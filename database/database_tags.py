@@ -2,7 +2,7 @@
 
 import re
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QT_TRANSLATE_NOOP
 
 
 class DatabaseTerms:
@@ -18,40 +18,45 @@ class DatabaseTerms:
     MOUNT_MEDIA = ["Not_set", "Water", "KOH", "NH3", "Melzer", "Glycerine", "Congo_Red", "Cotton_Blue"]
     SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
     MEASURE_CATEGORIES = [
-        "Spores", "Field", "Pleurocystidia", 
-        "Cheilocystidia", "Caulocystidia", "Other"
+        "Spores", "Field", "Basidia", "Pileipellis",
+        "Pleurocystidia", "Cheilocystidia", "Caulocystidia", "Other"
     ]
     
     # Display name mappings (for translation)
     CONTRAST_DISPLAY = {
-        "BF": "BF", "DF": "DF", "DIC": "DIC", "Phase": "Phase"
+        "BF": QT_TRANSLATE_NOOP("DatabaseTerms", "BF"),
+        "DF": QT_TRANSLATE_NOOP("DatabaseTerms", "DF"),
+        "DIC": QT_TRANSLATE_NOOP("DatabaseTerms", "DIC"),
+        "Phase": QT_TRANSLATE_NOOP("DatabaseTerms", "Phase"),
     }
     
     MOUNT_DISPLAY = {
-        "Not_set": "Not set",
-        "Water": "Water",
-        "KOH": "KOH",
-        "NH3": "NH₃",
-        "Melzer": "Melzer",
-        "Glycerine": "Glycerine",
-        "Congo_Red": "Congo Red",
-        "Cotton_Blue": "Cotton Blue"
+        "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
+        "Water": QT_TRANSLATE_NOOP("DatabaseTerms", "Water"),
+        "KOH": QT_TRANSLATE_NOOP("DatabaseTerms", "KOH"),
+        "NH3": QT_TRANSLATE_NOOP("DatabaseTerms", "NH₃"),
+        "Melzer": QT_TRANSLATE_NOOP("DatabaseTerms", "Melzer"),
+        "Glycerine": QT_TRANSLATE_NOOP("DatabaseTerms", "Glycerine"),
+        "Congo_Red": QT_TRANSLATE_NOOP("DatabaseTerms", "Congo Red"),
+        "Cotton_Blue": QT_TRANSLATE_NOOP("DatabaseTerms", "Cotton Blue"),
     }
     
     SAMPLE_DISPLAY = {
-        "Not_set": "Not set",
-        "Fresh": "Fresh",
-        "Dried": "Dried",
-        "Spore_print": "Spore print"
+        "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
+        "Fresh": QT_TRANSLATE_NOOP("DatabaseTerms", "Fresh"),
+        "Dried": QT_TRANSLATE_NOOP("DatabaseTerms", "Dried"),
+        "Spore_print": QT_TRANSLATE_NOOP("DatabaseTerms", "Spore print"),
     }
     
     MEASURE_DISPLAY = {
-        "Spores": "Spores",
-        "Field": "Field",
-        "Pleurocystidia": "Pleurocystidia",
-        "Cheilocystidia": "Cheilocystidia",
-        "Caulocystidia": "Caulocystidia",
-        "Other": "Other"
+        "Spores": QT_TRANSLATE_NOOP("DatabaseTerms", "Spores"),
+        "Field": QT_TRANSLATE_NOOP("DatabaseTerms", "Field"),
+        "Basidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Basidia"),
+        "Pileipellis": QT_TRANSLATE_NOOP("DatabaseTerms", "Pileipellis"),
+        "Pleurocystidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Pleurocystidia"),
+        "Cheilocystidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Cheilocystidia"),
+        "Caulocystidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Caulocystidia"),
+        "Other": QT_TRANSLATE_NOOP("DatabaseTerms", "Other"),
     }
     
     @staticmethod

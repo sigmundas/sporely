@@ -1,7 +1,19 @@
 """Database migration script to update schema."""
+import json
 import sqlite3
 import shutil
 from database.schema import get_database_path, load_objectives, resolve_objective_key
+
+_DEFAULT_MEASURE_CATEGORIES = [
+    "Spores",
+    "Field",
+    "Basidia",
+    "Pileipellis",
+    "Pleurocystidia",
+    "Cheilocystidia",
+    "Caulocystidia",
+    "Other",
+]
 
 
 def backup_database():
@@ -13,6 +25,83 @@ def backup_database():
         print(f"Backup created at: {backup_path}")
         return True
     return False
+
+
+def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
+    def _canonicalize(value) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        normalized = "".join(ch for ch in text.lower() if ch.isalnum())
+        mapping = {
+            "manual": "Spores",
+            "spore": "Spores",
+            "spores": "Spores",
+            "field": "Field",
+            "basidia": "Basidia",
+            "pileipellis": "Pileipellis",
+            "pleurocystidia": "Pleurocystidia",
+            "cheilocystidia": "Cheilocystidia",
+            "caulocystidia": "Caulocystidia",
+            "other": "Other",
+        }
+        return mapping.get(normalized, "_".join(text.split()))
+
+    def _canonicalize_list(values: list) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values or []:
+            canonical = _canonicalize(value)
+            if not canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            cleaned.append(canonical)
+        return cleaned or list(_DEFAULT_MEASURE_CATEGORIES)
+
+    key = "measure_categories"
+    defaults = list(_DEFAULT_MEASURE_CATEGORIES)
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = cursor.fetchone()
+
+    if row is None or row[0] is None:
+        normalized = _canonicalize_list(defaults)
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(normalized)),
+        )
+        return
+
+    raw_value = row[0]
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError):
+        parsed = []
+    if not isinstance(parsed, list):
+        parsed = []
+
+    normalized = _canonicalize_list(parsed)
+    merged = list(normalized)
+    changed = merged != parsed
+    for default_category in defaults:
+        if default_category not in merged:
+            merged.append(default_category)
+            changed = True
+
+    if changed:
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(merged)),
+        )
 
 
 def migrate_database():
@@ -184,6 +273,16 @@ def migrate_database():
                         OR calibration_id NOT IN (SELECT id FROM calibrations)
                       )
                 """)
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """
+    )
+    _migrate_measure_categories_setting(cursor)
 
     conn.commit()
     conn.close()

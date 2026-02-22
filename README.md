@@ -4,19 +4,53 @@ MycoLog is a desktop app for field observations, microscopy calibration, and spo
 
 ## Installation
 
+### Prebuilt application
+
 Download the latest build from:
 https://github.com/sigmundas/mycolog/releases/latest
 
-#### Install / run
-1. Download and extract the archive
-2. Run the executable
+Install / run:
+1. Download and extract the archive.
+2. Run the executable.
 
-### Python installation
+### Run from source (Python)
+
+This repository does not ship a `.venv` folder or activation scripts.
+They are created locally when you run `python -m venv .venv`.
+
+Use `python -m pip` (not plain `pip`) so installs always target the same interpreter you run.
+
+Linux/macOS (first-time setup):
 
 ```bash
-pip install -r requirements.txt
+cd ~/myapps/mycolog
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python main.py
 ```
+
+Windows PowerShell (first-time setup):
+
+```powershell
+cd path\to\mycolog
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python main.py
+```
+
+
+
+Each new terminal session:
+
+- Linux/macOS: `source .venv/bin/activate`
+- Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
+- Windows Command Prompt: `.\.venv\Scripts\activate.bat`
+
+
 
 
 ## First Run

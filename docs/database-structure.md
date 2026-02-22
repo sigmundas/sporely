@@ -46,8 +46,8 @@ These are available in the **File** menu as **Export DB** and **Import DB**.
 
 ## See also
 
-- [Artsobservasjoner login and upload](docs/artsobservasjoner.md)
-- [Field photography](docs/field-photography.md)
-- [Microscopy workflow](docs/microscopy-workflow.md)
-- [Spore measurements](docs/spore-measurements.md)
-- [Taxonomy integration](docs/taxonomy-integration.md)
+- [Artsobservasjoner login and upload](./artsobservasjoner.md)
+- [Field photography](./field-photography.md)
+- [Microscopy workflow](./microscopy-workflow.md)
+- [Spore measurements](./spore-measurements.md)
+- [Taxonomy integration](./taxonomy-integration.md)

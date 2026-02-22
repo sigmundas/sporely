@@ -3,6 +3,8 @@ set -euo pipefail
 
 files=(
   "main.py"
+  "database/database_tags.py"
+  "ui/database_settings_dialog.py"
   "ui/main_window.py"
   "ui/image_import_dialog.py"
   "ui/observations_tab.py"

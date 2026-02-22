@@ -2,6 +2,7 @@
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 os.environ.setdefault("QTWEBENGINE_DISABLE_GPU", "1")
@@ -10,7 +11,10 @@ os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-software-rasterizer")
 if sys.platform.startswith("linux"):
     # Avoid loading libproxy-based GIO module in mixed snap/system setups.
-    os.environ.setdefault("GIO_USE_PROXY_RESOLVER", "0")
+    os.environ["GIO_USE_PROXY_RESOLVER"] = "0"
+    # VS Code Snap may inject cached GIO modules built against a newer libstdc++.
+    # Drop these extra modules to avoid non-fatal GLIBCXX warnings at startup.
+    os.environ.pop("GIO_EXTRA_MODULES", None)
 
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor
@@ -57,10 +61,6 @@ def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
 
 def main():
     """Initialize and run the application."""
-    # Initialize database
-    print("Initializing database...")
-    init_database()
-
     # Create and run application
     app = QApplication(sys.argv)
     app.setApplicationName("MycoLog - Mushroom Log and Spore Analyzer")
@@ -71,9 +71,16 @@ def main():
         app.setFont(app_font)
 
     splash = _create_splash(app, APP_VERSION)
+    splash_shown_at: float | None = None
     if splash:
         splash.show()
+        splash.raise_()
         app.processEvents()
+        splash_shown_at = time.monotonic()
+
+    # Initialize database (after splash is visible)
+    print("Initializing database...")
+    init_database()
 
     translator = QTranslator()
     app_settings = get_app_settings()
@@ -100,6 +107,13 @@ def main():
             app._translator = translator
 
     window = MainWindow(app_version=APP_VERSION)
+    if splash:
+        if splash_shown_at is not None:
+            elapsed = time.monotonic() - splash_shown_at
+            min_splash_seconds = 0.6
+            if elapsed < min_splash_seconds:
+                time.sleep(min_splash_seconds - elapsed)
+                app.processEvents()
     window.show()
     if splash:
         splash.finish(window)

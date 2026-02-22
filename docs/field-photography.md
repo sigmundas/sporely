@@ -34,7 +34,7 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 
 ## See also
 
-- [Microscopy workflow](docs/microscopy-workflow.md)
-- [Spore measurements](docs/spore-measurements.md)
-- [Taxonomy integration](docs/taxonomy-integration.md)
-- [Database structure](docs/database-structure.md)
+- [Microscopy workflow](./microscopy-workflow.md)
+- [Spore measurements](./spore-measurements.md)
+- [Taxonomy integration](./taxonomy-integration.md)
+- [Database structure](./database-structure.md)

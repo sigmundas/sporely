@@ -137,17 +137,24 @@ class HintLabel(QLabel):
         self.setProperty("hint_interactive", "true")
         self.style().unpolish(self)
         self.style().polish(self)
-        self.setCursor(Qt.WhatsThisCursor)
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setTextFormat(Qt.PlainText)
         # Keep text readable; underline is drawn in paintEvent.
         self.setStyleSheet("QLabel { color: #2c3e50; }")
         self.setToolTip("")
+        self._apply_hint_affordance()
         self.setText(text)
+
+    def _apply_hint_affordance(self) -> None:
+        if self._hint_text:
+            self.setCursor(Qt.WhatsThisCursor)
+        else:
+            self.unsetCursor()
 
     def set_hint_text(self, hint_text: str | None) -> None:
         self._hint_text = (hint_text or "").strip()
         self.setToolTip("")
+        self._apply_hint_affordance()
 
     def setText(self, text: str) -> None:  # noqa: N802 - Qt API
         self._plain_text = text or ""
@@ -165,6 +172,8 @@ class HintLabel(QLabel):
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
+        if not self._hint_text:
+            return
         text = self.text() or ""
         if not text:
             return

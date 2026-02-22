@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QCheckBox, QDoubleSpinBox, QDialog, QFormLayout,
                                  QDialogButtonBox, QSpinBox, QSizePolicy, QToolButton,
                                  QStyle, QLineEdit, QApplication, QProgressDialog,
-                                 QToolTip, QCompleter, QSplitterHandle)
+                                 QToolTip, QCompleter, QSplitterHandle, QFrame)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -36,6 +36,7 @@ from PySide6.QtCore import (
     QUrl,
     QStandardPaths,
     QModelIndex,
+    QT_TRANSLATE_NOOP,
 )
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import json
@@ -77,6 +78,7 @@ from utils.vernacular_utils import (
     list_available_vernacular_languages,
 )
 from .image_gallery_widget import ImageGalleryWidget
+from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no
 from .calibration_dialog import CalibrationDialog
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
@@ -84,6 +86,7 @@ from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .styles import MODERN_STYLE
 from .hint_status import HintStatusController
+from .export_image_dialog import ExportImageDialog as SharedExportImageDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -375,9 +378,11 @@ class DatabaseBundleOptionsDialog(QDialog):
         hint.setStyleSheet("color: #7f8c8d; font-size: 9pt;")
         layout.addWidget(hint)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
+        buttons = QDialogButtonBox(self)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(self._on_accept)
+        cancel_btn.clicked.connect(self.reject)
         layout.addWidget(buttons)
 
         self.measurements_check.toggled.connect(self._sync_measurement_dependencies)
@@ -420,7 +425,7 @@ class LanguageSettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Language")
+        self.setWindowTitle(self.tr("Language"))
         self.setModal(True)
         self.setMinimumWidth(420)
         self._ui_changed = False
@@ -430,6 +435,11 @@ class LanguageSettingsDialog(QDialog):
     def init_ui(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
+
+        restart_notice = QLabel(self.tr("Language change will apply after restart."))
+        restart_notice.setWordWrap(True)
+        restart_notice.setStyleSheet("color: #34495e;")
+        layout.addWidget(restart_notice)
 
         self.ui_combo = QComboBox()
         self.ui_combo.addItem(self.tr("English"), "en")
@@ -443,9 +453,11 @@ class LanguageSettingsDialog(QDialog):
 
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._save)
-        buttons.rejected.connect(self.reject)
+        buttons = QDialogButtonBox(self)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(self._save)
+        cancel_btn.clicked.connect(self.reject)
         layout.addWidget(buttons)
 
         self._load_settings()
@@ -492,13 +504,6 @@ class LanguageSettingsDialog(QDialog):
             if parent and hasattr(parent, "apply_vernacular_language_change"):
                 parent.apply_vernacular_language_change()
 
-        if self._ui_changed:
-            QMessageBox.information(
-                self,
-                self.tr("Language"),
-                self.tr("Language change will apply after restart.")
-            )
-
         self.accept()
 
 
@@ -510,12 +515,19 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
     SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
+    SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_INAT_CLIENT_ID = "inat_client_id"
     SETTING_INAT_CLIENT_SECRET = "inat_client_secret"
     SETTING_INAT_REDIRECT_URI = "inat_redirect_uri"
     SETTING_MO_APP_API_KEY = "mushroomobserver_app_api_key"
     SETTING_MO_USER_API_KEY = "mushroomobserver_user_api_key"
+    UPLOADER_LABELS = {
+        "mobile": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner (mobile)"),
+        "web": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner (web)"),
+        "inat": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "iNaturalist"),
+        "mo": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Mushroom Observer"),
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -534,8 +546,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._inat_session_client_secret = ""
         self.setWindowTitle(self.tr("Online publishing"))
         self.setModal(True)
-        self.setMinimumWidth(520)
-        self.resize(560, 660)
+        self.setMinimumWidth(660)
+        self.resize(700, 660)
         self._build_ui()
         self._load_settings()
         self._update_status()
@@ -575,6 +587,15 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             redirect_uri=redirect_uri,
             token_file=self._inat_token_file(),
         )
+
+    def _uploader_display_label(self, uploader) -> str:
+        if not uploader:
+            return ""
+        label = self.UPLOADER_LABELS.get(
+            getattr(uploader, "key", ""),
+            getattr(uploader, "label", ""),
+        )
+        return self.tr(label) if label else ""
 
     def _mushroomobserver_credentials(self) -> tuple[str, str]:
         app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip()
@@ -623,7 +644,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         form.addRow(self.tr("User API key:"), user_key_edit)
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(dialog)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
         layout.addWidget(buttons)
 
         def _accept_if_valid() -> None:
@@ -643,8 +666,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 return
             dialog.accept()
 
-        buttons.accepted.connect(_accept_if_valid)
-        buttons.rejected.connect(dialog.reject)
+        ok_btn.clicked.connect(_accept_if_valid)
+        cancel_btn.clicked.connect(dialog.reject)
         user_key_edit.returnPressed.connect(_accept_if_valid)
         if app_key_edit is not None:
             app_key_edit.returnPressed.connect(_accept_if_valid)
@@ -678,10 +701,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         saved_client_id = (SettingsDB.get_setting(self.SETTING_INAT_CLIENT_ID, "") or "").strip()
         saved_client_secret = (SettingsDB.get_setting(self.SETTING_INAT_CLIENT_SECRET, "") or "").strip()
         client_id_edit = QLineEdit()
-        client_id_edit.setPlaceholderText("Client ID")
+        client_id_edit.setPlaceholderText(self.tr("Client ID"))
         client_id_edit.setText(saved_client_id or (self._inat_session_client_id or ""))
         client_secret_edit = QLineEdit()
-        client_secret_edit.setPlaceholderText("Client Secret")
+        client_secret_edit.setPlaceholderText(self.tr("Client Secret"))
         client_secret_edit.setEchoMode(QLineEdit.Password)
         client_secret_edit.setText(saved_client_secret or (self._inat_session_client_secret or ""))
         form.addRow(self.tr("Client ID:"), client_id_edit)
@@ -692,7 +715,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         remember_checkbox.setChecked(bool(saved_client_id and saved_client_secret))
         layout.addWidget(remember_checkbox)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(dialog)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
         layout.addWidget(buttons)
 
         def _accept_if_valid() -> None:
@@ -705,8 +730,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 return
             dialog.accept()
 
-        buttons.accepted.connect(_accept_if_valid)
-        buttons.rejected.connect(dialog.reject)
+        ok_btn.clicked.connect(_accept_if_valid)
+        cancel_btn.clicked.connect(dialog.reject)
         client_id_edit.returnPressed.connect(_accept_if_valid)
         client_secret_edit.returnPressed.connect(_accept_if_valid)
         client_id_edit.setFocus()
@@ -751,7 +776,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         for uploader in self._uploaders:
             row = self.targets_table.rowCount()
             self.targets_table.insertRow(row)
-            target_item = QTableWidgetItem(self.tr(uploader.label))
+            target_item = QTableWidgetItem(self._uploader_display_label(uploader))
             target_item.setData(Qt.UserRole, uploader.key)
             status_item = QTableWidgetItem(self.tr("Not logged in"))
             self.targets_table.setItem(row, 0, target_item)
@@ -779,6 +804,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.include_spore_stats_checkbox = QCheckBox(self)
         self.include_measure_plots_checkbox = QCheckBox(self)
         self.include_thumbnail_gallery_checkbox = QCheckBox(self)
+        self.include_copyright_checkbox = QCheckBox(self)
         self.hint_bar = QLabel("")
         self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.hint_bar.setWordWrap(True)
@@ -814,6 +840,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self.tr("Include thumbnail gallery"),
                 self.tr("Adds a mosaic gallery image (Same as Export gallery in Analysis)."),
             ),
+            (
+                self.include_copyright_checkbox,
+                self.tr("Include copyright"),
+                self.tr("Adds your profile name, (c), and the observation year on published images."),
+            ),
         )
         for checkbox, text, help_text in wrapped_options:
             checkbox.toggled.connect(self._save_settings)
@@ -830,9 +861,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         bottom_row.setSpacing(8)
         bottom_row.addWidget(self.hint_bar, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
+        buttons = QDialogButtonBox(self)
+        close_button = buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
+        close_button.clicked.connect(self.reject)
         bottom_row.addWidget(buttons, 0, Qt.AlignRight | Qt.AlignVCenter)
         layout.addLayout(bottom_row)
 
@@ -910,6 +941,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.SETTING_INCLUDE_THUMBNAIL_GALLERY,
             "1" if self.include_thumbnail_gallery_checkbox.isChecked() else "0",
         )
+        SettingsDB.set_setting(
+            self.SETTING_INCLUDE_COPYRIGHT,
+            "1" if self.include_copyright_checkbox.isChecked() else "0",
+        )
 
     def _selected_uploader(self):
         if not self._uploaders:
@@ -983,7 +1018,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
         if selected_logged_in and selected:
             self.set_hint(
-                self.tr("Logged in to {target}").format(target=self.tr(selected.label)),
+                self.tr("Logged in to {target}").format(
+                    target=self._uploader_display_label(selected)
+                ),
                 tone="success",
             )
         elif logged_count:
@@ -1224,6 +1261,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 (
                     self.include_thumbnail_gallery_checkbox,
                     self.SETTING_INCLUDE_THUMBNAIL_GALLERY,
+                    False,
+                ),
+                (
+                    self.include_copyright_checkbox,
+                    self.SETTING_INCLUDE_COPYRIGHT,
                     False,
                 ),
             )
@@ -2458,7 +2500,7 @@ class MainWindow(QMainWindow):
         self._gallery_render_state = None
         self._gallery_collapsed = False
         self._gallery_hint_controller: HintStatusController | None = None
-        self._pending_gallery_hint_widgets: list[tuple[QWidget, str, str]] = []
+        self._pending_gallery_hint_widgets: list[tuple[QWidget, str, str, bool]] = []
         self._gallery_scatter_axis = None
         self._gallery_hist_axes: set = set()
         self._gallery_hover_hint_key = ""
@@ -2506,10 +2548,12 @@ class MainWindow(QMainWindow):
                     text = self._clean_ref_species_text(self.ref_species_input.text())
                     self._update_ref_species_suggestions(genus, text)
                     if self._ref_species_model.rowCount() > 0:
+                        self._ref_species_completer.setCompletionPrefix(text)
                         self._ref_species_completer.complete()
             elif obj == getattr(self, "ref_vernacular_input", None):
                 if not self.ref_vernacular_input.text().strip():
-                    self._on_ref_vernacular_text_changed("")
+                    self._ref_vernacular_completer.setCompletionPrefix("")
+                    self._update_ref_vernacular_suggestions_for_taxon()
                     if self._ref_vernacular_model.rowCount() > 0:
                         self._ref_vernacular_completer.complete()
         if event.type() == QEvent.MouseButtonPress:
@@ -2803,9 +2847,9 @@ class MainWindow(QMainWindow):
 
         self.measure_button = QPushButton(self.tr("Start measuring"))
         self.measure_button.setCheckable(True)
-        self.measure_button.setMinimumHeight(40)
+        self.measure_button.setMinimumHeight(35)
         self.measure_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.measure_button.setStyleSheet("font-weight: bold; padding: 8px 10px;")
+        self.measure_button.setStyleSheet("font-weight: bold; padding: 6px 10px;")
         self.measure_button.clicked.connect(self._on_measure_button_clicked)
         measure_layout.addWidget(self.measure_button)
 
@@ -2866,13 +2910,13 @@ class MainWindow(QMainWindow):
 
         reset_btn = QPushButton(self.tr("Reset"))
         reset_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        reset_btn.setStyleSheet("font-size: 8pt; padding: 4px 6px;")
+        reset_btn.setMinimumHeight(35)
         reset_btn.clicked.connect(self.reset_view)
         view_buttons_row.addWidget(reset_btn)
 
         export_image_btn = QPushButton(self.tr("Export image"))
         export_image_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        export_image_btn.setStyleSheet("font-size: 8pt; padding: 4px 6px;")
+        export_image_btn.setMinimumHeight(35)
         export_image_btn.clicked.connect(self.export_annotated_image)
         view_buttons_row.addWidget(export_image_btn)
         view_buttons_row.setStretch(0, 1)
@@ -2892,6 +2936,10 @@ class MainWindow(QMainWindow):
         self.show_scale_bar_checkbox = QCheckBox(self.tr("Show scale bar"))
         self.show_scale_bar_checkbox.toggled.connect(self.on_show_scale_bar_toggled)
         zoom_layout.addWidget(self.show_scale_bar_checkbox)
+
+        self.show_copyright_checkbox = QCheckBox(self.tr("Show copyright"))
+        self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
+        zoom_layout.addWidget(self.show_copyright_checkbox)
 
         scale_bar_row = QHBoxLayout()
         self.scale_bar_input = QDoubleSpinBox()
@@ -2940,8 +2988,8 @@ class MainWindow(QMainWindow):
 
         # Left panel - controls (fixed width)
         left_panel = self.create_control_panel()
-        left_panel.setMaximumWidth(250)
-        left_panel.setMinimumWidth(250)
+        left_panel.setMaximumWidth(270)
+        left_panel.setMinimumWidth(270)
         layout.addWidget(left_panel)
 
         # Center - image panel
@@ -2982,6 +3030,7 @@ class MainWindow(QMainWindow):
             self.image_label.set_show_measure_labels(self.show_measures_checkbox.isChecked())
         if hasattr(self, "show_rectangles_checkbox"):
             self.image_label.set_show_measure_overlays(self.show_rectangles_checkbox.isChecked())
+        self._update_measure_copyright_overlay()
 
         self.measure_gallery = ImageGalleryWidget(
             self.tr("Images"),
@@ -3083,8 +3132,8 @@ class MainWindow(QMainWindow):
         self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
         self.gallery_q_minmax_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_q_minmax_checkbox)
-        plot_section = CollapsibleSection(self.tr("Plot settings"), plot_panel, expanded=True)
-        reference_section = CollapsibleSection(self.tr("Reference values"), self._build_reference_panel(), expanded=False)
+        plot_section = CollapsibleSection(self.tr("Plot settings"), plot_panel, expanded=False)
+        reference_section = CollapsibleSection(self.tr("Reference values"), self._build_reference_panel(), expanded=True)
 
         gallery_group = QGroupBox(self.tr("Gallery settings"))
         gallery_controls = QVBoxLayout(gallery_group)
@@ -3114,32 +3163,32 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(gallery_group)
 
         self.gallery_plot_export_btn = QPushButton(self.tr("Export Plot"))
-        self.gallery_plot_export_btn.setMinimumHeight(34)
+        self.gallery_plot_export_btn.setMinimumHeight(35)
         self.gallery_plot_export_btn.setMinimumWidth(110)
         self.gallery_plot_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_plot_export_btn.clicked.connect(self.export_graph_plot_svg)
 
         self.gallery_export_btn = QPushButton(self.tr("Export gallery"))
-        self.gallery_export_btn.setMinimumHeight(34)
+        self.gallery_export_btn.setMinimumHeight(35)
         self.gallery_export_btn.setMinimumWidth(110)
         self.gallery_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_export_btn.clicked.connect(self.export_gallery_composite)
 
         self.gallery_copy_stats_btn = QPushButton(self.tr("Copy stats"))
-        self.gallery_copy_stats_btn.setMinimumHeight(34)
+        self.gallery_copy_stats_btn.setMinimumHeight(35)
         self.gallery_copy_stats_btn.setMinimumWidth(110)
         self.gallery_copy_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_copy_stats_btn.clicked.connect(self.copy_spore_stats)
 
         self.gallery_save_stats_btn = QPushButton(self.tr("Save stats"))
-        self.gallery_save_stats_btn.setMinimumHeight(34)
+        self.gallery_save_stats_btn.setMinimumHeight(35)
         self.gallery_save_stats_btn.setMinimumWidth(110)
         self.gallery_save_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
 
-        left_panel.setMinimumWidth(250)
-        left_panel.setMaximumWidth(450)
+        left_panel.setMinimumWidth(270)
+        left_panel.setMaximumWidth(270)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -3170,7 +3219,15 @@ class MainWindow(QMainWindow):
         self.gallery_plot_canvas.mpl_connect("pick_event", self.on_gallery_plot_pick)
         self.gallery_plot_canvas.mpl_connect("motion_notify_event", self._on_gallery_plot_motion)
         self.gallery_plot_canvas.mpl_connect("figure_leave_event", self._on_gallery_plot_leave)
-        plot_layout.addWidget(self.gallery_plot_canvas)
+
+        plot_canvas_frame = QFrame()
+        plot_canvas_frame.setFrameShape(QFrame.StyledPanel)
+        plot_canvas_frame.setLineWidth(1)
+        plot_canvas_layout = QVBoxLayout(plot_canvas_frame)
+        plot_canvas_layout.setContentsMargins(0, 0, 0, 0)
+        plot_canvas_layout.setSpacing(0)
+        plot_canvas_layout.addWidget(self.gallery_plot_canvas)
+        plot_layout.addWidget(plot_canvas_frame)
 
         gallery_panel = QWidget()
         gallery_layout = QVBoxLayout(gallery_panel)
@@ -3206,7 +3263,7 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([350, 1000])
+        main_splitter.setSizes([270, 1000])
 
         main_layout.addWidget(main_splitter, 1)
 
@@ -3222,9 +3279,14 @@ class MainWindow(QMainWindow):
         bottom_row.addWidget(self.gallery_hint_bar, 1)
         self._gallery_hint_controller = HintStatusController(self.gallery_hint_bar, self)
         if self._pending_gallery_hint_widgets:
-            for widget, hint, tone in self._pending_gallery_hint_widgets:
+            for widget, hint, tone, allow_when_disabled in self._pending_gallery_hint_widgets:
                 if widget:
-                    self._gallery_hint_controller.register_widget(widget, hint, tone=tone)
+                    self._gallery_hint_controller.register_widget(
+                        widget,
+                        hint,
+                        tone=tone,
+                        allow_when_disabled=allow_when_disabled,
+                    )
             self._pending_gallery_hint_widgets.clear()
 
         action_row = QHBoxLayout()
@@ -3245,19 +3307,26 @@ class MainWindow(QMainWindow):
         widget: QWidget,
         hint_text: str | None,
         tone: str = "info",
+        allow_when_disabled: bool = False,
     ) -> None:
         if not widget:
             return
         hint = (hint_text or "").strip()
         hint_tone = (tone or "info").strip().lower()
         if self._gallery_hint_controller is not None:
-            self._gallery_hint_controller.register_widget(widget, hint, tone=hint_tone)
+            self._gallery_hint_controller.register_widget(
+                widget,
+                hint,
+                tone=hint_tone,
+                allow_when_disabled=allow_when_disabled,
+            )
             return
         widget.setProperty("_hint_text", hint)
         widget.setProperty("_hint_tone", hint_tone)
+        widget.setProperty("_hint_allow_disabled", bool(allow_when_disabled))
         widget.setToolTip("")
-        if not any(existing is widget for existing, _, _ in self._pending_gallery_hint_widgets):
-            self._pending_gallery_hint_widgets.append((widget, hint, hint_tone))
+        if not any(existing is widget for existing, _, _, _ in self._pending_gallery_hint_widgets):
+            self._pending_gallery_hint_widgets.append((widget, hint, hint_tone, bool(allow_when_disabled)))
 
     def _set_gallery_hint(self, text: str | None, tone: str = "info") -> None:
         if self._gallery_hint_controller is not None:
@@ -3350,9 +3419,13 @@ class MainWindow(QMainWindow):
         self.ref_vernacular_input = QLineEdit()
         self.ref_genus_input = QLineEdit()
         self.ref_species_input = QLineEdit()
+        self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
+        self.ref_genus_input.setPlaceholderText("e.g., Flammulina")
+        self.ref_species_input.setPlaceholderText("e.g., velutipes")
         self.ref_source_input = QComboBox()
         self.ref_source_input.setEditable(True)
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
+        self._style_dropdown_popup_readability(self.ref_source_input.view(), self.ref_source_input)
 
         form.addRow(self.ref_vernacular_label, self.ref_vernacular_input)
         form.addRow(self.tr("Genus:"), self.ref_genus_input)
@@ -3364,7 +3437,11 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         self.ref_plot_btn = QPushButton(self.tr("Plot"))
         self.ref_plot_btn.clicked.connect(self._on_reference_panel_plot_clicked)
-        self._register_gallery_hint_widget(self.ref_plot_btn, self.tr("Plot this data"))
+        self._register_gallery_hint_widget(
+            self.ref_plot_btn,
+            self.tr("Plot this data"),
+            allow_when_disabled=True,
+        )
         self.ref_add_btn = QPushButton(self.tr("Add"))
         self.ref_add_btn.clicked.connect(self._on_reference_panel_add_clicked)
         self._register_gallery_hint_widget(
@@ -3374,14 +3451,10 @@ class MainWindow(QMainWindow):
         self.ref_edit_btn = QPushButton(self.tr("Edit"))
         self.ref_edit_btn.clicked.connect(self._on_reference_panel_edit_clicked)
         self._register_gallery_hint_widget(self.ref_edit_btn, self.tr("Edit reference data"))
-        self.ref_clear_btn = QPushButton(self.tr("Clear"))
-        self.ref_clear_btn.clicked.connect(self._on_reference_panel_clear_clicked)
-        self._register_gallery_hint_widget(self.ref_clear_btn, self.tr("Clear all reference plots"))
         btn_row.addStretch()
         btn_row.addWidget(self.ref_plot_btn)
         btn_row.addWidget(self.ref_add_btn)
         btn_row.addWidget(self.ref_edit_btn)
-        btn_row.addWidget(self.ref_clear_btn)
         layout.addLayout(btn_row)
 
         self.ref_series_table = QTableWidget(0, 2)
@@ -3404,10 +3477,104 @@ class MainWindow(QMainWindow):
         self._update_reference_add_state()
         return panel
 
+    def _style_dropdown_popup_readability(self, popup, font_source=None):
+        """Match popup font to input and add slightly looser row spacing."""
+        if popup is None:
+            return
+        if font_source is not None and hasattr(font_source, "font"):
+            try:
+                popup.setFont(font_source.font())
+            except Exception:
+                pass
+        if hasattr(popup, "setSpacing"):
+            try:
+                popup.setSpacing(1)
+            except Exception:
+                pass
+        popup.setStyleSheet(
+            "QListView::item { padding: 2px 6px; }"
+            "QAbstractItemView::item { padding: 2px 6px; }"
+        )
+
     def _reference_vernacular_label(self) -> str:
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         base = self.tr("Common name")
         return f"{common_name_display_label(lang, base)}:"
+
+    def _reference_vernacular_placeholder(self) -> str:
+        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        examples = {
+            "no": "Kantarell",
+            "de": "Pfifferling",
+            "fr": "Girolle",
+            "es": "Rebozuelo",
+            "da": "Kantarel",
+            "sv": "Kantarell",
+            "fi": "Kantarelli",
+            "pl": "Kurka",
+            "pt": "Cantarelo",
+            "it": "Gallinaccio",
+        }
+        return f"e.g., {examples.get(lang, 'Chanterelle')}"
+
+    def _set_ref_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+        if not hasattr(self, "ref_vernacular_input"):
+            return
+        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
+        if not cleaned:
+            self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
+            return
+        preview = "; ".join(cleaned[:4])
+        self.ref_vernacular_input.setPlaceholderText(f"e.g., {preview}")
+
+    def _set_ref_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+        if not hasattr(self, "ref_species_input"):
+            return
+        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
+        if not cleaned:
+            self.ref_species_input.setPlaceholderText("e.g., velutipes")
+            return
+        preview = "; ".join(cleaned[:4])
+        self.ref_species_input.setPlaceholderText(f"e.g., {preview}")
+
+    def _populate_ref_vernacular_model(self, suggestions: list[str]) -> None:
+        self._ref_vernacular_model.clear()
+        if not self.ref_vernacular_db:
+            return
+        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
+        for name in suggestions:
+            display = name
+            emojis = []
+            if self.species_availability and name:
+                taxon = self.ref_vernacular_db.taxon_from_vernacular(name)
+                if taxon:
+                    tax_genus, tax_species, _family = taxon
+                    info = self._reference_species_info_case_insensitive(
+                        tax_genus,
+                        tax_species,
+                        exclude_observation_id=exclude_id,
+                    )
+                    emojis.extend(self._reference_availability_emojis(info))
+            if emojis:
+                display = f"{name} {' '.join(emojis)}"
+            item = QStandardItem(display)
+            item.setData(name, Qt.UserRole)
+            self._ref_vernacular_model.appendRow(item)
+
+    def _update_ref_vernacular_suggestions_for_taxon(self) -> None:
+        if not self.ref_vernacular_db:
+            self._ref_vernacular_model.clear()
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) or None
+        species = self._clean_ref_species_text(self.ref_species_input.text()) or None
+        if not genus and not species:
+            self._ref_vernacular_model.clear()
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
+        suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        self._populate_ref_vernacular_model(suggestions)
+        self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
     def _update_reference_add_state(self):
         if not hasattr(self, "ref_add_btn"):
@@ -3420,7 +3587,19 @@ class MainWindow(QMainWindow):
             has_source = bool(self.ref_source_input.currentText().strip()) if hasattr(self, "ref_source_input") else False
             self.ref_edit_btn.setEnabled(has_species and has_source)
         if hasattr(self, "ref_plot_btn"):
-            self.ref_plot_btn.setEnabled(self._reference_has_selected_source_data())
+            source_text = self.ref_source_input.currentText().strip() if hasattr(self, "ref_source_input") else ""
+            has_plot_data = self._reference_has_selected_source_data()
+            self.ref_plot_btn.setEnabled(has_plot_data)
+            plot_hint = self.tr("Plot this data")
+            if not has_species:
+                plot_hint = self.tr("Select species and source to plot.")
+            elif not source_text or not has_plot_data:
+                plot_hint = self.tr("Select a source for this species or Add a new source.")
+            self._register_gallery_hint_widget(
+                self.ref_plot_btn,
+                plot_hint,
+                allow_when_disabled=True,
+            )
         if hasattr(self, "ref_clear_btn"):
             has_plot_data = bool(getattr(self, "reference_series", []))
             has_taxon_input = bool(genus or species)
@@ -3816,7 +3995,9 @@ class MainWindow(QMainWindow):
         self._ref_species_completer.setFilterMode(Qt.MatchContains)
         self.ref_genus_input.setCompleter(self._ref_genus_completer)
         self.ref_species_input.setCompleter(self._ref_species_completer)
+        self._style_dropdown_popup_readability(self._ref_genus_completer.popup(), self.ref_genus_input)
         species_popup = self._ref_species_completer.popup()
+        self._style_dropdown_popup_readability(species_popup, self.ref_species_input)
         species_popup.setItemDelegate(
             SpeciesItemDelegate(
                 self.species_availability,
@@ -3851,6 +4032,7 @@ class MainWindow(QMainWindow):
         self._ref_vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
         self._ref_vernacular_completer.setCompletionRole(Qt.UserRole)
         self.ref_vernacular_input.setCompleter(self._ref_vernacular_completer)
+        self._style_dropdown_popup_readability(self._ref_vernacular_completer.popup(), self.ref_vernacular_input)
         self._ref_vernacular_completer.activated[QModelIndex].connect(self._on_ref_vernacular_selected)
         self._ref_vernacular_completer.popup().clicked.connect(self._on_ref_vernacular_popup_clicked)
         self.ref_vernacular_input.textChanged.connect(self._on_ref_vernacular_text_changed)
@@ -3942,10 +4124,27 @@ class MainWindow(QMainWindow):
         if not text.strip():
             self.ref_species_input.setText("")
             self._ref_species_model.clear()
+            if self._ref_species_completer:
+                self._ref_species_completer.setCompletionPrefix("")
             if hasattr(self, "ref_vernacular_input"):
                 self.ref_vernacular_input.setText("")
+            if self._ref_vernacular_completer:
+                self._ref_vernacular_completer.setCompletionPrefix("")
             if hasattr(self, "ref_source_input"):
                 self.ref_source_input.setCurrentText("")
+            self._set_ref_species_placeholder_from_suggestions([])
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+        genus = self._clean_ref_genus_text(text)
+        if genus and not self.ref_species_input.text().strip():
+            species_suggestions = self._update_ref_species_suggestions(genus, "")
+            self._set_ref_species_placeholder_from_suggestions(species_suggestions)
+        elif not genus:
+            self._set_ref_species_placeholder_from_suggestions([])
+        self._update_ref_vernacular_suggestions_for_taxon()
+        if self._ref_species_completer and not self.ref_species_input.hasFocus():
+            self._ref_species_completer.setCompletionPrefix("")
+        if self._ref_vernacular_completer and not self.ref_vernacular_input.hasFocus():
+            self._ref_vernacular_completer.setCompletionPrefix("")
         if not self.ref_genus_input.hasFocus() or self.ref_species_input.text().strip():
             self._populate_reference_panel_sources(auto_select_single=False)
         self._update_reference_add_state()
@@ -3960,14 +4159,19 @@ class MainWindow(QMainWindow):
             self.ref_source_input.setCurrentText("")
             self.ref_source_input.blockSignals(False)
         if genus:
-            self._update_ref_species_suggestions(genus, clean_text or "", hide_on_exact=True)
+            species_suggestions = self._update_ref_species_suggestions(genus, clean_text or "", hide_on_exact=True)
+            if not clean_text:
+                self._set_ref_species_placeholder_from_suggestions(species_suggestions)
             if self.ref_species_input.hasFocus() and self._ref_species_model.rowCount() > 0:
                 self._ref_species_completer.setCompletionPrefix(clean_text or "")
                 QTimer.singleShot(0, self._ref_species_completer.complete)
         else:
             self._ref_species_model.clear()
+            self._set_ref_species_placeholder_from_suggestions([])
             if self._ref_species_completer and self._ref_species_completer.popup():
                 self._ref_species_completer.popup().hide()
+        if not clean_text:
+            self._update_ref_vernacular_suggestions_for_taxon()
         self._populate_reference_panel_sources(auto_select_single=False)
         self._update_reference_add_state()
 
@@ -4001,10 +4205,16 @@ class MainWindow(QMainWindow):
             self._ref_genus_completer.popup().hide()
         self._ref_genus_model.setStringList([])
         self._ref_genus_completer.setCompletionPrefix("")
+        if self._ref_species_completer:
+            self._ref_species_completer.setCompletionPrefix("")
+        if self._ref_vernacular_completer:
+            self._ref_vernacular_completer.setCompletionPrefix("")
         self._update_ref_genus_suggestions(value)
-        species_text = self.ref_species_input.text().strip()
-        if species_text:
-            self._update_ref_species_suggestions(value, species_text)
+        species_text = self._clean_ref_species_text(self.ref_species_input.text())
+        species_suggestions = self._update_ref_species_suggestions(value, species_text or "")
+        if not species_text:
+            self._set_ref_species_placeholder_from_suggestions(species_suggestions)
+        self._update_ref_vernacular_suggestions_for_taxon()
         self._populate_reference_panel_sources()
         self._update_reference_add_state()
 
@@ -4115,26 +4325,9 @@ class MainWindow(QMainWindow):
             if self._ref_vernacular_completer:
                 self._ref_vernacular_completer.popup().hide()
             return
-        self._ref_vernacular_model.clear()
-        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        for name in suggestions:
-            display = name
-            emojis = []
-            if self.species_availability and name:
-                taxon = self.ref_vernacular_db.taxon_from_vernacular(name)
-                if taxon:
-                    tax_genus, tax_species, _family = taxon
-                    info = self._reference_species_info_case_insensitive(
-                        tax_genus,
-                        tax_species,
-                        exclude_observation_id=exclude_id,
-                    )
-                    emojis.extend(self._reference_availability_emojis(info))
-            if emojis:
-                display = f"{name} {' '.join(emojis)}"
-            item = QStandardItem(display)
-            item.setData(name, Qt.UserRole)
-            self._ref_vernacular_model.appendRow(item)
+        self._populate_ref_vernacular_model(suggestions)
+        if not text.strip():
+            self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
     def _on_ref_vernacular_editing_finished(self):
         if not self.ref_vernacular_db:
@@ -4155,16 +4348,24 @@ class MainWindow(QMainWindow):
 
     def _maybe_set_ref_vernacular_from_taxon(self):
         if not self.ref_vernacular_db:
+            self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         if self.ref_vernacular_input.text().strip():
             return
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species = self.ref_species_input.text().strip()
+        species = self._clean_ref_species_text(self.ref_species_input.text())
         if not genus or not species:
+            self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        if not suggestions:
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
         if len(suggestions) == 1:
             self.ref_vernacular_input.setText(suggestions[0])
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+        else:
+            self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
     def _populate_reference_panel_sources(self, auto_select_single: bool = True):
         if not hasattr(self, "ref_source_input"):
@@ -5115,6 +5316,7 @@ class MainWindow(QMainWindow):
         self.current_image_type = image_data.get("image_type")
         self.auto_gray_cache = None
         self.auto_gray_cache_id = None
+        self._update_measure_copyright_overlay()
 
         self.current_pixmap = self._load_pixmap_cached(self.current_image_path)
         self.image_label.set_image(self.current_pixmap)
@@ -5300,12 +5502,10 @@ class MainWindow(QMainWindow):
             return
 
         measurements = MeasurementDB.get_measurements_for_image(image_id)
-        prompt = (
-            self.tr("Delete image and associated measurements?")
-            if measurements
-            else self.tr("Delete image?")
-        )
-        confirmed = self._question_yes_no(self.tr("Confirm Delete"), prompt, default_yes=False)
+        if measurements:
+            confirmed = ask_measurements_exist_delete(self, count=1)
+        else:
+            confirmed = self._question_yes_no(self.tr("Confirm Delete"), self.tr("Delete image?"), default_yes=False)
         if not confirmed:
             return
 
@@ -5391,6 +5591,7 @@ class MainWindow(QMainWindow):
         self.update_exif_panel(None)
         self.image_label.clear_preview_line()
         self.image_label.clear_preview_rectangle()
+        self._update_measure_copyright_overlay()
         self.spore_preview.clear()
         self.update_display_lines()
         self._update_scale_mismatch_warning()
@@ -5513,6 +5714,58 @@ class MainWindow(QMainWindow):
         if hasattr(self, "show_scale_bar_checkbox") and self.show_scale_bar_checkbox.isChecked():
             self.image_label.set_scale_bar(True, value)
 
+    def on_show_copyright_toggled(self, _checked):
+        """Toggle copyright text on the Measure image view/export."""
+        self._update_measure_copyright_overlay()
+
+    def _observation_year_for_copyright(self, observation_date) -> int:
+        """Return a year extracted from observation date input."""
+        value = observation_date
+        if hasattr(value, "year") and callable(getattr(value, "year", None)):
+            try:
+                return int(value.year())
+            except Exception:
+                pass
+        if hasattr(value, "date") and callable(getattr(value, "date", None)):
+            try:
+                return int(value.date().year())
+            except Exception:
+                pass
+        text = str(observation_date or "").strip()
+        match = re.match(r"^(\d{4})", text)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                pass
+        return int(time.localtime().tm_year)
+
+    def _measure_copyright_text(self) -> str | None:
+        """Build copyright line from profile name + observation year."""
+        if not self.active_observation_id:
+            return None
+        observation = ObservationDB.get_observation(self.active_observation_id)
+        if not observation:
+            return None
+        profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
+        name = str((profile or {}).get("name") or "").strip()
+        if not name:
+            name = str(observation.get("author") or "").strip()
+        if not name:
+            return None
+        year = self._observation_year_for_copyright(observation.get("date"))
+        return f"{name} (c) {year}"
+
+    def _update_measure_copyright_overlay(self) -> None:
+        if not hasattr(self, "image_label"):
+            return
+        show = bool(
+            hasattr(self, "show_copyright_checkbox")
+            and self.show_copyright_checkbox.isChecked()
+        )
+        text = self._measure_copyright_text() if show else None
+        self.image_label.set_copyright(show and bool(text), text or "")
+
     def start_measurement(self):
         """Enable measurement mode."""
         self.measurement_active = True
@@ -5548,11 +5801,11 @@ class MainWindow(QMainWindow):
             if self.measurement_active:
                 self.measure_button.setText(self.tr("Stop measuring"))
                 self.measure_button.setStyleSheet(
-                    "font-weight: bold; padding: 8px 10px; background-color: #e74c3c; color: white;"
+                    "font-weight: bold; padding: 6px 10px; background-color: #e74c3c; color: white;"
                 )
             else:
                 self.measure_button.setText(self.tr("Start measuring"))
-                self.measure_button.setStyleSheet("font-weight: bold; padding: 8px 10px;")
+                self.measure_button.setStyleSheet("font-weight: bold; padding: 6px 10px;")
             self.measure_button.blockSignals(False)
 
     def _on_measure_button_clicked(self):
@@ -6703,7 +6956,7 @@ class MainWindow(QMainWindow):
                 if name:
                     default_name = name
 
-        dialog = ExportImageDialog(
+        dialog = SharedExportImageDialog(
             self.current_pixmap.width(),
             self.current_pixmap.height(),
             self.export_scale_percent,
@@ -7074,24 +7327,21 @@ class MainWindow(QMainWindow):
         """Normalize measurement categories for filtering."""
         if not category:
             return "spores"
-        value = str(category).strip().lower()
+        canonical = DatabaseTerms.canonicalize_measure(category)
+        if canonical:
+            value = str(canonical).strip().lower()
+        else:
+            value = str(category).strip().lower()
         if value in ("manual", "spore", "spores"):
             return "spores"
         return value
 
     def format_measurement_category(self, category):
         """Format measurement categories for display."""
-        labels = {
-            "spores": "Spores",
-            "spore": "Spores",
-            "field": "Field",
-            "basidia": "Basidia",
-            "pleurocystidia": "Pleurocystidia",
-            "cheilocystidia": "Cheilocystidia",
-            "caulocystidia": "Caulocystidia",
-            "other": "Other"
-        }
-        return labels.get(category, str(category).replace("_", " ").title())
+        canonical = DatabaseTerms.canonicalize_measure(category)
+        if canonical:
+            return DatabaseTerms.translate("measure", canonical)
+        return str(category).replace("_", " ").title()
 
     def refresh_gallery_filter_options(self):
         """Refresh gallery filter dropdown based on observation measurements."""
@@ -7116,7 +7366,11 @@ class MainWindow(QMainWindow):
                 if category not in normalized:
                     normalized.append(category)
 
-            order = ["spores", "field", "pleurocystidia", "cheilocystidia", "caulocystidia", "other", "basidia"]
+            order = []
+            for canonical in DatabaseTerms.default_values("measure"):
+                normalized_category = self.normalize_measurement_category(canonical)
+                if normalized_category and normalized_category not in order:
+                    order.append(normalized_category)
             ordered = [cat for cat in order if cat in normalized]
             for category in normalized:
                 if category not in ordered:
@@ -8720,20 +8974,23 @@ class MainWindow(QMainWindow):
         """Open profile settings dialog."""
         profile = SettingsDB.get_profile()
         dialog = QDialog(self)
-        dialog.setWindowTitle("Profile")
+        dialog.setWindowTitle(self.tr("Profile"))
         form = QFormLayout(dialog)
         name_input = QLineEdit(profile.get("name", ""))
         email_input = QLineEdit(profile.get("email", ""))
-        form.addRow("Name", name_input)
-        form.addRow("Email", email_input)
+        form.addRow(self.tr("Name"), name_input)
+        form.addRow(self.tr("Email"), email_input)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
+        buttons = QDialogButtonBox(dialog)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
         form.addRow(buttons)
 
         if dialog.exec() == QDialog.Accepted:
             SettingsDB.set_profile(name_input.text().strip(), email_input.text().strip())
+            self._update_measure_copyright_overlay()
 
     def open_database_settings_dialog(self):
         """Open database settings dialog."""
@@ -8761,6 +9018,16 @@ class MainWindow(QMainWindow):
             db_path = resolve_vernacular_db_path(lang)
             if db_path:
                 self.ref_vernacular_db = VernacularDB(db_path, language_code=lang)
+            if not self.ref_vernacular_input.text().strip():
+                self._set_ref_vernacular_placeholder_from_suggestions([])
+                self._update_ref_vernacular_suggestions_for_taxon()
+        if hasattr(self, "ref_species_input"):
+            genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
+            if genus and not self._clean_ref_species_text(self.ref_species_input.text()):
+                species_suggestions = self._update_ref_species_suggestions(genus, "")
+                self._set_ref_species_placeholder_from_suggestions(species_suggestions)
+            elif not self._clean_ref_species_text(self.ref_species_input.text()):
+                self._set_ref_species_placeholder_from_suggestions([])
         for widget in QApplication.topLevelWidgets():
             if widget is self:
                 continue
@@ -8771,36 +9038,36 @@ class MainWindow(QMainWindow):
                     pass
 
     def set_ui_language(self, code):
-        """Persist the UI language and prompt for restart."""
+        """Persist the UI language setting."""
         SettingsDB.set_setting("ui_language", code)
         update_app_settings({"ui_language": code})
-        QMessageBox.information(
-            self,
-            self.tr("Language"),
-            self.tr("Language change will apply after restart.")
-        )
 
     def _populate_measure_categories(self):
-        categories = SettingsDB.get_list_setting(
-            "measure_categories",
-            ["Spores", "Field", "Pleurocystidia", "Cheilocystidia", "Caulocystidia", "Other"]
-        )
-        categories = [
-            "Spores" if str(c).strip().lower() == "spore" else c
-            for c in categories
-            if str(c).strip().lower() != "basidia"
-        ]
-        if not any(str(c).strip().lower() == "field" for c in categories):
-            categories.insert(1, "Field")
+        setting_key = DatabaseTerms.setting_key("measure")
+        defaults = DatabaseTerms.default_values("measure")
+        saved_categories = SettingsDB.get_list_setting(setting_key, defaults)
+        categories = DatabaseTerms.canonicalize_list("measure", saved_categories)
+        categories = list(categories)
+        changed = categories != saved_categories
+        for default_category in defaults:
+            if default_category not in categories:
+                categories.append(default_category)
+                changed = True
+        if changed:
+            SettingsDB.set_list_setting(setting_key, categories)
         if not hasattr(self, "measure_category_combo"):
             return
         current = self.measure_category_combo.currentData()
         self.measure_category_combo.blockSignals(True)
         self.measure_category_combo.clear()
-        for label in categories:
-            if not label:
+        for category in categories:
+            if not category:
                 continue
-            self.measure_category_combo.addItem(label, label.strip().lower())
+            normalized_category = self.normalize_measurement_category(category)
+            self.measure_category_combo.addItem(
+                self.format_measurement_category(category),
+                normalized_category,
+            )
         self.measure_category_combo.blockSignals(False)
         if current:
             idx = self.measure_category_combo.findData(current)
@@ -8965,7 +9232,7 @@ class MainWindow(QMainWindow):
     def open_gallery_plot_settings(self):
         """Open plot settings dialog for analysis charts."""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Plot settings")
+        dialog.setWindowTitle(self.tr("Plot settings"))
         dialog.setModal(True)
 
         layout = QFormLayout(dialog)
@@ -8976,7 +9243,7 @@ class MainWindow(QMainWindow):
         bins_spin = QSpinBox()
         bins_spin.setRange(3, 50)
         bins_spin.setValue(int(settings.get("bins", 8)))
-        layout.addRow("Bins:", bins_spin)
+        layout.addRow(self.tr("Bins:"), bins_spin)
 
         ci_checkbox = QCheckBox(self.tr("Confidence interval (95%)"))
         ci_checkbox.setChecked(bool(settings.get("ci", True)))
@@ -8990,9 +9257,11 @@ class MainWindow(QMainWindow):
         q_minmax_checkbox.setChecked(bool(settings.get("q_minmax", False)))
         layout.addRow("", q_minmax_checkbox)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
+        buttons = QDialogButtonBox(dialog)
+        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
         layout.addRow(buttons)
 
         if dialog.exec() != QDialog.Accepted:
@@ -9337,15 +9606,7 @@ class MainWindow(QMainWindow):
 
     def _question_yes_no(self, title, text, default_yes=True):
         """Show a localized Yes/No confirmation dialog."""
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Question)
-        box.setWindowTitle(title)
-        box.setText(text)
-        yes_btn = box.addButton(self.tr("Yes"), QMessageBox.YesRole)
-        no_btn = box.addButton(self.tr("No"), QMessageBox.NoRole)
-        box.setDefaultButton(yes_btn if default_yes else no_btn)
-        box.exec()
-        return box.clickedButton() == yes_btn
+        return ask_wrapped_yes_no(self, title, text, default_yes=default_yes)
 
     def _maybe_rescale_current_image(self, old_scale, new_scale):
         """Prompt to rescale previous measurements for the current image."""
@@ -9518,6 +9779,7 @@ class MainWindow(QMainWindow):
             self.image_info_label.setText("")
         self.update_observation_header(None)
         self.clear_current_image_display()
+        self._update_measure_copyright_overlay()
         self.refresh_observation_images()
         self.update_measurements_table()
 
@@ -9525,6 +9787,7 @@ class MainWindow(QMainWindow):
         """Internal handler for observation selection."""
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
+        self._update_measure_copyright_overlay()
 
         # Update the image info label to show active observation
         if hasattr(self, "image_info_label"):
@@ -9752,115 +10015,3 @@ class MainWindow(QMainWindow):
         # Reconnect the dimensions_changed signal
         self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
         self._update_preview_title()
-
-
-class ExportImageDialog(QDialog):
-    """Dialog to configure export size and quality."""
-
-    def __init__(self, base_width, base_height, scale_percent, fmt, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Export Image")
-        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
-        self.base_width = base_width
-        self.base_height = base_height
-        self.format = fmt
-        self._updating = False
-        self._init_ui(scale_percent, fmt)
-
-    def _init_ui(self, scale_percent, fmt):
-        layout = QFormLayout(self)
-        layout.setSpacing(8)
-
-        self.format_input = QComboBox()
-        self.format_input.addItem("PNG", "png")
-        self.format_input.addItem("JPEG", "jpg")
-        self.format_input.addItem("SVG", "svg")
-        current_format = self.format_input.findData(fmt)
-        if current_format >= 0:
-            self.format_input.setCurrentIndex(current_format)
-        self.format_input.currentIndexChanged.connect(self.on_format_changed)
-        layout.addRow("Format:", self.format_input)
-
-        self.scale_input = QDoubleSpinBox()
-        self.scale_input.setRange(1.0, 400.0)
-        self.scale_input.setDecimals(1)
-        self.scale_input.setValue(scale_percent)
-        self.scale_input.valueChanged.connect(self.on_scale_changed)
-        layout.addRow("Scale %:", self.scale_input)
-
-        self.width_input = QSpinBox()
-        self.width_input.setRange(1, 100000)
-        self.width_input.setValue(int(self.base_width * scale_percent / 100.0))
-        self.width_input.valueChanged.connect(self.on_width_changed)
-        layout.addRow("Width:", self.width_input)
-
-        self.height_input = QSpinBox()
-        self.height_input.setRange(1, 100000)
-        self.height_input.setValue(int(self.base_height * scale_percent / 100.0))
-        self.height_input.valueChanged.connect(self.on_height_changed)
-        layout.addRow("Height:", self.height_input)
-
-        self.quality_input = QSpinBox()
-        self.quality_input.setRange(1, 10)
-        self.quality_input.setValue(9)
-        self.quality_label = QLabel("JPEG quality (1-10):")
-        layout.addRow(self.quality_label, self.quality_input)
-
-        if fmt == "jpg":
-            self.quality_input.setValue(9)
-        self.on_format_changed()
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addRow(buttons)
-
-    def on_scale_changed(self, value):
-        if self._updating:
-            return
-        self._updating = True
-        width = int(self.base_width * value / 100.0)
-        height = int(self.base_height * value / 100.0)
-        self.width_input.setValue(max(1, width))
-        self.height_input.setValue(max(1, height))
-        self._updating = False
-
-    def on_width_changed(self, value):
-        if self._updating or self.base_width <= 0:
-            return
-        self._updating = True
-        scale = (value / self.base_width) * 100.0
-        height = int(self.base_height * scale / 100.0)
-        self.scale_input.setValue(max(1.0, scale))
-        self.height_input.setValue(max(1, height))
-        self._updating = False
-
-    def on_height_changed(self, value):
-        if self._updating or self.base_height <= 0:
-            return
-        self._updating = True
-        scale = (value / self.base_height) * 100.0
-        width = int(self.base_width * scale / 100.0)
-        self.scale_input.setValue(max(1.0, scale))
-        self.width_input.setValue(max(1, width))
-        self._updating = False
-
-    def on_format_changed(self):
-        selected = self.format_input.currentData()
-        if selected:
-            self.format = selected
-        is_jpeg = self.format == "jpg"
-        self.quality_input.setEnabled(is_jpeg)
-        self.quality_label.setEnabled(is_jpeg)
-
-    def get_settings(self):
-        return {
-            "scale_percent": float(self.scale_input.value()),
-            "width": int(self.width_input.value()),
-            "height": int(self.height_input.value()),
-            "quality": int(self.quality_input.value()) * 10,
-            "format": self.format_input.currentData()
-        }
-
-        self.measure_status_label.setText(self.tr("Scale calibrated - check dialog for result"))
-        self.measure_status_label.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 9pt;")

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QT_TRANSLATE_NOOP
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -37,21 +37,21 @@ class DatabaseSettingsDialog(QDialog):
     """Dialog for database and image folder settings."""
 
     TAG_CATEGORIES = (
-        ("contrast", "Contrast methods"),
-        ("mount", "Mount media"),
-        ("sample", "Sample types"),
-        ("measure", "Measure categories"),
+        ("contrast", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Contrast methods")),
+        ("mount", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Mount media")),
+        ("sample", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Sample types")),
+        ("measure", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Measure categories")),
     )
     CONTRAST_HINTS = {
-        "bf": "BF - Brightfield",
-        "df": "DF - Darkfield",
-        "dic": "DIC - Differential interference contrast",
-        "phase": "Phase - Phase contrast",
+        "bf": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "BF - Brightfield"),
+        "df": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DF - Darkfield"),
+        "dic": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DIC - Differential interference contrast"),
+        "phase": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Phase - Phase contrast"),
     }
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Database Settings")
+        self.setWindowTitle(self.tr("Database Settings"))
         self.setModal(True)
         self.setMinimumWidth(620)
         self.setMinimumHeight(580)
@@ -147,11 +147,13 @@ class DatabaseSettingsDialog(QDialog):
 
         tag_list = QListWidget()
         tag_list.setAlternatingRowColors(True)
+        tag_list.setSpacing(3)
         tag_list.setMouseTracking(True)
         tag_list.viewport().setMouseTracking(True)
         tag_list.itemEntered.connect(self._on_tag_item_hovered)
         tag_list.viewport().installEventFilter(self)
         tag_list.setStyleSheet(
+            "QListWidget::item { padding: 4px 6px; min-height: 22px; }"
             "QListWidget::item:selected { background: #d9e9f8; color: #1f2d3d; }"
             "QListWidget::item:selected:!active { background: #d9e9f8; color: #1f2d3d; }"
             "QListWidget::item:hover { background: #edf5fd; color: #1f2d3d; }"
@@ -285,14 +287,14 @@ class DatabaseSettingsDialog(QDialog):
 
     def _browse_db_folder(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Select Database Folder", self.db_path_input.text()
+            self, self.tr("Select Database Folder"), self.db_path_input.text()
         )
         if path:
             self.db_path_input.setText(path)
 
     def _browse_images_dir(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Select Images Folder", self.images_dir_input.text()
+            self, self.tr("Select Images Folder"), self.images_dir_input.text()
         )
         if path:
             self.images_dir_input.setText(path)
@@ -329,7 +331,7 @@ class DatabaseSettingsDialog(QDialog):
                 if old_ref_path and Path(old_ref_path).exists() and Path(old_ref_path) != new_ref:
                     Path(old_ref_path).replace(new_ref)
             except Exception as exc:
-                QMessageBox.warning(self, "Database Move Failed", str(exc))
+                QMessageBox.warning(self, self.tr("Database Move Failed"), str(exc))
 
         init_database()
 

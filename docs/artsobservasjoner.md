@@ -101,7 +101,7 @@ Each uploader implements `upload(...)` with a unique `key`, `label`, and `login_
 
 ## See also
 
-- [Database structure](docs/database-structure.md)
-- [Taxonomy integration](docs/taxonomy-integration.md)
-- [Field photography](docs/field-photography.md)
-- [Microscopy workflow](docs/microscopy-workflow.md)
+- [Database structure](./database-structure.md)
+- [Taxonomy integration](./taxonomy-integration.md)
+- [Field photography](./field-photography.md)
+- [Microscopy workflow](./microscopy-workflow.md)

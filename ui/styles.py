@@ -1,5 +1,6 @@
 
 """Modern stylesheet for the application."""
+import sys
 
 MODERN_STYLE = """
 QMainWindow {
@@ -202,8 +203,8 @@ QComboBox {
 QComboBox QAbstractItemView {
     background-color: white;
     color: #2c3e50;
-    selection-background-color: #3498db;
-    selection-color: white;
+    selection-background-color: #d9e9f8;
+    selection-color: #1f2d3d;
 }
 
 QComboBox QAbstractItemView::item {
@@ -212,9 +213,10 @@ QComboBox QAbstractItemView::item {
 }
 
 QComboBox QAbstractItemView::item:selected,
+QComboBox QAbstractItemView::item:selected:!active,
 QComboBox QAbstractItemView::item:hover {
-    background-color: #3498db;
-    color: white;
+    background-color: #d9e9f8;
+    color: #1f2d3d;
 }
 
 QComboBoxPrivateContainer {
@@ -225,8 +227,8 @@ QComboBoxPrivateContainer {
 QComboBoxPrivateContainer QListView {
     background-color: white;
     color: #2c3e50;
-    selection-background-color: #3498db;
-    selection-color: white;
+    selection-background-color: #d9e9f8;
+    selection-color: #1f2d3d;
 }
 
 QComboBoxPrivateContainer QListView::item {
@@ -235,9 +237,10 @@ QComboBoxPrivateContainer QListView::item {
 }
 
 QComboBoxPrivateContainer QListView::item:selected,
+QComboBoxPrivateContainer QListView::item:selected:!active,
 QComboBoxPrivateContainer QListView::item:hover {
-    background-color: #3498db;
-    color: white;
+    background-color: #d9e9f8;
+    color: #1f2d3d;
 }
 
 QComboBox:focus {
@@ -255,5 +258,34 @@ QComboBox::down-arrow {
     border-right: 5px solid transparent;
     border-top: 6px solid #7f8c8d;
     margin-right: 8px;
+}
+"""
+
+if sys.platform.startswith("linux"):
+    MODERN_STYLE += """
+QWidget {
+    font-family: 'Noto Sans', 'DejaVu Sans', Arial, sans-serif;
+    font-size: 9pt;
+}
+
+QPushButton {
+    padding: 8px 14px;
+    font-size: 9pt;
+}
+
+QMessageBox QPushButton,
+QDialogButtonBox QPushButton {
+    min-width: 120px;
+    min-height: 35px;
+    padding: 6px 12px;
+}
+
+QMessageBox QLabel#qt_msgbox_label,
+QMessageBox QLabel#qt_msgbox_informativelabel {
+    min-width: 360px;
+}
+
+QMessageBox QLabel#qt_msgboxex_icon_label {
+    min-width: 0px;
 }
 """
