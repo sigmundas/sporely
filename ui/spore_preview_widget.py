@@ -25,7 +25,7 @@ class SporePreviewWidget(QWidget):
         self.width_um = 0
         self.microns_per_pixel = 0.5
         self.measurement_id = None
-        self.measure_color = QColor(52, 152, 219)
+        self.measure_color = QColor("#0044aa")
         self.show_dimension_labels = True
 
         # Adjustment offsets (in pixels in original image space)
@@ -386,18 +386,92 @@ class PreviewImageLabel(QLabel):
         self.screen_corners = []
         self.rotation_arrow_positions = []  # Positions of rotation arrow handles
         self.preview_scale = 1.0
-        self.measure_color = QColor(52, 152, 219)
+        self.measure_color = QColor("#0044aa")
 
     def set_show_dimension_labels(self, show: bool):
         self.show_dimension_labels = bool(show)
         self.update()
 
-    def _light_stroke_color(self):
-        """Return a lighter, low-opacity version of the measure color."""
-        light = QColor(self.measure_color)
-        light = light.lighter(130)
-        light.setAlpha(51)
-        return light
+    def _measure_stroke_style(self, color=None):
+        base = QColor(color) if color is not None else QColor(self.measure_color)
+        if not base.isValid():
+            base = QColor("#0044aa")
+        presets = (
+            {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+            {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+            {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
+            {"match": QColor("#2ECC71"), "thin": QColor("#00aa00"), "glow": QColor("#00aa00"), "opacity": 0.658163, "blend": "screen"},
+            {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
+            {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+        )
+        def _dist2(c1, c2):
+            dr = c1.red() - c2.red()
+            dg = c1.green() - c2.green()
+            db = c1.blue() - c2.blue()
+            return dr * dr + dg * dg + db * db
+        chosen = min(presets, key=lambda p: _dist2(base, p["match"]))
+        thin = QColor(chosen["thin"])
+        thin.setAlpha(max(1, base.alpha()))
+        glow = QColor(chosen["glow"])
+        glow.setAlpha(max(1, min(255, int(round(255 * float(chosen["opacity"]))))))  # type: ignore[arg-type]
+        return {"thin": thin, "glow": glow, "blend": str(chosen["blend"])}
+
+    @staticmethod
+    def _set_named_composition_mode(painter: QPainter, composition: str | None) -> None:
+        comp = (composition or "").strip().lower()
+        if comp == "overlay":
+            painter.setCompositionMode(QPainter.CompositionMode_Overlay)
+        elif comp == "screen":
+            painter.setCompositionMode(QPainter.CompositionMode_Screen)
+        elif comp == "plus":
+            painter.setCompositionMode(QPainter.CompositionMode_Plus)
+        elif comp == "lighten":
+            painter.setCompositionMode(QPainter.CompositionMode_Lighten)
+
+    def _draw_dual_stroke_polygon(self, painter: QPainter, polygon: QPolygonF, color=None, thin_width=1.0, wide_width=None):
+        style = self._measure_stroke_style(color=color)
+        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
+        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        painter.save()
+        self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+        painter.setPen(wide_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPolygon(polygon)
+        painter.restore()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(thin_pen)
+        painter.drawPolygon(polygon)
+
+    def _draw_dual_stroke_line(self, painter: QPainter, a: QPointF, b: QPointF, color=None, thin_width=1.0, wide_width=None):
+        style = self._measure_stroke_style(color=color)
+        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
+        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        painter.save()
+        self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+        painter.setPen(wide_pen)
+        painter.drawLine(a, b)
+        painter.restore()
+        painter.setPen(thin_pen)
+        painter.drawLine(a, b)
+
+    def _draw_halo_text(self, painter: QPainter, x: int, y: int, text: str, color=None) -> None:
+        style = self._measure_stroke_style(color=color)
+        text_color = QColor(style["thin"])
+        path = QPainterPath()
+        path.addText(float(x), float(y), painter.font(), text)
+        stroke_w = max(1.0, float(painter.fontMetrics().height()) * 0.4)
+        pen = QPen(QColor(255, 255, 255, 102), stroke_w)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(pen)
+        painter.drawPath(path)
+        painter.restore()
+        painter.setPen(text_color)
+        painter.drawText(x, y, text)
 
     def set_measure_color(self, color):
         """Set the measurement color."""
@@ -705,27 +779,16 @@ class PreviewImageLabel(QLabel):
                     screen_center_y - cos_a * half_width + sin_a * half_length),
         ]
 
-        # Draw the rotated rectangle (wide + thin stroke)
+        # Draw the rotated rectangle (SVG-style glow + thin stroke)
         polygon = QPolygonF(self.screen_corners)
-        light_pen = QPen(self._light_stroke_color(), 3)
-        thin_pen = QPen(self.measure_color, 1)
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(light_pen)
-        painter.drawPolygon(polygon)
-        painter.setPen(thin_pen)
-        painter.drawPolygon(polygon)
+        self._draw_dual_stroke_polygon(painter, polygon, color=self.measure_color, thin_width=1.0, wide_width=3.0)
 
         # Draw side highlight if hovered
         highlight_side = self.dragging_side if self.dragging_side >= 0 else self.hover_side
         if len(self.screen_corners) == 4 and highlight_side >= 0:
             a = self.screen_corners[highlight_side]
             b = self.screen_corners[(highlight_side + 1) % 4]
-            wide_pen = QPen(QColor(231, 76, 60, 90), 3)
-            thin_pen = QPen(QColor(231, 76, 60), 1)
-            painter.setPen(wide_pen)
-            painter.drawLine(a, b)
-            painter.setPen(thin_pen)
-            painter.drawLine(a, b)
+            self._draw_dual_stroke_line(painter, a, b, color=QColor(231, 76, 60), thin_width=1.0, wide_width=3.0)
 
         # Draw rotation arrows on the left and right sides
         self.rotation_arrow_positions = []
@@ -815,7 +878,13 @@ class PreviewImageLabel(QLabel):
                     left_mid.x() + perp_x * offset_distance,
                     left_mid.y() + perp_y * offset_distance
                 )
-                painter.drawText(int(label_pos.x() - 25), int(label_pos.y() + 5), f"{current_length_um:.2f}")
+                self._draw_halo_text(
+                    painter,
+                    int(label_pos.x() - 25),
+                    int(label_pos.y() + 5),
+                    f"{current_length_um:.2f}",
+                    color=self.measure_color,
+                )
 
             # Top side label (width) - perpendicular to top edge
             top_edge_vec = QPointF(
@@ -831,5 +900,11 @@ class PreviewImageLabel(QLabel):
                     top_mid.x() + perp_x * offset_distance,
                     top_mid.y() + perp_y * offset_distance
                 )
-                painter.drawText(int(label_pos.x() - 25), int(label_pos.y() + 5), f"{current_width_um:.2f}")
+                self._draw_halo_text(
+                    painter,
+                    int(label_pos.x() - 25),
+                    int(label_pos.y() + 5),
+                    f"{current_width_um:.2f}",
+                    color=self.measure_color,
+                )
         painter.end()

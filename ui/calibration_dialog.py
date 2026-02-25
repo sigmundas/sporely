@@ -31,7 +31,7 @@ from database.schema import (
 from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 from utils.exif_reader import get_exif_data
-from .hint_status import HintLabel, HintStatusController
+from .hint_status import HintBar, HintLabel, HintStatusController
 from .zoomable_image_widget import ZoomableImageLabel
 from .image_gallery_widget import ImageGalleryWidget
 from .export_image_dialog import ExportImageDialog
@@ -848,13 +848,7 @@ class CalibrationDialog(QDialog):
         hint_area_layout.setContentsMargins(0, 0, 0, 0)
         hint_area_layout.setSpacing(4)
 
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setWordWrap(True)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_bar.setStyleSheet("background: transparent; border: none; color: #222222; font-size: 9pt;")
-        hint_height = self.hint_bar.fontMetrics().lineSpacing() * 2 + 4
-        self.hint_bar.setFixedHeight(hint_height)
+        self.hint_bar = HintBar(self)
         hint_area_layout.addWidget(self.hint_bar)
 
         self.hint_progress_widget = QWidget(self)

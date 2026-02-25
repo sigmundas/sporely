@@ -62,6 +62,7 @@ class ImageGalleryWidget(QGroupBox):
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
         self._last_clicked_index: int | None = None
+        self._objectives_cache: dict | None = None
         self._content = QWidget(self)
         content_layout = QVBoxLayout(self._content)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -137,7 +138,9 @@ class ImageGalleryWidget(QGroupBox):
             self.clear()
             return
         images = ImageDB.get_images_for_observation(observation_id)
-        objectives = load_objectives()
+        objectives = self._get_objectives_cache()
+        measurement_image_ids = self._spore_measurement_image_ids_for_observation(observation_id)
+        objective_label_cache: dict[str, str | None] = {}
         items = []
         for idx, img in enumerate(images):
             img_id = img.get("id")
@@ -145,12 +148,22 @@ class ImageGalleryWidget(QGroupBox):
             objective_name = img.get("objective_name")
             objective_display = objective_name
             if objective_name:
-                resolved_key = resolve_objective_key(objective_name, objectives)
-                if resolved_key and resolved_key in objectives:
-                    objective_display = objective_display_name(objectives[resolved_key], resolved_key)
-                elif objective_name in objectives:
-                    objective_display = objective_display_name(objectives[objective_name], objective_name)
-            objective_short = ImageGalleryWidget._short_objective_label(objective_display, self.tr) or objective_display
+                objective_name_key = str(objective_name)
+                if objective_name_key in objective_label_cache:
+                    objective_short = objective_label_cache[objective_name_key]
+                else:
+                    resolved_key = resolve_objective_key(objective_name, objectives)
+                    if resolved_key and resolved_key in objectives:
+                        objective_display = objective_display_name(objectives[resolved_key], resolved_key)
+                    elif objective_name in objectives:
+                        objective_display = objective_display_name(objectives[objective_name], objective_name)
+                    objective_short = (
+                        ImageGalleryWidget._short_objective_label(objective_display, self.tr)
+                        or objective_display
+                    )
+                    objective_label_cache[objective_name_key] = objective_short
+            else:
+                objective_short = None
             contrast = img.get("contrast")
             scale_value = img.get("scale_microns_per_pixel")
             custom_scale = bool(scale_value) and (not objective_name or str(objective_name).strip().lower() == "custom")
@@ -172,13 +185,41 @@ class ImageGalleryWidget(QGroupBox):
                 {
                     "id": img_id,
                     "filepath": img.get("filepath"),
-                    "has_measurements": self._has_spore_measurements(img_id) if img_id else False,
+                    "has_measurements": bool(img_id and int(img_id) in measurement_image_ids),
                     "image_number": idx + 1,
                     "badges": badges,
                 }
             )
         self._items = items
         self._render()
+
+    def _get_objectives_cache(self) -> dict:
+        if isinstance(self._objectives_cache, dict):
+            return self._objectives_cache
+        try:
+            self._objectives_cache = load_objectives()
+        except Exception:
+            self._objectives_cache = {}
+        return self._objectives_cache
+
+    @staticmethod
+    def _spore_measurement_image_ids_for_observation(observation_id: int) -> set[int]:
+        image_ids: set[int] = set()
+        try:
+            measurements = MeasurementDB.get_measurements_for_observation(int(observation_id))
+        except Exception:
+            return image_ids
+        for measurement in measurements or []:
+            measurement_type = (measurement.get("measurement_type") or "").strip().lower()
+            if measurement_type not in ("", "manual", "spore", "spores"):
+                continue
+            image_id = measurement.get("image_id")
+            try:
+                parsed = int(image_id)
+            except (TypeError, ValueError):
+                continue
+            image_ids.add(parsed)
+        return image_ids
 
     @staticmethod
     def _short_objective_label(name: str | None, translate=None) -> str | None:

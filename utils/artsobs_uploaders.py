@@ -118,6 +118,7 @@ class ArtsobsWebUploader:
             unspontaneous=bool(observation.get("unspontaneous")),
             determination_method=observation.get("determination_method"),
             image_paths=image_paths,
+            media_license=observation.get("image_license_code"),
             progress_cb=progress_cb,
         )
         return UploadResult(sighting_id=result.get("sighting_id"), raw=result)

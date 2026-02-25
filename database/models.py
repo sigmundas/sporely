@@ -762,6 +762,33 @@ class ImageDB:
         return [dict(row) for row in rows]
 
     @staticmethod
+    def get_pending_artsobs_web_upload_count_for_observation(observation_id: int) -> int:
+        """Return number of pending Artsobservasjoner web image uploads for one observation."""
+        try:
+            obs_id = int(observation_id)
+        except (TypeError, ValueError):
+            return 0
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT COUNT(*)
+            FROM images i
+            JOIN observations o ON o.id = i.observation_id
+            WHERE i.observation_id = ?
+              AND COALESCE(i.artsobs_web_unpublished, 0) = 1
+              AND COALESCE(o.artsdata_id, 0) > 0
+            ''',
+            (obs_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        try:
+            return int(row[0] if row else 0)
+        except Exception:
+            return 0
+
+    @staticmethod
     def mark_images_artsobs_web_uploaded(image_ids: List[int]) -> None:
         if not image_ids:
             return

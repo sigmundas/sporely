@@ -122,7 +122,7 @@ def _prompt_web_credentials(parent=None) -> tuple[Optional[str], Optional[str], 
     form.addRow("Password:", password_edit)
     layout.addLayout(form)
 
-    remember_checkbox = QCheckBox("Save login info on this device")
+    remember_checkbox = QCheckBox("Save password on this device")
     remember_checkbox.setChecked(bool(saved_username or has_saved_password))
     if not can_store_password:
         remember_checkbox.setChecked(False)
@@ -290,7 +290,7 @@ class ArtsObservasjonerAuthWidget:
         os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
         os.environ.setdefault(
             "QTWEBENGINE_CHROMIUM_FLAGS",
-            "--disable-gpu --disable-software-rasterizer"
+            "--disable-gpu --log-level=3"
         )
         if sys.platform.startswith("linux"):
             # Avoid loading libproxy-based GIO module in mixed snap/system setups.
@@ -537,7 +537,11 @@ class ArtsObservasjonerAuth:
         success = web_auth.login(
             username=username,
             password=password,
-            remember_me=remember_login,
+            # Always request a persistent cookie from the server so the session
+            # survives days/weeks instead of the ~24 h non-persistent timeout.
+            # Whether the user's credentials are saved locally is a separate
+            # concern controlled by the checkbox below.
+            remember_me=True,
         )
         if not success:
             raise RuntimeError("Login failed. Please check your email and password.")

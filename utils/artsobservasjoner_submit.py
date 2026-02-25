@@ -457,6 +457,7 @@ class ArtsObservasjonerWebClient:
         unspontaneous: bool = False,
         determination_method: Optional[int] = None,
         image_paths: Optional[list[str]] = None,
+        media_license: Optional[str] = None,
         progress_cb: Optional[callable] = None,
     ) -> Dict[str, Any]:
         if progress_cb:
@@ -560,6 +561,7 @@ class ArtsObservasjonerWebClient:
             uploaded = self.upload_images_web(
                 sighting_id=sighting_id,
                 image_paths=image_paths or [],
+                media_license=media_license,
                 progress_cb=progress_cb,
             )
             result["uploaded_images"] = uploaded
@@ -569,6 +571,7 @@ class ArtsObservasjonerWebClient:
         self,
         sighting_id: int,
         image_paths: list[str],
+        media_license: Optional[str] = None,
         progress_cb: Optional[callable] = None,
     ) -> list[Dict[str, Any]]:
         existing = []
@@ -621,6 +624,7 @@ class ArtsObservasjonerWebClient:
                         sighting_id=sighting_id,
                         image_path=image_path,
                         token=token,
+                        media_license=media_license,
                     )
                 except Exception as action_exc:
                     action_error = str(action_exc)
@@ -707,6 +711,7 @@ class ArtsObservasjonerWebClient:
         sighting_id: int,
         image_path: str,
         token: Optional[str],
+        media_license: Optional[str] = None,
     ) -> Dict[str, Any]:
         file_path = Path(image_path)
         if not file_path.exists():
@@ -724,9 +729,12 @@ class ArtsObservasjonerWebClient:
         data = {
             "__RequestVerificationToken": token or "",
             "UploadImageViewModel.Sighting.Id": str(sighting_id),
-            # NOTE: do NOT send UploadImageViewModel.MediaLicense — browser omits it,
-            # server returns 500 if it is present.
         }
+        # Browser captures show UploadImageAction accepts UploadImageViewModel.MediaLicense.
+        license_value = str(media_license or self.DEFAULT_WEB_MEDIA_LICENSE).strip()
+        if license_value not in {"10", "20", "30", "60"}:
+            license_value = self.DEFAULT_WEB_MEDIA_LICENSE
+        data["UploadImageViewModel.MediaLicense"] = license_value
         with open(file_path, "rb") as handle:
             files = {
                 "UploadImageViewModel.Image": (file_path.name, handle, content_type),
@@ -1564,3 +1572,4 @@ if __name__ == "__main__":
     print("2. OAuth-based (better, for apps)")
     print("\nSee example_cookie_based() and example_oauth_based() for usage")
     print("\nTo extract cookies, run: extract_cookies_from_browser()")
+

@@ -70,7 +70,7 @@ from .image_gallery_widget import ImageGalleryWidget
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
-from .hint_status import HintLabel, HintStatusController
+from .hint_status import HintBar, HintLabel, HintStatusController
 from .dialog_helpers import ask_measurements_exist_delete
 
 
@@ -522,14 +522,7 @@ class ImageImportDialog(QDialog):
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_bar.setMaximumHeight(35)
-        self.hint_bar.setStyleSheet("background: transparent; border: none; color: #222222; font-size: 9pt;")
-        hint_font = self.hint_bar.font()
-        hint_font.setWeight(QFont.Weight.Medium)
-        self.hint_bar.setFont(hint_font)
+        self.hint_bar = HintBar(self)
         bottom_row.addWidget(self.hint_bar, 1)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         if self._pending_hint_widgets:
@@ -1029,6 +1022,10 @@ class ImageImportDialog(QDialog):
             if 0 <= idx < len(self.import_results)
         )
         if not all_micro:
+            self.resize_group.setEnabled(False)
+            return
+        selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
+        if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
             self.resize_group.setEnabled(False)
             return
         any_resized = any(
@@ -1876,6 +1873,7 @@ class ImageImportDialog(QDialog):
     def add_images(self, paths: list[str]) -> None:
         import_dir = get_images_dir() / "imports"
         import_dir.mkdir(parents=True, exist_ok=True)
+        first_new_index = len(self.import_results)
         if getattr(self, "import_progress", None) and len(paths) > 1:
             self.import_progress.setRange(0, len(paths))
             self.import_progress.setValue(0)
@@ -1932,8 +1930,12 @@ class ImageImportDialog(QDialog):
         self._update_scale_group_state()
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
-        if self.selected_index is None and self.image_paths:
-            self._select_image(0)
+        if self.image_paths:
+            last_new_index = len(self.import_results) - 1
+            if first_new_index <= last_new_index:
+                self._select_image(last_new_index)
+            elif self.selected_index is None:
+                self._select_image(0)
 
     def set_import_results(self, results: list[ImageImportResult]) -> None:
         self.import_results = []
@@ -2256,6 +2258,7 @@ class ImageImportDialog(QDialog):
             previous_key = self._last_objective_key
             current_key = self.objective_combo.currentData()
             if current_key == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale is None:
+                self._update_resize_group_state()
                 self._open_calibration_dialog(previous_key=previous_key)
                 return
         elif sender is self.contrast_combo:

@@ -85,7 +85,7 @@ from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .styles import MODERN_STYLE
-from .hint_status import HintStatusController
+from .hint_status import HintBar, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
@@ -516,6 +516,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
     SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
     SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
+    SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_INAT_CLIENT_ID = "inat_client_id"
     SETTING_INAT_CLIENT_SECRET = "inat_client_secret"
@@ -528,6 +529,28 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         "inat": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "iNaturalist"),
         "mo": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Mushroom Observer"),
     }
+    ARTSOBS_MEDIA_LICENSE_OPTIONS = (
+        (
+            "10",
+            "Creative Commons 4.0 (CC) BY",
+            "Others can share, reuse, modify, and use commercially, as long as they give credit.",
+        ),
+        (
+            "20",
+            "Creative Commons 4.0 (CC) BY-SA",
+            "Others can share, reuse, modify, and use commercially, as long as they give credit and keep the same license.",
+        ),
+        (
+            "30",
+            "Creative Commons 4.0 (CC) BY-NC-SA",
+            "Others can share, reuse, and modify, but not commercially, and they must give credit and keep the same license.",
+        ),
+        (
+            "60",
+            "Ingen (alle rettigheter forbeholdt)",
+            "No reuse or sharing without permission (except legal exceptions).",
+        ),
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -805,11 +828,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.include_measure_plots_checkbox = QCheckBox(self)
         self.include_thumbnail_gallery_checkbox = QCheckBox(self)
         self.include_copyright_checkbox = QCheckBox(self)
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setWordWrap(True)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_bar.setStyleSheet("background: transparent; border: none; color: #222222; font-size: 9pt;")
+        self.image_license_label = QLabel(self.tr("License"), self)
+        self.image_license_combo = QComboBox(self)
+        self.hint_bar = HintBar(self)
+        self.hint_bar.set_wrap_mode(True)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         wrapped_options = (
             (
@@ -840,11 +862,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self.tr("Include thumbnail gallery"),
                 self.tr("Adds a mosaic gallery image (Same as Export gallery in Analysis)."),
             ),
-            (
-                self.include_copyright_checkbox,
-                self.tr("Include copyright"),
-                self.tr("Adds your profile name, (c), and the observation year on published images."),
-            ),
         )
         for checkbox, text, help_text in wrapped_options:
             checkbox.toggled.connect(self._save_settings)
@@ -854,7 +871,49 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 text,
                 help_text,
             )
-        layout.addWidget(options_group)
+
+        copyright_group = QGroupBox(self.tr("Image copyright"), self)
+        copyright_layout = QVBoxLayout(copyright_group)
+        copyright_layout.setContentsMargins(10, 10, 10, 10)
+        copyright_layout.setSpacing(6)
+
+        watermark_help = self.tr(
+            "Adds a visible watermark on published images. The selected license still applies even if watermark is off."
+        )
+        license_help = ""
+        self.image_license_label.setWordWrap(True)
+        self._register_hint_widget(self.image_license_label, license_help)
+        self._register_hint_widget(self.image_license_combo, license_help)
+        self.image_license_label.setToolTip(license_help)
+        self.image_license_combo.setToolTip(license_help)
+        copyright_layout.addWidget(self.image_license_label)
+
+        self._populate_image_license_combo()
+        self.image_license_combo.currentIndexChanged.connect(self._save_settings)
+        self.image_license_combo.currentIndexChanged.connect(self._on_image_license_selection_changed)
+        self.image_license_combo.highlighted.connect(self._on_image_license_highlighted)
+        license_row = QHBoxLayout()
+        license_row.setContentsMargins(24, 0, 0, 0)
+        license_row.setSpacing(0)
+        license_row.addWidget(self.image_license_combo, 1)
+        copyright_layout.addLayout(license_row)
+
+        self.include_copyright_checkbox.toggled.connect(self._save_settings)
+        self.include_copyright_checkbox.toggled.connect(self._update_watermark_controls)
+        self._add_wrapped_checkbox_row(
+            copyright_layout,
+            self.include_copyright_checkbox,
+            self.tr("Include watermark"),
+            watermark_help,
+        )
+        copyright_layout.addStretch(1)
+
+        lower_row = QHBoxLayout()
+        lower_row.setContentsMargins(0, 0, 0, 0)
+        lower_row.setSpacing(10)
+        lower_row.addWidget(options_group, 1)
+        lower_row.addWidget(copyright_group, 1)
+        layout.addLayout(lower_row)
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -917,6 +976,51 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         raw = SettingsDB.get_setting(key, fallback)
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
+    def _image_license_help_text(self, index: int | None = None) -> str:
+        if index is None:
+            index = self.image_license_combo.currentIndex()
+        if index is None or index < 0 or index >= self.image_license_combo.count():
+            return self.tr("Select the image license for watermark/upload.")
+        label = str(self.image_license_combo.itemText(index) or "").strip()
+        desc = str(
+            self.image_license_combo.itemData(index, Qt.UserRole + 1) or ""
+        ).strip()
+        if label and desc:
+            return f"{label}: {desc}"
+        return desc or label or self.tr("Select the image license for watermark/upload.")
+
+    def _populate_image_license_combo(self) -> None:
+        self.image_license_combo.clear()
+        for code, label, description in self.ARTSOBS_MEDIA_LICENSE_OPTIONS:
+            self.image_license_combo.addItem(self.tr(label), code)
+            idx = self.image_license_combo.count() - 1
+            self.image_license_combo.setItemData(idx, self.tr(description), Qt.UserRole + 1)
+        self._update_image_license_hint_text()
+
+    def _current_image_license_code(self) -> str:
+        code = str(self.image_license_combo.currentData() or "").strip()
+        valid_codes = {item[0] for item in self.ARTSOBS_MEDIA_LICENSE_OPTIONS}
+        return code if code in valid_codes else "60"
+
+    def _update_watermark_controls(self) -> None:
+        # License applies to uploaded images whether or not the visible watermark is enabled.
+        self.image_license_label.setEnabled(True)
+        self.image_license_combo.setEnabled(True)
+
+    def _update_image_license_hint_text(self, index: int | None = None) -> None:
+        hint = self._image_license_help_text(index)
+        for widget in (self.image_license_label, self.image_license_combo):
+            widget.setProperty("_hint_text", hint)
+            widget.setToolTip("")
+
+    def _on_image_license_selection_changed(self, index: int) -> None:
+        self._update_image_license_hint_text(index)
+
+    def _on_image_license_highlighted(self, index: int) -> None:
+        hover_hint = self._image_license_help_text(index)
+        if self._hint_controller is not None and self.image_license_combo.isEnabled():
+            self._hint_controller.set_hint(hover_hint)
+
     def _save_settings(self) -> None:
         selected_uploader = self._selected_uploader()
         if selected_uploader:
@@ -944,6 +1048,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_INCLUDE_COPYRIGHT,
             "1" if self.include_copyright_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
+            self.SETTING_IMAGE_LICENSE,
+            self._current_image_license_code(),
         )
 
     def _selected_uploader(self):
@@ -1033,6 +1141,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         selected_logged_in = self._is_logged_in(uploader.key if uploader else None)
         self.logout_button.setEnabled(bool(uploader) and selected_logged_in)
         self.login_button.setText(self.tr("Log in"))
+        self._update_watermark_controls()
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
@@ -1273,6 +1382,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 checkbox.blockSignals(True)
                 checkbox.setChecked(self._setting_enabled(key, default=default))
                 checkbox.blockSignals(False)
+
+            image_license = str(
+                SettingsDB.get_setting(self.SETTING_IMAGE_LICENSE, "60") or "60"
+            ).strip()
+            license_index = self.image_license_combo.findData(image_license)
+            if license_index < 0:
+                license_index = self.image_license_combo.findData("60")
+            if license_index < 0 and self.image_license_combo.count():
+                license_index = 0
+            self.image_license_combo.blockSignals(True)
+            if license_index >= 0:
+                self.image_license_combo.setCurrentIndex(license_index)
+            self.image_license_combo.blockSignals(False)
+            self._update_image_license_hint_text()
+            self._update_watermark_controls()
 
             if self.targets_table.rowCount() > 0:
                 if not self.targets_table.selectionModel().hasSelection():
@@ -2035,7 +2159,7 @@ class SporeDataTable(QTableWidget):
 
     def __init__(self, parent=None):
         super().__init__(0, 3, parent)
-        self.setHorizontalHeaderLabels(["Length (µm)", "Width (µm)", "Q"])
+        self.setHorizontalHeaderLabels([self.tr("Length (\u03bcm)"), self.tr("Width (\u03bcm)"), "Q"])
         header = self.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -2159,7 +2283,9 @@ class ReferenceAddDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title or parent.tr("Add reference data"))
         self.setModal(True)
-        self.setMinimumSize(820, 420)
+        # Start compact (roughly half the old width), but keep the dialog resizable.
+        self.setMinimumSize(420, 420)
+        self.resize(440, 520)
         self._result = None
         self._genus = genus
         self._species = species
@@ -2228,11 +2354,7 @@ class ReferenceAddDialog(QDialog):
         layout.addLayout(source_row)
 
         button_row = QHBoxLayout()
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setWordWrap(True)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_bar.setStyleSheet("background: transparent; border: none; color: #222222; font-size: 9pt;")
+        self.hint_bar = HintBar(self)
         button_row.addWidget(self.hint_bar, 1)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         self._hint_controller.set_hint(self._default_hint_text)
@@ -2625,26 +2747,6 @@ class MainWindow(QMainWindow):
         export_ml_action.triggered.connect(export_handler)
         file_menu.addAction(export_ml_action)
 
-        export_inat_action = QAction(self.tr("Export iNaturalist"), self)
-        export_inat_action.triggered.connect(
-            lambda: self.show_export_placeholder("iNaturalist")
-        )
-        file_menu.addAction(export_inat_action)
-
-        export_arts_action = QAction(self.tr("Export Artsobservasjoner"), self)
-        export_arts_action.triggered.connect(
-            lambda: self.show_export_placeholder("Artsobservasjoner")
-        )
-        file_menu.addAction(export_arts_action)
-
-        export_db_action = QAction(self.tr("Export DB"), self)
-        export_db_action.triggered.connect(self.export_database_bundle)
-        file_menu.addAction(export_db_action)
-
-        import_db_action = QAction(self.tr("Import DB"), self)
-        import_db_action.triggered.connect(self.import_database_bundle)
-        file_menu.addAction(import_db_action)
-
         file_menu.addSeparator()
 
         exit_action = QAction(self.tr("Exit"), self)
@@ -2845,7 +2947,7 @@ class MainWindow(QMainWindow):
         measure_group = QGroupBox(self.tr("Measure"))
         measure_layout = QVBoxLayout()
 
-        self.measure_button = QPushButton(self.tr("Start measuring"))
+        self.measure_button = QPushButton(self.tr("Start measuring (M)"))
         self.measure_button.setCheckable(True)
         self.measure_button.setMinimumHeight(35)
         self.measure_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -2873,12 +2975,12 @@ class MainWindow(QMainWindow):
         self.color_button_group.setExclusive(True)
         self.measure_color_buttons = []
         palette_colors = [
-            ("Blue", QColor("#1E90FF")),
-            ("Red", QColor("#FF3B30")),
-            ("Green", QColor("#2ECC71")),
-            ("Magenta", QColor("#E056FD")),
-            ("Orange", QColor("#ECAF11")),
-            ("Cyan", QColor("#1CEBEB")),
+            ("Blue", QColor("#0044aa")),
+            ("Red", QColor("#d40000")),
+            ("Green", QColor("#00aa00")),
+            ("Magenta", QColor("#ff00ff")),
+            ("Orange", QColor("#ffd42a")),
+            ("Cyan", QColor("#00ffff")),
             ("Black", QColor("#000000")),
         ]
         for name, color in palette_colors:
@@ -2942,19 +3044,26 @@ class MainWindow(QMainWindow):
         zoom_layout.addWidget(self.show_copyright_checkbox)
 
         scale_bar_row = QHBoxLayout()
+        scale_bar_row.setContentsMargins(0, 0, 0, 0)
+        scale_bar_row.setSpacing(6)
+        self.scale_bar_length_label = QLabel(self.tr("Scale bar length:"))
         self.scale_bar_input = QDoubleSpinBox()
         self.scale_bar_input.setRange(0.1, 100000.0)
         self.scale_bar_input.setDecimals(2)
         self.scale_bar_input.setValue(10.0)
         self.scale_bar_input.setSingleStep(1.0)
+        self.scale_bar_input.setSuffix(" \u03bcm")
         self.scale_bar_input.valueChanged.connect(self.on_scale_bar_value_changed)
+        self.scale_bar_input.setToolTip(self.tr("Length of the displayed scale bar in micrometers."))
+        self.scale_bar_length_label.setBuddy(self.scale_bar_input)
+        scale_bar_row.addWidget(self.scale_bar_length_label)
         scale_bar_row.addWidget(self.scale_bar_input)
-        scale_bar_row.addWidget(QLabel("μm"))
         scale_bar_row.addStretch()
         self.scale_bar_container = QWidget()
         scale_bar_layout = QHBoxLayout(self.scale_bar_container)
-        scale_bar_layout.setContentsMargins(0, 0, 0, 0)
+        scale_bar_layout.setContentsMargins(18, 0, 0, 0)
         scale_bar_layout.addLayout(scale_bar_row)
+        self.scale_bar_container.setToolTip(self.tr("Settings for the 'Show scale bar' option."))
         self.scale_bar_container.setVisible(False)
         zoom_layout.addWidget(self.scale_bar_container)
 
@@ -3009,6 +3118,10 @@ class MainWindow(QMainWindow):
         self.prev_image_shortcut = QShortcut(QKeySequence(Qt.Key_P), tab)
         self.prev_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.prev_image_shortcut.activated.connect(self.goto_previous_image)
+
+        self.toggle_measurement_shortcut = QShortcut(QKeySequence(Qt.Key_M), tab)
+        self.toggle_measurement_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.toggle_measurement_shortcut.activated.connect(self._on_measure_button_clicked)
 
         self.start_measurement()
         return tab
@@ -3072,7 +3185,9 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(8)
 
         category_row = QHBoxLayout()
-        category_row.addWidget(QLabel(self.tr("Category:")))
+        self.gallery_category_label = QLabel(self.tr("Category:"))
+        self.gallery_category_label.setToolTip(self.tr("Select the measurement category you want to plot"))
+        category_row.addWidget(self.gallery_category_label)
         self.gallery_filter_combo = QComboBox()
         self.gallery_filter_combo.setFixedWidth(160)
         self.gallery_filter_combo.currentIndexChanged.connect(self.on_gallery_thumbnail_setting_changed)
@@ -3166,24 +3281,28 @@ class MainWindow(QMainWindow):
         self.gallery_plot_export_btn.setMinimumHeight(35)
         self.gallery_plot_export_btn.setMinimumWidth(110)
         self.gallery_plot_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_plot_export_btn.setToolTip(self.tr("Export the width vs length plot"))
         self.gallery_plot_export_btn.clicked.connect(self.export_graph_plot_svg)
 
         self.gallery_export_btn = QPushButton(self.tr("Export gallery"))
         self.gallery_export_btn.setMinimumHeight(35)
         self.gallery_export_btn.setMinimumWidth(110)
         self.gallery_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_export_btn.setToolTip(self.tr("Export the thumbnail gallery as a mosaic"))
         self.gallery_export_btn.clicked.connect(self.export_gallery_composite)
 
         self.gallery_copy_stats_btn = QPushButton(self.tr("Copy stats"))
         self.gallery_copy_stats_btn.setMinimumHeight(35)
         self.gallery_copy_stats_btn.setMinimumWidth(110)
         self.gallery_copy_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_copy_stats_btn.setToolTip(self.tr("Copy spore statistics and individual measurements to the clipboard"))
         self.gallery_copy_stats_btn.clicked.connect(self.copy_spore_stats)
 
         self.gallery_save_stats_btn = QPushButton(self.tr("Save stats"))
         self.gallery_save_stats_btn.setMinimumHeight(35)
         self.gallery_save_stats_btn.setMinimumWidth(110)
         self.gallery_save_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_save_stats_btn.setToolTip(self.tr("Save spore statistics and individual measurements to a text file"))
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
 
@@ -3271,11 +3390,7 @@ class MainWindow(QMainWindow):
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
 
-        self.gallery_hint_bar = QLabel("")
-        self.gallery_hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.gallery_hint_bar.setWordWrap(True)
-        self.gallery_hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.gallery_hint_bar.setStyleSheet("background: transparent; border: none; color: #222222; font-size: 9pt;")
+        self.gallery_hint_bar = HintBar(self)
         bottom_row.addWidget(self.gallery_hint_bar, 1)
         self._gallery_hint_controller = HintStatusController(self.gallery_hint_bar, self)
         if self._pending_gallery_hint_widgets:
@@ -3345,11 +3460,11 @@ class MainWindow(QMainWindow):
         self._gallery_hover_hint_key = hint_key
         if hint_key == "scatter":
             self._set_gallery_hint(
-                self.tr("Mouse over scatter plot: Select measure points to see the thumbnail in the gallery")
+                self.tr("Scatter plot")
             )
         elif hint_key == "hist":
             self._set_gallery_hint(
-                self.tr("Mouse over histogram: select bins to filter thumbnail gallery")
+                self.tr("Histogram")
             )
         else:
             self._set_gallery_hint("")
@@ -5740,8 +5855,20 @@ class MainWindow(QMainWindow):
                 pass
         return int(time.localtime().tm_year)
 
+    def _measure_publish_license_watermark_text(self) -> str:
+        code = str(
+            SettingsDB.get_setting(ArtsobservasjonerSettingsDialog.SETTING_IMAGE_LICENSE, "60") or "60"
+        ).strip()
+        if code == "10":
+            return "CC BY 4.0"
+        if code == "20":
+            return "CC BY-SA 4.0"
+        if code == "30":
+            return "CC BY-NC-SA 4.0"
+        return "No reuse without permission"
+
     def _measure_copyright_text(self) -> str | None:
-        """Build copyright line from profile name + observation year."""
+        """Build watermark line from profile name + selected online-publishing license."""
         if not self.active_observation_id:
             return None
         observation = ObservationDB.get_observation(self.active_observation_id)
@@ -5753,8 +5880,7 @@ class MainWindow(QMainWindow):
             name = str(observation.get("author") or "").strip()
         if not name:
             return None
-        year = self._observation_year_for_copyright(observation.get("date"))
-        return f"{name} (c) {year}"
+        return f"{name} \u2022 {self._measure_publish_license_watermark_text()}"
 
     def _update_measure_copyright_overlay(self) -> None:
         if not hasattr(self, "image_label"):
@@ -5799,12 +5925,12 @@ class MainWindow(QMainWindow):
             self.measure_button.blockSignals(True)
             self.measure_button.setChecked(self.measurement_active)
             if self.measurement_active:
-                self.measure_button.setText(self.tr("Stop measuring"))
+                self.measure_button.setText(self.tr("Stop measuring (M)"))
                 self.measure_button.setStyleSheet(
                     "font-weight: bold; padding: 6px 10px; background-color: #e74c3c; color: white;"
                 )
             else:
-                self.measure_button.setText(self.tr("Start measuring"))
+                self.measure_button.setText(self.tr("Start measuring (M)"))
                 self.measure_button.setStyleSheet("font-weight: bold; padding: 6px 10px;")
             self.measure_button.blockSignals(False)
 
@@ -7865,7 +7991,7 @@ class MainWindow(QMainWindow):
         self.gallery_plot_figure.clear()
         if show_hist:
             gs = self.gallery_plot_figure.add_gridspec(
-                3, 2, width_ratios=[3.2, 1.0], hspace=0.4, wspace=0.3
+                3, 2, width_ratios=[3.8, 1.2], hspace=0.7, wspace=0.30
             )
             ax_scatter = self.gallery_plot_figure.add_subplot(gs[:, 0])
             ax_len = self.gallery_plot_figure.add_subplot(gs[0, 1])
@@ -7877,7 +8003,7 @@ class MainWindow(QMainWindow):
             ax_len = None
             ax_wid = None
             ax_q = None
-        self.gallery_plot_figure.subplots_adjust(top=0.98, bottom=0.1)
+        self.gallery_plot_figure.subplots_adjust(left=0.08, right=0.98, top=0.97, bottom=0.11)
         self._gallery_scatter_axis = ax_scatter
         self._gallery_hist_axes = {axis for axis in (ax_len, ax_wid, ax_q) if axis is not None}
         self._gallery_hover_hint_key = ""
@@ -7907,8 +8033,8 @@ class MainWindow(QMainWindow):
         self.gallery_hist_patches = {}
         self.gallery_scatter = None
         self.gallery_scatter_id_map = {}
-        ax_scatter.set_xlabel(self.tr("Length (μm)"))
-        ax_scatter.set_ylabel(self.tr("Width (μm)"))
+        ax_scatter.set_xlabel(self.tr("Length (\u03bcm)"))
+        ax_scatter.set_ylabel(self.tr("Width (\u03bcm)"))
 
         image_labels = getattr(self, "gallery_image_labels", {}) or {}
         image_color_map = {}
@@ -8237,9 +8363,9 @@ class MainWindow(QMainWindow):
                     ax_wid.axvline(overlay["width_min"], color=color, linestyle=":", linewidth=1.0)
                 if overlay.get("width_max") is not None:
                     ax_wid.axvline(overlay["width_max"], color=color, linestyle=":", linewidth=1.0)
-            ax_len.set_xlabel(self.tr("Length (μm)"))
+            ax_len.set_xlabel(self.tr("Length (\u03bcm)"))
             ax_len.set_ylabel("Count")
-            ax_wid.set_xlabel(self.tr("Width (μm)"))
+            ax_wid.set_xlabel(self.tr("Width (\u03bcm)"))
             if show_q:
                 ax_q.set_xlabel("Q (L/W)")
             else:
@@ -8272,7 +8398,7 @@ class MainWindow(QMainWindow):
         self._remember_export_dir(filename)
         try:
             self.gallery_plot_figure.savefig(filename, format="svg")
-            self.measure_status_label.setText(f"✓ Plot exported to {Path(filename).name}")
+            self.measure_status_label.setText(f"âœ“ Plot exported to {Path(filename).name}")
             self.measure_status_label.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 9pt;")
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
@@ -8286,6 +8412,7 @@ class MainWindow(QMainWindow):
         previous_observation_name = self.active_observation_name
         previous_tab_index = self.tab_widget.currentIndex() if hasattr(self, "tab_widget") else None
         previous_suppress = getattr(self, "_suppress_gallery_update", False)
+        previous_fig_size = None
         switched_observation = False
 
         try:
@@ -8313,12 +8440,29 @@ class MainWindow(QMainWindow):
                 self.gallery_image_labels = {}
 
             measurements = self.get_gallery_measurements()
+            try:
+                previous_fig_size = tuple(self.gallery_plot_figure.get_size_inches())
+                # Wider export canvas so scatter panel + stacked histograms have room for labels.
+                self.gallery_plot_figure.set_size_inches(10.5, 6.0, forward=False)
+            except Exception:
+                previous_fig_size = None
             self.update_graph_plots(measurements)
-            self.gallery_plot_figure.savefig(str(target_path), format="png", dpi=120)
+            self.gallery_plot_figure.savefig(str(target_path), format="png", dpi=140)
             return target_path.exists()
         except Exception:
             return False
         finally:
+            if previous_fig_size and hasattr(self, "gallery_plot_figure"):
+                try:
+                    self.gallery_plot_figure.set_size_inches(
+                        float(previous_fig_size[0]),
+                        float(previous_fig_size[1]),
+                        forward=False,
+                    )
+                    if hasattr(self, "gallery_plot_canvas"):
+                        self.gallery_plot_canvas.draw_idle()
+                except Exception:
+                    pass
             self._suppress_gallery_update = previous_suppress
             if switched_observation and previous_observation_id:
                 self.on_observation_selected(
@@ -8607,9 +8751,73 @@ class MainWindow(QMainWindow):
             orient: If True, rotate so length axis is vertical
             extra_rotation: Additional rotation in degrees (e.g., 180 for flip)
         """
-        from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen, QTransform
+        from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen, QTransform, QPainterPath
         from PySide6.QtCore import QPointF, QRectF
         import math
+
+        def _measure_stroke_style(stroke_color):
+            base = QColor(stroke_color) if stroke_color is not None else QColor("#0044aa")
+            presets = (
+                {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+                {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+                {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
+                {"match": QColor("#2ECC71"), "thin": QColor("#00aa00"), "glow": QColor("#00aa00"), "opacity": 0.658163, "blend": "screen"},
+                {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
+                {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
+                {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
+                {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+            )
+            def _dist2(c1, c2):
+                dr = c1.red() - c2.red()
+                dg = c1.green() - c2.green()
+                db = c1.blue() - c2.blue()
+                return dr * dr + dg * dg + db * db
+            chosen = min(presets, key=lambda p: _dist2(base, p["match"]))
+            thin = QColor(chosen["thin"])
+            glow = QColor(chosen["glow"])
+            glow.setAlpha(max(1, min(255, int(round(255 * float(chosen["opacity"]))))))  # type: ignore[arg-type]
+            return {"thin": thin, "glow": glow, "blend": str(chosen["blend"])}
+
+        def _set_comp(p: QPainter, comp_name: str):
+            if comp_name == "overlay":
+                p.setCompositionMode(QPainter.CompositionMode_Overlay)
+            elif comp_name == "screen":
+                p.setCompositionMode(QPainter.CompositionMode_Screen)
+            elif comp_name == "plus":
+                p.setCompositionMode(QPainter.CompositionMode_Plus)
+            elif comp_name == "lighten":
+                p.setCompositionMode(QPainter.CompositionMode_Lighten)
+
+        def _draw_dual_polygon(p: QPainter, polygon: QPolygonF, stroke_color):
+            style = _measure_stroke_style(stroke_color)
+            thin_pen = QPen(QColor(style["thin"]), 1)
+            wide_pen = QPen(QColor(style["glow"]), 3)
+            p.save()
+            _set_comp(p, str(style["blend"]))
+            p.setPen(wide_pen)
+            p.setBrush(Qt.NoBrush)
+            p.drawPolygon(polygon)
+            p.restore()
+            p.setBrush(Qt.NoBrush)
+            p.setPen(thin_pen)
+            p.drawPolygon(polygon)
+
+        def _draw_halo_text(p: QPainter, x: int, y: int, text: str, stroke_color):
+            style = _measure_stroke_style(stroke_color)
+            text_color = QColor(style["thin"])
+            path = QPainterPath()
+            path.addText(float(x), float(y), p.font(), text)
+            stroke_w = max(1.0, float(p.fontMetrics().height()) * 0.4)
+            pen = QPen(QColor(255, 255, 255, 102), stroke_w)
+            pen.setJoinStyle(Qt.RoundJoin)
+            pen.setCapStyle(Qt.RoundCap)
+            p.save()
+            p.setBrush(Qt.NoBrush)
+            p.setPen(pen)
+            p.drawPath(path)
+            p.restore()
+            p.setPen(text_color)
+            p.drawText(x, y, text)
 
         if not pixmap:
             return None
@@ -8768,23 +8976,14 @@ class MainWindow(QMainWindow):
             screen_center + axis_width * (-half_width * img_scale) + axis_length * (half_length * img_scale),
         ]
 
-        stroke_color = QColor(color) if color else QColor(52, 152, 219)
-        light_color = QColor(stroke_color)
-        light_color = light_color.lighter(130)
-        light_color.setAlpha(51)
-        light_pen = QPen(light_color, 3)
-        thin_pen = QPen(stroke_color, 1)
-        painter.setPen(light_pen)
-        painter.drawPolygon(QPolygonF(corners))
-        painter.setPen(thin_pen)
-        painter.drawPolygon(QPolygonF(corners))
+        stroke_color = QColor(color) if color else QColor("#0044aa")
+        _draw_dual_polygon(painter, QPolygonF(corners), stroke_color)
 
         # Draw dimensions
-        painter.setPen(stroke_color)
         font = painter.font()
         font.setPointSize(max(8, int(size * 0.045)))
         painter.setFont(font)
-        painter.drawText(5, size - 10, f"{length_um:.2f} x {width_um:.2f}")
+        _draw_halo_text(painter, 5, size - 10, f"{length_um:.2f} x {width_um:.2f}", stroke_color)
 
         painter.end()
         return result
@@ -8948,7 +9147,7 @@ class MainWindow(QMainWindow):
 
         # Save composite
         composite.save(filename)
-        self.measure_status_label.setText(f"✓ Gallery exported to {Path(filename).name}")
+        self.measure_status_label.setText(f"âœ“ Gallery exported to {Path(filename).name}")
         self.measure_status_label.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 9pt;")
 
     def export_ml_dataset(self):
@@ -8962,22 +9161,23 @@ class MainWindow(QMainWindow):
             "The observations tab is not ready yet."
         )
 
-    def show_export_placeholder(self, target_name):
-        """Placeholder for export integrations."""
-        QMessageBox.information(
-            self,
-            "Export Not Implemented",
-            f"{target_name} export is not implemented yet."
-        )
-
     def open_profile_dialog(self):
         """Open profile settings dialog."""
         profile = SettingsDB.get_profile()
         dialog = QDialog(self)
         dialog.setWindowTitle(self.tr("Profile"))
         form = QFormLayout(dialog)
+        info_label = QLabel(
+            self.tr(
+                "Name is used for the copyright watermark on images.\n"
+                "Name and email (optional) are added to observations in the database, "
+                "useful if you share your observations with others."
+            )
+        )
+        info_label.setWordWrap(True)
         name_input = QLineEdit(profile.get("name", ""))
         email_input = QLineEdit(profile.get("email", ""))
+        form.addRow(info_label)
         form.addRow(self.tr("Name"), name_input)
         form.addRow(self.tr("Email"), email_input)
 
@@ -8987,6 +9187,7 @@ class MainWindow(QMainWindow):
         ok_btn.clicked.connect(dialog.accept)
         cancel_btn.clicked.connect(dialog.reject)
         form.addRow(buttons)
+        dialog.resize(560, dialog.sizeHint().height())
 
         if dialog.exec() == QDialog.Accepted:
             SettingsDB.set_profile(name_input.text().strip(), email_input.text().strip())
@@ -10015,3 +10216,4 @@ class MainWindow(QMainWindow):
         # Reconnect the dimensions_changed signal
         self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
         self._update_preview_title()
+

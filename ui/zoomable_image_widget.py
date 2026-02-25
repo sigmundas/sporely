@@ -1,6 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
@@ -33,13 +33,14 @@ class ZoomableImageLabel(QLabel):
         self.preview_rect = None  # Temporary rectangle preview
         self.objective_text = ""
         self.objective_color = QColor(52, 152, 219)
-        self.measure_color = QColor(52, 152, 219)
+        self.measure_color = QColor("#0044aa")
         self.show_line_endcaps = True
         self.show_measure_labels = False
         self.measurement_labels = []
         self.show_scale_bar = False
         self.scale_bar_um = 10.0
-        self.scale_bar_bg_alpha = 190
+        self.scale_bar_bg_alpha = 102
+        self.export_measure_label_scale_multiplier = 1.0
         self.show_copyright = False
         self.copyright_text = ""
         self.microns_per_pixel = 0.5
@@ -93,12 +94,132 @@ class ZoomableImageLabel(QLabel):
         self.reset_view()
         self._auto_fit_pending = True
 
+    def _measure_stroke_style(self, color=None):
+        """Return SVG-inspired thin/glow colors and blend mode for a stroke color."""
+        base = QColor(color) if color is not None else QColor(self.measure_color)
+        if not base.isValid():
+            base = QColor("#0044aa")
+
+        presets = (
+            # Representative (old palette/default) -> SVG thin/glow + blend
+            {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+            {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
+            {"match": QColor("#2ECC71"), "thin": QColor("#00aa00"), "glow": QColor("#00aa00"), "opacity": 0.658163, "blend": "screen"},
+            {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
+            {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+            # Also match the older widget default blue if encountered
+            {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
+        )
+
+        def _dist2(c1: QColor, c2: QColor) -> int:
+            dr = int(c1.red()) - int(c2.red())
+            dg = int(c1.green()) - int(c2.green())
+            db = int(c1.blue()) - int(c2.blue())
+            return dr * dr + dg * dg + db * db
+
+        chosen = min(presets, key=lambda p: _dist2(base, p["match"]))
+        thin = QColor(chosen["thin"])
+        thin.setAlpha(max(1, base.alpha()))
+        glow = QColor(chosen["glow"])
+        glow.setAlpha(max(1, min(255, int(round(255 * float(chosen["opacity"]))))))  # type: ignore[arg-type]
+        return {
+            "thin": thin,
+            "glow": glow,
+            "blend": str(chosen["blend"]),
+        }
+
     def _light_stroke_color(self):
-        """Return a lighter, low-opacity version of the measure color."""
-        light = QColor(self.measure_color)
-        light = light.lighter(130)
-        light.setAlpha(51)
-        return light
+        """Backward-compatible glow color helper used by some preview/legacy paths."""
+        return QColor(self._measure_stroke_style().get("glow"))
+
+    @staticmethod
+    def _set_named_composition_mode(painter: QPainter, composition: str | None) -> None:
+        comp = (composition or "").strip().lower()
+        if comp == "overlay":
+            painter.setCompositionMode(QPainter.CompositionMode_Overlay)
+        elif comp == "screen":
+            painter.setCompositionMode(QPainter.CompositionMode_Screen)
+        elif comp == "plus":
+            painter.setCompositionMode(QPainter.CompositionMode_Plus)
+        elif comp == "lighten":
+            painter.setCompositionMode(QPainter.CompositionMode_Lighten)
+
+    def _draw_dual_stroke_line(
+        self,
+        painter: QPainter,
+        p1,
+        p2,
+        color=None,
+        thin_width: float = 1.0,
+        wide_width: float | None = None,
+        dashed: bool = False,
+    ) -> None:
+        style = self._measure_stroke_style(color=color)
+        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
+        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        if dashed:
+            thin_pen.setStyle(Qt.DashLine)
+            wide_pen.setStyle(Qt.DashLine)
+
+        use_blend = True
+        try:
+            device = painter.device()
+        except Exception:
+            device = None
+        if isinstance(device, QSvgGenerator):
+            use_blend = False
+
+        if use_blend:
+            painter.save()
+            self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+            painter.setPen(wide_pen)
+            painter.drawLine(p1, p2)
+            painter.restore()
+        else:
+            painter.setPen(wide_pen)
+            painter.drawLine(p1, p2)
+
+        painter.setPen(thin_pen)
+        painter.drawLine(p1, p2)
+
+    def _draw_dual_stroke_polygon(
+        self,
+        painter: QPainter,
+        polygon: QPolygonF,
+        color=None,
+        thin_width: float = 1.0,
+        wide_width: float | None = None,
+        dashed: bool = False,
+    ) -> None:
+        style = self._measure_stroke_style(color=color)
+        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
+        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        if dashed:
+            thin_pen.setStyle(Qt.DashLine)
+            wide_pen.setStyle(Qt.DashLine)
+
+        use_blend = True
+        try:
+            device = painter.device()
+        except Exception:
+            device = None
+        if isinstance(device, QSvgGenerator):
+            use_blend = False
+
+        if use_blend:
+            painter.save()
+            self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+            painter.setPen(wide_pen)
+            painter.drawPolygon(polygon)
+            painter.restore()
+        else:
+            painter.setPen(wide_pen)
+            painter.drawPolygon(polygon)
+
+        painter.setPen(thin_pen)
+        painter.drawPolygon(polygon)
 
     def _compute_corners_from_lines(self, line1, line2):
         """Compute rectangle corners from two measurement lines."""
@@ -181,7 +302,12 @@ class ZoomableImageLabel(QLabel):
         painter.save()
         painter.translate(label_pos.x(), label_pos.y())
         painter.rotate(angle_deg)
-        painter.drawText(int(-text_w / 2), int(text_h / 2), text)
+        self._draw_measure_text_with_outline(
+            painter,
+            int(-text_w / 2),
+            int(text_h / 2),
+            text,
+        )
         painter.restore()
 
     def _draw_rotated_label_on_line(self, painter, a, b, text, padding_px=4.0):
@@ -205,8 +331,73 @@ class ZoomableImageLabel(QLabel):
         painter.save()
         painter.translate(label_pos.x(), label_pos.y())
         painter.rotate(angle_deg)
-        painter.drawText(int(-text_w / 2), int(text_h / 2), text)
+        self._draw_measure_text_with_outline(
+            painter,
+            int(-text_w / 2),
+            int(text_h / 2),
+            text,
+        )
         painter.restore()
+
+    def _draw_measure_text_with_outline(
+        self,
+        painter: QPainter,
+        x: int,
+        y: int,
+        text: str,
+        color: QColor | None = None,
+    ) -> None:
+        """Draw measure text with Inkscape-like white outline underlay.
+
+        Approximation of: 2.5 mm text + 1 mm white stroke @ 40% opacity,
+        implemented as a size-relative stroke (~40% of current font height).
+        """
+        if not text:
+            return
+        metrics = painter.fontMetrics()
+        stroke_w = max(1.0, float(metrics.height()) * 0.4)
+        path = QPainterPath()
+        path.addText(float(x), float(y), painter.font(), text)
+        outline_pen = QPen(QColor(255, 255, 255, 102), stroke_w)
+        outline_pen.setJoinStyle(Qt.RoundJoin)
+        outline_pen.setCapStyle(Qt.RoundCap)
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(outline_pen)
+        painter.drawPath(path)
+        painter.restore()
+        painter.setPen(QColor(color) if color is not None else QColor(self.measure_color))
+        painter.drawText(int(x), int(y), text)
+
+    def _draw_text_with_outline(
+        self,
+        painter: QPainter,
+        x: float,
+        y: float,
+        text: str,
+        fill_color: QColor,
+        outline_color: QColor,
+        outline_opacity: float = 0.4,
+        outline_width_ratio: float = 0.4,
+    ) -> None:
+        """Draw text with a stroked outline underlay (Inkscape-like)."""
+        if not text:
+            return
+        metrics = painter.fontMetrics()
+        stroke_w = max(1.0, float(metrics.height()) * float(outline_width_ratio))
+        alpha = max(0, min(255, int(round(255 * float(outline_opacity)))))
+        path = QPainterPath()
+        path.addText(float(x), float(y), painter.font(), text)
+        pen = QPen(QColor(outline_color.red(), outline_color.green(), outline_color.blue(), alpha), stroke_w)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(pen)
+        painter.drawPath(path)
+        painter.restore()
+        painter.setPen(fill_color)
+        painter.drawText(int(x), int(y), text)
 
     def _label_positions_from_lines(self, line1, line2, center, offset):
         """Return label positions using the same logic as the preview widget."""
@@ -293,6 +484,15 @@ class ZoomableImageLabel(QLabel):
         self.show_scale_bar = bool(show)
         if microns and microns > 0:
             self.scale_bar_um = float(microns)
+        self.update()
+
+    def set_export_measure_label_scale_multiplier(self, multiplier):
+        """Set export-only measurement label scale multiplier (does not affect app view)."""
+        try:
+            value = float(multiplier)
+        except Exception:
+            value = 1.0
+        self.export_measure_label_scale_multiplier = max(0.5, min(6.0, value))
         self.update()
 
     def set_copyright(self, show, text):
@@ -1102,9 +1302,7 @@ class ZoomableImageLabel(QLabel):
         result.fill(Qt.transparent)
 
         painter = QPainter(result)
-        scale_factor = 1.0
-        if self.zoom_level and self.zoom_level > 0:
-            scale_factor = 1.0 / self.zoom_level
+        scale_factor = self._export_overlay_scale_factor()
 
         self._render_export(painter, scale_factor)
 
@@ -1131,12 +1329,23 @@ class ZoomableImageLabel(QLabel):
         generator.setDescription("Annotated image export")
 
         painter = QPainter(generator)
-        scale_factor = 1.0
-        if self.zoom_level and self.zoom_level > 0:
-            scale_factor = 1.0 / self.zoom_level
+        scale_factor = self._export_overlay_scale_factor()
         self._render_export(painter, scale_factor)
         painter.end()
         return True
+
+    def _export_overlay_scale_factor(self) -> float:
+        """Scale export overlays by zoom-in only; never enlarge when view is zoomed out/fit."""
+        scale_factor = 1.0
+        if self.zoom_level and self.zoom_level > 0:
+            try:
+                scale_factor = 1.0 / float(self.zoom_level)
+            except Exception:
+                scale_factor = 1.0
+        # Hidden/offscreen widgets often auto-fit images (zoom < 1), which used to inflate
+        # export labels/strokes dramatically. Clamp so exports do not get larger overlays
+        # just because the widget view was zoomed out.
+        return max(0.25, min(1.0, scale_factor))
 
     def _draw_copyright_text(
         self,
@@ -1151,8 +1360,8 @@ class ZoomableImageLabel(QLabel):
             return
 
         font = painter.font()
-        # Keep the text at 1% of the currently rendered image height so it scales with zoom.
-        target_font_px = max(1, int(round(float(base_rect.height()) * 0.01)))
+        # Match publish watermark sizing (about 1.2% of rendered image height).
+        target_font_px = max(1, int(round(float(base_rect.height()) * 0.012)))
         font.setPixelSize(target_font_px)
         font.setBold(False)
         painter.setFont(font)
@@ -1166,16 +1375,16 @@ class ZoomableImageLabel(QLabel):
             baseline = min(baseline, max_baseline_y)
         baseline = max(min_baseline, baseline)
 
-        halo = 1
-        painter.setPen(QColor(255, 255, 255, 170))
-        for dx in range(-halo, halo + 1):
-            for dy in range(-halo, halo + 1):
-                if dx == 0 and dy == 0:
-                    continue
-                painter.drawText(int(x + dx), int(baseline + dy), self.copyright_text)
-
-        painter.setPen(QColor(0, 0, 0, 170))
-        painter.drawText(int(x), int(baseline), self.copyright_text)
+        self._draw_text_with_outline(
+            painter,
+            x,
+            baseline,
+            self.copyright_text,
+            fill_color=QColor(255, 255, 255, 225),
+            outline_color=QColor(0, 0, 0),
+            outline_opacity=0.4,
+            outline_width_ratio=0.4,
+        )
 
     def _render_export(self, painter, scale_factor):
         painter.setRenderHint(QPainter.Antialiasing)
@@ -1184,27 +1393,31 @@ class ZoomableImageLabel(QLabel):
 
         thin_width = max(1.0, 1.0 * scale_factor)
         wide_width = max(1.0, 3.0 * scale_factor)
-        light_color = self._light_stroke_color()
-        light_pen = QPen(light_color, wide_width)
-        thin_pen = QPen(self.measure_color, thin_width)
 
         # Draw measurement rectangles
         if self.show_measure_overlays and self.measurement_rectangles:
             for rect in self.measurement_rectangles:
-                painter.setPen(light_pen)
-                painter.drawPolygon(QPolygonF(rect))
-                painter.setPen(thin_pen)
-                painter.drawPolygon(QPolygonF(rect))
+                self._draw_dual_stroke_polygon(
+                    painter,
+                    QPolygonF(rect),
+                    color=self.measure_color,
+                    thin_width=thin_width,
+                    wide_width=wide_width,
+                )
 
         # Draw measurement lines
         if self.show_measure_overlays and self.measurement_lines:
             for line in self.measurement_lines:
                 p1 = QPointF(line[0], line[1])
                 p2 = QPointF(line[2], line[3])
-                painter.setPen(light_pen)
-                painter.drawLine(p1, p2)
-                painter.setPen(thin_pen)
-                painter.drawLine(p1, p2)
+                self._draw_dual_stroke_line(
+                    painter,
+                    p1,
+                    p2,
+                    color=self.measure_color,
+                    thin_width=thin_width,
+                    wide_width=wide_width,
+                )
 
                 dx = p2.x() - p1.x()
                 dy = p2.y() - p1.y()
@@ -1213,13 +1426,21 @@ class ZoomableImageLabel(QLabel):
                     perp_x = -dy / length
                     perp_y = dx / length
                     mark_len = 5 * scale_factor
-                    painter.drawLine(
+                    self._draw_dual_stroke_line(
+                        painter,
                         QPointF(p1.x() - perp_x * mark_len, p1.y() - perp_y * mark_len),
-                        QPointF(p1.x() + perp_x * mark_len, p1.y() + perp_y * mark_len)
+                        QPointF(p1.x() + perp_x * mark_len, p1.y() + perp_y * mark_len),
+                        color=self.measure_color,
+                        thin_width=thin_width,
+                        wide_width=wide_width,
                     )
-                    painter.drawLine(
+                    self._draw_dual_stroke_line(
+                        painter,
                         QPointF(p2.x() - perp_x * mark_len, p2.y() - perp_y * mark_len),
-                        QPointF(p2.x() + perp_x * mark_len, p2.y() + perp_y * mark_len)
+                        QPointF(p2.x() + perp_x * mark_len, p2.y() + perp_y * mark_len),
+                        color=self.measure_color,
+                        thin_width=thin_width,
+                        wide_width=wide_width,
                     )
 
         # Draw debug line layers (used by calibration auto overlays)
@@ -1299,8 +1520,9 @@ class ZoomableImageLabel(QLabel):
 
         # Draw measurement labels
         if self.show_measure_labels and self.measurement_labels:
+            export_label_ui_scale = max(0.5, float(getattr(self, "export_measure_label_scale_multiplier", 1.0)))
             font = painter.font()
-            font.setPointSize(max(6, int(9 * scale_factor)))
+            font.setPointSize(max(8, int(round(9 * 1.3 * scale_factor * export_label_ui_scale))))
             font.setBold(False)
             painter.setFont(font)
             painter.setPen(self.measure_color)
@@ -1318,7 +1540,11 @@ class ZoomableImageLabel(QLabel):
                         p1 = QPointF(line[0], line[1])
                         p2 = QPointF(line[2], line[3])
                         self._draw_rotated_label_on_line(
-                            painter, p1, p2, f"{value:.1f} {unit}", padding_px=3 * scale_factor
+                            painter,
+                            p1,
+                            p2,
+                            f"{value:.1f}",
+                            padding_px=max(3.0, 3.0 * scale_factor * export_label_ui_scale),
                         )
                     continue
                 line1 = label.get("line1")
@@ -1368,10 +1594,10 @@ class ZoomableImageLabel(QLabel):
                     length_edge = edges[best_index]
                     width_edge = edges[(best_index + 1) % 4]
                     self._draw_rotated_label_outside(
-                        painter, f"{length_value:.1f} {unit}", length_edge, center, 3
+                        painter, f"{length_value:.1f}", length_edge, center, max(3.0, 3.0 * export_label_ui_scale)
                     )
                     self._draw_rotated_label_outside(
-                        painter, f"{width_value:.1f} {unit}", width_edge, center, 3
+                        painter, f"{width_value:.1f}", width_edge, center, max(3.0, 3.0 * export_label_ui_scale)
                     )
 
         # Draw scale bar
@@ -1381,8 +1607,19 @@ class ZoomableImageLabel(QLabel):
             bar_pixels = max(10.0, bar_pixels)
             bar_pixels = min(bar_pixels, self.original_pixmap.width() * 0.6)
 
+            # Published/exported images are often downscaled by the target website.
+            # Compensate for hidden-widget fit zoom so scale-bar UI (font/line/padding)
+            # remains readable after upload while keeping the bar length itself accurate.
+            scale_bar_ui_scale = 1.0
+            if self.zoom_level and self.zoom_level > 0:
+                try:
+                    scale_bar_ui_scale = max(1.0, min(6.0, 1.0 / float(self.zoom_level)))
+                except Exception:
+                    scale_bar_ui_scale = 1.0
+
             font = painter.font()
-            font.setPointSize(max(6, int(9 * scale_factor)))
+            # Slightly smaller label text than the previous tuning.
+            font.setPixelSize(max(10, int(round(12 * 0.8 * scale_bar_ui_scale))))
             font.setBold(False)
             painter.setFont(font)
             label = f"{bar_um:g} \u03bcm"
@@ -1390,25 +1627,26 @@ class ZoomableImageLabel(QLabel):
             label_w = metrics.horizontalAdvance(label)
             label_h = metrics.height()
 
-            margin = 8 * scale_factor
-            pad = 6 * scale_factor
+            margin = max(8.0, 8.0 * scale_bar_ui_scale)
+            pad = max(6.0, 6.0 * scale_bar_ui_scale)
             box_w = max(bar_pixels, label_w) + pad * 2
-            box_h = label_h + pad * 2 + 6 * scale_factor
+            box_h = label_h + pad * 2 + max(6.0, 6.0 * scale_bar_ui_scale)
             box_x = self.original_pixmap.width() - box_w - margin
             box_y = self.original_pixmap.height() - box_h - margin
 
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(255, 255, 255, self.scale_bar_bg_alpha))
-            painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 4, 4)
+            radius = max(4.0, 4.0 * min(2.0, scale_bar_ui_scale))
+            painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), radius, radius)
 
             bar_x1 = box_x + (box_w - bar_pixels) / 2
             bar_x2 = bar_x1 + bar_pixels
-            bar_y = box_y + pad + 4 * scale_factor
-            painter.setPen(QPen(QColor(0, 0, 0), max(1.0, 2 * scale_factor)))
+            bar_y = box_y + pad + max(4.0, 4.0 * scale_bar_ui_scale)
+            painter.setPen(QPen(QColor(0, 0, 0), max(2.0, 2.0 * scale_bar_ui_scale)))
             painter.drawLine(QPointF(bar_x1, bar_y), QPointF(bar_x2, bar_y))
 
             text_x = box_x + (box_w - label_w) / 2
-            text_y = box_y + pad + 4 * scale_factor + label_h
+            text_y = box_y + pad + max(4.0, 4.0 * scale_bar_ui_scale) + label_h
             painter.setPen(QColor(0, 0, 0))
             painter.drawText(int(text_x), int(text_y), label)
 
@@ -1524,32 +1762,21 @@ class ZoomableImageLabel(QLabel):
 
         # Draw measurement rectangles
         if self.show_measure_overlays and self.measurement_rectangles:
-            light_pen = QPen(self._light_stroke_color(), 3)
-            thin_pen = QPen(self.measure_color, 1)
-            hover_light = QPen(QColor(231, 76, 60, 90), 5)
-            hover_thin = QPen(QColor(231, 76, 60), 2)
+            hover_color = QColor(231, 76, 60)
             for idx, rect in enumerate(self.measurement_rectangles):
                 screen_points = []
                 for corner in rect:
                     x = display_rect.x() + corner.x() * self.zoom_level
                     y = display_rect.y() + corner.y() * self.zoom_level
                     screen_points.append(QPointF(x, y))
-                painter.setPen(light_pen)
-                painter.drawPolygon(QPolygonF(screen_points))
-                painter.setPen(thin_pen)
-                painter.drawPolygon(QPolygonF(screen_points))
+                polygon = QPolygonF(screen_points)
+                self._draw_dual_stroke_polygon(painter, polygon, color=self.measure_color, thin_width=1.0, wide_width=3.0)
                 if idx == self.hover_rect_index or (not self.measurement_active and idx == self.selected_rect_index):
-                    painter.setPen(hover_light)
-                    painter.drawPolygon(QPolygonF(screen_points))
-                    painter.setPen(hover_thin)
-                    painter.drawPolygon(QPolygonF(screen_points))
+                    self._draw_dual_stroke_polygon(painter, polygon, color=hover_color, thin_width=2.0, wide_width=6.0)
 
         # Draw measurement lines with perpendicular end marks
         if self.show_measure_overlays and self.measurement_lines:
-            light_pen = QPen(self._light_stroke_color(), 3)
-            thin_pen = QPen(self.measure_color, 1)
-            hover_light = QPen(QColor(231, 76, 60, 90), 5)
-            hover_thin = QPen(QColor(231, 76, 60), 2)
+            hover_color = QColor(231, 76, 60)
 
             for idx, line in enumerate(self.measurement_lines):
                 # Convert original image coordinates to screen coordinates
@@ -1559,10 +1786,11 @@ class ZoomableImageLabel(QLabel):
                 p2_y = display_rect.y() + line[3] * self.zoom_level
 
                 # Draw main line (wide + thin)
-                painter.setPen(light_pen)
-                painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
-                painter.setPen(thin_pen)
-                painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
+                p1_screen = QPointF(p1_x, p1_y)
+                p2_screen = QPointF(p2_x, p2_y)
+                self._draw_dual_stroke_line(
+                    painter, p1_screen, p2_screen, color=self.measure_color, thin_width=1.0, wide_width=3.0
+                )
 
                 if self.show_line_endcaps:
                     # Calculate perpendicular direction
@@ -1578,22 +1806,29 @@ class ZoomableImageLabel(QLabel):
                         mark_len = 5
 
                         # Draw perpendicular marks at both ends
-                        painter.drawLine(
-                            int(p1_x - perp_x * mark_len), int(p1_y - perp_y * mark_len),
-                            int(p1_x + perp_x * mark_len), int(p1_y + perp_y * mark_len)
+                        self._draw_dual_stroke_line(
+                            painter,
+                            QPointF(p1_x - perp_x * mark_len, p1_y - perp_y * mark_len),
+                            QPointF(p1_x + perp_x * mark_len, p1_y + perp_y * mark_len),
+                            color=self.measure_color,
+                            thin_width=1.0,
+                            wide_width=3.0,
                         )
-                        painter.drawLine(
-                            int(p2_x - perp_x * mark_len), int(p2_y - perp_y * mark_len),
-                            int(p2_x + perp_x * mark_len), int(p2_y + perp_y * mark_len)
+                        self._draw_dual_stroke_line(
+                            painter,
+                            QPointF(p2_x - perp_x * mark_len, p2_y - perp_y * mark_len),
+                            QPointF(p2_x + perp_x * mark_len, p2_y + perp_y * mark_len),
+                            color=self.measure_color,
+                            thin_width=1.0,
+                            wide_width=3.0,
                         )
 
                 if idx == self.hover_line_index or (
                     not self.measurement_active and idx in self.selected_line_indices
                 ):
-                    painter.setPen(hover_light)
-                    painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
-                    painter.setPen(hover_thin)
-                    painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
+                    self._draw_dual_stroke_line(
+                        painter, p1_screen, p2_screen, color=hover_color, thin_width=2.0, wide_width=6.0
+                    )
 
         # Draw debug line layers (no hover/selection)
         if self.show_measure_overlays and self.debug_line_layers:
@@ -1656,29 +1891,24 @@ class ZoomableImageLabel(QLabel):
                 painter.restore()
         # Draw preview line (from last point to mouse cursor)
         if self.preview_line is not None and self.current_mouse_pos is not None:
-            light_pen = QPen(self._light_stroke_color(), 3)
-            light_pen.setStyle(Qt.DashLine)
-            thin_pen = QPen(self.measure_color, 1)
-            thin_pen.setStyle(Qt.DashLine)
-
             # Convert coordinates to screen
             p1_x = display_rect.x() + self.preview_line.x() * self.zoom_level
             p1_y = display_rect.y() + self.preview_line.y() * self.zoom_level
             p2_x = display_rect.x() + self.current_mouse_pos.x() * self.zoom_level
             p2_y = display_rect.y() + self.current_mouse_pos.y() * self.zoom_level
 
-            painter.setPen(light_pen)
-            painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
-            painter.setPen(thin_pen)
-            painter.drawLine(int(p1_x), int(p1_y), int(p2_x), int(p2_y))
+            self._draw_dual_stroke_line(
+                painter,
+                QPointF(p1_x, p1_y),
+                QPointF(p2_x, p2_y),
+                color=self.measure_color,
+                thin_width=1.0,
+                wide_width=3.0,
+                dashed=True,
+            )
 
         # Draw preview rectangle (based on fixed base line and mouse width)
         if self.preview_rect is not None and self.current_mouse_pos is not None:
-            light_pen = QPen(self._light_stroke_color(), 3)
-            light_pen.setStyle(Qt.DashLine)
-            thin_pen = QPen(self.measure_color, 1)
-            thin_pen.setStyle(Qt.DashLine)
-
             base_start = self.preview_rect["base_start"]
             base_end = self.preview_rect["base_end"]
             width_dir = self.preview_rect["width_dir"]
@@ -1710,16 +1940,20 @@ class ZoomableImageLabel(QLabel):
                 y = display_rect.y() + corner.y() * self.zoom_level
                 screen_points.append(QPointF(x, y))
 
-            painter.setPen(light_pen)
-            painter.drawPolygon(QPolygonF(screen_points))
-            painter.setPen(thin_pen)
-            painter.drawPolygon(QPolygonF(screen_points))
+            self._draw_dual_stroke_polygon(
+                painter,
+                QPolygonF(screen_points),
+                color=self.measure_color,
+                thin_width=1.0,
+                wide_width=3.0,
+                dashed=True,
+            )
 
         # Draw measurement labels
         if self.show_measure_labels and self.measurement_labels:
             painter.setPen(self.measure_color)
             font = painter.font()
-            font.setPointSize(9)
+            font.setPointSize(int(round(9 * 1.3)))
             font.setBold(False)
             painter.setFont(font)
 
@@ -1728,7 +1962,6 @@ class ZoomableImageLabel(QLabel):
                 width_um = label.get("width_um")
                 if label.get("kind") == "line":
                     line = label.get("line")
-                    unit = label.get("unit") or "\u03bcm"
                     value = label.get("length_value")
                     if value is None:
                         value = length_um
@@ -1737,12 +1970,11 @@ class ZoomableImageLabel(QLabel):
                                      display_rect.y() + line[1] * self.zoom_level)
                         p2 = QPointF(display_rect.x() + line[2] * self.zoom_level,
                                      display_rect.y() + line[3] * self.zoom_level)
-                        self._draw_rotated_label_on_line(painter, p1, p2, f"{value:.1f} {unit}", padding_px=4.0)
+                        self._draw_rotated_label_on_line(painter, p1, p2, f"{value:.1f}", padding_px=4.0)
                     continue
                 line1 = label.get("line1")
                 line2 = label.get("line2")
                 center = label.get("center")
-                unit = label.get("unit") or "\u03bcm"
                 length_value = label.get("length_value")
                 width_value = label.get("width_value")
                 if length_value is None:
@@ -1793,10 +2025,10 @@ class ZoomableImageLabel(QLabel):
                     length_edge = edges[best_index]
                     width_edge = edges[(best_index + 1) % 4]
                     self._draw_rotated_label_outside(
-                        painter, f"{length_value:.1f} {unit}", length_edge, center_screen, 3
+                        painter, f"{length_value:.1f}", length_edge, center_screen, 3
                     )
                     self._draw_rotated_label_outside(
-                        painter, f"{width_value:.1f} {unit}", width_edge, center_screen, 3
+                        painter, f"{width_value:.1f}", width_edge, center_screen, 3
                     )
 
         def _draw_tag(text, y_offset, bg_color, font_size=10):
@@ -1932,7 +2164,6 @@ class ZoomableImageLabel(QLabel):
             painter,
             QRectF(display_rect),
             scale_factor=1.0,
-            max_baseline_y=float(zoom_rect.top()) - 8.0,
         )
 
         if self._corner_tag_text:

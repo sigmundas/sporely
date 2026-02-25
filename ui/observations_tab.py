@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QListWidget, QListWidgetItem, QGroupBox, QCheckBox,
                                 QDoubleSpinBox, QTabWidget, QDialogButtonBox, QCompleter,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
-                                QApplication, QMenu)
+                                QApplication, QMenu, QProgressBar)
 from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF
-from PySide6.QtGui import QPixmap, QImage, QDesktopServices, QColor, QPainter, QShortcut, QKeySequence
+from PySide6.QtGui import QPixmap, QImage, QDesktopServices, QColor, QPainter, QShortcut, QKeySequence, QPainterPath, QPen
 from PIL import Image
 from PySide6.QtCore import QUrl
 from pathlib import Path
@@ -52,7 +52,7 @@ from utils.vernacular_utils import (
 from .image_gallery_widget import ImageGalleryWidget
 from .image_import_dialog import ImageImportDialog, ImageImportResult, AIGuessWorker
 from .calibration_dialog import get_resolution_status
-from .hint_status import HintStatusController
+from .hint_status import HintBar, HintStatusController
 from .zoomable_image_widget import ZoomableImageLabel
 from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no
 from matplotlib.ticker import MaxNLocator
@@ -124,7 +124,7 @@ class LocationLookupWorker(QThread):
 class ArtsobsMobileLinkCheckWorker(QThread):
     """Background worker that checks public Artsobs sighting links."""
 
-    linkChecked = Signal(int, bool)  # observation_id, is_dead
+    linkChecked = Signal(int, bool, bool)  # observation_id, is_dead, is_publicly_published
     checkFinished = Signal(int, int, int)  # checked, alive, dead
     checkFailed = Signal(str)
 
@@ -149,14 +149,22 @@ class ArtsobsMobileLinkCheckWorker(QThread):
                 # Public web endpoint works without mobile session cookies.
                 url = f"https://www.artsobservasjoner.no/Sighting/{arts_id}"
                 response = session.get(url, timeout=12)
+                final_url = str(getattr(response, "url", "") or "")
+                final_url_l = final_url.lower()
                 is_dead = response.status_code == 404
+                is_publicly_published = False
+                if response.status_code == 200:
+                    if "/viewsighting/sightingnotpublished" in final_url_l:
+                        is_publicly_published = False
+                    elif f"/sighting/{arts_id}" in final_url_l:
+                        is_publicly_published = True
                 if response.status_code in (200, 404):
                     checked += 1
                     if is_dead:
                         dead += 1
                     else:
                         alive += 1
-                    self.linkChecked.emit(observation_id, is_dead)
+                    self.linkChecked.emit(observation_id, is_dead, is_publicly_published)
                 elif response.status_code in (401, 403):
                     self.checkFailed.emit("Artsobs link check unauthorized.")
                     break
@@ -549,8 +557,15 @@ class ObservationsTab(QWidget):
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
     SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
     SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
+    SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
     SETTING_MO_APP_API_KEY = "mushroomobserver_app_api_key"
     SETTING_MO_USER_API_KEY = "mushroomobserver_user_api_key"
+    ARTSOBS_MEDIA_LICENSE_CODES = {
+        "10": "CC BY 4.0",
+        "20": "CC BY-SA 4.0",
+        "30": "CC BY-NC-SA 4.0",
+        "60": "No reuse without permission",
+    }
 
     # Signal emitted when observation is selected (id, display_name, switch_tab)
     observation_selected = Signal(int, str, bool)
@@ -564,11 +579,15 @@ class ObservationsTab(QWidget):
         self.selected_observation_id = None
         self._publish_actions: dict[str, object] = {}
         self._artsobs_dead_by_observation_id: dict[int, bool] = {}
+        self._artsobs_public_published_by_observation_id: dict[int, bool] = {}
         self._artsobs_check_thread: ArtsobsMobileLinkCheckWorker | None = None
         self._artsobs_check_failed = False
         self.map_helper = MapServiceHelper(self)
         self._ai_suggestions_cache: dict[int, dict] = {}
         self._accepted_taxon_pair_cache: dict[tuple[str, str], tuple[str, str]] | None = None
+        self._publish_login_status_cache: dict[str, bool] | None = None
+        self._publish_login_status_cache_ts: float = 0.0
+        self._observation_table_rows_cache: list[dict] = []
         self._search_refresh_timer = QTimer(self)
         self._search_refresh_timer.setSingleShot(True)
         self._search_refresh_timer.setInterval(180)
@@ -598,18 +617,21 @@ class ObservationsTab(QWidget):
         obs_button_row = QHBoxLayout()
         obs_button_row.setSpacing(6)
 
-        new_btn = QPushButton(self.tr("New (N)"))
-        new_btn.setObjectName("primaryButton")
-        new_btn.clicked.connect(self.create_new_observation)
-        obs_button_row.addWidget(new_btn)
+        self.new_btn = QPushButton(self.tr("New (N)"))
+        self.new_btn.setObjectName("primaryButton")
+        self.new_btn.setToolTip(self.tr("Create a new observation"))
+        self.new_btn.clicked.connect(self.create_new_observation)
+        obs_button_row.addWidget(self.new_btn)
 
         self.rename_btn = QPushButton(self.tr("Edit"))
         self.rename_btn.setEnabled(False)
+        self.rename_btn.setToolTip(self.tr("Edit selected observation"))
         self.rename_btn.clicked.connect(self.edit_observation)
         obs_button_row.addWidget(self.rename_btn)
 
         self.delete_btn = QPushButton(self.tr("Delete"))
         self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
         self.delete_btn.setStyleSheet(
             "QPushButton { background-color: #e74c3c; color: white; font-weight: bold; }"
             "QPushButton:hover { background-color: #c0392b; }"
@@ -634,26 +656,30 @@ class ObservationsTab(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("Search observations..."))
+        self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search_text_changed)
         database_layout.addWidget(self.search_input)
 
-        refresh_btn = QPushButton(self.tr("Refresh (R)"))
-        refresh_btn.clicked.connect(self._on_refresh_clicked)
-        database_layout.addWidget(refresh_btn)
+        self.refresh_btn = QPushButton(self.tr("Refresh (R)"))
+        self.refresh_btn.setToolTip(self.tr("Refresh database"))
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
+        database_layout.addWidget(self.refresh_btn)
 
         db_transfer_row = QHBoxLayout()
         db_transfer_row.setSpacing(6)
-        export_btn = QPushButton(self.tr("Export"))
-        export_btn.clicked.connect(self._on_export_db_clicked)
-        db_transfer_row.addWidget(export_btn)
-        import_btn = QPushButton(self.tr("Import"))
-        import_btn.clicked.connect(self._on_import_db_clicked)
-        db_transfer_row.addWidget(import_btn)
+        self.export_btn = QPushButton(self.tr("Export"))
+        self.export_btn.setEnabled(False)
+        self.export_btn.setToolTip(self.tr("Export selected observations (Ctrl-A for all) to zip archive"))
+        self.export_btn.clicked.connect(self._on_export_db_clicked)
+        db_transfer_row.addWidget(self.export_btn)
+        self.import_btn = QPushButton(self.tr("Import"))
+        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
+        self.import_btn.clicked.connect(self._on_import_db_clicked)
+        db_transfer_row.addWidget(self.import_btn)
         database_layout.addLayout(db_transfer_row)
 
         database_group.setLayout(database_layout)
         left_panel_layout.addWidget(database_group)
-        left_panel_layout.addStretch()
 
         content_layout.addWidget(left_panel)
 
@@ -750,17 +776,61 @@ class ObservationsTab(QWidget):
         content_layout.addWidget(splitter, 1)
         layout.addLayout(content_layout, 1)
 
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.status_label.setMinimumHeight(35)
-        self.status_label.setStyleSheet(
-            "background: transparent; border: none; color: #222222; font-size: 9pt;"
-        )
+        self.status_label = HintBar(self)
         layout.addWidget(self.status_label)
+
+        self.status_progress_widget = QWidget(self)
+        status_progress_layout = QVBoxLayout(self.status_progress_widget)
+        status_progress_layout.setContentsMargins(0, 0, 0, 0)
+        status_progress_layout.setSpacing(4)
+        status_progress_bar_row = QHBoxLayout()
+        status_progress_bar_row.setContentsMargins(0, 0, 0, 0)
+        status_progress_bar_row.setSpacing(6)
+        self.status_progress_bar = QProgressBar(self.status_progress_widget)
+        self.status_progress_bar.setRange(0, 100)
+        self.status_progress_bar.setValue(0)
+        self.status_progress_bar.setTextVisible(False)
+        try:
+            self.status_progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        except Exception:
+            pass
+        self.status_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.status_progress_bar.setFixedHeight(18)
+        self.status_progress_pct = QLabel("0%")
+        self.status_progress_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status_progress_pct.setFixedWidth(34)
+        self.status_progress_pct.setStyleSheet("color: #222222; font-size: 9pt;")
+        self.status_progress_text = QLabel("")
+        self.status_progress_text.setWordWrap(True)
+        self.status_progress_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.status_progress_text.setStyleSheet("color: #2980b9; font-size: 9pt;")
+        status_progress_bar_row.addWidget(self.status_progress_bar, 1)
+        status_progress_bar_row.addWidget(self.status_progress_pct, 0, Qt.AlignRight)
+        status_progress_layout.addLayout(status_progress_bar_row)
+        status_progress_layout.addWidget(self.status_progress_text)
+        self.status_progress_widget.setVisible(False)
+        layout.addWidget(self.status_progress_widget)
+
+        left_panel_layout.addStretch()
+
         self._status_hint_controller = HintStatusController(self.status_label, self)
         self._status_hint_controller.set_hint(self.tr("Ready."))
+        for widget, hint, disabled in (
+            (getattr(self, "new_btn", None), self.tr("Create a new observation"), None),
+            (getattr(self, "rename_btn", None), self.tr("Edit selected observation"), self.tr("Select an observation to edit")),
+            (getattr(self, "delete_btn", None), self.tr("Delete selected observation(s)"), self.tr("Select one or more observations to delete")),
+            (getattr(self, "refresh_btn", None), self.tr("Refresh database"), None),
+            (getattr(self, "export_btn", None), self.tr("Export selected observations (Ctrl-A for all) to zip archive"), self.tr("Select observations to export (Ctrl-A selects all)")),
+            (getattr(self, "import_btn", None), self.tr("Import observations from zip archive"), None),
+        ):
+            if widget is not None:
+                self._status_hint_controller.register_widget(widget, hint, disabled_hint=disabled)
+        if getattr(self, "publish_btn", None):
+            self._status_hint_controller.register_widget(
+                self.publish_btn,
+                self.tr("Choose a publish target."),
+                allow_when_disabled=True,
+            )
         self._init_shortcuts()
 
     def _init_shortcuts(self) -> None:
@@ -830,6 +900,15 @@ class ObservationsTab(QWidget):
 
     def _apply_search_refresh(self) -> None:
         # Keep search responsive: do not auto-restore selection/detail panes while typing.
+        if hasattr(self, "_observation_table_rows_cache"):
+            self._render_observations_table(
+                self._observation_table_rows_cache,
+                query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
+                restore_selection=False,
+                show_status=False,
+                status_message=None,
+            )
+            return
         self.refresh_observations(show_status=False, restore_selection=False)
 
     def set_status_message(
@@ -847,6 +926,44 @@ class ObservationsTab(QWidget):
             )
             return
         self.status_label.setText(text)
+
+    def _set_status_progress_visible(self, visible: bool) -> None:
+        visible = bool(visible)
+        if hasattr(self, "status_label"):
+            self.status_label.setVisible(not visible)
+        if hasattr(self, "status_progress_widget"):
+            self.status_progress_widget.setVisible(visible)
+
+    def _set_status_progress(
+        self,
+        status_text: str | None,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        if hasattr(self, "status_progress_text"):
+            self.status_progress_text.setText((status_text or "").strip())
+        if hasattr(self, "status_progress_bar"):
+            if total is not None and total > 0:
+                try:
+                    total_i = max(1, int(total))
+                    current_i = 0 if current is None else max(0, min(int(current), total_i))
+                    pct = int(round((current_i / total_i) * 100.0))
+                    self.status_progress_bar.setRange(0, 100)
+                    pct = max(0, min(100, pct))
+                    self.status_progress_bar.setValue(pct)
+                    if hasattr(self, "status_progress_pct"):
+                        self.status_progress_pct.setText(f"{pct}%")
+                except Exception:
+                    pass
+            elif current is not None:
+                try:
+                    self.status_progress_bar.setRange(0, 100)
+                    pct = max(0, min(100, int(current)))
+                    self.status_progress_bar.setValue(pct)
+                    if hasattr(self, "status_progress_pct"):
+                        self.status_progress_pct.setText(f"{pct}%")
+                except Exception:
+                    pass
 
     def _call_main_window_db_action(self, method_name: str) -> None:
         main_window = self.window()
@@ -867,20 +984,13 @@ class ObservationsTab(QWidget):
         self._call_main_window_db_action("import_database_bundle")
 
     def _on_refresh_clicked(self) -> None:
+        self._invalidate_publish_login_status_cache()
         self.refresh_observations(show_status=False)
-        if not self._publish_target_logged_in("mobile"):
-            self.set_status_message(
-                self.tr(
-                    "Publish links for Artsobservasjoner not checked (requires login to Artsobs mobile)"
-                ),
-                level="info",
-                auto_clear_ms=12000,
-            )
-            return
         pending_status = self._upload_pending_artsobs_web_images()
-        if pending_status == "no_cookie":
-            return
-        self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=0)
+        # Public web link checks do not require Artsobs mobile login.
+        # Keep any pending-upload warning/success message unless there was nothing pending.
+        if pending_status == "none":
+            self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=0)
         self._start_artsobs_link_check()
 
     def _upload_pending_artsobs_web_images(self) -> str:
@@ -901,14 +1011,14 @@ class ObservationsTab(QWidget):
         if total_pending == 1:
             uploading_msg = self.tr("1 image added to a published observation. Uploading...")
             login_msg = self.tr(
-                "1 image added to a published observation. Log in and click Refresh db."
+                "1 image added to a published observation. Log in to Artsobservasjoner (web), then click Refresh db."
             )
         else:
             uploading_msg = self.tr(
                 "{count} images added to published observations. Uploading..."
             ).format(count=total_pending)
             login_msg = self.tr(
-                "{count} images added to published observations. Log in and click Refresh db."
+                "{count} images added to published observations. Log in to Artsobservasjoner (web), then click Refresh db."
             ).format(count=total_pending)
 
         try:
@@ -1025,6 +1135,43 @@ class ObservationsTab(QWidget):
                 return row
         return -1
 
+    def _pending_published_image_upload_notice_for_observation(self, observation_id: int) -> tuple[str, str] | None:
+        """Return a reminder message for pending Artsobservasjoner web image uploads."""
+        try:
+            pending_count = int(ImageDB.get_pending_artsobs_web_upload_count_for_observation(observation_id))
+        except Exception:
+            pending_count = 0
+        if pending_count <= 0:
+            return None
+
+        login_status = self._publish_target_login_status()
+        web_logged_in = bool(login_status.get("web", False))
+
+        if pending_count == 1:
+            if web_logged_in:
+                return (
+                    self.tr("Image added to published observation. Refresh to upload the new image."),
+                    "info",
+                )
+            return (
+                self.tr("Image added to published observation. Log in to Artsobservasjoner (web), then click Refresh db to upload the new image."),
+                "warning",
+            )
+
+        if web_logged_in:
+            return (
+                self.tr("{count} images added to published observations. Refresh to upload the new images.").format(
+                    count=pending_count
+                ),
+                "info",
+            )
+        return (
+            self.tr("{count} images added to published observations. Log in to Artsobservasjoner (web), then click Refresh db to upload the new images.").format(
+                count=pending_count
+            ),
+            "warning",
+        )
+
     def _render_artsobs_cell(self, row: int, observation_id: int, arts_id: int | None) -> None:
         self.table.removeCellWidget(row, 9)
         has_id = bool(arts_id)
@@ -1044,10 +1191,19 @@ class ObservationsTab(QWidget):
             return
 
         mao_url = f"https://mobil.artsobservasjoner.no/sighting/{arts_id}"
-        wao_url = "https://www.artsobservasjoner.no/ReviewSighting"
-        arts_label = QLabel(
-            f'<a href="{mao_url}">MAo</a> | <a href="{wao_url}">Ao</a>'
-        )
+        wao_url = f"https://www.artsobservasjoner.no/Sighting/{arts_id}"
+        is_publicly_published = self._artsobs_public_published_by_observation_id.get(observation_id)
+        if is_publicly_published is True:
+            label_html = f'<a href="{mao_url}">MAo</a> | <a href="{wao_url}">Ao</a>'
+            link_tooltip = self.tr("MAo: Artsobservasjoner mobile app · Ao: Artsobservasjoner web")
+        else:
+            label_html = f'<a href="{mao_url}">MAo</a>'
+            link_tooltip = (
+                self.tr("Ao link shown only after the observation is publicly published.")
+                if is_publicly_published is False
+                else self.tr("MAo: Artsobservasjoner mobile app. Ao link appears after link check.")
+            )
+        arts_label = QLabel(label_html)
         arts_label.setTextFormat(Qt.RichText)
         arts_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         arts_label.setOpenExternalLinks(False)
@@ -1055,6 +1211,8 @@ class ObservationsTab(QWidget):
         arts_label.linkActivated.connect(
             lambda url: QDesktopServices.openUrl(QUrl(url))
         )
+        self._status_hint_controller.register_widget(arts_label, link_tooltip)
+        arts_label.setToolTip(link_tooltip)
         self.table.setCellWidget(row, 9, arts_label)
 
     def _start_artsobs_link_check(self) -> None:
@@ -1100,8 +1258,9 @@ class ObservationsTab(QWidget):
             self._artsobs_check_thread = None
         worker.deleteLater()
 
-    def _on_artsobs_link_checked(self, observation_id: int, is_dead: bool) -> None:
+    def _on_artsobs_link_checked(self, observation_id: int, is_dead: bool, is_publicly_published: bool) -> None:
         self._artsobs_dead_by_observation_id[observation_id] = bool(is_dead)
+        self._artsobs_public_published_by_observation_id[observation_id] = bool(is_publicly_published) and not bool(is_dead)
         row = self._find_table_row_for_observation(observation_id)
         if row < 0:
             return
@@ -1179,6 +1338,7 @@ class ObservationsTab(QWidget):
             try:
                 ObservationDB.clear_artsdata_id(observation_id)
                 self._artsobs_dead_by_observation_id[observation_id] = False
+                self._artsobs_public_published_by_observation_id.pop(observation_id, None)
                 cleared += 1
             except Exception:
                 continue
@@ -1213,7 +1373,7 @@ class ObservationsTab(QWidget):
         except Exception as exc:
             action = self.publish_menu.addAction(self.tr("Upload unavailable"))
             action.setEnabled(False)
-            self.publish_btn.setToolTip(self.tr("Upload helpers unavailable: {error}").format(error=exc))
+            self.publish_btn.setProperty("_hint_text", self.tr("Upload helpers unavailable: {error}").format(error=exc))
             return
 
         if not uploaders:
@@ -1335,11 +1495,29 @@ class ObservationsTab(QWidget):
 
         return True
 
-    def _publish_target_login_status(self) -> dict[str, bool]:
-        return {
+    def _invalidate_publish_login_status_cache(self) -> None:
+        self._publish_login_status_cache = None
+        self._publish_login_status_cache_ts = 0.0
+
+    def _publish_target_login_status(self, force_refresh: bool = False) -> dict[str, bool]:
+        # Avoid disk reads (cookie JSON) and token checks on every row click.
+        now = time.perf_counter()
+        ttl_seconds = 10.0
+        cache_valid = (
+            not force_refresh
+            and isinstance(self._publish_login_status_cache, dict)
+            and (now - float(self._publish_login_status_cache_ts)) < ttl_seconds
+        )
+        if cache_valid:
+            return dict(self._publish_login_status_cache or {})
+
+        status = {
             key: self._publish_target_logged_in(key)
             for key in self._publish_actions.keys()
         }
+        self._publish_login_status_cache = dict(status)
+        self._publish_login_status_cache_ts = now
+        return status
 
     def _update_publish_controls(self) -> None:
         if not hasattr(self, "publish_btn"):
@@ -1348,6 +1526,13 @@ class ObservationsTab(QWidget):
         observation_ids = self._selected_observation_ids()
         has_selection = bool(observation_ids)
         has_existing_upload = self._selection_has_uploaded_artsobs() if has_selection else False
+        if not has_selection:
+            for action in self._publish_actions.values():
+                action.setEnabled(False)
+            self.publish_btn.setEnabled(False)
+            self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
+            return
+
         login_status = self._publish_target_login_status()
         any_target_enabled = False
         for key, action in self._publish_actions.items():
@@ -1361,17 +1546,16 @@ class ObservationsTab(QWidget):
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
 
         if not has_selection:
-            self.publish_btn.setToolTip(self.tr("Select one or more observations to publish."))
+            self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
         elif not any_target_enabled and not has_existing_upload:
-            self.publish_btn.setToolTip(self.tr("Not logged in"))
+            self.publish_btn.setProperty("_hint_text", self.tr("Not logged in — log in to publish"))
         elif has_existing_upload:
-            self.publish_btn.setToolTip(
-                self.tr("Artsobservasjoner targets are disabled for already-published observations.")
-            )
+            self.publish_btn.setProperty("_hint_text", self.tr("Artsobservasjoner targets are disabled for already-published observations."))
         else:
-            self.publish_btn.setToolTip(self.tr("Choose a publish target."))
+            self.publish_btn.setProperty("_hint_text", self.tr("Choose a publish target."))
 
     def _publish_selected_observations(self, uploader_key: str) -> None:
+        self._invalidate_publish_login_status_cache()
         observation_ids = self._selected_observation_ids()
         if not observation_ids:
             self.set_status_message(
@@ -1412,6 +1596,7 @@ class ObservationsTab(QWidget):
                 failed.append((observation_id, error))
 
         self.refresh_observations()
+        self._invalidate_publish_login_status_cache()
         if not failed:
             self.set_status_message(
                 self.tr("Published {count} observations to {target}.").format(
@@ -1443,122 +1628,172 @@ class ObservationsTab(QWidget):
             summary = f"{summary} {first_error}"
         self.set_status_message(summary, level=level, auto_clear_ms=15000)
 
-    def refresh_observations(
-        self,
-        show_status: bool = False,
-        status_message: str | None = None,
-        restore_selection: bool = True,
-    ):
-        """Load all observations from database."""
-        previous_id = self.selected_observation_id if restore_selection else None
-        observations = ObservationDB.get_all_observations()
-        self._vernacular_cache = {}
-        self._table_vernacular_db = self._get_vernacular_db_for_active_language()
-        self._update_table_headers()
+    def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
-        query = self.search_input.text().strip().lower() if hasattr(self, "search_input") else ""
-        if query:
-            filtered = []
-            for obs in observations:
-                for value in obs.values():
-                    if value is None:
-                        continue
-                    if query in str(value).lower():
-                        filtered.append(obs)
-                        break
-            observations = filtered
+        rows: list[dict] = []
+        for obs in observations:
+            try:
+                obs_id = int(obs.get("id"))
+            except (TypeError, ValueError):
+                continue
 
-        self.table.blockSignals(True)
+            genus_raw = (obs.get("genus") or "").strip()
+            species_raw = (obs.get("species") or "").strip()
+            genus_display = genus_raw or "-"
+            if obs.get("uncertain", 0):
+                genus_display = f"? {genus_display}"
+            species_display = (obs.get("species") or obs.get("species_guess") or "sp.")
+
+            common_name = self._lookup_common_name(obs, common_name_map)
+            common_name_display = common_name
+            if not common_name_display:
+                if genus_raw and species_raw:
+                    common_name_display = f"- ({genus_raw} {species_raw})"
+                else:
+                    common_name_display = "-"
+
+            spore_short = self._spore_stats_for_observation_row(obs) or "-"
+            date_text = obs.get("date") or "-"
+            location_text = obs.get("location") or "-"
+            needs_id = not (obs.get("genus") and obs.get("species"))
+            lat = obs.get("gps_latitude")
+            lon = obs.get("gps_longitude")
+            has_coords = lat is not None and lon is not None
+            arts_id = obs.get("artsdata_id")
+            species_name = self._build_species_name(obs)
+
+            search_parts = [str(v) for v in obs.values() if v is not None]
+            if common_name_display and common_name_display != "-":
+                search_parts.append(common_name_display)
+            if spore_short and spore_short != "-":
+                search_parts.append(spore_short)
+            search_text = " ".join(search_parts).lower()
+
+            rows.append(
+                {
+                    "id": obs_id,
+                    "genus": genus_display,
+                    "species": species_display,
+                    "common_name": common_name_display,
+                    "spore_short": spore_short,
+                    "needs_id": bool(needs_id),
+                    "date": date_text,
+                    "location": location_text,
+                    "lat": lat,
+                    "lon": lon,
+                    "has_coords": bool(has_coords),
+                    "species_name": species_name,
+                    "arts_id": arts_id,
+                    "search_text": search_text,
+                }
+            )
+        return rows
+
+    def _render_observations_table(
+        self,
+        row_cache: list[dict],
+        query: str,
+        restore_selection: bool,
+        show_status: bool,
+        status_message: str | None,
+    ) -> None:
+        previous_id = self.selected_observation_id if restore_selection else None
+        query_text = (query or "").strip().lower()
+        if query_text:
+            visible_rows = [row for row in (row_cache or []) if query_text in (row.get("search_text") or "")]
+        else:
+            visible_rows = list(row_cache or [])
+
+        table = self.table
+        header = table.horizontalHeader()
+        sorting_enabled = bool(table.isSortingEnabled())
+        sort_col = header.sortIndicatorSection() if header else -1
+        sort_order = header.sortIndicatorOrder() if header else Qt.AscendingOrder
+
         restored_selection = False
+        table.setUpdatesEnabled(False)
+        table.blockSignals(True)
         try:
-            self.table.setRowCount(len(observations))
+            if sorting_enabled:
+                table.setSortingEnabled(False)
+            table.setRowCount(len(visible_rows))
 
-            for row, obs in enumerate(observations):
-                # ID
-                id_item = SortableTableWidgetItem(str(obs['id']))
-                id_item.setData(Qt.UserRole, obs['id'])
-                self.table.setItem(row, 0, id_item)
+            for row_index, row_data in enumerate(visible_rows):
+                obs_id = int(row_data["id"])
 
-                # Genus (with uncertain indicator)
-                genus = obs.get('genus') or '-'
-                uncertain = obs.get('uncertain', 0)
-                if uncertain:
-                    genus = f"? {genus}"
-                self.table.setItem(row, 1, QTableWidgetItem(genus))
+                id_item = SortableTableWidgetItem(str(obs_id))
+                id_item.setData(Qt.UserRole, obs_id)
+                table.setItem(row_index, 0, id_item)
 
-                # Species
-                species = obs.get('species') or obs.get('species_guess') or 'sp.'
-                self.table.setItem(row, 2, QTableWidgetItem(species))
+                table.setItem(row_index, 1, QTableWidgetItem(str(row_data.get("genus") or "-")))
+                table.setItem(row_index, 2, QTableWidgetItem(str(row_data.get("species") or "sp.")))
+                table.setItem(row_index, 3, QTableWidgetItem(str(row_data.get("common_name") or "-")))
+                table.setItem(row_index, 4, QTableWidgetItem(str(row_data.get("spore_short") or "-")))
 
-                # Common name (language-specific)
-                common_name = self._lookup_common_name(obs, common_name_map)
-                display_name = common_name
-                if not display_name:
-                    genus_raw = (obs.get('genus') or '').strip()
-                    species_raw = (obs.get('species') or '').strip()
-                    if genus_raw and species_raw:
-                        display_name = f"- ({genus_raw} {species_raw})"
-                    else:
-                        display_name = "-"
-                self.table.setItem(row, 3, QTableWidgetItem(display_name))
-
-                # Spore stats (simplified)
-                spore_short = self._spore_stats_for_observation_row(obs)
-                self.table.setItem(row, 4, QTableWidgetItem(spore_short or "-"))
-
-                needs_id = not (obs.get('genus') and obs.get('species'))
+                needs_id = bool(row_data.get("needs_id"))
                 needs_item = SortableTableWidgetItem(self.tr("Yes") if needs_id else "")
                 needs_item.setData(Qt.UserRole, 1 if needs_id else 0)
-                self.table.setItem(row, 5, needs_item)
+                table.setItem(row_index, 5, needs_item)
 
-                # Date
-                self.table.setItem(row, 6, QTableWidgetItem(obs['date'] or '-'))
+                table.setItem(row_index, 6, QTableWidgetItem(str(row_data.get("date") or "-")))
+                table.setItem(row_index, 7, QTableWidgetItem(str(row_data.get("location") or "-")))
 
-                # Location
-                self.table.setItem(row, 7, QTableWidgetItem(obs['location'] or '-'))
-
-                # Map link
-                lat = obs.get('gps_latitude')
-                lon = obs.get('gps_longitude')
-                has_coords = lat is not None and lon is not None
-                self.table.removeCellWidget(row, 8)
+                has_coords = bool(row_data.get("has_coords"))
+                table.removeCellWidget(row_index, 8)
                 map_item = SortableTableWidgetItem("" if has_coords else "-")
                 map_item.setData(Qt.UserRole, 1 if has_coords else 0)
                 map_item.setFlags(map_item.flags() & ~Qt.ItemIsEditable)
-                self.table.setItem(row, 8, map_item)
+                table.setItem(row_index, 8, map_item)
                 if has_coords:
+                    lat = row_data.get("lat")
+                    lon = row_data.get("lon")
+                    species_name = row_data.get("species_name")
                     map_label = QLabel('<a href="#">Map</a>')
                     map_label.setTextFormat(Qt.RichText)
                     map_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
                     map_label.setOpenExternalLinks(False)
                     map_label.setAlignment(Qt.AlignCenter)
-                    species_name = self._build_species_name(obs)
                     map_label.linkActivated.connect(
                         lambda _=None, la=lat, lo=lon, sn=species_name: self.show_map_service_dialog(la, lo, sn)
                     )
-                    self.table.setCellWidget(row, 8, map_label)
+                    _map_hint = self.tr("Open map service")
+                    self._status_hint_controller.register_widget(map_label, _map_hint)
+                    map_label.setToolTip(_map_hint)
+                    table.setCellWidget(row_index, 8, map_label)
 
-                # Artsobservasjoner link
-                arts_id = obs.get('artsdata_id')
-                self._render_artsobs_cell(row, int(obs.get("id")), arts_id)
+                self._render_artsobs_cell(row_index, obs_id, row_data.get("arts_id"))
 
-            # Clear detail view
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
+            if hasattr(self, "export_btn"):
+                self.export_btn.setEnabled(False)
             self._update_publish_controls()
             self.gallery_widget.clear()
             self.selected_observation_id = None
 
+            if sorting_enabled:
+                table.setSortingEnabled(True)
+                if sort_col >= 0:
+                    table.sortItems(sort_col, sort_order)
+
             if previous_id:
-                for row, obs in enumerate(observations):
-                    if obs['id'] == previous_id:
-                        self.table.selectRow(row)
+                for row_index in range(table.rowCount()):
+                    id_item = table.item(row_index, 0)
+                    if not id_item:
+                        continue
+                    try:
+                        row_obs_id = int(id_item.data(Qt.UserRole) or id_item.text())
+                    except (TypeError, ValueError):
+                        continue
+                    if row_obs_id == previous_id:
+                        table.selectRow(row_index)
                         restored_selection = True
                         break
             elif not restore_selection:
-                self.table.clearSelection()
+                table.clearSelection()
         finally:
-            self.table.blockSignals(False)
+            table.blockSignals(False)
+            table.setUpdatesEnabled(True)
 
         if restored_selection:
             self.on_selection_changed()
@@ -1566,6 +1801,26 @@ class ObservationsTab(QWidget):
             self.set_status_message(status_message, level="success")
         elif show_status:
             self.set_status_message(self.tr("Refreshed db."), level="success")
+
+    def refresh_observations(
+        self,
+        show_status: bool = False,
+        status_message: str | None = None,
+        restore_selection: bool = True,
+    ):
+        """Load all observations from database."""
+        observations = ObservationDB.get_all_observations()
+        self._vernacular_cache = {}
+        self._table_vernacular_db = self._get_vernacular_db_for_active_language()
+        self._update_table_headers()
+        self._observation_table_rows_cache = self._build_observation_table_rows_cache(observations)
+        self._render_observations_table(
+            self._observation_table_rows_cache,
+            query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
+            restore_selection=restore_selection,
+            show_status=show_status,
+            status_message=status_message,
+        )
 
     def _get_vernacular_db_for_active_language(self):
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
@@ -1702,6 +1957,22 @@ class ObservationsTab(QWidget):
     def _spore_stats_column_title(self) -> str:
         lang = (SettingsDB.get_setting("ui_language", "en") or "en").lower()
         return "Sporer" if lang.startswith("nb") or lang.startswith("no") else "Spores"
+
+    def _publish_prefers_norwegian_labels(self) -> bool:
+        ui_lang = str(SettingsDB.get_setting("ui_language", "en") or "en").lower()
+        if ui_lang.startswith("nb") or ui_lang.startswith("no"):
+            return True
+        vern_lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        return bool(vern_lang.startswith("nb") or vern_lang.startswith("no"))
+
+    def _localize_spore_stats_for_publish(self, stats_text: str | None) -> str:
+        text = str(stats_text or "").strip()
+        if not text:
+            return ""
+        if not self._publish_prefers_norwegian_labels():
+            return text
+        # Only rewrite the leading label; keep the actual numeric content as stored.
+        return re.sub(r"^\s*(?:Spores?|Sporer)\s*:", "Sporer:", text, count=1, flags=re.IGNORECASE)
 
     def _update_table_headers(self) -> None:
         if not hasattr(self, "table"):
@@ -1852,6 +2123,8 @@ class ObservationsTab(QWidget):
         # Reset action buttons first to avoid stale enabled state during edge-case transitions.
         self.rename_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
+        if hasattr(self, "export_btn"):
+            self.export_btn.setEnabled(False)
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             self.gallery_widget.clear()
@@ -1860,6 +2133,8 @@ class ObservationsTab(QWidget):
             return
         if len(selected_rows) > 1:
             self.delete_btn.setEnabled(True)
+            if hasattr(self, "export_btn"):
+                self.export_btn.setEnabled(True)
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
@@ -1877,11 +2152,20 @@ class ObservationsTab(QWidget):
 
         self.rename_btn.setEnabled(True)
         self.delete_btn.setEnabled(True)
+        if hasattr(self, "export_btn"):
+            self.export_btn.setEnabled(True)
 
         # Populate image browser for the selected row only (no extra full-table DB fetch).
         self.gallery_widget.set_observation_id(obs_id)
-        self.set_selected_as_active(switch_tab=False)
+        # Do not force a full Measure-tab reload on every table click.
+        # MainWindow.on_tab_changed() synchronizes the selected observation when the
+        # user switches to Measure/Analysis, and explicit actions can still call
+        # set_selected_as_active() directly.
         self._update_publish_controls()
+        pending_notice = self._pending_published_image_upload_notice_for_observation(obs_id)
+        if pending_notice:
+            msg, level = pending_notice
+            self.set_status_message(msg, level=level, auto_clear_ms=0)
 
     def on_row_double_clicked(self, item):
         """Double-click to open edit dialog for the observation."""
@@ -1979,8 +2263,17 @@ class ObservationsTab(QWidget):
             name = str(obs.get("author") or "").strip()
         if not name:
             return None
-        year = self._publish_observation_year(obs.get("date"))
-        return f"{name} (c) {year}"
+        return f"{name} • {self._publish_image_license_watermark_text()}"
+
+    def _publish_image_license_code(self) -> str:
+        raw = str(SettingsDB.get_setting(self.SETTING_IMAGE_LICENSE, "60") or "60").strip()
+        return raw if raw in self.ARTSOBS_MEDIA_LICENSE_CODES else "60"
+
+    def _publish_image_license_watermark_text(self) -> str:
+        return self.ARTSOBS_MEDIA_LICENSE_CODES.get(
+            self._publish_image_license_code(),
+            "No reuse without permission",
+        )
 
     @staticmethod
     def _draw_publish_copyright(pixmap: QPixmap, text: str) -> bool:
@@ -1992,23 +2285,29 @@ class ObservationsTab(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
         font = painter.font()
-        target_font_px = max(1, int(round(float(pixmap.height()) * 0.01)))
+        target_font_px = max(10, int(round(float(pixmap.height()) * 0.012)))
         font.setPixelSize(target_font_px)
         font.setBold(False)
         painter.setFont(font)
         metrics = painter.fontMetrics()
-        margin = max(4, int(round(target_font_px * 0.35)))
+        margin = max(8, int(round(target_font_px * 0.6)))
+        baseline = max(metrics.ascent() + margin, pixmap.height() - margin)
         x = margin
-        y = max(metrics.ascent() + margin, pixmap.height() - margin)
-        # White halo first, then black text for readability over dark backgrounds.
-        painter.setPen(QColor(255, 255, 255, 170))
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                painter.drawText(int(x + dx), int(y + dy), text)
-        painter.setPen(QColor(0, 0, 0, 170))
-        painter.drawText(int(x), int(y), text)
+
+        # Inkscape-like stroked underlay: dark outline @ 40% opacity under white text.
+        stroke_w = max(1.0, float(metrics.height()) * 0.4)
+        path = QPainterPath()
+        path.addText(float(x), float(baseline), painter.font(), text)
+        pen = QPen(QColor(0, 0, 0, 102), stroke_w)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(pen)
+        painter.drawPath(path)
+        painter.restore()
+        painter.setPen(QColor(255, 255, 255, 225))
+        painter.drawText(int(x), int(baseline), text)
         painter.end()
         return True
 
@@ -2030,7 +2329,7 @@ class ObservationsTab(QWidget):
                 cancel_cb()
             if progress_cb:
                 progress_cb(
-                    self.tr("Adding copyright {current}/{total}...").format(
+                    self.tr("Adding watermark {current}/{total}...").format(
                         current=idx,
                         total=total,
                     ),
@@ -2277,6 +2576,15 @@ class ObservationsTab(QWidget):
 
             widget = ZoomableImageLabel()
             widget.set_image(pixmap)
+            orig_pixels = max(1, pixmap.width() * pixmap.height())
+            # Artsobs commonly downsizes uploads to around 2 MP. Increase exported
+            # measurement label text so it remains readable after that resize.
+            # Slightly reduce publish-only measurement label scaling after recent tuning.
+            publish_measure_label_scale = max(
+                1.0,
+                min(4.0, ((orig_pixels / 2_000_000.0) ** 0.5) * 0.85),
+            )
+            widget.set_export_measure_label_scale_multiplier(publish_measure_label_scale)
             measure_color = (image_row.get("measure_color") or "").strip()
             if measure_color:
                 widget.set_measurement_color(QColor(measure_color))
@@ -2460,9 +2768,10 @@ class ObservationsTab(QWidget):
         show_q_minmax = plot_settings["q_minmax"]
         bins = max(3, plot_settings["bins"])
 
-        fig = Figure(figsize=(8.8, 4.8), dpi=120)
+        # Wider export canvas so the scatter panel and histogram labels do not collide.
+        fig = Figure(figsize=(10.5, 6.0), dpi=140)
         if show_hist:
-            gs = fig.add_gridspec(3, 2, width_ratios=[3.2, 1.0], hspace=0.42, wspace=0.32)
+            gs = fig.add_gridspec(3, 2, width_ratios=[3.8, 1.2], hspace=0.7, wspace=0.30)
             ax_scatter = fig.add_subplot(gs[:, 0])
             ax_len = fig.add_subplot(gs[0, 1])
             ax_wid = fig.add_subplot(gs[1, 1])
@@ -2473,7 +2782,7 @@ class ObservationsTab(QWidget):
             ax_len = None
             ax_wid = None
             ax_q = None
-        fig.subplots_adjust(top=0.98, bottom=0.12)
+        fig.subplots_adjust(left=0.08, right=0.98, top=0.97, bottom=0.11)
 
         hist_color = "#3498db"
         ax_scatter.scatter(L, W, s=20, alpha=0.85, color=hist_color)
@@ -2532,7 +2841,7 @@ class ObservationsTab(QWidget):
             cancel_cb()
         if progress_cb:
             progress_cb(self.tr("Rendering measure plot image..."), 3, 3)
-        fig.savefig(out_path, format="png", dpi=120)
+        fig.savefig(out_path, format="png", dpi=140)
         fig.clear()
         self._quantize_png8(out_path)
         return str(out_path)
@@ -2716,7 +3025,7 @@ class ObservationsTab(QWidget):
         generated_any = False
         if include_copyright and not copyright_text:
             warnings.append(
-                self.tr("Copyright text was skipped because profile name is missing.")
+                self.tr("Watermark was skipped because profile name is missing.")
             )
 
         if include_annotations:
@@ -2745,7 +3054,7 @@ class ObservationsTab(QWidget):
         if include_copyright and copyright_text:
             try:
                 if progress_cb:
-                    progress_cb(self.tr("Adding copyright..."), 1, 1)
+                    progress_cb(self.tr("Adding watermark..."), 1, 1)
                 copyright_paths = self._generate_publish_copyright_images(
                     upload_paths,
                     temp_dir,
@@ -2761,7 +3070,7 @@ class ObservationsTab(QWidget):
                 upload_paths = copyright_paths
                 generated_any = True
             else:
-                warnings.append(self.tr("Could not add copyright text to images."))
+                warnings.append(self.tr("Could not add watermark to images."))
 
         if include_measure_plots:
             try:
@@ -2977,6 +3286,7 @@ class ObservationsTab(QWidget):
                 level="warning",
                 auto_clear_ms=12000,
             )
+        image_license_code = self._publish_image_license_code()
         copyright_text = (
             self._publish_copyright_text(obs)
             if include_copyright
@@ -3090,38 +3400,96 @@ class ObservationsTab(QWidget):
                 "user_key": user_key,
             }
 
-        progress = QProgressDialog(self.tr("Preparing upload..."), self.tr("Cancel"), 0, 1, self)
-        progress.setWindowTitle(self.tr("Online publishing"))
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.setAutoClose(False)
-        progress.setAutoReset(False)
-        progress.setValue(0)
-        progress.show()
+        self._set_status_progress_visible(True)
         QApplication.processEvents()
-        cancel_state = {"cancelled": False}
-        progress.canceled.connect(lambda: cancel_state.__setitem__("cancelled", True))
+
+        progress_tracker: dict[str, object] = {
+            "overall_pct": 0,
+            "prepare_pct": 5.0,
+            "last_prepare_text": "",
+        }
+
+        def _set_overall_publish_progress(status_text: str, pct: int) -> None:
+            try:
+                pct_i = int(pct)
+            except Exception:
+                pct_i = 0
+            pct_i = max(0, min(100, pct_i))
+            try:
+                last_pct = int(progress_tracker.get("overall_pct", 0))
+            except Exception:
+                last_pct = 0
+            pct_i = max(last_pct, pct_i)
+            progress_tracker["overall_pct"] = pct_i
+            self._set_status_progress(status_text, current=pct_i, total=100)
+
+        def _update_prepare_phase_progress(
+            status_text: str,
+            current: int | None = None,
+            total: int | None = None,
+        ) -> None:
+            text_key = (status_text or "").strip()
+            try:
+                prepare_pct = float(progress_tracker.get("prepare_pct", 5.0))
+            except Exception:
+                prepare_pct = 5.0
+            if text_key and text_key != progress_tracker.get("last_prepare_text"):
+                progress_tracker["last_prepare_text"] = text_key
+                prepare_pct = min(35.0, prepare_pct + 2.0)
+            if total is not None and total > 0 and current is not None:
+                try:
+                    ratio = max(0.0, min(1.0, float(current) / float(max(1, total))))
+                    prepare_pct = min(35.0, max(prepare_pct, prepare_pct + (ratio * 1.2)))
+                except Exception:
+                    pass
+            progress_tracker["prepare_pct"] = prepare_pct
+            _set_overall_publish_progress(status_text, int(round(prepare_pct)))
 
         def ensure_not_cancelled() -> None:
             QApplication.processEvents()
-            if cancel_state["cancelled"] or progress.wasCanceled():
-                raise UploadCancelledError(self.tr("Upload cancelled by user."))
 
-        def update_progress(text: str, current: int | None = None, total: int | None = None) -> None:
+        def update_progress(
+            text: str,
+            current: int | None = None,
+            total: int | None = None,
+            phase: str | None = None,
+        ) -> None:
             ensure_not_cancelled()
-            if total is not None and total > 0:
-                progress.setMaximum(max(1, int(total)))
-                if current is not None:
-                    progress.setValue(max(0, min(int(current), int(total))))
-            progress.setLabelText(text)
+            if phase == "prepare":
+                _update_prepare_phase_progress(text, current=current, total=total)
+            elif phase == "connect":
+                _set_overall_publish_progress(text, 40)
+            elif phase == "upload":
+                if total is not None and total > 0 and current is not None:
+                    try:
+                        ratio = max(0.0, min(1.0, float(current) / float(max(1, total))))
+                    except Exception:
+                        ratio = 0.0
+                    _set_overall_publish_progress(text, int(round(40 + (ratio * 57))))
+                else:
+                    _set_overall_publish_progress(text, 45)
+            elif phase == "finalize":
+                _set_overall_publish_progress(text, 99)
+            else:
+                # Fallback path: never move backwards.
+                try:
+                    current_pct = int(progress_tracker.get("overall_pct", 0))
+                except Exception:
+                    current_pct = 0
+                _set_overall_publish_progress(text, current_pct)
             QApplication.processEvents()
             ensure_not_cancelled()
+
+        update_progress(self.tr("Preparing upload..."), 0, 1, phase="prepare")
+
+        def prepare_progress_cb(text: str, current: int | None = None, total: int | None = None) -> None:
+            update_progress(text, current=current, total=total, phase="prepare")
 
         upload_image_paths = list(image_paths)
         publish_temp_dir: Path | None = None
         publish_warnings: list[str] = []
         try:
-            update_progress(self.tr("Preparing media for upload..."), 0, 1)
+            update_progress(self.tr("Preparing media for upload..."), 0, 1, phase="prepare")
 
             (
                 upload_image_paths,
@@ -3135,7 +3503,7 @@ class ObservationsTab(QWidget):
                 include_thumbnail_gallery=include_thumbnail_gallery,
                 include_copyright=include_copyright,
                 copyright_text=copyright_text,
-                progress_cb=update_progress,
+                progress_cb=prepare_progress_cb,
                 cancel_cb=ensure_not_cancelled,
             )
             if uploader.key == "mobile" and not upload_image_paths:
@@ -3145,7 +3513,7 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
 
-            spore_stats = (obs.get("spore_statistics") or "").strip()
+            spore_stats = self._localize_spore_stats_for_publish(obs.get("spore_statistics"))
             habitat = (obs.get("habitat") or "").strip()
             notes = (obs.get("notes") or "").strip()
             notes_for_publish = notes
@@ -3184,6 +3552,7 @@ class ObservationsTab(QWidget):
                 "include_measure_plots": include_measure_plots,
                 "include_thumbnail_gallery": include_thumbnail_gallery,
                 "include_copyright": include_copyright,
+                "image_license_code": image_license_code,
                 "genus": (obs.get("genus") or "").strip(),
                 "species": (obs.get("species") or "").strip(),
                 "species_guess": (obs.get("species_guess") or "").strip(),
@@ -3193,15 +3562,13 @@ class ObservationsTab(QWidget):
                 self.tr("Connecting to {target}...").format(target=self.tr(uploader.label)),
                 0,
                 1,
+                phase="connect",
             )
             upload_state: dict[str, object] = {"result": None, "error": None}
             upload_finished = threading.Event()
-            cancel_event = threading.Event()
             progress_events: SimpleQueue[tuple[str, int, int]] = SimpleQueue()
 
             def worker_progress_cb(text: str, current: int, total: int) -> None:
-                if cancel_event.is_set():
-                    raise UploadCancelledError("Upload cancelled by user.")
                 try:
                     c = int(current)
                 except Exception:
@@ -3232,7 +3599,6 @@ class ObservationsTab(QWidget):
             )
             worker.start()
 
-            cancel_notice_shown = False
             while not upload_finished.is_set():
                 QApplication.processEvents()
                 while True:
@@ -3240,27 +3606,12 @@ class ObservationsTab(QWidget):
                         step_text, current_step, total_steps = progress_events.get_nowait()
                     except Empty:
                         break
-                    if cancel_state["cancelled"] or progress.wasCanceled():
-                        continue
                     update_progress(
                         self.tr("Uploading: {step}").format(step=self.tr(step_text)),
                         current_step,
                         total_steps,
+                        phase="upload",
                     )
-                if cancel_state["cancelled"] or progress.wasCanceled():
-                    cancel_state["cancelled"] = True
-                    cancel_event.set()
-                    if not cancel_notice_shown:
-                        progress.setLabelText(
-                            self.tr(
-                                "Cancelling upload... waiting for current network request to finish."
-                            )
-                        )
-                        try:
-                            progress.setCancelButton(None)
-                        except Exception:
-                            pass
-                        cancel_notice_shown = True
                 time.sleep(0.05)
 
             while True:
@@ -3268,16 +3619,19 @@ class ObservationsTab(QWidget):
                     step_text, current_step, total_steps = progress_events.get_nowait()
                 except Empty:
                     break
-                if cancel_state["cancelled"] or progress.wasCanceled():
-                    continue
                 update_progress(
                     self.tr("Uploading: {step}").format(step=self.tr(step_text)),
                     current_step,
                     total_steps,
+                    phase="upload",
                 )
-
-            if cancel_state["cancelled"] or progress.wasCanceled():
-                raise UploadCancelledError(self.tr("Upload cancelled by user."))
+            final_progress_text = ""
+            if hasattr(self, "status_progress_text"):
+                try:
+                    final_progress_text = self.status_progress_text.text()
+                except Exception:
+                    final_progress_text = ""
+            update_progress(final_progress_text or self.tr("Preparing upload..."), 1, 1, phase="finalize")
             if upload_state["error"] is not None:
                 raise upload_state["error"]  # type: ignore[misc]
             result = upload_state["result"]
@@ -3288,10 +3642,10 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=8000,
             )
         except Exception as exc:
-            progress.close()
             return _fail(self.tr("Upload failed: {error}").format(error=exc))
         finally:
-            progress.close()
+            self._set_status_progress_visible(False)
+            self._set_status_progress("", 0, 1)
             self._cleanup_publish_temp_dir(publish_temp_dir)
 
         obs_id = None
@@ -3307,6 +3661,8 @@ class ObservationsTab(QWidget):
                 if uploader.key == "web":
                     ImageDB.mark_observation_images_artsobs_web_uploaded(observation_id)
                 self._artsobs_dead_by_observation_id[observation_id] = False
+                # Newly sent observations are often still in review/preview on Artsobs.
+                self._artsobs_public_published_by_observation_id[observation_id] = False
             elif uploader.key == "inat":
                 ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
             elif uploader.key == "mo":
@@ -4344,7 +4700,6 @@ class ObservationDetailsDialog(QDialog):
 
         # Map button - opens location in browser
         self.map_btn = QPushButton(self.tr("Go to map"))
-        self.map_btn.setToolTip("Open location in Google Maps")
         self.map_btn.setMinimumWidth(90)
         self.map_btn.clicked.connect(self.open_map)
         self.map_btn.setEnabled(False)
@@ -4401,8 +4756,9 @@ class ObservationDetailsDialog(QDialog):
         self.notes_input.setPlaceholderText(self.tr("Any additional notes..."))
         right_layout.addRow(self.tr("Notes:"), self.notes_input)
 
-        details_layout.addWidget(left_panel, 3)
+        # Put location/habitat/notes on the left, and date/GPS/map on the right.
         details_layout.addWidget(right_panel, 7)
+        details_layout.addWidget(left_panel, 3)
         main_layout.addWidget(details_group)
 
         # ===== TAXONOMY SECTION =====
@@ -4524,31 +4880,23 @@ class ObservationDetailsDialog(QDialog):
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteRequested.connect(self._on_gallery_delete_requested)
-        gallery_row = QHBoxLayout()
-        gallery_row.setContentsMargins(0, 0, 0, 0)
-        gallery_row.setSpacing(10)
-        if self.allow_edit_images:
-            self.edit_images_btn = QPushButton(self.tr("Edit images"))
-            self.edit_images_btn.setMinimumHeight(35)
-            self.edit_images_btn.setMinimumWidth(120)
-            self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
-            gallery_row.addWidget(self.edit_images_btn, 0, Qt.AlignVCenter)
-        gallery_row.addWidget(self.image_gallery, 1)
-        main_layout.addLayout(gallery_row)
+        main_layout.addWidget(self.image_gallery)
 
         # ===== BOTTOM BUTTONS =====
         bottom_buttons = QHBoxLayout()
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setWordWrap(True)
-        self.hint_bar.setMinimumHeight(28)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.hint_bar = HintBar(self)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         bottom_buttons.addWidget(self.hint_bar, 1)
         cancel_btn = QPushButton(self.tr("Cancel"))
         cancel_btn.setMinimumHeight(35)
         cancel_btn.clicked.connect(self.reject)
         bottom_buttons.addWidget(cancel_btn)
+        if self.allow_edit_images:
+            self.edit_images_btn = QPushButton(f"{self.tr('Edit images')} (E)")
+            self.edit_images_btn.setMinimumHeight(35)
+            self.edit_images_btn.setMinimumWidth(120)
+            self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
+            bottom_buttons.addWidget(self.edit_images_btn)
         self.submit_observation_btn = QPushButton(
             self.tr("Save Observation") if self.edit_mode else self.tr("Create Observation")
         )
@@ -4579,6 +4927,28 @@ class ObservationDetailsDialog(QDialog):
         self._submit_shortcut_enter.setContext(Qt.WidgetWithChildrenShortcut)
         self._submit_shortcut_enter.activated.connect(self._submit_dialog_from_enter)
 
+        if getattr(self, "allow_edit_images", False):
+            self._edit_images_shortcut = QShortcut(QKeySequence(Qt.Key_E), self)
+            self._edit_images_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            self._edit_images_shortcut.activated.connect(self._edit_images_from_shortcut)
+
+    def _dialog_shortcut_blocked_by_text_input(self) -> bool:
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return False
+        if isinstance(focus, (QLineEdit, QTextEdit)):
+            return True
+        if isinstance(focus, QComboBox) and focus.isEditable():
+            return True
+        parent = focus.parentWidget()
+        while parent is not None:
+            if isinstance(parent, (QLineEdit, QTextEdit)):
+                return True
+            if isinstance(parent, QComboBox) and parent.isEditable():
+                return True
+            parent = parent.parentWidget()
+        return False
+
     def _submit_dialog_from_enter(self) -> None:
         focus = QApplication.focusWidget()
         if isinstance(focus, QTextEdit):
@@ -4587,6 +4957,14 @@ class ObservationDetailsDialog(QDialog):
         if submit_btn is None or not submit_btn.isEnabled():
             return
         submit_btn.click()
+
+    def _edit_images_from_shortcut(self) -> None:
+        if self._dialog_shortcut_blocked_by_text_input():
+            return
+        edit_btn = getattr(self, "edit_images_btn", None)
+        if edit_btn is None or not edit_btn.isEnabled():
+            return
+        edit_btn.click()
 
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
@@ -4598,6 +4976,7 @@ class ObservationDetailsDialog(QDialog):
         hint_text: str | None,
         tone: str = "info",
         allow_when_disabled: bool = False,
+        disabled_hint: str | None = None,
     ) -> None:
         if widget is None:
             return
@@ -4605,6 +4984,8 @@ class ObservationDetailsDialog(QDialog):
         widget.setProperty("_hint_text", hint)
         widget.setProperty("_hint_tone", (tone or "info").strip().lower())
         widget.setProperty("_hint_allow_disabled", bool(allow_when_disabled))
+        if disabled_hint is not None:
+            widget.setProperty("_hint_disabled_text", (disabled_hint or "").strip())
         widget.setToolTip("")
 
     def _register_hint_widget(
@@ -4613,6 +4994,7 @@ class ObservationDetailsDialog(QDialog):
         hint_text: str | None,
         tone: str = "info",
         allow_when_disabled: bool = False,
+        disabled_hint: str | None = None,
     ) -> None:
         if widget is None:
             return
@@ -4623,6 +5005,7 @@ class ObservationDetailsDialog(QDialog):
                 hint,
                 tone=tone,
                 allow_when_disabled=allow_when_disabled,
+                disabled_hint=disabled_hint,
             )
             return
         self._hint_controller.register_widget(
@@ -4630,6 +5013,7 @@ class ObservationDetailsDialog(QDialog):
             hint,
             tone=tone,
             allow_when_disabled=allow_when_disabled,
+            disabled_hint=disabled_hint,
         )
         self._set_widget_hint(
             widget,
@@ -4649,6 +5033,12 @@ class ObservationDetailsDialog(QDialog):
         self._register_hint_widget(self.maplink_input, maplink_hint)
         self._register_hint_widget(self.maplink_open_btn, maplink_hint)
         self._register_hint_widget(
+            self.map_btn,
+            self.tr("Open location in Google Maps"),
+            allow_when_disabled=True,
+            disabled_hint=self.tr("Enter coordinates to enable the map"),
+        )
+        self._register_hint_widget(
             self.uncertain_checkbox,
             self.tr("Uncertain identification"),
         )
@@ -4662,6 +5052,15 @@ class ObservationDetailsDialog(QDialog):
             allow_when_disabled=True,
         )
         self._register_hint_widget(self.ai_copy_btn, "")
+        self._register_hint_widget(
+            self.submit_observation_btn,
+            self.tr("Save observation (Enter)") if self.edit_mode else self.tr("Create observation (Enter)"),
+        )
+        if getattr(self, "edit_images_btn", None):
+            self._register_hint_widget(
+                self.edit_images_btn,
+                self.tr("Add or remove images for this observation (E)"),
+            )
         self._update_ai_button_hints()
 
     def _update_ai_button_hints(self) -> None:

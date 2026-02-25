@@ -30,7 +30,7 @@ from database.schema import (
     init_database,
 )
 from database.database_tags import DatabaseTerms
-from .hint_status import HintStatusController
+from .hint_status import HintBar, HintStatusController
 
 
 class DatabaseSettingsDialog(QDialog):
@@ -117,13 +117,7 @@ class DatabaseSettingsDialog(QDialog):
         layout.addLayout(custom_row)
 
         bottom_row = QHBoxLayout()
-        self.hint_bar = QLabel("")
-        self.hint_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.hint_bar.setWordWrap(True)
-        self.hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_bar.setStyleSheet(
-            "background: transparent; border: none; color: #222222; font-size: 9pt;"
-        )
+        self.hint_bar = HintBar(self)
         bottom_row.addWidget(self.hint_bar, 1)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         self.set_hint(self._default_hint_text)
