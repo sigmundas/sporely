@@ -45,6 +45,7 @@ class ImageGalleryWidget(QGroupBox):
         thumbnail_size: int = 140,
         min_height: int = 60,
         default_height: int = 140,
+        thumbnail_tooltip: str = "",
     ) -> None:
         super().__init__(title, parent)
         self.setCheckable(False)
@@ -56,6 +57,7 @@ class ImageGalleryWidget(QGroupBox):
         self._show_delete = show_delete
         self._show_badges = show_badges
         self._multi_select = False
+        self._thumbnail_tooltip = thumbnail_tooltip
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
         self._thumb_size = self._base_thumb_size
@@ -433,6 +435,8 @@ class ImageGalleryWidget(QGroupBox):
         frame.image_path = item.get("filepath")
         frame.image_key = item.get("id") if item.get("id") is not None else item.get("filepath")
         frame.thumb_label = thumb_label
+        if self._thumbnail_tooltip:
+            frame.setToolTip(self._thumbnail_tooltip)
         frame.mousePressEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self._on_click(e, img_id, path)
         frame.mouseDoubleClickEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self.imageDoubleClicked.emit(img_id, path or "")
 

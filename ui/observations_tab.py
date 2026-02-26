@@ -4901,6 +4901,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             min_height=60,
             default_height=160,
             thumbnail_size=110,
+            thumbnail_tooltip=self.tr("Double-click to edit"),
         )
         self.image_gallery.set_multi_select(True)
         self._gps_source_index = self._resolve_gps_source_index()
@@ -4916,8 +4917,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.hint_bar = HintBar(self)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         bottom_buttons.addWidget(self.hint_bar, 1)
+        _edit_key = "⌘E" if sys.platform == "darwin" else "Alt-E"
+        self._edit_key_label = _edit_key
         if self.allow_edit_images:
-            self.edit_images_btn = QPushButton(f"{self.tr('Edit images')} (E)")
+            self.edit_images_btn = QPushButton(f"{self.tr('Edit images')} ({_edit_key})")
             self.edit_images_btn.setMinimumHeight(35)
             self.edit_images_btn.setMinimumWidth(120)
             self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
@@ -4958,12 +4961,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._submit_shortcut_enter.activated.connect(self._submit_dialog_from_enter)
 
         if getattr(self, "allow_edit_images", False):
-            self._edit_images_shortcut = QShortcut(QKeySequence(Qt.Key_E), self)
+            _seq = "Ctrl+E" if sys.platform == "darwin" else "Alt+E"
+            self._edit_images_shortcut = QShortcut(QKeySequence(_seq), self)
             self._edit_images_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-            self._edit_images_shortcut.activated.connect(self._edit_images_from_shortcut)
-            self._edit_images_shortcut_alt = QShortcut(QKeySequence("Alt+E"), self)
-            self._edit_images_shortcut_alt.setContext(Qt.WidgetWithChildrenShortcut)
-            self._edit_images_shortcut_alt.activated.connect(self._edit_images_from_modified_shortcut)
+            self._edit_images_shortcut.activated.connect(self._edit_images_from_modified_shortcut)
 
     def _dialog_shortcut_blocked_by_text_input(self) -> bool:
         focus = QApplication.focusWidget()
@@ -5096,10 +5097,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("Save observation (Enter)") if self.edit_mode else self.tr("Create observation (Enter)"),
         )
         if getattr(self, "edit_images_btn", None):
-            self._register_hint_widget(
-                self.edit_images_btn,
-                self.tr("Add or remove images for this observation (E)"),
-            )
+            _key = getattr(self, "_edit_key_label", "Alt-E")
+            _hint = self.tr("Add or remove images for this observation (E)").replace("(E)", f"({_key})")
+            self._register_hint_widget(self.edit_images_btn, _hint)
         self._update_ai_button_hints()
 
     def _update_ai_button_hints(self) -> None:
