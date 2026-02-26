@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread, Slot
+from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread, Slot, QLocale
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QIntValidator, QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -32,6 +32,8 @@ from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 from utils.exif_reader import get_exif_data
 from .hint_status import HintBar, HintLabel, HintStatusController
+from .styles import pt
+from .window_state import GeometryMixin
 from .zoomable_image_widget import ZoomableImageLabel
 from .image_gallery_widget import ImageGalleryWidget
 from .export_image_dialog import ExportImageDialog
@@ -225,6 +227,7 @@ class NewObjectiveDialog(QDialog):
         self.na_input.setPlaceholderText(self.tr("e.g., 0.75"))
         na_validator = QDoubleValidator(0.01, 2.0, 2, self)
         na_validator.setNotation(QDoubleValidator.StandardNotation)
+        na_validator.setLocale(QLocale.system())
         self.na_input.setValidator(na_validator)
         self.na_input.setMinimumHeight(26)
         self.na_input.setStyleSheet("padding: 4px 6px;")
@@ -278,7 +281,7 @@ class NewObjectiveDialog(QDialog):
             magnification = 0
 
         try:
-            na_value = float(na_text)
+            na_value = float(na_text.replace(",", "."))
         except (TypeError, ValueError):
             na_value = 0.0
 
@@ -315,7 +318,7 @@ class NewObjectiveDialog(QDialog):
         mag_text = self.magnification_input.text().strip()
         na_text = self.na_input.text().strip()
         magnification = int(mag_text) if mag_text else 0
-        na_value = float(na_text) if na_text else 0.0
+        na_value = float(na_text.replace(",", ".")) if na_text else 0.0
         objective_name = self.objective_name_input.text().strip()
         display_name = format_objective_display(magnification, na_value, objective_name)
         key = self._make_key(display_name)
@@ -766,10 +769,11 @@ class _ExportImageWorker(QObject):
         self.finished.emit(self.save_path)
 
 
-class CalibrationDialog(QDialog):
+class CalibrationDialog(GeometryMixin, QDialog):
     """Dialog for managing microscope objectives and calibration."""
 
     calibration_saved = Signal(dict)  # Emits the selected objective data
+    _geometry_key = "CalibrationDialog"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -812,6 +816,8 @@ class CalibrationDialog(QDialog):
         self._init_ui()
         self._load_objectives_combo()
         self._update_history_table()
+        self._restore_geometry()
+        self.finished.connect(self._save_geometry)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -863,7 +869,7 @@ class CalibrationDialog(QDialog):
         self.hint_progress_status.setWordWrap(True)
         self.hint_progress_status.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.hint_progress_status.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.hint_progress_status.setStyleSheet("color: #2980b9; font-size: 9pt;")
+        self.hint_progress_status.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
         self.hint_progress_bar = QProgressBar(self)
         self.hint_progress_bar.setRange(0, 100)
         self.hint_progress_bar.setValue(0)
@@ -1093,7 +1099,7 @@ class CalibrationDialog(QDialog):
         results_layout = QFormLayout(results_group)
 
         self.result_average_label = QLabel("--")
-        self.result_average_label.setStyleSheet("font-weight: bold; font-size: 14pt;")
+        self.result_average_label.setStyleSheet(f"font-weight: bold; font-size: {pt(14)}pt;")
         results_layout.addRow(self.tr("Average:"), self.result_average_label)
 
         self.result_std_label = QLabel("--")

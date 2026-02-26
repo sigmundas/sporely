@@ -24,6 +24,7 @@ from database.models import ImageDB, MeasurementDB
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
+from .styles import pt
 
 
 class ImageGalleryWidget(QGroupBox):
@@ -31,6 +32,7 @@ class ImageGalleryWidget(QGroupBox):
 
     imageClicked = Signal(object, str)
     imageSelected = Signal(object, str)
+    imageDoubleClicked = Signal(object, str)
     deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
     selectionChanged = Signal(list)
 
@@ -361,7 +363,7 @@ class ImageGalleryWidget(QGroupBox):
             number_label = QLabel(str(image_num))
             number_label.setStyleSheet(
                 "color: #000000; background-color: rgba(255, 255, 255, 77);"
-                "font-size: 8pt; padding: 1px 4px; border-radius: 3px; border: none;"
+                f"font-size: {pt(8)}pt; padding: 1px 4px; border-radius: 3px; border: none;"
             )
             number_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(number_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignLeft)
@@ -374,9 +376,8 @@ class ImageGalleryWidget(QGroupBox):
             background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
             weight = "bold" if gps_highlight else "normal"
             gps_label.setStyleSheet(
-                "color: %s; background-color: %s;"
-                "font-size: 8pt; font-weight: %s; padding: 1px 4px; border-radius: 3px; border: none;"
-                % (color, background, weight)
+                f"color: {color}; background-color: {background};"
+                f"font-size: {pt(8)}pt; font-weight: {weight}; padding: 1px 4px; border-radius: 3px; border: none;"
             )
             gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(gps_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
@@ -393,7 +394,7 @@ class ImageGalleryWidget(QGroupBox):
                 badge = QLabel(str(badge_text))
                 badge.setStyleSheet(
                     "color: #000000; background-color: rgba(255, 255, 255, 180);"
-                    "font-size: 7pt; padding: 1px 4px; border-radius: 3px; border: none;"
+                    f"font-size: {pt(7)}pt; padding: 1px 4px; border-radius: 3px; border: none;"
                 )
                 badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
                 badge_layout.addWidget(badge)
@@ -410,7 +411,7 @@ class ImageGalleryWidget(QGroupBox):
             badge.setFixedSize(16, 16)
             badge.setAlignment(Qt.AlignCenter)
             badge.setStyleSheet(
-                "background-color: #27ae60; color: white; border-radius: 8px; font-size: 8pt;"
+                f"background-color: #27ae60; color: white; border-radius: 8px; font-size: {pt(8)}pt;"
             )
             overlay_layout.addWidget(badge)
 
@@ -420,7 +421,7 @@ class ImageGalleryWidget(QGroupBox):
             delete_btn.setText("X")
             delete_btn.setFixedSize(16, 16)
             delete_btn.setStyleSheet(
-                "QToolButton { background-color: #e74c3c; color: white; border-radius: 8px; font-size: 8pt; }"
+                f"QToolButton {{ background-color: #e74c3c; color: white; border-radius: 8px; font-size: {pt(8)}pt; }}"
             )
             delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteRequested.emit(key))
             overlay_layout.addWidget(delete_btn)
@@ -433,6 +434,7 @@ class ImageGalleryWidget(QGroupBox):
         frame.image_key = item.get("id") if item.get("id") is not None else item.get("filepath")
         frame.thumb_label = thumb_label
         frame.mousePressEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self._on_click(e, img_id, path)
+        frame.mouseDoubleClickEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self.imageDoubleClicked.emit(img_id, path or "")
 
         return frame
 

@@ -125,7 +125,7 @@ class MeasurementTool(QWidget):
         distance_pixels = np.sqrt(dx**2 + dy**2)
 
         # Convert to microns
-        scale = float(self.scale_input.text())
+        scale = float(self.scale_input.text().replace(",", "."))
         distance_microns = distance_pixels * scale
 
         # Save to database

@@ -5,6 +5,8 @@ from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolTip, QWidget
 
+from .styles import pt
+
 
 class HintBar(QFrame):
     """Always-visible hint/status strip with a colored left accent bar.
@@ -61,7 +63,7 @@ class HintBar(QFrame):
         self._label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._label.setWordWrap(False)
         self._label.setStyleSheet(
-            "QLabel { background: transparent; border: none; color: #222222; font-size: 9pt; }"
+            f"QLabel {{ background: transparent; border: none; color: #222222; font-size: {pt(9)}pt; }}"
         )
         font = self._label.font()
         font.setWeight(QFont.Weight.Medium)

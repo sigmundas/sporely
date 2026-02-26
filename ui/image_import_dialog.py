@@ -72,6 +72,8 @@ from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintLabel, HintStatusController
 from .dialog_helpers import ask_measurements_exist_delete
+from .styles import pt
+from .window_state import GeometryMixin
 
 
 @dataclass
@@ -342,10 +344,11 @@ class ScaleBarImportDialog(QDialog):
             if self.previous_key is None:
                 self.image_dialog.objective_combo.setCurrentIndex(0)
         super().closeEvent(event)
-class ImageImportDialog(QDialog):
+class ImageImportDialog(GeometryMixin, QDialog):
     """Prepare images before creating or editing an observation."""
 
     continueRequested = Signal(list)
+    _geometry_key = "ImageImportDialog"
     CUSTOM_OBJECTIVE_KEY = "__custom__"
 
     def __init__(
@@ -446,6 +449,8 @@ class ImageImportDialog(QDialog):
             self.set_import_results(import_results)
         elif image_paths:
             self.add_images(image_paths)
+        self._restore_geometry()
+        self.finished.connect(self._save_geometry)
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -661,7 +666,7 @@ class ImageImportDialog(QDialog):
         scale_layout.addWidget(self.calibrate_btn)
         self.scale_warning_label = QLabel("")
         self.scale_warning_label.setWordWrap(True)
-        self.scale_warning_label.setStyleSheet("color: #e74c3c; font-weight: bold; font-size: 9pt;")
+        self.scale_warning_label.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(9)}pt;")
         self.scale_warning_label.setVisible(False)
         scale_layout.addWidget(self.scale_warning_label)
         layout.addWidget(self.scale_group)
@@ -736,7 +741,7 @@ class ImageImportDialog(QDialog):
 
         self.preview_message = QLabel(self.tr("Multiple images selected"))
         self.preview_message.setAlignment(Qt.AlignCenter)
-        self.preview_message.setStyleSheet("color: #7f8c8d; font-size: 12pt;")
+        self.preview_message.setStyleSheet(f"color: #7f8c8d; font-size: {pt(12)}pt;")
 
         self.preview_stack.addWidget(self.preview)
         self.preview_stack.addWidget(self.preview_message)
@@ -1936,6 +1941,16 @@ class ImageImportDialog(QDialog):
                 self._select_image(last_new_index)
             elif self.selected_index is None:
                 self._select_image(0)
+
+    def select_image_by_path(self, path: str) -> None:
+        """Select and preview a specific image by its file path."""
+        if not path:
+            return
+        try:
+            index = self.image_paths.index(path)
+        except ValueError:
+            return
+        self._select_image(index)
 
     def set_import_results(self, results: list[ImageImportResult]) -> None:
         self.import_results = []

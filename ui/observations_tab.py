@@ -55,6 +55,8 @@ from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintStatusController
 from .zoomable_image_widget import ZoomableImageLabel
 from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no
+from .styles import pt
+from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 
 
@@ -458,7 +460,7 @@ class MapServiceHelper:
             "QPushButton#mapLink { text-align: left; padding: 7px 12px;"
             " border: 1px solid #d0d0d0; border-radius: 4px;"
             " background-color: white; color: #2c3e50;"
-            " font-size: 10pt; font-weight: normal; }"
+            f" font-size: {pt(10)}pt; font-weight: normal; }}"
             "QPushButton#mapLink:hover { background-color: #e8f0fe;"
             " border-color: #4a90d9; color: #2c3e50; }"
         )
@@ -799,11 +801,11 @@ class ObservationsTab(QWidget):
         self.status_progress_pct = QLabel("0%")
         self.status_progress_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.status_progress_pct.setFixedWidth(34)
-        self.status_progress_pct.setStyleSheet("color: #222222; font-size: 9pt;")
+        self.status_progress_pct.setStyleSheet(f"color: #222222; font-size: {pt(9)}pt;")
         self.status_progress_text = QLabel("")
         self.status_progress_text.setWordWrap(True)
         self.status_progress_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.status_progress_text.setStyleSheet("color: #2980b9; font-size: 9pt;")
+        self.status_progress_text.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
         status_progress_bar_row.addWidget(self.status_progress_bar, 1)
         status_progress_bar_row.addWidget(self.status_progress_pct, 0, Qt.AlignRight)
         status_progress_layout.addLayout(status_progress_bar_row)
@@ -3794,6 +3796,8 @@ class ObservationsTab(QWidget):
                     observation_lat=obs_lat,
                     observation_lon=obs_lon,
                 )
+                if dialog.request_edit_images_path:
+                    image_dialog.select_image_by_path(dialog.request_edit_images_path)
                 if image_dialog.exec():
                     image_results = image_dialog.import_results
                     ai_taxon = image_dialog.get_ai_selected_taxon()
@@ -4571,8 +4575,10 @@ class ObservationsTab(QWidget):
                 cleanup_import_temp_file(filepath, resampled_path, stored_path, output_dir)
 
 
-class ObservationDetailsDialog(QDialog):
+class ObservationDetailsDialog(GeometryMixin, QDialog):
     """Dialog for creating or editing an observation after image import."""
+
+    _geometry_key = "ObservationDetailsDialog"
 
     def __init__(
         self,
@@ -4591,6 +4597,7 @@ class ObservationDetailsDialog(QDialog):
         self.primary_index = primary_index
         self.allow_edit_images = allow_edit_images
         self.request_edit_images = False
+        self.request_edit_images_path: str | None = None
         self.suggested_taxon = suggested_taxon
         self.map_helper = MapServiceHelper(self)
         self._hint_controller: HintStatusController | None = None
@@ -4650,6 +4657,8 @@ class ObservationDetailsDialog(QDialog):
             self._apply_primary_metadata()
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
+        self._restore_geometry()
+        self.finished.connect(self._save_geometry)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -4739,7 +4748,7 @@ class ObservationDetailsDialog(QDialog):
 
         # GPS info label (shows source of coordinates)
         self.gps_info_label = QLabel("")
-        self.gps_info_label.setStyleSheet("color: #7f8c8d; font-size: 9pt;")
+        self.gps_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         right_layout.addRow("", self.gps_info_label)
 
         # Habitat
@@ -4880,6 +4889,7 @@ class ObservationDetailsDialog(QDialog):
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteRequested.connect(self._on_gallery_delete_requested)
+        self.image_gallery.imageDoubleClicked.connect(self._on_image_double_clicked)
         main_layout.addWidget(self.image_gallery)
 
         # ===== BOTTOM BUTTONS =====
@@ -4887,16 +4897,17 @@ class ObservationDetailsDialog(QDialog):
         self.hint_bar = HintBar(self)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         bottom_buttons.addWidget(self.hint_bar, 1)
-        cancel_btn = QPushButton(self.tr("Cancel"))
-        cancel_btn.setMinimumHeight(35)
-        cancel_btn.clicked.connect(self.reject)
-        bottom_buttons.addWidget(cancel_btn)
         if self.allow_edit_images:
             self.edit_images_btn = QPushButton(f"{self.tr('Edit images')} (E)")
             self.edit_images_btn.setMinimumHeight(35)
             self.edit_images_btn.setMinimumWidth(120)
             self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
             bottom_buttons.addWidget(self.edit_images_btn)
+        cancel_btn = QPushButton(self.tr("Cancel"))
+        cancel_btn.setMinimumHeight(35)
+        cancel_btn.setStyleSheet("background-color: #e74c3c;")
+        cancel_btn.clicked.connect(self.reject)
+        bottom_buttons.addWidget(cancel_btn)
         self.submit_observation_btn = QPushButton(
             self.tr("Save Observation") if self.edit_mode else self.tr("Create Observation")
         )
@@ -5122,7 +5133,7 @@ class ObservationDetailsDialog(QDialog):
 
         self.ai_status_label = QLabel("")
         self.ai_status_label.setWordWrap(True)
-        self.ai_status_label.setStyleSheet("color: #7f8c8d; font-size: 9pt;")
+        self.ai_status_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         ai_layout.addWidget(self.ai_status_label)
 
         return ai_group
@@ -5337,7 +5348,7 @@ class ObservationDetailsDialog(QDialog):
             self.ai_status_label.setText("")
             return
         self.ai_status_label.setText(text)
-        self.ai_status_label.setStyleSheet(f"color: {color}; font-size: 9pt;")
+        self.ai_status_label.setStyleSheet(f"color: {color}; font-size: {pt(9)}pt;")
 
     def _set_ai_copy_enabled(self, enabled: bool) -> None:
         if hasattr(self, "ai_copy_btn"):
@@ -5559,6 +5570,11 @@ class ObservationDetailsDialog(QDialog):
 
     def _on_edit_images_clicked(self):
         self.request_edit_images = True
+        self.reject()
+
+    def _on_image_double_clicked(self, _img_id, path: str) -> None:
+        self.request_edit_images = True
+        self.request_edit_images_path = path or None
         self.reject()
 
     def _apply_primary_metadata(self):

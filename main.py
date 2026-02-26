@@ -65,6 +65,12 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("MycoLog - Mushroom Log and Spore Analyzer")
     app.setApplicationVersion(APP_VERSION)
+    # Fusion style gives fully consistent QSS rendering on every platform —
+    # no native-style quirks that partially ignore stylesheet rules.
+    app.setStyle("Fusion")
+    # Use the system locale so QDoubleSpinBox and other locale-aware widgets
+    # accept the decimal separator the user's OS is configured for.
+    QLocale.setDefault(QLocale.system())
     app_font = app.font()
     if app_font.pointSize() <= 0:
         app_font.setPointSize(10)
