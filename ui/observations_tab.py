@@ -606,8 +606,8 @@ class ObservationsTab(QWidget):
         content_layout.setSpacing(10)
 
         left_panel = QWidget()
-        left_panel.setMaximumWidth(270)
-        left_panel.setMinimumWidth(270)
+        left_panel.setMaximumWidth(285)
+        left_panel.setMinimumWidth(285)
         left_panel_layout = QVBoxLayout(left_panel)
         left_panel_layout.setContentsMargins(0, 0, 0, 0)
         left_panel_layout.setSpacing(8)
@@ -656,16 +656,16 @@ class ObservationsTab(QWidget):
         database_layout = QVBoxLayout()
         database_layout.setSpacing(8)
 
+        self.refresh_btn = QPushButton(self.tr("Refresh (R)"))
+        self.refresh_btn.setToolTip(self.tr("Refresh database"))
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
+        database_layout.addWidget(self.refresh_btn)
+
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("Search observations..."))
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search_text_changed)
         database_layout.addWidget(self.search_input)
-
-        self.refresh_btn = QPushButton(self.tr("Refresh (R)"))
-        self.refresh_btn.setToolTip(self.tr("Refresh database"))
-        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
-        database_layout.addWidget(self.refresh_btn)
 
         db_transfer_row = QHBoxLayout()
         db_transfer_row.setSpacing(6)
@@ -1320,19 +1320,17 @@ class ObservationsTab(QWidget):
         dead_ids = self._collect_dead_artsobs_observation_ids()
         if not dead_ids:
             return 0
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Question)
-        box.setWindowTitle(self.tr("Dead Artsobs links"))
-        box.setText(self.tr("Delete dead links?"))
-        box.setInformativeText(self.tr("OK will clear the Artsobs ID for dead links."))
-        ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-        cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
-        box.setDefaultButton(ok_btn)
-        box.setEscapeButton(cancel_btn)
-        if sys.platform.startswith("linux"):
-            box.setMinimumWidth(520)
-        box.exec()
-        if box.clickedButton() is not ok_btn:
+        if not ask_wrapped_yes_no(
+            self,
+            self.tr("Dead Artsobs links"),
+            (
+                f"{self.tr('Delete dead links?')}\n\n"
+                f"{self.tr('OK will clear the Artsobs ID for dead links.')}"
+            ),
+            default_yes=True,
+            yes_text=self.tr("OK"),
+            no_text=self.tr("Cancel"),
+        ):
             return 0
 
         cleared = 0
@@ -3405,9 +3403,20 @@ class ObservationsTab(QWidget):
         self._set_status_progress_visible(True)
         QApplication.processEvents()
 
+        prepare_media_requested = bool(
+            include_annotations
+            or include_measure_plots
+            or include_thumbnail_gallery
+            or include_copyright
+        )
+        prepare_phase_max = 35 if prepare_media_requested else 0
+        connect_phase_pct = prepare_phase_max + (5 if prepare_media_requested else 0)
+        upload_phase_start = connect_phase_pct
+        upload_phase_end = 97
+
         progress_tracker: dict[str, object] = {
             "overall_pct": 0,
-            "prepare_pct": 5.0,
+            "prepare_pct": 5.0 if prepare_media_requested else 0.0,
             "last_prepare_text": "",
         }
 
@@ -3431,17 +3440,24 @@ class ObservationsTab(QWidget):
             total: int | None = None,
         ) -> None:
             text_key = (status_text or "").strip()
+            if prepare_phase_max <= 0:
+                progress_tracker["prepare_pct"] = 0.0
+                _set_overall_publish_progress(status_text, 0)
+                return
             try:
                 prepare_pct = float(progress_tracker.get("prepare_pct", 5.0))
             except Exception:
                 prepare_pct = 5.0
             if text_key and text_key != progress_tracker.get("last_prepare_text"):
                 progress_tracker["last_prepare_text"] = text_key
-                prepare_pct = min(35.0, prepare_pct + 2.0)
+                prepare_pct = min(float(prepare_phase_max), prepare_pct + 2.0)
             if total is not None and total > 0 and current is not None:
                 try:
                     ratio = max(0.0, min(1.0, float(current) / float(max(1, total))))
-                    prepare_pct = min(35.0, max(prepare_pct, prepare_pct + (ratio * 1.2)))
+                    prepare_pct = min(
+                        float(prepare_phase_max),
+                        max(prepare_pct, prepare_pct + (ratio * 1.2)),
+                    )
                 except Exception:
                     pass
             progress_tracker["prepare_pct"] = prepare_pct
@@ -3460,16 +3476,19 @@ class ObservationsTab(QWidget):
             if phase == "prepare":
                 _update_prepare_phase_progress(text, current=current, total=total)
             elif phase == "connect":
-                _set_overall_publish_progress(text, 40)
+                _set_overall_publish_progress(text, connect_phase_pct)
             elif phase == "upload":
                 if total is not None and total > 0 and current is not None:
                     try:
                         ratio = max(0.0, min(1.0, float(current) / float(max(1, total))))
                     except Exception:
                         ratio = 0.0
-                    _set_overall_publish_progress(text, int(round(40 + (ratio * 57))))
+                    _set_overall_publish_progress(
+                        text,
+                        int(round(upload_phase_start + (ratio * (upload_phase_end - upload_phase_start)))),
+                    )
                 else:
-                    _set_overall_publish_progress(text, 45)
+                    _set_overall_publish_progress(text, max(upload_phase_start, 5))
             elif phase == "finalize":
                 _set_overall_publish_progress(text, 99)
             else:
@@ -4853,9 +4872,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         unknown_layout.setContentsMargins(8, 8, 8, 8)
         unknown_layout.setSpacing(8)
 
-        unknown_layout.addWidget(QLabel("Working title:"))
+        unknown_layout.addWidget(QLabel(self.tr("Working title:")))
         self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText("e.g., Brown gilled mushroom, Unknown 1")
+        self.title_input.setPlaceholderText(self.tr("e.g., Brown gilled mushroom, Unknown 1"))
         unknown_layout.addWidget(self.title_input, 1)
         unknown_layout.addStretch()
 
@@ -4942,6 +4961,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._edit_images_shortcut = QShortcut(QKeySequence(Qt.Key_E), self)
             self._edit_images_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             self._edit_images_shortcut.activated.connect(self._edit_images_from_shortcut)
+            self._edit_images_shortcut_alt = QShortcut(QKeySequence("Alt+E"), self)
+            self._edit_images_shortcut_alt.setContext(Qt.WidgetWithChildrenShortcut)
+            self._edit_images_shortcut_alt.activated.connect(self._edit_images_from_modified_shortcut)
 
     def _dialog_shortcut_blocked_by_text_input(self) -> bool:
         focus = QApplication.focusWidget()
@@ -4972,6 +4994,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _edit_images_from_shortcut(self) -> None:
         if self._dialog_shortcut_blocked_by_text_input():
             return
+        edit_btn = getattr(self, "edit_images_btn", None)
+        if edit_btn is None or not edit_btn.isEnabled():
+            return
+        edit_btn.click()
+
+    def _edit_images_from_modified_shortcut(self) -> None:
         edit_btn = getattr(self, "edit_images_btn", None)
         if edit_btn is None or not edit_btn.isEnabled():
             return
@@ -6838,7 +6866,7 @@ class RenameObservationDialog(QDialog):
         self.unknown_checkbox.toggled.connect(self.on_unknown_toggled)
 
         self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText("Working title (e.g., Unknown 1)")
+        self.title_input.setPlaceholderText(self.tr("Working title (e.g., Unknown 1)"))
         self.title_input.setText(self.observation.get('species_guess') or "")
 
         unknown_row = QHBoxLayout()
@@ -6847,7 +6875,7 @@ class RenameObservationDialog(QDialog):
         working_title_layout = QHBoxLayout(self.working_title_container)
         working_title_layout.setContentsMargins(0, 0, 0, 0)
         working_title_layout.setSpacing(6)
-        working_title_layout.addWidget(QLabel("Working title:"))
+        working_title_layout.addWidget(QLabel(self.tr("Working title:")))
         working_title_layout.addWidget(self.title_input)
         unknown_row.addWidget(self.working_title_container)
         layout.addRow("", unknown_row)

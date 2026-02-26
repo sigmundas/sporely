@@ -17,7 +17,7 @@ if sys.platform.startswith("linux"):
     os.environ.pop("GIO_EXTRA_MODULES", None)
 
 from PySide6.QtWidgets import QApplication, QSplashScreen
-from PySide6.QtGui import QFont, QPixmap, QPainter, QColor
+from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer
 from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
@@ -59,6 +59,55 @@ def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
     return splash
 
 
+def _apply_light_palette(app: QApplication) -> None:
+    """Force a light palette so app colors stay consistent across OS themes."""
+    palette = QPalette()
+
+    window = QColor("#f5f5f5")
+    panel = QColor("#ffffff")
+    text = QColor("#2c3e50")
+    muted = QColor("#7f8c8d")
+    border = QColor("#d0d7de")
+    disabled_bg = QColor("#eceff1")
+    disabled_text = QColor("#95a5a6")
+    highlight = QColor("#3498db")
+
+    palette.setColor(QPalette.Window, window)
+    palette.setColor(QPalette.WindowText, text)
+    palette.setColor(QPalette.Base, panel)
+    palette.setColor(QPalette.AlternateBase, window)
+    palette.setColor(QPalette.ToolTipBase, panel)
+    palette.setColor(QPalette.ToolTipText, text)
+    palette.setColor(QPalette.Text, text)
+    palette.setColor(QPalette.Button, window)
+    palette.setColor(QPalette.ButtonText, text)
+    palette.setColor(QPalette.BrightText, QColor("white"))
+    palette.setColor(QPalette.Mid, border)
+    palette.setColor(QPalette.Dark, QColor("#b0bec5"))
+    palette.setColor(QPalette.Light, QColor("#ffffff"))
+    palette.setColor(QPalette.Highlight, highlight)
+    palette.setColor(QPalette.HighlightedText, QColor("white"))
+    palette.setColor(QPalette.PlaceholderText, muted)
+
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, disabled_text)
+    palette.setColor(QPalette.Disabled, QPalette.Text, disabled_text)
+    palette.setColor(QPalette.Disabled, QPalette.ButtonText, disabled_text)
+    palette.setColor(QPalette.Disabled, QPalette.Base, disabled_bg)
+    palette.setColor(QPalette.Disabled, QPalette.Button, disabled_bg)
+
+    app.setPalette(palette)
+
+    # Qt 6 may expose a runtime color-scheme hint; use it when available,
+    # but keep this optional for compatibility across PySide6 versions.
+    try:
+        color_scheme_enum = getattr(Qt, "ColorScheme", None)
+        set_color_scheme = getattr(app.styleHints(), "setColorScheme", None)
+        if color_scheme_enum is not None and callable(set_color_scheme):
+            set_color_scheme(color_scheme_enum.Light)
+    except Exception:
+        pass
+
+
 def main():
     """Initialize and run the application."""
     # Create and run application
@@ -68,6 +117,7 @@ def main():
     # Fusion style gives fully consistent QSS rendering on every platform —
     # no native-style quirks that partially ignore stylesheet rules.
     app.setStyle("Fusion")
+    _apply_light_palette(app)
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets
     # accept the decimal separator the user's OS is configured for.
     QLocale.setDefault(QLocale.system())

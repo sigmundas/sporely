@@ -56,7 +56,7 @@ QPushButton {{
     color: white;
     border: none;
     border-radius: 6px;
-    padding: 10px 20px;
+    padding: 6px 10px;
     font-weight: bold;
     font-size: {base_pt}pt;
 }}
@@ -94,7 +94,7 @@ QLineEdit {{
     background-color: white;
     border: 2px solid #e0e0e0;
     border-radius: 6px;
-    padding: 8px;
+    padding: 5px 6px;
     font-size: {base_pt}pt;
 }}
 
@@ -116,7 +116,7 @@ QTextEdit {{
     background-color: white;
     border: 2px solid #e0e0e0;
     border-radius: 6px;
-    padding: 8px;
+    padding: 5px 6px;
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: {small_pt}pt;
 }}
@@ -211,13 +211,21 @@ QMenu::item:selected {{
 
 QDialog {{
     background-color: #f5f5f5;
+    border: 2px solid #c7d0da;
+    border-radius: 10px;
+}}
+
+QMessageBox {{
+    background-color: #f5f5f5;
+    border: 2px solid #c7d0da;
+    border-radius: 10px;
 }}
 
 QComboBox {{
     background-color: white;
     border: 2px solid #e0e0e0;
     border-radius: 6px;
-    padding: 8px;
+    padding: 5px 6px;
     font-size: {base_pt}pt;
 }}
 
@@ -285,7 +293,7 @@ QComboBox::down-arrow {{
    but capped so they don't expand to fill wide containers. */
 QMessageBox QPushButton,
 QDialogButtonBox QPushButton {{
-    padding: 10px 20px;
+    padding: 6px 10px;
     min-width: 90px;
     max-width: 200px;
 }}

@@ -21,7 +21,7 @@ VERNACULAR_LANGUAGE_LABELS = {
 }
 
 COMMON_NAME_LABEL_OVERRIDES = {
-    "de": "Trivialnamen",
+    "de": "Namen",
     "no": "Norsk navn",
     "en": "Common name",
 }

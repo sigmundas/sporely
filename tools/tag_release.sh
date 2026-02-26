@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# Prevent accidental sourcing (can terminate the current shell due to strict mode).
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    echo "Do not source this script. Run it as: ./tools/tag_release.sh" >&2
+    return 1 2>/dev/null || exit 1
+fi
+
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

@@ -21,6 +21,8 @@ def ask_wrapped_yes_no(
     text: str,
     *,
     default_yes: bool = False,
+    yes_text: str | None = None,
+    no_text: str | None = None,
 ) -> bool:
     """Show a compact wrapped Yes/No dialog with reliable Linux sizing."""
     host = parent
@@ -67,8 +69,8 @@ def ask_wrapped_yes_no(
     outer.addLayout(row)
 
     buttons = QDialogButtonBox(dialog)
-    no_btn = buttons.addButton(tr("No"), QDialogButtonBox.RejectRole)
-    yes_btn = buttons.addButton(tr("Yes"), QDialogButtonBox.AcceptRole)
+    no_btn = buttons.addButton(no_text or tr("No"), QDialogButtonBox.RejectRole)
+    yes_btn = buttons.addButton(yes_text or tr("Yes"), QDialogButtonBox.AcceptRole)
     if default_yes:
         yes_btn.setDefault(True)
         yes_btn.setAutoDefault(True)

@@ -260,7 +260,7 @@ class ScaleBarCalibrationDialog(QDialog):
         previous_key: str | None = None,
     ):
         super().__init__(main_window)
-        self.setWindowTitle("Scale bar")
+        self.setWindowTitle(self.tr("Scale bar"))
         self.setModal(False)
         self.main_window = main_window
         self.previous_key = previous_key
@@ -284,20 +284,20 @@ class ScaleBarCalibrationDialog(QDialog):
             self.length_input.setDecimals(2)
         self.length_input.setValue(initial_value)
         self.length_input.setSuffix(f" {unit_label}")
-        form.addRow("Scale bar length:", self.length_input)
+        form.addRow(self.tr("Scale bar length:"), self.length_input)
 
         self.scale_label = QLabel("--")
-        form.addRow("Custom scale:", self.scale_label)
+        form.addRow(self.tr("Custom scale:"), self.scale_label)
 
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
-        self.select_btn = QPushButton("Select scale bar endpoints")
+        self.select_btn = QPushButton(self.tr("Select scale bar endpoints"))
         self.select_btn.clicked.connect(self._on_select)
         btn_row.addWidget(self.select_btn)
         btn_row.addStretch()
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(self.tr("Close"))
         close_btn.clicked.connect(self.close)
         btn_row.addWidget(close_btn)
 
@@ -533,23 +533,35 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     ARTSOBS_MEDIA_LICENSE_OPTIONS = (
         (
             "10",
-            "Creative Commons 4.0 (CC) BY",
-            "Others can share, reuse, modify, and use commercially, as long as they give credit.",
+            QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Creative Commons 4.0 (CC) BY"),
+            QT_TRANSLATE_NOOP(
+                "ArtsobservasjonerSettingsDialog",
+                "Others can share, reuse, modify, and use commercially, as long as they give credit.",
+            ),
         ),
         (
             "20",
-            "Creative Commons 4.0 (CC) BY-SA",
-            "Others can share, reuse, modify, and use commercially, as long as they give credit and keep the same license.",
+            QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Creative Commons 4.0 (CC) BY-SA"),
+            QT_TRANSLATE_NOOP(
+                "ArtsobservasjonerSettingsDialog",
+                "Others can share, reuse, modify, and use commercially, as long as they give credit and keep the same license.",
+            ),
         ),
         (
             "30",
-            "Creative Commons 4.0 (CC) BY-NC-SA",
-            "Others can share, reuse, and modify, but not commercially, and they must give credit and keep the same license.",
+            QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Creative Commons 4.0 (CC) BY-NC-SA"),
+            QT_TRANSLATE_NOOP(
+                "ArtsobservasjonerSettingsDialog",
+                "Others can share, reuse, and modify, but not commercially, and they must give credit and keep the same license.",
+            ),
         ),
         (
             "60",
-            "Ingen (alle rettigheter forbeholdt)",
-            "No reuse or sharing without permission (except legal exceptions).",
+            QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "None (all rights reserved)"),
+            QT_TRANSLATE_NOOP(
+                "ArtsobservasjonerSettingsDialog",
+                "No reuse or sharing without permission (except legal exceptions).",
+            ),
         ),
     )
 
@@ -3090,8 +3102,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         # Left panel - controls (fixed width)
         left_panel = self.create_control_panel()
-        left_panel.setMaximumWidth(270)
-        left_panel.setMinimumWidth(270)
+        left_panel.setMaximumWidth(285)
+        left_panel.setMinimumWidth(285)
         layout.addWidget(left_panel)
 
         # Center - image panel
@@ -3299,8 +3311,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
 
-        left_panel.setMinimumWidth(270)
-        left_panel.setMaximumWidth(270)
+        left_panel.setMinimumWidth(285)
+        left_panel.setMaximumWidth(285)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -3375,7 +3387,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([270, 1000])
+        main_splitter.setSizes([285, 1000])
 
         main_layout.addWidget(main_splitter, 1)
 
@@ -3555,14 +3567,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._register_gallery_hint_widget(
             self.ref_add_btn,
             self.tr("Add reference data for the selected species"),
+            allow_when_disabled=True,
         )
         self.ref_edit_btn = QPushButton(self.tr("Edit"))
         self.ref_edit_btn.clicked.connect(self._on_reference_panel_edit_clicked)
-        self._register_gallery_hint_widget(self.ref_edit_btn, self.tr("Edit reference data"))
-        btn_row.addStretch()
-        btn_row.addWidget(self.ref_plot_btn)
-        btn_row.addWidget(self.ref_add_btn)
-        btn_row.addWidget(self.ref_edit_btn)
+        self._register_gallery_hint_widget(
+            self.ref_edit_btn,
+            self.tr("Edit reference data"),
+            allow_when_disabled=True,
+        )
+        for btn in (self.ref_plot_btn, self.ref_add_btn, self.ref_edit_btn):
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn_row.addWidget(self.ref_plot_btn, 1)
+        btn_row.addWidget(self.ref_add_btn, 1)
+        btn_row.addWidget(self.ref_edit_btn, 1)
         layout.addLayout(btn_row)
 
         self.ref_series_table = QTableWidget(0, 2)
@@ -3691,9 +3709,27 @@ class MainWindow(GeometryMixin, QMainWindow):
         species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
         has_species = bool(genus and species)
         self.ref_add_btn.setEnabled(has_species)
+        add_hint = self.tr("Add reference data for the selected species")
+        if not has_species:
+            add_hint = self.tr("Enter a species first to add spore data")
+        self._register_gallery_hint_widget(
+            self.ref_add_btn,
+            add_hint,
+            allow_when_disabled=True,
+        )
         if hasattr(self, "ref_edit_btn"):
             has_source = bool(self.ref_source_input.currentText().strip()) if hasattr(self, "ref_source_input") else False
             self.ref_edit_btn.setEnabled(has_species and has_source)
+            edit_hint = self.tr("Edit reference data")
+            if not has_species:
+                edit_hint = self.tr("Enter a species first to edit reference data")
+            elif not has_source:
+                edit_hint = self.tr("Select a source to edit reference data")
+            self._register_gallery_hint_widget(
+                self.ref_edit_btn,
+                edit_hint,
+                allow_when_disabled=True,
+            )
         if hasattr(self, "ref_plot_btn"):
             source_text = self.ref_source_input.currentText().strip() if hasattr(self, "ref_source_input") else ""
             has_plot_data = self._reference_has_selected_source_data()
@@ -10209,4 +10245,3 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Reconnect the dimensions_changed signal
         self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
         self._update_preview_title()
-

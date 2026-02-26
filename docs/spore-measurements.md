@@ -27,11 +27,30 @@ Drag the lines you want to adjust - the spore dimensions are updated instantly
 
 ### 95% Confidence Ellipse
 
-For bivariate measurements (length $x$ and width $y$), the 95% confidence ellipse
-is defined from the sample mean and covariance matrix. Let
-$\mathbf{z} = \begin{bmatrix} x \\ y \end{bmatrix}$, the mean
-$\boldsymbol{\mu} = \begin{bmatrix} \bar{x} \\ \bar{y} \end{bmatrix}$, and the
-covariance matrix
+For bivariate measurements (length `x` and width `y`), the 95% confidence ellipse
+is defined from the sample mean and covariance matrix.
+
+Let
+
+$$
+\mathbf{z} =
+\begin{bmatrix}
+x \\
+y
+\end{bmatrix}
+$$
+
+and the mean
+
+$$
+\boldsymbol{\mu} =
+\begin{bmatrix}
+\bar{x} \\
+\bar{y}
+\end{bmatrix}
+$$
+
+and the covariance matrix
 
 $$
 \mathbf{\Sigma} =
@@ -48,19 +67,39 @@ $$
 (\mathbf{z} - \boldsymbol{\mu}) = \chi^{2}_{2,\,0.95}
 $$
 
-where $\chi^{2}_{2,\,0.95} \approx 5.991$ is the 95th percentile of the
+where
+
+$$
+\chi^{2}_{2,\,0.95} \approx 5.991
+$$
+
+is the 95th percentile of the
 chi-square distribution with 2 degrees of freedom.
 
-Equivalently, if $\lambda_{1}, \lambda_{2}$ are the eigenvalues of
-$\mathbf{\Sigma}$ and $\mathbf{v}_{1}, \mathbf{v}_{2}$ the corresponding
-eigenvectors, the ellipse axes are
+Equivalently, if the eigenvalues of \(\mathbf{\Sigma}\) are
+
+$$
+\lambda_{1}, \lambda_{2}
+$$
+
+and the corresponding eigenvectors are
+
+$$
+\mathbf{v}_{1}, \mathbf{v}_{2}
+$$
+
+the ellipse axes are
 
 $$
 a = \sqrt{\chi^{2}_{2,\,0.95} \, \lambda_{1}}, \qquad
 b = \sqrt{\chi^{2}_{2,\,0.95} \, \lambda_{2}}
 $$
 
-with the ellipse rotated by the eigenvectors $\mathbf{v}_{1}, \mathbf{v}_{2}$.
+with the ellipse rotated by the eigenvectors
+
+$$
+\mathbf{v}_{1}, \mathbf{v}_{2}.
+$$
 
 ## Reference Data
 

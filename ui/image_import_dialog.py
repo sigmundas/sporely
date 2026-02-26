@@ -460,7 +460,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         content_row.setSpacing(10)
 
         left_panel = self._build_left_panel()
-        left_panel.setFixedWidth(240)
+        left_panel.setFixedWidth(280)
+        left_panel.setStyleSheet(
+            "QPushButton { padding: 4px 8px; }"
+            "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
+        )
         left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         content_row.addWidget(left_panel, 0)
 

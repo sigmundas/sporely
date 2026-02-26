@@ -1032,7 +1032,11 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         # Right panel: Auto/manual tabs, results, notes
         right_panel = QWidget()
-        right_panel.setFixedWidth(320)
+        right_panel.setFixedWidth(360)
+        right_panel.setStyleSheet(
+            "QPushButton { padding: 4px 8px; }"
+            "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
+        )
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
