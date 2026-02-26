@@ -1,9 +1,7 @@
 """Artsobservasjoner login and cookie capture for MycoLog."""
 
 import json
-import os
 import re
-import sys
 from pathlib import Path
 import requests
 from platformdirs import user_data_dir
@@ -82,8 +80,11 @@ def _clear_saved_web_credentials() -> None:
         return
 
 
-def _prompt_web_credentials(parent=None) -> tuple[Optional[str], Optional[str], bool]:
-    """Show a Qt dialog for Artsobservasjoner web credentials."""
+def _prompt_web_credentials(
+    parent=None,
+    title: str = "Log in to Artsobservasjoner (web)",
+) -> tuple[Optional[str], Optional[str], bool]:
+    """Show a Qt dialog for Artsobservasjoner credentials."""
     from PySide6.QtWidgets import (
         QDialog,
         QDialogButtonBox,
@@ -102,7 +103,7 @@ def _prompt_web_credentials(parent=None) -> tuple[Optional[str], Optional[str], 
     remember_login = False
 
     dialog = QDialog(parent)
-    dialog.setWindowTitle("Log in to Artsobservasjoner (web)")
+    dialog.setWindowTitle(title)
     dialog.setModal(True)
     dialog.setMinimumWidth(420)
 
@@ -263,122 +264,162 @@ class ArtsObservasjonerWebLogin:
         return requests.utils.dict_from_cookiejar(self.session.cookies)
 
 
-class ArtsObservasjonerAuthWidget:
+def _parse_login_form(html_text: str, base_url: str) -> Optional[dict]:
+    """Parse an HTML page for a login form.
+
+    Returns a dict with keys ``action``, ``hidden``, ``username_field``,
+    ``password_field``, or *None* if no suitable form is found.
     """
-    PySide6 widget for Artsobservasjoner login
-    
-    Usage in MycoLog:
-    1. Show this widget in a dialog when user needs to authenticate
-    2. User logs in through the embedded browser
-    3. Widget automatically captures cookies
-    4. Save cookies for future use
+    from html.parser import HTMLParser
+    from urllib.parse import urljoin
+
+    class _FormParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.forms: list[dict] = []
+            self._current: Optional[dict] = None
+
+        def handle_starttag(self, tag, attrs):
+            attrs_d = dict(attrs)
+            if tag == "form":
+                self._current = {"action": attrs_d.get("action", ""), "hidden": {}, "fields": []}
+                self.forms.append(self._current)
+            elif tag == "input" and self._current is not None:
+                t = attrs_d.get("type", "text").lower()
+                name = attrs_d.get("name", "")
+                value = attrs_d.get("value", "")
+                if t == "hidden" and name:
+                    self._current["hidden"][name] = value
+                elif t not in ("submit", "button", "reset", "image", "checkbox", "radio") and name:
+                    self._current["fields"].append(
+                        {"name": name, "type": t, "id": attrs_d.get("id", "")}
+                    )
+
+        def handle_endtag(self, tag):
+            if tag == "form":
+                self._current = None
+
+    parser = _FormParser()
+    try:
+        parser.feed(html_text)
+    except Exception:
+        return None
+
+    login_form = next(
+        (f for f in parser.forms if any(field["type"] == "password" for field in f["fields"])),
+        None,
+    )
+    if login_form is None:
+        return None
+
+    _USERNAME_HINTS = ("user", "email", "login", "name", "identifier")
+    username_field: Optional[str] = None
+    password_field: Optional[str] = None
+    for f in login_form["fields"]:
+        if f["type"] == "password":
+            password_field = f["name"]
+        elif f["type"] in ("text", "email"):
+            combined = (f["name"] + " " + f["id"]).lower()
+            if any(hint in combined for hint in _USERNAME_HINTS):
+                username_field = f["name"]
+            elif username_field is None:
+                username_field = f["name"]
+
+    if not username_field or not password_field:
+        return None
+
+    action = login_form["action"]
+    action = urljoin(base_url, action) if action else base_url
+    return {
+        "action": action,
+        "hidden": login_form["hidden"],
+        "username_field": username_field,
+        "password_field": password_field,
+    }
+
+
+class ArtsObservasjonerMobileBffLogin:
+    """Programmatic login to ``mobil.artsobservasjoner.no`` via BFF/OIDC.
+
+    Follows the same redirect chain a browser would, but using
+    :mod:`requests` — no embedded browser (QtWebEngine) required.
+    The :class:`requests.Session` accumulates all cookies, including
+    the ``__Host-bff*`` BFF session cookies set after a successful login.
     """
-    
-    def __init__(
-        self,
-        on_login_success: Optional[Callable] = None,
-        parent=None,
-        login_url: Optional[str] = None,
-        required_cookies: Optional[list[str]] = None,
-    ):
-        """
-        Args:
-            on_login_success: Callback function called with cookies dict when login succeeds
-        """
-        os.environ.setdefault("QTWEBENGINE_DISABLE_GPU", "1")
-        os.environ.setdefault("QT_QUICK_BACKEND", "software")
-        os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
-        os.environ.setdefault(
-            "QTWEBENGINE_CHROMIUM_FLAGS",
-            "--disable-gpu --log-level=3"
+
+    MOBILE_BASE = "https://mobil.artsobservasjoner.no"
+    LOGIN_URL = f"{MOBILE_BASE}/bff/login?returnUrl=%2Fmy-page"
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;"
+                    "q=0.9,image/avif,image/webp,*/*;q=0.8"
+                ),
+                "Accept-Language": "nb-NO,nb;q=0.9,no;q=0.8,en;q=0.7",
+            }
         )
-        if sys.platform.startswith("linux"):
-            # Avoid loading libproxy-based GIO module in mixed snap/system setups.
-            os.environ.setdefault("GIO_USE_PROXY_RESOLVER", "0")
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QSizePolicy
-        from PySide6.QtWebEngineWidgets import QWebEngineView
-        from PySide6.QtWebEngineCore import QWebEngineProfile
-        from PySide6.QtCore import QUrl
-        
-        self.widget = QWidget(parent)
-        self.on_login_success = on_login_success
-        
-        # Create layout
-        layout = QVBoxLayout()
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-        
-        # Instructions
-        label = QLabel("Log in to Artsobservasjoner to continue:")
-        layout.addWidget(label)
-        
-        # Embedded browser
-        self.web_view = QWebEngineView()
-        self.web_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.profile = QWebEngineProfile.defaultProfile()
-        self.cookie_store = self.profile.cookieStore()
-        
-        # Monitor cookies
-        self.cookies = {}
-        if required_cookies is None:
-            if login_url and "www.artsobservasjoner.no" in login_url:
-                required_cookies = [".ASPXAUTHNO"]
-            else:
-                required_cookies = ["__Host-bff", "__Host-bffC1", "__Host-bffC2"]
-        self.required_cookies = required_cookies
-        self._login_saved = False
-        self.cookie_store.cookieAdded.connect(self._on_cookie_added)
-        
-        # Load the Artsobservasjoner login entry point.
-        if not login_url:
-            login_url = "https://mobil.artsobservasjoner.no/bff/login?returnUrl=/my-page"
-        self.web_view.setUrl(QUrl(login_url))
-        layout.addWidget(self.web_view)
-        
-        # Done button
-        self.done_button = QPushButton("Done - Save Login")
-        self.done_button.clicked.connect(self._on_done)
-        self.done_button.setEnabled(False)  # Enable once we have cookies
-        layout.addWidget(self.done_button)
-        
-        self.widget.setLayout(layout)
-        self.widget.setWindowTitle("Log in to Artsobservasjoner")
-        self.widget.setMinimumSize(700, 540)
-        self.widget.resize(860, 640)
-    
-    def _on_cookie_added(self, cookie):
-        """Called when browser receives a cookie"""
-        name = bytes(cookie.name()).decode('utf-8')
-        value = bytes(cookie.value()).decode('utf-8')
-        domain = cookie.domain()
-        
-        # Store cookies from artsobservasjoner.no
-        if 'artsobservasjoner.no' in domain:
-            self.cookies[name] = value
-            
-            # Check if we have all required cookies
-            if all(k in self.cookies for k in self.required_cookies):
-                self.done_button.setEnabled(True)
-                self.done_button.setText(f"Logged in - Click to Save ({len(self.cookies)} cookies)")
-                if not self._login_saved and self.on_login_success:
-                    self._login_saved = True
-                    self.on_login_success(self.cookies)
-                    self.widget.close()
-    
-    def _on_done(self):
-        """User clicked done - save cookies and close"""
-        if self.on_login_success:
-            self.on_login_success(self.cookies)
-        self.widget.close()
-    
-    def show(self):
-        """Show the login widget"""
-        self.widget.show()
-        return self.widget
-    
-    def get_cookies(self) -> Dict[str, str]:
-        """Get captured cookies"""
-        return self.cookies
+
+    def login(self, username: str, password: str) -> bool:
+        """Follow the BFF OIDC redirect chain and submit credentials.
+
+        Raises :class:`RuntimeError` if no login form is found.
+        Returns *True* if BFF session cookies were obtained.
+        """
+        # Step 1: follow BFF login redirect to the identity provider
+        resp = self.session.get(self.LOGIN_URL, timeout=20, allow_redirects=True)
+        resp.raise_for_status()
+
+        # Step 2: parse the identity provider's login form
+        form = _parse_login_form(resp.text, resp.url)
+        if form is None:
+            raise RuntimeError(
+                "Could not find a login form on the identity provider page "
+                f"({resp.url}). The page may require JavaScript or have changed."
+            )
+
+        # Step 3: build form data (CSRF / anti-forgery tokens + credentials)
+        data = dict(form["hidden"])
+        data[form["username_field"]] = username
+        data[form["password_field"]] = password
+
+        # Step 4: submit and follow all redirects back to the BFF
+        resp2 = self.session.post(
+            form["action"],
+            data=data,
+            headers={"Referer": resp.url},
+            timeout=20,
+            allow_redirects=True,
+        )
+        resp2.raise_for_status()
+
+        return self.check_auth()
+
+    def check_auth(self) -> bool:
+        """Return *True* if the session holds valid BFF session cookies."""
+        cookie_names = {c.name for c in self.session.cookies}
+        if "__Host-bff" in cookie_names or "__Host-bffC1" in cookie_names:
+            return True
+        # Fallback: hit a lightweight authenticated endpoint
+        try:
+            r = self.session.get(
+                f"{self.MOBILE_BASE}/core/Sites/ByUser/LastUsed?top=1",
+                headers={"X-Csrf": "1"},
+                timeout=8,
+            )
+            return r.status_code == 200
+        except requests.RequestException:
+            return False
+
+    def get_cookies_dict(self) -> Dict[str, str]:
+        return {c.name: c.value for c in self.session.cookies}
 
 
 class ArtsObservasjonerAuth:
@@ -503,22 +544,49 @@ class ArtsObservasjonerAuth:
             except Exception:
                 continue
 
-    def login_with_gui(self, callback: Optional[Callable] = None) -> Dict[str, str]:
-        """
-        Show PyQt login dialog (best for MycoLog)
+    def login_mobile_with_gui(
+        self, parent=None, callback: Optional[Callable] = None
+    ) -> Optional[Dict[str, str]]:
+        """Prompt for credentials and authenticate against mobil.artsobservasjoner.no.
 
-        Args:
-            callback: Function to call when login succeeds
-        """
+        Follows the BFF/OIDC redirect chain programmatically — no browser required.
 
-        def on_success(cookies):
+        Returns:
+            Cookie dict on success, None if user cancelled.
+        Raises:
+            RuntimeError: on login failure.
+        """
+        username, password, remember_login = _prompt_web_credentials(
+            parent=parent,
+            title="Log in to Artsobservasjoner (mobile)",
+        )
+        if username is None:
+            return None
+        if not password:
+            raise RuntimeError("Missing password.")
+
+        mobile_auth = ArtsObservasjonerMobileBffLogin()
+        success = mobile_auth.login(username=username, password=password)
+        if not success:
+            raise RuntimeError("Login failed. Please check your email and password.")
+
+        cookies = mobile_auth.get_cookies_dict()
+        if not cookies:
+            raise RuntimeError("Login succeeded but no session cookies were returned.")
+
+        if remember_login:
+            try:
+                _save_web_credentials(username, password)
+            except Exception as exc:
+                print(f"Warning: could not save credentials: {exc}")
+        else:
+            _clear_saved_web_credentials()
+
+        if callback:
+            callback(cookies)
+        else:
             self.save_cookies(cookies, target="mobile")
-            if callback:
-                callback(cookies)
-
-        auth_widget = ArtsObservasjonerAuthWidget(on_login_success=on_success)
-        auth_widget.show()
-        return auth_widget.get_cookies()
+        return cookies
 
     def login_web_with_gui(self, parent=None, callback: Optional[Callable] = None) -> Optional[Dict[str, str]]:
         """

@@ -16,6 +16,10 @@ pyinstaller `
     --exclude-module PySide6.QtQuickWidgets `
     --exclude-module PySide6.QtPdf `
     --exclude-module PySide6.QtPdfWidgets `
+    --exclude-module PySide6.QtWebEngineWidgets `
+    --exclude-module PySide6.QtWebEngineCore `
+    --exclude-module PySide6.QtWebEngineQuick `
+    --exclude-module PySide6.QtWebChannel `
     --exclude-module tkinter `
     --exclude-module PyQt5 `
     --exclude-module PyQt6 `

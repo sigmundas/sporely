@@ -1197,20 +1197,18 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
 
         try:
-            from utils.artsobservasjoner_auto_login import (
-                ArtsObservasjonerAuth,
-                ArtsObservasjonerAuthWidget,
-            )
+            from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
         except Exception as exc:
             QMessageBox.warning(
                 self,
                 self.tr("Login Unavailable"),
-                self.tr(f"Could not start the login widget.\n\n{exc}")
+                self.tr(f"Could not load the login module.\n\n{exc}")
             )
             return
 
+        auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
+
         if selected_uploader and selected_uploader.key == "web":
-            auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
             try:
                 cookies = auth.login_web_with_gui(parent=self)
             except Exception as exc:
@@ -1224,33 +1222,19 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self._on_login_success(cookies, target_key="web", already_saved=True)
             return
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Log in to Artsobservasjoner"))
-        dialog.setModal(True)
-
-        def _handle_success(cookies: dict) -> None:
-            self._on_login_success(cookies, target_key=selected_uploader.key)
-            dialog.accept()
-
-        login_url = selected_uploader.login_url if selected_uploader else None
-        self._auth_widget = ArtsObservasjonerAuthWidget(
-            on_login_success=_handle_success,
-            parent=dialog,
-            login_url=login_url,
-        )
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(self._auth_widget.widget)
-
-        screen = QApplication.primaryScreen()
-        if screen:
-            available = screen.availableGeometry()
-            target_w = min(900, int(available.width() * 0.85))
-            target_h = min(650, int(available.height() * 0.85))
-            dialog.resize(max(640, target_w), max(520, target_h))
-        else:
-            dialog.resize(1000, 800)
-
-        dialog.exec()
+        if selected_uploader and selected_uploader.key == "mobile":
+            try:
+                cookies = auth.login_mobile_with_gui(parent=self)
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Login Failed"),
+                    self.tr("Mobile login failed.\n\n{error}").format(error=exc)
+                )
+                return
+            if cookies:
+                self._on_login_success(cookies, target_key="mobile", already_saved=True)
+            return
 
     def _on_login_success(self, cookies: dict, target_key: str, already_saved: bool = False):
         if not already_saved:
