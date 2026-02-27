@@ -30,5 +30,5 @@ Write-Host "Created tag $tag"
 
 Write-Host "Pushing commits..."
 & git push
-Write-Host "Pushing tags..."
-& git push --tags
+Write-Host "Pushing tag $tag..."
+& git push origin $tag

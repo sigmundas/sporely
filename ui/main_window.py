@@ -9643,6 +9643,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not filename.lower().endswith(".zip"):
             filename += ".zip"
         self._remember_export_dir(filename)
+        status_tab = getattr(self, "observations_tab", None)
+        progress_visible = False
+
+        def set_export_progress(text: str, current: int, total: int) -> None:
+            nonlocal progress_visible
+            if status_tab is not None and hasattr(status_tab, "_set_status_progress_visible"):
+                if not progress_visible:
+                    status_tab._set_status_progress_visible(True)
+                    progress_visible = True
+                if hasattr(status_tab, "_set_status_progress"):
+                    status_tab._set_status_progress(text, current=current, total=total)
+            QApplication.processEvents()
+
         try:
             export_db_bundle(
                 filename,
@@ -9651,6 +9664,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 include_measurements=options["measurements"],
                 include_calibrations=options["calibrations"],
                 include_reference_values=options["reference_values"],
+                progress_cb=set_export_progress,
             )
             self._set_observations_status(
                 self.tr("Export complete: {name}.").format(name=Path(filename).name),
@@ -9662,6 +9676,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                 level="error",
                 auto_clear_ms=12000,
             )
+        finally:
+            if progress_visible and status_tab is not None:
+                if hasattr(status_tab, "_set_status_progress_visible"):
+                    status_tab._set_status_progress_visible(False)
+                if hasattr(status_tab, "_set_status_progress"):
+                    status_tab._set_status_progress("", current=0, total=1)
 
     def import_database_bundle(self):
         """Import DB and data from a shared zip file."""

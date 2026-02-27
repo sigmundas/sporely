@@ -43,5 +43,5 @@ echo "Created tag $tag"
 
 echo "Pushing commits..."
 git -C "$root" push
-echo "Pushing tags..."
-git -C "$root" push --tags
+echo "Pushing tag $tag..."
+git -C "$root" push origin "$tag"

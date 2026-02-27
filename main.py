@@ -23,7 +23,7 @@ from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
 from ui.main_window import MainWindow
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
 
 
 def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
@@ -166,7 +166,7 @@ def main():
     if splash:
         if splash_shown_at is not None:
             elapsed = time.monotonic() - splash_shown_at
-            min_splash_seconds = 0.6
+            min_splash_seconds = 0.5
             if elapsed < min_splash_seconds:
                 time.sleep(min_splash_seconds - elapsed)
                 app.processEvents()

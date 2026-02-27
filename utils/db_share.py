@@ -4,6 +4,7 @@ import sqlite3
 import zipfile
 import tempfile
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from database.schema import (
@@ -87,6 +88,7 @@ def export_database_bundle(
     include_measurements: bool = True,
     include_calibrations: bool = True,
     include_reference_values: bool = True,
+    progress_cb: Callable[[str, int, int], None] | None = None,
 ) -> None:
     """Export selected data to a zip file."""
     images_dir = get_images_dir()
@@ -95,22 +97,42 @@ def export_database_bundle(
         [include_observations, include_images, include_measurements, include_calibrations]
     )
     temp_dir = Path(tempfile.mkdtemp())
+
+    selected_tables: list[str] = []
+    if include_observations:
+        selected_tables.append("observations")
+    if include_images or include_measurements:
+        selected_tables.append("images")
+    if include_measurements:
+        selected_tables.extend(["spore_measurements", "spore_annotations"])
+    if include_calibrations:
+        selected_tables.append("calibrations")
+
+    image_files: list[Path] = []
+    if include_images and images_dir.exists():
+        image_files = [path for path in images_dir.rglob("*") if path.is_file()]
+
+    total_steps = max(
+        1,
+        len(selected_tables)
+        + (1 if include_main_db else 0)
+        + len(image_files)
+        + (1 if include_reference_values and ref_path.exists() else 0),
+    )
+    completed_steps = 0
+
+    def _emit_progress(text: str) -> None:
+        if progress_cb is not None:
+            progress_cb(text, completed_steps, total_steps)
+
     try:
         db_path = temp_dir / "mushrooms.db"
         if include_main_db:
             src_conn = sqlite3.connect(DATABASE_PATH)
             dest_conn = sqlite3.connect(db_path)
-            selected_tables: list[str] = []
-            if include_observations:
-                selected_tables.append("observations")
-            if include_images or include_measurements:
-                selected_tables.append("images")
-            if include_measurements:
-                selected_tables.extend(["spore_measurements", "spore_annotations"])
-            if include_calibrations:
-                selected_tables.append("calibrations")
 
             for table in selected_tables:
+                _emit_progress(f"Exporting table: {table}...")
                 _copy_table_schema(src_conn, dest_conn, table)
 
                 def _transform(data, table_name=table):
@@ -139,6 +161,8 @@ def export_database_bundle(
                     return data
 
                 _copy_table_rows(src_conn, dest_conn, table, transform_row=_transform)
+                completed_steps += 1
+                _emit_progress(f"Exported table: {table}.")
 
             dest_conn.commit()
             dest_conn.close()
@@ -146,13 +170,23 @@ def export_database_bundle(
 
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             if include_main_db and db_path.exists():
+                _emit_progress("Adding database file...")
                 zf.write(db_path, arcname="mushrooms.db")
-            if include_images and images_dir.exists():
-                for path in images_dir.rglob("*"):
-                    if path.is_file():
-                        zf.write(path, arcname=str(Path("images") / path.relative_to(images_dir)))
+                completed_steps += 1
+                _emit_progress("Database file added.")
+            if include_images and image_files:
+                for idx, path in enumerate(image_files, start=1):
+                    zf.write(path, arcname=str(Path("images") / path.relative_to(images_dir)))
+                    completed_steps += 1
+                    if idx == 1 or idx == len(image_files) or idx % 10 == 0:
+                        _emit_progress(f"Adding images... ({idx}/{len(image_files)})")
             if include_reference_values and ref_path.exists():
+                _emit_progress("Adding reference values...")
                 zf.write(ref_path, arcname="reference_values.db")
+                completed_steps += 1
+                _emit_progress("Reference values added.")
+        completed_steps = total_steps
+        _emit_progress("Export complete.")
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
