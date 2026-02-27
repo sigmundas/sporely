@@ -3,6 +3,7 @@
 ## Objectives
 
 You need to set up your objectives and calibrate them so the app knows the scale of your microscope images. Go to  **Settings** → **Calibration** and pick an objective, or create **New Objective**:
+
 ![Ojbective](images/calibrate-objective.png)
 
 Objectives are defined by:
@@ -28,24 +29,32 @@ Check the deviation on three different measurements and check that the deviation
 ### Automatic calibration
 MycoLog recognizes horizontal or vertical lines. All you have to do is specify the line distance, then click ***Calibrate***.
 
+You may have to select a cropped area if the lines are not uniform. Like here:
+![auto calibration](images/autocalibrate.png)
+You will get some quality metrics, like MAD and IQR, that depend on the quality of the slide and your optics. If these numbers are way off (in red), the auto-calibration algorithm probably failed.
+
+Check the overlay lines if you have troubles: 
+![line overlay](images/autocalibrate-overlay.png)
+The yellow lines show where the line edges have been detected. The red center lines are in the middle, between the edge lines. With poor contrast or insufficient resolution, the auto calibration may fail.
+
 ## Calibration history
-- Camera model
-- Megapixels used
-- Confidence interval and residuals (when available)
+This is handy if you change things in your setup, and you want to document past calibrations. The history stores:
+- Camera model (from exif data)
+- Megapixels
+- Calibration scale and statistics
 
-You can export the calibration image with overlays for documentation.
+You can export the calibration image with overlays for documentation purposes.
 
-Ideal resolution only appears after the currently loaded calibration image has
-an auto result or manual measurements. It is based on the *current image*, not
-the previously active calibration.
-Calibration images are stored at full resolution; resampling is applied to
-imported microscope images and the scale is adjusted by the resample factor.
+## Prepare Images (Microscope)
 
-## Sampling Assessment
+In **Prepare Images**, set image type to **Micro (M)** and pick the objective (or **Scale bar**) in the **Scale** group.
 
-Sampling status is shown in the Calibration dialog and Prepare Images panel. This checks if your pixel sampling is undersampled or oversampled based on NA.Typically, images taken with a 100X objective are oversampled, and your local database can be shrunk quite a lot if you work with spores.
+For microscope images, the right panel shows:
+- **Current resolution** (current MP and pixel dimensions)
+- **Ideal sampling (% Nyquist)** (target sampling)
+- **Ideal resolution** (target MP and pixel dimensions when resize is enabled)
 
-There is a resize preview feature you can use to check if important details are lost: press **P** to toggle original resolution vs ideal resolution.
+Use **Resize to optimal sampling (R)** to preview and apply downsampling based on objective scale + NA + target sampling.
 
 ### Nyquist Sampling (Basics)
 
@@ -76,13 +85,28 @@ downsampled image.
 
 ## Resolution Mismatch Warning
 
-If a microscope image resolution differs significantly from the calibration image, a warning is shown in:
+The mismatch warning is still active, but only shown when all of these are true:
+- Image type is microscope
+- A normal objective is selected (not **Not set** or **Scale bar**)
+- A calibration with usable resolution info exists
+- The image/calibration resolution difference is large enough to matter
+
+MycoLog compares calibration megapixels with the image megapixels and accounts for resize factor when relevant.  
+A mismatch can be expected for heavily cropped images.
+
+You may see this warning in both:
 - **Measure** tab (Scale group)
 - **Prepare Images** (Scale group)
 
-This is expected for cropped images; the warning includes a tooltip with calibration vs image MP.
-The comparison uses the calibration's stored resolution and the image's effective resolution
-(taking resampling into account).
+## Prepare Images Shortcuts
+
+- **F**: Set image type to Field
+- **M**: Set image type to Micro
+- **R**: Toggle "Resize to optimal sampling"
+- **C**: Toggle AI crop mode
+- **S**: Open "Set from scalebar"
+- **A**: Apply current settings to all selected images
+- **Delete**: Remove selected image(s)
 
 ## Working with Scale
 

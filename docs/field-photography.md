@@ -16,6 +16,7 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 ## Field photos for AI identification
 
 1. Select one or multiple (ctrl + click) field photos in the **Edit Observation** dialog
+   You can open this dialog from the **Observations** table with **Alt+E** (Windows/Linux) or **Command+E** (macOS).
 2.  Press **Guess** and the table will populate
 3. Press **Copy** to copy the species over to the species name fields for this observation.
 

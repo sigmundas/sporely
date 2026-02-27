@@ -661,25 +661,32 @@ class ArtsObservasjonerAuth:
         return self._validate_mobile_cookies(cookies)
 
     def _validate_mobile_cookies(self, cookies: Dict[str, str]) -> bool:
+        print("[artsobs] mobile: validating cached session...")
         session = requests.Session()
         for name, value in cookies.items():
             session.cookies.set(name, value, domain='mobil.artsobservasjoner.no')
 
         try:
-            # Try a simple authenticated endpoint
             response = session.get(
                 'https://mobil.artsobservasjoner.no/core/Sites/ByUser/LastUsed?top=1',
                 headers={'X-Csrf': '1'},
                 timeout=5
             )
-            return response.status_code == 200
-        except requests.RequestException:
+            if response.status_code == 200:
+                print("[artsobs] mobile: session still valid")
+                return True
+            print(f"[artsobs] mobile: session invalid (HTTP {response.status_code})")
+            return False
+        except requests.RequestException as exc:
+            print(f"[artsobs] mobile: session check failed ({exc})")
             return False
 
     def _validate_web_cookies(self, cookies: Dict[str, str]) -> bool:
         if ".ASPXAUTHNO" not in cookies:
+            print("[artsobs] web: no .ASPXAUTHNO cookie — session missing")
             return False
 
+        print("[artsobs] web: validating cached session...")
         session = requests.Session()
         for name, value in cookies.items():
             session.cookies.set(name, value, domain=".artsobservasjoner.no")
@@ -690,10 +697,127 @@ class ArtsObservasjonerAuth:
                 allow_redirects=True,
                 timeout=8,
             )
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            print(f"[artsobs] web: session check failed ({exc})")
             return False
 
         if response.status_code != 200:
+            print(f"[artsobs] web: session invalid (HTTP {response.status_code})")
             return False
         url = (response.url or "").lower()
-        return "/logon" not in url and "/account/login" not in url
+        if "/logon" in url or "/account/login" in url:
+            print(f"[artsobs] web: session expired (redirected to login page)")
+            return False
+        print("[artsobs] web: session still valid")
+        return True
+
+    def ensure_valid_cookies(self, target: str = "mobile") -> Optional[Dict[str, str]]:
+        """Get valid cookies, silently re-authenticating from saved credentials if needed.
+
+        Returns cookies dict on success, None if login is required manually.
+        """
+        target_key = self._normalize_target(target)
+        cookies = self.get_valid_cookies(target=target_key)
+        if cookies:
+            return cookies
+
+        print(f"[artsobs] {target_key}: session expired — attempting silent re-auth")
+        username, password, _ = _load_saved_web_credentials()
+        if not username or not password:
+            print(f"[artsobs] {target_key}: no saved credentials — manual login required")
+            return None
+
+        print(f"[artsobs] {target_key}: re-authenticating as {username}...")
+        try:
+            if target_key == "mobile":
+                auth_obj = ArtsObservasjonerMobileBffLogin()
+                ok = auth_obj.login(username=username, password=password)
+            else:
+                auth_obj = ArtsObservasjonerWebLogin()
+                ok = auth_obj.login(username=username, password=password, remember_me=True)
+
+            if not ok:
+                print(f"[artsobs] {target_key}: silent re-auth — login rejected")
+                return None
+
+            new_cookies = auth_obj.get_cookies_dict()
+            if not new_cookies:
+                print(f"[artsobs] {target_key}: silent re-auth succeeded but no cookies returned")
+                return None
+
+            self.save_cookies(new_cookies, target=target_key)
+            print(f"[artsobs] {target_key}: silent re-auth OK ({len(new_cookies)} cookies saved)")
+            return new_cookies
+        except Exception as exc:
+            print(f"[artsobs] {target_key}: silent re-auth error: {exc}")
+            return None
+
+    def login_both_with_gui(self, parent=None) -> dict:
+        """Single credential dialog -> authenticate both mobile and web endpoints.
+
+        Returns {
+            "mobile": cookies_dict_or_None,
+            "web":    cookies_dict_or_None,
+            "cancelled": bool,
+        }
+        """
+        username, password, remember_login = _prompt_web_credentials(
+            parent=parent,
+            title="Log in to Artsobservasjoner",
+        )
+        if username is None:
+            print("[artsobs] login cancelled by user")
+            return {"mobile": None, "web": None, "cancelled": True}
+        if not password:
+            raise RuntimeError("Missing password.")
+
+        results: dict = {"mobile": None, "web": None, "cancelled": False}
+
+        # --- Mobile BFF ---
+        print("[artsobs] unified login: authenticating mobile endpoint...")
+        try:
+            mobile_auth = ArtsObservasjonerMobileBffLogin()
+            ok = mobile_auth.login(username=username, password=password)
+            if ok:
+                mobile_cookies = mobile_auth.get_cookies_dict()
+                if mobile_cookies:
+                    self.save_cookies(mobile_cookies, target="mobile")
+                    results["mobile"] = mobile_cookies
+                    print(f"[artsobs] mobile login OK ({len(mobile_cookies)} cookies saved)")
+                else:
+                    print("[artsobs] mobile login: no cookies returned")
+            else:
+                print("[artsobs] mobile login: rejected by server")
+        except Exception as exc:
+            print(f"[artsobs] mobile login error: {exc}")
+
+        # --- Web ---
+        print("[artsobs] unified login: authenticating web endpoint...")
+        try:
+            web_auth = ArtsObservasjonerWebLogin()
+            ok = web_auth.login(username=username, password=password, remember_me=True)
+            if ok:
+                web_cookies = web_auth.get_cookies_dict()
+                if web_cookies:
+                    self.save_cookies(web_cookies, target="web")
+                    results["web"] = web_cookies
+                    print(f"[artsobs] web login OK ({len(web_cookies)} cookies saved)")
+                else:
+                    print("[artsobs] web login: no cookies returned")
+            else:
+                print("[artsobs] web login: rejected by server")
+        except Exception as exc:
+            print(f"[artsobs] web login error: {exc}")
+
+        # --- Persist credentials ---
+        if remember_login:
+            try:
+                _save_web_credentials(username, password)
+                print("[artsobs] credentials saved to keyring for silent re-auth")
+            except Exception as exc:
+                print(f"[artsobs] warning: could not save credentials: {exc}")
+        else:
+            _clear_saved_web_credentials()
+            print("[artsobs] credentials cleared (save-password unchecked)")
+
+        return results

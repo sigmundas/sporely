@@ -84,7 +84,7 @@ from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
-from .styles import get_style, apply_palette, pt
+from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
@@ -1188,7 +1188,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 logged_count += 1
             if status_item:
                 status_item.setText(self.tr("Logged in") if logged_in else self.tr("Not logged in"))
-                status_item.setForeground(QColor("#2c3e50"))
+                status_item.setForeground(QColor("#e8e8e8") if _is_dark("auto") else QColor("#2c3e50"))
 
         if selected_logged_in and selected:
             self.set_hint(
@@ -1272,32 +1272,34 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
         auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
 
-        if selected_uploader and selected_uploader.key == "web":
+        if selected_uploader and selected_uploader.key in ("mobile", "web"):
+            # Single credential prompt authenticates both endpoints at once.
             try:
-                cookies = auth.login_web_with_gui(parent=self)
+                results = auth.login_both_with_gui(parent=self)
             except Exception as exc:
                 QMessageBox.warning(
                     self,
                     self.tr("Login Failed"),
-                    self.tr("Web login failed.\n\n{error}").format(error=exc)
+                    self.tr("Login failed.\n\n{error}").format(error=exc)
                 )
                 return
-            if cookies:
-                self._on_login_success(cookies, target_key="web", already_saved=True)
-            return
-
-        if selected_uploader and selected_uploader.key == "mobile":
-            try:
-                cookies = auth.login_mobile_with_gui(parent=self)
-            except Exception as exc:
+            if results.get("cancelled"):
+                return
+            # Report partial failures
+            failed = [k for k in ("mobile", "web") if not results.get(k)]
+            if failed and not any(results.get(k) for k in ("mobile", "web")):
                 QMessageBox.warning(
                     self,
                     self.tr("Login Failed"),
-                    self.tr("Mobile login failed.\n\n{error}").format(error=exc)
+                    self.tr("Could not log in to any Artsobservasjoner endpoint. Check your credentials.")
                 )
                 return
-            if cookies:
-                self._on_login_success(cookies, target_key="mobile", already_saved=True)
+            if failed:
+                print(f"[artsobs] partial login — failed endpoints: {failed}")
+            # Register both successful sessions
+            for key in ("mobile", "web"):
+                if results.get(key):
+                    self._on_login_success(results[key], target_key=key, already_saved=True)
             return
 
     def _on_login_success(self, cookies: dict, target_key: str, already_saved: bool = False):

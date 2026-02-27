@@ -3328,10 +3328,10 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             auth = ArtsObservasjonerAuth()
-            cookies = auth.get_valid_cookies(target=uploader.key) or {}
+            cookies = auth.ensure_valid_cookies(target=uploader.key) or {}
             if not cookies:
                 return _fail(
-                    self.tr("Not logged in to Artsobservasjoner. Log in via Settings -> Online publishing."),
+                    self.tr("Not logged in to Artsobservasjoner (session expired and no saved credentials). Log in via Settings -> Online publishing."),
                     level="warning",
                     auto_clear_ms=12000,
                 )
@@ -4682,7 +4682,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.suggested_taxon = suggested_taxon
         self.map_helper = MapServiceHelper(self)
         self._hint_controller: HintStatusController | None = None
-        self.setWindowTitle("Edit Observation" if self.edit_mode else "New Observation")
+        self.setWindowTitle(
+            self.tr("Edit Observation") if self.edit_mode else self.tr("New Observation")
+        )
         self.setModal(True)
         self.setMinimumSize(900, 820)
         self._observation_datetime = _parse_observation_datetime(
@@ -4982,7 +4984,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         _edit_key = "⌘E" if sys.platform == "darwin" else "Alt-E"
         self._edit_key_label = _edit_key
         if self.allow_edit_images:
-            self.edit_images_btn = QPushButton(f"{self.tr('Edit images')} ({_edit_key})")
+            self.edit_images_btn = QPushButton(
+                self.tr("Edit images ({key})").format(key=_edit_key)
+            )
             self.edit_images_btn.setMinimumHeight(35)
             self.edit_images_btn.setMinimumWidth(120)
             self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)

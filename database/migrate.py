@@ -15,6 +15,14 @@ _DEFAULT_MEASURE_CATEGORIES = [
     "Other",
 ]
 
+_DEFAULT_CONTRAST_METHODS = [
+    "BF",
+    "DF",
+    "DIC",
+    "Phase",
+    "HMC",
+]
+
 
 def backup_database():
     """Create a backup of the database."""
@@ -91,6 +99,84 @@ def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
     for default_category in defaults:
         if default_category not in merged:
             merged.append(default_category)
+            changed = True
+
+    if changed:
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(merged)),
+        )
+
+
+def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
+    def _canonicalize(value) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        normalized = "".join(ch for ch in text.lower() if ch.isalnum())
+        mapping = {
+            "bf": "BF",
+            "brightfield": "BF",
+            "df": "DF",
+            "darkfield": "DF",
+            "dic": "DIC",
+            "differentialinterferencecontrast": "DIC",
+            "phase": "Phase",
+            "phasecontrast": "Phase",
+            "hmc": "HMC",
+            "hoffman": "HMC",
+            "hoffmanmodulationcontrast": "HMC",
+        }
+        return mapping.get(normalized, "_".join(text.split()))
+
+    def _canonicalize_list(values: list) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in values or []:
+            canonical = _canonicalize(value)
+            if not canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            cleaned.append(canonical)
+        return cleaned or list(_DEFAULT_CONTRAST_METHODS)
+
+    key = "contrast_options"
+    defaults = list(_DEFAULT_CONTRAST_METHODS)
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = cursor.fetchone()
+
+    if row is None or row[0] is None:
+        normalized = _canonicalize_list(defaults)
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(normalized)),
+        )
+        return
+
+    raw_value = row[0]
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError):
+        parsed = []
+    if not isinstance(parsed, list):
+        parsed = []
+
+    normalized = _canonicalize_list(parsed)
+    merged = list(normalized)
+    changed = merged != parsed
+    for default_method in defaults:
+        if default_method not in merged:
+            merged.append(default_method)
             changed = True
 
     if changed:
@@ -282,6 +368,7 @@ def migrate_database():
         )
         """
     )
+    _migrate_contrast_options_setting(cursor)
     _migrate_measure_categories_setting(cursor)
 
     conn.commit()

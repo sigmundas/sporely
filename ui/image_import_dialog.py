@@ -72,7 +72,7 @@ from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintLabel, HintStatusController
 from .dialog_helpers import ask_measurements_exist_delete
-from .styles import pt
+from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 
 
@@ -568,14 +568,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.preview_stack.setCurrentWidget(self.preview)
 
     def _apply_combo_popup_style(self, combo: QComboBox) -> None:
+        dark = _is_dark("auto")
         view = QListView()
         view.setSpacing(3)
-        view.setStyleSheet(
-            "QListView { background: white; color: #2c3e50; }"
-            "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; }"
-            "QListView::item:hover { background: #d9e9f8; color: #2c3e50; }"
-            "QListView::item:selected { background: #3498db; color: white; }"
-        )
+        if dark:
+            view.setStyleSheet(
+                "QListView { background: #2b2b2d; color: #e8e8e8; }"
+                "QListView::item { color: #e8e8e8; background: #2b2b2d; padding: 4px 8px; min-height: 24px; }"
+                "QListView::item:hover { background: #1c3a5e; color: #c0deff; }"
+                "QListView::item:selected { background: #4a90d9; color: white; }"
+            )
+        else:
+            view.setStyleSheet(
+                "QListView { background: white; color: #2c3e50; }"
+                "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; }"
+                "QListView::item:hover { background: #d9e9f8; color: #2c3e50; }"
+                "QListView::item:selected { background: #3498db; color: white; }"
+            )
         combo.setView(view)
 
     def _load_tag_options(self, category: str) -> list[str]:
@@ -711,6 +720,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.apply_all_btn.clicked.connect(self._apply_to_all)
         apply_row.addWidget(self.apply_all_btn)
         layout.addLayout(apply_row)
+
+        inner_bg = "#3a3a3c" if _is_dark("auto") else "#f0f0f0"
+        panel.setStyleSheet(
+            f"QGroupBox QGroupBox {{ background-color: {inner_bg}; }}"
+            f"QGroupBox QGroupBox::title {{ background-color: {inner_bg}; }}"
+        )
         outer.addWidget(panel, 1)
         return container
 
@@ -910,6 +925,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         layout.addWidget(ai_crop_group)
         layout.addStretch(1)
+
+        inner_bg = "#3a3a3c" if _is_dark("auto") else "#f0f0f0"
+        panel.setStyleSheet(
+            f"QGroupBox QGroupBox {{ background-color: {inner_bg}; }}"
+            f"QGroupBox QGroupBox::title {{ background-color: {inner_bg}; }}"
+        )
         return panel
 
     def _populate_objectives(self, selected_key: str | None = None) -> None:

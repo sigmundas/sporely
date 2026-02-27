@@ -334,6 +334,31 @@ QListWidget::item:selected:!active {{
     color: {sel_fg};
 }}
 
+QHeaderView::section {{
+    background-color: {surface};
+    color: {text};
+    border: none;
+    border-bottom: 1px solid {border};
+    border-right: 1px solid {border};
+    padding: 4px 8px;
+    font-weight: bold;
+}}
+
+QHeaderView::section:last {{
+    border-right: none;
+}}
+
+QTableView::item,
+QTableWidget::item {{
+    color: {text};
+    padding: 2px 4px;
+}}
+
+QTableView::item:alternate,
+QTableWidget::item:alternate {{
+    background-color: {surface};
+}}
+
 QLabel#imageLabel {{
     background-color: {img_bg};
     border: 2px solid {img_brd};

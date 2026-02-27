@@ -47,6 +47,7 @@ class DatabaseSettingsDialog(QDialog):
         "df": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DF - Darkfield"),
         "dic": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DIC - Differential interference contrast"),
         "phase": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Phase - Phase contrast"),
+        "hmc": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "HMC - Hoffman modulation contrast"),
     }
 
     def __init__(self, parent=None):

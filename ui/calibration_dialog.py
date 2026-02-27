@@ -32,7 +32,7 @@ from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 from utils.exif_reader import get_exif_data
 from .hint_status import HintBar, HintLabel, HintStatusController
-from .styles import pt
+from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 from .zoomable_image_widget import ZoomableImageLabel
 from .image_gallery_widget import ImageGalleryWidget
@@ -1358,16 +1358,14 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.target_sampling_input.setDecimals(0)
         self.target_sampling_input.setSuffix("%")
         self.target_sampling_input.setValue(float(self.target_sampling_pct))
+        _dark = _is_dark("auto")
+        _spin_bg = "#2b2b2d" if _dark else "white"
+        _spin_brd = "#3a3a3c" if _dark else "#e0e0e0"
+        _spin_fg = "#e8e8e8" if _dark else "#2c3e50"
         self.target_sampling_input.setStyleSheet(
-            "QDoubleSpinBox {"
-            " background-color: white;"
-            " border: 2px solid #e0e0e0;"
-            " border-radius: 6px;"
-            " padding: 2px 6px;"
-            "}"
-            "QDoubleSpinBox:focus {"
-            " border: 2px solid #3498db;"
-            "}"
+            f"QDoubleSpinBox {{ background-color: {_spin_bg}; color: {_spin_fg};"
+            f" border: 2px solid {_spin_brd}; border-radius: 6px; padding: 2px 6px; }}"
+            "QDoubleSpinBox:focus { border: 2px solid #3498db; }"
         )
         self.target_sampling_input.valueChanged.connect(self._on_target_sampling_changed)
         layout.addWidget(

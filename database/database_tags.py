@@ -14,7 +14,7 @@ class DatabaseTerms:
         return QCoreApplication.translate("DatabaseTerms", text)
     
     # Canonical English names (stored in database)
-    CONTRAST_METHODS = ["BF", "DF", "DIC", "Phase"]
+    CONTRAST_METHODS = ["BF", "DF", "DIC", "Phase", "HMC"]
     MOUNT_MEDIA = ["Not_set", "Water", "KOH", "NH3", "Melzer", "Glycerine", "Congo_Red", "Cotton_Blue"]
     SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
     MEASURE_CATEGORIES = [
@@ -28,6 +28,7 @@ class DatabaseTerms:
         "DF": QT_TRANSLATE_NOOP("DatabaseTerms", "DF"),
         "DIC": QT_TRANSLATE_NOOP("DatabaseTerms", "DIC"),
         "Phase": QT_TRANSLATE_NOOP("DatabaseTerms", "Phase"),
+        "HMC": QT_TRANSLATE_NOOP("DatabaseTerms", "HMC"),
     }
     
     MOUNT_DISPLAY = {

@@ -1,81 +1,40 @@
-# Online Publishing (Artsobservasjoner + iNaturalist)
+# Online Publishing
 
-This guide explains login and upload from MycoLog using:
+Publish observations from MycoLog to Artsobservasjoner, iNaturalist, and Mushroom Observer via **Settings → Online publishing**.
 
-- **Artsobservasjoner (mobile)**
-- **Artsobservasjoner (web)**
-- **iNaturalist**
+## Logging in
 
-All publishing settings are in **Settings -> Online publishing**.
-
-## Login
-
-1. Open **Settings -> Online publishing**.
-2. Select a target in the **Websites** table.
+1. Open **Settings → Online publishing**.
+2. Select a service in the table.
 3. Click **Log in**.
-4. **Log out** only logs out the currently selected service.
 
-### Artsobservasjoner (mobile)
+### Artsobservasjoner
 
-- Uses embedded browser login.
-- Cookies are cached in the MycoLog app data folder.
+Logging in to either Artsobservasjoner target logs in to both (mobile and web) in one step. Enter your username and password when prompted. Tick **Save login info on this device** to avoid being asked again — credentials are stored securely via the OS keyring.
 
-### Artsobservasjoner (web)
-
-- Uses username/password prompt.
-- Optional **Save login info on this device**.
-- Username is stored in app settings.
-- Password is stored via OS keyring (not plain text) when available.
+If your session expires, MycoLog will silently re-authenticate in the background using saved credentials.
 
 ### iNaturalist
 
-- Click **Log in** and complete sign-in in your web browser.
-- After a successful sign-in, MycoLog keeps you signed in so you do not need to sign in every day.
-- If you click **Log out**, only the selected service is logged out.
+Click **Log in** and complete sign-in in your browser. MycoLog keeps you signed in afterwards.
 
-## iNaturalist sign-in
+### Mushroom Observer
 
-1. Open **Settings -> Online publishing**.
-2. Select **iNaturalist**.
-3. Click **Log in**.
-4. In the browser window, sign in to your iNaturalist account and approve access.
-5. Return to MycoLog and continue publishing as normal.
+Click **Log in** and enter your Mushroom Observer user API key.
 
-If MycoLog asks for app credentials:
-
-- Regular users should not create these.
-- Use the values provided with the app, or contact the app maintainer.
-
-## Cached files
-
-Common paths:
-
-- Windows: `%APPDATA%\\MycoLog\\...`
-- macOS: `~/Library/Application Support/MycoLog/...`
-- Linux: `~/.local/share/MycoLog/...`
-
-Files:
-
-- `artsobservasjoner_cookies_mobile.json`
-- `artsobservasjoner_cookies_web.json`
-- `inaturalist_oauth_tokens.json`
-
-## Upload observations
+## Publishing an observation
 
 1. Go to **Observations**.
 2. Select one or more rows.
-3. Click **Publish** and choose target.
+3. Click **Publish** and choose a target.
 
-Notes:
-
-- Artsobservasjoner targets are disabled for observations already uploaded to Artsobservasjoner.
-- iNaturalist can still be used for those observations.
+Artsobservasjoner targets are greyed out for observations that have already been uploaded there. iNaturalist and Mushroom Observer can still be used for those.
 
 ## Requirements
 
 ### Artsobservasjoner
 
-- Genus and species set (for Artsdatabanken taxon id).
+- Genus and species set.
 - Observation date.
 - GPS coordinates.
 - At least one image.
@@ -85,19 +44,6 @@ Notes:
 - Observation date.
 - GPS coordinates.
 - At least one image.
-- Active iNaturalist sign-in.
-
-## After upload
-
-- Artsobservasjoner ID is stored in `observations.artsdata_id`.
-- iNaturalist ID is stored in `observations.inaturalist_id`.
-- Observations table Artsobs web link opens:
-  `https://www.artsobservasjoner.no/ReviewSighting`
-
-## Add new uploaders
-
-Upload targets are registered in `utils/artsobs_uploaders.py`.
-Each uploader implements `upload(...)` with a unique `key`, `label`, and `login_url`.
 
 ## See also
 

@@ -948,7 +948,7 @@ class ZoomableImageLabel(QLabel):
                         self.update()
                         return
                 start = self.screen_to_image(event.position())
-                if start and self._point_in_crop_box(start, self.crop_box):
+                if start and self._point_on_crop_edge(start, self.crop_box):
                     self.crop_dragging = True
                     self.crop_drag_start = QPointF(start)
                     self.crop_drag_initial_box = tuple(self.crop_box)
@@ -1023,7 +1023,7 @@ class ZoomableImageLabel(QLabel):
                     self.update()
                 return
             corner_hover = self._update_crop_corner_hover(event.position())
-            hovered = bool(image_pos and self.crop_box and self._point_in_crop_box(image_pos, self.crop_box))
+            hovered = bool(image_pos and self.crop_box and self._point_on_crop_edge(image_pos, self.crop_box))
             if hovered != self.crop_hovered:
                 self.crop_hovered = hovered
                 self.update()
@@ -1165,6 +1165,33 @@ class ZoomableImageLabel(QLabel):
         bottom = max(y1, y2)
         return left <= point.x() <= right and top <= point.y() <= bottom
 
+    def _point_on_crop_edge(
+        self,
+        point: QPointF,
+        crop_box: tuple[float, float, float, float],
+        edge_px: float = 6.0,
+    ) -> bool:
+        """Check whether point is near a crop edge line (not merely inside)."""
+        x1, y1, x2, y2 = crop_box
+        left = min(x1, x2)
+        top = min(y1, y2)
+        right = max(x1, x2)
+        bottom = max(y1, y2)
+        if right <= left or bottom <= top:
+            return False
+
+        tol = float(edge_px) / float(self.zoom_level or 1.0)
+        if point.x() < (left - tol) or point.x() > (right + tol):
+            return False
+        if point.y() < (top - tol) or point.y() > (bottom + tol):
+            return False
+
+        on_left = abs(point.x() - left) <= tol and (top - tol) <= point.y() <= (bottom + tol)
+        on_right = abs(point.x() - right) <= tol and (top - tol) <= point.y() <= (bottom + tol)
+        on_top = abs(point.y() - top) <= tol and (left - tol) <= point.x() <= (right + tol)
+        on_bottom = abs(point.y() - bottom) <= tol and (left - tol) <= point.x() <= (right + tol)
+        return bool(on_left or on_right or on_top or on_bottom)
+
     def _update_crop_hover(self, screen_pos) -> None:
         if not self.original_pixmap or not self.crop_box:
             if self.crop_hovered:
@@ -1172,7 +1199,7 @@ class ZoomableImageLabel(QLabel):
                 self.update()
             return
         image_pos = self.screen_to_image(screen_pos)
-        hovered = bool(image_pos and self._point_in_crop_box(image_pos, self.crop_box))
+        hovered = bool(image_pos and self._point_on_crop_edge(image_pos, self.crop_box))
         if hovered != self.crop_hovered:
             self.crop_hovered = hovered
             self.update()
