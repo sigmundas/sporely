@@ -84,10 +84,10 @@ from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
-from .styles import get_style, pt
+from .styles import get_style, apply_palette, pt
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
-from .export_image_dialog import ExportImageDialog as SharedExportImageDialog
+from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -226,17 +226,12 @@ class CollapsibleSection(QWidget):
         layout.setSpacing(4)
 
         self._toggle_btn = QToolButton()
+        self._toggle_btn.setObjectName("collapsibleToggle")
         self._toggle_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._toggle_btn.setText(title)
         self._toggle_btn.setCheckable(True)
         self._toggle_btn.setChecked(bool(expanded))
         self._toggle_btn.setAutoRaise(True)
-        self._toggle_btn.setStyleSheet(
-            "QToolButton { font-weight: bold; padding: 6px 8px; background-color: transparent; "
-            "color: #2c3e50; border: none; text-align: left; }"
-            "QToolButton:hover { background-color: #ecf0f1; }"
-            "QToolButton:checked { background-color: white; color: #2c3e50; }"
-        )
         self._toggle_btn.clicked.connect(self._on_toggled)
         layout.addWidget(self._toggle_btn)
 
@@ -505,6 +500,63 @@ class LanguageSettingsDialog(QDialog):
             if parent and hasattr(parent, "apply_vernacular_language_change"):
                 parent.apply_vernacular_language_change()
 
+        self.accept()
+
+
+class AppearanceDialog(QDialog):
+    """Dialog for colour-theme preference (Auto / Light / Dark)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Appearance"))
+        self.setModal(True)
+        self.setMinimumWidth(320)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        label = QLabel(self.tr("Color theme:"))
+        layout.addWidget(label)
+        layout.addSpacing(4)
+
+        self.btn_auto  = QRadioButton(self.tr("Auto (follow system)"))
+        self.btn_light = QRadioButton(self.tr("Light"))
+        self.btn_dark  = QRadioButton(self.tr("Dark"))
+        layout.addWidget(self.btn_auto)
+        layout.addWidget(self.btn_light)
+        layout.addWidget(self.btn_dark)
+        layout.addSpacing(8)
+
+        buttons = QDialogButtonBox(self)
+        ok_btn     = buttons.addButton(self.tr("OK"),     QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(self._save)
+        cancel_btn.clicked.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self._load_settings()
+
+    def _load_settings(self):
+        theme = SettingsDB.get_setting("ui_theme", "auto")
+        if theme == "dark":
+            self.btn_dark.setChecked(True)
+        elif theme == "light":
+            self.btn_light.setChecked(True)
+        else:
+            self.btn_auto.setChecked(True)
+
+    def _save(self):
+        if self.btn_dark.isChecked():
+            theme = "dark"
+        elif self.btn_light.isChecked():
+            theme = "light"
+        else:
+            theme = "auto"
+        SettingsDB.set_setting("ui_theme", theme)
+        parent = self.parent()
+        if parent and hasattr(parent, "_apply_theme"):
+            parent._apply_theme()
         self.accept()
 
 
@@ -1875,6 +1927,9 @@ class ReferenceValuesDialog(QDialog):
             self._species_model.setStringList([])
             return
         self._update_species_suggestions(genus, text or "")
+        if self._species_model.stringList() and self._species_completer:
+            self._species_completer.setCompletionPrefix((text or "").strip())
+            self._species_completer.complete()
         if text.strip():
             self._maybe_set_vernacular_from_taxon()
 
@@ -2143,9 +2198,9 @@ class ReferenceValuesDialog(QDialog):
         else:
             values = ReferenceDB.list_species(genus or "", text or "")
         
-        # If text exactly matches a single suggestion, clear the model to prevent popup
-        text_stripped = text.strip()
-        if len(values) == 1 and values[0].lower() == text_stripped.lower():
+        # Hide popup when text exactly matches any suggestion (covers multi-result cases)
+        text_stripped = (text or "").strip()
+        if text_stripped and any(v.lower() == text_stripped.lower() for v in values):
             self._species_model.setStringList([])
             if self._species_completer:
                 self._species_completer.popup().hide()
@@ -2642,8 +2697,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.calibration_dialog = None
         self.calibration_points = []
 
-        # Apply modern stylesheet (sizes adapt to the system font automatically)
-        self.setStyleSheet(get_style())
+        # Apply theme (palette + stylesheet). Reads "ui_theme" from SettingsDB.
+        self._apply_theme()
 
         self.init_ui()
         self._populate_scale_combo()
@@ -2778,6 +2833,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         language_action = QAction(self.tr("Language"), self)
         language_action.triggered.connect(self.open_language_settings_dialog)
         settings_menu.addAction(language_action)
+
+        appearance_action = QAction(self.tr("Appearance"), self)
+        appearance_action.triggered.connect(self.open_appearance_dialog)
+        settings_menu.addAction(appearance_action)
 
         help_menu = menubar.addMenu(self.tr("Help"))
         version_text = self.tr("Version: {version}").format(
@@ -3351,7 +3410,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_canvas_layout.setContentsMargins(0, 0, 0, 0)
         plot_canvas_layout.setSpacing(0)
         plot_canvas_layout.addWidget(self.gallery_plot_canvas)
-        plot_layout.addWidget(plot_canvas_frame)
+
+        self.plot_width_splitter = QSplitter(Qt.Horizontal)
+        self.plot_width_splitter.setHandleWidth(6)
+        self.plot_width_splitter.addWidget(plot_canvas_frame)
+        _plot_spacer = QWidget()
+        _plot_spacer.setMinimumWidth(0)
+        self.plot_width_splitter.addWidget(_plot_spacer)
+        self.plot_width_splitter.setCollapsible(0, False)  # canvas never collapses
+        self.plot_width_splitter.setCollapsible(1, True)   # spacer can collapse to 0
+        self.plot_width_splitter.setStretchFactor(0, 1)
+        self.plot_width_splitter.setStretchFactor(1, 0)
+        self.plot_width_splitter.setSizes([700, 0])
+        plot_layout.addWidget(self.plot_width_splitter)
 
         gallery_panel = QWidget()
         gallery_layout = QVBoxLayout(gallery_panel)
@@ -7990,6 +8061,54 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_gallery_filter_label()
         self.schedule_gallery_refresh()
 
+    def _is_dark_theme(self) -> bool:
+        """Return True if the current palette is dark."""
+        return self.palette().window().color().lightness() < 128
+
+    def _apply_plot_dark_theme(self, fig, axes: list) -> None:
+        """Apply dark colours to a matplotlib Figure and its Axes list."""
+        fig_bg  = "#1c1c1e"
+        ax_bg   = "#2b2b2d"
+        text_c  = "#e8e8e8"
+        spine_c = "#555557"
+        tick_c  = "#8e8e93"
+        grid_c  = "#3a3a3c"
+        fig.patch.set_facecolor(fig_bg)
+        for ax in axes:
+            if ax is None:
+                continue
+            ax.set_facecolor(ax_bg)
+            ax.tick_params(colors=tick_c, which="both")
+            ax.xaxis.label.set_color(text_c)
+            ax.yaxis.label.set_color(text_c)
+            for spine in ax.spines.values():
+                spine.set_edgecolor(spine_c)
+            leg = ax.get_legend()
+            if leg is not None:
+                leg.get_frame().set_facecolor("#3a3a3c")
+                leg.get_frame().set_edgecolor("#555557")
+                for txt in leg.get_texts():
+                    txt.set_color(text_c)
+
+    def _apply_plot_light_theme(self, fig, axes: list) -> None:
+        """Reset matplotlib Figure and Axes to light colours."""
+        fig.patch.set_facecolor("#f5f5f5")
+        for ax in axes:
+            if ax is None:
+                continue
+            ax.set_facecolor("white")
+            ax.tick_params(colors="#555555", which="both")
+            ax.xaxis.label.set_color("#2c3e50")
+            ax.yaxis.label.set_color("#2c3e50")
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#cccccc")
+            leg = ax.get_legend()
+            if leg is not None:
+                leg.get_frame().set_facecolor("white")
+                leg.get_frame().set_edgecolor("#cccccc")
+                for txt in leg.get_texts():
+                    txt.set_color("#2c3e50")
+
     def update_graph_plots(self, measurements):
         """Update analysis graphs from measurement data."""
         if not hasattr(self, "gallery_plot_figure"):
@@ -8032,22 +8151,36 @@ class MainWindow(GeometryMixin, QMainWindow):
             ax_len = None
             ax_wid = None
             ax_q = None
-        self.gallery_plot_figure.subplots_adjust(left=0.08, right=0.98, top=0.97, bottom=0.11)
         self._gallery_scatter_axis = ax_scatter
         self._gallery_hist_axes = {axis for axis in (ax_len, ax_wid, ax_q) if axis is not None}
         self._gallery_hover_hint_key = ""
 
         stats = self._stats_from_measurements(lengths, widths)
 
+        dark = self._is_dark_theme()
+        hist_color_dark = "#4a90d9"   # brighter blue for dark bg
+        q_line_color = "#8e8e93" if dark else "black"
+
         if not lengths:
             self.gallery_scatter_id_map = {}
             self.gallery_hist_patches = {}
-            ax_scatter.text(0.5, 0.5, "No measurements", ha="center", va="center")
+            all_axes = [ax_scatter, ax_len if show_hist else None,
+                        ax_wid if show_hist else None, ax_q if show_hist else None]
+            ax_scatter.text(0.5, 0.5, "No measurements", ha="center", va="center",
+                            color="#e8e8e8" if dark else "#2c3e50")
             ax_scatter.set_axis_off()
             if show_hist and ax_len and ax_wid and ax_q:
                 ax_len.set_axis_off()
                 ax_wid.set_axis_off()
                 ax_q.set_axis_off()
+            if dark:
+                self._apply_plot_dark_theme(self.gallery_plot_figure, all_axes)
+            else:
+                self._apply_plot_light_theme(self.gallery_plot_figure, all_axes)
+            try:
+                self.gallery_plot_figure.tight_layout(pad=0.4)
+            except Exception:
+                pass
             self.gallery_plot_canvas.draw()
             return
 
@@ -8067,7 +8200,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         image_labels = getattr(self, "gallery_image_labels", {}) or {}
         image_color_map = {}
-        hist_color = "#3498db"
+        hist_color = hist_color_dark if dark else "#3498db"
 
         if show_legend and image_labels:
             grouped = {}
@@ -8126,14 +8259,14 @@ class MainWindow(GeometryMixin, QMainWindow):
                     end_y = min(max_w, max_len / q_min)
                     end_x = min(max_len, end_y * q_min)
                     ax_scatter.plot([start_x, end_x], [start_x / q_min, end_x / q_min],
-                                    color="black", linewidth=1.0, label="Q min/max")
+                                    color=q_line_color, linewidth=1.0, label="Q min/max")
             if q_max > 0:
                 start_x = max(min_len, min_w * q_max)
                 if start_x < max_len:
                     end_y = min(max_w, max_len / q_max)
                     end_x = min(max_len, end_y * q_max)
                     ax_scatter.plot([start_x, end_x], [start_x / q_max, end_x / q_max],
-                                    color="black", linewidth=1.0)
+                                    color=q_line_color, linewidth=1.0)
 
         if show_ci and len(L) >= 3:
             ellipse = self._confidence_ellipse_points(L, W, confidence=0.95)
@@ -8407,30 +8540,94 @@ class MainWindow(GeometryMixin, QMainWindow):
             if ax_q:
                 ax_q.set_axis_off()
 
+        all_axes = [ax_scatter, ax_len, ax_wid, ax_q]
+        if dark:
+            self._apply_plot_dark_theme(self.gallery_plot_figure, all_axes)
+        else:
+            self._apply_plot_light_theme(self.gallery_plot_figure, all_axes)
+        try:
+            self.gallery_plot_figure.tight_layout(pad=0.4)
+        except Exception:
+            pass
         self.gallery_plot_canvas.draw()
 
     def export_graph_plot_svg(self):
-        """Export analysis graphs to an SVG file."""
+        """Export analysis graphs to SVG, PNG, or JPEG."""
         if not hasattr(self, "gallery_plot_figure"):
             return
-        default_path = str(Path(self._get_default_export_dir()) / "plot.svg")
+
+        dark = self._is_dark_theme()
+        dialog = ExportPlotDialog(current_dark=dark, parent=self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        settings = dialog.get_settings()
+        export_format = settings["format"]
+        export_theme = settings["theme"]   # "light" or "dark"
+        export_quality = settings["quality"]
+
+        default_name = "spore_plot"
+        if self.active_observation_id:
+            obs = ObservationDB.get_observation(self.active_observation_id)
+            if obs:
+                parts = [
+                    obs.get("genus") or "",
+                    obs.get("species") or obs.get("species_guess") or "",
+                    obs.get("date") or ""
+                ]
+                name = " ".join([p for p in parts if p]).strip()
+                name = name.replace(":", "-")
+                name = re.sub(r'[<>:"/\\\\|?*]', "_", name)
+                name = re.sub(r"\s+", " ", name).strip()
+                if name:
+                    default_name = f"{name} - plot"
+
+        ext_map = {"svg": ".svg", "png": ".png", "jpg": ".jpg"}
+        default_ext = ext_map.get(export_format, ".svg")
+        filter_map = {
+            "svg": "SVG Files (*.svg)",
+            "png": "PNG Images (*.png)",
+            "jpg": "JPEG Images (*.jpg)",
+        }
+        default_path = str(Path(self._get_default_export_dir()) / f"{default_name}{default_ext}")
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export Plot",
             default_path,
-            "SVG Files (*.svg)"
+            f"{filter_map.get(export_format, 'SVG Files (*.svg)')};;All Files (*)"
         )
         if not filename:
             return
-        if not filename.lower().endswith(".svg"):
-            filename = f"{filename}.svg"
+        if not re.search(r"\.(svg|png|jpe?g)$", filename, re.IGNORECASE):
+            filename += default_ext
         self._remember_export_dir(filename)
+
+        fig = self.gallery_plot_figure
+        axes = fig.get_axes()
+        needs_restore = (export_theme == "dark") != dark
         try:
-            self.gallery_plot_figure.savefig(filename, format="svg")
-            self.measure_status_label.setText(f"âœ“ Plot exported to {Path(filename).name}")
+            if export_theme == "dark" and not dark:
+                self._apply_plot_dark_theme(fig, axes)
+            elif export_theme == "light" and dark:
+                self._apply_plot_light_theme(fig, axes)
+
+            fmt = "jpeg" if export_format == "jpg" else export_format
+            save_kwargs = {"format": fmt}
+            if export_format == "jpg":
+                save_kwargs["pil_kwargs"] = {"quality": export_quality}
+            fig.savefig(filename, **save_kwargs)
+            self.measure_status_label.setText(f"\u2713 Plot exported to {Path(filename).name}")
             self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
+        finally:
+            if needs_restore:
+                if dark:
+                    self._apply_plot_dark_theme(fig, axes)
+                else:
+                    self._apply_plot_light_theme(fig, axes)
+                canvas = getattr(fig, "canvas", None)
+                if canvas:
+                    canvas.draw_idle()
 
     def export_publish_measure_plot_png(self, observation_id: int, out_path: Path | str) -> bool:
         """Render and export a publish PNG using the same analysis plot pipeline."""
@@ -9035,6 +9232,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not valid_measurements:
             return
 
+        # Ask user for format options
+        fmt_dialog = ExportGalleryDialog(parent=self)
+        if fmt_dialog.exec() != QDialog.Accepted:
+            return
+        fmt_settings = fmt_dialog.get_settings()
+        export_format = fmt_settings["format"]
+        export_quality = fmt_settings["quality"]
+
         # Ask user for save location
         default_name = "spore_gallery"
         if self.active_observation_id:
@@ -9052,12 +9257,19 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if name:
                     default_name = f"{name} - gallery"
 
-        default_path = str(Path(self._get_default_export_dir()) / f"{default_name}.png")
+        ext_map = {"png": ".png", "jpg": ".jpg", "svg": ".svg"}
+        default_ext = ext_map.get(export_format, ".png")
+        filter_map = {
+            "png": "PNG Images (*.png)",
+            "jpg": "JPEG Images (*.jpg)",
+            "svg": "SVG Files (*.svg)",
+        }
+        default_path = str(Path(self._get_default_export_dir()) / f"{default_name}{default_ext}")
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export Gallery Composite",
             default_path,
-            "PNG Images (*.png);;JPEG Images (*.jpg)"
+            f"{filter_map.get(export_format, 'PNG Images (*.png)')};;All Files (*)"
         )
 
         if not filename:
@@ -9160,23 +9372,38 @@ class MainWindow(GeometryMixin, QMainWindow):
         composite_width = items_per_row * thumbnail_size + (items_per_row - 1) * spacing
         composite_height = num_rows * thumbnail_size + (num_rows - 1) * spacing
 
-        composite = QPixmap(composite_width, composite_height)
-        composite.fill(QColor(255, 255, 255))
+        if export_format == "svg":
+            from PySide6.QtSvg import QSvgGenerator
+            from PySide6.QtCore import QRect, QSize as _QSize
+            generator = QSvgGenerator()
+            generator.setFileName(filename)
+            generator.setSize(_QSize(composite_width, composite_height))
+            generator.setViewBox(QRect(0, 0, composite_width, composite_height))
+            painter = QPainter(generator)
+            for idx, thumbnail in enumerate(thumbnails):
+                row = idx // items_per_row
+                col = idx % items_per_row
+                x = col * (thumbnail_size + spacing)
+                y = row * (thumbnail_size + spacing)
+                painter.drawPixmap(x, y, thumbnail)
+            painter.end()
+        else:
+            composite = QPixmap(composite_width, composite_height)
+            composite.fill(QColor(255, 255, 255))
+            painter = QPainter(composite)
+            for idx, thumbnail in enumerate(thumbnails):
+                row = idx // items_per_row
+                col = idx % items_per_row
+                x = col * (thumbnail_size + spacing)
+                y = row * (thumbnail_size + spacing)
+                painter.drawPixmap(x, y, thumbnail)
+            painter.end()
+            if export_format == "jpg":
+                composite.save(filename, "JPEG", export_quality)
+            else:
+                composite.save(filename)
 
-        painter = QPainter(composite)
-
-        for idx, thumbnail in enumerate(thumbnails):
-            row = idx // items_per_row
-            col = idx % items_per_row
-            x = col * (thumbnail_size + spacing)
-            y = row * (thumbnail_size + spacing)
-            painter.drawPixmap(x, y, thumbnail)
-
-        painter.end()
-
-        # Save composite
-        composite.save(filename)
-        self.measure_status_label.setText(f"âœ“ Gallery exported to {Path(filename).name}")
+        self.measure_status_label.setText(f"\u2713 Gallery exported to {Path(filename).name}")
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
 
     def export_ml_dataset(self):
@@ -9237,6 +9464,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Open language settings dialog."""
         dialog = LanguageSettingsDialog(self)
         dialog.exec()
+
+    def open_appearance_dialog(self):
+        """Open appearance (theme) settings dialog."""
+        dialog = AppearanceDialog(self)
+        dialog.exec()
+
+    def _apply_theme(self):
+        """Read the stored theme preference and apply palette + stylesheet."""
+        theme = SettingsDB.get_setting("ui_theme", "auto")
+        apply_palette(theme)
+        self.setStyleSheet(get_style(theme))
 
     def apply_vernacular_language_change(self):
         if hasattr(self, "observations_tab"):

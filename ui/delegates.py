@@ -1,5 +1,5 @@
 """Reusable item delegates for UI widgets."""
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtWidgets import QStyledItemDelegate, QStyle, QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
@@ -44,7 +44,10 @@ class SpeciesItemDelegate(QStyledItemDelegate):
                         or info.get("has_reference_minmax")
                     )
             if has_data:
+                app = QApplication.instance()
+                dark = app.palette().window().color().lightness() < 128 if app else False
+                highlight = QColor(28, 53, 90) if dark else QColor(219, 234, 254)
                 painter.save()
-                painter.fillRect(option.rect, QColor(219, 234, 254))
+                painter.fillRect(option.rect, highlight)
                 painter.restore()
         super().paint(painter, option, index)

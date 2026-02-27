@@ -39,6 +39,30 @@ from .image_gallery_widget import ImageGalleryWidget
 from .export_image_dialog import ExportImageDialog
 
 
+class _FlexibleDecimalSpinBox(QDoubleSpinBox):
+    """Double spinbox that accepts both '.' and ',' as decimal separators."""
+
+    @staticmethod
+    def _normalize_decimal_text(text: str) -> str:
+        return (text or "").replace(",", ".")
+
+    def validate(self, text: str, pos: int):
+        normalized = self._normalize_decimal_text(text)
+        state, _cleaned, _pos = super().validate(normalized, pos)
+        return state, text, pos
+
+    def valueFromText(self, text: str) -> float:
+        normalized = self._normalize_decimal_text(text)
+        suffix = self.suffix()
+        if suffix:
+            normalized = normalized.replace(suffix, "")
+        normalized = normalized.strip()
+        try:
+            return float(normalized)
+        except (TypeError, ValueError):
+            return super().valueFromText(text)
+
+
 def calculate_calibration_stats(measurements: list[tuple[float, float]]):
     """
     Calculate calibration statistics from measurements.
@@ -795,8 +819,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.measurement_points: list[QPointF] = []  # Points being drawn
         self.is_measuring = False
         self._modified = False  # Track if user made changes
-        self.manual_measure_color = "#3498db"
         self.auto_measure_color = "#e74c3c"
+        self.manual_measure_color = self.auto_measure_color
         self.auto_parabola_color = "#b455ff"
         self._auto_crop_active = False
         self._show_auto_debug_overlays = True
@@ -1057,7 +1081,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Known distance input (mm)
         distance_row = QHBoxLayout()
         distance_row.addWidget(QLabel(self.tr("Known distance:")))
-        self.known_distance_input = QDoubleSpinBox()
+        self.known_distance_input = _FlexibleDecimalSpinBox()
         self.known_distance_input.setRange(0.01, 1000.0)
         self.known_distance_input.setValue(0.10)
         self.known_distance_input.setSuffix(" mm")
@@ -1186,18 +1210,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.auto_clear_btn,
             self.tr("Remove this. Calibration will run a new calibration."),
         )
-        btn_width = max(self.auto_crop_btn.sizeHint().width(), self.auto_clear_btn.sizeHint().width())
-        self.auto_crop_btn.setFixedWidth(btn_width)
-        self.auto_clear_btn.setFixedWidth(btn_width)
-        run_row.addWidget(self.auto_crop_btn)
-        run_row.addStretch(1)
 
         self.auto_run_btn = QPushButton(self.tr("Calibrate"))
         self.auto_run_btn.clicked.connect(self._on_run_auto_calibration)
         self._register_hint_widget(self.auto_run_btn, self.tr("Automatic calibration."))
-        run_row.addWidget(self.auto_run_btn)
-        run_row.addStretch(1)
-        run_row.addWidget(self.auto_clear_btn)
+        for btn in (self.auto_crop_btn, self.auto_run_btn, self.auto_clear_btn):
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            run_row.addWidget(btn, 1)
 
         input_layout.addRow(run_row)
 

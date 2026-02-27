@@ -19,7 +19,7 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 2.  Press **Guess** and the table will populate
 3. Press **Copy** to copy the species over to the species name fields for this observation.
 
-![Create a new observation](images/taxonomy.png)
+![Taxonomy](images/taxonomy.png)
 
 ## Measuring Lengths in Field Images
 

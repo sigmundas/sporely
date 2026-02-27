@@ -596,6 +596,12 @@ class ObservationsTab(QWidget):
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
         self.init_ui()
         self.refresh_observations()
+        # Keyboard shortcut to open Prepare Images directly from the table.
+        # Ctrl+E = Cmd+E on macOS; Alt+E works on all platforms.
+        for _seq in ("Ctrl+E", "Alt+E"):
+            sc = QShortcut(QKeySequence(_seq), self)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(self.open_edit_images_direct)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -3836,6 +3842,62 @@ class ObservationsTab(QWidget):
             self._ai_suggestions_cache[obs_id] = ai_state
             return
 
+    def open_edit_images_direct(self):
+        """Open Prepare Images dialog directly for the selected observation.
+
+        Skips ObservationDetailsDialog — useful when triggered via keyboard
+        shortcut (Ctrl/Cmd+E or Alt+E) from the observations table.
+        """
+        selected_rows = self.table.selectionModel().selectedRows()
+        if len(selected_rows) != 1:
+            return
+        row = selected_rows[0].row()
+        obs_id = int(self.table.item(row, 0).text())
+        observation = ObservationDB.get_observation(obs_id)
+        if not observation:
+            return
+
+        obs_dt  = _parse_observation_datetime(observation.get("date"))
+        obs_lat = observation.get("gps_latitude")
+        obs_lon = observation.get("gps_longitude")
+
+        existing_images = ImageDB.get_images_for_observation(obs_id)
+        image_results   = self._build_import_results_from_images(existing_images)
+
+        image_dialog = ImageImportDialog(
+            self,
+            import_results=image_results,
+            observation_datetime=obs_dt,
+            observation_lat=obs_lat,
+            observation_lon=obs_lon,
+        )
+        # Jump to first image so the user lands on actual content
+        if existing_images:
+            first_path = existing_images[0].get("filepath")
+            if first_path:
+                image_dialog.select_image_by_path(first_path)
+
+        if not image_dialog.exec():
+            return
+
+        image_results       = image_dialog.import_results
+        obs_lat, obs_lon    = image_dialog.get_observation_gps()
+        ObservationDB.update_observation(
+            obs_id,
+            gps_latitude=obs_lat,
+            gps_longitude=obs_lon,
+            allow_nulls=True,
+        )
+        self._apply_import_results_to_observation(obs_id, image_results, existing_images=existing_images)
+        self.refresh_observations()
+        for r, obs in enumerate(ObservationDB.get_all_observations()):
+            if obs["id"] == obs_id:
+                self.table.selectRow(r)
+                self.selected_observation_id = obs_id
+                self.on_selection_changed()
+                break
+        self.set_status_message(self.tr("Images updated."), level="success")
+
     def create_new_observation(self):
         """Show dialog to create new observation."""
         image_results: list[ImageImportResult] = []
@@ -6587,6 +6649,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_species_placeholder_from_suggestions(species_suggestions)
 
     def _on_genus_editing_finished(self):
+        if self._genus_completer and self._genus_completer.popup().isVisible():
+            return
         if not self.vernacular_db or self._suppress_taxon_autofill:
             return
         self._handle_taxon_change()
@@ -6619,31 +6683,39 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._maybe_set_vernacular_from_taxon()
 
     def _on_species_editing_finished(self):
+        if self._species_completer and self._species_completer.popup().isVisible():
+            return
         if not self.vernacular_db or self._suppress_taxon_autofill:
             return
         self._handle_taxon_change()
         self._maybe_set_vernacular_from_taxon()
 
     def _on_species_text_changed(self, text):
-        if not self.vernacular_db:
-            return
         if self._suppress_taxon_autofill:
             return
         genus = self.genus_input.text().strip()
         if not genus:
             self._species_model.setStringList([])
             return
-        suggestions = self.vernacular_db.suggest_species(genus, text.strip())
-        
-        # If text exactly matches a single suggestion, clear the model to prevent popup
-        if len(suggestions) == 1 and suggestions[0].lower() == text.strip().lower():
+        text_stripped = (text or "").strip()
+        if self.vernacular_db:
+            suggestions = self.vernacular_db.suggest_species(genus, text_stripped)
+        else:
+            from database.reference_db import ReferenceDB
+            suggestions = ReferenceDB.list_species(genus, text_stripped)
+
+        # Hide popup when text exactly matches any suggestion (covers multi-result cases)
+        if text_stripped and any(s.lower() == text_stripped.lower() for s in suggestions):
             self._species_model.setStringList([])
             if self._species_completer:
                 self._species_completer.popup().hide()
         else:
             self._species_model.setStringList(suggestions)
-        
-        if text.strip():
+            if self._species_model.stringList() and self._species_completer:
+                self._species_completer.setCompletionPrefix(text_stripped)
+                self._species_completer.complete()
+
+        if text_stripped:
             self._maybe_set_vernacular_from_taxon()
 
     def _handle_taxon_change(self):

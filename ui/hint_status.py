@@ -34,7 +34,7 @@ class HintBar(QFrame):
     SUCCESS = "success"
     WARNING = "warning"
 
-    # (background, left accent bar colour)
+    # (background, left accent bar colour) — light mode defaults
     _STATE_COLORS: dict[str, tuple[str, str]] = {
         "idle":    ("#e8e8e8", "#b8b8b8"),
         "tip":     ("#f0f7ff", "#0066cc"),
@@ -42,6 +42,14 @@ class HintBar(QFrame):
         "success": ("#eefaf3", "#27ae60"),
         "warning": ("#fdecec", "#e74c3c"),
         "error":   ("#fdecec", "#e74c3c"),   # alias → warning
+    }
+    _STATE_COLORS_DARK: dict[str, tuple[str, str]] = {
+        "idle":    ("#2a2a2c", "#555557"),
+        "tip":     ("#162030", "#4a90d9"),
+        "info":    ("#162030", "#4a90d9"),
+        "success": ("#122418", "#2ecc71"),
+        "warning": ("#2e1a1a", "#e74c3c"),
+        "error":   ("#2e1a1a", "#e74c3c"),
     }
 
     _BAR_WIDTH = 4
@@ -64,6 +72,7 @@ class HintBar(QFrame):
         self._label.setWordWrap(False)
         self._label.setStyleSheet(
             f"QLabel {{ background: transparent; border: none; color: #222222; font-size: {pt(9)}pt; }}"
+            # colour is overwritten in _apply_style on each state change
         )
         font = self._label.font()
         font.setWeight(QFont.Weight.Medium)
@@ -76,8 +85,19 @@ class HintBar(QFrame):
     # ------------------------------------------------------------------
     # Internal
 
+    def _is_dark(self) -> bool:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        return app.palette().window().color().lightness() < 128 if app else False
+
     def _apply_style(self, state: str) -> None:
-        bg, accent = self._STATE_COLORS.get(state, self._STATE_COLORS["tip"])
+        dark = self._is_dark()
+        palette = self._STATE_COLORS_DARK if dark else self._STATE_COLORS
+        bg, accent = palette.get(state, palette["tip"])
+        text_color = "#e8e8e8" if dark else "#222222"
+        self._label.setStyleSheet(
+            f"QLabel {{ background: transparent; border: none; color: {text_color}; font-size: {pt(9)}pt; }}"
+        )
         self.setStyleSheet(
             f"HintBar {{ background: {bg}; border-left: {self._BAR_WIDTH}px solid {accent}; }}"
         )
@@ -186,14 +206,23 @@ class HintStatusController(QObject):
         if self._hint_bar is not None:
             self._hint_bar._update_height_for_wrap()
 
+    @staticmethod
+    def _palette_is_dark() -> bool:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        return app.palette().window().color().lightness() < 128 if app else False
+
     def _apply_idle_style(self) -> None:
         self._set_label_text("")
         if self._hint_bar is not None:
             self._hint_bar._apply_style("idle")
         else:
+            dark = self._palette_is_dark()
+            bg, border = ("#2a2a2c", "#555557") if dark else ("#e8e8e8", "#b8b8b8")
+            text = "#e8e8e8" if dark else "#222222"
             self._hint_label.setStyleSheet(
-                "QLabel { background: #e8e8e8; border-left: 4px solid #b8b8b8; "
-                "padding-left: 6px; color: #222222; }"
+                f"QLabel {{ background: {bg}; border-left: 4px solid {border}; "
+                f"padding-left: 6px; color: {text}; }}"
             )
 
     def _apply_active_style(self, tone: str = "info") -> None:
@@ -201,15 +230,24 @@ class HintStatusController(QObject):
         if self._hint_bar is not None:
             self._hint_bar._apply_style(state)
         else:
-            colors: dict[str, tuple[str, str]] = {
-                "tip":     ("#f0f7ff", "#0066cc"),
-                "success": ("#eefaf3", "#27ae60"),
-                "warning": ("#fdecec", "#e74c3c"),
-            }
+            dark = self._palette_is_dark()
+            if dark:
+                colors: dict[str, tuple[str, str]] = {
+                    "tip":     ("#162030", "#4a90d9"),
+                    "success": ("#122418", "#2ecc71"),
+                    "warning": ("#2e1a1a", "#e74c3c"),
+                }
+            else:
+                colors = {
+                    "tip":     ("#f0f7ff", "#0066cc"),
+                    "success": ("#eefaf3", "#27ae60"),
+                    "warning": ("#fdecec", "#e74c3c"),
+                }
             bg, border = colors.get(state, colors["tip"])
+            text = "#e8e8e8" if dark else "#222222"
             self._hint_label.setStyleSheet(
                 f"QLabel {{ background: {bg}; border-left: 4px solid {border}; "
-                "padding-left: 6px; color: #222222; }"
+                f"padding-left: 6px; color: {text}; }}"
             )
 
     def _restore_hint(self) -> None:
@@ -331,7 +369,7 @@ class HintLabel(QLabel):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setTextFormat(Qt.PlainText)
         # Keep text readable; underline is drawn in paintEvent.
-        self.setStyleSheet("QLabel { color: #2c3e50; }")
+        # No color override — inherits from global stylesheet / palette.
         self.setToolTip("")
         self._apply_hint_affordance()
         self.setText(text)

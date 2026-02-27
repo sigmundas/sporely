@@ -1662,12 +1662,15 @@ class ZoomableImageLabel(QLabel):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        # Fill background
-        painter.fillRect(self.rect(), QColor(236, 240, 241))
+        # Fill background — use dark gray in dark mode
+        from PySide6.QtWidgets import QApplication as _QApp
+        _app = _QApp.instance()
+        _dark = _app.palette().window().color().lightness() < 128 if _app else False
+        painter.fillRect(self.rect(), QColor(44, 44, 46) if _dark else QColor(236, 240, 241))
 
         if not self.original_pixmap:
             # Draw placeholder text
-            painter.setPen(QColor(127, 140, 141))
+            painter.setPen(QColor(180, 180, 182) if _dark else QColor(127, 140, 141))
             painter.drawText(self.rect(), Qt.AlignCenter, "Load an image to begin")
             painter.end()
             return

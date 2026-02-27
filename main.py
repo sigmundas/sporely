@@ -22,6 +22,7 @@ from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer
 from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
 from ui.main_window import MainWindow
+from ui.styles import cache_system_dark
 
 APP_VERSION = "0.6.1"
 
@@ -97,16 +98,6 @@ def _apply_light_palette(app: QApplication) -> None:
 
     app.setPalette(palette)
 
-    # Qt 6 may expose a runtime color-scheme hint; use it when available,
-    # but keep this optional for compatibility across PySide6 versions.
-    try:
-        color_scheme_enum = getattr(Qt, "ColorScheme", None)
-        set_color_scheme = getattr(app.styleHints(), "setColorScheme", None)
-        if color_scheme_enum is not None and callable(set_color_scheme):
-            set_color_scheme(color_scheme_enum.Light)
-    except Exception:
-        pass
-
 
 def main():
     """Initialize and run the application."""
@@ -117,6 +108,7 @@ def main():
     # Fusion style gives fully consistent QSS rendering on every platform —
     # no native-style quirks that partially ignore stylesheet rules.
     app.setStyle("Fusion")
+    cache_system_dark()   # snapshot native dark state before palette override
     _apply_light_palette(app)
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets
     # accept the decimal separator the user's OS is configured for.

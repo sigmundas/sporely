@@ -2,23 +2,33 @@
 
 ## Objectives
 
+You need to set up your objectives and calibrate them so the app knows the scale of your microscope images. Go to  **Settings** → **Calibration** and pick an objective, or create **New Objective**:
+![Ojbective](images/calibrate-objective.png)
+
 Objectives are defined by:
-- Magnification (integer)
+- Magnification
 - Numerical Aperture (NA)
 - Objective name/camera setup
 
-You can add a note about your setup, what camera or phone adapters you're using etc.
+You can also add a note about your setup, what camera or phone adapters you're using etc.
 
-Display name is built as `<Magnification>X/<NA> <Objective name>` in the UI.
 
-## Calibration of image scales
+## Calibration 
 
-MycoLog supports manual and auto calibration.
+Calibrating a microscope requires a calibration slide, or "stage micrometer" for accurate results. See if you can borrow one from someone, or you can buy one from China for very little money: 
 
-- **Manual**: click two points on a known scale.
-- **Auto**: detect calibration slide lines, then review the result.
+![Calibration-slide](images/calibration-slide.png)
 
-Calibration history stores:
+### Manual calibration
+ Pick one or more known distances in your image; start and stop location. Make sure you measure from the edge of a line to the same-side edge of another line. Like this:
+![manual calibration](images/manual-calibration.png)
+
+Check the deviation on three different measurements and check that the deviation is acceptable.
+
+### Automatic calibration
+MycoLog recognizes horizontal or vertical lines. All you have to do is specify the line distance, then click ***Calibrate***.
+
+## Calibration history
 - Camera model
 - Megapixels used
 - Confidence interval and residuals (when available)

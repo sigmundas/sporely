@@ -14,8 +14,8 @@ DEFAULT_OBJECTIVES = {
     "100X": {
         "magnification": 100.0,
         "na": 1.25,
-        "objective_name": "Plan acrho",
-        "name": "100X/1.25 Plan acrho",
+        "objective_name": "Plan achro",
+        "name": "100X/1.25 Plan achro",
         "microns_per_pixel": 0.0315,
         "notes": "Leica DM2000, Olympus MFT 1:1",
     },
@@ -121,6 +121,12 @@ def _upgrade_objective_entry(key: str, obj: dict) -> tuple[dict, bool]:
         if parsed_name:
             entry["objective_name"] = parsed_name
             updated = True
+
+    normalized_objective_name = str(entry.get("objective_name") or "")
+    corrected_objective_name = re.sub(r"\bacrho\b", "achro", normalized_objective_name, flags=re.IGNORECASE)
+    if corrected_objective_name != normalized_objective_name:
+        entry["objective_name"] = corrected_objective_name
+        updated = True
 
     display_name = format_objective_display(
         entry.get("magnification"),
