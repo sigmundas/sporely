@@ -8,13 +8,18 @@ Publish observations from MycoLog to Artsobservasjoner, iNaturalist, and Mushroo
 2. Select a service in the table.
 3. Click **Log in**.
 
+## Publishing options
+You can set the image license you want to use for the images you upload. Tick off the boxes for image annotations, like showing what spores you measured, or showing an image scale in the bottom right corner.
+
+![artsobs login](images/publisering.png)
+
 ### Artsobservasjoner
 
 Logging in to either Artsobservasjoner target logs in to both (mobile and web) in one step. Enter your username and password when prompted. Tick **Save login info on this device** to avoid being asked again — credentials are stored securely via the OS keyring.
 
 If your session expires, MycoLog will silently re-authenticate in the background using saved credentials.
 
-### iNaturalist
+### iNaturalist (awaiting approval)
 
 Click **Log in** and complete sign-in in your browser. MycoLog keeps you signed in afterwards.
 

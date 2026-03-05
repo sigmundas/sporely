@@ -37,7 +37,10 @@ from PySide6.QtCore import (
     QStandardPaths,
     QModelIndex,
     QT_TRANSLATE_NOOP,
+    QSysInfo,
 )
+
+_ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import json
 import html
@@ -46,6 +49,7 @@ import math
 import sqlite3
 import time
 import os
+import warnings
 from pathlib import Path
 import re
 from PIL import Image, ExifTags
@@ -1012,6 +1016,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         label.setWordWrap(True)
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         label.setTextInteractionFlags(Qt.NoTextInteraction)
+        label.setCursor(Qt.PointingHandCursor)
+        label.mousePressEvent = lambda _event, cb=checkbox: cb.click() if cb.isEnabled() else None
         self._register_hint_widget(label, help_text)
         text_row.addWidget(label, 1)
         row.addLayout(text_row, 1)
@@ -2640,6 +2646,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.microns_per_pixel = 0.5
         self.current_calibration_id = None
         self.current_image_type = None
+        # Keep independent scale-bar overlay lengths per image type.
+        self._scale_bar_overlay_field_mm = 10.0
+        self._scale_bar_overlay_micro_um = 10.0
+        self._scale_bar_overlay_field_is_manual = False
+        # Microscope overlay presets by objective; manual edits establish basis
+        # used to derive values for other objectives.
+        self._scale_bar_micro_manual_by_objective: dict[str, float] = {}
+        self._scale_bar_micro_basis_objective: str | None = None
 
         # Active observation tracking
         self.active_observation_id = None
@@ -2683,6 +2697,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_scatter_axis = None
         self._gallery_hist_axes: set = set()
         self._gallery_hover_hint_key = ""
+        self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
         self.species_availability = SpeciesDataAvailability()
@@ -2693,6 +2708,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.reference_series = []
         self.suppress_scale_prompt = False
         self._measure_category_sync = False
+        self._measurement_type_by_id: dict[int, str] = {}
+        self._show_calibration_overlay_for_scalebar = False
 
         # Calibration mode tracking
         self.calibration_mode = False
@@ -2701,6 +2718,14 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         # Apply theme (palette + stylesheet). Reads "ui_theme" from SettingsDB.
         self._apply_theme()
+
+        # Re-apply theme automatically when the OS switches dark/light (Qt 6.5+).
+        try:
+            QApplication.instance().styleHints().colorSchemeChanged.connect(
+                self._on_system_color_scheme_changed
+            )
+        except Exception:
+            pass
 
         self.init_ui()
         self._populate_scale_combo()
@@ -2778,18 +2803,39 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.observations_tab.observation_selected.connect(self.on_observation_selected)
         self.observations_tab.image_selected.connect(self.on_image_selected)
         self.observations_tab.observation_deleted.connect(self.on_observation_deleted)
-        self.tab_widget.addTab(self.observations_tab, self.tr("Observations"))
+        self.tab_widget.addTab(self.observations_tab, self.tr("Observations ({alt}O)").format(alt=_ALT_LABEL))
 
         # Measure tab (includes control panel on left and stats panel on right)
         measure_tab = self.create_measure_tab()
-        self.tab_widget.addTab(measure_tab, self.tr("Measure"))
+        self.tab_widget.addTab(measure_tab, self.tr("Measure ({alt}M)").format(alt=_ALT_LABEL))
 
         # Analysis tab
         gallery_tab = self.create_gallery_panel()
-        self.tab_widget.addTab(gallery_tab, self.tr("Analysis"))
+        self.analysis_tab = gallery_tab
+        self.tab_widget.addTab(gallery_tab, self.tr("Analysis ({alt}A)").format(alt=_ALT_LABEL))
         self.refresh_gallery_filter_options()
 
         main_layout.addWidget(self.tab_widget, 1)
+
+        # Tab navigation shortcuts: Alt/Option on all platforms.
+        # Cmd (Meta) deliberately excluded — Cmd+A/M/O conflict with system shortcuts on macOS.
+        # From Observations → Measure (Alt+M), Analysis (Alt+A)
+        # From Measure      → Observations (Alt+O), Analysis (Alt+A)
+        # From Analysis     → Observations (Alt+O), Measure (Alt+M)
+        _tab_shortcuts = [
+            (self.observations_tab, Qt.Key_M, lambda: self._switch_tab_from_observations(1)),
+            (self.observations_tab, Qt.Key_A, lambda: self._switch_tab_from_observations(2)),
+            (self.measure_tab,      Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
+            (self.measure_tab,      Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
+            (self.analysis_tab,     Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
+            (self.analysis_tab,     Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
+        ]
+        self._tab_nav_shortcuts = []
+        for widget, key, slot in _tab_shortcuts:
+            sc = QShortcut(QKeySequence(Qt.ALT | key), widget)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(slot)
+            self._tab_nav_shortcuts.append(sc)
 
     def create_menu_bar(self):
         """Create the menu bar."""
@@ -2979,6 +3025,26 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_combo.currentIndexChanged.connect(self.on_scale_combo_changed)
         calib_layout.addWidget(self.scale_combo)
 
+        self.set_from_scalebar_btn = QPushButton(self.tr("Set from scalebar"))
+        self.set_from_scalebar_btn.clicked.connect(self._on_set_from_scalebar_clicked)
+        calib_layout.addWidget(self.set_from_scalebar_btn)
+
+        self.scale_bar_inline = QWidget()
+        scale_inline_layout = QHBoxLayout(self.scale_bar_inline)
+        scale_inline_layout.setContentsMargins(0, 0, 0, 0)
+        scale_inline_layout.setSpacing(6)
+        self.scale_bar_length_input = QDoubleSpinBox()
+        self.scale_bar_length_input.setRange(0.1, 100000.0)
+        self.scale_bar_length_input.setDecimals(1)
+        self.scale_bar_length_input.setSingleStep(1.0)
+        self.scale_bar_length_input.setValue(10.0)
+        self.scale_bar_length_input.setSuffix(" µm")
+        self.scale_bar_horizontal_checkbox = QCheckBox(self.tr("Horizontal"))
+        self.scale_bar_horizontal_checkbox.toggled.connect(self._on_scale_bar_horizontal_toggled)
+        scale_inline_layout.addWidget(self.scale_bar_length_input, 1)
+        scale_inline_layout.addWidget(self.scale_bar_horizontal_checkbox, 0)
+        calib_layout.addWidget(self.scale_bar_inline)
+
         self.calib_info_label = QLabel(self.tr("Calibration: --"))
         self.calib_info_label.setWordWrap(True)
         self.calib_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
@@ -3112,7 +3178,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         scale_bar_row = QHBoxLayout()
         scale_bar_row.setContentsMargins(0, 0, 0, 0)
         scale_bar_row.setSpacing(6)
-        self.scale_bar_length_label = QLabel(self.tr("Scale bar length:"))
+        self.scale_bar_length_label = QLabel(self.tr("Length reference"))
         self.scale_bar_input = QDoubleSpinBox()
         self.scale_bar_input.setRange(0.1, 100000.0)
         self.scale_bar_input.setDecimals(2)
@@ -3180,14 +3246,27 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.next_image_shortcut = QShortcut(QKeySequence(Qt.Key_N), tab)
         self.next_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.next_image_shortcut.activated.connect(self.goto_next_image)
+        self.next_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Right), tab)
+        self.next_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.next_image_arrow_shortcut.activated.connect(self.goto_next_image)
 
         self.prev_image_shortcut = QShortcut(QKeySequence(Qt.Key_P), tab)
         self.prev_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.prev_image_shortcut.activated.connect(self.goto_previous_image)
+        self.prev_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Left), tab)
+        self.prev_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.prev_image_arrow_shortcut.activated.connect(self.goto_previous_image)
 
         self.toggle_measurement_shortcut = QShortcut(QKeySequence(Qt.Key_M), tab)
         self.toggle_measurement_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.toggle_measurement_shortcut.activated.connect(self._on_measure_button_clicked)
+
+        self.delete_measurement_shortcuts = []
+        for seq in (QKeySequence(Qt.Key_Delete), QKeySequence("Alt+D"), QKeySequence("Meta+D")):
+            shortcut = QShortcut(seq, tab)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(self._delete_selected_measurement_shortcut)
+            self.delete_measurement_shortcuts.append(shortcut)
 
         self.start_measurement()
         return tab
@@ -3218,9 +3297,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             show_badges=True,
             min_height=50,
             default_height=220,
+            show_publish_checkbox=True,
+            publish_checkbox_hint=self.tr("Select image for online publishing"),
         )
+        self.measure_gallery.set_multi_select(True)
         self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
         self.measure_gallery.deleteRequested.connect(self._on_measure_gallery_delete_requested)
+        self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
 
         splitter = QSplitter(Qt.Vertical)
         splitter.setChildrenCollapsible(False)
@@ -3268,6 +3351,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "legend": False,
             "avg_q": False,
             "q_minmax": False,
+            "axis_equal": False,
             "x_min": None,
             "x_max": None,
             "y_min": None,
@@ -3313,6 +3397,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
         self.gallery_q_minmax_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_q_minmax_checkbox)
+
+        self.gallery_axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))
+        self.gallery_axis_equal_checkbox.setToolTip(self.tr("Use the same scale on X and Y axes"))
+        self.gallery_axis_equal_checkbox.setChecked(bool(self.gallery_plot_settings.get("axis_equal", False)))
+        self.gallery_axis_equal_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
+        plot_layout.addRow("", self.gallery_axis_equal_checkbox)
         plot_section = CollapsibleSection(self.tr("Plot settings"), plot_panel, expanded=False)
         reference_section = CollapsibleSection(self.tr("Reference values"), self._build_reference_panel(), expanded=True)
 
@@ -4892,7 +4982,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Measurement preview group
-        self.preview_group = QGroupBox("Measurement Preview")
+        self.preview_group = QGroupBox("Measurement Fine tune")
         preview_layout = QVBoxLayout()
         preview_layout.setContentsMargins(5, 5, 5, 5)
 
@@ -4901,11 +4991,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.spore_preview.delete_requested.connect(self.delete_measurement)
         self.spore_preview.set_measure_color(self.measure_color)
         preview_layout.addWidget(self.spore_preview)
-
-        self.calibration_apply_btn = QPushButton(self.tr("Set Scale"))
-        self.calibration_apply_btn.setVisible(False)
-        self.calibration_apply_btn.clicked.connect(self.apply_calibration_scale)
-        preview_layout.addWidget(self.calibration_apply_btn)
 
         self.preview_group.setLayout(preview_layout)
         layout.addWidget(self.preview_group)
@@ -5016,10 +5101,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.scale_combo.blockSignals(True)
         self.scale_combo.clear()
+        self.scale_combo.addItem(self.tr("Not set"), "")
         for key, obj in sorted(objectives.items(), key=_sort_key):
             label = objective_display_name(obj, key) or key
             self.scale_combo.addItem(label, key)
-        self.scale_combo.addItem("Scale bar", "custom")
         if selected_key is None:
             selected_key = self.current_objective_name
         if selected_key:
@@ -5035,23 +5120,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         previous_key = getattr(self, "_last_scale_combo_key", None)
         selected_key = self.scale_combo.currentData()
-        if selected_key == "custom":
-            is_field = (self.current_image_type == "field")
-            unit_label = "mm" if is_field else "\u03bcm"
-            unit_multiplier = 1000.0 if is_field else 1.0
-            initial_value = 1.0 if is_field else 10.0
-            dialog = ScaleBarCalibrationDialog(
-                self,
-                initial_value=initial_value,
-                unit_label=unit_label,
-                unit_multiplier=unit_multiplier,
-                previous_key=previous_key,
-            )
-            dialog.show()
+        if not selected_key:
+            self.current_objective = None
+            self.current_objective_name = None
+            self.microns_per_pixel = 0.0
+            self._last_scale_combo_key = ""
+            self._set_custom_scale_info(None)
+            self.image_label.set_microns_per_pixel(self.microns_per_pixel)
+            if self.current_pixmap:
+                self.image_label.set_objective_text("")
+            if self.current_image_id:
+                ImageDB.update_image(
+                    self.current_image_id,
+                    scale=0.0,
+                    objective_name="",
+                    calibration_id=None,
+                )
+            self._update_scalebar_controls_visibility()
             return
 
-        if not selected_key:
-            return
         objectives = self.load_objective_definitions()
         objective = objectives.get(selected_key)
         if objective:
@@ -5068,6 +5155,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.scale_combo.blockSignals(False)
                 return
             self._last_scale_combo_key = selected_key
+        self._update_scalebar_controls_visibility()
 
     def _set_calibration_info(self, objective_key: str | None, calibration_id: int | None = None) -> None:
         if not hasattr(self, "calib_info_label"):
@@ -5114,6 +5202,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             self.calib_info_label.setText(self.tr("Scale: -- nm/px"))
 
+    def _has_objective_calibration_selected(self) -> bool:
+        key = (self.current_objective_name or "").strip()
+        if not key:
+            return False
+        if key.lower() == "custom":
+            return False
+        return True
+
+    def _update_scalebar_controls_visibility(self) -> None:
+        hide_scalebar_controls = self._has_objective_calibration_selected()
+        if hasattr(self, "set_from_scalebar_btn"):
+            self.set_from_scalebar_btn.setVisible(not hide_scalebar_controls)
+        if hasattr(self, "scale_bar_inline"):
+            self.scale_bar_inline.setVisible(not hide_scalebar_controls)
+
     def apply_objective(self, objective):
         """Apply an objective's settings."""
         old_scale = self.microns_per_pixel
@@ -5152,6 +5255,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._populate_scale_combo(self.current_objective_name)
         self._last_scale_combo_key = self.current_objective_name
         self._update_scale_mismatch_warning()
+        self._update_measure_view_option_states()
+        self._update_scalebar_controls_visibility()
         return True
 
     def load_objective_definitions(self):
@@ -5193,9 +5298,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 objective_name=self.current_objective_name,
                 calibration_id=None,
             )
-        self._populate_scale_combo("custom")
-        self._last_scale_combo_key = "custom"
+        self._populate_scale_combo("")
+        self._last_scale_combo_key = ""
         self._update_scale_mismatch_warning()
+        self._update_measure_view_option_states()
+        self._update_scalebar_controls_visibility()
         return True
 
     def apply_image_scale(self, image_data):
@@ -5296,6 +5403,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measure_status_label.setStyleSheet("")
         self.suppress_scale_prompt = False
         self._update_scale_mismatch_warning()
+        self._update_measure_view_option_states()
+        self._update_scalebar_controls_visibility()
         if image_data.get("image_type") == "field" and (scale is None or scale <= 0):
             self.microns_per_pixel = 0.0
         self._update_field_scale_label()
@@ -5438,13 +5547,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         is_field = (image_type == "field")
         if hasattr(self, "scale_combo"):
             self.scale_combo.setEnabled(True)
-            if is_field:
-                idx = self.scale_combo.findData("custom")
-                if idx >= 0 and self.scale_combo.currentData() != "custom":
-                    self.scale_combo.blockSignals(True)
-                    self.scale_combo.setCurrentIndex(idx)
-                    self.scale_combo.blockSignals(False)
-                    self._last_scale_combo_key = self.scale_combo.currentData()
+        self._sync_scale_bar_unit_for_image_type(is_field)
         if is_field and self.measurement_active:
             self.stop_measurement()
         if hasattr(self, "measure_category_combo"):
@@ -5486,6 +5589,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             elif self.measure_status_label.text() == self.tr("Field photo - no scale set"):
                 self.measure_status_label.setText("")
                 self.measure_status_label.setStyleSheet("")
+        self._update_measure_view_option_states()
+        self._update_scalebar_controls_visibility()
 
     def _ensure_field_measure_category(self):
         if not hasattr(self, "measure_category_combo"):
@@ -5507,8 +5612,207 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.calib_info_label.setText(self.tr("Scale: {scale:.3f} mm/px").format(scale=scale_mm))
         else:
             self.calib_info_label.setText(self.tr("Scale: -- mm/px"))
-        self._calib_link_objective_key = None
-        self._calib_link_calibration_id = None
+
+    def _current_image_has_scale(self) -> bool:
+        image_data = ImageDB.get_image(self.current_image_id) if self.current_image_id else None
+        scale = image_data.get("scale_microns_per_pixel") if image_data else None
+        if isinstance(scale, (int, float)) and scale > 0:
+            return True
+        return bool(self.microns_per_pixel and self.microns_per_pixel > 0)
+
+    def _update_measure_view_option_states(self) -> None:
+        has_scale = self._current_image_has_scale()
+        for widget_name in (
+            "show_measures_checkbox",
+            "show_rectangles_checkbox",
+            "show_scale_bar_checkbox",
+            "show_copyright_checkbox",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setEnabled(has_scale)
+        if hasattr(self, "scale_bar_input"):
+            self.scale_bar_input.setEnabled(has_scale)
+        if hasattr(self, "scale_bar_length_label"):
+            self.scale_bar_length_label.setEnabled(has_scale)
+        if hasattr(self, "scale_bar_container"):
+            show_container = bool(
+                has_scale
+                and hasattr(self, "show_scale_bar_checkbox")
+                and self.show_scale_bar_checkbox.isChecked()
+            )
+            self.scale_bar_container.setVisible(show_container)
+        if not has_scale and hasattr(self, "image_label"):
+            unit = "mm" if (self.current_image_type or "").strip().lower() == "field" else "\u03bcm"
+            self.image_label.set_scale_bar(False, 0.0, unit=unit)
+
+    @staticmethod
+    def _snap_scale_bar_length_um(value_um: float) -> float:
+        """Snap microscope scale-bar lengths to user-friendly whole increments."""
+        value_um = max(0.1, float(value_um))
+        multipliers = (1.0, 2.0, 2.5, 3.0, 5.0)
+        candidates: list[float] = []
+        for exp in range(0, 6):  # 1 .. 500000
+            base = 10.0 ** exp
+            for mul in multipliers:
+                candidate = mul * base
+                if 0.1 <= candidate <= 500000.0:
+                    candidates.append(candidate)
+        if not candidates:
+            return value_um
+        return min(candidates, key=lambda candidate: abs(candidate - value_um))
+
+    def _objective_microns_per_pixel_for_key(self, objective_key: str | None) -> float | None:
+        key = (objective_key or "").strip()
+        if not key:
+            return None
+        if key == (self.current_objective_name or "") and self.microns_per_pixel and self.microns_per_pixel > 0:
+            return float(self.microns_per_pixel)
+        objectives = self.load_objective_definitions()
+        objective = objectives.get(key)
+        if not objective:
+            return None
+        scale = objective.get("microns_per_pixel")
+        if isinstance(scale, (int, float)) and scale > 0:
+            return float(scale)
+        return None
+
+    def _suggest_microscope_scale_bar_um_for_objective(self, objective_key: str | None) -> float:
+        key = (objective_key or "").strip()
+        if key and key in self._scale_bar_micro_manual_by_objective:
+            return float(self._scale_bar_micro_manual_by_objective[key])
+        basis_key = (self._scale_bar_micro_basis_objective or "").strip()
+        target_mpp = self._objective_microns_per_pixel_for_key(key)
+        basis_mpp = self._objective_microns_per_pixel_for_key(basis_key)
+        if (
+            basis_key
+            and basis_key in self._scale_bar_micro_manual_by_objective
+            and target_mpp
+            and basis_mpp
+            and basis_mpp > 0
+        ):
+            basis_um = float(self._scale_bar_micro_manual_by_objective[basis_key])
+            derived_um = basis_um * (float(target_mpp) / float(basis_mpp))
+            return float(self._snap_scale_bar_length_um(derived_um))
+        return float(self._snap_scale_bar_length_um(self._scale_bar_overlay_micro_um))
+
+    def _register_microscope_scale_bar_manual_value(self, value_um: float) -> None:
+        key = (self.current_objective_name or "").strip()
+        if not key or key.lower() == "custom":
+            self._scale_bar_overlay_micro_um = float(self._snap_scale_bar_length_um(value_um))
+            return
+        snapped_um = float(self._snap_scale_bar_length_um(value_um))
+        self._scale_bar_micro_manual_by_objective[key] = snapped_um
+        self._scale_bar_micro_basis_objective = key
+        self._scale_bar_overlay_micro_um = snapped_um
+
+    def _sync_scale_bar_unit_for_image_type(self, is_field: bool) -> None:
+        if not hasattr(self, "scale_bar_length_input"):
+            return
+        if is_field:
+            self.scale_bar_length_input.setDecimals(1)
+            self.scale_bar_length_input.setSingleStep(1.0)
+            self.scale_bar_length_input.setSuffix(" mm")
+            if self.scale_bar_length_input.value() <= 0:
+                self.scale_bar_length_input.setValue(10.0)
+        else:
+            self.scale_bar_length_input.setDecimals(1)
+            self.scale_bar_length_input.setSingleStep(1.0)
+            self.scale_bar_length_input.setSuffix(" µm")
+            if self.scale_bar_length_input.value() <= 0:
+                self.scale_bar_length_input.setValue(10.0)
+
+        if hasattr(self, "scale_bar_input"):
+            if is_field:
+                display_value = max(0.1, float(self._scale_bar_overlay_field_mm))
+                suffix = " mm"
+                tooltip = self.tr("Length of the displayed scale bar in millimeters.")
+                current_um = display_value * 1000.0
+            else:
+                suggested_um = self._suggest_microscope_scale_bar_um_for_objective(
+                    self.current_objective_name
+                )
+                self._scale_bar_overlay_micro_um = float(suggested_um)
+                display_value = max(0.1, float(suggested_um))
+                suffix = " \u03bcm"
+                tooltip = self.tr("Length of the displayed scale bar in micrometers.")
+                current_um = display_value
+            self.scale_bar_input.blockSignals(True)
+            self.scale_bar_input.setSuffix(suffix)
+            self.scale_bar_input.setToolTip(tooltip)
+            self.scale_bar_input.setValue(float(display_value))
+            self.scale_bar_input.blockSignals(False)
+            if (
+                self._current_image_has_scale()
+                and hasattr(self, "show_scale_bar_checkbox")
+                and self.show_scale_bar_checkbox.isChecked()
+            ):
+                unit = "mm" if is_field else "\u03bcm"
+                self.image_label.set_scale_bar(True, current_um, unit=unit)
+
+    def _current_scale_bar_length_um(self) -> float:
+        if not hasattr(self, "scale_bar_length_input"):
+            return 10.0
+        raw_value = float(self.scale_bar_length_input.value())
+        if (self.current_image_type or "").strip().lower() == "field":
+            return raw_value * 1000.0
+        return raw_value
+
+    def _on_set_from_scalebar_clicked(self) -> None:
+        if not self.current_pixmap:
+            self.measure_status_label.setText(self.tr("Load an image first to calibrate"))
+            self.measure_status_label.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(9)}pt;")
+            return
+        self.enter_calibration_mode(None)
+
+    def _on_scale_bar_horizontal_toggled(self, checked: bool) -> None:
+        if self.calibration_mode and hasattr(self, "image_label"):
+            self.image_label.preview_line_horizontal = bool(checked)
+
+    def _reset_calibration_interaction_state(self) -> None:
+        """Reset transient scalebar-calibration interaction state."""
+        self.calibration_mode = False
+        self.calibration_dialog = None
+        self.calibration_points = []
+        self._show_calibration_overlay_for_scalebar = False
+        if hasattr(self, "calibration_distance_pixels"):
+            self.calibration_distance_pixels = 0.0
+        self.temp_lines = []
+        if hasattr(self, "image_label"):
+            self.image_label.clear_preview_line()
+            self.image_label.clear_preview_rectangle()
+
+    def _default_measure_category_for_image(self, image_id: int | None, image_type: str | None) -> str:
+        """Choose default category when switching images."""
+        normalized_type = (image_type or "").strip().lower()
+        default_category = "field" if normalized_type == "field" else "spores"
+        if not image_id:
+            return default_category
+        measurements = MeasurementDB.get_measurements_for_image(image_id)
+        if not measurements:
+            return default_category
+        last = measurements[-1]
+        last_category = self.normalize_measurement_category(last.get("measurement_type"))
+        if normalized_type == "microscope" and last_category == "calibration":
+            return "spores"
+        return last_category or default_category
+
+    def _set_measure_category_for_current_image(self) -> None:
+        if not hasattr(self, "measure_category_combo"):
+            return
+        target = self._default_measure_category_for_image(self.current_image_id, self.current_image_type)
+        idx = self.measure_category_combo.findData(target)
+        if idx < 0:
+            idx = self.measure_category_combo.findData("spores")
+        if idx < 0:
+            return
+        self._measure_category_sync = True
+        self.measure_category_combo.blockSignals(True)
+        self.measure_category_combo.setCurrentIndex(idx)
+        self.measure_category_combo.blockSignals(False)
+        self._measure_category_sync = False
+        self._update_preview_title()
+        self.update_display_lines()
 
     def load_image_record(self, image_data, display_name=None, refresh_table=True):
         """Load an image record into the viewer."""
@@ -5531,6 +5835,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.current_image_path = image_data['filepath']
         self.current_image_id = image_data['id']
         self.current_image_type = image_data.get("image_type")
+        self._reset_calibration_interaction_state()
         self.auto_gray_cache = None
         self.auto_gray_cache_id = None
         self._update_measure_copyright_overlay()
@@ -5571,6 +5876,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_statistics()
         if refresh_table:
             self.update_measurements_table()
+            self.measurements_table.clearSelection()
+            self.spore_preview.clear()
+        self._set_measure_category_for_current_image()
         if not self._suppress_gallery_update:
             self.schedule_gallery_refresh()
 
@@ -5597,6 +5905,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.observation_images = ImageDB.get_images_for_observation(self.active_observation_id)
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.set_observation_id(self.active_observation_id)
+            self._apply_measure_gallery_publish_selection()
         if select_image_id:
             for idx, image in enumerate(self.observation_images):
                 if image['id'] == select_image_id:
@@ -5617,6 +5926,70 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_image_navigation_ui()
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
+
+    def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
+        return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
+
+    def _get_publish_excluded_image_ids_for_observation(self, observation_id: int | None) -> set[int]:
+        if not observation_id:
+            return set()
+        obs_id = int(observation_id)
+        raw = SettingsDB.get_setting(self._publish_excluded_images_setting_key(obs_id), "[]")
+        parsed: set[int] = set()
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                parsed = {int(v) for v in loaded}
+        except Exception:
+            parsed = set()
+        self._publish_excluded_image_ids_by_observation[obs_id] = set(parsed)
+        return parsed
+
+    def _set_publish_excluded_image_ids_for_observation(self, observation_id: int | None, excluded_ids: set[int]) -> None:
+        if not observation_id:
+            return
+        obs_id = int(observation_id)
+        normalized = {int(v) for v in (excluded_ids or set())}
+        self._publish_excluded_image_ids_by_observation[obs_id] = set(normalized)
+        try:
+            SettingsDB.set_setting(
+                self._publish_excluded_images_setting_key(obs_id),
+                json.dumps(sorted(normalized)),
+            )
+        except Exception:
+            pass
+
+    def _apply_measure_gallery_publish_selection(self) -> None:
+        if not hasattr(self, "measure_gallery"):
+            return
+        if not self.active_observation_id:
+            return
+        all_image_ids = {
+            int(image.get("id"))
+            for image in (self.observation_images or [])
+            if image.get("id") is not None
+        }
+        excluded = self._get_publish_excluded_image_ids_for_observation(self.active_observation_id)
+        excluded = {img_id for img_id in excluded if img_id in all_image_ids}
+        selected = set(all_image_ids) - set(excluded)
+        self.measure_gallery.set_publish_selected_ids(selected, emit_signal=False)
+
+    def _on_measure_gallery_publish_selection_changed(self, selected_ids) -> None:
+        if not self.active_observation_id:
+            return
+        all_image_ids = {
+            int(image.get("id"))
+            for image in (self.observation_images or [])
+            if image.get("id") is not None
+        }
+        try:
+            selected_set = {int(v) for v in (selected_ids or set())}
+        except Exception:
+            selected_set = set()
+        excluded = set(all_image_ids) - set(selected_set)
+        self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
+        if hasattr(self, "observations_tab") and hasattr(self.observations_tab, "refresh_publish_checkbox_state"):
+            self.observations_tab.refresh_publish_checkbox_state(self.active_observation_id)
 
     def update_image_navigation_ui(self):
         """Update navigation button state and label."""
@@ -5816,12 +6189,13 @@ class MainWindow(GeometryMixin, QMainWindow):
     def load_image(self):
         """Load a microscope image."""
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", "",
+            self, "Open Microscope Image", self._get_default_import_dir(),
             "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
         )
 
         if not paths:
             return
+        self._remember_import_dir(paths[0])
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -5921,15 +6295,44 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_show_scale_bar_toggled(self, checked):
         """Toggle scale bar display."""
+        if checked and not self._current_image_has_scale():
+            checked = False
         if hasattr(self, "scale_bar_container"):
-            self.scale_bar_container.setVisible(checked)
-        scale_value = self.scale_bar_input.value() if hasattr(self, "scale_bar_input") else 10.0
-        self.image_label.set_scale_bar(checked, scale_value)
+            self.scale_bar_container.setVisible(bool(checked) and self._current_image_has_scale())
+        scale_value = float(self.scale_bar_input.value()) if hasattr(self, "scale_bar_input") else 10.0
+        is_field = (self.current_image_type or "").strip().lower() == "field"
+        if is_field:
+            self._scale_bar_overlay_field_mm = max(0.1, float(scale_value))
+        else:
+            self._register_microscope_scale_bar_manual_value(float(scale_value))
+            scale_value = float(self._scale_bar_overlay_micro_um)
+        scale_um = scale_value * 1000.0 if is_field else scale_value
+        unit = "mm" if is_field else "\u03bcm"
+        self.image_label.set_scale_bar(checked, scale_um, unit=unit)
 
     def on_scale_bar_value_changed(self, value):
         """Update scale bar size."""
+        if not self._current_image_has_scale():
+            if hasattr(self, "image_label"):
+                unit = "mm" if (self.current_image_type or "").strip().lower() == "field" else "\u03bcm"
+                self.image_label.set_scale_bar(False, 0.0, unit=unit)
+            return
+        is_field = (self.current_image_type or "").strip().lower() == "field"
+        if is_field:
+            self._scale_bar_overlay_field_mm = max(0.1, float(value))
+            self._scale_bar_overlay_field_is_manual = True
+        else:
+            self._register_microscope_scale_bar_manual_value(float(value))
+            snapped = float(self._scale_bar_overlay_micro_um)
+            if hasattr(self, "scale_bar_input") and abs(float(value) - snapped) > 1e-9:
+                self.scale_bar_input.blockSignals(True)
+                self.scale_bar_input.setValue(snapped)
+                self.scale_bar_input.blockSignals(False)
+            value = snapped
         if hasattr(self, "show_scale_bar_checkbox") and self.show_scale_bar_checkbox.isChecked():
-            self.image_label.set_scale_bar(True, value)
+            scale_um = float(value) * 1000.0 if is_field else float(value)
+            unit = "mm" if is_field else "\u03bcm"
+            self.image_label.set_scale_bar(True, scale_um, unit=unit)
 
     def on_show_copyright_toggled(self, _checked):
         """Toggle copyright text on the Measure image view/export."""
@@ -6062,17 +6465,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         if image_type not in ("field", "microscope"):
             return True
         if image_type == "field":
-            dialog = ScaleBarCalibrationDialog(
-                self,
-                initial_value=100.0,
-                unit_label="mm",
-                unit_multiplier=1000.0,
-                previous_key=self._last_scale_combo_key,
-            )
-            dialog.show()
+            self.measure_status_label.setText(self.tr("Set scale first using 'Set from scalebar'."))
+            self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
             return False
 
-        self.open_calibration_dialog()
+        self.measure_status_label.setText(self.tr("Set scale first (objective or 'Set from scalebar')."))
+        self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
         return False
 
     def on_measure_category_changed(self):
@@ -6082,6 +6480,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         selected_rows = self.measurements_table.selectedIndexes()
         if not selected_rows:
+            self.update_display_lines()
             return
         row = selected_rows[0].row()
         if row >= len(self.measurements_cache):
@@ -6103,6 +6502,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_measurements_table()
         if measurement_id:
             self.select_measurement_in_table(measurement_id)
+        self.update_display_lines()
 
     def abort_measurement(self, show_status=True):
         """Abort the current measurement."""
@@ -6412,11 +6812,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         show_saved = True
         if hasattr(self, "show_rectangles_checkbox"):
             show_saved = self.show_rectangles_checkbox.isChecked()
+        show_calibration = self._should_show_calibration_overlay()
         rectangles, self._rect_index_map = self._build_measurement_rectangles_with_ids() if show_saved else ([], {})
         all_lines = []
         self._line_index_map = {}
         if show_saved:
             for measurement_id, lines_list in self.measurement_lines.items():
+                measurement_type = self.normalize_measurement_category(
+                    self._measurement_type_by_id.get(measurement_id, "")
+                )
+                if measurement_type == "calibration" and not show_calibration:
+                    continue
                 if len(lines_list) != 1:
                     continue
                 line = lines_list[0]
@@ -6424,9 +6830,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                 all_lines.append(line)
                 self._line_index_map.setdefault(measurement_id, []).append(idx)
         all_lines.extend(self.temp_lines)
+        visible_labels = self.measurement_labels
+        if show_saved and not show_calibration:
+            visible_labels = [
+                label
+                for label in self.measurement_labels
+                if self.normalize_measurement_category(
+                    self._measurement_type_by_id.get(label.get("id"), "")
+                ) != "calibration"
+            ]
         self.image_label.set_measurement_rectangles(rectangles)
         self.image_label.set_measurement_lines(all_lines)
-        self.image_label.set_measurement_labels(self.measurement_labels)
+        self.image_label.set_measurement_labels(visible_labels)
 
     def build_measurement_rectangles(self):
         """Build rectangle corner lists from saved measurement lines."""
@@ -6437,7 +6852,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Build rectangle corner lists and an index map keyed by measurement id."""
         rectangles = []
         rect_index_map = {}
+        show_calibration = self._should_show_calibration_overlay()
         for measurement_id, lines_list in self.measurement_lines.items():
+            measurement_type = self.normalize_measurement_category(
+                self._measurement_type_by_id.get(measurement_id, "")
+            )
+            if measurement_type == "calibration" and not show_calibration:
+                continue
             if len(lines_list) < 2:
                 continue
             line1 = lines_list[0]
@@ -7155,6 +7576,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         export_dir = str(Path(filepath).parent)
         update_app_settings({"last_export_dir": export_dir})
 
+    def _get_default_import_dir(self) -> str:
+        settings = get_app_settings()
+        last_dir = settings.get("last_import_dir")
+        if last_dir and Path(last_dir).exists():
+            return last_dir
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        if docs:
+            return docs
+        return str(Path.home())
+
+    def _remember_import_dir(self, filepath: str | None) -> None:
+        if not filepath:
+            return
+        import_dir = str(Path(filepath).parent)
+        update_app_settings({"last_import_dir": import_dir})
+
     def export_annotated_image(self):
         """Export the current image view with annotations."""
         if not self.current_pixmap:
@@ -7256,14 +7693,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
 
     def _measurement_unit_for_display(self, measurement_type: str | None = None) -> tuple[str, float]:
-        """Return (unit, divisor) for displaying measurements based on image type."""
+        """Return (unit, divisor) for displaying measurements based on image type.
+
+        Field images use no unit label — the calibration defines the scale.
+        The divisor still converts µm storage values to mm-scale for display.
+        """
         image_type = (self.current_image_type or "").strip().lower()
         if image_type == "field":
-            return "mm", 1000.0
+            return "", 1000.0
         if image_type == "microscope":
             return "\u03bcm", 1.0
         if measurement_type and self.normalize_measurement_category(measurement_type) == "field":
-            return "mm", 1000.0
+            return "", 1000.0
         return "\u03bcm", 1.0
 
     def _build_measurement_label(self, measurement_id, line1, line2, length_um, width_um, measurement_type=None):
@@ -7313,6 +7754,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measurement_lines = {}
         self.temp_lines = []
         self.measurement_labels = []
+        self._measurement_type_by_id = {}
         self.image_label.set_measurement_lines([])
         self.image_label.set_measurement_rectangles([])
         self.image_label.set_measurement_labels([])
@@ -7337,6 +7779,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 ]
                 lines.append(line2)
             self.measurement_lines[measurement['id']] = lines
+            self._measurement_type_by_id[int(measurement['id'])] = self.normalize_measurement_category(
+                measurement.get("measurement_type")
+            )
             length_um = measurement.get('length_um')
             width_um = measurement.get('width_um')
             if len(lines) >= 2 and (length_um is None or width_um is None):
@@ -7378,25 +7823,45 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_dimensions_changed(self, measurement_id, new_length_um, new_width_um, new_points):
         """Handle dimension changes from the preview widget."""
-        # Calculate Q value
-        q_value = new_length_um / new_width_um if new_width_um > 0 else 0
+        is_line = len(new_points) == 2
+        has_width = (not is_line) and (new_width_um is not None and new_width_um > 0)
+        q_value = new_length_um / new_width_um if has_width else None
 
         # Update the database
         conn = get_connection()
         cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE spore_measurements
-            SET length_um = ?, width_um = ?, notes = ?,
-                p1_x = ?, p1_y = ?, p2_x = ?, p2_y = ?,
-                p3_x = ?, p3_y = ?, p4_x = ?, p4_y = ?
-            WHERE id = ?
-        ''', (new_length_um, new_width_um, f"Q={q_value:.1f}",
-              new_points[0].x(), new_points[0].y(),
-              new_points[1].x(), new_points[1].y(),
-              new_points[2].x(), new_points[2].y(),
-              new_points[3].x(), new_points[3].y(),
-              measurement_id))
+        if is_line:
+            cursor.execute('''
+                UPDATE spore_measurements
+                SET length_um = ?, width_um = ?, notes = ?,
+                    p1_x = ?, p1_y = ?, p2_x = ?, p2_y = ?,
+                    p3_x = NULL, p3_y = NULL, p4_x = NULL, p4_y = NULL
+                WHERE id = ?
+            ''', (
+                new_length_um,
+                None,
+                None,
+                new_points[0].x(), new_points[0].y(),
+                new_points[1].x(), new_points[1].y(),
+                measurement_id,
+            ))
+        else:
+            cursor.execute('''
+                UPDATE spore_measurements
+                SET length_um = ?, width_um = ?, notes = ?,
+                    p1_x = ?, p1_y = ?, p2_x = ?, p2_y = ?,
+                    p3_x = ?, p3_y = ?, p4_x = ?, p4_y = ?
+                WHERE id = ?
+            ''', (
+                new_length_um,
+                new_width_um,
+                f"Q={q_value:.1f}" if q_value is not None else None,
+                new_points[0].x(), new_points[0].y(),
+                new_points[1].x(), new_points[1].y(),
+                new_points[2].x(), new_points[2].y(),
+                new_points[3].x(), new_points[3].y(),
+                measurement_id,
+            ))
 
         conn.commit()
         conn.close()
@@ -7408,10 +7873,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_statistics()
 
         # Update the measurement lines on the main image
-        # Reconstruct the lines from the new points
         line1 = [new_points[0].x(), new_points[0].y(), new_points[1].x(), new_points[1].y()]
-        line2 = [new_points[2].x(), new_points[2].y(), new_points[3].x(), new_points[3].y()]
-        self.measurement_lines[measurement_id] = [line1, line2]
+        if is_line:
+            self.measurement_lines[measurement_id] = [line1]
+        else:
+            line2 = [new_points[2].x(), new_points[2].y(), new_points[3].x(), new_points[3].y()]
+            self.measurement_lines[measurement_id] = [line1, line2]
         measurement_type = None
         for cached in self.measurements_cache:
             if cached.get("id") == measurement_id:
@@ -7424,34 +7891,132 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         for idx, label in enumerate(self.measurement_labels):
             if label.get("id") == measurement_id:
-                self.measurement_labels[idx] = self._build_measurement_label(
-                    measurement_id, line1, line2, new_length_um, new_width_um, measurement_type
-                )
+                if is_line:
+                    self.measurement_labels[idx] = self._build_line_measurement_label(
+                        measurement_id, line1, new_length_um, measurement_type
+                    )
+                else:
+                    self.measurement_labels[idx] = self._build_measurement_label(
+                        measurement_id, line1, line2, new_length_um, new_width_um, measurement_type
+                    )
                 break
         else:
-            self.measurement_labels.append(
-                self._build_measurement_label(
-                    measurement_id, line1, line2, new_length_um, new_width_um, measurement_type
+            if is_line:
+                self.measurement_labels.append(
+                    self._build_line_measurement_label(
+                        measurement_id, line1, new_length_um, measurement_type
+                    )
                 )
-            )
+            else:
+                self.measurement_labels.append(
+                    self._build_measurement_label(
+                        measurement_id, line1, line2, new_length_um, new_width_um, measurement_type
+                    )
+                )
         self.update_display_lines()
 
         self.measure_status_label.setText(self.tr("Click to measure next"))
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
 
+        # If calibration measurement was edited, offer to rescale all other measurements
+        if (not is_line) and self.normalize_measurement_category(measurement_type) == "calibration":
+            self._on_calibration_measurement_edited(measurement_id, new_length_um, new_points)
+
+    def _on_calibration_measurement_edited(self, measurement_id, new_length_um, new_points):
+        """Handle edit of a calibration measurement — offer to rescale others."""
+        # Compute pixel distance from p1–p2 points (scale bar endpoints)
+        dx = new_points[1].x() - new_points[0].x()
+        dy = new_points[1].y() - new_points[0].y()
+        pixel_dist = (dx * dx + dy * dy) ** 0.5
+        if pixel_dist <= 0 or new_length_um <= 0:
+            return
+        new_scale_mpp = new_length_um / pixel_dist
+
+        # Get the image_id for this measurement
+        image_id = None
+        for m in self.measurements_cache:
+            if m.get("id") == measurement_id:
+                image_id = m.get("image_id")
+                break
+        if not image_id:
+            record = self._get_measurement_by_id(measurement_id)
+            if record:
+                image_id = record.get("image_id")
+        if not image_id:
+            return
+
+        # Get old scale from the images table
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT scale_microns_per_pixel FROM images WHERE id = ?", (image_id,)
+        ).fetchone()
+        conn.close()
+        old_scale_mpp = row[0] if row and row[0] else None
+        if not old_scale_mpp or abs(new_scale_mpp - old_scale_mpp) < 1e-9:
+            return
+
+        # Ask user
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(self.tr("Changing calibration"))
+        box.setText(self.tr(
+            "You changed the calibration measurement. "
+            "Do you want to rescale all other measurements for this image to match the new scale?"
+        ))
+        ok_btn = box.addButton(self.tr("Rescale"), QMessageBox.AcceptRole)
+        box.addButton(self.tr("Keep as-is"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() != ok_btn:
+            return
+
+        ratio = new_scale_mpp / old_scale_mpp
+        conn = get_connection()
+        measurements = conn.execute(
+            "SELECT id, length_um, width_um FROM spore_measurements WHERE image_id = ? AND measurement_type != 'calibration'",
+            (image_id,),
+        ).fetchall()
+        for m in measurements:
+            m_id, length, width = m
+            if length is None:
+                continue
+            new_l = float(length) * ratio
+            new_w = float(width) * ratio if width is not None else None
+            q = new_l / new_w if new_w and new_w > 0 else 0
+            conn.execute(
+                "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
+                (new_l, new_w, f"Q={q:.1f}", m_id),
+            )
+        conn.execute(
+            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
+            (new_scale_mpp, image_id),
+        )
+        conn.commit()
+        conn.close()
+
+        # Refresh UI
+        self.update_measurements_table()
+        self.update_statistics()
+        if hasattr(self, "microns_per_pixel"):
+            self.microns_per_pixel = new_scale_mpp
+        self.update_display_lines()
+
     def show_measurement_preview(self, measurement):
         """Show preview for a specific measurement."""
-        if hasattr(self, "calibration_apply_btn"):
-            self.calibration_apply_btn.setVisible(False)
-        # Check if we have point coordinates
-        if (measurement.get('p1_x') is not None and
+        has_line = (
+            measurement.get('p1_x') is not None and
             measurement.get('p1_y') is not None and
             measurement.get('p2_x') is not None and
-            measurement.get('p2_y') is not None and
+            measurement.get('p2_y') is not None
+        )
+        has_rect = (
+            has_line and
             measurement.get('p3_x') is not None and
             measurement.get('p3_y') is not None and
             measurement.get('p4_x') is not None and
-            measurement.get('p4_y') is not None):
+            measurement.get('p4_y') is not None
+        )
+
+        if has_rect:
 
             # Reconstruct points
             from PySide6.QtCore import QPointF
@@ -7463,13 +8028,32 @@ class MainWindow(GeometryMixin, QMainWindow):
             ]
 
             # Update preview with measurement ID for editing
+            is_field = (self.current_image_type or "").strip().lower() == "field"
             self.spore_preview.set_spore(
                 self.current_pixmap,
                 points,
                 measurement['length_um'],
                 measurement['width_um'] or 0,
                 self.microns_per_pixel,
-                measurement['id']
+                measurement['id'],
+                display_unit="mm" if is_field else "\u03bcm",
+                display_divisor=1000.0 if is_field else 1.0,
+            )
+        elif has_line:
+            from PySide6.QtCore import QPointF
+            points = [
+                QPointF(measurement['p1_x'], measurement['p1_y']),
+                QPointF(measurement['p2_x'], measurement['p2_y']),
+            ]
+            is_field = (self.current_image_type or "").strip().lower() == "field"
+            self.spore_preview.set_line(
+                self.current_pixmap,
+                points,
+                measurement['length_um'] or 0,
+                self.microns_per_pixel,
+                measurement['id'],
+                display_unit="mm" if is_field else "\u03bcm",
+                display_divisor=1000.0 if is_field else 1.0,
             )
         else:
             # No point data available for this measurement
@@ -7492,7 +8076,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if idx >= 0:
                     self._measure_category_sync = True
                     self.measure_category_combo.setCurrentIndex(idx)
-                    self._measure_category_sync = False
+            self._measure_category_sync = False
+            self.update_display_lines()
             image_id = measurement.get('image_id')
             if image_id and image_id != self.current_image_id:
                 image_data = ImageDB.get_image(image_id)
@@ -7530,20 +8115,20 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measurements_table.setItem(row, 0, image_item)
 
             category = self.normalize_measurement_category(measurement.get("measurement_type"))
-            category_label = self.format_measurement_category(category)[:6]
+            category_label = self.format_measurement_category(category)
             self.measurements_table.setItem(row, 1, QTableWidgetItem(category_label))
 
             # Length
             length = measurement['length_um']
-            self.measurements_table.setItem(row, 2, QTableWidgetItem(f"{length:.2f}"))
+            self.measurements_table.setItem(row, 2, QTableWidgetItem(f"{length:.1f}"))
 
             # Width
             width = measurement['width_um'] or 0
-            self.measurements_table.setItem(row, 3, QTableWidgetItem(f"{width:.2f}"))
+            self.measurements_table.setItem(row, 3, QTableWidgetItem(f"{width:.1f}"))
 
             # Q
             q = length / width if width > 0 else 0
-            self.measurements_table.setItem(row, 4, QTableWidgetItem(f"{q:.2f}"))
+            self.measurements_table.setItem(row, 4, QTableWidgetItem(f"{q:.1f}"))
 
         # Update gallery view only when visible
         if self.is_analysis_visible() and not self._suppress_gallery_update:
@@ -7562,6 +8147,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             value = str(category).strip().lower()
         if value in ("manual", "spore", "spores"):
             return "spores"
+        if value == "calibration":
+            return "calibration"
         return value
 
     def format_measurement_category(self, category):
@@ -7648,8 +8235,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Return True if the Analysis tab is active."""
         return hasattr(self, "tab_widget") and self.tab_widget.currentIndex() == 2
 
+    def _switch_tab_from_observations(self, target_index: int) -> None:
+        """Switch tabs only when Observations tab is currently active."""
+        if not hasattr(self, "tab_widget"):
+            return
+        if self.tab_widget.currentIndex() != 0:
+            return
+        if target_index < 0 or target_index >= self.tab_widget.count():
+            return
+        self.tab_widget.setCurrentIndex(int(target_index))
+
     def on_tab_changed(self, index):
         """Handle tab changes for analysis/measure."""
+        if index == 0 and hasattr(self, "observations_tab") and hasattr(self.observations_tab, "refresh_publish_checkbox_state"):
+            self.observations_tab.refresh_publish_checkbox_state(self.active_observation_id)
         if index in (1, 2) and hasattr(self, "observations_tab"):
             selected = self.observations_tab.get_selected_observation()
             if selected:
@@ -7661,6 +8260,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                         switch_tab=False,
                         suppress_gallery=True
                     )
+        if index == 1 and hasattr(self, "_apply_measure_gallery_publish_selection"):
+            self._apply_measure_gallery_publish_selection()
         if index == 1 and hasattr(self, "measure_button"):
             self.measure_button.setEnabled(True)
         if index == 2:
@@ -7703,6 +8304,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         category = None
         if hasattr(self, "gallery_filter_combo"):
             category = self.gallery_filter_combo.currentData()
+
+        # Always exclude calibration measurements from the Analysis tab
+        measurements = [
+            m for m in measurements
+            if self.normalize_measurement_category(m.get("measurement_type")) != "calibration"
+        ]
 
         if category and category != "all":
             measurements = [
@@ -8123,6 +8730,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         show_legend = bool(plot_settings.get("legend", False))
         show_avg_q = bool(plot_settings.get("avg_q", True))
         show_q_minmax = bool(plot_settings.get("q_minmax", True))
+        axis_equal = bool(plot_settings.get("axis_equal", False))
 
         lengths = []
         widths = []
@@ -8180,7 +8788,29 @@ class MainWindow(GeometryMixin, QMainWindow):
             else:
                 self._apply_plot_light_theme(self.gallery_plot_figure, all_axes)
             try:
-                self.gallery_plot_figure.tight_layout(pad=0.4)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message="This figure includes Axes that are not compatible with tight_layout",
+                        category=UserWarning,
+                    )
+                    self.gallery_plot_figure.tight_layout(pad=0.5, rect=(0.02, 0.02, 0.995, 0.995))
+                self.gallery_plot_figure.subplots_adjust(
+                    left=max(0.075, float(self.gallery_plot_figure.subplotpars.left))
+                )
+                canvas = getattr(self.gallery_plot_figure, "canvas", None)
+                if canvas is not None:
+                    canvas.draw()
+                    renderer = canvas.get_renderer()
+                    tight_bbox = ax_scatter.get_tightbbox(renderer)
+                    fig_bbox = self.gallery_plot_figure.bbox
+                    if tight_bbox is not None and fig_bbox is not None:
+                        clip_px = max(0.0, 6.0 - float(tight_bbox.x0))
+                        if clip_px > 0 and float(fig_bbox.width) > 0:
+                            extra_left = (clip_px / float(fig_bbox.width)) + 0.005
+                            self.gallery_plot_figure.subplots_adjust(
+                                left=min(0.28, float(self.gallery_plot_figure.subplotpars.left) + extra_left)
+                            )
             except Exception:
                 pass
             self.gallery_plot_canvas.draw()
@@ -8284,6 +8914,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             ax_scatter.set_xlim(left=x_min, right=x_max)
         if y_min is not None or y_max is not None:
             ax_scatter.set_ylim(bottom=y_min, top=y_max)
+        if axis_equal:
+            ax_scatter.set_aspect("equal", adjustable="box")
+        else:
+            ax_scatter.set_aspect("auto")
 
         reference_series = []
         if self.reference_series:
@@ -8548,7 +9182,29 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             self._apply_plot_light_theme(self.gallery_plot_figure, all_axes)
         try:
-            self.gallery_plot_figure.tight_layout(pad=0.4)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="This figure includes Axes that are not compatible with tight_layout",
+                    category=UserWarning,
+                )
+                self.gallery_plot_figure.tight_layout(pad=0.5, rect=(0.02, 0.02, 0.995, 0.995))
+            self.gallery_plot_figure.subplots_adjust(
+                left=max(0.075, float(self.gallery_plot_figure.subplotpars.left))
+            )
+            canvas = getattr(self.gallery_plot_figure, "canvas", None)
+            if canvas is not None:
+                canvas.draw()
+                renderer = canvas.get_renderer()
+                tight_bbox = ax_scatter.get_tightbbox(renderer)
+                fig_bbox = self.gallery_plot_figure.bbox
+                if tight_bbox is not None and fig_bbox is not None:
+                    clip_px = max(0.0, 6.0 - float(tight_bbox.x0))
+                    if clip_px > 0 and float(fig_bbox.width) > 0:
+                        extra_left = (clip_px / float(fig_bbox.width)) + 0.005
+                        self.gallery_plot_figure.subplots_adjust(
+                            left=min(0.28, float(self.gallery_plot_figure.subplotpars.left) + extra_left)
+                        )
         except Exception:
             pass
         self.gallery_plot_canvas.draw()
@@ -8863,7 +9519,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.tab_widget.setCurrentIndex(1)
 
     def _highlight_selected_measurement(self, measurement):
-        if self.measurement_active or not measurement:
+        if not measurement:
             self._clear_measurement_highlight()
             return
         measurement_id = measurement.get("id")
@@ -9478,6 +10134,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         apply_palette(theme)
         self.setStyleSheet(get_style(theme))
 
+    def _on_system_color_scheme_changed(self):
+        if SettingsDB.get_setting("ui_theme", "auto") == "auto":
+            self._apply_theme()
+
     def apply_vernacular_language_change(self):
         if hasattr(self, "observations_tab"):
             self.observations_tab.apply_vernacular_language_change()
@@ -9560,6 +10220,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "legend": bool(getattr(self, "gallery_plot_settings", {}).get("legend", False)),
             "avg_q": bool(self.gallery_avg_q_checkbox.isChecked()) if hasattr(self, "gallery_avg_q_checkbox") else False,
             "q_minmax": bool(self.gallery_q_minmax_checkbox.isChecked()) if hasattr(self, "gallery_q_minmax_checkbox") else False,
+            "axis_equal": bool(self.gallery_axis_equal_checkbox.isChecked()) if hasattr(self, "gallery_axis_equal_checkbox") else False,
             "x_min": None,
             "x_max": None,
             "y_min": None,
@@ -9727,6 +10388,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         q_minmax_checkbox.setChecked(bool(settings.get("q_minmax", False)))
         layout.addRow("", q_minmax_checkbox)
 
+        axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))
+        axis_equal_checkbox.setToolTip(self.tr("Use the same scale on X and Y axes"))
+        axis_equal_checkbox.setChecked(bool(settings.get("axis_equal", False)))
+        layout.addRow("", axis_equal_checkbox)
+
         buttons = QDialogButtonBox(dialog)
         ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
@@ -9743,6 +10409,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "legend": bool(settings.get("legend", False)),
             "avg_q": bool(avg_q_checkbox.isChecked()),
             "q_minmax": bool(q_minmax_checkbox.isChecked()),
+            "axis_equal": bool(axis_equal_checkbox.isChecked()),
             "x_min": None,
             "x_max": None,
             "y_min": None,
@@ -9786,6 +10453,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "legend": bool(plot_settings.get("legend", False)),
             "avg_q": bool(plot_settings.get("avg_q", True)),
             "q_minmax": bool(plot_settings.get("q_minmax", True)),
+            "axis_equal": bool(plot_settings.get("axis_equal", False)),
             "x_min": None,
             "x_max": None,
             "y_min": None,
@@ -9815,6 +10483,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "legend": bool(settings.get("legend", self.gallery_plot_settings.get("legend", False))),
             "avg_q": bool(settings.get("avg_q", self.gallery_plot_settings.get("avg_q", False))),
             "q_minmax": bool(settings.get("q_minmax", self.gallery_plot_settings.get("q_minmax", False))),
+            "axis_equal": bool(settings.get("axis_equal", self.gallery_plot_settings.get("axis_equal", False))),
             "x_min": None,
             "x_max": None,
             "y_min": None,
@@ -9840,6 +10509,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_q_minmax_checkbox.blockSignals(True)
             self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
             self.gallery_q_minmax_checkbox.blockSignals(False)
+        if hasattr(self, "gallery_axis_equal_checkbox"):
+            self.gallery_axis_equal_checkbox.blockSignals(True)
+            self.gallery_axis_equal_checkbox.setChecked(bool(self.gallery_plot_settings.get("axis_equal", False)))
+            self.gallery_axis_equal_checkbox.blockSignals(False)
         self._sync_gallery_histogram_controls()
         if hasattr(self, "orient_checkbox"):
             self.orient_checkbox.blockSignals(True)
@@ -9928,11 +10601,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(
             self,
             "Import Database",
-            "",
+            self._get_default_import_dir(),
             "Zip Files (*.zip)"
         )
         if not filename:
             return
+        self._remember_import_dir(filename)
         options_dialog = DatabaseBundleOptionsDialog(self.tr("Import Options"), parent=self)
         if options_dialog.exec() != QDialog.Accepted:
             return
@@ -9991,6 +10665,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.spore_preview.clear()
         self.measure_status_label.setText(self.tr("Measurement deleted"))
         self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
+
+    def _delete_selected_measurement_shortcut(self) -> None:
+        """Delete selected measurement from keyboard shortcuts in field photos."""
+        image_type = (self.current_image_type or "").strip().lower()
+        if image_type != "field":
+            return
+        if not hasattr(self, "measurements_table") or not getattr(self, "measurements_cache", None):
+            return
+        selected_rows = self.measurements_table.selectedIndexes()
+        if not selected_rows:
+            return
+        row = selected_rows[0].row()
+        if row < 0 or row >= len(self.measurements_cache):
+            return
+        measurement_id = self.measurements_cache[row].get("id")
+        if not measurement_id:
+            return
+        self.delete_measurement(int(measurement_id))
 
     def update_statistics(self):
         """Update the statistics display."""
@@ -10065,11 +10757,11 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _update_preview_title(self):
         if not hasattr(self, "preview_group"):
             return
-        label = "Measurement Preview"
+        label = "Measurement Fine tune"
         if hasattr(self, "measure_category_combo"):
             category = self.measure_category_combo.currentData()
             if category:
-                label = f"{self.format_measurement_category(category)} Preview"
+                label = f"{self.format_measurement_category(category)} Fine tune"
         self.preview_group.setTitle(label)
 
     def _show_loading(self, message="Loading..."):
@@ -10306,12 +10998,13 @@ class MainWindow(GeometryMixin, QMainWindow):
     def load_image_for_observation(self):
         """Load microscope images and link them to the active observation."""
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", "",
+            self, "Open Microscope Image", self._get_default_import_dir(),
             "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
         )
 
         if not paths:
             return
+        self._remember_import_dir(paths[0])
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -10403,6 +11096,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.calibration_mode = True
         self.calibration_dialog = dialog
         self.calibration_points = []
+        self._show_calibration_overlay_for_scalebar = True
+        self.update_display_lines()
 
         # Clear any existing preview
         self.image_label.clear_preview_line()
@@ -10416,7 +11111,11 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         if len(self.calibration_points) == 1:
             # First point - show preview line
-            self.image_label.set_preview_line(pos)
+            constrain_horizontal = bool(
+                hasattr(self, "scale_bar_horizontal_checkbox")
+                and self.scale_bar_horizontal_checkbox.isChecked()
+            )
+            self.image_label.set_preview_line(pos, horizontal=constrain_horizontal)
             self.measure_status_label.setText(self.tr("CALIBRATION: Click second point on scale bar"))
             self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
 
@@ -10424,84 +11123,121 @@ class MainWindow(GeometryMixin, QMainWindow):
             # Second point - calculate distance
             p1 = self.calibration_points[0]
             p2 = self.calibration_points[1]
+            if (
+                hasattr(self, "scale_bar_horizontal_checkbox")
+                and self.scale_bar_horizontal_checkbox.isChecked()
+            ):
+                p2 = QPointF(p2.x(), p1.y())
+                self.calibration_points[1] = p2
             dx = p2.x() - p1.x()
             dy = p2.y() - p1.y()
             distance_pixels = math.sqrt(dx**2 + dy**2)
+            if distance_pixels <= 0:
+                self.calibration_points = []
+                self.image_label.clear_preview_line()
+                self.measure_status_label.setText(self.tr("Calibration failed: zero-length line. Try again."))
+                self.measure_status_label.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(9)}pt;")
+                return
 
             # Store the calibration line for display
             self.calibration_distance_pixels = distance_pixels
 
-            # Show the calibration line on the image (as a temporary measurement line)
             calib_line = [p1.x(), p1.y(), p2.x(), p2.y()]
-            self.image_label.set_measurement_lines([calib_line])
+            self.temp_lines = [calib_line]
+            self.update_display_lines()
             self.image_label.clear_preview_line()
-
-            # Show calibration preview in the spore preview widget
-            self.show_calibration_preview(p1, p2, distance_pixels)
-
-            if getattr(self.calibration_dialog, "auto_apply", False):
-                self.apply_calibration_scale()
-                self.measure_status_label.setText(self.tr("Scale calibrated"))
-                self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
-                return
-
-            self.measure_status_label.setText(
-                self.tr("Calibration: {pixels:.1f} pixels - Click '{label}' to apply").format(
-                    pixels=distance_pixels,
-                    label=self.tr("Set Scale")
-                )
-            )
-            self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
-
-    def show_calibration_preview(self, p1, p2, distance_pixels):
-        """Show calibration preview with Set Scale button."""
-        # Create a simple preview showing the measured distance
-        # We'll use the spore preview widget but configure it for calibration
-        if self.current_pixmap:
-            # Create fake 4-point measurement (the calibration line doubled)
-            points = [p1, p2, p1, p2]
-
-            # Temporarily disconnect the dimensions_changed signal
-            try:
-                self.spore_preview.dimensions_changed.disconnect(self.on_dimensions_changed)
-            except:
-                pass
-
-            # Set the preview
-            self.spore_preview.set_spore(
-                self.current_pixmap,
-                points,
-                distance_pixels,  # Show pixels as "length"
-                0,  # No width
-                1.0,  # 1:1 scale for display
-                None  # No measurement ID
-            )
-
-            self.preview_group.setTitle(self.tr("Calibration preview"))
-            if hasattr(self, "calibration_apply_btn"):
-                self.calibration_apply_btn.setVisible(True)
+            self.apply_calibration_scale()
 
     def apply_calibration_scale(self):
         """Apply the calibration scale from preview."""
-        # Clear the calibration line
-        self.image_label.set_measurement_lines([])
-
-        # Exit calibration mode
+        if not hasattr(self, "calibration_distance_pixels"):
+            return
+        if not self.calibration_points or len(self.calibration_points) < 2:
+            return
+        distance_pixels = float(self.calibration_distance_pixels or 0.0)
+        if distance_pixels <= 0:
+            return
+        total_um = self._current_scale_bar_length_um()
+        if total_um <= 0:
+            return
+        scale_um_per_px = total_um / distance_pixels
+        applied = bool(self.set_custom_scale(scale_um_per_px))
+        if applied and self.current_image_id:
+            p1 = self.calibration_points[0]
+            p2 = self.calibration_points[1]
+            scale_bar_selection = ((float(p1.x()), float(p1.y())), (float(p2.x()), float(p2.y())))
+            ImageDB.update_image(
+                self.current_image_id,
+                scale_bar_selection=scale_bar_selection,
+            )
+            self._upsert_calibration_measurement(
+                self.current_image_id,
+                scale_bar_selection,
+                total_um,
+                distance_pixels,
+            )
+            self.load_measurement_lines()
+            self.update_measurements_table()
+            self.update_display_lines()
+        if (self.current_image_type or "").strip().lower() == "field":
+            mm_per_px = scale_um_per_px / 1000.0
+            self.measure_status_label.setText(self.tr("Scale set: {scale:.4f} mm/px").format(scale=mm_per_px))
+        else:
+            self.measure_status_label.setText(self.tr("Scale set: {scale:.2f} nm/px").format(scale=scale_um_per_px * 1000.0))
+        self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
         self.calibration_mode = False
-
-        # Send distance to calibration dialog
-        if self.calibration_dialog and hasattr(self, 'calibration_distance_pixels'):
-            if hasattr(self.calibration_dialog, "apply_scale"):
-                self.calibration_dialog.apply_scale(self.calibration_distance_pixels)
-            else:
-                self.calibration_dialog.set_calibration_distance(self.calibration_distance_pixels)
-
-        # Clean up
+        self.calibration_dialog = None
         self.calibration_points = []
-        self.spore_preview.clear()
-        if hasattr(self, "calibration_apply_btn"):
-            self.calibration_apply_btn.setVisible(False)
+        self.temp_lines = []
+        self._show_calibration_overlay_for_scalebar = False
+        self.update_display_lines()
 
-        # Reconnect the dimensions_changed signal
-        self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
-        self._update_preview_title()
+    def _upsert_calibration_measurement(
+        self,
+        image_id: int,
+        scale_bar_selection: tuple[tuple[float, float], tuple[float, float]],
+        total_um: float,
+        pixel_dist: float,
+    ) -> None:
+        (x1, y1), (x2, y2) = scale_bar_selection
+        dx = x2 - x1
+        dy = y2 - y1
+        length_px = (dx * dx + dy * dy) ** 0.5
+        if length_px <= 0:
+            return
+        perp_x = -dy / length_px
+        perp_y = dx / length_px
+        half_width_px = pixel_dist / 20.0
+        mx = (x1 + x2) / 2
+        my = (y1 + y2) / 2
+        p1 = QPointF(x1, y1)
+        p2 = QPointF(x2, y2)
+        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
+        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
+        width_um = total_um / 10.0
+
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
+            (image_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        MeasurementDB.add_measurement(
+            image_id=image_id,
+            length=total_um,
+            width=width_um,
+            measurement_type="calibration",
+            notes=f"Scale bar: {total_um:.1f} µm",
+            points=[p1, p2, p3, p4],
+        )
+
+    def _should_show_calibration_overlay(self) -> bool:
+        if self.calibration_mode or self._show_calibration_overlay_for_scalebar:
+            return True
+        if hasattr(self, "measure_category_combo"):
+            category = self.normalize_measurement_category(self.measure_category_combo.currentData())
+            if category == "calibration":
+                return True
+        return False

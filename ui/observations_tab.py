@@ -9,9 +9,21 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QListWidget, QListWidgetItem, QGroupBox, QCheckBox,
                                 QDoubleSpinBox, QTabWidget, QDialogButtonBox, QCompleter,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
-                                QApplication, QMenu, QProgressBar)
-from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF
-from PySide6.QtGui import QPixmap, QImage, QDesktopServices, QColor, QPainter, QShortcut, QKeySequence, QPainterPath, QPen
+                                QApplication, QMenu, QProgressBar, QToolButton)
+from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QPixmap,
+    QImage,
+    QDesktopServices,
+    QColor,
+    QPainter,
+    QShortcut,
+    QKeySequence,
+    QPainterPath,
+    QPen,
+)
 from PIL import Image
 from PySide6.QtCore import QUrl
 from pathlib import Path
@@ -30,10 +42,12 @@ from database.schema import (
     get_connection,
     get_database_path,
     get_images_dir,
+    get_app_settings,
     load_objectives,
     objective_display_name,
     objective_sort_value,
     resolve_objective_key,
+    update_app_settings,
 )
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file
@@ -48,6 +62,8 @@ from utils.vernacular_utils import (
     normalize_vernacular_language,
     common_name_display_label,
     resolve_vernacular_db_path,
+    vernacular_language_label,
+    list_available_vernacular_languages,
 )
 from .image_gallery_widget import ImageGalleryWidget
 from .image_import_dialog import ImageImportDialog, ImageImportResult, AIGuessWorker
@@ -769,9 +785,14 @@ class ObservationsTab(QWidget):
             show_badges=True,
             min_height=50,
             default_height=180,
+            show_publish_checkbox=True,
+            publish_checkbox_hint=self.tr("Select image for online publishing"),
         )
+        self.gallery_widget.set_multi_select(True)
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
+        self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
+        self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
 
         detail_layout.addWidget(self.gallery_widget)
 
@@ -839,6 +860,7 @@ class ObservationsTab(QWidget):
                 self.tr("Choose a publish target."),
                 allow_when_disabled=True,
             )
+        self._register_gallery_publish_hint_widgets()
         self._init_shortcuts()
 
     def _init_shortcuts(self) -> None:
@@ -853,6 +875,14 @@ class ObservationsTab(QWidget):
         self._shortcut_delete = QShortcut(QKeySequence(Qt.Key_Delete), self)
         self._shortcut_delete.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_delete.activated.connect(self._on_delete_shortcut)
+
+        self._shortcut_delete_alt = QShortcut(QKeySequence(Qt.ALT | Qt.Key_D), self)
+        self._shortcut_delete_alt.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_delete_alt.activated.connect(self._on_delete_shortcut)
+
+        self._shortcut_delete_cmd = QShortcut(QKeySequence(Qt.CTRL | Qt.Key_D), self)
+        self._shortcut_delete_cmd.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_delete_cmd.activated.connect(self._on_delete_shortcut)
 
         self._shortcut_edit_return = QShortcut(QKeySequence(Qt.Key_Return), self)
         self._shortcut_edit_return.setContext(Qt.WidgetWithChildrenShortcut)
@@ -2114,15 +2144,87 @@ class ObservationsTab(QWidget):
             self.refresh_observations()
             self.set_status_message(self.tr("Image deleted."), level="success")
 
-    def _on_gallery_image_clicked(self, image_id, _filepath):
-        """Handle thumbnail click - emit signal to open in Measure tab."""
-        if self.selected_observation_id and image_id:
-            obs = ObservationDB.get_observation(self.selected_observation_id)
-            if obs:
-                genus = obs.get('genus') or ''
-                species = obs.get('species') or obs.get('species_guess') or 'sp.'
-                display_name = f"{genus} {species} {obs['date'] or ''}".strip()
-                self.image_selected.emit(image_id, self.selected_observation_id, display_name)
+    def _on_gallery_image_clicked(self, _image_id, _filepath):
+        """Keep selection in Observations tab; do not jump to Measure tab."""
+        return
+
+    def _register_gallery_publish_hint_widgets(self) -> None:
+        if not hasattr(self, "_status_hint_controller") or self._status_hint_controller is None:
+            return
+        if not hasattr(self, "gallery_widget"):
+            return
+        hint = self.tr("Select image for online publishing")
+        for checkbox in self.gallery_widget.publish_checkbox_widgets():
+            self._status_hint_controller.register_widget(checkbox, hint)
+
+    def _apply_gallery_publish_selection_for_observation(self, observation_id: int | None) -> None:
+        if not observation_id or not hasattr(self, "gallery_widget"):
+            return
+        images = ImageDB.get_images_for_observation(int(observation_id))
+        all_ids = {
+            int(img.get("id"))
+            for img in images
+            if img.get("id") is not None
+        }
+        excluded = self._publish_excluded_image_ids(observation_id)
+        excluded = {img_id for img_id in excluded if img_id in all_ids}
+        selected_ids = all_ids - excluded
+        self.gallery_widget.set_publish_selected_ids(selected_ids, emit_signal=False)
+        self._register_gallery_publish_hint_widgets()
+
+    def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
+        if not self.selected_observation_id:
+            return
+        images = ImageDB.get_images_for_observation(int(self.selected_observation_id))
+        all_ids = {
+            int(img.get("id"))
+            for img in images
+            if img.get("id") is not None
+        }
+        try:
+            selected_set = {int(v) for v in (selected_ids or set())}
+        except Exception:
+            selected_set = set()
+        excluded = all_ids - selected_set
+        obs_id = int(self.selected_observation_id)
+        self._set_publish_excluded_image_ids(obs_id, excluded)
+        host = self.window()
+        if host is None:
+            host = self.parent()
+        if host is not None and hasattr(host, "_set_publish_excluded_image_ids_for_observation"):
+            try:
+                host._set_publish_excluded_image_ids_for_observation(obs_id, excluded)
+            except Exception:
+                pass
+        if (
+            host is not None
+            and hasattr(host, "active_observation_id")
+            and int(getattr(host, "active_observation_id") or 0) == obs_id
+            and hasattr(host, "_apply_measure_gallery_publish_selection")
+        ):
+            try:
+                host._apply_measure_gallery_publish_selection()
+            except Exception:
+                pass
+
+    def refresh_publish_checkbox_state(self, observation_id: int | None = None) -> None:
+        """Refresh publish checkbox selection from persisted settings."""
+        if not hasattr(self, "gallery_widget"):
+            return
+        target_obs_id = observation_id or self.selected_observation_id
+        if not target_obs_id:
+            selected = self.get_selected_observation()
+            if selected:
+                target_obs_id = selected[0]
+        if not target_obs_id:
+            host = self.window()
+            if host is None:
+                host = self.parent()
+            if host is not None and hasattr(host, "active_observation_id"):
+                target_obs_id = int(getattr(host, "active_observation_id") or 0) or None
+        if not target_obs_id:
+            return
+        self._apply_gallery_publish_selection_for_observation(int(target_obs_id))
 
     def on_selection_changed(self):
         """Update detail view when selection changes."""
@@ -2163,6 +2265,7 @@ class ObservationsTab(QWidget):
 
         # Populate image browser for the selected row only (no extra full-table DB fetch).
         self.gallery_widget.set_observation_id(obs_id)
+        self._apply_gallery_publish_selection_for_observation(obs_id)
         # Do not force a full Measure-tab reload on every table click.
         # MainWindow.on_tab_changed() synchronizes the selected observation when the
         # user switches to Measure/Analysis, and explicit actions can still call
@@ -2210,8 +2313,16 @@ class ObservationsTab(QWidget):
 
     def _collect_artsobs_image_paths(self, observation_id: int) -> list[str]:
         images = ImageDB.get_images_for_observation(observation_id)
+        excluded_ids = self._publish_excluded_image_ids(observation_id)
         ordered = []
         for image in images:
+            image_id = image.get("id")
+            if image_id is not None:
+                try:
+                    if int(image_id) in excluded_ids:
+                        continue
+                except Exception:
+                    pass
             image_type = (image.get("image_type") or "").strip().lower()
             if image_type not in {"field", "microscope"}:
                 continue
@@ -2221,6 +2332,36 @@ class ObservationsTab(QWidget):
             if filepath not in ordered:
                 ordered.append(filepath)
         return ordered
+
+    @staticmethod
+    def _publish_excluded_images_setting_key(observation_id: int | None) -> str:
+        return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
+
+    @classmethod
+    def _publish_excluded_image_ids(cls, observation_id: int | None) -> set[int]:
+        if not observation_id:
+            return set()
+        raw = SettingsDB.get_setting(cls._publish_excluded_images_setting_key(observation_id), "[]")
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                return {int(v) for v in loaded}
+        except Exception:
+            pass
+        return set()
+
+    @classmethod
+    def _set_publish_excluded_image_ids(cls, observation_id: int | None, excluded_ids: set[int]) -> None:
+        if not observation_id:
+            return
+        normalized = sorted({int(v) for v in (excluded_ids or set())})
+        try:
+            SettingsDB.set_setting(
+                cls._publish_excluded_images_setting_key(observation_id),
+                json.dumps(normalized),
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _publish_option_enabled(key: str, default: bool = False) -> bool:
@@ -2391,6 +2532,82 @@ class ObservationsTab(QWidget):
         }
 
     @staticmethod
+    def _snap_publish_scale_bar_um(value_um: float) -> float:
+        """Snap publish scale-bar length to human-friendly increments."""
+        value_um = max(0.1, float(value_um))
+        multipliers = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0)
+        candidates: list[float] = []
+        for exp in range(-1, 7):  # 0.1 up to 6,000,000
+            base = 10.0 ** exp
+            for mul in multipliers:
+                candidate = mul * base
+                if 0.1 <= candidate <= 6_000_000.0:
+                    candidates.append(candidate)
+        if not candidates:
+            return value_um
+        return min(candidates, key=lambda candidate: abs(candidate - value_um))
+
+    def _publish_scale_bar_for_image(
+        self,
+        image_row: dict,
+        pixmap: QPixmap,
+        parent,
+        fallback_um: float,
+    ) -> tuple[float | None, str]:
+        """Return publish scale-bar length in µm and unit label for one image."""
+        try:
+            mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
+        except Exception:
+            mpp_value = 0.0
+        if mpp_value <= 0 or pixmap is None or pixmap.isNull():
+            return None, "\u03bcm"
+
+        image_type = (image_row.get("image_type") or "").strip().lower()
+        objective_name = (image_row.get("objective_name") or "").strip()
+        objective_key = resolve_objective_key(objective_name, load_objectives()) or objective_name
+        has_micro_override = False
+        override_um = None
+
+        # Preserve Measure-tab user override/basis logic when available.
+        if (
+            image_type == "microscope"
+            and parent is not None
+            and hasattr(parent, "_scale_bar_micro_manual_by_objective")
+            and hasattr(parent, "_suggest_microscope_scale_bar_um_for_objective")
+        ):
+            manual_map = getattr(parent, "_scale_bar_micro_manual_by_objective", {}) or {}
+            basis_key = str(getattr(parent, "_scale_bar_micro_basis_objective", "") or "").strip()
+            has_micro_override = bool(manual_map) or bool(basis_key)
+            if has_micro_override:
+                try:
+                    override_um = float(parent._suggest_microscope_scale_bar_um_for_objective(objective_key))
+                except Exception:
+                    override_um = None
+
+        if (
+            image_type == "field"
+            and parent is not None
+            and hasattr(parent, "_scale_bar_overlay_field_mm")
+        ):
+            try:
+                is_manual = bool(getattr(parent, "_scale_bar_overlay_field_is_manual", False))
+                if is_manual:
+                    mm_value = float(getattr(parent, "_scale_bar_overlay_field_mm"))
+                    if mm_value > 0:
+                        return mm_value * 1000.0, "mm"
+            except Exception:
+                pass
+
+        if override_um and override_um > 0:
+            return float(self._snap_publish_scale_bar_um(override_um)), "\u03bcm"
+
+        # Auto default: target roughly 10% of image width in physical units.
+        auto_um = float(pixmap.width()) * float(mpp_value) * 0.10
+        if auto_um <= 0:
+            auto_um = float(fallback_um or 10.0)
+        return float(self._snap_publish_scale_bar_um(auto_um)), ("\u03bcm" if image_type != "field" else "mm")
+
+    @staticmethod
     def _measurement_rectangle_from_lines(line1: list[float], line2: list[float]) -> list[QPointF] | None:
         p1 = QPointF(float(line1[0]), float(line1[1]))
         p2 = QPointF(float(line1[2]), float(line1[3]))
@@ -2548,6 +2765,7 @@ class ObservationsTab(QWidget):
         if not base_image_paths:
             return []
 
+        parent = self.window()
         preferences = self._publish_render_preferences()
         images = ImageDB.get_images_for_observation(observation_id)
         by_path_key: dict[str, dict] = {}
@@ -2611,8 +2829,15 @@ class ObservationsTab(QWidget):
                 except Exception:
                     mpp_value = 0.0
                 if mpp_value > 0:
-                    widget.set_microns_per_pixel(mpp_value)
-                    widget.set_scale_bar(True, float(preferences["scale_bar_um"]))
+                    scale_bar_um, unit = self._publish_scale_bar_for_image(
+                        image_row=image_row,
+                        pixmap=pixmap,
+                        parent=parent,
+                        fallback_um=float(preferences["scale_bar_um"]),
+                    )
+                    if scale_bar_um and scale_bar_um > 0:
+                        widget.set_microns_per_pixel(mpp_value)
+                        widget.set_scale_bar(True, float(scale_bar_um), unit=unit)
                     has_scale_bar = True
 
             if not show_overlays and not has_scale_bar:
@@ -2740,6 +2965,7 @@ class ObservationsTab(QWidget):
             "ci": bool(settings.get("ci", True)),
             "avg_q": bool(settings.get("avg_q", False)),
             "q_minmax": bool(settings.get("q_minmax", False)),
+            "axis_equal": bool(settings.get("axis_equal", False)),
         }
 
         measurements = MeasurementDB.get_measurements_for_observation(observation_id)
@@ -2772,6 +2998,7 @@ class ObservationsTab(QWidget):
         show_ci = plot_settings["ci"]
         show_avg_q = plot_settings["avg_q"]
         show_q_minmax = plot_settings["q_minmax"]
+        axis_equal = plot_settings["axis_equal"]
         bins = max(3, plot_settings["bins"])
 
         # Wider export canvas so the scatter panel and histogram labels do not collide.
@@ -2827,6 +3054,10 @@ class ObservationsTab(QWidget):
             if ellipse is not None:
                 ex, ey = ellipse
                 ax_scatter.plot(ex, ey, color=hist_color, linewidth=1.5)
+        if axis_equal:
+            ax_scatter.set_aspect("equal", adjustable="box")
+        else:
+            ax_scatter.set_aspect("auto")
 
         if show_hist and ax_len and ax_wid and ax_q:
             ax_len.hist(L, bins=np.histogram_bin_edges(L, bins=bins), color=hist_color)
@@ -3306,6 +3537,27 @@ class ObservationsTab(QWidget):
                 self.tr("Upload failed: no uploader is configured for the selected target."),
                 level="error",
             )
+        if uploader.key in {"mobile", "web"}:
+            base_image_count = len(image_paths)
+            extra_image_count = int(bool(include_measure_plots)) + int(bool(include_thumbnail_gallery))
+            total_image_count = base_image_count + extra_image_count
+            if base_image_count > 10 or total_image_count > 10:
+                if extra_image_count > 0:
+                    warning_text = self.tr(
+                        "Artsobservasjoner allows up to 10 images per observation. "
+                        "You have {count} images, including plots and gallery images "
+                        "(Settings - Online publishing)."
+                    ).format(count=total_image_count)
+                else:
+                    warning_text = self.tr(
+                        "Artsobservasjoner allows up to 10 images per observation. "
+                        "You have {count} images."
+                    ).format(count=base_image_count)
+                return _fail(
+                    warning_text,
+                    level="warning",
+                    auto_clear_ms=15000,
+                )
 
         taxon_id = None
         cookies: dict = {}
@@ -3820,6 +4072,7 @@ class ObservationsTab(QWidget):
                     observation_datetime=obs_dt,
                     observation_lat=obs_lat,
                     observation_lon=obs_lon,
+                    continue_to_observation_details=False,
                 )
                 if dialog.request_edit_images_path:
                     image_dialog.select_image_by_path(dialog.request_edit_images_path)
@@ -3842,7 +4095,7 @@ class ObservationsTab(QWidget):
             self._ai_suggestions_cache[obs_id] = ai_state
             return
 
-    def open_edit_images_direct(self):
+    def open_edit_images_direct(self, selected_image_path: str | None = None):
         """Open Prepare Images dialog directly for the selected observation.
 
         Skips ObservationDetailsDialog — useful when triggered via keyboard
@@ -3870,9 +4123,12 @@ class ObservationsTab(QWidget):
             observation_datetime=obs_dt,
             observation_lat=obs_lat,
             observation_lon=obs_lon,
+            continue_to_observation_details=False,
         )
-        # Jump to first image so the user lands on actual content
-        if existing_images:
+        # Jump to requested image when provided, otherwise first image.
+        if selected_image_path:
+            image_dialog.select_image_by_path(selected_image_path)
+        elif existing_images:
             first_path = existing_images[0].get("filepath")
             if first_path:
                 image_dialog.select_image_by_path(first_path)
@@ -3896,14 +4152,25 @@ class ObservationsTab(QWidget):
                 self.selected_observation_id = obs_id
                 self.on_selection_changed()
                 break
+        # Force Measure tab to reload updated scale/measurements without switching tabs
+        self.set_selected_as_active(switch_tab=False)
         self.set_status_message(self.tr("Images updated."), level="success")
+
+    def _on_gallery_image_double_clicked(self, _image_id, filepath: str) -> None:
+        """Open Prepare Images from Observations-gallery double-click."""
+        target_path = (filepath or "").strip() or None
+        self.open_edit_images_direct(selected_image_path=target_path)
 
     def create_new_observation(self):
         """Show dialog to create new observation."""
         image_results: list[ImageImportResult] = []
         primary_index = None
         while True:
-            image_dialog = ImageImportDialog(self, import_results=image_results or None)
+            image_dialog = ImageImportDialog(
+                self,
+                import_results=image_results or None,
+                continue_to_observation_details=True,
+            )
             if not image_dialog.exec():
                 return
             image_results = image_dialog.import_results
@@ -3983,6 +4250,21 @@ class ObservationsTab(QWidget):
 
     def export_for_ml(self):
         """Export annotations in COCO format for ML training."""
+        def _get_default_export_dir() -> str:
+            settings = get_app_settings()
+            last_dir = settings.get("last_export_dir")
+            if last_dir and Path(last_dir).exists():
+                return last_dir
+            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            if docs:
+                return docs
+            return str(Path.home())
+
+        def _remember_export_dir(folderpath: str | None) -> None:
+            if not folderpath:
+                return
+            update_app_settings({"last_export_dir": str(folderpath)})
+
         # Get export summary first
         summary = get_export_summary()
 
@@ -3997,12 +4279,13 @@ class ObservationsTab(QWidget):
 
         # Select output directory
         output_dir = QFileDialog.getExistingDirectory(
-            self, "Select Output Directory for ML Dataset"
+            self, "Select Output Directory for ML Dataset", _get_default_export_dir()
         )
 
         if not output_dir:
             self.set_status_message(self.tr("ML export cancelled."), level="info")
             return
+        _remember_export_dir(output_dir)
 
         # Perform export
         try:
@@ -4127,10 +4410,27 @@ class ObservationsTab(QWidget):
                 except (TypeError, ValueError):
                     custom_scale = None
             objective_value = resolved_key if resolved_key else (None if objective_name == "Custom" else objective_name)
+            image_type = (img.get("image_type") or "field").strip().lower()
             resize_to_optimal = bool(SettingsDB.get_setting("resize_to_optimal_sampling", False))
             storage_mode = self._get_original_storage_mode()
             store_original = storage_mode != "none"
             resample_factor = img.get("resample_scale_factor")
+            if image_type == "microscope":
+                parsed_resample = None
+                try:
+                    if resample_factor is not None:
+                        parsed_resample = float(resample_factor)
+                except (TypeError, ValueError):
+                    parsed_resample = None
+                if parsed_resample is not None:
+                    # Persist per-image resize intent: explicit non-resized microscope images
+                    # store 1.0, while resized images store a factor below 1.0.
+                    resize_to_optimal = 0.0 < parsed_resample < 0.999
+                else:
+                    original_path = (img.get("original_filepath") or "").strip()
+                    current_path = (img.get("filepath") or "").strip()
+                    if original_path and current_path and original_path != current_path:
+                        resize_to_optimal = True
             if (
                 resample_factor is None
                 and objective_value
@@ -4142,11 +4442,25 @@ class ObservationsTab(QWidget):
                     factor_guess = float(base_scale) / float(scale_value)
                     if 0 < factor_guess < 0.999:
                         resample_factor = factor_guess
+            sb_x1 = img.get("scale_bar_x1")
+            sb_y1 = img.get("scale_bar_y1")
+            sb_x2 = img.get("scale_bar_x2")
+            sb_y2 = img.get("scale_bar_y2")
+            scale_bar_sel = None
+            if all(v is not None for v in (sb_x1, sb_y1, sb_x2, sb_y2)):
+                scale_bar_sel = ((float(sb_x1), float(sb_y1)), (float(sb_x2), float(sb_y2)))
+            calibration_length_um = self._get_calibration_measurement_length(img.get("id"))
+            if scale_bar_sel is None or calibration_length_um is None:
+                fallback_sel, fallback_len = self._get_calibration_overlay_data(img.get("id"))
+                if scale_bar_sel is None and fallback_sel is not None:
+                    scale_bar_sel = fallback_sel
+                if calibration_length_um is None and fallback_len is not None:
+                    calibration_length_um = fallback_len
             results.append(
                 ImageImportResult(
                     filepath=filepath,
                     image_id=img.get("id"),
-                    image_type=img.get("image_type") or "field",
+                    image_type=image_type,
                     objective=objective_value,
                     custom_scale=custom_scale,
                     contrast=img.get("contrast"),
@@ -4161,6 +4475,8 @@ class ObservationsTab(QWidget):
                     original_filepath=img.get("original_filepath") or filepath,
                     resize_to_optimal=resize_to_optimal,
                     store_original=store_original,
+                    scale_bar_selection=scale_bar_sel,
+                    scale_bar_length_um=calibration_length_um,
                 )
             )
         if missing_paths:
@@ -4290,6 +4606,128 @@ class ObservationsTab(QWidget):
         conn.commit()
         conn.close()
 
+    def _get_calibration_measurement_length(self, image_id: int) -> float | None:
+        if not image_id:
+            return None
+        conn = get_connection()
+        row = conn.execute(
+            """
+            SELECT length_um
+            FROM spore_measurements
+            WHERE image_id = ?
+              AND COALESCE(LOWER(measurement_type), '') = 'calibration'
+            ORDER BY measured_at DESC, id DESC
+            LIMIT 1
+            """,
+            (image_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        value = row[0]
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _get_calibration_overlay_data(
+        self,
+        image_id: int,
+    ) -> tuple[tuple[tuple[float, float], tuple[float, float]] | None, float | None]:
+        if not image_id:
+            return None, None
+        conn = get_connection()
+        row = conn.execute(
+            """
+            SELECT p1_x, p1_y, p2_x, p2_y, length_um
+            FROM spore_measurements
+            WHERE image_id = ?
+              AND COALESCE(LOWER(measurement_type), '') = 'calibration'
+            ORDER BY measured_at DESC, id DESC
+            LIMIT 1
+            """,
+            (image_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None, None
+        p1_x, p1_y, p2_x, p2_y, length_um = row
+        selection = None
+        if all(v is not None for v in (p1_x, p1_y, p2_x, p2_y)):
+            selection = (
+                (float(p1_x), float(p1_y)),
+                (float(p2_x), float(p2_y)),
+            )
+        length_value = None
+        try:
+            length_value = float(length_um) if length_um is not None else None
+        except (TypeError, ValueError):
+            length_value = None
+        return selection, length_value
+
+    def _upsert_calibration_measurement_for_image(
+        self,
+        image_id: int,
+        scale_bar_selection: tuple | None,
+        total_um: float | None,
+        coordinate_scale: float = 1.0,
+    ) -> None:
+        if not image_id or not scale_bar_selection or len(scale_bar_selection) != 2:
+            return
+        if total_um is None or total_um <= 0:
+            return
+        (x1, y1), (x2, y2) = scale_bar_selection
+        factor = float(coordinate_scale) if coordinate_scale and coordinate_scale > 0 else 1.0
+        x1 *= factor
+        y1 *= factor
+        x2 *= factor
+        y2 *= factor
+        dx = x2 - x1
+        dy = y2 - y1
+        length_px = (dx * dx + dy * dy) ** 0.5
+        if length_px <= 0:
+            return
+        perp_x = -dy / length_px
+        perp_y = dx / length_px
+        half_width_px = length_px / 20.0  # 1:10 ratio
+        mx = (x1 + x2) / 2
+        my = (y1 + y2) / 2
+        p1 = QPointF(x1, y1)
+        p2 = QPointF(x2, y2)
+        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
+        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
+        width_um = float(total_um) / 10.0
+
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM spore_measurements WHERE image_id = ? AND COALESCE(LOWER(measurement_type), '') = 'calibration'",
+            (image_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        MeasurementDB.add_measurement(
+            image_id=image_id,
+            length=float(total_um),
+            width=width_um,
+            measurement_type="calibration",
+            notes=f"Scale bar: {float(total_um):.1f} µm",
+            points=[p1, p2, p3, p4],
+        )
+
+    def _scale_scale_bar_selection(
+        self,
+        selection: tuple | None,
+        factor: float,
+    ) -> tuple | None:
+        if not selection or len(selection) != 2:
+            return selection
+        if not isinstance(factor, (int, float)) or factor <= 0 or abs(float(factor) - 1.0) < 1e-9:
+            return selection
+        (x1, y1), (x2, y2) = selection
+        f = float(factor)
+        return ((float(x1) * f, float(y1) * f), (float(x2) * f, float(y2) * f))
+
     def _rescale_measurement_lengths(
         self,
         image_id: int,
@@ -4315,6 +4753,7 @@ class ObservationsTab(QWidget):
             SET length_um = length_um * ?,
                 width_um = CASE WHEN width_um IS NOT NULL THEN width_um * ? ELSE NULL END
             WHERE image_id = ?
+              AND COALESCE(LOWER(measurement_type), '') != 'calibration'
             ''',
             (ratio, ratio, image_id)
         )
@@ -4458,12 +4897,13 @@ class ObservationsTab(QWidget):
             objective_name = None
             scale_from_existing = False
             scale_is_custom = False
-            if image_type == "microscope":
-                if result.custom_scale:
-                    scale = float(result.custom_scale)
+            if result.custom_scale:
+                scale = float(result.custom_scale)
+                scale_is_custom = True
+                if image_type == "microscope":
                     objective_name = "Custom"
-                    scale_is_custom = True
-                elif objective_key and objective_key in objectives:
+            if image_type == "microscope":
+                if (not scale_is_custom) and objective_key and objective_key in objectives:
                     objective_name = objective_key
                     if result.image_id:
                         existing = existing_by_id.get(result.image_id)
@@ -4479,6 +4919,10 @@ class ObservationsTab(QWidget):
                             scale_from_existing = True
                     if scale is None:
                         scale = float(objectives[objective_key]["microns_per_pixel"])
+            else:
+                # Field images can have a custom scale from scale-bar calibration.
+                # Keep objective empty so stale microscope objective values are cleared.
+                objective_name = ""
 
             calibration_id = None
             if objective_name and objective_name != "Custom":
@@ -4511,6 +4955,7 @@ class ObservationsTab(QWidget):
                     ai_crop_source_size=result.ai_crop_source_size,
                     gps_source=result.gps_source,
                     calibration_id=calibration_id,
+                    scale_bar_selection=getattr(result, "scale_bar_selection", None),
                 )
 
                 apply_resample = (
@@ -4560,6 +5005,12 @@ class ObservationsTab(QWidget):
                                 )
 
                         self._scale_measurement_points(result.image_id, resample_factor)
+                        if result.scale_bar_selection:
+                            scaled_sel = self._scale_scale_bar_selection(
+                                result.scale_bar_selection, resample_factor
+                            )
+                            result.scale_bar_selection = scaled_sel
+                            update_kwargs["scale_bar_selection"] = scaled_sel
 
                         copied_original = False
                         if storage_mode != "none":
@@ -4591,9 +5042,15 @@ class ObservationsTab(QWidget):
                         )
 
                 if not apply_resample:
+                    current_image = ImageDB.get_image(result.image_id)
+                    current_scale = (
+                        current_image.get("scale_microns_per_pixel")
+                        if current_image
+                        else existing_scale
+                    )
                     self._rescale_measurement_lengths(
                         result.image_id,
-                        existing_scale,
+                        current_scale,
                         scale,
                     )
 
@@ -4642,6 +5099,27 @@ class ObservationsTab(QWidget):
                 gps_source=result.gps_source,
                 resample_scale_factor=resample_factor,
                 original_filepath=original_to_store,
+            )
+            stored_scale_bar_selection = self._scale_scale_bar_selection(
+                getattr(result, "scale_bar_selection", None),
+                resample_factor
+                if image_type == "microscope"
+                and getattr(result, "resize_to_optimal", True)
+                and resample_factor < 0.999
+                else 1.0,
+            )
+            if stored_scale_bar_selection:
+                ImageDB.update_image(
+                    image_id,
+                    scale_bar_selection=stored_scale_bar_selection,
+                )
+                result.scale_bar_selection = stored_scale_bar_selection
+            scale_bar_length = getattr(result, "scale_bar_length_um", None)
+            self._upsert_calibration_measurement_for_image(
+                image_id=image_id,
+                scale_bar_selection=stored_scale_bar_selection,
+                total_um=scale_bar_length,
+                coordinate_scale=1.0,
             )
 
             stored_path = resampled_path
@@ -4886,6 +5364,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.vernacular_input = QLineEdit()
         self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         vern_row.addWidget(self.vernacular_input, 1)
+        self.vernacular_language_btn = QToolButton()
+        self.vernacular_language_btn.setText("🌐")
+        self.vernacular_language_btn.setPopupMode(QToolButton.InstantPopup)
+        self.vernacular_language_menu = QMenu(self.vernacular_language_btn)
+        self.vernacular_language_btn.setMenu(self.vernacular_language_menu)
+        input_height = max(20, int(self.vernacular_input.sizeHint().height()))
+        self.vernacular_language_btn.setFixedSize(input_height, input_height)
+        self._populate_vernacular_language_menu()
+        vern_row.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
         identified_layout.addLayout(vern_row)
 
         genus_row = QHBoxLayout()
@@ -5151,6 +5638,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._register_hint_widget(
             self.unspontaneous_checkbox,
             self.tr("Introduced species, escaped from cultivation, not native (ikke spontant)."),
+        )
+        self._register_hint_widget(
+            getattr(self, "vernacular_language_btn", None),
+            self.tr("Choose common-name language (applies to the whole app)."),
         )
         self._register_hint_widget(
             self.ai_guess_btn,
@@ -5773,12 +6264,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         """Select images and extract EXIF metadata."""
         from utils.exif_reader import get_image_metadata
 
+        settings = get_app_settings()
+        last_import_dir = settings.get("last_import_dir")
+        if not last_import_dir or not Path(last_import_dir).exists():
+            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            last_import_dir = docs if docs else str(Path.home())
+
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Photos", "",
+            self, "Select Photos", last_import_dir,
             "Images (*.png *.jpg *.jpeg *.tif *.tiff *.orf *.nef *.heic *.heif);;All Files (*)"
         )
         if not files:
             return
+        update_app_settings({"last_import_dir": str(Path(files[0]).parent)})
 
         # Add to existing files
         for filepath in files:
@@ -6442,6 +6940,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.vernacular_label.setText(self._vernacular_label())
         if hasattr(self, "vernacular_input"):
             self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
+        self._populate_vernacular_language_menu()
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         db_path = resolve_vernacular_db_path(lang)
         if not db_path:
@@ -6451,6 +6950,51 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         else:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
         self._maybe_set_vernacular_from_taxon()
+
+    def _populate_vernacular_language_menu(self) -> None:
+        button = getattr(self, "vernacular_language_btn", None)
+        menu = getattr(self, "vernacular_language_menu", None)
+        if button is None or menu is None:
+            return
+        menu.clear()
+        current = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        language_group = QActionGroup(menu)
+        language_group.setExclusive(True)
+        for code in list_available_vernacular_languages():
+            norm_code = normalize_vernacular_language(code)
+            label = vernacular_language_label(norm_code) or norm_code
+            action = QAction(self.tr(label), menu)
+            action.setData(norm_code)
+            action.setCheckable(True)
+            action.setChecked(norm_code == current)
+            action.triggered.connect(
+                lambda checked=False, selected_code=norm_code: self._on_vernacular_language_selected(
+                    selected_code,
+                    checked,
+                )
+            )
+            language_group.addAction(action)
+            menu.addAction(action)
+        current_label = vernacular_language_label(current) or current
+        button.setToolTip(
+            self.tr("Common-name language: {lang}").format(lang=self.tr(current_label))
+        )
+
+    def _on_vernacular_language_selected(self, code: str, checked: bool = True) -> None:
+        if not checked:
+            return
+        selected = normalize_vernacular_language(code)
+        current = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        if not selected or selected == current:
+            return
+        SettingsDB.set_setting("vernacular_language", selected)
+        update_app_settings({"vernacular_language": selected})
+        for widget in QApplication.topLevelWidgets():
+            if hasattr(widget, "apply_vernacular_language_change"):
+                try:
+                    widget.apply_vernacular_language_change()
+                except Exception:
+                    pass
 
     def _setup_vernacular_autocomplete(self):
         """Wire vernacular lookup/completion if taxonomy DB is available."""

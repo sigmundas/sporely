@@ -836,10 +836,13 @@ class ImageDB:
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
                      gps_source: bool | None | object = _UNSET,
                      resample_scale_factor: float | None | object = _UNSET,
-                     original_filepath: str | None | object = _UNSET):
+                     original_filepath: str | None | object = _UNSET,
+                     scale_bar_selection: object = _UNSET):
         """Update image metadata"""
         conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(images)")
+        image_columns = {row[1] for row in cursor.fetchall()}
 
         updates = []
         values = []
@@ -904,6 +907,13 @@ class ImageDB:
             gps_value = None if gps_source is None else (1 if gps_source else 0)
             updates.append('gps_source = ?')
             values.append(gps_value)
+        if scale_bar_selection is not _UNSET:
+            x1 = y1 = x2 = y2 = None
+            if scale_bar_selection and len(scale_bar_selection) == 2:
+                (x1, y1), (x2, y2) = scale_bar_selection
+            if {"scale_bar_x1", "scale_bar_y1", "scale_bar_x2", "scale_bar_y2"}.issubset(image_columns):
+                updates.extend(['scale_bar_x1 = ?', 'scale_bar_y1 = ?', 'scale_bar_x2 = ?', 'scale_bar_y2 = ?'])
+                values.extend([x1, y1, x2, y2])
 
         if updates:
             values.append(image_id)

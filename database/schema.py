@@ -12,6 +12,7 @@ SETTINGS_PATH = _app_dir / "app_settings.json"
 
 DEFAULT_OBJECTIVES = {
     "100X": {
+        "optics_type": "microscope",
         "magnification": 100.0,
         "na": 1.25,
         "objective_name": "Plan achro",
@@ -58,16 +59,24 @@ def format_objective_display(
     magnification,
     numerical_aperture,
     objective_name: str | None,
+    optics_type: str | None = "microscope",
 ) -> str:
+    optics = str(optics_type or "microscope").strip().lower()
     mag_text = _format_objective_number(magnification, decimals=2)
     na_text = _format_objective_number(numerical_aperture, decimals=2)
     base = ""
-    if mag_text and na_text:
-        base = f"{mag_text}X/{na_text}"
-    elif mag_text:
-        base = f"{mag_text}X"
-    elif na_text:
-        base = f"NA {na_text}"
+    if optics == "macro":
+        if mag_text:
+            base = f"1:{mag_text}"
+        elif na_text:
+            base = f"NA {na_text}"
+    else:
+        if mag_text and na_text:
+            base = f"{mag_text}X/{na_text}"
+        elif mag_text:
+            base = f"{mag_text}X"
+        elif na_text:
+            base = f"NA {na_text}"
     name = (objective_name or "").strip()
     if name:
         return f"{base} {name}".strip()
@@ -102,6 +111,13 @@ def _parse_objective_name(text: str | None) -> str | None:
     return None
 
 
+def _normalize_optics_type(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"macro", "macro_lens", "macro lens", "camera"}:
+        return "macro"
+    return "microscope"
+
+
 def _upgrade_objective_entry(key: str, obj: dict) -> tuple[dict, bool]:
     updated = False
     entry = dict(obj) if isinstance(obj, dict) else {}
@@ -109,6 +125,10 @@ def _upgrade_objective_entry(key: str, obj: dict) -> tuple[dict, bool]:
     na_value = entry.get("na") or entry.get("numerical_aperture")
     objective_name = entry.get("objective_name")
     legacy_name = entry.get("name")
+    optics_type = _normalize_optics_type(entry.get("optics_type"))
+    if entry.get("optics_type") != optics_type:
+        entry["optics_type"] = optics_type
+        updated = True
 
     parsed_mag = _parse_magnification(magnification)
     if parsed_mag is None:
@@ -140,6 +160,7 @@ def _upgrade_objective_entry(key: str, obj: dict) -> tuple[dict, bool]:
         entry.get("magnification"),
         entry.get("na"),
         entry.get("objective_name"),
+        entry.get("optics_type"),
     )
     if entry.get("objective_name"):
         if display_name and entry.get("name") != display_name:
@@ -168,25 +189,36 @@ def _upgrade_objectives(objectives: dict) -> tuple[dict, bool]:
 def objective_display_name(obj: dict, fallback_key: str | None = None) -> str:
     if not isinstance(obj, dict):
         return fallback_key or ""
+    optics = _normalize_optics_type(obj.get("optics_type"))
+    prefix = "Macro"
     objective_name = obj.get("objective_name")
     if objective_name:
-        display = format_objective_display(obj.get("magnification"), obj.get("na"), objective_name)
+        display = format_objective_display(
+            obj.get("magnification"),
+            obj.get("na"),
+            objective_name,
+            obj.get("optics_type"),
+        )
         if display:
-            return display
+            return f"{prefix} • {display}" if optics == "macro" else display
     name = obj.get("name")
     if name:
-        return str(name)
-    return str(fallback_key) if fallback_key is not None else ""
+        return f"{prefix} • {str(name)}" if optics == "macro" else str(name)
+    fallback = str(fallback_key) if fallback_key is not None else ""
+    if optics == "macro":
+        return f"{prefix} • {fallback}" if fallback else prefix
+    return fallback
 
 
 def objective_sort_value(obj: dict, fallback_key: str | None = None) -> float:
+    optics_group = 10000.0 if _normalize_optics_type(obj.get("optics_type") if isinstance(obj, dict) else None) == "macro" else 0.0
     if isinstance(obj, dict):
         mag = obj.get("magnification")
         parsed = _parse_magnification(mag)
         if parsed is not None:
-            return parsed
+            return optics_group + parsed
     parsed = _parse_magnification(fallback_key)
-    return parsed if parsed is not None else 9999.0
+    return optics_group + (parsed if parsed is not None else 9999.0)
 
 
 def resolve_objective_key(name: str | None, objectives: dict) -> str | None:
@@ -792,6 +824,10 @@ def init_database():
             ai_crop_source_h INTEGER,
             gps_source INTEGER DEFAULT 0,
             artsobs_web_unpublished INTEGER DEFAULT 0,
+            scale_bar_x1 REAL,
+            scale_bar_y1 REAL,
+            scale_bar_x2 REAL,
+            scale_bar_y2 REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (observation_id) REFERENCES observations(id)
         )
@@ -886,6 +922,24 @@ def init_database():
     # Add pending Artsobs web upload flag for images
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN artsobs_web_unpublished INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+
+    # Add stored scale bar endpoints for Prepare Images overlay restore
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_x1 REAL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_y1 REAL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_x2 REAL')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_y2 REAL')
     except sqlite3.OperationalError:
         pass
 

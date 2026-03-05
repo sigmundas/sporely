@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="-2 -2 20 20">
+  <defs>
+    <filter id="s" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="1.5" flood-color="rgba(0,0,0,0.55)"/>
+    </filter>
+  </defs>
+  <rect x="1" y="1" width="14" height="14" rx="2" fill="white" stroke="#666" stroke-width="1.2" filter="url(#s)"/>
+  <polyline points="3.5,8.5 6.5,12 12.5,4" stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

@@ -9,6 +9,7 @@ pyinstaller \
   --onedir \
   --windowed \
   --name MycoLog \
+  --icon "assets/icons/mycolog.icns" \
   --hidden-import pillow_heif \
   --exclude-module PySide6.QtQml \
   --exclude-module PySide6.QtQuick \

@@ -26,7 +26,25 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 
 - Select **Category: Field** in the Measure tab.
 - Use the **Line** tool (two clicks) to annotate length.
-- If no scale is set, measurements are relative; set a scale if you need real units.
+- Measurement overlays show **2 significant figures** with no unit label. The calibration defines the scale — if you calibrate on a 10 cm ruler, values are in cm; on a 1 m stick, in meters.
+- If no scale is set, measurements are relative.
+
+### Macro Lens Calibration
+
+If you shoot with a macro lens, set up a profile under **Settings → Calibration → New Objective**, selecting profile type **Macro**. Enter:
+- Magnification as a 1:X ratio (e.g. 1 for 1:1 macro, 0.5 for 1:2)
+- Sensor width (mm) and image width (px)
+
+This calculates a provisional scale. For best accuracy, calibrate against a ruler in the frame instead.
+
+## Keyboard Shortcuts
+
+| Action | Windows / Linux | macOS |
+|--------|----------------|-------|
+| Open Edit Observation | Alt+E | Option+E |
+| Go to Observations tab | Alt+O | Option+O |
+| Go to Measure tab | Alt+M | Option+M |
+| Go to Analysis tab | Alt+A | Option+A |
 
 ## Tips
 

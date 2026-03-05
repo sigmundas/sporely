@@ -24,12 +24,16 @@ class SporePreviewWidget(QWidget):
         self.length_um = 0
         self.width_um = 0
         self.microns_per_pixel = 0.5
+        self.display_unit = "\u03bcm"
+        self.display_divisor = 1.0
         self.measurement_id = None
         self.measure_color = QColor("#0044aa")
         self.show_dimension_labels = True
+        self.line_mode = False
 
         # Adjustment offsets (in pixels in original image space)
         self.corner_offsets = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
+        self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
 
         # Fixed crop size (calculated once when spore is set, to prevent rescaling during drag)
         self.fixed_crop_size = 0
@@ -60,19 +64,33 @@ class SporePreviewWidget(QWidget):
         self.image_label.side_dragged.connect(self.on_side_dragged)
         self.image_label.rotation_dragged.connect(self.on_rotation_dragged)
         self.image_label.rectangle_dragged.connect(self.on_rectangle_dragged)
+        self.image_label.line_endpoint_dragged.connect(self.on_line_endpoint_dragged)
         self.image_label.interaction_finished.connect(self.apply_changes)
         self.image_label.set_measure_color(self.measure_color)
         layout.addWidget(self.image_label, 1)
 
         # No action buttons; edits auto-apply on release. Delete via keyboard.
 
-    def set_spore(self, pixmap, points, length_um, width_um, microns_per_pixel, measurement_id=None):
+    def set_spore(
+        self,
+        pixmap,
+        points,
+        length_um,
+        width_um,
+        microns_per_pixel,
+        measurement_id=None,
+        display_unit="\u03bcm",
+        display_divisor=1.0,
+    ):
         """Set the spore to display."""
+        self.line_mode = False
         self.original_pixmap = pixmap
         self.points = points
         self.length_um = length_um
         self.width_um = width_um
         self.microns_per_pixel = microns_per_pixel
+        self.display_unit = display_unit or "\u03bcm"
+        self.display_divisor = float(display_divisor) if display_divisor else 1.0
         self.measurement_id = measurement_id
 
         # Calculate fixed crop size based on original dimensions
@@ -88,6 +106,36 @@ class SporePreviewWidget(QWidget):
         line1_mid = QPointF((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
         line2_mid = QPointF((points[2].x() + points[3].x()) / 2, (points[2].y() + points[3].y()) / 2)
         self.fixed_center = QPointF((line1_mid.x() + line2_mid.x()) / 2, (line1_mid.y() + line2_mid.y()) / 2)
+
+        self.reset_adjustments()
+        self.setFocus(Qt.OtherFocusReason)
+
+    def set_line(
+        self,
+        pixmap,
+        points,
+        length_um,
+        microns_per_pixel,
+        measurement_id=None,
+        display_unit="\u03bcm",
+        display_divisor=1.0,
+    ):
+        """Set a line measurement to display and fine-tune."""
+        self.line_mode = True
+        self.original_pixmap = pixmap
+        self.points = points
+        self.length_um = length_um
+        self.width_um = 0
+        self.microns_per_pixel = microns_per_pixel
+        self.display_unit = display_unit or "\u03bcm"
+        self.display_divisor = float(display_divisor) if display_divisor else 1.0
+        self.measurement_id = measurement_id
+
+        line_vec = QPointF(points[1].x() - points[0].x(), points[1].y() - points[0].y())
+        line_len = math.sqrt(line_vec.x() ** 2 + line_vec.y() ** 2)
+        padding = max(16.0, line_len * 0.25)
+        self.fixed_crop_size = max(48.0, line_len + padding * 2.0)
+        self.fixed_center = QPointF((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
 
         self.reset_adjustments()
         self.setFocus(Qt.OtherFocusReason)
@@ -110,6 +158,9 @@ class SporePreviewWidget(QWidget):
         self.points = []
         self.length_um = 0
         self.width_um = 0
+        self.display_unit = "\u03bcm"
+        self.display_divisor = 1.0
+        self.line_mode = False
         self.measurement_id = None
         self.fixed_crop_size = 0
         self.fixed_center = QPointF(0, 0)
@@ -121,7 +172,10 @@ class SporePreviewWidget(QWidget):
         self.delete_requested.emit(self.measurement_id)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
+        is_delete = event.key() == Qt.Key_Delete
+        is_alt_d = event.key() == Qt.Key_D and (event.modifiers() & Qt.AltModifier)
+        is_cmd_d = event.key() == Qt.Key_D and (event.modifiers() & Qt.ControlModifier)
+        if is_delete or is_alt_d or is_cmd_d:
             self._on_delete_clicked()
             event.accept()
             return
@@ -129,7 +183,21 @@ class SporePreviewWidget(QWidget):
 
     def reset_adjustments(self):
         """Reset all adjustments to zero."""
-        self.corner_offsets = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
+        if self.line_mode:
+            self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
+            self.corner_offsets = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
+        else:
+            self.corner_offsets = [QPointF(0, 0), QPointF(0, 0), QPointF(0, 0), QPointF(0, 0)]
+            self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
+        self.update_preview()
+
+    def on_line_endpoint_dragged(self, endpoint_index: int, delta: QPointF):
+        """Move one line endpoint in image space."""
+        if not self.line_mode or len(self.line_offsets) != 2:
+            return
+        if endpoint_index not in (0, 1):
+            return
+        self.line_offsets[endpoint_index] = self.line_offsets[endpoint_index] + delta
         self.update_preview()
 
     def on_side_drag_started(self, side_index):
@@ -302,6 +370,20 @@ class SporePreviewWidget(QWidget):
         if not self.points or not self.measurement_id:
             return
 
+        if self.line_mode and len(self.points) == 2:
+            adjusted_points = []
+            for i, point in enumerate(self.points):
+                adjusted_points.append(QPointF(
+                    point.x() + self.line_offsets[i].x(),
+                    point.y() + self.line_offsets[i].y()
+                ))
+            dx = adjusted_points[1].x() - adjusted_points[0].x()
+            dy = adjusted_points[1].y() - adjusted_points[0].y()
+            line_len = math.sqrt(dx * dx + dy * dy)
+            new_length_um = line_len * self.microns_per_pixel
+            self.dimensions_changed.emit(self.measurement_id, new_length_um, 0.0, adjusted_points)
+            return
+
         # Calculate adjusted points
         adjusted_points = []
         for i, point in enumerate(self.points):
@@ -328,7 +410,14 @@ class SporePreviewWidget(QWidget):
 
     def update_preview(self):
         """Update the image label with current adjustments."""
-        if not self.original_pixmap or len(self.points) != 4:
+        if not self.original_pixmap:
+            self.image_label.clear_preview()
+            return
+        if self.line_mode:
+            if len(self.points) != 2:
+                self.image_label.clear_preview()
+                return
+        elif len(self.points) != 4:
             self.image_label.clear_preview()
             return
 
@@ -339,7 +428,11 @@ class SporePreviewWidget(QWidget):
             self.corner_offsets,
             self.microns_per_pixel,
             self.fixed_crop_size,
-            self.fixed_center
+            self.fixed_center,
+            self.display_unit,
+            self.display_divisor,
+            self.line_mode,
+            self.line_offsets,
         )
         # Force immediate repaint
         self.image_label.update()
@@ -356,6 +449,8 @@ class PreviewImageLabel(QLabel):
     rotation_dragged = Signal(float)
     # Signal emitted when rectangle is dragged (delta)
     rectangle_dragged = Signal(QPointF)
+    # Signal emitted when a line endpoint is dragged (endpoint_index, delta)
+    line_endpoint_dragged = Signal(int, QPointF)
     # Signal emitted when a drag interaction ends
     interaction_finished = Signal()
 
@@ -372,18 +467,25 @@ class PreviewImageLabel(QLabel):
         self.microns_per_pixel = 0.5
         self.fixed_crop_size = 0
         self.fixed_center = QPointF(0, 0)
+        self.display_unit = "\u03bcm"
+        self.display_divisor = 1.0
         self.show_dimension_labels = True
+        self.line_mode = False
+        self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
 
         # Interaction state
         self.dragging_side = -1
         self.dragging_rotation = False
         self.dragging_rectangle = False  # New: dragging entire rectangle
+        self.dragging_line_endpoint = -1
         self.last_mouse_pos = QPointF()
         self.hover_side = -1
         self.hover_rotation_arrow = -1  # -1 = none, 0 = left, 1 = right
+        self.hover_line_endpoint = -1
 
         # Display coordinates (for hit testing)
         self.screen_corners = []
+        self.screen_line_endpoints = []
         self.rotation_arrow_positions = []  # Positions of rotation arrow handles
         self.preview_scale = 1.0
         self.measure_color = QColor("#0044aa")
@@ -478,7 +580,19 @@ class PreviewImageLabel(QLabel):
         self.measure_color = QColor(color)
         self.update()
 
-    def set_preview(self, pixmap, points, corner_offsets, mpp, fixed_crop_size, fixed_center):
+    def set_preview(
+        self,
+        pixmap,
+        points,
+        corner_offsets,
+        mpp,
+        fixed_crop_size,
+        fixed_center,
+        display_unit="\u03bcm",
+        display_divisor=1.0,
+        line_mode=False,
+        line_offsets=None,
+    ):
         """Set preview data."""
         self.original_pixmap = pixmap
         self.points = points
@@ -486,6 +600,13 @@ class PreviewImageLabel(QLabel):
         self.microns_per_pixel = mpp
         self.fixed_crop_size = fixed_crop_size
         self.fixed_center = fixed_center
+        self.display_unit = display_unit or "\u03bcm"
+        self.display_divisor = float(display_divisor) if display_divisor else 1.0
+        self.line_mode = bool(line_mode)
+        if isinstance(line_offsets, list) and len(line_offsets) == 2:
+            self.line_offsets = [QPointF(line_offsets[0]), QPointF(line_offsets[1])]
+        else:
+            self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
         self.update()
 
     def clear_preview(self):
@@ -493,9 +614,33 @@ class PreviewImageLabel(QLabel):
         self.original_pixmap = None
         self.points = []
         self.screen_corners = []
+        self.screen_line_endpoints = []
         self.fixed_crop_size = 0
         self.fixed_center = QPointF(0, 0)
+        self.display_unit = "\u03bcm"
+        self.display_divisor = 1.0
+        self.line_mode = False
+        self.line_offsets = [QPointF(0, 0), QPointF(0, 0)]
         self.update()
+
+    def _clamp_source_rect(self, center: QPointF, requested_size: float) -> QRectF:
+        """Return a stable source rect, clamped to image bounds while preserving size."""
+        if not self.original_pixmap:
+            return QRectF()
+        img_w = float(self.original_pixmap.width())
+        img_h = float(self.original_pixmap.height())
+        if img_w <= 0 or img_h <= 0:
+            return QRectF()
+
+        size = float(requested_size) if requested_size and requested_size > 0 else min(img_w, img_h)
+        src_w = max(1.0, min(size, img_w))
+        src_h = max(1.0, min(size, img_h))
+
+        x = float(center.x()) - src_w / 2.0
+        y = float(center.y()) - src_h / 2.0
+        x = min(max(0.0, x), max(0.0, img_w - src_w))
+        y = min(max(0.0, y), max(0.0, img_h - src_h))
+        return QRectF(x, y, src_w, src_h)
 
     def is_point_inside_polygon(self, point, polygon_points):
         """Check if a point is inside a polygon using ray casting algorithm."""
@@ -538,6 +683,14 @@ class PreviewImageLabel(QLabel):
         if event.button() == Qt.LeftButton:
             click_pos = event.position()
 
+            if self.line_mode and len(self.screen_line_endpoints) == 2:
+                for i, ep in enumerate(self.screen_line_endpoints):
+                    if (ep - click_pos).manhattanLength() < 20:
+                        self.dragging_line_endpoint = i
+                        self.last_mouse_pos = click_pos
+                        self.setCursor(Qt.CrossCursor)
+                        return
+
             # Check if clicking on a rotation arrow first (highest priority)
             for i, arrow_pos in enumerate(self.rotation_arrow_positions):
                 if (arrow_pos - click_pos).manhattanLength() < 20:
@@ -576,7 +729,13 @@ class PreviewImageLabel(QLabel):
         """Handle mouse move for corner/rotation/rectangle dragging and hover."""
         mouse_pos = event.position()
 
-        if self.dragging_rotation:
+        if self.dragging_line_endpoint >= 0:
+            delta = mouse_pos - self.last_mouse_pos
+            if self.preview_scale > 0:
+                delta = QPointF(delta.x() / self.preview_scale, delta.y() / self.preview_scale)
+            self.line_endpoint_dragged.emit(self.dragging_line_endpoint, delta)
+            self.last_mouse_pos = mouse_pos
+        elif self.dragging_rotation:
             # Dragging rotation - calculate angle change
             screen_center = QPointF(self.width() / 2, self.height() / 2)
 
@@ -608,6 +767,15 @@ class PreviewImageLabel(QLabel):
             self.rectangle_dragged.emit(delta)
             self.last_mouse_pos = mouse_pos
         else:
+            if self.line_mode and len(self.screen_line_endpoints) == 2:
+                self.hover_line_endpoint = -1
+                for i, ep in enumerate(self.screen_line_endpoints):
+                    if (ep - mouse_pos).manhattanLength() < 20:
+                        self.hover_line_endpoint = i
+                        self.setCursor(Qt.CrossCursor)
+                        self.update()
+                        return
+
             # Check for hover on rotation arrows
             self.hover_rotation_arrow = -1
             for i, arrow_pos in enumerate(self.rotation_arrow_positions):
@@ -648,10 +816,16 @@ class PreviewImageLabel(QLabel):
     def mouseReleaseEvent(self, event):
         """Handle mouse release."""
         if event.button() == Qt.LeftButton:
-            was_dragging = self.dragging_side >= 0 or self.dragging_rotation or self.dragging_rectangle
+            was_dragging = (
+                self.dragging_side >= 0
+                or self.dragging_rotation
+                or self.dragging_rectangle
+                or self.dragging_line_endpoint >= 0
+            )
             self.dragging_side = -1
             self.dragging_rotation = False
             self.dragging_rectangle = False
+            self.dragging_line_endpoint = -1
             self.setCursor(Qt.ArrowCursor)
             if was_dragging:
                 self.interaction_finished.emit()
@@ -665,10 +839,81 @@ class PreviewImageLabel(QLabel):
         # Fill background
         painter.fillRect(self.rect(), QColor(236, 240, 241))
 
-        if not self.original_pixmap or len(self.points) != 4:
+        expected_points = 2 if self.line_mode else 4
+        if not self.original_pixmap or len(self.points) != expected_points:
             # Draw placeholder text
             painter.setPen(QColor(127, 140, 141))
             painter.drawText(self.rect(), Qt.AlignCenter, "Click a measurement\nto preview")
+            painter.end()
+            return
+
+        if self.line_mode and len(self.points) == 2:
+            p1 = QPointF(
+                self.points[0].x() + self.line_offsets[0].x(),
+                self.points[0].y() + self.line_offsets[0].y(),
+            )
+            p2 = QPointF(
+                self.points[1].x() + self.line_offsets[1].x(),
+                self.points[1].y() + self.line_offsets[1].y(),
+            )
+            current_center = QPointF((p1.x() + p2.x()) / 2.0, (p1.y() + p2.y()) / 2.0)
+            source_rect = self._clamp_source_rect(current_center, self.fixed_crop_size)
+            if source_rect.width() <= 0 or source_rect.height() <= 0:
+                painter.end()
+                return
+
+            scale = min(
+                (self.width() - 20) / source_rect.width(),
+                (self.height() - 20) / source_rect.height()
+            )
+            self.preview_scale = scale if scale > 0 else 1.0
+            scaled_width = source_rect.width() * scale
+            scaled_height = source_rect.height() * scale
+            img_x = (self.width() - scaled_width) / 2.0
+            img_y = (self.height() - scaled_height) / 2.0
+            target_rect = QRectF(img_x, img_y, scaled_width, scaled_height)
+            painter.drawPixmap(target_rect, self.original_pixmap, source_rect)
+
+            sp1 = QPointF(
+                img_x + (p1.x() - source_rect.x()) * scale,
+                img_y + (p1.y() - source_rect.y()) * scale,
+            )
+            sp2 = QPointF(
+                img_x + (p2.x() - source_rect.x()) * scale,
+                img_y + (p2.y() - source_rect.y()) * scale,
+            )
+            self.screen_line_endpoints = [sp1, sp2]
+            self._draw_dual_stroke_line(painter, sp1, sp2, color=self.measure_color, thin_width=1.0, wide_width=3.0)
+
+            dx = sp2.x() - sp1.x()
+            dy = sp2.y() - sp1.y()
+            line_len = math.sqrt(dx * dx + dy * dy)
+            if line_len > 0:
+                perp_x = -dy / line_len
+                perp_y = dx / line_len
+                mark_len = 9.0
+                for ep in (sp1, sp2):
+                    painter.setPen(QPen(self.measure_color, 2))
+                    painter.drawLine(
+                        QPointF(ep.x() - perp_x * mark_len, ep.y() - perp_y * mark_len),
+                        QPointF(ep.x() + perp_x * mark_len, ep.y() + perp_y * mark_len),
+                    )
+
+                if self.show_dimension_labels:
+                    length_um = math.sqrt(
+                        (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2
+                    ) * self.microns_per_pixel
+                    divisor = self.display_divisor if self.display_divisor else 1.0
+                    label_text = f"{(length_um / divisor):.2f}"
+                    mid = QPointF((sp1.x() + sp2.x()) / 2.0, (sp1.y() + sp2.y()) / 2.0)
+                    label_pos = QPointF(mid.x() + perp_x * 14.0, mid.y() + perp_y * 14.0)
+                    self._draw_halo_text(
+                        painter,
+                        int(label_pos.x() - 20),
+                        int(label_pos.y() + 5),
+                        label_text,
+                        color=self.measure_color,
+                    )
             painter.end()
             return
 
@@ -701,48 +946,34 @@ class PreviewImageLabel(QLabel):
         current_center = QPointF((line1_mid.x() + line2_mid.x()) / 2,
                                 (line1_mid.y() + line2_mid.y()) / 2)
 
-        # Use fixed crop size but current center (allows rectangle dragging to move view)
-        desired_crop_rect = QRectF(
-            current_center.x() - self.fixed_crop_size / 2,
-            current_center.y() - self.fixed_crop_size / 2,
-            self.fixed_crop_size,
-            self.fixed_crop_size
-        )
-
-        # Ensure crop rect is within image bounds
-        crop_rect = desired_crop_rect.intersected(
-            QRectF(0, 0, self.original_pixmap.width(), self.original_pixmap.height())
-        )
-
-        # Crop the pixmap (NO ROTATION)
-        cropped = self.original_pixmap.copy(crop_rect.toRect())
+        # Use a float source rect and clamp by translating instead of intersect/shrink.
+        source_rect = self._clamp_source_rect(current_center, self.fixed_crop_size)
+        if source_rect.width() <= 0 or source_rect.height() <= 0:
+            painter.end()
+            return
 
         # Calculate scaling to fit widget
         scale = min(
-            (self.width() - 20) / cropped.width(),
-            (self.height() - 20) / cropped.height()
+            (self.width() - 20) / source_rect.width(),
+            (self.height() - 20) / source_rect.height()
         )
         self.preview_scale = scale if scale > 0 else 1.0
 
-        scaled_width = int(cropped.width() * scale)
-        scaled_height = int(cropped.height() * scale)
-        scaled_pixmap = cropped.scaled(
-            scaled_width, scaled_height,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
+        scaled_width = source_rect.width() * scale
+        scaled_height = source_rect.height() * scale
 
         # Draw the scaled pixmap centered in the widget
-        img_x = (self.width() - scaled_pixmap.width()) / 2
-        img_y = (self.height() - scaled_pixmap.height()) / 2
-        painter.drawPixmap(int(img_x), int(img_y), scaled_pixmap)
+        img_x = (self.width() - scaled_width) / 2.0
+        img_y = (self.height() - scaled_height) / 2.0
+        target_rect = QRectF(img_x, img_y, scaled_width, scaled_height)
+        painter.drawPixmap(target_rect, self.original_pixmap, source_rect)
 
         # Calculate where the measurement center appears on screen
         # The measurement center in image coordinates is current_center
         # The crop_rect.topLeft() is the origin of our cropped image
         # So the measurement center relative to the cropped image is:
-        center_in_crop_x = current_center.x() - crop_rect.x()
-        center_in_crop_y = current_center.y() - crop_rect.y()
+        center_in_crop_x = current_center.x() - source_rect.x()
+        center_in_crop_y = current_center.y() - source_rect.y()
 
         # Then scale and offset to get screen coordinates
         screen_center_x = img_x + center_in_crop_x * scale
@@ -843,6 +1074,9 @@ class PreviewImageLabel(QLabel):
             # Calculate current dimensions in microns
             current_length_um = length_px * self.microns_per_pixel
             current_width_um = width_px * self.microns_per_pixel
+            divisor = self.display_divisor if self.display_divisor else 1.0
+            current_length_value = current_length_um / divisor
+            current_width_value = current_width_um / divisor
 
             # Draw dimension labels CLOSER to rectangle
             painter.setPen(self.measure_color)
@@ -882,7 +1116,7 @@ class PreviewImageLabel(QLabel):
                     painter,
                     int(label_pos.x() - 25),
                     int(label_pos.y() + 5),
-                    f"{current_length_um:.2f}",
+                    f"{current_length_value:.2f}",
                     color=self.measure_color,
                 )
 
@@ -904,7 +1138,7 @@ class PreviewImageLabel(QLabel):
                     painter,
                     int(label_pos.x() - 25),
                     int(label_pos.y() + 5),
-                    f"{current_width_um:.2f}",
+                    f"{current_width_value:.2f}",
                     color=self.measure_color,
                 )
         painter.end()

@@ -1,4 +1,4 @@
-name: build-release-windows
+name: build-release
 
 on:
   push:
@@ -22,22 +22,30 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Generate app icon
+        shell: pwsh
+        run: |
+          python -m pip install pillow --quiet --disable-pip-version-check
+          python tools/make_ico.py
+
       - name: Build with PyInstaller
         shell: pwsh
         run: ./build.ps1
 
-      - name: Package zip
+      - name: Build installer
+        id: installer
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $zipName = "MycoLog-$tag-windows.zip"
-          if (Test-Path $zipName) { Remove-Item $zipName }
-          Compress-Archive -Path dist\MycoLog\* -DestinationPath $zipName
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc /DMyAppVersion=$version installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          echo "name=MycoLog-$version-windows-setup.exe" >> $env:GITHUB_OUTPUT
 
       - name: Create Release and upload asset
         uses: softprops/action-gh-release@v2
         with:
-          files: MycoLog-${{ github.ref_name }}-windows.zip
+          files: ${{ steps.installer.outputs.name }}
           generate_release_notes: true
 
   build-linux:
@@ -53,22 +61,61 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Generate icons
+        run: |
+          pip install pillow --quiet --disable-pip-version-check
+          python tools/make_ico.py
+
       - name: Build with PyInstaller
         run: |
           chmod +x ./build_linux.sh
           ./build_linux.sh
 
-      - name: Package zip
+      - name: Build .deb
+        id: deb
         run: |
           tag="${{ github.ref_name }}"
-          zip_name="MycoLog-${tag}-linux.zip"
-          rm -f "$zip_name"
-          cd dist/MycoLog && zip -r "../../$zip_name" .
+          version="${tag#v}"
+          pkg="mycolog_${version}_amd64"
+
+          mkdir -p "$pkg/DEBIAN"
+          mkdir -p "$pkg/opt/mycolog"
+          mkdir -p "$pkg/usr/bin"
+          mkdir -p "$pkg/usr/share/applications"
+          mkdir -p "$pkg/usr/share/icons/hicolor/256x256/apps"
+
+          cp -r dist/MycoLog/. "$pkg/opt/mycolog/"
+          ln -s /opt/mycolog/MycoLog "$pkg/usr/bin/mycolog"
+          cp assets/icons/mycolog_256.png "$pkg/usr/share/icons/hicolor/256x256/apps/mycolog.png"
+
+          cat > "$pkg/usr/share/applications/mycolog.desktop" << 'EOF'
+          [Desktop Entry]
+          Name=MycoLog
+          Comment=Mushroom spore analysis and logging
+          Exec=/opt/mycolog/MycoLog
+          Icon=mycolog
+          Terminal=false
+          Type=Application
+          Categories=Science;Education;
+          EOF
+
+          cat > "$pkg/DEBIAN/control" << EOF
+          Package: mycolog
+          Version: $version
+          Architecture: amd64
+          Maintainer: Sigmund Astrup <sigmundas@users.noreply.github.com>
+          Description: MycoLog - Mushroom spore analysis and logging
+           A desktop application for mushroom spore analysis,
+           field photography, and species logging.
+          EOF
+
+          dpkg-deb --build "$pkg"
+          echo "name=${pkg}.deb" >> $GITHUB_OUTPUT
 
       - name: Create Release and upload asset
         uses: softprops/action-gh-release@v2
         with:
-          files: MycoLog-${{ github.ref_name }}-linux.zip
+          files: ${{ steps.deb.outputs.name }}
           generate_release_notes: true
 
   build-macos:
@@ -84,20 +131,61 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Generate icons
+        run: |
+          pip install pillow --quiet --disable-pip-version-check
+          python tools/make_ico.py
+
+          # Build .icns using iconutil (built into macOS)
+          ICONSET=assets/icons/MycoLog.iconset
+          mkdir -p "$ICONSET"
+          python3 - << 'PYEOF'
+          from PIL import Image
+          from pathlib import Path
+          src = Path("assets/icons/mycolog icon.png")
+          iconset = Path("assets/icons/MycoLog.iconset")
+          img = Image.open(src).convert("RGBA")
+          w, h = img.size; side = min(w, h)
+          img = img.crop(((w-side)//2, (h-side)//2, (w+side)//2, (h+side)//2))
+          for size, name in [
+              (16,  "icon_16x16.png"),
+              (32,  "icon_16x16@2x.png"),
+              (32,  "icon_32x32.png"),
+              (64,  "icon_32x32@2x.png"),
+              (128, "icon_128x128.png"),
+              (256, "icon_128x128@2x.png"),
+              (256, "icon_256x256.png"),
+              (512, "icon_256x256@2x.png"),
+              (512, "icon_512x512.png"),
+          ]:
+              img.resize((size, size), Image.LANCZOS).save(str(iconset / name))
+          PYEOF
+          iconutil -c icns "$ICONSET" -o assets/icons/mycolog.icns
+          rm -rf "$ICONSET"
+
       - name: Build with PyInstaller
         run: |
           chmod +x ./build_mac.sh
           ./build_mac.sh
 
-      - name: Package zip
+      - name: Package .dmg
+        id: dmg
         run: |
           tag="${{ github.ref_name }}"
-          zip_name="MycoLog-${tag}-macos.zip"
-          rm -f "$zip_name"
-          cd dist/MycoLog && zip -r "../../$zip_name" .
+          dmg_name="MycoLog-${tag}-macos.dmg"
+          staging="dmg_staging"
+          mkdir -p "$staging"
+          cp -R dist/MycoLog.app "$staging/"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create \
+            -volname "MycoLog" \
+            -srcfolder "$staging" \
+            -ov -format UDZO \
+            "$dmg_name"
+          echo "name=$dmg_name" >> $GITHUB_OUTPUT
 
       - name: Create Release and upload asset
         uses: softprops/action-gh-release@v2
         with:
-          files: MycoLog-${{ github.ref_name }}-macos.zip
+          files: ${{ steps.dmg.outputs.name }}
           generate_release_notes: true

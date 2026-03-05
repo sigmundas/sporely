@@ -204,7 +204,7 @@ def format_resolution_summary(pixels_per_micron, numerical_aperture, wavelength_
 
 
 class NewObjectiveDialog(QDialog):
-    """Dialog for creating or editing a microscope objective."""
+    """Dialog for creating or editing an optical profile (micro/macro)."""
 
     def __init__(
         self,
@@ -227,16 +227,105 @@ class NewObjectiveDialog(QDialog):
         if self._objective_data:
             self._populate_form(self._objective_data)
 
-    def _make_key(self, display_name: str) -> str:
+    def _make_key(self, display_name: str, optics_type: str) -> str:
         if self.edit_mode and self.original_key:
             return self.original_key
         key = re.sub(r"[^A-Za-z0-9._-]+", "_", display_name).strip("_")
+        optics = "macro" if str(optics_type or "").strip().lower() == "macro" else "micro"
+        key = f"{optics}_{key}" if key else optics
         return key or display_name
+
+    def _is_macro_profile(self) -> bool:
+        return self.profile_type_combo.currentData() == "macro"
+
+    def _on_profile_type_changed(self) -> None:
+        is_macro = self._is_macro_profile()
+        self.na_label.setVisible(not is_macro)
+        self.na_input.setVisible(not is_macro)
+        self.na_input.setEnabled(not is_macro)
+        self.sensor_width_label.setVisible(is_macro)
+        self.sensor_width_input.setVisible(is_macro)
+        self.image_width_label.setVisible(is_macro)
+        self.image_width_input.setVisible(is_macro)
+        self.macro_scale_label.setVisible(is_macro)
+        if is_macro:
+            self.na_input.clear()
+            self.na_input.setPlaceholderText(self.tr("Not required for macro profiles"))
+            self.magnification_label.setText(self.tr("Magnification (1:X):"))
+            self.magnification_input.setPlaceholderText(self.tr("e.g., 1 for 1:1, 2 for 1:2, 4 for 1:4"))
+            if not self.objective_name_input.text().strip():
+                self.objective_name_input.setPlaceholderText(self.tr("e.g., Canon 100 mm"))
+            if not self.notes_input.text().strip():
+                self.notes_input.setPlaceholderText(self.tr("e.g., Sony A7R IV"))
+        else:
+            self.magnification_label.setText(self.tr("Magnification (X):"))
+            self.magnification_input.setPlaceholderText(self.tr("e.g., 40"))
+            self.na_input.setPlaceholderText(self.tr("e.g., 0.75"))
+            if not self.objective_name_input.text().strip():
+                self.objective_name_input.setPlaceholderText(self.tr("e.g., Plan achro"))
+            if not self.notes_input.text().strip():
+                self.notes_input.setPlaceholderText(self.tr("e.g., Leica DM2000, Olympus MFT 1:1"))
+        self._update_macro_scale_label()
+
+    def _effective_sensor_width_mm(self) -> float | None:
+        value = self.sensor_width_input.text().strip() if hasattr(self, "sensor_width_input") else ""
+        try:
+            width_mm = float(value.replace(",", "."))
+        except (TypeError, ValueError):
+            return None
+        return width_mm if width_mm > 0 else None
+
+    def _effective_image_width_px(self) -> float | None:
+        value = self.image_width_input.text().strip() if hasattr(self, "image_width_input") else ""
+        try:
+            width_px = float(value)
+        except (TypeError, ValueError):
+            return None
+        return width_px if width_px > 0 else None
+
+    def _macro_pixel_scale_um_per_px(self) -> float | None:
+        if not self._is_macro_profile():
+            return None
+        mag_text = self.magnification_input.text().strip()
+        try:
+            divisor = float(mag_text)
+        except (TypeError, ValueError):
+            return None
+        if divisor <= 0:
+            return None
+        sensor_width_mm = self._effective_sensor_width_mm()
+        image_width_px = self._effective_image_width_px()
+        if not sensor_width_mm or not image_width_px:
+            return None
+        sensor_pitch_um = (float(sensor_width_mm) * 1000.0) / float(image_width_px)
+        # Magnification is entered as 1:X -> optical magnification is 1/X.
+        # Object-plane pixel size ~= sensor pixel size / magnification = sensor_pitch_um * X.
+        return float(sensor_pitch_um * divisor)
+
+    def _update_macro_scale_label(self) -> None:
+        if not hasattr(self, "macro_scale_label"):
+            return
+        if not self._is_macro_profile():
+            self.macro_scale_label.setText("")
+            return
+        scale_um = self._macro_pixel_scale_um_per_px()
+        if not scale_um:
+            self.macro_scale_label.setText(self.tr("Provisional pixel scale: --"))
+            return
+        self.macro_scale_label.setText(
+            self.tr("Provisional pixel scale: {scale:.2f} \u03bcm/px (estimate)").format(scale=scale_um)
+        )
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
+
+        self.profile_type_combo = QComboBox()
+        self.profile_type_combo.addItem(self.tr("Microscope objective"), "microscope")
+        self.profile_type_combo.addItem(self.tr("Macro lens"), "macro")
+        self.profile_type_combo.currentIndexChanged.connect(self._on_profile_type_changed)
+        form.addRow(self.tr("Profile type:"), self.profile_type_combo)
 
         # Magnification
         self.magnification_input = QLineEdit()
@@ -244,7 +333,9 @@ class NewObjectiveDialog(QDialog):
         self.magnification_input.setValidator(QIntValidator(1, 1000, self))
         self.magnification_input.setMinimumHeight(26)
         self.magnification_input.setStyleSheet("padding: 4px 6px;")
-        form.addRow(self.tr("Magnification (X):"), self.magnification_input)
+        self.magnification_input.textChanged.connect(self._update_macro_scale_label)
+        self.magnification_label = QLabel(self.tr("Magnification (X):"))
+        form.addRow(self.magnification_label, self.magnification_input)
 
         # Numerical aperture
         self.na_input = QLineEdit()
@@ -255,7 +346,33 @@ class NewObjectiveDialog(QDialog):
         self.na_input.setValidator(na_validator)
         self.na_input.setMinimumHeight(26)
         self.na_input.setStyleSheet("padding: 4px 6px;")
-        form.addRow(self.tr("NA:"), self.na_input)
+        self.na_label = QLabel(self.tr("NA:"))
+        form.addRow(self.na_label, self.na_input)
+
+        self.sensor_width_input = QLineEdit()
+        self.sensor_width_input.setPlaceholderText(self.tr("e.g., 17.3"))
+        sensor_width_validator = QDoubleValidator(1.0, 100.0, 2, self)
+        sensor_width_validator.setNotation(QDoubleValidator.StandardNotation)
+        sensor_width_validator.setLocale(QLocale.system())
+        self.sensor_width_input.setValidator(sensor_width_validator)
+        self.sensor_width_input.setMinimumHeight(26)
+        self.sensor_width_input.setStyleSheet("padding: 4px 6px;")
+        self.sensor_width_input.textChanged.connect(self._update_macro_scale_label)
+        self.sensor_width_label = QLabel(self.tr("Sensor width (mm):"))
+        form.addRow(self.sensor_width_label, self.sensor_width_input)
+
+        self.image_width_input = QLineEdit()
+        self.image_width_input.setPlaceholderText(self.tr("e.g., 6000"))
+        self.image_width_input.setValidator(QIntValidator(1, 200000, self))
+        self.image_width_input.setMinimumHeight(26)
+        self.image_width_input.setStyleSheet("padding: 4px 6px;")
+        self.image_width_input.textChanged.connect(self._update_macro_scale_label)
+        self.image_width_label = QLabel(self.tr("Image width (px):"))
+        form.addRow(self.image_width_label, self.image_width_input)
+
+        self.macro_scale_label = QLabel("")
+        self.macro_scale_label.setStyleSheet("color: #2980b9;")
+        form.addRow(self.tr("Calculated scale:"), self.macro_scale_label)
 
         # Objective name
         self.objective_name_input = QLineEdit()
@@ -283,21 +400,34 @@ class NewObjectiveDialog(QDialog):
         button_row.addWidget(self.ok_btn)
 
         layout.addLayout(button_row)
+        self._on_profile_type_changed()
 
     def _populate_form(self, data: dict) -> None:
+        optics_type = str(data.get("optics_type") or "microscope").strip().lower()
+        idx = self.profile_type_combo.findData("macro" if optics_type == "macro" else "microscope")
+        if idx >= 0:
+            self.profile_type_combo.setCurrentIndex(idx)
         magnification = data.get("magnification")
         if magnification is not None:
             self.magnification_input.setText(str(int(magnification)) if float(magnification).is_integer() else str(magnification))
         na_value = data.get("na")
         if na_value is not None:
             self.na_input.setText(str(na_value))
+        sensor_width_mm = data.get("sensor_width_mm")
+        if sensor_width_mm is not None:
+            self.sensor_width_input.setText(str(sensor_width_mm))
+        image_width_px = data.get("sensor_image_width_px")
+        if image_width_px is not None:
+            self.image_width_input.setText(str(int(image_width_px)))
         self.objective_name_input.setText(str(data.get("objective_name") or ""))
         self.notes_input.setText(str(data.get("notes") or ""))
+        self._update_macro_scale_label()
 
     def _on_create(self):
         objective_name = self.objective_name_input.text().strip()
         mag_text = self.magnification_input.text().strip()
         na_text = self.na_input.text().strip()
+        optics_type = "macro" if self._is_macro_profile() else "microscope"
 
         try:
             magnification = int(mag_text)
@@ -308,25 +438,48 @@ class NewObjectiveDialog(QDialog):
             na_value = float(na_text.replace(",", "."))
         except (TypeError, ValueError):
             na_value = 0.0
+        sensor_width_mm = self._effective_sensor_width_mm()
+        image_width_px = self._effective_image_width_px()
 
         if not objective_name:
             QMessageBox.warning(self, self.tr("Missing Name"), self.tr("Please enter an objective name."))
             return
 
         if magnification <= 0:
-            QMessageBox.warning(self, self.tr("Missing Magnification"), self.tr("Please enter a magnification."))
+            if optics_type == "macro":
+                msg = self.tr("Please enter a magnification divisor (for 1:X).")
+            else:
+                msg = self.tr("Please enter a magnification.")
+            QMessageBox.warning(self, self.tr("Missing Magnification"), msg)
             return
 
-        if na_value <= 0:
+        if optics_type != "macro" and na_value <= 0:
             QMessageBox.warning(self, self.tr("Missing NA"), self.tr("Please enter a numerical aperture (NA)."))
             return
 
-        display_name = format_objective_display(magnification, na_value, objective_name)
+        if optics_type == "macro":
+            na_value = 0.0
+        if optics_type == "macro" and not sensor_width_mm:
+            QMessageBox.warning(
+                self,
+                self.tr("Missing Sensor Data"),
+                self.tr("Please enter sensor width in mm."),
+            )
+            return
+        if optics_type == "macro" and not image_width_px:
+            QMessageBox.warning(
+                self,
+                self.tr("Missing Image Width"),
+                self.tr("Please enter image width in pixels."),
+            )
+            return
+
+        display_name = format_objective_display(magnification, na_value, objective_name, optics_type=optics_type)
         if not display_name:
             QMessageBox.warning(self, self.tr("Invalid Name"), self.tr("Please enter valid objective details."))
             return
 
-        key = self._make_key(display_name)
+        key = self._make_key(display_name, optics_type)
         if key in self.existing_keys or display_name in self.existing_keys:
             QMessageBox.warning(
                 self,
@@ -341,17 +494,32 @@ class NewObjectiveDialog(QDialog):
         """Get the objective data from the dialog."""
         mag_text = self.magnification_input.text().strip()
         na_text = self.na_input.text().strip()
+        optics_type = "macro" if self._is_macro_profile() else "microscope"
         magnification = int(mag_text) if mag_text else 0
         na_value = float(na_text.replace(",", ".")) if na_text else 0.0
+        sensor_width_mm = self._effective_sensor_width_mm()
+        image_width_px = self._effective_image_width_px()
+        provisional_mpp = self._macro_pixel_scale_um_per_px() if optics_type == "macro" else None
+        if optics_type == "macro":
+            na_value = 0.0
         objective_name = self.objective_name_input.text().strip()
-        display_name = format_objective_display(magnification, na_value, objective_name)
-        key = self._make_key(display_name)
+        display_name = format_objective_display(
+            magnification,
+            na_value,
+            objective_name,
+            optics_type=optics_type,
+        )
+        key = self._make_key(display_name, optics_type)
         return {
             "key": key,
             "name": display_name,
+            "optics_type": optics_type,
             "objective_name": objective_name,
             "magnification": magnification,
             "na": na_value,
+            "sensor_width_mm": sensor_width_mm if optics_type == "macro" else None,
+            "sensor_image_width_px": image_width_px if optics_type == "macro" else None,
+            "provisional_microns_per_pixel": provisional_mpp if optics_type == "macro" else None,
             "microns_per_pixel": 0.1,  # Default, will be set by calibration
             "notes": self.notes_input.text().strip(),
         }
@@ -794,7 +962,7 @@ class _ExportImageWorker(QObject):
 
 
 class CalibrationDialog(GeometryMixin, QDialog):
-    """Dialog for managing microscope objectives and calibration."""
+    """Dialog for managing optical profiles and calibration."""
 
     calibration_saved = Signal(dict)  # Emits the selected objective data
     _geometry_key = "CalibrationDialog"
@@ -951,27 +1119,46 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Delete shortcut - handles both measurement list and history table
         self.delete_shortcut = QShortcut(QKeySequence.Delete, self)
         self.delete_shortcut.activated.connect(self._on_delete_pressed)
+        self.delete_shortcut_alt = QShortcut(QKeySequence(Qt.ALT | Qt.Key_D), self)
+        self.delete_shortcut_alt.activated.connect(self._on_delete_pressed)
+        self.delete_shortcut_cmd = QShortcut(QKeySequence(Qt.CTRL | Qt.Key_D), self)
+        self.delete_shortcut_cmd.activated.connect(self._on_delete_pressed)
 
     def _build_top_row(self) -> QHBoxLayout:
         """Build the top row with objective selector and load button."""
         row = QHBoxLayout()
 
-        row.addWidget(QLabel(self.tr("Objective:")))
+        self.objective_label = QLabel(self.tr("Objective:"))
+        row.addWidget(self.objective_label)
+        self._register_hint_widget(
+            self.objective_label,
+            self.tr("Choose a profile type: Micro for microscope objectives, Macro for macro-lens setups."),
+        )
 
         self.objective_combo = QComboBox()
         self.objective_combo.setMinimumWidth(200)
         self.objective_combo.currentIndexChanged.connect(self._on_objective_changed)
         row.addWidget(self.objective_combo)
+        self._register_hint_widget(
+            self.objective_combo,
+            self.tr("Select the optical profile used for this calibration image."),
+        )
 
-        new_objective_btn = QPushButton(self.tr("New Objective..."))
-        new_objective_btn.clicked.connect(self._on_new_objective)
-        row.addWidget(new_objective_btn)
-        self._register_hint_widget(new_objective_btn, self.tr("Add a new objective."))
+        self.new_objective_btn = QPushButton(self.tr("New Objective..."))
+        self.new_objective_btn.clicked.connect(self._on_new_objective)
+        row.addWidget(self.new_objective_btn)
+        self._register_hint_widget(
+            self.new_objective_btn,
+            self.tr("Create a new optical profile (microscope objective or macro lens)."),
+        )
 
-        edit_objective_btn = QPushButton(self.tr("Edit Objective..."))
-        edit_objective_btn.clicked.connect(self._on_edit_objective)
-        row.addWidget(edit_objective_btn)
-        self._register_hint_widget(edit_objective_btn, self.tr("Edit the selected objective."))
+        self.edit_objective_btn = QPushButton(self.tr("Edit Objective..."))
+        self.edit_objective_btn.clicked.connect(self._on_edit_objective)
+        row.addWidget(self.edit_objective_btn)
+        self._register_hint_widget(
+            self.edit_objective_btn,
+            self.tr("Edit magnification, NA, type, and notes for the selected profile."),
+        )
 
         # Load images button (moved here from left panel)
         load_btn = QPushButton(self.tr("Load image(s)..."))
@@ -979,10 +1166,15 @@ class CalibrationDialog(GeometryMixin, QDialog):
         row.addWidget(load_btn)
         self._register_hint_widget(load_btn, self.tr("Load one or more images of calibration slides."))
 
-        delete_objective_btn = QPushButton(self.tr("Delete objective"))
-        self._apply_danger_button_style(delete_objective_btn)
-        delete_objective_btn.clicked.connect(self._on_delete_objective)
-        row.addWidget(delete_objective_btn)
+        self.delete_objective_btn = QPushButton(self.tr("Delete objective"))
+        self._apply_danger_button_style(self.delete_objective_btn)
+        self.delete_objective_btn.clicked.connect(self._on_delete_objective)
+        row.addWidget(self.delete_objective_btn)
+        self._register_hint_widget(
+            self.delete_objective_btn,
+            self.tr("Delete the selected profile and unlink it from images."),
+            tone="warning",
+        )
 
         self.export_btn = QPushButton(self.tr("Export Image"))
         self.export_btn.clicked.connect(self._on_export_image)
@@ -997,6 +1189,65 @@ class CalibrationDialog(GeometryMixin, QDialog):
         row.addWidget(self.active_cal_label)
 
         return row
+
+    def _current_objective_dict(self) -> dict:
+        if not self.current_objective_key:
+            return {}
+        obj = self.objectives.get(self.current_objective_key)
+        return obj if isinstance(obj, dict) else {}
+
+    def _current_objective_optics_type(self) -> str:
+        obj = self._current_objective_dict()
+        return "macro" if str(obj.get("optics_type") or "").strip().lower() == "macro" else "microscope"
+
+    def _current_objective_is_macro(self) -> bool:
+        return self._current_objective_optics_type() == "macro"
+
+    def _update_objective_hint_texts(self) -> None:
+        obj = self._current_objective_dict()
+        if not obj:
+            return
+        optics_type = self._current_objective_optics_type()
+        profile_label = self.tr("Macro lens") if optics_type == "macro" else self.tr("Microscope objective")
+        combo_hint = self.tr(
+            "Current profile type: {ptype}. Use New/Edit Objective to switch type or update details."
+        ).format(ptype=profile_label)
+        self._register_hint_widget(self.objective_combo, combo_hint)
+        if hasattr(self, "target_sampling_input"):
+            if optics_type == "macro":
+                self._register_hint_widget(
+                    self.target_sampling_input,
+                    self.tr("Nyquist-based target sampling applies to microscope objectives only."),
+                )
+            else:
+                self._register_hint_widget(
+                    self.target_sampling_input,
+                    self.tr("Set target sampling relative to Nyquist for this microscope objective."),
+                )
+
+    def _update_sampling_controls_for_objective(self) -> None:
+        if not hasattr(self, "target_sampling_input"):
+            return
+        is_macro = self._current_objective_is_macro()
+        self.target_sampling_input.setEnabled(not is_macro)
+        if is_macro:
+            if hasattr(self, "sampling_status_label"):
+                self.sampling_status_label.setText(self.tr("Macro profile"))
+            self._set_hint_for_label_widget(
+                getattr(self, "sampling_status_title", None),
+                self.tr("Sampling quality versus NA is not used for macro profiles."),
+            )
+            if hasattr(self, "target_resolution_label"):
+                self.target_resolution_label.setText(self.tr("--"))
+            self._set_hint_for_label_widget(
+                getattr(self, "target_resolution_title", None),
+                self.tr("Ideal resolution from Nyquist is only calculated for microscope objectives."),
+            )
+        else:
+            self._set_hint_for_label_widget(
+                getattr(self, "target_resolution_title", None),
+                self.tr("Ideal output resolution from objective scale, NA, and target sampling."),
+            )
 
     def _build_image_calibration_tab(self) -> QWidget:
         """Build the image calibration tab."""
@@ -1385,7 +1636,14 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _build_manual_entry_tab(self) -> QWidget:
         """Build the manual entry tab for direct nm/pixel input."""
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Constrain content to a reasonable width
+        inner = QWidget()
+        inner.setMaximumWidth(420)
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         # Instructions
         instructions = QLabel(
@@ -1395,7 +1653,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             )
         )
         instructions.setWordWrap(True)
-        instructions.setStyleSheet("color: #7f8c8d; padding: 10px;")
+        instructions.setStyleSheet("color: #7f8c8d; padding: 4px 0px;")
         layout.addWidget(instructions)
 
         # Form
@@ -1415,12 +1673,18 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         layout.addWidget(form_group)
 
-        # Save button for manual entry
+        # Save button — left-aligned, natural width
+        btn_row = QHBoxLayout()
         save_manual_btn = QPushButton(self.tr("Save Manual Calibration"))
         save_manual_btn.clicked.connect(self._on_save_manual_calibration)
-        layout.addWidget(save_manual_btn)
+        btn_row.addWidget(save_manual_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
         layout.addStretch()
+
+        outer.addWidget(inner)
+        outer.addStretch()
 
         return tab
 
@@ -1696,6 +1960,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
         return wrapper
 
     def _update_sampling_label(self, label: QLabel, scale_nm_per_px: float) -> None:
+        if self._current_objective_is_macro():
+            label.setText(self.tr("Macro profile"))
+            self._set_hint_for_label_widget(
+                getattr(self, "sampling_status_title", None),
+                self.tr("Sampling quality versus NA is not used for macro profiles."),
+            )
+            return
         na_value = None
         if self.current_objective_key:
             obj = self.objectives.get(self.current_objective_key, {})
@@ -1747,6 +2018,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
     def _compute_resample_scale_factor(self, scale_um_per_px: float | None) -> float:
         if not scale_um_per_px or scale_um_per_px <= 0:
+            return 1.0
+        if self._current_objective_is_macro():
             return 1.0
         na_value = None
         if self.current_objective_key:
@@ -1817,6 +2090,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if self.current_objective_key:
             obj = self.objectives.get(self.current_objective_key, {})
             na_value = obj.get("na")
+        if self._current_objective_is_macro():
+            self.target_resolution_label.setText(self.tr("--"))
+            return
         if not scale_um or not na_value:
             self.target_resolution_label.setText("--")
             return
@@ -2481,6 +2757,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
             # Discard: continue to switch
 
         self.current_objective_key = new_objective_key
+        self._update_objective_hint_texts()
+        self._update_sampling_controls_for_objective()
 
         # Update active calibration label (in nm/px)
         active_cal = CalibrationDB.get_active_calibration(self.current_objective_key)
@@ -2536,11 +2814,17 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
             self.objectives[key] = {
                 "name": data["name"],
+                "optics_type": data.get("optics_type", "microscope"),
                 "objective_name": data["objective_name"],
                 "magnification": data["magnification"],
                 "na": data["na"],
+                "sensor_width_mm": data.get("sensor_width_mm"),
+                "sensor_image_width_px": data.get("sensor_image_width_px"),
+                "provisional_microns_per_pixel": data.get("provisional_microns_per_pixel"),
                 "microns_per_pixel": data["microns_per_pixel"],
                 "notes": data["notes"],
+                "target_sampling_pct": float(self.target_sampling_pct),
+                "resample_scale_factor": 1.0,
             }
             save_objectives(self.objectives)
             self._load_objectives_combo()
@@ -2579,11 +2863,17 @@ class CalibrationDialog(GeometryMixin, QDialog):
             key = self.current_objective_key
             self.objectives[key] = {
                 "name": data["name"],
+                "optics_type": data.get("optics_type", "microscope"),
                 "objective_name": data["objective_name"],
                 "magnification": data["magnification"],
                 "na": data["na"],
+                "sensor_width_mm": data.get("sensor_width_mm"),
+                "sensor_image_width_px": data.get("sensor_image_width_px"),
+                "provisional_microns_per_pixel": data.get("provisional_microns_per_pixel"),
                 "microns_per_pixel": self.objectives.get(key, {}).get("microns_per_pixel", data["microns_per_pixel"]),
                 "notes": data["notes"],
+                "target_sampling_pct": self.objectives.get(key, {}).get("target_sampling_pct", self.target_sampling_pct),
+                "resample_scale_factor": self.objectives.get(key, {}).get("resample_scale_factor", 1.0),
             }
             save_objectives(self.objectives)
             self._load_objectives_combo()
@@ -4015,12 +4305,28 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 lines.append(coords)
         self.image_viewer.set_measurement_lines(lines)
 
+    def _current_objective_provisional_scale_um(self) -> float | None:
+        obj = self._current_objective_dict()
+        if not obj:
+            return None
+        provisional = obj.get("provisional_microns_per_pixel")
+        if isinstance(provisional, (int, float)) and provisional > 0:
+            return float(provisional)
+        return None
+
     def _update_results(self):
         """Update the results display."""
         all_measurements = self._get_all_measurements()
 
         if not all_measurements:
-            self.result_average_label.setText("--")
+            provisional_um = self._current_objective_provisional_scale_um()
+            if self._current_objective_is_macro() and provisional_um:
+                provisional_nm = um_to_nm(provisional_um)
+                self.result_average_label.setText(
+                    self.tr("{value:.2f} nm/px (provisional)").format(value=provisional_nm)
+                )
+            else:
+                self.result_average_label.setText("--")
             self.result_std_label.setText("--")
             self.result_ci_label.setText("--")
             self.result_count_label.setText("0")
@@ -4029,7 +4335,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 self._set_hint_for_label_widget(getattr(self, "sampling_status_title", None), "")
             self.comparison_label.setText("--")
             if hasattr(self, "auto_used_label"):
-                self.auto_used_label.setText("")
+                if self._current_objective_is_macro() and provisional_um:
+                    self.auto_used_label.setText(self.tr("Using objective provisional scale"))
+                else:
+                    self.auto_used_label.setText("")
             return
 
         # Calculate statistics
@@ -4525,6 +4834,59 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Manual image calibration (no auto results)
         all_measurements = self._get_all_measurements()
         if not all_measurements:
+            provisional_um = self._current_objective_provisional_scale_um()
+            if self._current_objective_is_macro() and provisional_um:
+                old_calibration = CalibrationDB.get_active_calibration(self.current_objective_key)
+                old_scale = old_calibration.get("microns_per_pixel") if old_calibration else None
+                old_calibration_id = old_calibration.get("id") if old_calibration else None
+
+                obj = self._current_objective_dict()
+                calibration_data = {
+                    "source": "macro_provisional",
+                    "magnification": obj.get("magnification"),
+                    "sensor_width_mm": obj.get("sensor_width_mm"),
+                    "sensor_image_width_px": obj.get("sensor_image_width_px"),
+                    "provisional_microns_per_pixel": provisional_um,
+                }
+                notes = self.notes_input.text().strip()
+                base_note = self.tr("Provisional macro calibration")
+                if not notes:
+                    notes = base_note
+                elif base_note not in notes:
+                    notes = f"{notes} | {base_note}"
+
+                resample_factor = 1.0
+                calibration_id = CalibrationDB.add_calibration(
+                    objective_key=self.current_objective_key,
+                    microns_per_pixel=provisional_um,
+                    num_measurements=0,
+                    measurements_json=json.dumps(calibration_data),
+                    image_filepath=None,
+                    camera=self._selected_camera_text(),
+                    megapixels=self._collect_megapixels_summary(),
+                    target_sampling_pct=float(self.target_sampling_pct),
+                    resample_scale_factor=resample_factor,
+                    calibration_image_width=None,
+                    calibration_image_height=None,
+                    notes=notes,
+                    set_active=True,
+                )
+
+                if self.current_objective_key in self.objectives:
+                    self.objectives[self.current_objective_key]["microns_per_pixel"] = provisional_um
+                    self.objectives[self.current_objective_key]["target_sampling_pct"] = float(self.target_sampling_pct)
+                    self.objectives[self.current_objective_key]["resample_scale_factor"] = resample_factor
+                    save_objectives(self.objectives)
+
+                self._prompt_recalculate_measurements(
+                    old_calibration_id,
+                    old_scale,
+                    calibration_id,
+                    provisional_um,
+                )
+                self._on_objective_changed()
+                return
+
             QMessageBox.warning(
                 self,
                 self.tr("No Measurements"),

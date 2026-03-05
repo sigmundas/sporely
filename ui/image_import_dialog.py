@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     QDateTime,
     QDate,
     QTime,
+    QStandardPaths,
     Signal,
     QPointF,
     QCoreApplication,
@@ -23,6 +24,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImageReader, QColor, QIcon, QFont
 from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractSpinBox,
     QButtonGroup,
     QComboBox,
     QDateTimeEdit,
@@ -36,11 +39,14 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QListView,
+    QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QStackedLayout,
     QSizePolicy,
     QSplitter,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
     QProgressBar,
@@ -58,6 +64,8 @@ from database.schema import (
     save_objectives,
     get_images_dir,
     get_connection,
+    get_app_settings,
+    update_app_settings,
     objective_display_name,
     objective_sort_value,
 )
@@ -100,6 +108,8 @@ class ImageImportResult:
     resize_to_optimal: bool = False
     store_original: bool = False
     original_filepath: Optional[str] = None
+    scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
+    scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
 
 
 class AIGuessWorker(QThread):
@@ -245,12 +255,19 @@ class AIGuessWorker(QThread):
 class ScaleBarImportDialog(QDialog):
     """Scale bar calibration dialog used from Prepare Images."""
 
-    def __init__(self, image_dialog, initial_um: float = 10.0, previous_key: str | None = None):
+    def __init__(
+        self,
+        image_dialog,
+        initial_um: float = 10.0,
+        previous_key: str | None = None,
+        is_field: bool = False,
+    ):
         super().__init__(image_dialog)
         self.setWindowTitle(self.tr("Scale bar"))
         self.setModal(False)
         self.image_dialog = image_dialog
         self.previous_key = previous_key
+        self.is_field = bool(is_field)
         self.scale_applied = False
         self.auto_apply = False
         self._pending_distance_px: float | None = None
@@ -261,8 +278,9 @@ class ScaleBarImportDialog(QDialog):
         self.length_input = QDoubleSpinBox()
         self.length_input.setRange(0.1, 100000.0)
         self.length_input.setDecimals(2)
-        self.length_input.setValue(initial_um)
-        self.length_input.setSuffix(" um")
+        initial_value = float(initial_um) / 1000.0 if self.is_field else float(initial_um)
+        self.length_input.setValue(initial_value)
+        self.length_input.setSuffix(" mm" if self.is_field else " \u03bcm")
         self.length_input.valueChanged.connect(self._update_scale_label)
         form.addRow(self.tr("Scale bar length:"), self.length_input)
 
@@ -299,7 +317,8 @@ class ScaleBarImportDialog(QDialog):
     def _on_apply(self) -> None:
         if not self._pending_distance_px:
             return
-        scale_um = float(self.length_input.value()) / self._pending_distance_px
+        length_um = float(self.length_input.value()) * 1000.0 if self.is_field else float(self.length_input.value())
+        scale_um = length_um / self._pending_distance_px
         self.scale_applied = True
         if self.image_dialog:
             self.image_dialog.apply_scale_bar(scale_um)
@@ -315,9 +334,13 @@ class ScaleBarImportDialog(QDialog):
         if not self._pending_distance_px:
             self.scale_label.setText("--")
             return
-        scale_um = float(self.length_input.value()) / self._pending_distance_px
-        scale_nm = scale_um * 1000.0
-        self.scale_label.setText(f"{scale_nm:.2f} nm/px")
+        length_um = float(self.length_input.value()) * 1000.0 if self.is_field else float(self.length_input.value())
+        scale_um = length_um / self._pending_distance_px
+        if self.is_field:
+            self.scale_label.setText(f"{(scale_um / 1000.0):.4f} mm/px")
+        else:
+            scale_nm = scale_um * 1000.0
+            self.scale_label.setText(f"{scale_nm:.2f} nm/px")
 
     def set_calibration_distance(self, distance_pixels: float):
         if not distance_pixels or distance_pixels <= 0:
@@ -359,6 +382,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         observation_datetime: QDateTime | None = None,
         observation_lat: float | None = None,
         observation_lon: float | None = None,
+        continue_to_observation_details: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(self.tr("Prepare Images"))
@@ -438,9 +462,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_crop_active = False
         self._ai_thread: QThread | None = None
         self._scale_bar_dialog: ScaleBarImportDialog | None = None
+        self._scale_bar_pixel_distance: float | None = None  # pixel length of last scale bar selection
         self._last_objective_key: str | None = None
         self._hint_controller: HintStatusController | None = None
         self._pending_hint_widgets: list[tuple[QWidget, str, str]] = []
+        self._continue_to_observation_details = bool(continue_to_observation_details)
 
         self._build_ui()
         if hasattr(self, "objective_combo"):
@@ -489,6 +515,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.delete_shortcut = QShortcut(QKeySequence.Delete, self)
         self.delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.delete_shortcut.activated.connect(self._on_remove_selected)
+        self.delete_shortcut_alt = QShortcut(QKeySequence(Qt.ALT | Qt.Key_D), self)
+        self.delete_shortcut_alt.setContext(Qt.WidgetWithChildrenShortcut)
+        self.delete_shortcut_alt.activated.connect(self._on_remove_selected)
+        self.delete_shortcut_cmd = QShortcut(QKeySequence(Qt.CTRL | Qt.Key_D), self)
+        self.delete_shortcut_cmd.setContext(Qt.WidgetWithChildrenShortcut)
+        self.delete_shortcut_cmd.activated.connect(self._on_remove_selected)
         self.resize_preview_shortcut = QShortcut(QKeySequence("R"), self)
         self.resize_preview_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.resize_preview_shortcut.activated.connect(self._toggle_resize_preview)
@@ -501,12 +533,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.micro_shortcut = QShortcut(QKeySequence("M"), self)
         self.micro_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.micro_shortcut.activated.connect(lambda: self._apply_image_type_shortcut("micro"))
-        self.apply_all_shortcut = QShortcut(QKeySequence("A"), self)
-        self.apply_all_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        self.apply_all_shortcut.activated.connect(self._apply_to_all)
         self.scale_shortcut = QShortcut(QKeySequence("S"), self)
         self.scale_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.scale_shortcut.activated.connect(self._on_scale_shortcut)
+        self.next_image_shortcut = QShortcut(QKeySequence("N"), self)
+        self.next_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.next_image_shortcut.activated.connect(self._on_next_image_shortcut)
+        self.previous_image_shortcut = QShortcut(QKeySequence("P"), self)
+        self.previous_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.previous_image_shortcut.activated.connect(self._on_previous_image_shortcut)
+        self.next_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Right), self)
+        self.next_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.next_image_arrow_shortcut.activated.connect(self._on_next_image_shortcut)
+        self.previous_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Left), self)
+        self.previous_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.previous_image_arrow_shortcut.activated.connect(self._on_previous_image_shortcut)
 
         center_splitter = QSplitter(Qt.Vertical)
         center_splitter.setChildrenCollapsible(False)
@@ -531,8 +572,37 @@ class ImageImportDialog(GeometryMixin, QDialog):
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
+        hint_area = QWidget(self)
+        hint_area_layout = QVBoxLayout(hint_area)
+        hint_area_layout.setContentsMargins(0, 0, 0, 0)
+        hint_area_layout.setSpacing(4)
         self.hint_bar = HintBar(self)
-        bottom_row.addWidget(self.hint_bar, 1)
+        hint_area_layout.addWidget(self.hint_bar)
+        self.hint_progress_widget = QWidget(self)
+        hint_progress_layout = QHBoxLayout(self.hint_progress_widget)
+        hint_progress_layout.setContentsMargins(0, 0, 0, 0)
+        hint_progress_layout.setSpacing(0)
+        progress_stack = QWidget(self.hint_progress_widget)
+        progress_stack_layout = QVBoxLayout(progress_stack)
+        progress_stack_layout.setContentsMargins(0, 0, 0, 0)
+        progress_stack_layout.setSpacing(4)
+        self.hint_progress_status = QLabel("")
+        self.hint_progress_status.setWordWrap(True)
+        self.hint_progress_status.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.hint_progress_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.hint_progress_status.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
+        self.hint_progress_bar = QProgressBar(self)
+        self.hint_progress_bar.setRange(0, 100)
+        self.hint_progress_bar.setValue(0)
+        self.hint_progress_bar.setTextVisible(True)
+        self.hint_progress_bar.setFixedHeight(18)
+        self.hint_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        progress_stack_layout.addWidget(self.hint_progress_bar, 0)
+        progress_stack_layout.addWidget(self.hint_progress_status, 0)
+        hint_progress_layout.addWidget(progress_stack, 1)
+        self.hint_progress_widget.setVisible(False)
+        hint_area_layout.addWidget(self.hint_progress_widget)
+        bottom_row.addWidget(hint_area, 1)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         if self._pending_hint_widgets:
             for widget, hint, tone in self._pending_hint_widgets:
@@ -545,10 +615,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         bottom_row.addWidget(self.cancel_btn)
 
-        self.next_btn = QPushButton(self.tr("Continue"))
+        next_label = self.tr("Continue") if self._continue_to_observation_details else self.tr("Close")
+        self.next_btn = QPushButton(next_label)
         self.next_btn.setMinimumHeight(35)
-        self.next_btn.clicked.connect(self._accept_continue)
+        self.next_btn.clicked.connect(self._accept_and_close)
         bottom_row.addWidget(self.next_btn)
+        if not self._continue_to_observation_details:
+            self.cancel_btn.setVisible(False)
         main_layout.addLayout(bottom_row)
 
     def showEvent(self, event) -> None:
@@ -570,18 +643,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _apply_combo_popup_style(self, combo: QComboBox) -> None:
         dark = _is_dark("auto")
         view = QListView()
-        view.setSpacing(3)
+        view.setSpacing(0)
+        view.setUniformItemSizes(True)
         if dark:
             view.setStyleSheet(
                 "QListView { background: #2b2b2d; color: #e8e8e8; }"
-                "QListView::item { color: #e8e8e8; background: #2b2b2d; padding: 4px 8px; min-height: 24px; }"
+                "QListView::item { color: #e8e8e8; background: #2b2b2d; padding: 4px 8px; min-height: 24px; margin: 0px; }"
                 "QListView::item:hover { background: #1c3a5e; color: #c0deff; }"
                 "QListView::item:selected { background: #4a90d9; color: white; }"
             )
         else:
             view.setStyleSheet(
                 "QListView { background: white; color: #2c3e50; }"
-                "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; }"
+                "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; margin: 0px; }"
                 "QListView::item:hover { background: #d9e9f8; color: #2c3e50; }"
                 "QListView::item:selected { background: #3498db; color: white; }"
             )
@@ -644,11 +718,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         add_btn = QPushButton(self.tr("Add Images..."))
         add_btn.clicked.connect(self._on_add_images_clicked)
         outer.addWidget(add_btn)
-        self.import_progress = QProgressBar()
-        self.import_progress.setVisible(False)
-        self.import_progress.setRange(0, 1)
-        self.import_progress.setFormat(self.tr("Loading images... %p%"))
-        outer.addWidget(self.import_progress)
 
         panel = QGroupBox(self.tr("Image settings"))
         layout = QVBoxLayout(panel)
@@ -675,8 +744,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.objective_combo.currentIndexChanged.connect(self._on_settings_changed)
         scale_layout.addWidget(self.objective_combo)
         self.calibrate_btn = QPushButton(self.tr("Set from scalebar"))
-        self.calibrate_btn.clicked.connect(self._open_calibration_dialog)
+        calibrate_hint = self.tr("Select start and end on the image")
+        self._register_hint_widget(self.calibrate_btn, calibrate_hint)
+        self.calibrate_btn.clicked.connect(self._start_scale_bar_selection)
         scale_layout.addWidget(self.calibrate_btn)
+        # Inline controls shown after user draws a scale bar selection
+        self._scale_bar_inline = QWidget()
+        self._scale_bar_inline.setVisible(False)
+        _inline_layout = QVBoxLayout(self._scale_bar_inline)
+        _inline_layout.setContentsMargins(0, 4, 0, 0)
+        _inline_layout.setSpacing(4)
+        _length_row = QHBoxLayout()
+        self.scale_bar_length_input = QDoubleSpinBox()
+        self.scale_bar_length_input.setRange(0.1, 100000.0)
+        self.scale_bar_length_input.setDecimals(1)
+        self.scale_bar_length_input.setSuffix(" µm")
+        self.scale_bar_length_input.setValue(10.0)
+        self.scale_bar_length_input.editingFinished.connect(self._apply_scale_bar_inline)
+        _length_row.addWidget(self.scale_bar_length_input)
+        self.scale_bar_horizontal_checkbox = QCheckBox(self.tr("Horizontal"))
+        self.scale_bar_horizontal_checkbox.toggled.connect(self._on_scale_bar_horizontal_toggled)
+        _length_row.addWidget(self.scale_bar_horizontal_checkbox)
+        _inline_layout.addLayout(_length_row)
+        scale_layout.addWidget(self._scale_bar_inline)
         self.scale_warning_label = QLabel("")
         self.scale_warning_label.setWordWrap(True)
         self.scale_warning_label.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(9)}pt;")
@@ -715,11 +805,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.addWidget(self.sample_group)
 
         layout.addStretch()
-        apply_row = QHBoxLayout()
-        self.apply_all_btn = QPushButton(self.tr("Apply to all (A)"))
-        self.apply_all_btn.clicked.connect(self._apply_to_all)
-        apply_row.addWidget(self.apply_all_btn)
-        layout.addLayout(apply_row)
 
         inner_bg = "#3a3a3c" if _is_dark("auto") else "#f0f0f0"
         panel.setStyleSheet(
@@ -742,12 +827,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview.clicked.connect(self._on_preview_clicked)
         self.preview.cropChanged.connect(self._on_ai_crop_changed)
         self.preview.cropPreviewChanged.connect(self._on_ai_crop_preview_changed)
+        self.preview.scaleBarChanged.connect(self._on_scale_bar_endpoint_moved)
         self.preview.installEventFilter(self)
 
         self.rotate_preview_btn = QToolButton(self.preview)
         self.rotate_preview_btn.setIcon(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "rotate.svg")))
         self.rotate_preview_btn.setIconSize(QSize(20, 20))
-        self.rotate_preview_btn.setToolTip(self.tr("Rotate 90 deg clockwise"))
+        self.rotate_preview_btn.setToolTip(self.tr("Rotate 90 deg counter-clockwise"))
         self.rotate_preview_btn.setStyleSheet(
             "QToolButton { background-color: rgba(255, 255, 255, 200); border: 1px solid #d0d0d0; border-radius: 4px; }"
             "QToolButton:hover { background-color: rgba(236, 240, 241, 230); }"
@@ -958,10 +1044,135 @@ class ImageImportDialog(GeometryMixin, QDialog):
             dialog.raise_()
             dialog.activateWindow()
             return
-        dialog = ScaleBarImportDialog(self, previous_key=previous_key)
+        is_field = bool(hasattr(self, "field_radio") and self.field_radio.isChecked())
+        dialog = ScaleBarImportDialog(self, previous_key=previous_key, is_field=is_field)
         dialog.finished.connect(lambda _result: setattr(self, "_scale_bar_dialog", None))
         self._scale_bar_dialog = dialog
+        # Pre-load previous scale bar selection if one exists for this image
+        result = (
+            self.import_results[self.selected_index]
+            if self.selected_index is not None and self.selected_index < len(self.import_results)
+            else None
+        )
+        sel = getattr(result, "scale_bar_selection", None) if result else None
+        if sel and len(sel) == 2 and getattr(self.preview, "original_pixmap", None):
+            (x1, y1), (x2, y2) = sel
+            dx = x2 - x1; dy = y2 - y1
+            distance = (dx * dx + dy * dy) ** 0.5
+            if distance > 0:
+                perp_x = -dy / distance; perp_y = dx / distance
+                half_w = max(6.0, distance * 0.05)
+                mx = (x1 + x2) / 2; my = (y1 + y2) / 2
+                p1 = QPointF(x1, y1); p2 = QPointF(x2, y2)
+                p3 = QPointF(mx - perp_x * half_w, my - perp_y * half_w)
+                p4 = QPointF(mx + perp_x * half_w, my + perp_y * half_w)
+                dialog.set_calibration_distance(distance)
+                dialog.set_calibration_preview(self.preview.original_pixmap, [p1, p2, p3, p4])
         dialog.show()
+
+    def _start_scale_bar_selection(self) -> None:
+        """Enter calibration mode directly — user clicks start/end on the preview."""
+        if not getattr(self, "preview", None) or not self.preview.original_pixmap:
+            return
+        if hasattr(self, "ai_crop_btn") and self.ai_crop_btn.isChecked():
+            self.ai_crop_btn.setChecked(False)
+        if hasattr(self.preview, "ensure_full_resolution"):
+            self.preview.ensure_full_resolution()
+        self.calibration_dialog = None
+        self.calibration_points = []
+        self._calibration_mode = True
+        self.preview.set_scale_bar_draggable(False)
+        self.preview.clear_preview_line()
+        self._sync_scale_bar_length_unit_for_image_type()
+        if hasattr(self, "_scale_bar_inline"):
+            self._scale_bar_inline.setVisible(True)
+        self.set_hint(self.tr("Click the start point of the scale bar, then the end point"))
+
+    def _on_scale_bar_horizontal_toggled(self, checked: bool) -> None:
+        """Update preview line horizontal constraint when checkbox changes."""
+        if getattr(self, "preview", None):
+            self.preview.preview_line_horizontal = checked
+            self.preview.update()
+
+    def _on_scale_bar_endpoint_moved(self, line: list) -> None:
+        """Update scale_bar_selection when user drags an endpoint."""
+        if self.selected_index is None or self.selected_index >= len(self.import_results):
+            return
+        result = self.import_results[self.selected_index]
+        result.scale_bar_selection = ((line[0], line[1]), (line[2], line[3]))
+        dx = line[2] - line[0]; dy = line[3] - line[1]
+        px_dist = (dx * dx + dy * dy) ** 0.5
+        if px_dist > 0:
+            self._scale_bar_pixel_distance = px_dist
+        # Persist to DB
+        if result.image_id:
+            ImageDB.update_image(result.image_id, scale_bar_selection=result.scale_bar_selection)
+
+    def _apply_scale_bar_inline(self) -> None:
+        """Apply the scale bar using the value in the inline length input."""
+        entered_length = float(self.scale_bar_length_input.value())
+        is_field = bool(getattr(self, "field_radio", None) and self.field_radio.isChecked())
+        total_um = entered_length * 1000.0 if is_field else entered_length
+        pixel_dist = self._scale_bar_pixel_distance
+        if total_um <= 0 or not pixel_dist or pixel_dist <= 0:
+            return
+        scale_mpp = total_um / pixel_dist  # µm per pixel
+        self.apply_scale_bar(scale_mpp)
+        if self.selected_index is not None and self.selected_index < len(self.import_results):
+            result = self.import_results[self.selected_index]
+            result.scale_bar_length_um = total_um
+            # Persist scale bar selection to DB so it survives dialog close/reopen
+            if result.image_id and result.scale_bar_selection:
+                ImageDB.update_image(result.image_id, scale_bar_selection=result.scale_bar_selection)
+            # Create / update calibration measurement (1:10 aspect ratio)
+            if result.image_id and result.scale_bar_selection:
+                self._upsert_calibration_measurement(result.image_id, result.scale_bar_selection, total_um, pixel_dist)
+            # Re-apply overlay after scale updates, because scale application can refresh the preview widget.
+            self._restore_scale_bar_overlay(result)
+        self.set_hint(None)
+
+    def _upsert_calibration_measurement(
+        self,
+        image_id: int,
+        scale_bar_selection: tuple,
+        total_um: float,
+        pixel_dist: float,
+    ) -> None:
+        """Create or replace the calibration measurement for an image (1:10 aspect ratio)."""
+        (x1, y1), (x2, y2) = scale_bar_selection
+        dx = x2 - x1
+        dy = y2 - y1
+        length_px = (dx * dx + dy * dy) ** 0.5
+        if length_px <= 0:
+            return
+        perp_x = -dy / length_px
+        perp_y = dx / length_px
+        half_width_px = pixel_dist / 20.0  # 1:10 ratio: width = length/10, half = length/20
+        mx = (x1 + x2) / 2
+        my = (y1 + y2) / 2
+        p1 = QPointF(x1, y1)
+        p2 = QPointF(x2, y2)
+        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
+        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
+        width_um = total_um / 10.0
+
+        # Delete existing calibration measurement(s) for this image
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
+            (image_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        MeasurementDB.add_measurement(
+            image_id=image_id,
+            length=total_um,
+            width=width_um,
+            measurement_type="calibration",
+            notes=f"Scale bar: {total_um:.1f} µm",
+            points=[p1, p2, p3, p4],
+        )
 
     def apply_scale_bar(self, scale_um: float) -> None:
         if not scale_um or scale_um <= 0:
@@ -1029,13 +1240,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._update_micro_settings_state(False)
             self._update_scale_mismatch_warning()
             return
-        enable = all(
+        all_micro = all(
             self.import_results[idx].image_type == "microscope"
             for idx in indices
             if 0 <= idx < len(self.import_results)
         )
-        self.scale_group.setEnabled(enable)
-        self._update_micro_settings_state(enable)
+        # Scale can be set for both field and microscope images.
+        self.scale_group.setEnabled(True)
+        # Contrast/mount/sample remain microscope-only controls.
+        self._update_micro_settings_state(all_micro)
         self._update_resize_group_state()
         self._update_scale_mismatch_warning()
 
@@ -1056,6 +1269,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
         if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
+            self.resize_group.setEnabled(False)
+            return
+        if self._objective_optics_type(selected_objective) == "macro":
             self.resize_group.setEnabled(False)
             return
         any_resized = any(
@@ -1093,6 +1309,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.mount_group.setEnabled(enable)
         if hasattr(self, "sample_group"):
             self.sample_group.setEnabled(enable)
+
+    def _sync_scale_bar_length_unit_for_image_type(self) -> None:
+        if not hasattr(self, "scale_bar_length_input"):
+            return
+        is_field = bool(hasattr(self, "field_radio") and self.field_radio.isChecked())
+        target_suffix = " mm" if is_field else " \u03bcm"
+        current_suffix = (self.scale_bar_length_input.suffix() or "").strip().lower()
+        current_is_mm = current_suffix == "mm"
+        if current_is_mm == is_field:
+            return
+        current_value = float(self.scale_bar_length_input.value())
+        current_um = current_value * 1000.0 if current_is_mm else current_value
+        next_value = current_um / 1000.0 if is_field else current_um
+        self.scale_bar_length_input.blockSignals(True)
+        self.scale_bar_length_input.setSuffix(target_suffix)
+        self.scale_bar_length_input.setValue(max(0.1, float(next_value)))
+        self.scale_bar_length_input.blockSignals(False)
 
     def _update_set_from_image_button_state(self) -> None:
         if not hasattr(self, "set_from_image_btn"):
@@ -1705,6 +1938,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if self._hint_controller is not None:
             self._hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
 
+    def _set_hint_progress_visible(self, visible: bool) -> None:
+        if hasattr(self, "hint_bar"):
+            self.hint_bar.setVisible(not visible)
+        if hasattr(self, "hint_progress_widget"):
+            self.hint_progress_widget.setVisible(bool(visible))
+
+    def _set_hint_progress(self, status_text: str | None, value: int | None = None) -> None:
+        if hasattr(self, "hint_progress_status"):
+            self.hint_progress_status.setText((status_text or "").strip())
+        if value is not None and hasattr(self, "hint_progress_bar"):
+            self.hint_progress_bar.setValue(int(max(0, min(100, value))))
+
     @staticmethod
     def _status_tone_from_color(color: str | None, default: str = "info") -> str:
         value = (color or "").strip().lower()
@@ -1727,7 +1972,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
 
     @staticmethod
-    def _rotate_normalized_crop_box_clockwise(
+    def _rotate_normalized_crop_box_counterclockwise(
         box: tuple[float, float, float, float],
     ) -> tuple[float, float, float, float]:
         x1, y1, x2, y2 = box
@@ -1737,7 +1982,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             (x2, y2),
             (x1, y2),
         ]
-        rotated = [(1.0 - y, x) for x, y in corners]
+        rotated = [(y, 1.0 - x) for x, y in corners]
         xs = [p[0] for p in rotated]
         ys = [p[1] for p in rotated]
         return (
@@ -1746,6 +1991,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
             max(0.0, min(1.0, max(xs))),
             max(0.0, min(1.0, max(ys))),
         )
+
+    def _load_pixmap_with_orientation(self, path: str) -> QPixmap:
+        """Load preview pixmap honoring EXIF orientation."""
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        image = reader.read()
+        if image.isNull():
+            return QPixmap(path)
+        return QPixmap.fromImage(image)
 
     def _invalidate_cached_pixmap(self, path: str | None) -> None:
         if not path:
@@ -1790,7 +2044,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._converted_import_paths.add(str(dest))
         return str(dest)
 
-    def _rotate_image_file_clockwise(self, path: str) -> bool:
+    def _rotate_image_file_counterclockwise(self, path: str) -> bool:
         from PIL import Image, ImageOps
 
         source = Path(path)
@@ -1800,7 +2054,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         try:
             with Image.open(source) as img:
                 normalized = ImageOps.exif_transpose(img)
-                rotated = normalized.rotate(-90, expand=True)
+                rotated = normalized.rotate(90, expand=True)
                 exif = normalized.getexif()
                 if exif is not None:
                     exif[274] = 1  # Orientation = Normal
@@ -1837,7 +2091,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not rotate_path:
             self._set_settings_hint(self.tr("Failed to rotate image"), "#e74c3c")
             return
-        if not self._rotate_image_file_clockwise(rotate_path):
+        if not self._rotate_image_file_counterclockwise(rotate_path):
             self._set_settings_hint(self.tr("Failed to rotate image"), "#e74c3c")
             return
         result.filepath = rotate_path
@@ -1850,7 +2104,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._invalidate_cached_pixmap(old_preview)
         self._invalidate_cached_pixmap(rotate_path)
         if result.ai_crop_box:
-            rotated_box = self._rotate_normalized_crop_box_clockwise(result.ai_crop_box)
+            rotated_box = self._rotate_normalized_crop_box_counterclockwise(result.ai_crop_box)
             result.ai_crop_box = rotated_box
             self._ai_crop_boxes[index] = rotated_box
             new_size = self._get_image_size(rotate_path)
@@ -1867,7 +2121,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     pass
         self._refresh_gallery()
         self._select_image(index)
-        self._set_settings_hint(self.tr("Image rotated 90 deg"), "#27ae60")
+        self._set_settings_hint(self.tr("Image rotated 90 deg counter-clockwise"), "#27ae60")
 
     def _update_settings_hint_for_indices(self, indices: list[int], action: str | None = None) -> None:
         if not indices:
@@ -1878,6 +2132,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "mount": (self.tr("Mount changed"), "for"),
             "sample": (self.tr("Sample type changed"), "for"),
             "image_type": (self.tr("Image type changed"), "for"),
+            "resize": (self.tr("Resize setting changed"), "for"),
         }
         base, prep = action_map.get(action, (self.tr("Settings applied"), "to"))
         total = len(self.import_results)
@@ -1890,25 +2145,46 @@ class ImageImportDialog(GeometryMixin, QDialog):
             message = self.tr("{base} {prep} image {num}").format(base=base, prep=prep, num=index + 1)
         self._set_settings_hint(message, "#27ae60")
 
+    def _get_default_import_dir(self) -> str:
+        settings = get_app_settings()
+        last_dir = settings.get("last_import_dir")
+        if last_dir and Path(last_dir).exists():
+            return last_dir
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        if docs:
+            return docs
+        return str(Path.home())
+
+    def _remember_import_dir(self, filepath: str | None) -> None:
+        if not filepath:
+            return
+        update_app_settings({"last_import_dir": str(Path(filepath).parent)})
+
     def _on_add_images_clicked(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             self.tr("Select Images"),
-            "",
+            self._get_default_import_dir(),
             self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"),
         )
         if paths:
+            self._remember_import_dir(paths[0])
             self.add_images(paths)
 
     def add_images(self, paths: list[str]) -> None:
         import_dir = get_images_dir() / "imports"
         import_dir.mkdir(parents=True, exist_ok=True)
         first_new_index = len(self.import_results)
-        if getattr(self, "import_progress", None) and len(paths) > 1:
-            self.import_progress.setRange(0, len(paths))
-            self.import_progress.setValue(0)
-            self.import_progress.setVisible(True)
+        show_progress = len(paths) > 1
+        total_paths = len(paths)
+        if show_progress:
+            self._set_hint_progress_visible(True)
+            self._set_hint_progress(
+                self.tr("Loading images... ({current}/{total})").format(current=0, total=total_paths),
+                0,
+            )
             QCoreApplication.processEvents()
+        processed = 0
         for path in paths:
             if not path:
                 continue
@@ -1947,11 +2223,20 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 original_filepath=path,
             )
             self.import_results.append(result)
-            if getattr(self, "import_progress", None) and self.import_progress.isVisible():
-                self.import_progress.setValue(self.import_progress.value() + 1)
+            if show_progress:
+                processed += 1
+                progress_value = int(round((processed / total_paths) * 100)) if total_paths > 0 else 100
+                self._set_hint_progress(
+                    self.tr("Loading images... ({current}/{total})").format(
+                        current=processed,
+                        total=total_paths,
+                    ),
+                    progress_value,
+                )
                 QCoreApplication.processEvents()
-        if getattr(self, "import_progress", None) and self.import_progress.isVisible():
-            self.import_progress.setVisible(False)
+        if show_progress:
+            self._set_hint_progress_visible(False)
+            self._set_hint_progress("", 0)
         self._update_summary()
         self._seed_observation_metadata()
         self._update_observation_source_index()
@@ -2095,7 +2380,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         return pixmap, preview_scaled
 
     def _apply_resize_preview(self, pixmap: QPixmap, result: ImageImportResult) -> tuple[QPixmap, bool]:
-        if not self._resize_preview_enabled:
+        if not bool(getattr(result, "resize_to_optimal", False)):
             return pixmap, False
         if getattr(self, "_calibration_mode", False):
             return pixmap, False
@@ -2182,8 +2467,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._update_resize_preview_tag(None, False)
 
     def _refresh_resize_preview(self, force: bool = False, preserve_view: bool = False) -> None:
-        if not self._resize_preview_enabled and not force:
-            return
         index = self._current_single_index()
         if index is None:
             if hasattr(self, "preview"):
@@ -2191,7 +2474,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         if index < 0 or index >= len(self.import_results):
             return
-        self._set_preview_for_result(self.import_results[index], preserve_view=preserve_view)
+        result = self.import_results[index]
+        if not force and not bool(getattr(result, "resize_to_optimal", False)):
+            return
+        self._set_preview_for_result(result, preserve_view=preserve_view)
         self._update_ai_overlay()
 
     def _toggle_resize_preview(self) -> None:
@@ -2208,6 +2494,44 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         self._open_calibration_dialog()
 
+    def _is_gallery_navigation_shortcut_blocked(self) -> bool:
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is None:
+            return False
+        if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
+            return True
+        current = focus_widget
+        while current is not None:
+            if isinstance(current, QComboBox):
+                return True
+            current = current.parentWidget()
+        return False
+
+    def _select_adjacent_gallery_image(self, step: int) -> None:
+        if step == 0 or not self.import_results:
+            return
+        indices = self._current_selection_indices()
+        if indices:
+            base_index = max(indices) if step > 0 else min(indices)
+        elif self.selected_index is not None:
+            base_index = self.selected_index
+        else:
+            base_index = -1 if step > 0 else len(self.import_results)
+        target_index = max(0, min(len(self.import_results) - 1, base_index + step))
+        if target_index == base_index and self.selected_index == target_index:
+            return
+        self._select_image(target_index)
+
+    def _on_next_image_shortcut(self) -> None:
+        if self._is_gallery_navigation_shortcut_blocked():
+            return
+        self._select_adjacent_gallery_image(1)
+
+    def _on_previous_image_shortcut(self) -> None:
+        if self._is_gallery_navigation_shortcut_blocked():
+            return
+        self._select_adjacent_gallery_image(-1)
+
     def _apply_image_type_shortcut(self, image_type: str) -> None:
         if self.selected_index is None and not self.selected_indices:
             return
@@ -2218,6 +2542,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.micro_radio.setChecked(True)
         else:
             self.field_radio.setChecked(True)
+        self._sync_scale_bar_length_unit_for_image_type()
         indices = self.selected_indices or [self.selected_index]
         self._last_settings_action = "image_type"
         self._apply_settings_to_indices(indices, action="image_type")
@@ -2255,6 +2580,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
         self._update_ai_table()
         self._update_ai_overlay()
+        self._restore_scale_bar_overlay(result)
 
     def _load_result_into_form(self, result: ImageImportResult) -> None:
         self._loading_form = True
@@ -2262,6 +2588,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.micro_radio.setChecked(True)
         else:
             self.field_radio.setChecked(True)
+        self._sync_scale_bar_length_unit_for_image_type()
         self._custom_scale = float(result.custom_scale) if result.custom_scale else None
         self._populate_objectives(
             selected_key=self.CUSTOM_OBJECTIVE_KEY if result.custom_scale else result.objective
@@ -2282,6 +2609,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._set_combo_tag_value(self.mount_combo, "mount", result.mount_medium)
         if result.sample_type:
             self._set_combo_tag_value(self.sample_combo, "sample", result.sample_type)
+        if result.scale_bar_length_um:
+            display_len = (
+                float(result.scale_bar_length_um) / 1000.0
+                if result.image_type == "field"
+                else float(result.scale_bar_length_um)
+            )
+            self.scale_bar_length_input.setValue(display_len)
+        if hasattr(self, "resize_optimal_checkbox"):
+            self.resize_optimal_checkbox.blockSignals(True)
+            self.resize_optimal_checkbox.setChecked(bool(getattr(result, "resize_to_optimal", False)))
+            self.resize_optimal_checkbox.blockSignals(False)
         self._loading_form = False
         self._last_objective_key = self.objective_combo.currentData()
         self._sync_observation_metadata_inputs()
@@ -2299,7 +2637,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             current_key = self.objective_combo.currentData()
             if current_key == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale is None:
                 self._update_resize_group_state()
-                self._open_calibration_dialog(previous_key=previous_key)
+                self._start_scale_bar_selection()
                 return
         elif sender is self.contrast_combo:
             action = "contrast"
@@ -2307,8 +2645,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "mount"
         elif sender is self.sample_combo:
             action = "sample"
-        elif sender in (self.field_radio, self.micro_radio):
+        elif sender in (self.field_radio, self.micro_radio, self.image_type_group):
             action = "image_type"
+            self._sync_scale_bar_length_unit_for_image_type()
         self._last_settings_action = action
         indices = self.selected_indices or [self.selected_index]
         self._apply_settings_to_indices(indices, action, previous_key if action == "scale" else None)
@@ -2380,16 +2719,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             and not result.objective
             and not result.custom_scale
         )
-        if hasattr(self, "resize_optimal_checkbox"):
+        if action == "resize" and hasattr(self, "resize_optimal_checkbox"):
             result.resize_to_optimal = bool(self.resize_optimal_checkbox.isChecked())
-        result.store_original = self._store_originals_enabled()
+        if action == "resize":
+            result.store_original = self._store_originals_enabled() if result.resize_to_optimal else False
         if not result.image_id:
             result.resample_scale_factor = self._compute_resample_scale_factor(result)
-        self._refresh_gallery()
-        self._update_summary()
-        if index == self.selected_index and len(self.selected_indices) <= 1:
-            self._update_current_image_sampling(result)
-            self._refresh_resize_preview(preserve_view=True)
         return True
 
     def _apply_settings_to_indices(
@@ -2438,6 +2773,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 return
             applied.append(idx)
         if applied:
+            self._refresh_gallery()
+            self._update_summary()
+            if (
+                self.selected_index is not None
+                and self.selected_index in applied
+                and len(self.selected_indices) <= 1
+            ):
+                selected_result = self.import_results[self.selected_index]
+                self._update_current_image_sampling(selected_result)
+                if action == "scale":
+                    self._refresh_resize_preview(preserve_view=True)
+                elif action == "image_type":
+                    preview_pixmap = getattr(self.preview, "original_pixmap", None) if hasattr(self, "preview") else None
+                    self._update_resize_preview_tag(selected_result, False, preview_pixmap)
+                elif action == "resize":
+                    self._refresh_resize_preview(force=True, preserve_view=True)
             self._update_settings_hint_for_indices(applied, action or self._last_settings_action)
             self._update_scale_group_state()
             self._update_ai_controls_state()
@@ -2473,7 +2824,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             img = ImageDB.get_image(result.image_id)
             if not img:
                 continue
-            old_scale = img.get("scale_microns_per_pixel")
+            # Prefer the in-memory value to avoid stale DB reads during repeated rescales in the same session
+            old_scale = result.custom_scale if result.custom_scale is not None else img.get("scale_microns_per_pixel")
             if old_scale is None:
                 continue
             factor = getattr(result, "resample_scale_factor", None)
@@ -2547,11 +2899,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         measurements = MeasurementDB.get_measurements_for_image(image_id)
         if not measurements:
             return True
-        has_points = any(
-            all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-            for m in measurements
-        )
-        if not has_points:
+        if not any(m.get("length_um") is not None for m in measurements):
             return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
@@ -2578,30 +2926,28 @@ class ImageImportDialog(GeometryMixin, QDialog):
         measurements = measurements or MeasurementDB.get_measurements_for_image(image_id)
         if not measurements:
             return True
-        has_points = any(
-            all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-            for m in measurements
-        )
-        if not has_points:
+        if not any(m.get("length_um") is not None for m in measurements):
             return True
+        ratio = float(new_scale) / float(old_scale)
         conn = get_connection()
         cursor = conn.cursor()
         for m in measurements:
-            if not all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y")):
+            old_length = m.get("length_um")
+            if old_length is None:
                 continue
-            dx1 = m["p2_x"] - m["p1_x"]
-            dy1 = m["p2_y"] - m["p1_y"]
-            dx2 = m["p4_x"] - m["p3_x"]
-            dy2 = m["p4_y"] - m["p3_y"]
-            dist1 = math.hypot(dx1, dy1) * new_scale
-            dist2 = math.hypot(dx2, dy2) * new_scale
-            length_um = max(dist1, dist2)
-            width_um = min(dist1, dist2)
-            q_value = length_um / width_um if width_um > 0 else 0
+            new_length_um = float(old_length) * ratio
+            old_width = m.get("width_um")
+            new_width_um = float(old_width) * ratio if old_width is not None else None
+            q_value = new_length_um / new_width_um if new_width_um and new_width_um > 0 else 0
             cursor.execute(
                 "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
-                (length_um, width_um, f"Q={q_value:.1f}", m["id"]),
+                (new_length_um, new_width_um, f"Q={q_value:.1f}", m["id"]),
             )
+        # Also update the image's scale so _apply_import_results_to_observation won't double-rescale
+        cursor.execute(
+            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
+            (float(new_scale), image_id),
+        )
         conn.commit()
         conn.close()
         return True
@@ -2631,7 +2977,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _cache_pixmap(self, path: str) -> None:
         if not path or path in self._pixmap_cache:
             return
-        pixmap = QPixmap(path)
+        pixmap = self._load_pixmap_with_orientation(path)
         if pixmap.isNull():
             return
         w = pixmap.width()
@@ -2838,7 +3184,20 @@ class ImageImportDialog(GeometryMixin, QDialog):
             scale = history[0].get("microns_per_pixel")
             if scale and scale > 0:
                 return float(scale)
+        objective = self.objectives.get(objective_key) if hasattr(self, "objectives") else None
+        if isinstance(objective, dict):
+            provisional = objective.get("provisional_microns_per_pixel")
+            if isinstance(provisional, (int, float)) and provisional > 0:
+                return float(provisional)
         return None
+
+    def _objective_optics_type(self, objective_key: str | None) -> str:
+        if not objective_key or objective_key == self.CUSTOM_OBJECTIVE_KEY:
+            return "microscope"
+        objective = self.objectives.get(objective_key)
+        if not isinstance(objective, dict):
+            return "microscope"
+        return "macro" if str(objective.get("optics_type") or "").strip().lower() == "macro" else "microscope"
 
     def _compute_resample_scale_factor(
         self,
@@ -2849,15 +3208,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return 1.0
         if (
             respect_toggle
-            and (
-                not hasattr(self, "resize_optimal_checkbox")
-                or not self.resize_optimal_checkbox.isChecked()
-            )
+            and not bool(getattr(result, "resize_to_optimal", False))
         ):
             return 1.0
         objective = None
         if result.objective and result.objective in self.objectives:
             objective = self.objectives[result.objective]
+        if self._objective_optics_type(result.objective) == "macro":
+            return 1.0
         scale_mpp = result.custom_scale
         if scale_mpp is None:
             scale_mpp = self._get_objective_scale_mpp(result.objective)
@@ -2907,6 +3265,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         objective = None
         if result.objective and result.objective in self.objectives:
             objective = self.objectives[result.objective]
+        is_macro_profile = self._objective_optics_type(result.objective) == "macro"
         scale_mpp = result.custom_scale
         if scale_mpp is None:
             scale_mpp = self._get_objective_scale_mpp(result.objective)
@@ -2920,6 +3279,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.target_sampling_input.blockSignals(True)
             self.target_sampling_input.setValue(float(target_pct))
             self.target_sampling_input.blockSignals(False)
+            self.target_sampling_input.setEnabled(not is_macro_profile)
+        if is_macro_profile:
+            self.target_resolution_label.setText("--")
+            self._set_resize_resolution_hints(
+                current_hint,
+                self.tr("Ideal Nyquist-based resize is available only for microscope objectives."),
+            )
+            return
         if self._is_resized_image(result):
             self.target_resolution_label.setText(self.tr("Already resized"))
             self._set_resize_resolution_hints(
@@ -2937,7 +3304,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         factor = self._compute_resample_scale_factor(result)
         if result.image_id is None and not self._is_resized_image(result):
             result.resample_scale_factor = factor
-        if not hasattr(self, "resize_optimal_checkbox") or not self.resize_optimal_checkbox.isChecked():
+        if not bool(getattr(result, "resize_to_optimal", False)):
             self.target_resolution_label.setText("--")
             self._set_resize_resolution_hints(
                 current_hint,
@@ -2970,19 +3337,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _on_resize_settings_changed(self) -> None:
         if not hasattr(self, "resize_optimal_checkbox"):
             return
+        if getattr(self, "_loading_form", False):
+            return
         resize_enabled = bool(self.resize_optimal_checkbox.isChecked())
-        self._resize_preview_enabled = resize_enabled
         self._sync_resize_controls()
         SettingsDB.set_setting("resize_to_optimal_sampling", resize_enabled)
-        store_original = self._store_originals_enabled() if resize_enabled else False
-        for result in self.import_results:
-            result.resize_to_optimal = resize_enabled
-            result.store_original = store_original
-            if not result.image_id:
-                result.resample_scale_factor = self._compute_resample_scale_factor(result)
-        if self.selected_index is not None and 0 <= self.selected_index < len(self.import_results):
-            self._update_current_image_sampling(self.import_results[self.selected_index])
-        self._refresh_resize_preview(force=True, preserve_view=True)
+        indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
+        if not indices:
+            return
+        self._last_settings_action = "resize"
+        self._apply_settings_to_indices(indices, action="resize")
 
     def _on_target_sampling_changed(self, value: float) -> None:
         self.target_sampling_pct = float(value)
@@ -3071,6 +3435,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         result = self.import_results[idx]
         if result.image_type != "microscope":
+            _hide_warning()
+            return
+        if self._objective_optics_type(result.objective) == "macro":
             _hide_warning()
             return
         selected_objective = self.objective_combo.currentData()
@@ -3206,6 +3573,28 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
     def _refresh_gallery(self) -> None:
         selected = self.gallery.selected_paths() if hasattr(self, "gallery") else []
+        image_ids = [
+            int(result.image_id)
+            for result in self.import_results
+            if isinstance(result.image_id, int) and result.image_id > 0
+        ]
+        measured_image_ids: set[int] = set()
+        if image_ids:
+            conn = None
+            try:
+                conn = get_connection()
+                cursor = conn.cursor()
+                placeholders = ",".join("?" for _ in image_ids)
+                cursor.execute(
+                    f"SELECT DISTINCT image_id FROM spore_measurements WHERE image_id IN ({placeholders})",
+                    tuple(image_ids),
+                )
+                measured_image_ids = {int(row[0]) for row in cursor.fetchall() if row and row[0] is not None}
+            except Exception:
+                measured_image_ids = set()
+            finally:
+                if conn is not None:
+                    conn.close()
         items = []
         for idx, result in enumerate(self.import_results):
             objective_label = result.objective
@@ -3220,11 +3609,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 contrast=result.contrast,
                 custom_scale=bool(result.custom_scale),
                 needs_scale=bool(result.needs_scale),
+                resize_to_optimal=bool(getattr(result, "resize_to_optimal", False)),
                 translate=self.tr,
             )
-            has_measurements = False
-            if result.image_id:
-                has_measurements = bool(MeasurementDB.get_measurements_for_image(result.image_id))
+            has_measurements = bool(result.image_id and int(result.image_id) in measured_image_ids)
             is_source = self._observation_source_index == idx
             gps_highlight = is_source and result.exif_has_gps
             gps_tag = self.tr("GPS") if gps_highlight else None
@@ -3284,6 +3672,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._set_settings_hint(message, "#e74c3c")
         if self.image_paths:
             self._select_image(0)
+        else:
+            self._show_multi_selection_state()
+            self.preview.set_measurement_lines([])
+            self.preview.set_scale_bar_draggable(False)
 
     def _on_gallery_delete_requested(self, image_key) -> None:
         if image_key is None:
@@ -3320,11 +3712,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_crop_boxes = remap_dict(self._ai_crop_boxes)
         self._ai_selected_taxon = None
 
-    def _accept_continue(self) -> None:
+    def _accept_and_close(self) -> None:
         self._apply_to_selected()
         self._save_last_used_tag_settings()
         self._accepted = True
-        self.continueRequested.emit(self.import_results)
+        if self._continue_to_observation_details:
+            self.continueRequested.emit(self.import_results)
         self.accept()
 
     def _save_last_used_tag_settings(self) -> None:
@@ -3344,6 +3737,46 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def get_observation_gps(self) -> tuple[float | None, float | None]:
         return self._observation_lat, self._observation_lon
 
+    def _restore_scale_bar_overlay(self, result: "ImageImportResult") -> None:
+        """Draw the stored scale bar selection line on the preview, if any."""
+        sel = getattr(result, "scale_bar_selection", None)
+        if sel and len(sel) == 2:
+            (x1, y1), (x2, y2) = sel
+            pixmap = getattr(self.preview, "original_pixmap", None)
+            if pixmap and not pixmap.isNull():
+                width = float(pixmap.width())
+                height = float(pixmap.height())
+                in_bounds = (
+                    0.0 <= float(x1) <= width
+                    and 0.0 <= float(y1) <= height
+                    and 0.0 <= float(x2) <= width
+                    and 0.0 <= float(y2) <= height
+                )
+                if not in_bounds:
+                    self.preview.set_measurement_lines([])
+                    self.preview.set_scale_bar_draggable(False)
+                    if hasattr(self, "_scale_bar_inline"):
+                        self._scale_bar_inline.setVisible(False)
+                    return
+            self.preview.set_measurement_lines([[x1, y1, x2, y2]])
+            # Restore pixel distance so Apply can recompute µm/pixel
+            dx = x2 - x1; dy = y2 - y1
+            px_dist = (dx * dx + dy * dy) ** 0.5
+            if px_dist > 0:
+                self._scale_bar_pixel_distance = px_dist
+            self.preview.set_scale_bar_draggable(True)
+            if hasattr(self, "_scale_bar_inline"):
+                self._scale_bar_inline.setVisible(True)
+                length_um = getattr(result, "scale_bar_length_um", None)
+                if length_um:
+                    is_field = (result.image_type or "").strip().lower() == "field"
+                    self.scale_bar_length_input.setValue(float(length_um) / 1000.0 if is_field else float(length_um))
+        else:
+            self.preview.set_measurement_lines([])
+            self.preview.set_scale_bar_draggable(False)
+            if hasattr(self, "_scale_bar_inline"):
+                self._scale_bar_inline.setVisible(False)
+
     def enter_calibration_mode(self, dialog):
         if not getattr(self, "preview", None) or not self.preview.original_pixmap:
             return
@@ -3358,13 +3791,45 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
     def _on_preview_clicked(self, pos):
         if not getattr(self, "_calibration_mode", False):
+            # If the user clicks near an existing scale bar selection, open the dialog
+            result = (
+                self.import_results[self.selected_index]
+                if self.selected_index is not None and self.selected_index < len(self.import_results)
+                else None
+            )
+            sel = getattr(result, "scale_bar_selection", None) if result else None
+            if sel and len(sel) == 2:
+                (x1, y1), (x2, y2) = sel
+                dx = x2 - x1; dy = y2 - y1
+                seg_len = (dx * dx + dy * dy) ** 0.5
+                if seg_len > 0:
+                    t = max(0.0, min(1.0, ((pos.x() - x1) * dx + (pos.y() - y1) * dy) / (seg_len * seg_len)))
+                    cx = x1 + t * dx; cy = y1 + t * dy
+                    if ((pos.x() - cx) ** 2 + (pos.y() - cy) ** 2) ** 0.5 <= 20:
+                        # Restore pixel distance so _apply_scale_bar_inline can recompute µm/pixel
+                        self._scale_bar_pixel_distance = seg_len
+                        # Show inline controls so user can re-enter µm value
+                        if hasattr(self, "_scale_bar_inline"):
+                            self._scale_bar_inline.setVisible(True)
+                            length_um = getattr(result, "scale_bar_length_um", None)
+                            if length_um:
+                                is_field = (result.image_type or "").strip().lower() == "field"
+                                value = float(length_um) / 1000.0 if is_field else float(length_um)
+                                self.scale_bar_length_input.setValue(value)
+                        self.set_hint(self.tr("Adjust length and click again to re-apply scale"))
+                        return
             return
         self.calibration_points.append(pos)
         if len(self.calibration_points) == 1:
-            self.preview.set_preview_line(pos)
+            _horiz = hasattr(self, "scale_bar_horizontal_checkbox") and self.scale_bar_horizontal_checkbox.isChecked()
+            self.preview.set_preview_line(pos, horizontal=_horiz)
+            self.set_hint(self.tr("Now click the end point of the scale bar"))
             return
         if len(self.calibration_points) == 2:
             p1, p2 = self.calibration_points
+            # Constrain to horizontal line if checkbox is set
+            if hasattr(self, "scale_bar_horizontal_checkbox") and self.scale_bar_horizontal_checkbox.isChecked():
+                p2 = QPointF(p2.x(), p1.y())
             dx = p2.x() - p1.x()
             dy = p2.y() - p1.y()
             distance = (dx * dx + dy * dy) ** 0.5
@@ -3386,9 +3851,24 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     self.preview.original_pixmap,
                     [p1, p2, p3, p4],
                 )
+            # Store pixel distance so _apply_scale_bar_inline can compute µm/pixel
+            self._scale_bar_pixel_distance = distance
+            # Enable endpoint dragging
+            self.preview.set_scale_bar_draggable(True)
+            # Persist the selection on the current result so the overlay survives image switching
+            if self.selected_index is not None and self.selected_index < len(self.import_results):
+                self.import_results[self.selected_index].scale_bar_selection = (
+                    (p1.x(), p1.y()), (p2.x(), p2.y())
+                )
             self.calibration_points = []
+            # Apply scale immediately — 2nd click is the trigger
+            self._apply_scale_bar_inline()
 
     def closeEvent(self, event):
+        dialog = getattr(self, "_scale_bar_dialog", None)
+        if dialog and dialog.isVisible():
+            dialog.close()
+        self._scale_bar_dialog = None
         if self._ai_thread is not None:
             try:
                 self._ai_thread.quit()

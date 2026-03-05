@@ -1,22 +1,34 @@
 # Microscopy Workflow
 
-## Objectives
+## Objectives and Macro Profiles
 
-You need to set up your objectives and calibrate them so the app knows the scale of your microscope images. Go to  **Settings** → **Calibration** and pick an objective, or create **New Objective**:
+Go to **Settings** → **Calibration** and pick an existing profile, or create **New Objective**:
 
 ![Ojbective](images/calibrate-objective.png)
 
-Objectives are defined by:
+**Microscope objectives** are defined by:
 - Magnification
 - Numerical Aperture (NA)
 - Objective name/camera setup
 
-You can also add a note about your setup, what camera or phone adapters you're using etc.
+**Macro lens profiles** (select profile type **Macro** in the New Objective dialog) are defined by:
+- Magnification entered as a 1:X ratio (e.g. 1 for 1:1, 0.5 for 1:2)
+- Sensor width (mm) and image width (px) for a provisional scale
+
+The provisional scale formula is:
+
+$$
+p = \frac{\text{sensor\_width\_mm} \times 1000}{\text{image\_width\_px}} \times \frac{1}{\text{magnification}}
+$$
+
+This gives an approximate µm/px scale without a physical reference. For better accuracy, calibrate against a ruler or known reference length (same as microscope calibration).
+
+You can also add a note about your setup, what camera or lens you're using etc.
 
 
 ## Calibration 
 
-Calibrating a microscope requires a calibration slide, or "stage micrometer" for accurate results. See if you can borrow one from someone, or you can buy one from China for very little money: 
+Calibrating a microscope requires a calibration slide, or "stage micrometer" for accurate results. See if you can borrow one from someone, or you can buy one from Aliexpress for very little money: 
 
 ![Calibration-slide](images/calibration-slide.png)
 
@@ -33,7 +45,7 @@ You may have to select a cropped area if the lines are not uniform. Like here:
 ![auto calibration](images/autocalibrate.png)
 You will get some quality metrics, like MAD and IQR, that depend on the quality of the slide and your optics. If these numbers are way off (in red), the auto-calibration algorithm probably failed.
 
-Check the overlay lines if you have troubles: 
+Check the overlay: 
 ![line overlay](images/autocalibrate-overlay.png)
 The yellow lines show where the line edges have been detected. The red center lines are in the middle, between the edge lines. With poor contrast or insufficient resolution, the auto calibration may fail.
 
@@ -47,7 +59,9 @@ You can export the calibration image with overlays for documentation purposes.
 
 ## Prepare Images (Microscope)
 
-In **Prepare Images**, set image type to **Micro (M)** and pick the objective (or **Scale bar**) in the **Scale** group.
+In **Prepare Images**, set image type to **Micro** (keyboard shortcut: M) and pick the objective (or **Scale bar**) in the **Scale** group.
+
+To set the same image type or scale on multiple images at once, **Ctrl+click** (or **Shift+click**) to select them in the gallery, then change the setting — it applies to all selected images.
 
 For microscope images, the right panel shows:
 - **Current resolution** (current MP and pixel dimensions)
@@ -56,7 +70,7 @@ For microscope images, the right panel shows:
 
 Use **Resize to optimal sampling (R)** to preview and apply downsampling based on objective scale + NA + target sampling.
 
-### Nyquist Sampling (Basics)
+### Nyquist Sampling
 
 MycoLog uses a Nyquist-based ideal pixel size:
 
@@ -64,7 +78,7 @@ $$
 p_{\mathrm{ideal}} = \frac{\lambda}{4\,\mathrm{NA}}
 $$
 
-where $\lambda$ is the illumination wavelength in $\mathrm{\mu m}$ and $\mathrm{NA}$ is the numerical aperture.
+where $\lambda$ is the illumination wavelength in $\mathrm{\mu m}$ and $\mathrm{NA}$ is the numerical aperture. If you have a high-resolution sensor with a 100/1.25 objective, you could potentially reduce the image file size by quite a lot. As your database grows, and if you want to share your database with others, this file size reduction can be quite important.
 
 ### Downsampling and Scale Propagation
 
@@ -105,8 +119,21 @@ You may see this warning in both:
 - **R**: Toggle "Resize to optimal sampling"
 - **C**: Toggle AI crop mode
 - **S**: Open "Set from scalebar"
-- **A**: Apply current settings to all selected images
 - **Delete**: Remove selected image(s)
+
+## Tab Navigation Shortcuts
+
+Navigate between tabs from anywhere in the app:
+
+| Action | Windows / Linux | macOS |
+|--------|----------------|-------|
+| Go to Observations | Alt+O | Option+O |
+| Go to Measure | Alt+M | Option+M |
+| Go to Analysis | Alt+A | Option+A |
+
+## Appearance
+
+The app follows the system dark/light mode automatically when **Settings → Appearance** is set to **Auto**. Changes take effect immediately without restarting.
 
 ## Working with Scale
 

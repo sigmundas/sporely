@@ -19,7 +19,7 @@ class DatabaseTerms:
     SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
     MEASURE_CATEGORIES = [
         "Spores", "Field", "Basidia", "Pileipellis",
-        "Pleurocystidia", "Cheilocystidia", "Caulocystidia", "Other"
+        "Pleurocystidia", "Cheilocystidia", "Caulocystidia", "Other", "Calibration"
     ]
     
     # Display name mappings (for translation)
@@ -58,6 +58,7 @@ class DatabaseTerms:
         "Cheilocystidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Cheilocystidia"),
         "Caulocystidia": QT_TRANSLATE_NOOP("DatabaseTerms", "Caulocystidia"),
         "Other": QT_TRANSLATE_NOOP("DatabaseTerms", "Other"),
+        "Calibration": QT_TRANSLATE_NOOP("DatabaseTerms", "Calibration"),
     }
     
     @staticmethod

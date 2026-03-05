@@ -1,6 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QPainterPath, QImageReader
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
@@ -12,6 +12,7 @@ class ZoomableImageLabel(QLabel):
     clicked = Signal(QPointF)  # Emits click position in original image coordinates
     cropChanged = Signal(object)  # Emits (x1, y1, x2, y2) in image coords or None
     cropPreviewChanged = Signal(object)  # Emits live crop preview box in image coords or None
+    scaleBarChanged = Signal(list)  # Emits [x1, y1, x2, y2] when scale bar endpoint is dragged
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,7 +31,12 @@ class ZoomableImageLabel(QLabel):
         self.debug_line_layers = []
         self.measurement_rectangles = []
         self.preview_line = None  # Temporary line being drawn
+        self.preview_line_horizontal = False  # Constrain preview line to horizontal
         self.preview_rect = None  # Temporary rectangle preview
+        # Scale bar endpoint drag state
+        self._scale_bar_draggable = False
+        self._scale_bar_ep_drag = None   # None, 0, or 1
+        self._scale_bar_ep_hover = None  # None, 0, or 1
         self.objective_text = ""
         self.objective_color = QColor(52, 152, 219)
         self.measure_color = QColor("#0044aa")
@@ -39,6 +45,7 @@ class ZoomableImageLabel(QLabel):
         self.measurement_labels = []
         self.show_scale_bar = False
         self.scale_bar_um = 10.0
+        self.scale_bar_unit = "\u03bcm"
         self.scale_bar_bg_alpha = 102
         self.export_measure_label_scale_multiplier = 1.0
         self.show_copyright = False
@@ -369,6 +376,22 @@ class ZoomableImageLabel(QLabel):
         painter.setPen(QColor(color) if color is not None else QColor(self.measure_color))
         painter.drawText(int(x), int(y), text)
 
+    def _format_measure_label_value(self, value, unit: str | None) -> str:
+        """Format overlay values.
+
+        µm (microscope): 1 decimal place.
+        Field images (no unit): 2 significant figures.
+        """
+        v = float(value)
+        if str(unit or "").strip().lower() in ("\u03bcm", "um"):
+            return f"{v:.1f}"
+        # Field / unitless: 2 significant figures
+        if v == 0:
+            return "0"
+        mag = math.floor(math.log10(abs(v)))
+        decimals = max(0, 1 - mag)
+        return f"{round(v, decimals):.{decimals}f}"
+
     def _draw_text_with_outline(
         self,
         painter: QPainter,
@@ -479,11 +502,12 @@ class ZoomableImageLabel(QLabel):
             self.microns_per_pixel = mpp
         self.update()
 
-    def set_scale_bar(self, show, microns):
-        """Toggle and set scale bar size in microns."""
+    def set_scale_bar(self, show, microns, unit="\u03bcm"):
+        """Toggle and set scale bar size in microns, with display unit."""
         self.show_scale_bar = bool(show)
         if microns and microns > 0:
             self.scale_bar_um = float(microns)
+        self.scale_bar_unit = str(unit or "\u03bcm")
         self.update()
 
     def set_export_measure_label_scale_multiplier(self, multiplier):
@@ -641,10 +665,59 @@ class ZoomableImageLabel(QLabel):
         self.cropPreviewChanged.emit(None)
         self.update()
 
-    def set_preview_line(self, start_point):
+    def set_preview_line(self, start_point, horizontal=False):
         """Set the start point for a preview line that follows the mouse."""
         self.preview_line = start_point
+        self.preview_line_horizontal = horizontal
         self.update()
+
+    def set_scale_bar_draggable(self, draggable: bool) -> None:
+        """Enable/disable dragging of scale bar line endpoints."""
+        self._scale_bar_draggable = draggable
+        self._scale_bar_ep_drag = None
+        self._scale_bar_ep_hover = None
+        self.update()
+
+    def _scale_bar_t_hit_test(self, screen_pos) -> int | None:
+        """Return endpoint index (0 or 1) if screen_pos is near a T-mark, else None.
+
+        Hit region is the perpendicular T-bar at each endpoint (fixed screen size).
+        """
+        if not self._scale_bar_draggable or not self.measurement_lines or not self.original_pixmap:
+            return None
+        line = self.measurement_lines[0]
+        display_rect = self.get_display_rect()
+        if display_rect.isNull():
+            return None
+
+        p1_sx = display_rect.x() + line[0] * self.zoom_level
+        p1_sy = display_rect.y() + line[1] * self.zoom_level
+        p2_sx = display_rect.x() + line[2] * self.zoom_level
+        p2_sy = display_rect.y() + line[3] * self.zoom_level
+
+        dx = p2_sx - p1_sx
+        dy = p2_sy - p1_sy
+        length = (dx ** 2 + dy ** 2) ** 0.5
+        if length < 1:
+            return None
+        # Unit along line and perpendicular (T direction)
+        ux = dx / length
+        uy = dy / length
+        perp_x = -uy
+        perp_y = ux
+
+        # Hit box: ±10px along T-bar, ±6px along line
+        T_HALF = 12.0
+        LINE_HALF = 7.0
+        sx, sy = screen_pos.x(), screen_pos.y()
+        for ep_idx, (ex, ey) in enumerate([(p1_sx, p1_sy), (p2_sx, p2_sy)]):
+            rx = sx - ex
+            ry = sy - ey
+            along_perp = rx * perp_x + ry * perp_y
+            along_line = rx * ux + ry * uy
+            if abs(along_perp) <= T_HALF and abs(along_line) <= LINE_HALF:
+                return ep_idx
+        return None
 
     def clear_preview_line(self):
         """Clear the preview line."""
@@ -734,12 +807,13 @@ class ZoomableImageLabel(QLabel):
             return
         self._auto_fit_pending = False
 
-        # Zoom toward mouse cursor position
+        # Zoom toward mouse cursor position.
+        # Use proportional factor so trackpad (small delta) is gentler than mouse wheel (delta≈120).
         delta = event.angleDelta().y()
-        if delta > 0:
-            zoom_factor = 1.1
-        else:
-            zoom_factor = 0.9
+        if delta == 0:
+            return
+        exponent = abs(delta) / 120.0
+        zoom_factor = (1.1 if delta > 0 else (1.0 / 1.1)) ** exponent
 
         old_zoom = self.zoom_level
         self.zoom_level = max(self.min_zoom, min(self.max_zoom, self.zoom_level * zoom_factor))
@@ -774,7 +848,10 @@ class ZoomableImageLabel(QLabel):
         if not self._full_image_path:
             return
         try:
-            full_pixmap = QPixmap(self._full_image_path)
+            reader = QImageReader(self._full_image_path)
+            reader.setAutoTransform(True)
+            image = reader.read()
+            full_pixmap = QPixmap.fromImage(image) if not image.isNull() else QPixmap(self._full_image_path)
         except Exception:
             return
         if full_pixmap.isNull() or not self.original_pixmap:
@@ -933,6 +1010,13 @@ class ZoomableImageLabel(QLabel):
     def mousePressEvent(self, event):
         """Handle mouse press for panning or clicking."""
         if event.button() == Qt.LeftButton:
+            # Scale bar endpoint drag — check before crop/pan handling
+            ep_hit = self._scale_bar_t_hit_test(event.position())
+            if ep_hit is not None:
+                self._scale_bar_ep_drag = ep_hit
+                self.setCursor(Qt.CrossCursor)
+                self.update()
+                return
             if self.original_pixmap and self.crop_box:
                 corner_index = self._crop_corner_hit_test(event.position())
                 if corner_index >= 0:
@@ -984,6 +1068,20 @@ class ZoomableImageLabel(QLabel):
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for panning and preview line."""
+        # Scale bar endpoint drag
+        if self._scale_bar_ep_drag is not None and self.measurement_lines and self.original_pixmap:
+            image_pos = self.screen_to_image(event.position())
+            if image_pos:
+                line = list(self.measurement_lines[0])
+                if self._scale_bar_ep_drag == 0:
+                    line[0] = image_pos.x()
+                    line[1] = line[3] if self.preview_line_horizontal else image_pos.y()
+                else:
+                    line[2] = image_pos.x()
+                    line[3] = line[1] if self.preview_line_horizontal else image_pos.y()
+                self.measurement_lines[0] = line
+                self.update()
+            return
         if self.crop_corner_dragging and self.original_pixmap:
             image_pos = self.screen_to_image(event.position())
             if image_pos and self.crop_corner_drag_anchor is not None:
@@ -1049,8 +1147,15 @@ class ZoomableImageLabel(QLabel):
             self.update()
         else:
             # Update cursor for shift+hover
+            # Scale bar endpoint hover cursor — T-mark hit test uses screen coords
+            _sb_ep_hover = self._scale_bar_t_hit_test(event.position())
+            if _sb_ep_hover != self._scale_bar_ep_hover:
+                self._scale_bar_ep_hover = _sb_ep_hover
+                self.update()
             if event.modifiers() & Qt.ShiftModifier:
                 self.setCursor(Qt.OpenHandCursor)
+            elif _sb_ep_hover is not None:
+                self.setCursor(Qt.CrossCursor)
             elif self.crop_corner_hover_index >= 0 and self.crop_box:
                 cursor = self._crop_corner_cursor(self.crop_corner_hover_index)
                 self.setCursor(cursor if cursor is not None else Qt.ArrowCursor)
@@ -1065,6 +1170,13 @@ class ZoomableImageLabel(QLabel):
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release."""
+        if event.button() == Qt.LeftButton and self._scale_bar_ep_drag is not None:
+            self._scale_bar_ep_drag = None
+            if self.measurement_lines:
+                self.scaleBarChanged.emit(list(self.measurement_lines[0]))
+            self.setCursor(Qt.ArrowCursor)
+            self.update()
+            return
         if event.button() == Qt.LeftButton and self.crop_corner_dragging:
             self.crop_corner_dragging = False
             self.crop_corner_drag_index = -1
@@ -1570,7 +1682,7 @@ class ZoomableImageLabel(QLabel):
                             painter,
                             p1,
                             p2,
-                            f"{value:.1f}",
+                            self._format_measure_label_value(value, unit),
                             padding_px=max(3.0, 3.0 * scale_factor * export_label_ui_scale),
                         )
                     continue
@@ -1621,10 +1733,18 @@ class ZoomableImageLabel(QLabel):
                     length_edge = edges[best_index]
                     width_edge = edges[(best_index + 1) % 4]
                     self._draw_rotated_label_outside(
-                        painter, f"{length_value:.1f}", length_edge, center, max(3.0, 3.0 * export_label_ui_scale)
+                        painter,
+                        self._format_measure_label_value(length_value, unit),
+                        length_edge,
+                        center,
+                        max(3.0, 3.0 * export_label_ui_scale),
                     )
                     self._draw_rotated_label_outside(
-                        painter, f"{width_value:.1f}", width_edge, center, max(3.0, 3.0 * export_label_ui_scale)
+                        painter,
+                        self._format_measure_label_value(width_value, unit),
+                        width_edge,
+                        center,
+                        max(3.0, 3.0 * export_label_ui_scale),
                     )
 
         # Draw scale bar
@@ -1649,7 +1769,11 @@ class ZoomableImageLabel(QLabel):
             font.setPixelSize(max(10, int(round(12 * 0.8 * scale_bar_ui_scale))))
             font.setBold(False)
             painter.setFont(font)
-            label = f"{bar_um:g} \u03bcm"
+            if str(self.scale_bar_unit).strip().lower() == "mm":
+                label_value = bar_um / 1000.0
+                label = f"{label_value:g} mm"
+            else:
+                label = f"{bar_um:g} \u03bcm"
             metrics = painter.fontMetrics()
             label_w = metrics.horizontalAdvance(label)
             label_h = metrics.height()
@@ -1807,6 +1931,7 @@ class ZoomableImageLabel(QLabel):
         # Draw measurement lines with perpendicular end marks
         if self.show_measure_overlays and self.measurement_lines:
             hover_color = QColor(231, 76, 60)
+            sb_highlight_color = QColor(0, 120, 255)
 
             for idx, line in enumerate(self.measurement_lines):
                 # Convert original image coordinates to screen coordinates
@@ -1822,7 +1947,8 @@ class ZoomableImageLabel(QLabel):
                     painter, p1_screen, p2_screen, color=self.measure_color, thin_width=1.0, wide_width=3.0
                 )
 
-                if self.show_line_endcaps:
+                is_scale_bar = self._scale_bar_draggable and idx == 0
+                if self.show_line_endcaps or is_scale_bar:
                     # Calculate perpendicular direction
                     dx = p2_x - p1_x
                     dy = p2_y - p1_y
@@ -1832,29 +1958,29 @@ class ZoomableImageLabel(QLabel):
                         perp_x = -dy / length
                         perp_y = dx / length
 
-                        # End mark length (5 pixels on each side)
-                        mark_len = 5
+                        # Scale bar T-marks are larger and can be highlighted
+                        mark_len = 9 if is_scale_bar else 5
 
-                        # Draw perpendicular marks at both ends
-                        self._draw_dual_stroke_line(
-                            painter,
-                            QPointF(p1_x - perp_x * mark_len, p1_y - perp_y * mark_len),
-                            QPointF(p1_x + perp_x * mark_len, p1_y + perp_y * mark_len),
-                            color=self.measure_color,
-                            thin_width=1.0,
-                            wide_width=3.0,
-                        )
-                        self._draw_dual_stroke_line(
-                            painter,
-                            QPointF(p2_x - perp_x * mark_len, p2_y - perp_y * mark_len),
-                            QPointF(p2_x + perp_x * mark_len, p2_y + perp_y * mark_len),
-                            color=self.measure_color,
-                            thin_width=1.0,
-                            wide_width=3.0,
-                        )
+                        for ep_idx, (ex, ey) in enumerate([(p1_x, p1_y), (p2_x, p2_y)]):
+                            is_ep_active = is_scale_bar and (
+                                self._scale_bar_ep_hover == ep_idx or self._scale_bar_ep_drag == ep_idx
+                            )
+                            t_color = sb_highlight_color if is_ep_active else self.measure_color
+                            t_wide = 5.0 if is_ep_active else 3.0
+                            self._draw_dual_stroke_line(
+                                painter,
+                                QPointF(ex - perp_x * mark_len, ey - perp_y * mark_len),
+                                QPointF(ex + perp_x * mark_len, ey + perp_y * mark_len),
+                                color=t_color,
+                                thin_width=1.0,
+                                wide_width=t_wide,
+                            )
 
-                if idx == self.hover_line_index or (
-                    not self.measurement_active and idx in self.selected_line_indices
+                # For non-scale-bar lines: highlight whole line on hover/select
+                if not is_scale_bar and (
+                    idx == self.hover_line_index or (
+                        not self.measurement_active and idx in self.selected_line_indices
+                    )
                 ):
                     self._draw_dual_stroke_line(
                         painter, p1_screen, p2_screen, color=hover_color, thin_width=2.0, wide_width=6.0
@@ -1919,13 +2045,16 @@ class ZoomableImageLabel(QLabel):
                                 int(p2_x + perp_x * mark_len), int(p2_y + perp_y * mark_len)
                             )
                 painter.restore()
+        # Scale bar T-mark highlights are drawn inline in the measurement_lines loop above.
+
         # Draw preview line (from last point to mouse cursor)
         if self.preview_line is not None and self.current_mouse_pos is not None:
-            # Convert coordinates to screen
+            # Convert coordinates to screen; honour horizontal constraint if set
             p1_x = display_rect.x() + self.preview_line.x() * self.zoom_level
             p1_y = display_rect.y() + self.preview_line.y() * self.zoom_level
             p2_x = display_rect.x() + self.current_mouse_pos.x() * self.zoom_level
-            p2_y = display_rect.y() + self.current_mouse_pos.y() * self.zoom_level
+            _end_y_img = self.preview_line.y() if self.preview_line_horizontal else self.current_mouse_pos.y()
+            p2_y = display_rect.y() + _end_y_img * self.zoom_level
 
             self._draw_dual_stroke_line(
                 painter,
@@ -1992,6 +2121,7 @@ class ZoomableImageLabel(QLabel):
                 width_um = label.get("width_um")
                 if label.get("kind") == "line":
                     line = label.get("line")
+                    unit = label.get("unit") or "\u03bcm"
                     value = label.get("length_value")
                     if value is None:
                         value = length_um
@@ -2000,11 +2130,18 @@ class ZoomableImageLabel(QLabel):
                                      display_rect.y() + line[1] * self.zoom_level)
                         p2 = QPointF(display_rect.x() + line[2] * self.zoom_level,
                                      display_rect.y() + line[3] * self.zoom_level)
-                        self._draw_rotated_label_on_line(painter, p1, p2, f"{value:.1f}", padding_px=4.0)
+                        self._draw_rotated_label_on_line(
+                            painter,
+                            p1,
+                            p2,
+                            self._format_measure_label_value(value, unit),
+                            padding_px=4.0,
+                        )
                     continue
                 line1 = label.get("line1")
                 line2 = label.get("line2")
                 center = label.get("center")
+                unit = label.get("unit") or "\u03bcm"
                 length_value = label.get("length_value")
                 width_value = label.get("width_value")
                 if length_value is None:
@@ -2055,10 +2192,18 @@ class ZoomableImageLabel(QLabel):
                     length_edge = edges[best_index]
                     width_edge = edges[(best_index + 1) % 4]
                     self._draw_rotated_label_outside(
-                        painter, f"{length_value:.1f}", length_edge, center_screen, 3
+                        painter,
+                        self._format_measure_label_value(length_value, unit),
+                        length_edge,
+                        center_screen,
+                        3,
                     )
                     self._draw_rotated_label_outside(
-                        painter, f"{width_value:.1f}", width_edge, center_screen, 3
+                        painter,
+                        self._format_measure_label_value(width_value, unit),
+                        width_edge,
+                        center_screen,
+                        3,
                     )
 
         def _draw_tag(text, y_offset, bg_color, font_size=10):
@@ -2162,7 +2307,11 @@ class ZoomableImageLabel(QLabel):
             font.setPointSize(9)
             font.setBold(False)
             painter.setFont(font)
-            label = f"{bar_um:g} \u03bcm"
+            if str(self.scale_bar_unit).strip().lower() == "mm":
+                label_value = bar_um / 1000.0
+                label = f"{label_value:g} mm"
+            else:
+                label = f"{bar_um:g} \u03bcm"
             metrics = painter.fontMetrics()
             label_w = metrics.horizontalAdvance(label)
             label_h = metrics.height()

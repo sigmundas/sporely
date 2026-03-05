@@ -314,6 +314,11 @@ def migrate_database():
         columns = {col[1] for col in cursor.fetchall()}
         if "artsobs_web_unpublished" not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN artsobs_web_unpublished INTEGER DEFAULT 0")
+        if "scale_bar_x1" not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_x1 REAL")
+            cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y1 REAL")
+            cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_x2 REAL")
+            cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y2 REAL")
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
     if cursor.fetchone():

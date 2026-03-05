@@ -40,7 +40,7 @@ def ask_wrapped_yes_no(
         | Qt.WindowCloseButtonHint
     )
     dialog.setStyleSheet(
-        "QPushButton { min-width: 92px; min-height: 35px; padding: 6px 10px; }"
+        "QDialogButtonBox QPushButton { min-width: 90px; max-width: 200px; padding: 6px 10px; }"
     )
 
     outer = QVBoxLayout(dialog)
@@ -116,7 +116,7 @@ def ask_measurements_exist_delete(parent: QWidget | None, count: int = 1) -> boo
         | Qt.WindowCloseButtonHint
     )
     dialog.setStyleSheet(
-        "QPushButton { min-width: 92px; min-height: 35px; padding: 6px 10px; }"
+        "QDialogButtonBox QPushButton { min-width: 90px; max-width: 200px; padding: 6px 10px; }"
     )
 
     outer = QVBoxLayout(dialog)
