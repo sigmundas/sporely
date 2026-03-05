@@ -24,7 +24,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark
 
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 
 
 def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:

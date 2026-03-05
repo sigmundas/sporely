@@ -6,12 +6,14 @@ MycoLog is a desktop app for field observations, microscopy calibration, and spo
 
 ### Prebuilt application
 
-Download the latest build from:
+Download the latest release from:
 https://github.com/sigmundas/mycolog/releases/latest
 
-Install / run:
-1. Download and extract the archive.
-2. Run the executable.
+| Platform | File | How to install |
+|----------|------|----------------|
+| **Windows** | `MycoLog-x.x.x-windows-setup.exe` | Run the installer — creates Start Menu entry and uninstaller |
+| **macOS** | `MycoLog-vx.x.x-macos.dmg` | Open the disk image, drag **MycoLog** to **Applications** |
+| **Linux (Ubuntu/Debian)** | `mycolog_x.x.x_amd64.deb` | `sudo dpkg -i mycolog_x.x.x_amd64.deb` — adds app menu entry |
 
 ### Run from source (Python)
 
@@ -65,7 +67,7 @@ Each new terminal session:
 1. Click **New Observation**.
 2. Add images (field or microscope). Multi-select is supported.
 3. For microscope images, choose Objective/Scale, Contrast, Mount, and Sample type.
-4. Use **Apply to all** to copy settings to selected images.
+4. Ctrl+click multiple images in the gallery to apply settings to all selected at once.
 5. Save the observation.
 
 ## Measure and Analyze
