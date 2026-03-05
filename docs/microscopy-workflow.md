@@ -18,7 +18,7 @@ Go to **Settings** → **Calibration** and pick an existing profile, or create *
 The provisional scale formula is:
 
 $$
-p = \frac{\text{sensor\_width\_mm} \times 1000}{\text{image\_width\_px}} \times \frac{1}{\text{magnification}}
+p = \frac{\text{sensor width (mm)} \times 1000}{\text{image width (px)}} \times \frac{1}{\text{magnification}}
 $$
 
 This gives an approximate µm/px scale without a physical reference. For better accuracy, calibrate against a ruler or known reference length (same as microscope calibration).
