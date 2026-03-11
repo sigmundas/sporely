@@ -99,7 +99,7 @@ class ImageGalleryWidget(QGroupBox):
     ) -> None:
         super().__init__(title, parent)
         self.setCheckable(False)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self._min_height = max(0, int(min_height))
         self._default_height = max(self._min_height, int(default_height))
         self.setMinimumHeight(self._min_height)
@@ -135,7 +135,7 @@ class ImageGalleryWidget(QGroupBox):
 
         self._container = QWidget()
         self._grid = QHBoxLayout(self._container)
-        self._grid.setAlignment(Qt.AlignLeft)
+        self._grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._grid.setSpacing(10)
         self._scroll.setWidget(self._container)
         content_layout.addWidget(self._scroll)
@@ -496,7 +496,7 @@ class ImageGalleryWidget(QGroupBox):
                 scaled_thumb = self._apply_crop_overlay(scaled_thumb, crop_box, crop_source_size)
             thumb_label.setPixmap(scaled_thumb)
         else:
-            thumb_label.setText("No preview")
+            thumb_label.setText(self.tr("No preview"))
             thumb_label.setStyleSheet("color: #7f8c8d;")
 
         image_container = QWidget()

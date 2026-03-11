@@ -15,6 +15,12 @@ https://github.com/sigmundas/mycolog/releases/latest
 | **macOS** | `MycoLog-vx.x.x-macos.dmg` | Open the disk image, drag **MycoLog** to **Applications** |
 | **Linux (Ubuntu/Debian)** | `mycolog_x.x.x_amd64.deb` | `sudo dpkg -i mycolog_x.x.x_amd64.deb` — adds app menu entry |
 
+If macOS shows a warning like "Apple could not verify ...", run:
+
+```bash
+xattr -dr com.apple.quarantine MycoLog.app
+```
+
 ### Run from source (Python)
 
 This repository does not ship a `.venv` folder or activation scripts.

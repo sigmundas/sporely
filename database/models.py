@@ -155,13 +155,22 @@ class ObservationDB:
     def create_observation(date: str, genus: str = None, species: str = None,
                           common_name: str = None, location: str = None, habitat: str = None,
                           species_guess: str = None, notes: str = None,
+                          open_comment: str = None, private_comment: str = None, interesting_comment: bool = False,
                           uncertain: bool = False, inaturalist_id: int = None,
                           gps_latitude: float = None, gps_longitude: float = None,
                           author: str = None, source_type: str = "personal",
                           citation: str = None, data_provider: str = None,
                           artsdata_id: int | None = None,
                           unspontaneous: bool = False,
-                          determination_method: int | None = None) -> int:
+                          determination_method: int | None = None,
+                          habitat_nin2_path: str | None = None,
+                          habitat_substrate_path: str | None = None,
+                          habitat_host_genus: str | None = None,
+                          habitat_host_species: str | None = None,
+                          habitat_host_common_name: str | None = None,
+                          habitat_nin2_note: str | None = None,
+                          habitat_substrate_note: str | None = None,
+                          habitat_grows_on_note: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -188,14 +197,22 @@ class ObservationDB:
                                      artsdata_id, species_guess, notes, uncertain, unspontaneous,
                                      determination_method,
                                      folder_path, inaturalist_id, gps_latitude, gps_longitude,
-                                     author, source_type, citation, data_provider)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     author, source_type, citation, data_provider,
+                                     habitat_nin2_path, habitat_substrate_path,
+                                     habitat_host_genus, habitat_host_species, habitat_host_common_name,
+                                     habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
+                                     open_comment, private_comment, interesting_comment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               determination_method,
               folder_path,
               inaturalist_id, gps_latitude, gps_longitude, author, source_type,
-              citation, data_provider))
+              citation, data_provider,
+              habitat_nin2_path, habitat_substrate_path,
+              habitat_host_genus, habitat_host_species, habitat_host_common_name,
+              habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
+              open_comment, private_comment, 1 if interesting_comment else 0))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -206,12 +223,21 @@ class ObservationDB:
     def update_observation(observation_id: int, genus: str | object = _UNSET, species: str | object = _UNSET,
                            common_name: str | object = _UNSET, location: str | object = _UNSET, habitat: str | object = _UNSET,
                            notes: str | object = _UNSET, uncertain: bool | object = _UNSET,
+                           open_comment: str | object = _UNSET, private_comment: str | object = _UNSET, interesting_comment: bool | object = _UNSET,
                            species_guess: str | object = _UNSET, date: str | object = _UNSET,
                            gps_latitude: float | object = _UNSET, gps_longitude: float | object = _UNSET,
                            allow_nulls: bool = False,
                            artsdata_id: int | None | object = _UNSET,
                            unspontaneous: bool | object = _UNSET,
-                           determination_method: int | None | object = _UNSET) -> Optional[str]:
+                           determination_method: int | None | object = _UNSET,
+                           habitat_nin2_path: str | object = _UNSET,
+                           habitat_substrate_path: str | object = _UNSET,
+                           habitat_host_genus: str | object = _UNSET,
+                           habitat_host_species: str | object = _UNSET,
+                           habitat_host_common_name: str | object = _UNSET,
+                           habitat_nin2_note: str | object = _UNSET,
+                           habitat_substrate_note: str | object = _UNSET,
+                           habitat_grows_on_note: str | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -281,6 +307,15 @@ class ObservationDB:
             if notes is not _UNSET and (allow_nulls or notes is not None):
                 updates.append('notes = ?')
                 values.append(notes)
+            if open_comment is not _UNSET and (allow_nulls or open_comment is not None):
+                updates.append('open_comment = ?')
+                values.append(open_comment)
+            if private_comment is not _UNSET and (allow_nulls or private_comment is not None):
+                updates.append('private_comment = ?')
+                values.append(private_comment)
+            if interesting_comment is not _UNSET and (allow_nulls or interesting_comment is not None):
+                updates.append('interesting_comment = ?')
+                values.append(1 if interesting_comment else 0)
             if artsdata_id is not _UNSET and (allow_nulls or artsdata_id is not None):
                 updates.append('artsdata_id = ?')
                 values.append(artsdata_id)
@@ -302,6 +337,30 @@ class ObservationDB:
             if species_guess is not _UNSET and (allow_nulls or species_guess is not None):
                 updates.append('species_guess = ?')
                 values.append(species_guess)
+            if habitat_nin2_path is not _UNSET and (allow_nulls or habitat_nin2_path is not None):
+                updates.append('habitat_nin2_path = ?')
+                values.append(habitat_nin2_path)
+            if habitat_substrate_path is not _UNSET and (allow_nulls or habitat_substrate_path is not None):
+                updates.append('habitat_substrate_path = ?')
+                values.append(habitat_substrate_path)
+            if habitat_host_genus is not _UNSET and (allow_nulls or habitat_host_genus is not None):
+                updates.append('habitat_host_genus = ?')
+                values.append(habitat_host_genus)
+            if habitat_host_species is not _UNSET and (allow_nulls or habitat_host_species is not None):
+                updates.append('habitat_host_species = ?')
+                values.append(habitat_host_species)
+            if habitat_host_common_name is not _UNSET and (allow_nulls or habitat_host_common_name is not None):
+                updates.append('habitat_host_common_name = ?')
+                values.append(habitat_host_common_name)
+            if habitat_nin2_note is not _UNSET and (allow_nulls or habitat_nin2_note is not None):
+                updates.append('habitat_nin2_note = ?')
+                values.append(habitat_nin2_note)
+            if habitat_substrate_note is not _UNSET and (allow_nulls or habitat_substrate_note is not None):
+                updates.append('habitat_substrate_note = ?')
+                values.append(habitat_substrate_note)
+            if habitat_grows_on_note is not _UNSET and (allow_nulls or habitat_grows_on_note is not None):
+                updates.append('habitat_grows_on_note = ?')
+                values.append(habitat_grows_on_note)
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)

@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QListWidget, QListWidgetItem, QGroupBox, QCheckBox,
                                 QDoubleSpinBox, QTabWidget, QDialogButtonBox, QCompleter,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
-                                QApplication, QMenu, QProgressBar, QToolButton)
-from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths
+                                QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
+                                QGridLayout)
+from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -35,6 +36,8 @@ import threading
 import time
 import os
 import sys
+import json
+import unicodedata
 from queue import SimpleQueue, Empty
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, CalibrationDB
 from database.database_tags import DatabaseTerms
@@ -60,7 +63,6 @@ import requests
 from urllib.parse import urlparse, parse_qs
 from utils.vernacular_utils import (
     normalize_vernacular_language,
-    common_name_display_label,
     resolve_vernacular_db_path,
     vernacular_language_label,
     list_available_vernacular_languages,
@@ -85,6 +87,15 @@ def _parse_observation_datetime(value: str | None) -> QDateTime | None:
             return dt_value
     dt_value = QDateTime.fromString(value, Qt.ISODate)
     return dt_value if dt_value.isValid() else None
+
+
+def _timing_debug_enabled() -> bool:
+    return str(os.environ.get("MYCOLOG_DEBUG_TIMING", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _timing_log(message: str) -> None:
+    if _timing_debug_enabled():
+        print(f"[timing][obs] {message}")
 
 
 def _extract_coords_from_osm_url(text: str) -> tuple[float, float] | None:
@@ -457,8 +468,9 @@ class MapServiceHelper:
 
     def show_map_service_dialog(self, lat, lon, species_name=None):
         """Show a dialog to choose a map service."""
+        tr = lambda text: QCoreApplication.translate("ObservationsTab", text)
         dialog = QDialog(self.parent)
-        dialog.setWindowTitle("Open Map")
+        dialog.setWindowTitle(tr("Open Map"))
         dialog.setModal(True)
         dialog.setMinimumWidth(300)
 
@@ -466,7 +478,7 @@ class MapServiceHelper:
         layout.setSpacing(4)
         layout.setContentsMargins(16, 16, 16, 12)
 
-        header = QLabel("Choose a map service:")
+        header = QLabel(tr("Choose a map service:"))
         header.setStyleSheet("font-weight: bold; margin-bottom: 4px;")
         layout.addWidget(header)
 
@@ -548,14 +560,14 @@ class MapServiceHelper:
             finally:
                 dialog.accept()
 
-        add_link("Google Maps", "Open location in Google Maps", open_google_maps)
-        add_link("Kilden (NIBIO)", "Agricultural & land-use maps", open_kilden)
-        add_link("Artskart", "Species occurrence map (Artsdatabanken)", open_artskart)
-        add_link("Norge i Bilder", "Aerial imagery of Norway", open_norge_i_bilder)
-        add_link("iNaturalist — nearby observations", "Observations near this location", open_inat_local)
+        add_link("Google Maps", tr("Open location in Google Maps"), open_google_maps)
+        add_link("Kilden (NIBIO)", tr("Agricultural & land-use maps"), open_kilden)
+        add_link("Artskart", tr("Species occurrence map (Artsdatabanken)"), open_artskart)
+        add_link("Norge i Bilder", tr("Aerial imagery of Norway"), open_norge_i_bilder)
+        add_link("iNaturalist — nearby observations", tr("Observations near this location"), open_inat_local)
         if species_complete:
-            add_link(f"iNaturalist — {species_name}", "Species page on iNaturalist", open_inat_species)
-            add_link(f"GBIF — {species_name}", "Species page on GBIF", open_gbif_species)
+            add_link(f"iNaturalist — {species_name}", tr("Species page on iNaturalist"), open_inat_species)
+            add_link(f"GBIF — {species_name}", tr("Species page on GBIF"), open_gbif_species)
 
         layout.addStretch()
 
@@ -670,7 +682,17 @@ class ObservationsTab(QWidget):
         self.publish_btn.setMenu(self.publish_menu)
         self.publish_btn.setEnabled(False)
         self._build_publish_menu()
-        observation_layout.addWidget(self.publish_btn)
+
+        self.plate_btn = QPushButton(self.tr("Plate"))
+        self.plate_btn.setToolTip(self.tr("Generate a species plate — composite illustration of field and microscopy photos"))
+        self.plate_btn.setEnabled(False)
+        self.plate_btn.clicked.connect(self._on_plate_clicked)
+
+        pub_plate_row = QHBoxLayout()
+        pub_plate_row.setSpacing(6)
+        pub_plate_row.addWidget(self.publish_btn)
+        pub_plate_row.addWidget(self.plate_btn)
+        observation_layout.addLayout(pub_plate_row)
         observation_group.setLayout(observation_layout)
         left_panel_layout.addWidget(observation_group)
 
@@ -712,14 +734,13 @@ class ObservationsTab(QWidget):
 
         # Observations table
         self.table = QTableWidget()
-        self.table.setColumnCount(10)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
             self.tr("ID"),
+            self._common_name_column_title(),
             self.tr("Genus"),
             self.tr("Species"),
-            self._common_name_column_title(),
             self._spore_stats_column_title(),
-            self.tr("Needs ID"),
             self.tr("Date"),
             self.tr("Location"),
             self.tr("Map"),
@@ -737,18 +758,16 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
-        self.table.setColumnWidth(1, 95)   # Genus
-        self.table.setColumnWidth(2, 120)  # Species
-        self.table.setColumnWidth(3, 145)  # Vernacular / Common name
+        self.table.setColumnWidth(1, 145)  # Name
+        self.table.setColumnWidth(2, 95)   # Genus
+        self.table.setColumnWidth(3, 120)  # Species
         self.table.setColumnWidth(4, 190)  # Spores
-        self.table.setColumnWidth(5, 76)   # Needs ID
-        self.table.setColumnWidth(6, 132)  # Date
-        self.table.setColumnWidth(7, 170)  # Location
-        self.table.setColumnWidth(8, 56)   # Map
-        self.table.setColumnWidth(9, 90)   # Artsobs
+        self.table.setColumnWidth(5, 132)  # Date
+        self.table.setColumnWidth(6, 170)  # Location
+        self.table.setColumnWidth(7, 56)   # Map
+        self.table.setColumnWidth(8, 90)   # Artsobs
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -1211,12 +1230,12 @@ class ObservationsTab(QWidget):
         )
 
     def _render_artsobs_cell(self, row: int, observation_id: int, arts_id: int | None) -> None:
-        self.table.removeCellWidget(row, 9)
+        self.table.removeCellWidget(row, 8)
         has_id = bool(arts_id)
         arts_item = SortableTableWidgetItem("" if has_id else "-")
         arts_item.setData(Qt.UserRole, int(arts_id or 0))
         arts_item.setFlags(arts_item.flags() & ~Qt.ItemIsEditable)
-        self.table.setItem(row, 9, arts_item)
+        self.table.setItem(row, 8, arts_item)
         if not has_id:
             return
 
@@ -1225,7 +1244,7 @@ class ObservationsTab(QWidget):
             warn_label.setAlignment(Qt.AlignCenter)
             warn_label.setStyleSheet("color: #c0392b; font-weight: bold;")
             warn_label.setToolTip(self.tr("Can't find this observation"))
-            self.table.setCellWidget(row, 9, warn_label)
+            self.table.setCellWidget(row, 8, warn_label)
             return
 
         mao_url = f"https://mobil.artsobservasjoner.no/sighting/{arts_id}"
@@ -1251,7 +1270,7 @@ class ObservationsTab(QWidget):
         )
         self._status_hint_controller.register_widget(arts_label, link_tooltip)
         arts_label.setToolTip(link_tooltip)
-        self.table.setCellWidget(row, 9, arts_label)
+        self.table.setCellWidget(row, 8, arts_label)
 
     def _start_artsobs_link_check(self) -> None:
         try:
@@ -1302,7 +1321,7 @@ class ObservationsTab(QWidget):
         row = self._find_table_row_for_observation(observation_id)
         if row < 0:
             return
-        arts_item = self.table.item(row, 9)
+        arts_item = self.table.item(row, 8)
         if not arts_item:
             return
         value = arts_item.data(Qt.UserRole)
@@ -1453,7 +1472,7 @@ class ObservationsTab(QWidget):
                     observation_id = int(id_item.data(Qt.UserRole) or id_item.text())
                 except (TypeError, ValueError):
                     observation_id = None
-            arts_item = self.table.item(index.row(), 9)
+            arts_item = self.table.item(index.row(), 8)
             if not arts_item:
                 continue
             value = arts_item.data(Qt.UserRole)
@@ -1476,14 +1495,12 @@ class ObservationsTab(QWidget):
             try:
                 from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
 
-                cookies = ArtsObservasjonerAuth().load_cookies(target=key) or {}
+                cookies = ArtsObservasjonerAuth().load_cookies(target="web") or {}
             except Exception:
                 return False
             if not cookies:
                 return False
-            if key == "web":
-                return bool(str(cookies.get(".ASPXAUTHNO") or "").strip())
-            return any(name in cookies for name in ("__Host-bff", "__Host-bffC1", "__Host-bffC2"))
+            return bool(str(cookies.get(".ASPXAUTHNO") or "").strip())
 
         if key == "inat":
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
@@ -1567,6 +1584,8 @@ class ObservationsTab(QWidget):
                 action.setEnabled(False)
             self.publish_btn.setEnabled(False)
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
+            if hasattr(self, "plate_btn"):
+                self.plate_btn.setEnabled(False)
             return
 
         login_status = self._publish_target_login_status()
@@ -1581,6 +1600,10 @@ class ObservationsTab(QWidget):
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
 
+        # Plate button: enabled whenever exactly one observation is selected
+        if hasattr(self, "plate_btn"):
+            self.plate_btn.setEnabled(len(observation_ids) == 1)
+
         if not has_selection:
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
         elif not any_target_enabled and not has_existing_upload:
@@ -1589,6 +1612,28 @@ class ObservationsTab(QWidget):
             self.publish_btn.setProperty("_hint_text", self.tr("Artsobservasjoner targets are disabled for already-published observations."))
         else:
             self.publish_btn.setProperty("_hint_text", self.tr("Choose a publish target."))
+
+    def _on_plate_clicked(self) -> None:
+        obs_ids = self._selected_observation_ids()
+        if len(obs_ids) != 1:
+            self.set_status_message(self.tr("Select a single observation to generate a plate."), level="warning")
+            return
+        obs_id = obs_ids[0]
+        obs = ObservationDB.get_observation(obs_id)
+        if obs is None:
+            self.set_status_message(self.tr("Could not load observation."), level="error")
+            return
+        # Inject displayed vernacular name (may come from lookup table, not just DB column)
+        if not obs.get("common_name"):
+            name_map = self._build_common_name_map([obs])
+            vernacular = self._lookup_common_name(obs, name_map)
+            if vernacular:
+                obs = dict(obs)
+                obs["common_name"] = vernacular
+        excluded = self._publish_excluded_image_ids(obs_id)
+        from ui.species_plate_dialog import SpeciesPlateDialog
+        dlg = SpeciesPlateDialog(obs, excluded_image_ids=excluded, parent=self)
+        dlg.exec()
 
     def _publish_selected_observations(self, uploader_key: str) -> None:
         self._invalidate_publish_login_status_cache()
@@ -1691,7 +1736,6 @@ class ObservationsTab(QWidget):
             spore_short = self._spore_stats_for_observation_row(obs) or "-"
             date_text = obs.get("date") or "-"
             location_text = obs.get("location") or "-"
-            needs_id = not (obs.get("genus") and obs.get("species"))
             lat = obs.get("gps_latitude")
             lon = obs.get("gps_longitude")
             has_coords = lat is not None and lon is not None
@@ -1712,7 +1756,6 @@ class ObservationsTab(QWidget):
                     "species": species_display,
                     "common_name": common_name_display,
                     "spore_short": spore_short,
-                    "needs_id": bool(needs_id),
                     "date": date_text,
                     "location": location_text,
                     "lat": lat,
@@ -1761,25 +1804,20 @@ class ObservationsTab(QWidget):
                 id_item.setData(Qt.UserRole, obs_id)
                 table.setItem(row_index, 0, id_item)
 
-                table.setItem(row_index, 1, QTableWidgetItem(str(row_data.get("genus") or "-")))
-                table.setItem(row_index, 2, QTableWidgetItem(str(row_data.get("species") or "sp.")))
-                table.setItem(row_index, 3, QTableWidgetItem(str(row_data.get("common_name") or "-")))
+                table.setItem(row_index, 1, QTableWidgetItem(str(row_data.get("common_name") or "-")))
+                table.setItem(row_index, 2, QTableWidgetItem(str(row_data.get("genus") or "-")))
+                table.setItem(row_index, 3, QTableWidgetItem(str(row_data.get("species") or "sp.")))
                 table.setItem(row_index, 4, QTableWidgetItem(str(row_data.get("spore_short") or "-")))
 
-                needs_id = bool(row_data.get("needs_id"))
-                needs_item = SortableTableWidgetItem(self.tr("Yes") if needs_id else "")
-                needs_item.setData(Qt.UserRole, 1 if needs_id else 0)
-                table.setItem(row_index, 5, needs_item)
-
-                table.setItem(row_index, 6, QTableWidgetItem(str(row_data.get("date") or "-")))
-                table.setItem(row_index, 7, QTableWidgetItem(str(row_data.get("location") or "-")))
+                table.setItem(row_index, 5, QTableWidgetItem(str(row_data.get("date") or "-")))
+                table.setItem(row_index, 6, QTableWidgetItem(str(row_data.get("location") or "-")))
 
                 has_coords = bool(row_data.get("has_coords"))
-                table.removeCellWidget(row_index, 8)
+                table.removeCellWidget(row_index, 7)
                 map_item = SortableTableWidgetItem("" if has_coords else "-")
                 map_item.setData(Qt.UserRole, 1 if has_coords else 0)
                 map_item.setFlags(map_item.flags() & ~Qt.ItemIsEditable)
-                table.setItem(row_index, 8, map_item)
+                table.setItem(row_index, 7, map_item)
                 if has_coords:
                     lat = row_data.get("lat")
                     lon = row_data.get("lon")
@@ -1795,7 +1833,7 @@ class ObservationsTab(QWidget):
                     _map_hint = self.tr("Open map service")
                     self._status_hint_controller.register_widget(map_label, _map_hint)
                     map_label.setToolTip(_map_hint)
-                    table.setCellWidget(row_index, 8, map_label)
+                    table.setCellWidget(row_index, 7, map_label)
 
                 self._render_artsobs_cell(row_index, obs_id, row_data.get("arts_id"))
 
@@ -1987,8 +2025,9 @@ class ObservationsTab(QWidget):
 
     def _common_name_column_title(self) -> str:
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
-        base = self.tr("Common name")
-        return common_name_display_label(lang, base)
+        if lang in {"no", "nb", "nn"}:
+            return self.tr("Navn")
+        return self.tr("Name")
 
     def _spore_stats_column_title(self) -> str:
         lang = (SettingsDB.get_setting("ui_language", "en") or "en").lower()
@@ -2013,7 +2052,7 @@ class ObservationsTab(QWidget):
     def _update_table_headers(self) -> None:
         if not hasattr(self, "table"):
             return
-        item = self.table.horizontalHeaderItem(3)
+        item = self.table.horizontalHeaderItem(1)
         if item:
             item.setText(self._common_name_column_title())
         spore_item = self.table.horizontalHeaderItem(4)
@@ -2228,6 +2267,7 @@ class ObservationsTab(QWidget):
 
     def on_selection_changed(self):
         """Update detail view when selection changes."""
+        _t0 = time.perf_counter()
         # Reset action buttons first to avoid stale enabled state during edge-case transitions.
         self.rename_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
@@ -2238,6 +2278,7 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
+            _timing_log(f"on_selection_changed rows=0 took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
         if len(selected_rows) > 1:
             self.delete_btn.setEnabled(True)
@@ -2246,6 +2287,7 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
+            _timing_log(f"on_selection_changed rows={len(selected_rows)} multi_select took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
 
         row = selected_rows[0].row()
@@ -2254,6 +2296,7 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
+            _timing_log(f"on_selection_changed invalid_row row={row} took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
         obs_id = int(id_item.text())
         self.selected_observation_id = obs_id
@@ -2275,6 +2318,10 @@ class ObservationsTab(QWidget):
         if pending_notice:
             msg, level = pending_notice
             self.set_status_message(msg, level=level, auto_clear_ms=0)
+        _timing_log(
+            f"on_selection_changed obs={int(obs_id)} images={len(self.gallery_widget._items) if hasattr(self.gallery_widget, '_items') else -1} "
+            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
+        )
 
     def on_row_double_clicked(self, item):
         """Double-click to open edit dialog for the observation."""
@@ -2292,7 +2339,7 @@ class ObservationsTab(QWidget):
         obs_id = int(self.table.item(row, 0).text())
         genus = self.table.item(row, 1).text()
         species = self.table.item(row, 2).text()
-        date = self.table.item(row, 6).text()
+        date = self.table.item(row, 5).text()
         display_name = f"{genus} {species} {date}"
 
         # Emit signal to set as active observation
@@ -2307,7 +2354,7 @@ class ObservationsTab(QWidget):
         obs_id = int(self.table.item(row, 0).text())
         genus = self.table.item(row, 1).text()
         species = self.table.item(row, 2).text()
-        date = self.table.item(row, 6).text()
+        date = self.table.item(row, 5).text()
         display_name = f"{genus} {species} {date}"
         return obs_id, display_name
 
@@ -2341,7 +2388,8 @@ class ObservationsTab(QWidget):
     def _publish_excluded_image_ids(cls, observation_id: int | None) -> set[int]:
         if not observation_id:
             return set()
-        raw = SettingsDB.get_setting(cls._publish_excluded_images_setting_key(observation_id), "[]")
+        key = cls._publish_excluded_images_setting_key(observation_id)
+        raw = SettingsDB.get_setting(key, "[]")
         try:
             loaded = json.loads(raw or "[]")
             if isinstance(loaded, list):
@@ -2355,9 +2403,10 @@ class ObservationsTab(QWidget):
         if not observation_id:
             return
         normalized = sorted({int(v) for v in (excluded_ids or set())})
+        key = cls._publish_excluded_images_setting_key(observation_id)
         try:
             SettingsDB.set_setting(
-                cls._publish_excluded_images_setting_key(observation_id),
+                key,
                 json.dumps(normalized),
             )
         except Exception:
@@ -3530,7 +3579,9 @@ class ObservationsTab(QWidget):
             else None
         )
 
-        target_key = uploader_key or SettingsDB.get_setting("artsobs_upload_target")
+        target_key = (uploader_key or SettingsDB.get_setting("artsobs_upload_target") or "").strip().lower()
+        if target_key == "mobile":
+            target_key = "web"
         uploader = get_uploader(target_key)
         if not uploader:
             return _fail(
@@ -3580,7 +3631,7 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             auth = ArtsObservasjonerAuth()
-            cookies = auth.ensure_valid_cookies(target=uploader.key) or {}
+            cookies = auth.ensure_valid_cookies(target="web") or {}
             if not cookies:
                 return _fail(
                     self.tr("Not logged in to Artsobservasjoner (session expired and no saved credentials). Log in via Settings -> Online publishing."),
@@ -3793,23 +3844,13 @@ class ObservationsTab(QWidget):
                 )
 
             spore_stats = self._localize_spore_stats_for_publish(obs.get("spore_statistics"))
-            habitat = (obs.get("habitat") or "").strip()
-            notes = (obs.get("notes") or "").strip()
-            notes_for_publish = notes
+            legacy_notes = (obs.get("notes") or "").strip()
+            open_comment = (obs.get("open_comment") or "").strip()
+            private_comment = (obs.get("private_comment") or "").strip()
+            interesting_comment = bool(obs.get("interesting_comment", 0))
+            open_comment_parts = [part for part in [open_comment or legacy_notes] if part]
             if include_spore_stats and spore_stats:
-                notes_for_publish = (
-                    f"{notes}\n{spore_stats}" if notes else spore_stats
-                )
-
-            comment_parts = [part for part in [notes_for_publish] if part]
-            if habitat:
-                comment_parts.append(f"Habitat: {habitat}")
-            comment_text = "\n".join(comment_parts) if comment_parts else None
-            open_comment_parts: list[str] = []
-            if notes_for_publish:
-                open_comment_parts.append(notes_for_publish)
-            if habitat:
-                open_comment_parts.append(f"Habitat: {habitat}")
+                open_comment_parts.append(spore_stats)
             open_comment_text = "\n".join(open_comment_parts) if open_comment_parts else None
             observation_payload = {
                 "taxon_id": taxon_id,
@@ -3817,12 +3858,14 @@ class ObservationsTab(QWidget):
                 "longitude": float(lon),
                 "observed_datetime": observed_datetime,
                 "count": 1,
-                "comment": comment_text,
+                "comment": open_comment_text,
                 "open_comment": open_comment_text,
+                "private_comment": private_comment or None,
+                "interesting_comment": interesting_comment,
                 "accuracy_meters": obs.get("gps_accuracy") or 25,
                 "site_name": (obs.get("location") or "").strip(),
-                "habitat": habitat or None,
-                "notes": notes or None,
+                "habitat": (obs.get("habitat") or "").strip() or None,
+                "notes": None,
                 "uncertain": bool(obs.get("uncertain", 0)),
                 "unspontaneous": bool(obs.get("unspontaneous", 0)),
                 "determination_method": obs.get("determination_method"),
@@ -3836,6 +3879,23 @@ class ObservationsTab(QWidget):
                 "species": (obs.get("species") or "").strip(),
                 "species_guess": (obs.get("species_guess") or "").strip(),
                 "inaturalist_taxon_id": obs.get("inaturalist_id"),
+                "habitat_nin2_path": obs.get("habitat_nin2_path"),
+                "habitat_substrate_path": obs.get("habitat_substrate_path"),
+                "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
+                "habitat_substrate_note": (obs.get("habitat_substrate_note") or "").strip() or None,
+                "habitat_grows_on_note": (obs.get("habitat_grows_on_note") or "").strip() or None,
+                "habitat_host_scientific": " ".join(
+                    [
+                        (obs.get("habitat_host_genus") or "").strip(),
+                        (obs.get("habitat_host_species") or "").strip(),
+                    ]
+                ).strip()
+                or None,
+                "habitat_host_common_name": (obs.get("habitat_host_common_name") or "").strip() or None,
+                "habitat_host_taxon_id": ObservationDB.resolve_adb_taxon_id(
+                    (obs.get("habitat_host_genus") or "").strip() or None,
+                    (obs.get("habitat_host_species") or "").strip() or None,
+                ),
             }
             update_progress(
                 self.tr("Connecting to {target}...").format(target=self.tr(uploader.label)),
@@ -4039,7 +4099,18 @@ class ObservationsTab(QWidget):
                     date=data.get('date'),
                     location=data.get('location'),
                     habitat=data.get('habitat'),
-                    notes=data.get('notes'),
+                    habitat_nin2_path=data.get('habitat_nin2_path'),
+                    habitat_substrate_path=data.get('habitat_substrate_path'),
+                    habitat_host_genus=data.get('habitat_host_genus'),
+                    habitat_host_species=data.get('habitat_host_species'),
+                    habitat_host_common_name=data.get('habitat_host_common_name'),
+                    habitat_nin2_note=data.get('habitat_nin2_note'),
+                    habitat_substrate_note=data.get('habitat_substrate_note'),
+                    habitat_grows_on_note=data.get('habitat_grows_on_note'),
+                    notes=None,
+                    open_comment=data.get('open_comment'),
+                    private_comment=data.get('private_comment'),
+                    interesting_comment=1 if data.get('interesting_comment') else 0,
                     gps_latitude=data.get('gps_latitude'),
                     gps_longitude=data.get('gps_longitude'),
                     allow_nulls=True
@@ -5200,6 +5271,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._species_model = None
         self._species_completer = None
         self._suppress_taxon_autofill = False
+        self._host_suppress_taxon_autofill = False
         self._last_genus = ""
         self._last_species = ""
         self._ai_predictions_by_index: dict[int, list[dict]] = {}
@@ -5231,12 +5303,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         details_layout.setSpacing(12)
 
         left_panel = QWidget()
-        left_layout = QFormLayout(left_panel)
-        left_layout.setSpacing(8)
+        left_layout = QGridLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setHorizontalSpacing(8)
+        left_layout.setVerticalSpacing(8)
 
         right_panel = QWidget()
         right_layout = QFormLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
+        right_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
+        right_layout.setFormAlignment(Qt.AlignTop)
 
         # Date and time
         datetime_container = QWidget()
@@ -5246,34 +5323,41 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.datetime_input.setDateTime(QDateTime.currentDateTime())
         self.datetime_input.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.datetime_input.setCalendarPopup(True)
-        self.datetime_input.setMaximumWidth(200)
-        datetime_layout.addWidget(self.datetime_input)
-        datetime_layout.addStretch()
-        left_layout.addRow(self.tr("Date & time:"), datetime_container)
+        self.datetime_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        datetime_layout.addWidget(self.datetime_input, 1)
+        _details_row = 0
+        left_layout.addWidget(QLabel(self.tr("Date & time:")), _details_row, 0)
+        left_layout.addWidget(datetime_container, _details_row, 1, 1, 2)
+        _details_row += 1
 
-        # GPS fields
+        # GPS fields split across two rows with the Map button spanning both rows.
         self.lat_input = QDoubleSpinBox()
         self.lat_input.setRange(-90.0, 90.0)
         self.lat_input.setDecimals(6)
         self.lat_input.setSpecialValueText("--")
         self.lat_input.setValue(self.lat_input.minimum())
-        self.lat_label = QLabel(self.tr("Lat:"))
-        left_layout.addRow(self.lat_label, self.lat_input)
+        self.lat_label = QLabel(self.tr("Latitude:"))
 
         self.lon_input = QDoubleSpinBox()
         self.lon_input.setRange(-180.0, 180.0)
         self.lon_input.setDecimals(6)
         self.lon_input.setSpecialValueText("--")
         self.lon_input.setValue(self.lon_input.minimum())
-        self.lon_label = QLabel(self.tr("Lon:"))
-        left_layout.addRow(self.lon_label, self.lon_input)
+        self.lon_label = QLabel(self.tr("Longitude:"))
 
         # Map button - opens location in browser
-        self.map_btn = QPushButton(self.tr("Go to map"))
-        self.map_btn.setMinimumWidth(90)
+        self.map_btn = QPushButton(self.tr("Map"))
+        self.map_btn.setMinimumWidth(64)
         self.map_btn.clicked.connect(self.open_map)
         self.map_btn.setEnabled(False)
-        left_layout.addRow(self.tr("Map:"), self.map_btn)
+
+        left_layout.addWidget(self.lat_label, _details_row, 0)
+        left_layout.addWidget(self.lat_input, _details_row, 1)
+        left_layout.addWidget(self.map_btn, _details_row, 2, 2, 1, Qt.AlignVCenter)
+        _details_row += 1
+        left_layout.addWidget(self.lon_label, _details_row, 0)
+        left_layout.addWidget(self.lon_input, _details_row, 1)
+        _details_row += 1
 
         maplink_container = QWidget()
         maplink_layout = QHBoxLayout(maplink_container)
@@ -5287,7 +5371,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         maplink_layout.addWidget(self.maplink_input, 1)
         maplink_layout.addWidget(self.maplink_open_btn)
         self.paste_link_label = QLabel(self.tr("Paste link:"))
-        left_layout.addRow(self.paste_link_label, maplink_container)
+        left_layout.addWidget(self.paste_link_label, _details_row, 0)
+        left_layout.addWidget(maplink_container, _details_row, 1, 1, 2)
+        _details_row += 1
 
         # Enable map button when coordinates are manually changed
         self.lat_input.valueChanged.connect(self._update_map_button)
@@ -5304,31 +5390,42 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # Location (text)
         self.location_input = QLineEdit()
-        self.location_input.setPlaceholderText("e.g., Bymarka, Trondheim")
-        right_layout.addRow(self.tr("Location:"), self.location_input)
+        self.location_input.setPlaceholderText(self.tr("e.g., Bymarka, Trondheim"))
+        left_layout.addWidget(QLabel(self.tr("Location:")), _details_row, 0)
+        left_layout.addWidget(self.location_input, _details_row, 1, 1, 2)
+        _details_row += 1
+
+        open_comment_container = QWidget()
+        open_comment_layout = QVBoxLayout(open_comment_container)
+        open_comment_layout.setContentsMargins(0, 0, 0, 0)
+        open_comment_layout.setSpacing(6)
+
+        self.open_comment_input = QTextEdit()
+        self.open_comment_input.setPlaceholderText(self.tr("Open comment..."))
+        comment_h = (self.open_comment_input.fontMetrics().lineSpacing() * 3) + 14
+        self.open_comment_input.setFixedHeight(comment_h)
+        self.open_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        open_comment_layout.addWidget(self.open_comment_input)
+
+        self.interesting_comment_checkbox = QCheckBox(self.tr("Interesting comment"))
+        open_comment_layout.addWidget(self.interesting_comment_checkbox, 0, Qt.AlignLeft)
+        right_layout.addRow(self.tr("Open comment:"), open_comment_container)
+
+        self.private_comment_input = QTextEdit()
+        self.private_comment_input.setPlaceholderText(self.tr("Private comment..."))
+        self.private_comment_input.setFixedHeight(comment_h)
+        self.private_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        right_layout.addRow(self.tr("Private comment:"), self.private_comment_input)
 
         # GPS info label (shows source of coordinates)
         self.gps_info_label = QLabel("")
         self.gps_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
-        right_layout.addRow("", self.gps_info_label)
+        left_layout.addWidget(self.gps_info_label, _details_row, 1, 1, 2)
+        left_layout.setColumnStretch(1, 1)
 
-        # Habitat
-        self.habitat_input = QLineEdit()
-        self.habitat_input.setPlaceholderText(self.tr("e.g., Spruce forest"))
-        right_layout.addRow(self.tr("Habitat:"), self.habitat_input)
-
-        # Notes
-        self.notes_input = QTextEdit()
-        self.notes_input.setMaximumHeight(60)
-        self.notes_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.notes_input.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
-        self.notes_input.setStyleSheet("QTextEdit { border: 1px solid #bdc3c7; border-radius: 3px; }")
-        self.notes_input.setPlaceholderText(self.tr("Any additional notes..."))
-        right_layout.addRow(self.tr("Notes:"), self.notes_input)
-
-        # Put location/habitat/notes on the left, and date/GPS/map on the right.
-        details_layout.addWidget(right_panel, 7)
-        details_layout.addWidget(left_panel, 3)
+        # Put location/date/GPS on the left, and comments on the right (about 40/60 split).
+        details_layout.addWidget(left_panel, 4)
+        details_layout.addWidget(right_panel, 6)
         main_layout.addWidget(details_group)
 
         # ===== TAXONOMY SECTION =====
@@ -5345,51 +5442,59 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
 
-        # Taxonomy tab widget (Species vs Unknown)
+        # Taxonomy tab widget (Species + Biotope + Grows on)
         self.taxonomy_tabs = QTabWidget()
         self.taxonomy_tabs.setMinimumHeight(120)
         self.taxonomy_tabs.currentChanged.connect(self.on_taxonomy_tab_changed)
 
         # Tab 1: Identified (vernacular + genus/species)
         identified_tab = QWidget()
+        self.species_tab = identified_tab
         identified_layout = QVBoxLayout(identified_tab)
         identified_layout.setContentsMargins(8, 8, 8, 8)
-        identified_layout.setSpacing(6)
-        taxonomy_label_width = 130
+        identified_layout.setSpacing(4)
+        identified_layout.setAlignment(Qt.AlignTop)
+        taxonomy_label_width = 96
 
         vern_row = QHBoxLayout()
+        vern_row.setContentsMargins(0, 0, 0, 0)
+        vern_row.setSpacing(4)
         self.vernacular_label = QLabel(self._vernacular_label())
-        self.vernacular_label.setFixedWidth(taxonomy_label_width)
+        self.vernacular_label.setMinimumWidth(taxonomy_label_width)
+        self.vernacular_label.setMaximumWidth(taxonomy_label_width)
         vern_row.addWidget(self.vernacular_label)
         self.vernacular_input = QLineEdit()
         self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
+        self.vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         vern_row.addWidget(self.vernacular_input, 1)
         self.vernacular_language_btn = QToolButton()
         self.vernacular_language_btn.setText("🌐")
         self.vernacular_language_btn.setPopupMode(QToolButton.InstantPopup)
         self.vernacular_language_menu = QMenu(self.vernacular_language_btn)
         self.vernacular_language_btn.setMenu(self.vernacular_language_menu)
-        input_height = max(20, int(self.vernacular_input.sizeHint().height()))
+        input_height = max(18, int(self.vernacular_input.sizeHint().height()))
         self.vernacular_language_btn.setFixedSize(input_height, input_height)
         self._populate_vernacular_language_menu()
         vern_row.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
         identified_layout.addLayout(vern_row)
 
         genus_row = QHBoxLayout()
-        genus_label = QLabel("Genus:")
+        genus_label = QLabel(self.tr("Genus:"))
         genus_label.setFixedWidth(taxonomy_label_width)
         genus_row.addWidget(genus_label)
         self.genus_input = QLineEdit()
-        self.genus_input.setPlaceholderText("e.g., Flammulina")
+        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
+        self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         genus_row.addWidget(self.genus_input, 1)
         identified_layout.addLayout(genus_row)
 
         species_row = QHBoxLayout()
-        species_label = QLabel("Species:")
+        species_label = QLabel(self.tr("Species:"))
         species_label.setFixedWidth(taxonomy_label_width)
         species_row.addWidget(species_label)
         self.species_input = QLineEdit()
-        self.species_input.setPlaceholderText("e.g., velutipes")
+        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
+        self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         species_row.addWidget(self.species_input, 1)
         identified_layout.addLayout(species_row)
 
@@ -5404,32 +5509,109 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.determination_method_combo.addItem(self.tr("eDNA"), 3)
         self.determination_method_combo.setToolTip(self.tr("Optional method used for determination."))
         self._style_dropdown_popup_readability(self.determination_method_combo.view(), self.determination_method_combo)
+        self.determination_method_combo.currentIndexChanged.connect(self._update_taxonomy_tab_indicators)
         determination_row.addWidget(self.determination_method_combo, 1)
         identified_layout.addLayout(determination_row)
 
         uncertain_row = QHBoxLayout()
+        uncertain_row.setContentsMargins(0, 0, 0, 0)
+        uncertain_row.setSpacing(4)
+        uncertain_row.addSpacing(taxonomy_label_width)
         self.uncertain_checkbox = QCheckBox(self.tr("Uncertain"))
+        self.uncertain_checkbox.toggled.connect(self._update_taxonomy_tab_indicators)
         uncertain_row.addWidget(self.uncertain_checkbox)
-        self.unspontaneous_checkbox = QCheckBox(self.tr("Alien or cultivated"))
-        uncertain_row.addWidget(self.unspontaneous_checkbox)
         uncertain_row.addStretch()
         identified_layout.addLayout(uncertain_row)
 
+        unspontaneous_row = QHBoxLayout()
+        unspontaneous_row.setContentsMargins(0, 0, 0, 0)
+        unspontaneous_row.setSpacing(4)
+        unspontaneous_row.addSpacing(taxonomy_label_width)
+        self.unspontaneous_checkbox = QCheckBox(self.tr("Alien or cultivated"))
+        self.unspontaneous_checkbox.toggled.connect(self._update_taxonomy_tab_indicators)
+        unspontaneous_row.addWidget(self.unspontaneous_checkbox)
+        unspontaneous_row.addStretch()
+        identified_layout.addLayout(unspontaneous_row)
+        identified_layout.addStretch(1)
+
         self.taxonomy_tabs.addTab(identified_tab, self.tr("Species"))
 
-        # Tab 2: Unknown (working title only)
-        unknown_tab = QWidget()
-        unknown_layout = QHBoxLayout(unknown_tab)
-        unknown_layout.setContentsMargins(8, 8, 8, 8)
-        unknown_layout.setSpacing(8)
+        # Tab 2: NIN2 biotope metadata
+        self._habitat_tree_states: dict[str, dict] = {}
+        nin2_nodes = self._load_habitat_tree("nin2_biotopes_tree.json")
+        nin2_tab = QWidget()
+        self.nin2_tab = nin2_tab
+        nin2_layout = QVBoxLayout(nin2_tab)
+        nin2_layout.setContentsMargins(8, 8, 8, 8)
+        nin2_layout.setSpacing(8)
+        nin2_layout.setAlignment(Qt.AlignTop)
+        self._create_habitat_tree_controls(
+            nin2_layout,
+            self.tr("NIN2 biotope"),
+            "nin2",
+            nin2_nodes,
+        )
+        self.nin2_note_input = self._make_note_input()
+        self.nin2_note_input.setPlaceholderText(self.tr("Biotope note..."))
+        self.nin2_note_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        nin2_layout.addWidget(QLabel(self.tr("Biotope note:")))
+        nin2_layout.addWidget(self.nin2_note_input)
+        nin2_layout.addStretch(1)
+        self.taxonomy_tabs.addTab(nin2_tab, self.tr("NIN2 biotope"))
 
-        unknown_layout.addWidget(QLabel(self.tr("Working title:")))
-        self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText(self.tr("e.g., Brown gilled mushroom, Unknown 1"))
-        unknown_layout.addWidget(self.title_input, 1)
-        unknown_layout.addStretch()
+        # Tab 3: Substrate metadata
+        substrate_nodes = self._load_habitat_tree("substrate_tree.json")
+        substrate_tab = QWidget()
+        self.substrate_tab = substrate_tab
+        substrate_layout = QVBoxLayout(substrate_tab)
+        substrate_layout.setContentsMargins(8, 8, 8, 8)
+        substrate_layout.setSpacing(8)
+        substrate_layout.setAlignment(Qt.AlignTop)
+        self._create_habitat_tree_controls(
+            substrate_layout,
+            self.tr("Substrate"),
+            "substrate",
+            substrate_nodes,
+        )
+        self.substrate_note_input = self._make_note_input()
+        self.substrate_note_input.setPlaceholderText(self.tr("Substrate note..."))
+        self.substrate_note_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        substrate_layout.addWidget(QLabel(self.tr("Substrate note:")))
+        substrate_layout.addWidget(self.substrate_note_input)
+        substrate_layout.addStretch(1)
+        self.taxonomy_tabs.addTab(substrate_tab, self.tr("Substrate"))
 
-        self.taxonomy_tabs.addTab(unknown_tab, self.tr("Unknown"))
+        # Tab 4: Grows-on species metadata
+        grows_tab = QWidget()
+        self.grows_tab = grows_tab
+        grows_tab_layout = QVBoxLayout(grows_tab)
+        grows_tab_layout.setContentsMargins(8, 8, 8, 8)
+        grows_tab_layout.setSpacing(8)
+        grows_tab_layout.setAlignment(Qt.AlignTop)
+        grows_group = QGroupBox(self._grows_on_tab_title())
+        grows_layout = QFormLayout(grows_group)
+        grows_layout.setSpacing(6)
+        self.host_genus_input = QLineEdit()
+        self.host_genus_input.setPlaceholderText(self.tr("e.g., Betula"))
+        self.host_genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        self.host_species_input = QLineEdit()
+        self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
+        self.host_species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        self.host_vernacular_input = QLineEdit()
+        self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
+        self.host_vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        self.host_vernacular_label = QLabel(self._vernacular_label())
+        grows_layout.addRow(self.tr("Genus:"), self.host_genus_input)
+        grows_layout.addRow(self.tr("Species:"), self.host_species_input)
+        grows_layout.addRow(self.host_vernacular_label, self.host_vernacular_input)
+        grows_tab_layout.addWidget(grows_group)
+        self.grows_on_note_input = self._make_note_input()
+        self.grows_on_note_input.setPlaceholderText(self.tr("Grows-on note..."))
+        self.grows_on_note_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        grows_tab_layout.addWidget(QLabel(self.tr("Grows-on note:")))
+        grows_tab_layout.addWidget(self.grows_on_note_input)
+        grows_tab_layout.addStretch(1)
+        self.taxonomy_tabs.addTab(grows_tab, self._grows_on_tab_title())
 
         left_layout.addWidget(self.taxonomy_tabs)
         taxonomy_split.addWidget(left_container)
@@ -5451,7 +5633,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             show_badges=True,
             min_height=60,
             default_height=160,
-            thumbnail_size=110,
             thumbnail_tooltip=self.tr("Double-click to edit"),
         )
         self.image_gallery.set_multi_select(True)
@@ -5493,8 +5674,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.submit_observation_btn.clicked.connect(self.accept)
         bottom_buttons.addWidget(self.submit_observation_btn)
         main_layout.addLayout(bottom_buttons)
+        main_layout.setStretch(0, 2)  # Observation details
+        main_layout.setStretch(1, 3)  # Taxonomy
+        main_layout.setStretch(2, 0)  # Images gallery stays content-sized
 
         self._setup_vernacular_autocomplete()
+        self._setup_host_autocomplete()
 
         self.on_taxonomy_tab_changed(self.taxonomy_tabs.currentIndex())
         self._select_initial_ai_image()
@@ -5503,6 +5688,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_datetime_width()
         self._register_dialog_hints()
         self._init_submit_shortcuts()
+        self._update_taxonomy_tab_indicators()
 
     def _init_submit_shortcuts(self) -> None:
         self._submit_shortcut_return = QShortcut(QKeySequence(Qt.Key_Return), self)
@@ -5648,7 +5834,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "",
             allow_when_disabled=True,
         )
-        self._register_hint_widget(self.ai_copy_btn, "")
+        self._register_hint_widget(
+            self.ai_copy_btn,
+            "",
+            allow_when_disabled=True,
+        )
         self._register_hint_widget(
             self.submit_observation_btn,
             self.tr("Save observation (Enter)") if self.edit_mode else self.tr("Create observation (Enter)"),
@@ -5664,7 +5854,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             guess_hint = (
                 self.tr("Guess species using AI - select one or more thumbnails (shift/ctrl + click)")
                 if self.ai_guess_btn.isEnabled()
-                else self.tr("Select a field image for AI guessing")
+                else self.tr("Select a field image to use AI recognition")
             )
             self._set_widget_hint(
                 self.ai_guess_btn,
@@ -5672,12 +5862,38 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 allow_when_disabled=True,
             )
         if hasattr(self, "ai_copy_btn"):
-            copy_hint = (
-                self.tr("Transfer selected species to taxonomy")
-                if self.ai_copy_btn.isEnabled()
-                else ""
+            if self.ai_copy_btn.isEnabled():
+                copy_hint = (
+                    self.tr("Transfer selected species to grows-on")
+                    if hasattr(self, "taxonomy_tabs") and self.taxonomy_tabs.currentWidget() == getattr(self, "grows_tab", None)
+                    else self.tr("Transfer selected species to taxonomy")
+                )
+            else:
+                if not self._can_copy_ai_to_current_tab():
+                    copy_hint = self.tr("Select the Species tab or the Grows-on tab to use AI recognition")
+                elif self._ai_selection_has_non_field_image():
+                    copy_hint = self.tr("Select a field image to use AI recognition")
+                else:
+                    copy_hint = self.tr("Select an AI suggestion to copy")
+            self._set_widget_hint(
+                self.ai_copy_btn,
+                copy_hint,
+                allow_when_disabled=True,
             )
-            self._set_widget_hint(self.ai_copy_btn, copy_hint)
+
+    def _ai_selection_has_non_field_image(self) -> bool:
+        indices = self._selected_gallery_indices()
+        if not indices:
+            current = self._current_ai_index()
+            if current is not None:
+                indices = [current]
+        indices = [idx for idx in indices if 0 <= idx < len(self.image_results)]
+        if not indices:
+            return False
+        return any(
+            (self.image_results[idx].image_type or "field").strip().lower() != "field"
+            for idx in indices
+        )
 
     def _build_ai_suggestions_group(self) -> QGroupBox:
         ai_group = QGroupBox(self.tr("AI suggestions"))
@@ -5937,8 +6153,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _set_ai_copy_enabled(self, enabled: bool) -> None:
         if hasattr(self, "ai_copy_btn"):
-            self.ai_copy_btn.setEnabled(bool(enabled))
+            self.ai_copy_btn.setEnabled(bool(enabled) and self._can_copy_ai_to_current_tab())
             self._update_ai_button_hints()
+
+    def _can_copy_ai_to_current_tab(self) -> bool:
+        tabs = getattr(self, "taxonomy_tabs", None)
+        if tabs is None:
+            return True
+        current = tabs.currentWidget()
+        return current in {getattr(self, "species_tab", None), getattr(self, "grows_tab", None)}
 
     def _extract_genus_species_from_taxon(self, taxon: dict) -> tuple[str | None, str | None]:
         if not isinstance(taxon, dict):
@@ -5964,24 +6187,37 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not genus or not species:
             self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22")
             return
-        if hasattr(self, "taxonomy_tabs"):
-            self.taxonomy_tabs.setCurrentIndex(0)
-        if hasattr(self, "unknown_checkbox") and self.unknown_checkbox.isChecked():
-            self.unknown_checkbox.setChecked(False)
-        self._suppress_taxon_autofill = True
-        if hasattr(self, "genus_input"):
-            self.genus_input.setText(genus)
-        if hasattr(self, "species_input"):
-            self.species_input.setText(species)
-        vernacular = self._preferred_vernacular_from_taxon(taxon)
-        if hasattr(self, "vernacular_input"):
-            self.vernacular_input.setText(vernacular or "")
-        self._suppress_taxon_autofill = False
-        if self.vernacular_db:
-            self._update_vernacular_suggestions_for_taxon()
-            if not vernacular:
-                self._maybe_set_vernacular_from_taxon()
-        self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60")
+        current_tab = self.taxonomy_tabs.currentWidget() if hasattr(self, "taxonomy_tabs") else None
+        target_grows = current_tab == getattr(self, "grows_tab", None)
+        if target_grows:
+            self._host_suppress_taxon_autofill = True
+            self.host_genus_input.setText(genus)
+            self.host_species_input.setText(species)
+            self._host_suppress_taxon_autofill = False
+            if self.vernacular_db:
+                self.host_vernacular_input.clear()
+                self._maybe_set_host_vernacular_from_taxon()
+            self._set_ai_status(self.tr("Copied to grows-on species."), "#27ae60")
+        else:
+            if hasattr(self, "taxonomy_tabs"):
+                self.taxonomy_tabs.setCurrentIndex(self.taxonomy_tabs.indexOf(self.species_tab))
+            if hasattr(self, "unknown_checkbox") and self.unknown_checkbox.isChecked():
+                self.unknown_checkbox.setChecked(False)
+            self._suppress_taxon_autofill = True
+            if hasattr(self, "genus_input"):
+                self.genus_input.setText(genus)
+            if hasattr(self, "species_input"):
+                self.species_input.setText(species)
+            vernacular = self._preferred_vernacular_from_taxon(taxon)
+            if hasattr(self, "vernacular_input"):
+                self.vernacular_input.setText(vernacular or "")
+            self._suppress_taxon_autofill = False
+            if self.vernacular_db:
+                self._update_vernacular_suggestions_for_taxon()
+                if not vernacular:
+                    self._maybe_set_vernacular_from_taxon()
+            self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60")
+        self._update_taxonomy_tab_indicators()
 
     def _on_ai_crop_clicked(self) -> None:
         return
@@ -6504,7 +6740,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
             self.thumbnail_label.setPixmap(scaled)
         else:
-            self.thumbnail_label.setText("Preview unavailable")
+            self.thumbnail_label.setText(self.tr("Preview unavailable"))
 
         # Apply metadata from selected image
         self._apply_metadata_from_index(selected)
@@ -6583,7 +6819,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.gps_info_label.setText(f"GPS from: {meta['filename']}")
             self.map_btn.setEnabled(True)
         else:
-            self.gps_info_label.setText("No GPS data in selected image")
+            self.gps_info_label.setText(self.tr("No GPS data in selected image"))
             self.map_btn.setEnabled(False)
 
     def _update_map_button(self):
@@ -6700,19 +6936,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def get_data(self):
         """Return observation data as dict."""
-        # Check which taxonomy tab is selected (0=Identified, 1=Unknown)
-        is_unknown = self.taxonomy_tabs.currentIndex() == 1
-
-        if is_unknown:
-            genus = None
-            species = None
-            common_name = None
-            working_title = self.title_input.text().strip() or "Unknown"
-        else:
-            genus = self.genus_input.text().strip() or None
-            species = self.species_input.text().strip() or None
-            common_name = self.vernacular_input.text().strip() or None
-            working_title = None
+        genus = self.genus_input.text().strip() or None
+        species = self.species_input.text().strip() or None
+        common_name = self.vernacular_input.text().strip() or None
+        working_title = None
 
         # Get GPS values (None if at minimum/special value)
         lat = None
@@ -6722,39 +6949,132 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self.lon_input.value() > self.lon_input.minimum():
             lon = self.lon_input.value()
 
+        nin2_path = self._selected_habitat_tree_path("nin2")
+        substrate_path = self._selected_habitat_tree_path("substrate")
+        nin2_labels = [str(node.get("name") or "").strip() for node in nin2_path if isinstance(node, dict)]
+        substrate_labels = [str(node.get("name") or "").strip() for node in substrate_path if isinstance(node, dict)]
+        nin2_ids = [int(node.get("id")) for node in nin2_path if isinstance(node, dict) and node.get("id") is not None]
+        substrate_ids = [int(node.get("id")) for node in substrate_path if isinstance(node, dict) and node.get("id") is not None]
+        host_genus = self.host_genus_input.text().strip() if hasattr(self, "host_genus_input") else ""
+        host_species = self.host_species_input.text().strip() if hasattr(self, "host_species_input") else ""
+        host_vernacular = self.host_vernacular_input.text().strip() if hasattr(self, "host_vernacular_input") else ""
+        host_scientific = f"{host_genus} {host_species}".strip()
+        habitat_parts: list[str] = []
+        if nin2_labels:
+            habitat_parts.append(f"NIN2: {' > '.join(nin2_labels)}")
+        if substrate_labels:
+            habitat_parts.append(f"Substrate: {' > '.join(substrate_labels)}")
+        if host_scientific or host_vernacular:
+            if host_scientific and host_vernacular:
+                habitat_parts.append(f"Grows on: {host_vernacular} ({host_scientific})")
+            else:
+                habitat_parts.append(f"Grows on: {host_scientific or host_vernacular}")
+
         return {
             'genus': genus,
             'species': species,
             'common_name': common_name,
             'species_guess': working_title,
-            'uncertain': self.uncertain_checkbox.isChecked() if not is_unknown else False,
+            'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
             'determination_method': self.determination_method_combo.currentData(),
             'date': self.datetime_input.dateTime().toString("yyyy-MM-dd HH:mm"),
             'location': self.location_input.text().strip() or None,
-            'habitat': self.habitat_input.text().strip() or None,
-            'notes': self.notes_input.toPlainText().strip() or None,
+            'habitat': " | ".join(habitat_parts) if habitat_parts else None,
+            'habitat_nin2_path': json.dumps(nin2_ids) if nin2_ids else None,
+            'habitat_substrate_path': json.dumps(substrate_ids) if substrate_ids else None,
+            'habitat_host_genus': host_genus,
+            'habitat_host_species': host_species,
+            'habitat_host_common_name': host_vernacular or None,
+            'open_comment': self.open_comment_input.toPlainText().strip() or None,
+            'private_comment': self.private_comment_input.toPlainText().strip() or None,
+            'interesting_comment': self.interesting_comment_checkbox.isChecked(),
+            'habitat_nin2_note': (self.nin2_note_input.toPlainText().strip() if hasattr(self, "nin2_note_input") else "") or None,
+            'habitat_substrate_note': (self.substrate_note_input.toPlainText().strip() if hasattr(self, "substrate_note_input") else "") or None,
+            'habitat_grows_on_note': (self.grows_on_note_input.toPlainText().strip() if hasattr(self, "grows_on_note_input") else "") or None,
             'gps_latitude': lat,
             'gps_longitude': lon
         }
 
     def on_taxonomy_tab_changed(self, index):
-        """Disable uncertain when Unknown is selected."""
-        is_unknown = index == 1
-        self.uncertain_checkbox.setEnabled(not is_unknown)
-        if is_unknown:
-            self.uncertain_checkbox.setChecked(False)
+        """Handle taxonomy tab changes."""
+        _ = index
         if hasattr(self, "vernacular_input"):
-            self.vernacular_input.setEnabled(not is_unknown)
+            self.vernacular_input.setEnabled(True)
+        self._update_taxonomy_tab_indicators()
+        self._update_ai_controls_state()
+
+    def _tab_title_with_state(self, title: str, filled: bool) -> str:
+        marker = "●" if filled else "○"
+        return f"{marker} {title}"
+
+    def _tab_has_data(self, key: str) -> bool:
+        if key == "species":
+            return any(
+                [
+                    (self.genus_input.text() or "").strip(),
+                    (self.species_input.text() or "").strip(),
+                    (self.vernacular_input.text() or "").strip(),
+                    bool(self.determination_method_combo.currentData()),
+                    bool(self.uncertain_checkbox.isChecked()),
+                    bool(self.unspontaneous_checkbox.isChecked()),
+                ]
+            )
+        if key == "nin2":
+            return bool(self._selected_habitat_tree_path("nin2")) or bool(
+                (self.nin2_note_input.toPlainText() or "").strip()
+            )
+        if key == "substrate":
+            return bool(self._selected_habitat_tree_path("substrate")) or bool(
+                (self.substrate_note_input.toPlainText() or "").strip()
+            )
+        if key == "grows":
+            return any(
+                [
+                    (self.host_genus_input.text() or "").strip(),
+                    (self.host_species_input.text() or "").strip(),
+                    (self.host_vernacular_input.text() or "").strip(),
+                    (self.grows_on_note_input.toPlainText() or "").strip(),
+                ]
+            )
+        return False
+
+    def _update_taxonomy_tab_indicators(self) -> None:
+        if not hasattr(self, "taxonomy_tabs"):
+            return
+        species_index = self.taxonomy_tabs.indexOf(getattr(self, "species_tab", None))
+        nin2_index = self.taxonomy_tabs.indexOf(getattr(self, "nin2_tab", None))
+        substrate_index = self.taxonomy_tabs.indexOf(getattr(self, "substrate_tab", None))
+        grows_index = self.taxonomy_tabs.indexOf(getattr(self, "grows_tab", None))
+
+        if species_index >= 0:
+            self.taxonomy_tabs.setTabText(
+                species_index, self._tab_title_with_state(self.tr("Species"), self._tab_has_data("species"))
+            )
+        if nin2_index >= 0:
+            self.taxonomy_tabs.setTabText(
+                nin2_index,
+                self._tab_title_with_state(self.tr("NIN2 biotope"), self._tab_has_data("nin2")),
+            )
+        if substrate_index >= 0:
+            self.taxonomy_tabs.setTabText(
+                substrate_index,
+                self._tab_title_with_state(self.tr("Substrate"), self._tab_has_data("substrate")),
+            )
+        if grows_index >= 0:
+            self.taxonomy_tabs.setTabText(
+                grows_index,
+                self._tab_title_with_state(self._grows_on_tab_title(), self._tab_has_data("grows")),
+            )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_datetime_width()
 
     def _update_datetime_width(self):
-        """Keep Date & Time at half the dialog width."""
+        """Keep Date & Time responsive with the details grid width."""
         if hasattr(self, "datetime_input"):
-            self.datetime_input.setFixedWidth(200)
+            self.datetime_input.setMinimumWidth(200)
 
     def _resolve_gps_source_index(self) -> int | None:
         source_idx = None
@@ -6906,10 +7226,25 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         img_minutes = int(dt.toSecsSinceEpoch() / 60)
         return obs_minutes == img_minutes
 
+    def _make_note_input(self) -> QTextEdit:
+        note_input = QTextEdit()
+        note_input.setMaximumHeight(60)
+        note_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        note_input.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
+        note_input.setStyleSheet("QTextEdit { border: 1px solid #bdc3c7; border-radius: 3px; }")
+        return note_input
+
+    def _grows_on_tab_title(self) -> str:
+        ui_lang = str(SettingsDB.get_setting("ui_language", "en") or "en").lower()
+        return self.tr("Livsmedium") if ui_lang.startswith("no") else self.tr("Grows on")
+
     def _vernacular_label(self) -> str:
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
-        base = self.tr("Common name")
-        return f"{common_name_display_label(lang, base)}:"
+        if lang == "no":
+            return self.tr("Namn:")
+        if lang in {"en", "de"}:
+            return self.tr("Name:")
+        return self.tr("Name:")
 
     def _vernacular_placeholder(self) -> str:
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
@@ -6940,6 +7275,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.vernacular_label.setText(self._vernacular_label())
         if hasattr(self, "vernacular_input"):
             self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
+        if hasattr(self, "host_vernacular_label"):
+            self.host_vernacular_label.setText(self._vernacular_label())
+        if hasattr(self, "host_vernacular_input"):
+            self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self._populate_vernacular_language_menu()
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         db_path = resolve_vernacular_db_path(lang)
@@ -6949,7 +7288,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.vernacular_db.language_code = lang
         else:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
-        self._maybe_set_vernacular_from_taxon()
+        self._refresh_vernacular_for_current_taxon()
+        self._refresh_host_vernacular_for_current_taxon()
+        self._update_taxonomy_tab_indicators()
 
     def _populate_vernacular_language_menu(self) -> None:
         button = getattr(self, "vernacular_language_btn", None)
@@ -7045,6 +7386,214 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.genus_input.installEventFilter(self)
         self.species_input.installEventFilter(self)
 
+    def _setup_host_autocomplete(self):
+        """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
+        if not self.vernacular_db:
+            return
+        if (
+            not hasattr(self, "host_genus_input")
+            or not hasattr(self, "host_species_input")
+            or not hasattr(self, "host_vernacular_input")
+        ):
+            return
+
+        self._host_genus_model = QStringListModel()
+        self._host_genus_completer = QCompleter(self._host_genus_model, self)
+        self._host_genus_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._host_genus_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.host_genus_input.setCompleter(self._host_genus_completer)
+        host_genus_popup = self._host_genus_completer.popup()
+        if host_genus_popup:
+            self._style_dropdown_popup_readability(host_genus_popup, self.host_genus_input)
+        self._host_genus_completer.activated.connect(self._on_host_genus_selected)
+        self.host_genus_input.textChanged.connect(self._on_host_genus_text_changed)
+        self.host_genus_input.editingFinished.connect(self._on_host_genus_editing_finished)
+        self.host_genus_input.installEventFilter(self)
+
+        self._host_species_model = QStringListModel()
+        self._host_species_completer = QCompleter(self._host_species_model, self)
+        self._host_species_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._host_species_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.host_species_input.setCompleter(self._host_species_completer)
+        host_species_popup = self._host_species_completer.popup()
+        if host_species_popup:
+            self._style_dropdown_popup_readability(host_species_popup, self.host_species_input)
+        self._host_species_completer.activated.connect(self._on_host_species_selected)
+        self.host_species_input.textChanged.connect(self._on_host_species_text_changed)
+        self.host_species_input.editingFinished.connect(self._on_host_species_editing_finished)
+        self.host_species_input.installEventFilter(self)
+
+        self._host_vernacular_model = QStringListModel()
+        self._host_vernacular_completer = QCompleter(self._host_vernacular_model, self)
+        self._host_vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._host_vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.host_vernacular_input.setCompleter(self._host_vernacular_completer)
+        vern_popup = self._host_vernacular_completer.popup()
+        if vern_popup:
+            self._style_dropdown_popup_readability(vern_popup, self.host_vernacular_input)
+        self._host_vernacular_completer.activated.connect(self._on_host_vernacular_selected)
+        self.host_vernacular_input.textChanged.connect(self._on_host_vernacular_text_changed)
+        self.host_vernacular_input.editingFinished.connect(self._on_host_vernacular_editing_finished)
+        self.host_vernacular_input.installEventFilter(self)
+
+    def _on_host_genus_text_changed(self, text: str) -> None:
+        if not self.vernacular_db or self._host_suppress_taxon_autofill:
+            return
+        value = (text or "").strip()
+        suggestions = self.vernacular_db.suggest_genus(value)
+        self._host_genus_model.setStringList(suggestions[:30])
+        if not value:
+            self._host_suppress_taxon_autofill = True
+            self.host_species_input.clear()
+            self.host_vernacular_input.clear()
+            self._host_suppress_taxon_autofill = False
+
+    def _on_host_genus_selected(self, genus: str) -> None:
+        if self._host_genus_completer:
+            self._host_genus_completer.popup().hide()
+        if not self.vernacular_db:
+            return
+        if self.host_species_input.text().strip():
+            return
+        suggestions = self.vernacular_db.suggest_species(str(genus).strip(), "")
+        self._host_species_model.setStringList(suggestions[:30])
+
+    def _on_host_genus_editing_finished(self) -> None:
+        if self._host_genus_completer and self._host_genus_completer.popup().isVisible():
+            return
+        if self._host_suppress_taxon_autofill:
+            return
+        self._update_host_vernacular_suggestions_for_taxon()
+        self._maybe_set_host_vernacular_from_taxon()
+
+    def _on_host_species_text_changed(self, text: str) -> None:
+        if self._host_suppress_taxon_autofill:
+            return
+        genus = self.host_genus_input.text().strip()
+        if not genus:
+            self._host_species_model.setStringList([])
+            self._set_host_vernacular_placeholder_from_suggestions([])
+            return
+        prefix = (text or "").strip()
+        suggestions = self.vernacular_db.suggest_species(genus, prefix) if self.vernacular_db else []
+        if prefix and any(s.lower() == prefix.lower() for s in suggestions):
+            self._host_species_model.setStringList([])
+            if self._host_species_completer:
+                self._host_species_completer.popup().hide()
+        else:
+            self._host_species_model.setStringList(suggestions[:30])
+            if self._host_species_model.stringList() and self._host_species_completer:
+                self._host_species_completer.setCompletionPrefix(prefix)
+                self._host_species_completer.complete()
+        if prefix:
+            self._update_host_vernacular_suggestions_for_taxon()
+            self._maybe_set_host_vernacular_from_taxon()
+
+    def _on_host_species_selected(self, species: str) -> None:
+        if self._host_species_completer:
+            self._host_species_completer.popup().hide()
+        _ = species
+        self._update_host_vernacular_suggestions_for_taxon()
+        self._maybe_set_host_vernacular_from_taxon()
+
+    def _on_host_species_editing_finished(self) -> None:
+        if self._host_species_completer and self._host_species_completer.popup().isVisible():
+            return
+        if self._host_suppress_taxon_autofill:
+            return
+        self._update_host_vernacular_suggestions_for_taxon()
+        self._maybe_set_host_vernacular_from_taxon()
+
+    def _on_host_vernacular_text_changed(self, text: str) -> None:
+        if not self.vernacular_db or not hasattr(self, "_host_vernacular_model"):
+            return
+        if self._host_suppress_taxon_autofill:
+            return
+        value = (text or "").strip()
+        if not value:
+            self._update_host_vernacular_suggestions_for_taxon()
+            return
+        genus = self.host_genus_input.text().strip() or None
+        species = self.host_species_input.text().strip() or None
+        suggestions = self.vernacular_db.suggest_vernacular(value, genus=genus, species=species)
+        text_lower = value.lower()
+        if any(s.lower() == text_lower for s in suggestions):
+            self._host_vernacular_model.setStringList([])
+            if self._host_vernacular_completer:
+                self._host_vernacular_completer.popup().hide()
+        else:
+            self._host_vernacular_model.setStringList(suggestions[:20])
+
+    def _on_host_vernacular_selected(self, text: str) -> None:
+        self._set_host_taxon_from_vernacular(text)
+
+    def _on_host_vernacular_editing_finished(self) -> None:
+        self._set_host_taxon_from_vernacular(self.host_vernacular_input.text())
+
+    def _set_host_taxon_from_vernacular(self, name: str) -> None:
+        if not self.vernacular_db:
+            return
+        value = (name or "").strip()
+        if not value:
+            return
+        taxon = self.vernacular_db.taxon_from_vernacular(value)
+        if not taxon:
+            return
+        genus, species, _family = taxon
+        current_genus = self.host_genus_input.text().strip()
+        current_species = self.host_species_input.text().strip()
+        if current_genus and current_species:
+            return
+        self._host_suppress_taxon_autofill = True
+        if not current_genus:
+            self.host_genus_input.setText(genus)
+        if not current_species:
+            self.host_species_input.setText(species)
+        self._host_suppress_taxon_autofill = False
+
+    def _maybe_set_host_vernacular_from_taxon(self) -> None:
+        if not self.vernacular_db:
+            return
+        if self.host_vernacular_input.text().strip():
+            return
+        genus = self.host_genus_input.text().strip()
+        species = self.host_species_input.text().strip()
+        if not genus or not species:
+            return
+        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        if not suggestions:
+            self._set_host_vernacular_placeholder_from_suggestions([])
+            return
+        if len(suggestions) == 1:
+            self._host_suppress_taxon_autofill = True
+            self.host_vernacular_input.setText(suggestions[0])
+            self._host_suppress_taxon_autofill = False
+            self._set_host_vernacular_placeholder_from_suggestions([])
+        else:
+            self._set_host_vernacular_placeholder_from_suggestions(suggestions)
+
+    def _update_host_vernacular_suggestions_for_taxon(self) -> None:
+        if not self.vernacular_db or not hasattr(self, "_host_vernacular_model"):
+            return
+        genus = self.host_genus_input.text().strip() or None
+        species = self.host_species_input.text().strip() or None
+        if not genus and not species:
+            self._host_vernacular_model.setStringList([])
+            self._set_host_vernacular_placeholder_from_suggestions([])
+            return
+        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        self._host_vernacular_model.setStringList(suggestions[:20])
+        self._set_host_vernacular_placeholder_from_suggestions(suggestions)
+
+    def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+        if not hasattr(self, "host_vernacular_input"):
+            return
+        if not suggestions:
+            self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
+            return
+        preview = "; ".join(suggestions[:4])
+        self.host_vernacular_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
+
     def _style_dropdown_popup_readability(self, popup, font_source=None):
         """Make popup rows slightly looser while matching the input font."""
         if popup is None:
@@ -7111,7 +7660,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not hasattr(self, "species_input"):
             return
         if not suggestions:
-            self.species_input.setPlaceholderText("e.g., velutipes")
+            self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
             return
         preview = "; ".join(suggestions[:4])
         self.species_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
@@ -7321,6 +7870,27 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._species_model.setStringList(suggestions)
                     if suggestions:
                         self._species_completer.complete()
+            elif obj == self.host_genus_input:
+                text = self.host_genus_input.text().strip()
+                suggestions = self.vernacular_db.suggest_genus(text)
+                self._host_genus_model.setStringList(suggestions[:30])
+                if suggestions:
+                    self._host_genus_completer.complete()
+            elif obj == self.host_species_input:
+                genus = self.host_genus_input.text().strip()
+                if genus:
+                    text = self.host_species_input.text().strip()
+                    suggestions = self.vernacular_db.suggest_species(genus, text)
+                    self._host_species_model.setStringList(suggestions[:30])
+                    if suggestions:
+                        self._host_species_completer.complete()
+            elif obj == self.host_vernacular_input:
+                if not self.host_vernacular_input.text().strip():
+                    if self._host_vernacular_completer:
+                        self._host_vernacular_completer.setCompletionPrefix("")
+                    self._update_host_vernacular_suggestions_for_taxon()
+                    if self._host_vernacular_model.stringList():
+                        self._host_vernacular_completer.complete()
         return super().eventFilter(obj, event)
 
     def _maybe_set_vernacular_from_taxon(self):
@@ -7345,6 +7915,41 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_vernacular_placeholder_from_suggestions([])
         else:
             self._set_vernacular_placeholder_from_suggestions(suggestions)
+
+    def _refresh_vernacular_for_current_taxon(self) -> None:
+        if not self.vernacular_db or not hasattr(self, "vernacular_input"):
+            return
+        genus = self.genus_input.text().strip()
+        species = self.species_input.text().strip()
+        if not genus or not species:
+            return
+        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        if not suggestions:
+            return
+        old_block = self.vernacular_input.blockSignals(True)
+        try:
+            self._suppress_taxon_autofill = True
+            self.vernacular_input.setText(suggestions[0])
+        finally:
+            self._suppress_taxon_autofill = False
+            self.vernacular_input.blockSignals(old_block)
+        self._set_vernacular_placeholder_from_suggestions([])
+
+    def _refresh_host_vernacular_for_current_taxon(self) -> None:
+        if not self.vernacular_db or not hasattr(self, "host_genus_input") or not hasattr(self, "host_species_input") or not hasattr(self, "host_vernacular_input"):
+            return
+        genus = self.host_genus_input.text().strip()
+        species = self.host_species_input.text().strip()
+        if not genus or not species:
+            return
+        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        if not suggestions:
+            return
+        old_block = self.host_vernacular_input.blockSignals(True)
+        try:
+            self.host_vernacular_input.setText(suggestions[0])
+        finally:
+            self.host_vernacular_input.blockSignals(old_block)
 
     def get_files(self):
         """Return selected image files."""
@@ -7377,6 +7982,451 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "sample_type": item.sample_type
             })
         return entries
+
+    def _load_habitat_tree(self, filename: str) -> list[dict]:
+        path = Path(__file__).resolve().parents[1] / "database" / filename
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            return []
+        if isinstance(data, list):
+            return [node for node in data if isinstance(node, dict)]
+        if isinstance(data, dict):
+            roots = data.get("roots")
+            if isinstance(roots, list):
+                return [node for node in roots if isinstance(node, dict)]
+        return []
+
+    def _tree_depth(self, nodes: list[dict]) -> int:
+        if not nodes:
+            return 0
+        max_child = 0
+        for node in nodes:
+            children = node.get("children")
+            if isinstance(children, list) and children:
+                max_child = max(max_child, self._tree_depth(children))
+        return 1 + max_child
+
+    @staticmethod
+    def _normalize_tree_search_text(value: str) -> str:
+        text = unicodedata.normalize("NFKD", str(value or ""))
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        return text.casefold().strip()
+
+    def _build_habitat_tree_index(self, roots: list[dict]) -> dict:
+        by_level: dict[int, list[dict]] = {}
+        id_to_path: dict[int, list[int]] = {}
+        node_to_path: dict[int, list[int]] = {}
+
+        def visit(nodes: list[dict], level: int, path_nodes: list[dict]) -> None:
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                current_path_nodes = [*path_nodes, node]
+                node_name = str(node.get("name") or "").strip()
+                try:
+                    node_id = int(node.get("id")) if node.get("id") is not None else None
+                except Exception:
+                    node_id = None
+                path_ids = []
+                for n in current_path_nodes:
+                    try:
+                        if n.get("id") is not None:
+                            path_ids.append(int(n.get("id")))
+                    except Exception:
+                        continue
+                entry = {
+                    "node": node,
+                    "node_id": node_id,
+                    "name": node_name,
+                    "path_ids": path_ids,
+                    "path_names": [str(n.get("name") or "").strip() for n in current_path_nodes],
+                    "search_text": self._normalize_tree_search_text(node_name),
+                }
+                by_level.setdefault(level, []).append(entry)
+                node_to_path[id(node)] = path_ids
+                if node_id is not None and path_ids:
+                    id_to_path[node_id] = path_ids
+                children = node.get("children")
+                if isinstance(children, list) and children:
+                    visit(children, level + 1, current_path_nodes)
+
+        visit(roots, 0, [])
+        return {"by_level": by_level, "id_to_path": id_to_path, "node_to_path": node_to_path}
+
+    def _set_habitat_tree_level_options(
+        self,
+        key: str,
+        level: int,
+        entries: list[dict],
+        selected_id: int | None = None,
+        auto_popup: bool = False,
+    ) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        if level < 0 or level >= len(combos):
+            return
+        combo = combos[level]
+        sorted_entries = sorted(
+            entries or [],
+            key=lambda entry: self._normalize_tree_search_text(str(entry.get("name") or "")),
+        )
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(self.tr("Select..."), None)
+        for entry in sorted_entries:
+            node = entry.get("node")
+            if not isinstance(node, dict):
+                continue
+            label = str(entry.get("name") or "")
+            combo.addItem(label, node)
+            idx = combo.count() - 1
+            combo.setItemData(idx, entry.get("path_ids") or [], Qt.UserRole + 1)
+        # Keep editable combos enabled even when a filter has no matches,
+        # so the user can continue typing without re-clicking.
+        combo.setEnabled(True)
+        if selected_id is not None:
+            for idx in range(1, combo.count()):
+                node = combo.itemData(idx)
+                try:
+                    node_id = int(node.get("id")) if isinstance(node, dict) and node.get("id") is not None else None
+                except Exception:
+                    node_id = None
+                if node_id == int(selected_id):
+                    combo.setCurrentIndex(idx)
+                    break
+        else:
+            combo.setCurrentIndex(0)
+            # Keep "Select..." as placeholder text, not as editable content.
+            if combo.isEditable():
+                line_edit = combo.lineEdit()
+                if line_edit is not None:
+                    line_edit.clear()
+                    line_edit.setPlaceholderText(self.tr("Select..."))
+        combo.blockSignals(False)
+        if auto_popup and combo.isEditable() and combo.count() > 1 and not combo.view().isVisible():
+            combo.showPopup()
+
+    def _clear_habitat_tree_children(self, key: str, from_level: int) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        for child_level in range(from_level + 1, len(combos)):
+            all_level_entries = self._all_habitat_tree_level_entries(key, child_level)
+            self._set_habitat_tree_level_options(
+                key,
+                child_level,
+                all_level_entries,
+                selected_id=None,
+                auto_popup=False,
+            )
+
+    def _selected_habitat_tree_ancestor_ids(self, key: str, level: int) -> dict[int, int]:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        selected: dict[int, int] = {}
+        for ancestor_level in range(min(level, len(combos))):
+            node = combos[ancestor_level].currentData()
+            if not isinstance(node, dict):
+                continue
+            try:
+                node_id = int(node.get("id")) if node.get("id") is not None else None
+            except Exception:
+                node_id = None
+            if node_id is not None:
+                selected[ancestor_level] = node_id
+        return selected
+
+    @staticmethod
+    def _habitat_tree_entry_matches_ancestors(entry: dict, selected_ancestors: dict[int, int]) -> bool:
+        if not selected_ancestors:
+            return True
+        path_ids = entry.get("path_ids") or []
+        for ancestor_level, ancestor_id in selected_ancestors.items():
+            if ancestor_level >= len(path_ids):
+                return False
+            if path_ids[ancestor_level] != ancestor_id:
+                return False
+        return True
+
+    def _filter_habitat_tree_entries_for_context(self, key: str, level: int, entries: list[dict]) -> list[dict]:
+        selected_ancestors = self._selected_habitat_tree_ancestor_ids(key, level)
+        return [
+            entry
+            for entry in entries
+            if self._habitat_tree_entry_matches_ancestors(entry, selected_ancestors)
+        ]
+
+    def _all_habitat_tree_level_entries(self, key: str, level: int) -> list[dict]:
+        state = self._habitat_tree_states.get(key) or {}
+        tree_index = state.get("index") or {}
+        level_entries = list((tree_index.get("by_level") or {}).get(level) or [])
+        level_entries = self._filter_habitat_tree_entries_for_context(key, level, level_entries)
+        return [
+            {
+                "node": entry.get("node"),
+                "name": entry.get("name"),
+                "path_ids": entry.get("path_ids") or [],
+            }
+            for entry in level_entries
+            if isinstance(entry.get("node"), dict)
+        ]
+
+    def _apply_habitat_tree_selected_path(self, key: str, path_ids: list[int]) -> None:
+        if not path_ids:
+            return
+        state = self._habitat_tree_states.get(key) or {}
+        roots: list[dict] = state.get("roots") or []
+        combos: list[QComboBox] = state.get("combos") or []
+        if not combos:
+            return
+        self._populate_habitat_tree_level(key, 0, roots, path_ids[0] if path_ids else None)
+        for level in range(1, len(combos)):
+            prev_node = combos[level - 1].currentData()
+            children = prev_node.get("children") if isinstance(prev_node, dict) else None
+            self._populate_habitat_tree_level(
+                key,
+                level,
+                children if isinstance(children, list) else [],
+                path_ids[level] if level < len(path_ids) else None,
+            )
+
+    def _on_habitat_tree_level_text_edited(self, key: str, level: int, text: str) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        if state.get("suppress_text_filter"):
+            return
+        query = self._normalize_tree_search_text(text)
+        if not query:
+            # Restore full list for this level when filter is cleared.
+            self._set_habitat_tree_level_options(
+                key,
+                level,
+                self._all_habitat_tree_level_entries(key, level),
+                selected_id=None,
+                auto_popup=False,
+            )
+            return
+        tree_index = state.get("index") or {}
+        level_entries = list((tree_index.get("by_level") or {}).get(level) or [])
+        level_entries = self._filter_habitat_tree_entries_for_context(key, level, level_entries)
+        if not level_entries:
+            return
+        filtered = [entry for entry in level_entries if query in str(entry.get("search_text") or "")]
+        state["suppress_text_filter"] = True
+        self._set_habitat_tree_level_options(key, level, filtered, selected_id=None, auto_popup=False)
+        combos: list[QComboBox] = state.get("combos") or []
+        if 0 <= level < len(combos):
+            line_edit = combos[level].lineEdit()
+            if line_edit is not None:
+                line_edit.setText(text)
+                line_edit.setCursorPosition(len(text))
+        state["suppress_text_filter"] = False
+
+    def _on_habitat_tree_level_activated(self, key: str, level: int, _index: int) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        if level < 0 or level >= len(combos):
+            return
+        combo = combos[level]
+        path_ids = combo.currentData(Qt.UserRole + 1)
+        if not path_ids:
+            return
+        state["suppress_text_filter"] = True
+        try:
+            self._apply_habitat_tree_selected_path(key, [int(v) for v in path_ids])
+        finally:
+            state["suppress_text_filter"] = False
+        self._update_taxonomy_tab_indicators()
+
+    def _clear_habitat_tree_level_selection(self, key: str, level: int) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        if level < 0 or level >= len(combos):
+            return
+        roots: list[dict] = state.get("roots") or []
+        state["suppress_text_filter"] = True
+        try:
+            if level == 0:
+                self._populate_habitat_tree_level(key, 0, roots, selected_id=None)
+            else:
+                parent_node = combos[level - 1].currentData()
+                children = parent_node.get("children") if isinstance(parent_node, dict) else None
+                self._populate_habitat_tree_level(
+                    key,
+                    level,
+                    children if isinstance(children, list) else None,
+                    selected_id=None,
+                )
+        finally:
+            state["suppress_text_filter"] = False
+        self._update_taxonomy_tab_indicators()
+
+    def _create_habitat_tree_controls(
+        self,
+        parent_layout: QVBoxLayout,
+        title: str,
+        key: str,
+        roots: list[dict],
+    ) -> None:
+        group = QGroupBox(title)
+        group_layout = QFormLayout(group)
+        group_layout.setSpacing(6)
+        level_count = max(1, min(6, self._tree_depth(roots)))
+        combos: list[QComboBox] = []
+        for level in range(level_count):
+            combo = QComboBox()
+            combo.setEditable(True)
+            combo.setInsertPolicy(QComboBox.NoInsert)
+            combo.addItem(self.tr("Select..."), None)
+            combo.currentIndexChanged.connect(
+                lambda _idx, tree_key=key, tree_level=level: self._on_habitat_tree_level_changed(tree_key, tree_level)
+            )
+            combo.activated.connect(
+                lambda idx, tree_key=key, tree_level=level: self._on_habitat_tree_level_activated(tree_key, tree_level, idx)
+            )
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.textEdited.connect(
+                    lambda text, tree_key=key, tree_level=level: self._on_habitat_tree_level_text_edited(tree_key, tree_level, text)
+                )
+            clear_btn = QToolButton()
+            clear_btn.setText("X")
+            clear_btn.setAutoRaise(True)
+            clear_btn.setFixedWidth(20)
+            clear_btn.setToolTip(self.tr("Clear selection"))
+            clear_btn.clicked.connect(
+                lambda _checked=False, tree_key=key, tree_level=level: self._clear_habitat_tree_level_selection(
+                    tree_key, tree_level
+                )
+            )
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(4)
+            row_layout.addWidget(combo, 1)
+            row_layout.addWidget(clear_btn, 0)
+            group_layout.addRow(self.tr("Level {n}:").format(n=level + 1), row_widget)
+            combos.append(combo)
+        tree_index = self._build_habitat_tree_index(roots)
+        self._habitat_tree_states[key] = {
+            "roots": roots,
+            "combos": combos,
+            "index": tree_index,
+            "suppress_text_filter": False,
+        }
+        self._populate_habitat_tree_level(key, 0, roots)
+        parent_layout.addWidget(group)
+
+    def _populate_habitat_tree_level(
+        self,
+        key: str,
+        level: int,
+        nodes: list[dict] | None,
+        selected_id: int | None = None,
+    ) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        if level < 0 or level >= len(combos):
+            return
+        combo = combos[level]
+
+        valid_nodes = [node for node in (nodes or []) if isinstance(node, dict)]
+        if not valid_nodes:
+            # Allow direct search/selection on deeper levels even without selecting parents first.
+            valid_nodes = [
+                entry.get("node")
+                for entry in self._all_habitat_tree_level_entries(key, level)
+                if isinstance(entry.get("node"), dict)
+            ]
+        entries = []
+        for node in valid_nodes:
+            node_name = str(node.get("name") or "").strip()
+            path_ids = []
+            try:
+                node_id = int(node.get("id")) if node.get("id") is not None else None
+            except Exception:
+                node_id = None
+            idx = state.get("index") or {}
+            node_map = idx.get("node_to_path") or {}
+            path_ids = list(node_map.get(id(node)) or [])
+            if not path_ids and node_id is not None:
+                idx_map = idx.get("id_to_path") or {}
+                path_ids = idx_map.get(node_id) or [node_id]
+            entries.append(
+                {
+                    "node": node,
+                    "name": node_name,
+                    "path_ids": path_ids,
+                }
+            )
+        self._set_habitat_tree_level_options(key, level, entries, selected_id=selected_id)
+
+        self._clear_habitat_tree_children(key, level)
+
+        node = combo.currentData()
+        children = node.get("children") if isinstance(node, dict) else None
+        if level + 1 < len(combos) and isinstance(children, list) and children:
+            self._populate_habitat_tree_level(key, level + 1, children)
+
+    def _on_habitat_tree_level_changed(self, key: str, level: int) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        if state.get("suppress_text_filter"):
+            return
+        combos: list[QComboBox] = state.get("combos") or []
+        if level < 0 or level >= len(combos):
+            return
+        node = combos[level].currentData()
+        children = node.get("children") if isinstance(node, dict) else None
+        if level + 1 < len(combos):
+            self._populate_habitat_tree_level(key, level + 1, children if isinstance(children, list) else None)
+        self._update_taxonomy_tab_indicators()
+
+    def _selected_habitat_tree_path(self, key: str) -> list[dict]:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        selected: list[dict] = []
+        for combo in combos:
+            node = combo.currentData()
+            if not isinstance(node, dict):
+                break
+            selected.append(node)
+        return selected
+
+    def _apply_habitat_tree_path(self, key: str, raw_path: str | None) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        roots: list[dict] = state.get("roots") or []
+        combos: list[QComboBox] = state.get("combos") or []
+        if not combos:
+            return
+        ids: list[int] = []
+        try:
+            parsed = json.loads(raw_path or "[]")
+            if isinstance(parsed, list):
+                ids = [int(v) for v in parsed]
+        except Exception:
+            ids = []
+        # Backward compatibility: older saved paths may use shortcut levels.
+        # Resolve to the canonical tree path for the deepest selected node id.
+        if ids:
+            try:
+                deepest_id = int(ids[-1])
+            except Exception:
+                deepest_id = None
+            if deepest_id is not None:
+                canonical = ((state.get("index") or {}).get("id_to_path") or {}).get(deepest_id) or []
+                if canonical:
+                    ids = [int(v) for v in canonical]
+        self._populate_habitat_tree_level(key, 0, roots, ids[0] if ids else None)
+        for level in range(1, len(combos)):
+            prev_node = combos[level - 1].currentData()
+            children = prev_node.get("children") if isinstance(prev_node, dict) else None
+            self._populate_habitat_tree_level(
+                key,
+                level,
+                children if isinstance(children, list) else [],
+                ids[level] if level < len(ids) else None,
+            )
+        self._update_taxonomy_tab_indicators()
 
     def _load_tag_options(self, category: str) -> list[str]:
         setting_key = DatabaseTerms.setting_key(category)
@@ -7433,17 +8483,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         genus = obs.get("genus") or ""
         species = obs.get("species") or ""
-        if genus or species:
-            self.taxonomy_tabs.setCurrentIndex(0)
-            self.genus_input.setText(genus)
-            self.species_input.setText(species)
-            self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
-            if hasattr(self, "vernacular_input"):
-                self.vernacular_input.setText(obs.get("common_name") or "")
-        else:
-            self.taxonomy_tabs.setCurrentIndex(1)
-            self.title_input.setText(obs.get("species_guess") or "")
-            self.uncertain_checkbox.setChecked(False)
+        self.taxonomy_tabs.setCurrentIndex(0)
+        self.genus_input.setText(genus)
+        self.species_input.setText(species)
+        self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
+        if hasattr(self, "vernacular_input"):
+            self.vernacular_input.setText(obs.get("common_name") or "")
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
         method = obs.get("determination_method")
@@ -7454,8 +8499,24 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.determination_method_combo.setCurrentIndex(0)
 
         self.location_input.setText(obs.get("location") or "")
-        self.habitat_input.setText(obs.get("habitat") or "")
-        self.notes_input.setPlainText(obs.get("notes") or "")
+        legacy_notes = (obs.get("notes") or "").strip()
+        self.open_comment_input.setPlainText((obs.get("open_comment") or legacy_notes).strip())
+        self.private_comment_input.setPlainText((obs.get("private_comment") or "").strip())
+        self.interesting_comment_checkbox.setChecked(bool(obs.get("interesting_comment", 0)))
+        if hasattr(self, "host_genus_input"):
+            self.host_genus_input.setText((obs.get("habitat_host_genus") or "").strip())
+        if hasattr(self, "host_species_input"):
+            self.host_species_input.setText((obs.get("habitat_host_species") or "").strip())
+        if hasattr(self, "host_vernacular_input"):
+            self.host_vernacular_input.setText((obs.get("habitat_host_common_name") or "").strip())
+        self._apply_habitat_tree_path("nin2", obs.get("habitat_nin2_path"))
+        self._apply_habitat_tree_path("substrate", obs.get("habitat_substrate_path"))
+        if hasattr(self, "nin2_note_input"):
+            self.nin2_note_input.setPlainText(obs.get("habitat_nin2_note") or "")
+        if hasattr(self, "substrate_note_input"):
+            self.substrate_note_input.setPlainText(obs.get("habitat_substrate_note") or "")
+        if hasattr(self, "grows_on_note_input"):
+            self.grows_on_note_input.setPlainText(obs.get("habitat_grows_on_note") or "")
 
         lat = obs.get("gps_latitude")
         lon = obs.get("gps_longitude")
@@ -7465,6 +8526,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.lon_input.setValue(lon)
         self._update_map_button()
         self._maybe_set_vernacular_from_taxon()
+        self._update_taxonomy_tab_indicators()
 
 
 class RenameObservationDialog(QDialog):
@@ -7473,7 +8535,7 @@ class RenameObservationDialog(QDialog):
     def __init__(self, observation, parent=None):
         super().__init__(parent)
         self.observation = observation
-        self.setWindowTitle("Rename Observation")
+        self.setWindowTitle(self.tr("Rename Observation"))
         self.setModal(True)
         self.setMinimumWidth(400)
         self.init_ui()
@@ -7501,12 +8563,12 @@ class RenameObservationDialog(QDialog):
         layout.addRow("", unknown_row)
 
         self.genus_input = QLineEdit()
-        self.genus_input.setPlaceholderText("e.g., Flammulina")
+        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.genus_input.setText(self.observation.get('genus') or "")
         layout.addRow("Genus:", self.genus_input)
 
         self.species_input = QLineEdit()
-        self.species_input.setPlaceholderText("e.g., velutipes")
+        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
         self.species_input.setText(self.observation.get('species') or "")
         layout.addRow("Species:", self.species_input)
 

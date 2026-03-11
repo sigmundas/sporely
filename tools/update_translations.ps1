@@ -19,6 +19,8 @@ if (Test-Path $lrelease) {
 
 $files = @(
     "main.py",
+    "database\\database_tags.py",
+    "ui\\database_settings_dialog.py",
     "ui\\main_window.py",
     "ui\\image_import_dialog.py",
     "ui\\observations_tab.py",
@@ -29,5 +31,5 @@ $files = @(
     "ui\\spore_preview_widget.py"
 )
 
-& $lupdateCmd $files -ts i18n\\MycoLog_nb_NO.ts i18n\\MycoLog_de_DE.ts
+& $lupdateCmd $files -no-obsolete -ts i18n\\MycoLog_nb_NO.ts i18n\\MycoLog_de_DE.ts
 & $lreleaseCmd i18n\\MycoLog_nb_NO.ts i18n\\MycoLog_de_DE.ts

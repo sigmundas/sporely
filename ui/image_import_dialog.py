@@ -184,72 +184,56 @@ class AIGuessWorker(QThread):
             return
         try:
             import requests
-
-            send_paths: list[Path] = []
-            temp_paths: list[str] = []
-            for request in self.requests:
-                temp_path = self._prepare_image(request["image_path"], request.get("crop_box"))
-                send_paths.append(temp_path)
-                temp_paths.append(str(temp_path))
-
             url = "https://ai.artsdatabanken.no"
-            handles: list[object] = []
-            response = None
-            try:
-                files = []
-                for path in send_paths:
-                    handle = open(path, "rb")
-                    handles.append(handle)
-                    files.append(("image", (path.name, handle, "image/jpeg")))
-                response = requests.post(
-                    url,
-                    files=files,
-                    headers={"User-Agent": "MycoLog/AI"},
-                    timeout=30,
-                )
-                if response.status_code != 200 and len(send_paths) == 1:
-                    for handle in handles:
-                        handle.close()
-                    handles = []
-                    with open(send_paths[0], "rb") as handle:
+            for request in self.requests:
+                index = request.get("index")
+                if index is None:
+                    continue
+                temp_path: Path | None = None
+                response = None
+                try:
+                    temp_path = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    with open(temp_path, "rb") as handle:
                         response = requests.post(
                             url,
-                            files={"file": (send_paths[0].name, handle, "image/jpeg")},
+                            files={"image": (temp_path.name, handle, "image/jpeg")},
                             headers={"User-Agent": "MycoLog/AI"},
                             timeout=30,
                         )
-            finally:
-                for handle in handles:
-                    try:
-                        handle.close()
-                    except Exception:
-                        pass
+                    if response.status_code != 200:
+                        with open(temp_path, "rb") as handle:
+                            response = requests.post(
+                                url,
+                                files={"file": (temp_path.name, handle, "image/jpeg")},
+                                headers={"User-Agent": "MycoLog/AI"},
+                                timeout=30,
+                            )
+                    if response is None or response.status_code != 200:
+                        detail = (response.text or "").strip() if response is not None else ""
+                        if detail:
+                            detail = detail.replace("\n", " ").strip()
+                            detail = detail[:200]
+                        suffix = f" - {detail}" if detail else ""
+                        status = response.status_code if response is not None else "no response"
+                        raise Exception(f"API request failed: {status}{suffix}")
 
-            if response is None or response.status_code != 200:
-                detail = (response.text or "").strip() if response is not None else ""
-                if detail:
-                    detail = detail.replace("\n", " ").strip()
-                    detail = detail[:200]
-                suffix = f" - {detail}" if detail else ""
-                status = response.status_code if response is not None else "no response"
-                raise Exception(f"API request failed: {status}{suffix}")
-
-            data = response.json()
-            predictions = [
-                p for p in data.get("predictions", [])
-                if p.get("taxon", {}).get("vernacularName") != "*** Utdatert versjon ***"
-            ]
-
-            warnings = data.get("warnings")
-            self.resultReady.emit(self.indices, predictions, None, warnings, temp_paths)
+                    data = response.json()
+                    predictions = [
+                        p for p in data.get("predictions", [])
+                        if p.get("taxon", {}).get("vernacularName") != "*** Utdatert versjon ***"
+                    ]
+                    warnings = data.get("warnings")
+                    self.resultReady.emit([int(index)], predictions, None, warnings, [str(temp_path)])
+                except Exception as exc:
+                    self.error.emit([int(index)], str(exc))
+                finally:
+                    if temp_path is not None:
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
         except Exception as exc:
             self.error.emit(self.indices, str(exc))
-        finally:
-            for path in send_paths:
-                try:
-                    path.unlink(missing_ok=True)
-                except Exception:
-                    pass
 
 
 class ScaleBarImportDialog(QDialog):
@@ -620,8 +604,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.next_btn.setMinimumHeight(35)
         self.next_btn.clicked.connect(self._accept_and_close)
         bottom_row.addWidget(self.next_btn)
-        if not self._continue_to_observation_details:
-            self.cancel_btn.setVisible(False)
+        self._update_action_buttons_state()
         main_layout.addLayout(bottom_row)
 
     def showEvent(self, event) -> None:
@@ -748,9 +731,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._register_hint_widget(self.calibrate_btn, calibrate_hint)
         self.calibrate_btn.clicked.connect(self._start_scale_bar_selection)
         scale_layout.addWidget(self.calibrate_btn)
-        # Inline controls shown after user draws a scale bar selection
+        # Inline controls mirror Measure tab behavior and remain available
+        # whenever objective calibration is not selected.
         self._scale_bar_inline = QWidget()
-        self._scale_bar_inline.setVisible(False)
+        self._scale_bar_inline.setVisible(True)
         _inline_layout = QVBoxLayout(self._scale_bar_inline)
         _inline_layout.setContentsMargins(0, 4, 0, 0)
         _inline_layout.setSpacing(4)
@@ -1023,7 +1007,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.objective_combo.blockSignals(True)
         self.objective_combo.clear()
         self.objective_combo.addItem(self.tr("Not set"), None)
-        self.objective_combo.addItem(self.tr("Scale bar"), self.CUSTOM_OBJECTIVE_KEY)
+        self.objective_combo.addItem(self.tr("From scalebar"), self.CUSTOM_OBJECTIVE_KEY)
         for key, obj in sorted(self.objectives.items(), key=lambda item: objective_sort_value(item[1], item[0])):
             label = objective_display_name(obj, key) or key
             self.objective_combo.addItem(label, key)
@@ -1084,8 +1068,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview.set_scale_bar_draggable(False)
         self.preview.clear_preview_line()
         self._sync_scale_bar_length_unit_for_image_type()
-        if hasattr(self, "_scale_bar_inline"):
-            self._scale_bar_inline.setVisible(True)
+        self._update_scalebar_controls_visibility()
         self.set_hint(self.tr("Click the start point of the scale bar, then the end point"))
 
     def _on_scale_bar_horizontal_toggled(self, checked: bool) -> None:
@@ -1238,6 +1221,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not indices:
             self.scale_group.setEnabled(False)
             self._update_micro_settings_state(False)
+            self._update_scalebar_controls_visibility()
             self._update_scale_mismatch_warning()
             return
         all_micro = all(
@@ -1250,7 +1234,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
         # Contrast/mount/sample remain microscope-only controls.
         self._update_micro_settings_state(all_micro)
         self._update_resize_group_state()
+        self._update_scalebar_controls_visibility()
         self._update_scale_mismatch_warning()
+
+    def _has_objective_calibration_selected(self) -> bool:
+        selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
+        if not selected_objective:
+            return False
+        if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
+            return False
+        return True
+
+    def _update_scalebar_controls_visibility(self) -> None:
+        hide_scalebar_controls = self._has_objective_calibration_selected()
+        if hasattr(self, "calibrate_btn"):
+            self.calibrate_btn.setVisible(not hide_scalebar_controls)
+        if hasattr(self, "_scale_bar_inline"):
+            self._scale_bar_inline.setVisible(not hide_scalebar_controls)
 
     def _update_resize_group_state(self) -> None:
         if not hasattr(self, "resize_group"):
@@ -1286,6 +1286,34 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not hasattr(self, "resize_optimal_checkbox"):
             return
         return
+
+    def _has_pending_resize_operations(self) -> bool:
+        for result in self.import_results:
+            if not isinstance(result, ImageImportResult):
+                continue
+            if result.image_type != "microscope":
+                continue
+            if not bool(getattr(result, "resize_to_optimal", False)):
+                continue
+            if self._is_resized_image(result):
+                continue
+            if self._compute_resample_scale_factor(result) < 0.999:
+                return True
+        return False
+
+    def _update_action_buttons_state(self) -> None:
+        if not hasattr(self, "next_btn") or not hasattr(self, "cancel_btn"):
+            return
+        if self._continue_to_observation_details:
+            self.cancel_btn.setVisible(True)
+            self.next_btn.setText(self.tr("Continue"))
+            return
+        if self._has_pending_resize_operations():
+            self.cancel_btn.setVisible(True)
+            self.next_btn.setText(self.tr("Apply"))
+        else:
+            self.cancel_btn.setVisible(False)
+            self.next_btn.setText(self.tr("Close"))
 
     def _update_micro_settings_state(self, enable: bool | None = None) -> None:
         if not hasattr(self, "contrast_combo"):
@@ -2478,6 +2506,31 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not force and not bool(getattr(result, "resize_to_optimal", False)):
             return
         self._set_preview_for_result(result, preserve_view=preserve_view)
+        factor = self._compute_resample_scale_factor(result, respect_toggle=False)
+        # If resize preview is ON but effective factor is ~1.0 (no resize),
+        # still force full-resolution so users do not see the cached
+        # downscaled preview and think a resize happened.
+        if (
+            bool(getattr(result, "resize_to_optimal", False))
+            and factor >= 0.999
+            and hasattr(self, "preview")
+        ):
+            try:
+                self.preview.ensure_full_resolution()
+            except Exception:
+                pass
+        # When toggling resize preview off, show the true original immediately.
+        # Without this, the widget may stay on a cached downscaled preview until
+        # the next zoom action triggers full-resolution loading.
+        if (
+            force
+            and not bool(getattr(result, "resize_to_optimal", False))
+            and hasattr(self, "preview")
+        ):
+            try:
+                self.preview.ensure_full_resolution()
+            except Exception:
+                pass
         self._update_ai_overlay()
 
     def _toggle_resize_preview(self) -> None:
@@ -2635,6 +2688,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "scale"
             previous_key = self._last_objective_key
             current_key = self.objective_combo.currentData()
+            self._update_scalebar_controls_visibility()
             if current_key == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale is None:
                 self._update_resize_group_state()
                 self._start_scale_bar_selection()
@@ -3358,6 +3412,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         for result in self.import_results:
             if not result.image_id:
                 result.resample_scale_factor = self._compute_resample_scale_factor(result)
+        self._refresh_gallery()
         if self.selected_index is not None and 0 <= self.selected_index < len(self.import_results):
             self._update_current_image_sampling(self.import_results[self.selected_index])
         self._refresh_resize_preview(preserve_view=True)
@@ -3603,13 +3658,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     self.objectives[result.objective],
                     result.objective,
                 ) or result.objective
+            resize_suggested = (
+                bool(getattr(result, "resize_to_optimal", False))
+                and self._compute_resample_scale_factor(result) < 0.999
+            )
             badges = ImageGalleryWidget.build_image_type_badges(
                 image_type=result.image_type,
                 objective_name=objective_label,
                 contrast=result.contrast,
                 custom_scale=bool(result.custom_scale),
                 needs_scale=bool(result.needs_scale),
-                resize_to_optimal=bool(getattr(result, "resize_to_optimal", False)),
+                resize_to_optimal=resize_suggested,
                 translate=self.tr,
             )
             has_measurements = bool(result.image_id and int(result.image_id) in measured_image_ids)
@@ -3631,6 +3690,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.gallery.set_items(items)
         if selected:
             self.gallery.select_paths(selected)
+        self._update_action_buttons_state()
 
     def _on_remove_selected(self) -> None:
         if not self.selected_indices:
@@ -3755,8 +3815,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 if not in_bounds:
                     self.preview.set_measurement_lines([])
                     self.preview.set_scale_bar_draggable(False)
-                    if hasattr(self, "_scale_bar_inline"):
-                        self._scale_bar_inline.setVisible(False)
+                    self._update_scalebar_controls_visibility()
                     return
             self.preview.set_measurement_lines([[x1, y1, x2, y2]])
             # Restore pixel distance so Apply can recompute µm/pixel
@@ -3765,17 +3824,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if px_dist > 0:
                 self._scale_bar_pixel_distance = px_dist
             self.preview.set_scale_bar_draggable(True)
-            if hasattr(self, "_scale_bar_inline"):
-                self._scale_bar_inline.setVisible(True)
-                length_um = getattr(result, "scale_bar_length_um", None)
-                if length_um:
-                    is_field = (result.image_type or "").strip().lower() == "field"
-                    self.scale_bar_length_input.setValue(float(length_um) / 1000.0 if is_field else float(length_um))
+            self._update_scalebar_controls_visibility()
+            length_um = getattr(result, "scale_bar_length_um", None)
+            if length_um:
+                is_field = (result.image_type or "").strip().lower() == "field"
+                self.scale_bar_length_input.setValue(float(length_um) / 1000.0 if is_field else float(length_um))
         else:
             self.preview.set_measurement_lines([])
             self.preview.set_scale_bar_draggable(False)
-            if hasattr(self, "_scale_bar_inline"):
-                self._scale_bar_inline.setVisible(False)
+            self._update_scalebar_controls_visibility()
 
     def enter_calibration_mode(self, dialog):
         if not getattr(self, "preview", None) or not self.preview.original_pixmap:
@@ -3808,14 +3865,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     if ((pos.x() - cx) ** 2 + (pos.y() - cy) ** 2) ** 0.5 <= 20:
                         # Restore pixel distance so _apply_scale_bar_inline can recompute µm/pixel
                         self._scale_bar_pixel_distance = seg_len
-                        # Show inline controls so user can re-enter µm value
-                        if hasattr(self, "_scale_bar_inline"):
-                            self._scale_bar_inline.setVisible(True)
-                            length_um = getattr(result, "scale_bar_length_um", None)
-                            if length_um:
-                                is_field = (result.image_type or "").strip().lower() == "field"
-                                value = float(length_um) / 1000.0 if is_field else float(length_um)
-                                self.scale_bar_length_input.setValue(value)
+                        self._update_scalebar_controls_visibility()
+                        length_um = getattr(result, "scale_bar_length_um", None)
+                        if length_um:
+                            is_field = (result.image_type or "").strip().lower() == "field"
+                            value = float(length_um) / 1000.0 if is_field else float(length_um)
+                            self.scale_bar_length_input.setValue(value)
                         self.set_hint(self.tr("Adjust length and click again to re-apply scale"))
                         return
             return

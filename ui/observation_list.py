@@ -19,7 +19,7 @@ class ObservationList(QWidget):
         layout = QVBoxLayout(self)
 
         # Refresh button
-        refresh_btn = QPushButton("Refresh List")
+        refresh_btn = QPushButton(self.tr("Refresh List"))
         refresh_btn.clicked.connect(self.load_observations)
         layout.addWidget(refresh_btn)
 
@@ -27,7 +27,11 @@ class ObservationList(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Image Path", "Length (μm)", "Scale", "Timestamp"
+            self.tr("ID"),
+            self.tr("Image Path"),
+            self.tr("Length (μm)"),
+            self.tr("Scale"),
+            self.tr("Timestamp"),
         ])
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.table)

@@ -681,6 +681,17 @@ def init_database():
             source_type TEXT DEFAULT 'personal',
             citation TEXT,
             data_provider TEXT,
+            habitat_nin2_path TEXT,
+            habitat_substrate_path TEXT,
+            habitat_host_genus TEXT,
+            habitat_host_species TEXT,
+            habitat_host_common_name TEXT,
+            habitat_nin2_note TEXT,
+            habitat_substrate_note TEXT,
+            habitat_grows_on_note TEXT,
+            open_comment TEXT,
+            private_comment TEXT,
+            interesting_comment INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -796,6 +807,52 @@ def init_database():
     # Add GPS longitude column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE observations ADD COLUMN gps_longitude REAL')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add structured habitat columns if they don't exist
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_nin2_path TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_substrate_path TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_host_genus TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_host_species TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_host_common_name TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_nin2_note TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_substrate_note TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN habitat_grows_on_note TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN open_comment TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN private_comment TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN interesting_comment INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass  # Column already exists
 

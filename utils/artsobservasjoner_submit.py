@@ -453,9 +453,19 @@ class ArtsObservasjonerWebClient:
         habitat: Optional[str] = None,
         notes: Optional[str] = None,
         open_comment: Optional[str] = None,
+        private_comment: Optional[str] = None,
+        interesting_comment: bool = False,
         uncertain: bool = False,
         unspontaneous: bool = False,
         determination_method: Optional[int] = None,
+        habitat_nin2_path: Optional[str] = None,
+        habitat_substrate_path: Optional[str] = None,
+        habitat_nin2_note: Optional[str] = None,
+        habitat_substrate_note: Optional[str] = None,
+        habitat_grows_on_note: Optional[str] = None,
+        habitat_host_scientific: Optional[str] = None,
+        habitat_host_common_name: Optional[str] = None,
+        habitat_host_taxon_id: Optional[int] = None,
         image_paths: Optional[list[str]] = None,
         media_license: Optional[str] = None,
         progress_cb: Optional[callable] = None,
@@ -519,9 +529,19 @@ class ArtsObservasjonerWebClient:
             habitat=habitat,
             notes=notes,
             open_comment=open_comment,
+            private_comment=private_comment,
+            interesting_comment=interesting_comment,
             uncertain=uncertain,
             unspontaneous=unspontaneous,
             determination_method=determination_method,
+            habitat_nin2_path=habitat_nin2_path,
+            habitat_substrate_path=habitat_substrate_path,
+            habitat_nin2_note=habitat_nin2_note,
+            habitat_substrate_note=habitat_substrate_note,
+            habitat_grows_on_note=habitat_grows_on_note,
+            habitat_host_scientific=habitat_host_scientific,
+            habitat_host_common_name=habitat_host_common_name,
+            habitat_host_taxon_id=habitat_host_taxon_id,
             new_site_context=new_site_context,
         )
         headers = {
@@ -1181,9 +1201,19 @@ class ArtsObservasjonerWebClient:
         habitat: Optional[str],
         notes: Optional[str],
         open_comment: Optional[str],
+        private_comment: Optional[str],
+        interesting_comment: bool,
         uncertain: bool,
         unspontaneous: bool,
         determination_method: Optional[int],
+        habitat_nin2_path: Optional[str] = None,
+        habitat_substrate_path: Optional[str] = None,
+        habitat_nin2_note: Optional[str] = None,
+        habitat_substrate_note: Optional[str] = None,
+        habitat_grows_on_note: Optional[str] = None,
+        habitat_host_scientific: Optional[str] = None,
+        habitat_host_common_name: Optional[str] = None,
+        habitat_host_taxon_id: Optional[int] = None,
         new_site_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         date_str = self._format_date_ddmmyyyy(observed_datetime)
@@ -1193,9 +1223,8 @@ class ArtsObservasjonerWebClient:
             open_comment_parts.append(open_comment.strip())
         elif notes:
             open_comment_parts.append(notes.strip())
-            if habitat:
-                open_comment_parts.append(f"Habitat: {habitat.strip()}")
         combined_open_comment = "\n".join([part for part in open_comment_parts if part]).strip()
+        combined_private_comment = (private_comment or "").strip()
         selected_site_id = int(site_id) if site_id is not None else -1
         selected_site_name = site_name or ""
         if new_site_context and not selected_site_name:
@@ -1206,6 +1235,15 @@ class ArtsObservasjonerWebClient:
             method_value = 0
         if method_value not in (1, 2, 3):
             method_value = 0
+        biotope_id = self._extract_last_id_from_path(habitat_nin2_path)
+        substrate_id = self._extract_last_id_from_path(habitat_substrate_path)
+        substrate_species_id = None
+        try:
+            substrate_species_id = int(habitat_host_taxon_id) if habitat_host_taxon_id is not None else None
+        except (TypeError, ValueError):
+            substrate_species_id = None
+        substrate_description = (habitat_substrate_note or "").strip()
+        biotope_description = (habitat_nin2_note or "").strip()
         payload = {
             "__RequestVerificationToken": token,
             "SightingViewModel.CopyFromSightingId": "0",
@@ -1224,11 +1262,18 @@ class ArtsObservasjonerWebClient:
             "SightingViewModel.TemporarySighting.Sighting.Quantity": str(count),
             "SightingViewModel.TemporarySighting.Sighting.Unit": "0",
             "SightingViewModel.TemporarySighting.Sighting.PublicComment.Comment": combined_open_comment,
-            "SightingViewModel.TemporarySighting.Sighting.PrivateComment.Comment": "",
+            "SightingViewModel.TemporarySighting.Sighting.PrivateComment.Comment": combined_private_comment,
+            "SightingViewModel.TemporarySighting.Sighting.NoteOfInterest": "true" if interesting_comment else "false",
+            "SightingViewModel.EditableProperties.NoteOfInterest.IsEditable": "True",
+            "SightingViewModel.TemporarySighting.Sighting.BiotopeNiN2": str(biotope_id or ""),
             "SightingViewModel.TemporarySighting.Sighting.BiotopeDescription.Id": "0",
-            "SightingViewModel.TemporarySighting.Sighting.BiotopeDescription.Description": "",
+            "SightingViewModel.TemporarySighting.Sighting.BiotopeDescription.Description": biotope_description,
+            "SightingViewModel.TemporarySighting.Sighting.Substrate": str(substrate_id or ""),
             "SightingViewModel.TemporarySighting.Sighting.SubstrateDescription.Id": "0",
-            "SightingViewModel.TemporarySighting.Sighting.SubstrateDescription.Description": habitat or "",
+            "SightingViewModel.TemporarySighting.Sighting.SubstrateDescription.Description": substrate_description,
+            "SightingViewModel.TemporarySighting.Sighting.SubstrateSpecies": str(substrate_species_id or ""),
+            "SightingViewModel.TemporarySighting.Sighting.SubstrateSpeciesDescription.Id": "0",
+            "SightingViewModel.TemporarySighting.Sighting.SubstrateSpeciesDescription.Description": (habitat_grows_on_note or "").strip(),
             "SightingViewModel.TemporarySighting.Sighting.DeterminationMethod": str(method_value),
             "SightingViewModel.EditableProperties.DeterminationMethod.IsEditable": "True",
             "SightingViewModel.SelectedSite.Id": str(selected_site_id),
@@ -1276,6 +1321,31 @@ class ArtsObservasjonerWebClient:
                 }
             )
         return payload
+
+    @staticmethod
+    def _extract_last_id_from_path(path_value: Any) -> Optional[int]:
+        if path_value is None:
+            return None
+        parsed = path_value
+        if isinstance(path_value, str):
+            raw = path_value.strip()
+            if not raw:
+                return None
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                parsed = raw
+        if isinstance(parsed, list):
+            for item in reversed(parsed):
+                try:
+                    return int(item)
+                except (TypeError, ValueError):
+                    continue
+            return None
+        try:
+            return int(parsed)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _extract_sighting_id(text: str) -> Optional[int]:
@@ -1572,4 +1642,3 @@ if __name__ == "__main__":
     print("2. OAuth-based (better, for apps)")
     print("\nSee example_cookie_based() and example_oauth_based() for usage")
     print("\nTo extract cookies, run: extract_cookies_from_browser()")
-

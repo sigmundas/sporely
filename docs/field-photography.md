@@ -32,7 +32,7 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 ### Macro Lens Calibration
 
 If you shoot with a macro lens, set up a profile under **Settings → Calibration → New Objective**, selecting profile type **Macro**. Enter:
-- Magnification as a 1:X ratio (e.g. 1 for 1:1 macro, 0.5 for 1:2)
+- Magnification as a 1:X ratio divisor (e.g. 1 for 1:1 macro, 2 for 1:2, 4 for 1:4)
 - Sensor width (mm) and image width (px)
 
 This calculates a provisional scale. For best accuracy, calibrate against a ruler in the frame instead.

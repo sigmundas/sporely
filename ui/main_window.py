@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PySide6.QtGui import (
     QPixmap,
     QAction,
+    QActionGroup,
     QColor,
     QImage,
     QImageReader,
@@ -98,6 +99,15 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, Ellipse
 from matplotlib.ticker import MaxNLocator
+
+
+def _timing_debug_enabled() -> bool:
+    return str(os.environ.get("MYCOLOG_DEBUG_TIMING", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _timing_log(message: str) -> None:
+    if _timing_debug_enabled():
+        print(f"[timing][main] {message}")
 
 
 class SpinnerWidget(QWidget):
@@ -581,8 +591,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_MO_APP_API_KEY = "mushroomobserver_app_api_key"
     SETTING_MO_USER_API_KEY = "mushroomobserver_user_api_key"
     UPLOADER_LABELS = {
-        "mobile": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner (mobile)"),
-        "web": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner (web)"),
+        "mobile": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner"),
+        "web": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner"),
         "inat": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "iNaturalist"),
         "mo": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Mushroom Observer"),
     }
@@ -1279,9 +1289,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
 
         if selected_uploader and selected_uploader.key in ("mobile", "web"):
-            # Single credential prompt authenticates both endpoints at once.
             try:
-                results = auth.login_both_with_gui(parent=self)
+                cookies = auth.login_web_with_gui(parent=self)
             except Exception as exc:
                 QMessageBox.warning(
                     self,
@@ -1289,23 +1298,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     self.tr("Login failed.\n\n{error}").format(error=exc)
                 )
                 return
-            if results.get("cancelled"):
+            if not cookies:
                 return
-            # Report partial failures
-            failed = [k for k in ("mobile", "web") if not results.get(k)]
-            if failed and not any(results.get(k) for k in ("mobile", "web")):
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Failed"),
-                    self.tr("Could not log in to any Artsobservasjoner endpoint. Check your credentials.")
-                )
-                return
-            if failed:
-                print(f"[artsobs] partial login — failed endpoints: {failed}")
-            # Register both successful sessions
-            for key in ("mobile", "web"):
-                if results.get(key):
-                    self._on_login_success(results[key], target_key=key, already_saved=True)
+            self._on_login_success(cookies, target_key="web", already_saved=True)
             return
 
     def _on_login_success(self, cookies: dict, target_key: str, already_saved: bool = False):
@@ -1367,7 +1362,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
             auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
             if selected_uploader and selected_uploader.key:
-                auth.clear_cookies(target=selected_uploader.key)
+                target = "web" if selected_uploader.key in {"mobile", "web"} else selected_uploader.key
+                auth.clear_cookies(target=target)
             else:
                 return
         except Exception as exc:
@@ -1384,6 +1380,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._loading_settings = True
         try:
             selected_target = (SettingsDB.get_setting(self.SETTING_UPLOAD_TARGET, "") or "").strip().lower()
+            if selected_target == "mobile":
+                selected_target = "web"
             selected_row = -1
             if selected_target:
                 for row in range(self.targets_table.rowCount()):
@@ -2611,6 +2609,10 @@ class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
 
     _geometry_key = "MainWindow"
+    SETTING_MEASURE_SHOW_LABELS = "measure_view_show_labels"
+    SETTING_MEASURE_SHOW_OVERLAYS = "measure_view_show_overlays"
+    SETTING_MEASURE_SHOW_SCALE_BAR = "measure_view_show_scale_bar"
+    SETTING_MEASURE_SHOW_COPYRIGHT = "measure_view_show_copyright"
 
     def __init__(self, app_version: str | None = None):
         super().__init__()
@@ -2710,6 +2712,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._measure_category_sync = False
         self._measurement_type_by_id: dict[int, str] = {}
         self._show_calibration_overlay_for_scalebar = False
+        self._prevent_cross_image_switch_from_table_selection = False
 
         # Calibration mode tracking
         self.calibration_mode = False
@@ -2788,9 +2791,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         # Observation header
         self.observation_header_label = QLabel("")
-        self.observation_header_label.setStyleSheet(
-            f"font-size: {pt(12)}pt; font-weight: bold; color: #2c3e50;"
-        )
+        self.observation_header_label.setObjectName("observationHeaderLabel")
         self.observation_header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         main_layout.addWidget(self.observation_header_label)
 
@@ -2882,9 +2883,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         language_action.triggered.connect(self.open_language_settings_dialog)
         settings_menu.addAction(language_action)
 
-        appearance_action = QAction(self.tr("Appearance"), self)
-        appearance_action.triggered.connect(self.open_appearance_dialog)
-        settings_menu.addAction(appearance_action)
+        appearance_menu = settings_menu.addMenu(self.tr("Appearance"))
+        self._appearance_action_group = QActionGroup(self)
+        self._appearance_action_group.setExclusive(True)
+        self._appearance_actions: dict[str, QAction] = {}
+        for theme_key, label in (
+            ("auto", self.tr("Auto (follow system)")),
+            ("light", self.tr("Light")),
+            ("dark", self.tr("Dark")),
+        ):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, theme=theme_key: self._set_ui_theme(theme))
+            self._appearance_action_group.addAction(action)
+            appearance_menu.addAction(action)
+            self._appearance_actions[theme_key] = action
+        self._sync_appearance_menu()
 
         help_menu = menubar.addMenu(self.tr("Help"))
         version_text = self.tr("Version: {version}").format(
@@ -3102,7 +3116,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         measure_layout.addLayout(mode_row)
 
         palette_row = QHBoxLayout()
-        palette_row.addWidget(QLabel("Color:"))
+        palette_row.addWidget(QLabel(self.tr("Color:")))
         self.color_button_group = QButtonGroup(self)
         self.color_button_group.setExclusive(True)
         self.measure_color_buttons = []
@@ -3158,20 +3172,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         zoom_layout.addLayout(view_buttons_row)
 
         self.show_measures_checkbox = QCheckBox(self.tr("Show measures"))
-        self.show_measures_checkbox.setChecked(True)
+        self.show_measures_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_LABELS, default=True)
+        )
         self.show_measures_checkbox.toggled.connect(self.on_show_measures_toggled)
         zoom_layout.addWidget(self.show_measures_checkbox)
 
         self.show_rectangles_checkbox = QCheckBox(self.tr("Show rectangles"))
-        self.show_rectangles_checkbox.setChecked(True)
+        self.show_rectangles_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_OVERLAYS, default=True)
+        )
         self.show_rectangles_checkbox.toggled.connect(self.on_show_rectangles_toggled)
         zoom_layout.addWidget(self.show_rectangles_checkbox)
 
         self.show_scale_bar_checkbox = QCheckBox(self.tr("Show scale bar"))
+        self.show_scale_bar_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False)
+        )
         self.show_scale_bar_checkbox.toggled.connect(self.on_show_scale_bar_toggled)
         zoom_layout.addWidget(self.show_scale_bar_checkbox)
 
         self.show_copyright_checkbox = QCheckBox(self.tr("Show copyright"))
+        self.show_copyright_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False)
+        )
         self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
         zoom_layout.addWidget(self.show_copyright_checkbox)
 
@@ -3204,7 +3228,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         info_group = QGroupBox(self.tr("Info"))
         info_layout = QVBoxLayout()
-        self.exif_info_label = QLabel("No image loaded")
+        self.exif_info_label = QLabel(self.tr("No image loaded"))
         self.exif_info_label.setWordWrap(True)
         self.exif_info_label.setStyleSheet(f"color: #2c3e50; font-size: {pt(8)}pt;")
         self.exif_info_label.setTextFormat(Qt.RichText)
@@ -3217,6 +3241,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.addStretch()
         self.update_measurement_button_state()
         return panel
+
+    @staticmethod
+    def _measure_view_setting_enabled(key: str, default: bool = False) -> bool:
+        raw = SettingsDB.get_setting(key, "1" if default else "0")
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        text = str(raw or "").strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return bool(default)
 
     def create_measure_tab(self):
         """Create the measure tab with control panel, image panel, and stats panel."""
@@ -3413,12 +3451,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         gallery_row = QHBoxLayout()
         self.orient_checkbox = QCheckBox(self.tr("Orient"))
-        self.orient_checkbox.setToolTip("Rotate thumbnails so length axis is vertical")
+        self.orient_checkbox.setToolTip(self.tr("Rotate thumbnails so length axis is vertical"))
         self.orient_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.orient_checkbox)
 
         self.uniform_scale_checkbox = QCheckBox(self.tr("Uniform scale"))
-        self.uniform_scale_checkbox.setToolTip("Use the same scale for all thumbnails")
+        self.uniform_scale_checkbox.setToolTip(self.tr("Use the same scale for all thumbnails"))
         self.uniform_scale_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.uniform_scale_checkbox)
         gallery_row.addStretch()
@@ -3703,8 +3741,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_genus_input = QLineEdit()
         self.ref_species_input = QLineEdit()
         self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
-        self.ref_genus_input.setPlaceholderText("e.g., Flammulina")
-        self.ref_species_input.setPlaceholderText("e.g., velutipes")
+        self.ref_genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
+        self.ref_species_input.setPlaceholderText(self.tr("e.g., velutipes"))
         self.ref_source_input = QComboBox()
         self.ref_source_input.setEditable(True)
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
@@ -3821,7 +3859,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
         if not cleaned:
-            self.ref_species_input.setPlaceholderText("e.g., velutipes")
+            self.ref_species_input.setPlaceholderText(self.tr("e.g., velutipes"))
             return
         preview = "; ".join(cleaned[:4])
         self.ref_species_input.setPlaceholderText(f"e.g., {preview}")
@@ -4982,7 +5020,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Measurement preview group
-        self.preview_group = QGroupBox("Measurement Fine tune")
+        self.preview_group = QGroupBox(self.tr("Measurement Fine tune"))
         preview_layout = QVBoxLayout()
         preview_layout.setContentsMargins(5, 5, 5, 5)
 
@@ -4997,7 +5035,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_preview_title()
 
         # Measurements table group
-        measurements_group = QGroupBox("Measurements")
+        measurements_group = QGroupBox(self.tr("Measurements"))
         measurements_layout = QVBoxLayout()
         measurements_layout.setContentsMargins(5, 5, 5, 5)
 
@@ -5094,6 +5132,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not hasattr(self, "scale_combo"):
             return
         objectives = self.load_objective_definitions()
+        custom_key = "__from_scalebar__"
 
         def _sort_key(item):
             key, obj = item
@@ -5102,11 +5141,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_combo.blockSignals(True)
         self.scale_combo.clear()
         self.scale_combo.addItem(self.tr("Not set"), "")
+        self.scale_combo.addItem(self.tr("From scalebar"), custom_key)
         for key, obj in sorted(objectives.items(), key=_sort_key):
             label = objective_display_name(obj, key) or key
             self.scale_combo.addItem(label, key)
         if selected_key is None:
             selected_key = self.current_objective_name
+        if selected_key == "Custom":
+            selected_key = custom_key
         if selected_key:
             idx = self.scale_combo.findData(selected_key)
             if idx >= 0:
@@ -5120,6 +5162,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         previous_key = getattr(self, "_last_scale_combo_key", None)
         selected_key = self.scale_combo.currentData()
+        custom_key = "__from_scalebar__"
         if not selected_key:
             self.current_objective = None
             self.current_objective_name = None
@@ -5136,6 +5179,24 @@ class MainWindow(GeometryMixin, QMainWindow):
                     objective_name="",
                     calibration_id=None,
                 )
+            self._update_scalebar_controls_visibility()
+            return
+        if selected_key == custom_key:
+            image_data = ImageDB.get_image(self.current_image_id) if self.current_image_id else None
+            image_scale = image_data.get("scale_microns_per_pixel") if image_data else None
+            try:
+                resolved_scale = float(image_scale) if image_scale is not None and float(image_scale) > 0 else 0.0
+            except Exception:
+                resolved_scale = 0.0
+            if resolved_scale <= 0:
+                resolved_scale = float(self.microns_per_pixel or 0.0)
+            if resolved_scale > 0:
+                self.set_custom_scale(resolved_scale)
+            else:
+                self.scale_combo.blockSignals(True)
+                self.scale_combo.setCurrentIndex(0)
+                self.scale_combo.blockSignals(False)
+                self._last_scale_combo_key = ""
             self._update_scalebar_controls_visibility()
             return
 
@@ -5298,8 +5359,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 objective_name=self.current_objective_name,
                 calibration_id=None,
             )
-        self._populate_scale_combo("")
-        self._last_scale_combo_key = ""
+        self._populate_scale_combo("Custom")
+        self._last_scale_combo_key = self.scale_combo.currentData() if hasattr(self, "scale_combo") else "Custom"
         self._update_scale_mismatch_warning()
         self._update_measure_view_option_states()
         self._update_scalebar_controls_visibility()
@@ -5622,22 +5683,38 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _update_measure_view_option_states(self) -> None:
         has_scale = self._current_image_has_scale()
-        for widget_name in (
+        is_field = (self.current_image_type or "").strip().lower() == "field"
+        force_disable_overlays = bool(is_field and not has_scale)
+
+        overlay_checkbox_names = (
             "show_measures_checkbox",
             "show_rectangles_checkbox",
             "show_scale_bar_checkbox",
-            "show_copyright_checkbox",
-        ):
+        )
+        for widget_name in overlay_checkbox_names:
             widget = getattr(self, widget_name, None)
-            if widget is not None:
-                widget.setEnabled(has_scale)
+            if widget is None:
+                continue
+            widget.setEnabled(not force_disable_overlays)
+            if force_disable_overlays and widget.isChecked():
+                widget.blockSignals(True)
+                widget.setChecked(False)
+                widget.blockSignals(False)
+
+        copyright_widget = getattr(self, "show_copyright_checkbox", None)
+        if copyright_widget is not None:
+            copyright_widget.setEnabled(True)
+
+        if force_disable_overlays and hasattr(self, "image_label"):
+            self.image_label.set_show_measure_labels(False)
+            self.image_label.set_show_measure_overlays(False)
         if hasattr(self, "scale_bar_input"):
-            self.scale_bar_input.setEnabled(has_scale)
+            self.scale_bar_input.setEnabled(has_scale and not force_disable_overlays)
         if hasattr(self, "scale_bar_length_label"):
-            self.scale_bar_length_label.setEnabled(has_scale)
+            self.scale_bar_length_label.setEnabled(has_scale and not force_disable_overlays)
         if hasattr(self, "scale_bar_container"):
             show_container = bool(
-                has_scale
+                (has_scale and not force_disable_overlays)
                 and hasattr(self, "show_scale_bar_checkbox")
                 and self.show_scale_bar_checkbox.isChecked()
             )
@@ -5886,6 +5963,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def refresh_observation_images(self, select_image_id=None):
         """Refresh the image list for the active observation."""
+        _t0 = time.perf_counter()
         if not self.active_observation_id:
             self.observation_images = []
             self.current_image_index = -1
@@ -5895,6 +5973,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.update_image_navigation_ui()
             if hasattr(self, "measure_gallery"):
                 self.measure_gallery.clear()
+            _timing_log(f"refresh_observation_images obs=None took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
 
         if self._pixmap_cache_observation_id != self.active_observation_id:
@@ -5926,6 +6005,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_image_navigation_ui()
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
+        _timing_log(
+            f"refresh_observation_images obs={int(self.active_observation_id)} "
+            f"images={len(self.observation_images)} took={(time.perf_counter()-_t0)*1000:.1f}ms"
+        )
 
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -5934,7 +6017,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not observation_id:
             return set()
         obs_id = int(observation_id)
-        raw = SettingsDB.get_setting(self._publish_excluded_images_setting_key(obs_id), "[]")
+        key = self._publish_excluded_images_setting_key(obs_id)
+        raw = SettingsDB.get_setting(key, "[]")
         parsed: set[int] = set()
         try:
             loaded = json.loads(raw or "[]")
@@ -5950,10 +6034,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         obs_id = int(observation_id)
         normalized = {int(v) for v in (excluded_ids or set())}
+        key = self._publish_excluded_images_setting_key(obs_id)
         self._publish_excluded_image_ids_by_observation[obs_id] = set(normalized)
         try:
             SettingsDB.set_setting(
-                self._publish_excluded_images_setting_key(obs_id),
+                key,
                 json.dumps(sorted(normalized)),
             )
         except Exception:
@@ -5988,8 +6073,46 @@ class MainWindow(GeometryMixin, QMainWindow):
             selected_set = set()
         excluded = set(all_image_ids) - set(selected_set)
         self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
-        if hasattr(self, "observations_tab") and hasattr(self.observations_tab, "refresh_publish_checkbox_state"):
-            self.observations_tab.refresh_publish_checkbox_state(self.active_observation_id)
+        if hasattr(self, "_sync_observations_tab_publish_state"):
+            self._sync_observations_tab_publish_state(self.active_observation_id, excluded)
+
+    def _sync_observations_tab_publish_state(self, observation_id: int | None, excluded_ids: set[int] | None = None) -> None:
+        """Keep Observations tab publish checkboxes in sync with Measure tab edits."""
+        if not observation_id or not hasattr(self, "observations_tab"):
+            return
+        obs_id = int(observation_id)
+        tab = self.observations_tab
+
+        if excluded_ids is not None and hasattr(tab, "_set_publish_excluded_image_ids"):
+            try:
+                tab._set_publish_excluded_image_ids(obs_id, set(excluded_ids))
+            except Exception:
+                pass
+
+        if not hasattr(tab, "table") or not hasattr(tab, "_find_table_row_for_observation"):
+            if hasattr(tab, "refresh_publish_checkbox_state"):
+                tab.refresh_publish_checkbox_state(obs_id)
+            return
+
+        current_selected = int(getattr(tab, "selected_observation_id", 0) or 0)
+        if current_selected == obs_id:
+            if hasattr(tab, "refresh_publish_checkbox_state"):
+                tab.refresh_publish_checkbox_state(obs_id)
+            return
+
+        # When Observations tab is visible, align table selection with active Measure observation.
+        if hasattr(self, "tab_widget") and self.tab_widget.currentIndex() == 0:
+            try:
+                row = int(tab._find_table_row_for_observation(obs_id))
+            except Exception:
+                row = -1
+            if row >= 0:
+                try:
+                    tab.table.selectRow(row)
+                except Exception:
+                    pass
+            if hasattr(tab, "refresh_publish_checkbox_state"):
+                tab.refresh_publish_checkbox_state(obs_id)
 
     def update_image_navigation_ui(self):
         """Update navigation button state and label."""
@@ -6284,10 +6407,13 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_show_measures_toggled(self, checked):
         """Toggle measurement labels on the main image."""
-        self.image_label.set_show_measure_labels(checked)
+        SettingsDB.set_setting(self.SETTING_MEASURE_SHOW_LABELS, "1" if checked else "0")
+        if hasattr(self, "image_label"):
+            self.image_label.set_show_measure_labels(checked)
 
     def on_show_rectangles_toggled(self, checked):
         """Toggle measurement overlays on the main image."""
+        SettingsDB.set_setting(self.SETTING_MEASURE_SHOW_OVERLAYS, "1" if checked else "0")
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_overlays(checked)
         self.update_display_lines()
@@ -6295,6 +6421,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_show_scale_bar_toggled(self, checked):
         """Toggle scale bar display."""
+        SettingsDB.set_setting(self.SETTING_MEASURE_SHOW_SCALE_BAR, "1" if checked else "0")
         if checked and not self._current_image_has_scale():
             checked = False
         if hasattr(self, "scale_bar_container"):
@@ -6336,6 +6463,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_show_copyright_toggled(self, _checked):
         """Toggle copyright text on the Measure image view/export."""
+        SettingsDB.set_setting(
+            self.SETTING_MEASURE_SHOW_COPYRIGHT,
+            "1" if bool(self.show_copyright_checkbox.isChecked()) else "0",
+        )
         self._update_measure_copyright_overlay()
 
     def _observation_year_for_copyright(self, observation_date) -> int:
@@ -7106,7 +7237,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         lines = self._extract_exif_lines(image_path)
         if not lines:
-            self.exif_info_label.setText("No image loaded")
+            self.exif_info_label.setText(self.tr("No image loaded"))
             return
         mp_value = self._megapixels_from_path(image_path) or self._current_image_megapixels()
         if mp_value:
@@ -7344,7 +7475,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not self.current_pixmap:
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle("Auto Measure Debug")
+        dialog.setWindowTitle(self.tr("Auto Measure Debug"))
         layout = QVBoxLayout(dialog)
 
         center = QPointF(pos.x(), pos.y())
@@ -7366,7 +7497,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.addWidget(image_label)
 
         controls_row = QHBoxLayout()
-        threshold_label = QLabel("Threshold:")
+        threshold_label = QLabel(self.tr("Threshold:"))
         threshold_input = QDoubleSpinBox()
         threshold_input.setRange(0.02, 0.6)
         threshold_input.setDecimals(3)
@@ -8080,6 +8211,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.update_display_lines()
             image_id = measurement.get('image_id')
             if image_id and image_id != self.current_image_id:
+                if getattr(self, "_prevent_cross_image_switch_from_table_selection", False):
+                    return
                 image_data = ImageDB.get_image(image_id)
                 if image_data:
                     self.load_image_record(image_data, refresh_table=False)
@@ -8247,8 +8380,9 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_tab_changed(self, index):
         """Handle tab changes for analysis/measure."""
-        if index == 0 and hasattr(self, "observations_tab") and hasattr(self.observations_tab, "refresh_publish_checkbox_state"):
-            self.observations_tab.refresh_publish_checkbox_state(self.active_observation_id)
+        _t0 = time.perf_counter()
+        if index == 0 and hasattr(self, "_sync_observations_tab_publish_state"):
+            self._sync_observations_tab_publish_state(self.active_observation_id)
         if index in (1, 2) and hasattr(self, "observations_tab"):
             selected = self.observations_tab.get_selected_observation()
             if selected:
@@ -8269,6 +8403,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.refresh_gallery_filter_options()
             self._refresh_reference_species_availability()
             self.schedule_gallery_refresh()
+        _timing_log(
+            f"on_tab_changed index={int(index)} active_obs={int(self.active_observation_id or 0)} "
+            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
+        )
 
     def schedule_gallery_refresh(self):
         """Coalesce multiple refresh requests into a single gallery update."""
@@ -8500,7 +8638,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if orient:
             rotate_btn = QToolButton(container)
             rotate_btn.setIcon(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "rotate.svg")))
-            rotate_btn.setToolTip("Rotate 180")
+            rotate_btn.setToolTip(self.tr("Rotate 180"))
             rotate_btn.setProperty("instant_tooltip", True)
             rotate_btn.installEventFilter(self)
             rotate_btn.setFixedSize(24, 24)
@@ -10128,11 +10266,25 @@ class MainWindow(GeometryMixin, QMainWindow):
         dialog = AppearanceDialog(self)
         dialog.exec()
 
+    def _set_ui_theme(self, theme: str) -> None:
+        SettingsDB.set_setting("ui_theme", theme)
+        self._apply_theme()
+
+    def _sync_appearance_menu(self) -> None:
+        actions = getattr(self, "_appearance_actions", None)
+        if not actions:
+            return
+        theme = SettingsDB.get_setting("ui_theme", "auto")
+        if theme not in actions:
+            theme = "auto"
+        actions[theme].setChecked(True)
+
     def _apply_theme(self):
         """Read the stored theme preference and apply palette + stylesheet."""
         theme = SettingsDB.get_setting("ui_theme", "auto")
         apply_palette(theme)
         self.setStyleSheet(get_style(theme))
+        self._sync_appearance_menu()
 
     def _on_system_color_scheme_changed(self):
         if SettingsDB.get_setting("ui_theme", "auto") == "auto":
@@ -10649,6 +10801,13 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def delete_measurement(self, measurement_id):
         """Delete a measurement and its associated lines."""
+        previous_row = None
+        for row, measurement in enumerate(self.measurements_cache or []):
+            if int(measurement.get("id") or 0) == int(measurement_id):
+                previous_row = row
+                break
+        current_image_id = self.current_image_id
+
         MeasurementDB.delete_measurement(measurement_id)
 
         # Remove only the lines for this measurement
@@ -10659,8 +10818,29 @@ class MainWindow(GeometryMixin, QMainWindow):
             if label.get("id") != measurement_id
         ]
 
+        previous_guard = bool(getattr(self, "_prevent_cross_image_switch_from_table_selection", False))
+        self._prevent_cross_image_switch_from_table_selection = True
         self.update_display_lines()
         self.update_measurements_table()
+        try:
+            # Keep selection on the current image after delete; do not jump to another image.
+            same_image_rows = [
+                idx
+                for idx, measurement in enumerate(self.measurements_cache or [])
+                if int(measurement.get("image_id") or 0) == int(current_image_id or 0)
+            ]
+            if same_image_rows:
+                if previous_row is not None:
+                    target_row = next((idx for idx in same_image_rows if idx >= previous_row), same_image_rows[-1])
+                else:
+                    target_row = same_image_rows[0]
+                self.measurements_table.selectRow(int(target_row))
+                self.on_measurement_selected()
+            else:
+                self.measurements_table.clearSelection()
+                self._clear_measurement_highlight()
+        finally:
+            self._prevent_cross_image_switch_from_table_selection = previous_guard
         self.update_statistics()
         self.spore_preview.clear()
         self.measure_status_label.setText(self.tr("Measurement deleted"))
@@ -10936,6 +11116,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_observation_selected(self, observation_id, display_name, switch_tab=True, suppress_gallery=False):
         """Handle observation selection from the Observations tab."""
+        _t0 = time.perf_counter()
         previous_suppress = self._suppress_gallery_update
         if suppress_gallery:
             self._suppress_gallery_update = True
@@ -10951,6 +11132,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._suppress_gallery_update = previous_suppress
         if suppress_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
+        _timing_log(
+            f"on_observation_selected obs={int(observation_id or 0)} switch_tab={bool(switch_tab)} "
+            f"suppress_gallery={bool(suppress_gallery)} took={(time.perf_counter()-_t0)*1000:.1f}ms"
+        )
 
     def on_observation_deleted(self, observation_id: int):
         if observation_id != getattr(self, "active_observation_id", None):
@@ -10967,6 +11152,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_observation_selected_impl(self, observation_id, display_name, switch_tab=True, schedule_gallery=True):
         """Internal handler for observation selection."""
+        _t0 = time.perf_counter()
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
         self._update_measure_copyright_overlay()
@@ -10994,6 +11180,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Switch to the Measure tab
         if switch_tab:
             self.tab_widget.setCurrentIndex(1)
+        _timing_log(
+            f"_on_observation_selected_impl obs={int(observation_id or 0)} switch_tab={bool(switch_tab)} "
+            f"schedule_gallery={bool(schedule_gallery)} images={len(self.observation_images)} "
+            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
+        )
 
     def load_image_for_observation(self):
         """Load microscope images and link them to the active observation."""

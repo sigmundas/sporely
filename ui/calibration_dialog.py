@@ -1431,6 +1431,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.auto_division_input = QComboBox()
         self.auto_division_input.addItem(self.tr("0.01 mm (10 µm)"), 0.01)
         self.auto_division_input.addItem(self.tr("0.1 mm (100 µm)"), 0.1)
+        self.auto_division_input.addItem(self.tr("1 mm (1000 µm)"), 1.0)
         self.auto_division_input.setCurrentIndex(0)
         self.auto_division_input.currentIndexChanged.connect(self._on_auto_division_changed)
         input_layout.addRow(self.tr("Division distance:"), self.auto_division_input)

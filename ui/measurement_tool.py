@@ -37,7 +37,7 @@ class MeasurementTool(QWidget):
         load_btn.clicked.connect(self.load_image)
         controls.addWidget(load_btn)
 
-        controls.addWidget(QLabel("Scale (μm/pixel):"))
+        controls.addWidget(QLabel(self.tr("Scale (μm/pixel):")))
         self.scale_input = QLineEdit(str(DEFAULT_SCALE))
         self.scale_input.setMaximumWidth(100)
         controls.addWidget(self.scale_input)
@@ -46,7 +46,7 @@ class MeasurementTool(QWidget):
         measure_btn.clicked.connect(self.start_measurement)
         controls.addWidget(measure_btn)
 
-        self.result_label = QLabel("No measurements")
+        self.result_label = QLabel(self.tr("No measurements"))
         controls.addWidget(self.result_label)
 
         layout.addLayout(controls)
@@ -60,14 +60,14 @@ class MeasurementTool(QWidget):
     def load_image(self):
         """Load an image file for measurement."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Microscope Image", "", SUPPORTED_FORMATS
+            self, self.tr("Open Microscope Image"), "", SUPPORTED_FORMATS
         )
         if path:
             self.image_path = path
 
             # Handle RAW files
             if path.lower().endswith(RAW_FORMATS):
-                self.result_label.setText("RAW file - convert to TIFF first")
+                self.result_label.setText(self.tr("RAW file - convert to TIFF first"))
                 return
 
             # Load and display
@@ -82,17 +82,17 @@ class MeasurementTool(QWidget):
 
             # Reset measurements for new image
             self.measurements = []
-            self.result_label.setText("Image loaded - ready to measure")
+            self.result_label.setText(self.tr("Image loaded - ready to measure"))
 
     def start_measurement(self):
         """Start a new measurement."""
         if not self.image_path:
-            self.result_label.setText("Please load an image first")
+            self.result_label.setText(self.tr("Please load an image first"))
             return
 
         self.points = []
         self.measuring = True
-        self.result_label.setText("Click 2 points to measure...")
+        self.result_label.setText(self.tr("Click 2 points to measure..."))
 
     def image_clicked(self, event):
         """Handle mouse clicks on the image."""

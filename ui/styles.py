@@ -177,6 +177,9 @@ def get_style(theme: str = "auto") -> str:
         sel_inact  = "#172a42"
         dlg_border = "#3a3a3c"
         inline_brd = "#4a90d9"
+        indicator_border = "#8e8e93"
+        indicator_bg = "#232325"
+        indicator_disabled = "#555557"
     else:
         bg         = "#f5f5f5"
         surface    = "white"
@@ -198,6 +201,9 @@ def get_style(theme: str = "auto") -> str:
         sel_inact  = "#eaf3ff"
         dlg_border = "#c7d0da"
         inline_brd = "#6aa9e9"
+        indicator_border = "#7f8c8d"
+        indicator_bg = "#ffffff"
+        indicator_disabled = "#bdc3c7"
 
     return f"""
 QMainWindow {{
@@ -307,6 +313,70 @@ QLabel[hint_interactive="true"] {{
     color: {text};
 }}
 
+QCheckBox {{
+    color: {text};
+    spacing: 8px;
+}}
+
+QCheckBox::indicator {{
+    width: 16px;
+    height: 16px;
+    border: 2px solid {indicator_border};
+    border-radius: 4px;
+    background-color: {indicator_bg};
+}}
+
+QCheckBox::indicator:hover {{
+    border-color: {accent};
+}}
+
+QCheckBox::indicator:checked {{
+    background-color: {accent};
+    border-color: {accent};
+}}
+
+QCheckBox::indicator:unchecked {{
+    background-color: {indicator_bg};
+    border-color: {indicator_border};
+}}
+
+QCheckBox::indicator:disabled {{
+    background-color: {dis_bg};
+    border-color: {indicator_disabled};
+}}
+
+QRadioButton {{
+    color: {text};
+    spacing: 8px;
+}}
+
+QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border: 2px solid {indicator_border};
+    border-radius: 8px;
+    background-color: {indicator_bg};
+}}
+
+QRadioButton::indicator:hover {{
+    border-color: {accent};
+}}
+
+QRadioButton::indicator:checked {{
+    background-color: {accent};
+    border: 4px solid {indicator_border};
+}}
+
+QRadioButton::indicator:unchecked {{
+    background-color: {indicator_bg};
+    border-color: {indicator_border};
+}}
+
+QRadioButton::indicator:disabled {{
+    background-color: {dis_bg};
+    border-color: {indicator_disabled};
+}}
+
 QTableView,
 QTableWidget,
 QTreeView,
@@ -369,6 +439,13 @@ QLabel#headerLabel {{
     font-size: {header_pt}pt;
     font-weight: bold;
     color: {text};
+}}
+
+QLabel#observationHeaderLabel {{
+    font-size: {header_pt + 1}pt;
+    font-weight: bold;
+    color: {text};
+    padding: 2px 0px 4px 0px;
 }}
 
 QLabel#objectiveTag {{

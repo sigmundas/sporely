@@ -12,13 +12,13 @@ Go to **Settings** → **Calibration** and pick an existing profile, or create *
 - Objective name/camera setup
 
 **Macro lens profiles** (select profile type **Macro** in the New Objective dialog) are defined by:
-- Magnification entered as a 1:X ratio (e.g. 1 for 1:1, 0.5 for 1:2)
+- Magnification entered as a 1:X ratio divisor (e.g. 1 for 1:1, 2 for 1:2, 4 for 1:4)
 - Sensor width (mm) and image width (px) for a provisional scale
 
 The provisional scale formula is:
 
 $$
-p = \frac{\text{sensor width (mm)} \times 1000}{\text{image width (px)}} \times \frac{1}{\text{magnification}}
+p = \frac{\text{sensor width (mm)} \times 1000}{\text{image width (px)}} \times \text{magnification divisor (X)}
 $$
 
 This gives an approximate µm/px scale without a physical reference. For better accuracy, calibrate against a ruler or known reference length (same as microscope calibration).
@@ -43,11 +43,12 @@ MycoLog recognizes horizontal or vertical lines. All you have to do is specify t
 
 You may have to select a cropped area if the lines are not uniform. Like here:
 ![auto calibration](images/autocalibrate.png)
-You will get some quality metrics, like MAD and IQR, that depend on the quality of the slide and your optics. If these numbers are way off (in red), the auto-calibration algorithm probably failed.
+You will get some quality metrics, like MAD and IQR, that depend on the quality of the slide and your optics. If these numbers are way off (in red), the auto-calibration algorithm probably failed. Try cropping the image, or do manual calibration.
 
-Check the overlay: 
+You could also check the overlay to 
+
 ![line overlay](images/autocalibrate-overlay.png)
-The yellow lines show where the line edges have been detected. The red center lines are in the middle, between the edge lines. With poor contrast or insufficient resolution, the auto calibration may fail.
+The yellow lines show where the line edges have been detected. The red center lines are in the middle, between the edge lines. With poor contrast or insufficient resolution, the edge detect algorithm may fail.
 
 ## Calibration history
 This is handy if you change things in your setup, and you want to document past calibrations. The history stores:

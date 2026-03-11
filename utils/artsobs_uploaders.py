@@ -90,7 +90,7 @@ class ArtsobsMobileUploader:
 
 class ArtsobsWebUploader:
     key = "web"
-    label = "Artsobservasjoner (web)"
+    label = "Artsobservasjoner"
     login_url = "https://www.artsobservasjoner.no/Account/Login?ReturnUrl=%2FSubmitSighting%2FReport"
 
     def upload(
@@ -114,9 +114,19 @@ class ArtsobsWebUploader:
             habitat=observation.get("habitat"),
             notes=observation.get("notes"),
             open_comment=observation.get("open_comment"),
+            private_comment=observation.get("private_comment"),
+            interesting_comment=bool(observation.get("interesting_comment")),
             uncertain=bool(observation.get("uncertain")),
             unspontaneous=bool(observation.get("unspontaneous")),
             determination_method=observation.get("determination_method"),
+            habitat_nin2_path=observation.get("habitat_nin2_path"),
+            habitat_substrate_path=observation.get("habitat_substrate_path"),
+            habitat_nin2_note=observation.get("habitat_nin2_note"),
+            habitat_substrate_note=observation.get("habitat_substrate_note"),
+            habitat_grows_on_note=observation.get("habitat_grows_on_note"),
+            habitat_host_scientific=observation.get("habitat_host_scientific"),
+            habitat_host_common_name=observation.get("habitat_host_common_name"),
+            habitat_host_taxon_id=observation.get("habitat_host_taxon_id"),
             image_paths=image_paths,
             media_license=observation.get("image_license_code"),
             progress_cb=progress_cb,
@@ -377,7 +387,6 @@ class MushroomObserverUploader:
 
 
 _UPLOADERS = {
-    ArtsobsMobileUploader.key: ArtsobsMobileUploader(),
     ArtsobsWebUploader.key: ArtsobsWebUploader(),
     INaturalistUploader.key: INaturalistUploader(),
     MushroomObserverUploader.key: MushroomObserverUploader(),
@@ -389,6 +398,9 @@ def list_uploaders() -> list[ObservationUploader]:
 
 
 def get_uploader(key: str | None) -> ObservationUploader | None:
-    if not key:
-        return _UPLOADERS.get(ArtsobsMobileUploader.key)
-    return _UPLOADERS.get(key)
+    normalized = (key or "").strip().lower()
+    if not normalized:
+        normalized = ArtsobsWebUploader.key
+    if normalized == ArtsobsMobileUploader.key:
+        normalized = ArtsobsWebUploader.key
+    return _UPLOADERS.get(normalized)

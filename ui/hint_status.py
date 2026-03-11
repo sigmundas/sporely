@@ -7,6 +7,12 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolTip
 
 from .styles import pt
 
+try:
+    from shiboken6 import isValid as _qt_is_valid
+except Exception:  # pragma: no cover - fallback for environments without shiboken helper
+    def _qt_is_valid(obj) -> bool:
+        return obj is not None
+
 
 class HintBar(QFrame):
     """Always-visible hint/status strip with a colored left accent bar.
@@ -315,6 +321,8 @@ class HintStatusController(QObject):
         widget.installEventFilter(self)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is None or not _qt_is_valid(watched):
+            return False
         hint_text = watched.property("_hint_text") if hasattr(watched, "property") else None
         hint_tone = watched.property("_hint_tone") if hasattr(watched, "property") else None
         allow_when_disabled = (
