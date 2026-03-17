@@ -15,10 +15,17 @@ https://github.com/sigmundas/mycolog/releases/latest
 | **macOS** | `MycoLog-vx.x.x-macos.dmg` | Open the disk image, drag **MycoLog** to **Applications** |
 | **Linux (Ubuntu/Debian)** | `mycolog_x.x.x_amd64.deb` | `sudo dpkg -i mycolog_x.x.x_amd64.deb` — adds app menu entry |
 
-If macOS shows a warning like "Apple could not verify ...", run:
+### Notes for Windows and macOS
+
+Windows may show a Microsoft Defender SmartScreen warning like "This app isn't commonly downloaded". Choose `Keep` and run the installer. 
+
+If macOS shows a warning like "Apple could not verify ..." or blocks the app because it was downloaded from the Internet, either:
+
+1. In Finder, open `Applications`, right-click `MycoLog.app`, and choose `Open`.
+2. Or remove the quarantine attribute in Terminal:
 
 ```bash
-xattr -dr com.apple.quarantine MycoLog.app
+xattr -dr com.apple.quarantine /Applications/MycoLog.app
 ```
 
 ### Run from source (Python)
@@ -50,7 +57,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-
+Note for macOS development: when you launch the app from VS Code or with `python main.py`, the menu bar may show `Python` as the app name. The packaged app/installer shows `MycoLog`.
 
 Each new terminal session:
 
@@ -80,6 +87,13 @@ Each new terminal session:
 
 - Use the **Measure** tab to draw rectangles for spores or line measurements for length-only.
 - Use **Analysis** to plot distributions and compare with reference datasets.
+- Use **Species Plate** to build a composite plate from one observation. Saved plate layouts are stored in the app data folder, not in the project root.
+
+### Species Plate Layouts
+
+- Saved layouts are written as `.mplate` files in the app data folder.
+- Current plate state is also remembered automatically per observation.
+- macOS: `~/Library/Application Support/MycoLog/plate_layouts`
 
 ## Screenshots
 

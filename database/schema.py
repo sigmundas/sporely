@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from platformdirs import user_data_dir
 
+from database.database_tags import DatabaseTerms
+
 _app_dir = Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
 DATABASE_PATH = _app_dir / "mushrooms.db"
 REFERENCE_DATABASE_PATH = _app_dir / "reference_values.db"
@@ -34,11 +36,28 @@ _DEFAULT_MEASURE_CATEGORIES = [
 ]
 
 _DEFAULT_CONTRAST_METHODS = [
+    "Not_set",
     "BF",
     "DF",
     "DIC",
     "Phase",
     "HMC",
+]
+
+_DEFAULT_MOUNT_MEDIA = [
+    "Not_set",
+    "Water",
+    "KOH",
+    "NH3",
+    "Melzer",
+    "Glycerine",
+]
+
+_DEFAULT_STAIN_TYPES = [
+    "Not_set",
+    "Congo_Red",
+    "Cotton_Blue",
+    "Lactofuchsin",
 ]
 
 
@@ -377,6 +396,7 @@ def init_reference_database():
             species TEXT NOT NULL,
             source TEXT,
             mount_medium TEXT,
+            stain TEXT,
             length_min REAL,
             length_p05 REAL,
             length_p50 REAL,
@@ -402,6 +422,7 @@ def init_reference_database():
 
     _ensure_reference_columns()
     _migrate_reference_values()
+    _migrate_reference_mounts_and_stains()
 
 def _ensure_reference_columns():
     """Ensure new percentile columns exist in the reference values table."""
@@ -410,6 +431,7 @@ def _ensure_reference_columns():
     cursor.execute("PRAGMA table_info(reference_values)")
     existing = {row[1] for row in cursor.fetchall()}
     to_add = {
+        "stain": "TEXT",
         "length_p05": "REAL",
         "length_p50": "REAL",
         "length_p95": "REAL",
@@ -454,10 +476,11 @@ def _migrate_reference_values():
     has_wp50 = "width_p50" in main_cols
     has_wp95 = "width_p95" in main_cols
     has_qp50 = "q_p50" in main_cols
+    has_stain = "stain" in main_cols
 
-    if has_p05 or has_p50 or has_p95 or has_wp05 or has_wp50 or has_wp95 or has_qp50:
+    if has_p05 or has_p50 or has_p95 or has_wp05 or has_wp50 or has_wp95 or has_qp50 or has_stain:
         main_cursor.execute('''
-            SELECT genus, species, source, mount_medium,
+            SELECT genus, species, source, mount_medium, stain,
                    length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                    width_min, width_p05, width_p50, width_p95, width_max, width_avg,
                    q_min, q_p50, q_max, q_avg, updated_at
@@ -465,7 +488,7 @@ def _migrate_reference_values():
         ''')
     else:
         main_cursor.execute('''
-            SELECT genus, species, source, mount_medium,
+            SELECT genus, species, source, mount_medium, NULL,
                    length_min, NULL, NULL, NULL, length_max, length_avg,
                    width_min, NULL, NULL, NULL, width_max, width_avg,
                    q_min, NULL, q_max, q_avg, updated_at
@@ -481,14 +504,38 @@ def _migrate_reference_values():
     ref_cursor = ref_conn.cursor()
     ref_cursor.executemany('''
         INSERT INTO reference_values (
-            genus, species, source, mount_medium,
+            genus, species, source, mount_medium, stain,
             length_min, length_p05, length_p50, length_p95, length_max, length_avg,
             width_min, width_p05, width_p50, width_p95, width_max, width_avg,
             q_min, q_p50, q_max, q_avg, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', rows)
     ref_conn.commit()
     ref_conn.close()
+
+
+def _migrate_reference_mounts_and_stains() -> None:
+    """Move legacy stain-only mount values into the dedicated stain column."""
+    conn = sqlite3.connect(get_reference_database_path())
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, mount_medium, stain FROM reference_values")
+    for row_id, mount_medium, stain in cursor.fetchall():
+        if str(stain or "").strip():
+            canonical_stain = DatabaseTerms.canonicalize("stain", stain)
+            if canonical_stain and canonical_stain != stain:
+                cursor.execute(
+                    "UPDATE reference_values SET stain = ? WHERE id = ?",
+                    (canonical_stain, row_id),
+                )
+            continue
+        canonical_stain = DatabaseTerms.canonicalize("stain", mount_medium)
+        if canonical_stain in _DEFAULT_STAIN_TYPES[1:]:
+            cursor.execute(
+                "UPDATE reference_values SET stain = ?, mount_medium = NULL WHERE id = ?",
+                (canonical_stain, row_id),
+            )
+    conn.commit()
+    conn.close()
 
 
 def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
@@ -580,6 +627,7 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             return None
         normalized = re.sub(r"[\s_-]+", "", text.lower())
         mapping = {
+            "notset": "Not_set",
             "bf": "BF",
             "brightfield": "BF",
             "df": "DF",
@@ -647,6 +695,91 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             """,
             (key, json.dumps(merged)),
         )
+
+
+def _migrate_mount_and_stain_settings(cursor: sqlite3.Cursor) -> None:
+    """Split stain values out of legacy mount settings and seed stain defaults."""
+
+    def _load_list(key: str) -> list[str]:
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            return []
+        try:
+            parsed = json.loads(row[0])
+        except (TypeError, json.JSONDecodeError):
+            parsed = []
+        return parsed if isinstance(parsed, list) else []
+
+    def _save_value(key: str, value) -> None:
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(value) if isinstance(value, list) else value),
+        )
+
+    mount_values = _load_list("mount_options")
+    stain_values = _load_list("stain_options")
+
+    normalized_mounts = DatabaseTerms.canonicalize_list("mount", mount_values or _DEFAULT_MOUNT_MEDIA)
+    normalized_stains = DatabaseTerms.canonicalize_list("stain", stain_values or _DEFAULT_STAIN_TYPES)
+
+    moved_stains = []
+    kept_mounts = []
+    for value in normalized_mounts:
+        canonical_stain = DatabaseTerms.canonicalize("stain", value)
+        if canonical_stain in _DEFAULT_STAIN_TYPES[1:]:
+            if canonical_stain not in moved_stains:
+                moved_stains.append(canonical_stain)
+        else:
+            kept_mounts.append(value)
+
+    merged_mounts = list(kept_mounts)
+    for default_value in _DEFAULT_MOUNT_MEDIA:
+        if default_value not in merged_mounts:
+            merged_mounts.append(default_value)
+
+    merged_stains = list(normalized_stains)
+    for value in moved_stains:
+        if value not in merged_stains:
+            merged_stains.append(value)
+    for default_value in _DEFAULT_STAIN_TYPES:
+        if default_value not in merged_stains:
+            merged_stains.append(default_value)
+
+    _save_value("mount_options", merged_mounts)
+    _save_value("stain_options", merged_stains)
+
+    cursor.execute("SELECT value FROM settings WHERE key = ?", ("last_used_mount",))
+    last_mount_row = cursor.fetchone()
+    last_mount = last_mount_row[0] if last_mount_row else None
+    canonical_stain = DatabaseTerms.canonicalize("stain", last_mount)
+    if canonical_stain in _DEFAULT_STAIN_TYPES[1:]:
+        _save_value("last_used_stain", canonical_stain)
+        _save_value("last_used_mount", "Not_set")
+
+
+def _migrate_images_mounts_and_stains(cursor: sqlite3.Cursor) -> None:
+    """Move legacy stain-only image mount values into the dedicated stain column."""
+    cursor.execute("SELECT id, mount_medium, stain FROM images")
+    for row_id, mount_medium, stain in cursor.fetchall():
+        if str(stain or "").strip():
+            canonical_stain = DatabaseTerms.canonicalize("stain", stain)
+            if canonical_stain and canonical_stain != stain:
+                cursor.execute(
+                    "UPDATE images SET stain = ? WHERE id = ?",
+                    (canonical_stain, row_id),
+                )
+            continue
+        canonical_stain = DatabaseTerms.canonicalize("stain", mount_medium)
+        if canonical_stain in _DEFAULT_STAIN_TYPES[1:]:
+            cursor.execute(
+                "UPDATE images SET stain = ?, mount_medium = NULL WHERE id = ?",
+                (canonical_stain, row_id),
+            )
 
 def init_database():
     """Initialize the database with required tables"""
@@ -754,6 +887,7 @@ def init_database():
         )
     ''')
     _migrate_contrast_options_setting(cursor)
+    _migrate_mount_and_stain_settings(cursor)
     _migrate_measure_categories_setting(cursor)
 
     # Add genus column if it doesn't exist (migration for existing DBs)
@@ -869,6 +1003,7 @@ def init_database():
             scale_microns_per_pixel REAL,
             resample_scale_factor REAL,
             mount_medium TEXT,
+            stain TEXT,
             sample_type TEXT,
             contrast TEXT,
             measure_color TEXT,
@@ -914,6 +1049,12 @@ def init_database():
     except sqlite3.OperationalError:
         pass
 
+    # Add stain column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN stain TEXT')
+    except sqlite3.OperationalError:
+        pass
+
     # Add sample_type column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN sample_type TEXT')
@@ -937,6 +1078,8 @@ def init_database():
         cursor.execute('ALTER TABLE images ADD COLUMN resample_scale_factor REAL')
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    _migrate_images_mounts_and_stains(cursor)
 
     # Add calibration_id column to link images to calibrations
     try:
@@ -1071,6 +1214,7 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             objective_key TEXT NOT NULL,
             calibration_date TEXT NOT NULL,
+            calibration_image_date TEXT,
             microns_per_pixel REAL NOT NULL,
             microns_per_pixel_std REAL,
             confidence_interval_low REAL,
@@ -1117,6 +1261,10 @@ def init_database():
         pass
     try:
         cursor.execute('ALTER TABLE calibrations ADD COLUMN calibration_image_height INTEGER')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE calibrations ADD COLUMN calibration_image_date TEXT')
     except sqlite3.OperationalError:
         pass
 

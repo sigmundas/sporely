@@ -11,10 +11,11 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
                                 QGridLayout)
-from PySide6.QtCore import Signal, Qt, QDateTime, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication
+from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QIcon,
     QPixmap,
     QImage,
     QDesktopServices,
@@ -646,86 +647,94 @@ class ObservationsTab(QWidget):
         left_panel_layout.setContentsMargins(0, 0, 0, 0)
         left_panel_layout.setSpacing(8)
 
-        observation_group = QGroupBox(self.tr("Observation"))
-        observation_layout = QVBoxLayout()
-        observation_layout.setSpacing(8)
+        _icons = Path(__file__).parent.parent / "assets" / "icons"
+        _iz = QSize(16, 16)
 
-        obs_button_row = QHBoxLayout()
-        obs_button_row.setSpacing(6)
+        def _btn_icon(name: str) -> QIcon:
+            return QIcon(str(_icons / name))
 
-        self.new_btn = QPushButton(self.tr("New (N)"))
+        # ── New — full-width primary action ───────────────────────────────
+        self.new_btn = QPushButton(self.tr("+ New (N)"))
         self.new_btn.setObjectName("primaryButton")
         self.new_btn.setToolTip(self.tr("Create a new observation"))
         self.new_btn.clicked.connect(self.create_new_observation)
-        obs_button_row.addWidget(self.new_btn)
+        left_panel_layout.addWidget(self.new_btn)
 
-        self.rename_btn = QPushButton(self.tr("Edit"))
-        self.rename_btn.setEnabled(False)
-        self.rename_btn.setToolTip(self.tr("Edit selected observation"))
-        self.rename_btn.clicked.connect(self.edit_observation)
-        obs_button_row.addWidget(self.rename_btn)
-
-        self.delete_btn = QPushButton(self.tr("Delete"))
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
-        self.delete_btn.setStyleSheet(
-            "QPushButton { background-color: #e74c3c; color: white; font-weight: bold; }"
-            "QPushButton:hover { background-color: #c0392b; }"
-            "QPushButton:pressed { background-color: #a93226; }"
-        )
-        self.delete_btn.clicked.connect(self.delete_selected_observation)
-        obs_button_row.addWidget(self.delete_btn)
-        observation_layout.addLayout(obs_button_row)
-
-        self.publish_menu = QMenu(self)
-        self.publish_btn = QPushButton(self.tr("Publish"))
-        self.publish_btn.setMenu(self.publish_menu)
-        self.publish_btn.setEnabled(False)
-        self._build_publish_menu()
-
-        self.plate_btn = QPushButton(self.tr("Plate"))
-        self.plate_btn.setToolTip(self.tr("Generate a species plate — composite illustration of field and microscopy photos"))
-        self.plate_btn.setEnabled(False)
-        self.plate_btn.clicked.connect(self._on_plate_clicked)
-
-        pub_plate_row = QHBoxLayout()
-        pub_plate_row.setSpacing(6)
-        pub_plate_row.addWidget(self.publish_btn)
-        pub_plate_row.addWidget(self.plate_btn)
-        observation_layout.addLayout(pub_plate_row)
-        observation_group.setLayout(observation_layout)
-        left_panel_layout.addWidget(observation_group)
-
-        database_group = QGroupBox(self.tr("Database"))
-        database_layout = QVBoxLayout()
-        database_layout.setSpacing(8)
-
-        self.refresh_btn = QPushButton(self.tr("Refresh (R)"))
-        self.refresh_btn.setToolTip(self.tr("Refresh database"))
-        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
-        database_layout.addWidget(self.refresh_btn)
-
+        # ── Search ────────────────────────────────────────────────────────
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("Search observations..."))
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search_text_changed)
-        database_layout.addWidget(self.search_input)
+        left_panel_layout.addWidget(self.search_input)
 
-        db_transfer_row = QHBoxLayout()
-        db_transfer_row.setSpacing(6)
+        # ── Edit — frequent, single-selection ─────────────────────────────
+        self.rename_btn = QPushButton(self.tr("Edit"))
+        self.rename_btn.setObjectName("outlineButton")
+        self.rename_btn.setEnabled(False)
+        self.rename_btn.setToolTip(self.tr("Edit selected observation (⌘E / double-click)"))
+        self.rename_btn.clicked.connect(self.edit_observation)
+        left_panel_layout.addWidget(self.rename_btn)
+
+        # ── Plate | Publish — sharing pair ────────────────────────────────
+        share_row = QHBoxLayout()
+        share_row.setSpacing(5)
+
+        self.plate_btn = QPushButton(self.tr("Plate"))
+        self.plate_btn.setObjectName("outlineButton")
+        self.plate_btn.setToolTip(self.tr("Generate a species plate for selected observation"))
+        self.plate_btn.setEnabled(False)
+        self.plate_btn.clicked.connect(self._on_plate_clicked)
+        share_row.addWidget(self.plate_btn)
+
+        self.publish_menu = QMenu(self)
+        self.publish_btn = QPushButton(self.tr("Publish"))
+        self.publish_btn.setObjectName("outlineButton")
+        self.publish_btn.setMenu(self.publish_menu)
+        self.publish_btn.setEnabled(False)
+        self._build_publish_menu()
+        share_row.addWidget(self.publish_btn)
+
+        left_panel_layout.addLayout(share_row)
+
+        # ── Quiet row: Delete + data management ───────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Plain)
+        sep.setFixedHeight(1)
+        left_panel_layout.addWidget(sep)
+
+        data_row = QHBoxLayout()
+        data_row.setSpacing(5)
+
+        self.delete_btn = QPushButton(self.tr("Delete"))
+        self.delete_btn.setObjectName("destructiveButton")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
+        self.delete_btn.clicked.connect(self.delete_selected_observation)
+        data_row.addWidget(self.delete_btn)
+
+        data_row.addStretch()
+
+        self.import_btn = QPushButton(self.tr("Import"))
+        self.import_btn.setObjectName("dataButton")
+        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
+        self.import_btn.clicked.connect(self._on_import_db_clicked)
+        data_row.addWidget(self.import_btn)
+
         self.export_btn = QPushButton(self.tr("Export"))
+        self.export_btn.setObjectName("dataButton")
         self.export_btn.setEnabled(False)
         self.export_btn.setToolTip(self.tr("Export selected observations (Ctrl-A for all) to zip archive"))
         self.export_btn.clicked.connect(self._on_export_db_clicked)
-        db_transfer_row.addWidget(self.export_btn)
-        self.import_btn = QPushButton(self.tr("Import"))
-        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
-        self.import_btn.clicked.connect(self._on_import_db_clicked)
-        db_transfer_row.addWidget(self.import_btn)
-        database_layout.addLayout(db_transfer_row)
+        data_row.addWidget(self.export_btn)
 
-        database_group.setLayout(database_layout)
-        left_panel_layout.addWidget(database_group)
+        self.refresh_btn = QPushButton(self.tr("Refresh"))
+        self.refresh_btn.setObjectName("dataButton")
+        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
+        data_row.addWidget(self.refresh_btn)
+
+        left_panel_layout.addLayout(data_row)
 
         content_layout.addWidget(left_panel)
 
@@ -760,10 +769,10 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
-        self.table.setColumnWidth(1, 145)  # Name
-        self.table.setColumnWidth(2, 95)   # Genus
-        self.table.setColumnWidth(3, 120)  # Species
-        self.table.setColumnWidth(4, 190)  # Spores
+        self.table.setColumnWidth(1, 115)  # Name
+        self.table.setColumnWidth(2, 78)   # Genus
+        self.table.setColumnWidth(3, 95)   # Species
+        self.table.setColumnWidth(4, 290)  # Spores
         self.table.setColumnWidth(5, 132)  # Date
         self.table.setColumnWidth(6, 170)  # Location
         self.table.setColumnWidth(7, 56)   # Map
@@ -810,6 +819,7 @@ class ObservationsTab(QWidget):
         self.gallery_widget.set_multi_select(True)
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
+        self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
 
@@ -2074,6 +2084,8 @@ class ObservationsTab(QWidget):
 
         n_match = re.search(r"\bn\s*=\s*(\d+)\b", text, re.IGNORECASE)
         count = n_match.group(1) if n_match else None
+        q_match = re.search(r"\bQ\s*=\s*(.+?)(?:\s{2,}\bn\s*=|,\s*\bn\s*=|$)", text, re.IGNORECASE)
+        q_seg = q_match.group(1).strip() if q_match else None
 
         def _extract_p05_p95(segment: str | None) -> tuple[str | None, str | None]:
             if not segment:
@@ -2087,12 +2099,15 @@ class ObservationsTab(QWidget):
 
         l5, l95 = _extract_p05_p95(length_seg)
         w5, w95 = _extract_p05_p95(width_seg)
+        q5, q95 = _extract_p05_p95(q_seg)
         if not l5 or not l95 or not w5 or not w95:
             return None
 
         base = f"{l5}-{l95} x {w5}-{w95}"
+        if q5 and q95:
+            base += f"  Q = {q5}-{q95}"
         if count:
-            return f"{base} n={count}"
+            return f"{base}  n = {count}"
         return base
 
     @staticmethod
@@ -2103,13 +2118,17 @@ class ObservationsTab(QWidget):
         length_p95 = stats.get("length_p95")
         width_p5 = stats.get("width_p5")
         width_p95 = stats.get("width_p95")
+        ratio_p5 = stats.get("ratio_p5")
+        ratio_p95 = stats.get("ratio_p95")
         count = stats.get("count")
         if None in (length_p5, length_p95, width_p5, width_p95):
             return None
         try:
             text = f"{float(length_p5):.1f}-{float(length_p95):.1f} x {float(width_p5):.1f}-{float(width_p95):.1f}"
+            if ratio_p5 is not None and ratio_p95 is not None:
+                text += f"  Q = {float(ratio_p5):.1f}-{float(ratio_p95):.1f}"
             if count is not None:
-                text += f" n={int(count)}"
+                text += f"  n = {int(count)}"
             return text
         except Exception:
             return None
@@ -2186,6 +2205,20 @@ class ObservationsTab(QWidget):
     def _on_gallery_image_clicked(self, _image_id, _filepath):
         """Keep selection in Observations tab; do not jump to Measure tab."""
         return
+
+    def _on_gallery_measure_badge_clicked(self, image_id, _filepath):
+        """Open the clicked gallery image in the Measure tab."""
+        if not image_id or not self.selected_observation_id:
+            return
+        selected = self.get_selected_observation()
+        if not selected:
+            return
+        observation_id, display_name = selected
+        QTimer.singleShot(
+            75,
+            lambda img_id=int(image_id), obs_id=int(observation_id), name=display_name:
+                self.image_selected.emit(img_id, obs_id, name),
+        )
 
     def _register_gallery_publish_hint_widgets(self) -> None:
         if not hasattr(self, "_status_hint_controller") or self._status_hint_controller is None:
@@ -4536,6 +4569,7 @@ class ObservationsTab(QWidget):
                     custom_scale=custom_scale,
                     contrast=img.get("contrast"),
                     mount_medium=img.get("mount_medium"),
+                    stain=img.get("stain"),
                     sample_type=img.get("sample_type"),
                     captured_at=captured_at,
                     exif_has_gps=exif_has_gps,
@@ -4962,6 +4996,7 @@ class ObservationsTab(QWidget):
             objective_entry = objectives.get(objective_key) if objective_key in objectives else None
             contrast = result.contrast
             mount_medium = result.mount_medium
+            stain = result.stain
             sample_type = result.sample_type
 
             scale = None
@@ -5021,6 +5056,7 @@ class ObservationsTab(QWidget):
                     scale=scale,
                     contrast=contrast,
                     mount_medium=mount_medium,
+                    stain=stain,
                     sample_type=sample_type,
                     ai_crop_box=result.ai_crop_box,
                     ai_crop_source_size=result.ai_crop_source_size,
@@ -5163,6 +5199,7 @@ class ObservationsTab(QWidget):
                 objective_name=objective_name,
                 contrast=contrast,
                 mount_medium=mount_medium,
+                stain=stain,
                 sample_type=sample_type,
                 calibration_id=calibration_id,
                 ai_crop_box=result.ai_crop_box,
@@ -5247,6 +5284,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.default_objective = self._get_default_objective()
         self.contrast_options = self._load_tag_options("contrast")
         self.mount_options = self._load_tag_options("mount")
+        self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
         self.contrast_default = self._preferred_tag_value(
             "contrast",
@@ -5257,6 +5295,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "mount",
             self.mount_options,
             DatabaseTerms.MOUNT_MEDIA[0],
+        )
+        self.stain_default = self._preferred_tag_value(
+            "stain",
+            self.stain_options,
+            DatabaseTerms.STAIN_TYPES[0],
         )
         self.sample_default = self._preferred_tag_value(
             "sample",
@@ -6526,9 +6569,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self.image_settings.append({
                     'image_type': 'field',
                     'objective': self.default_objective,
-                    'contrast': self.contrast_default,
-                    'mount_medium': self.mount_default,
-                    'sample_type': self.sample_default
+                    'contrast': self._field_tag_value('contrast'),
+                    'mount_medium': self._field_tag_value('mount'),
+                    'stain': self._field_tag_value('stain'),
+                    'sample_type': self._field_tag_value('sample')
                 })
 
         self._update_image_table()
@@ -6611,6 +6655,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             idx = contrast_combo.findData(current_contrast)
             if idx >= 0:
                 contrast_combo.setCurrentIndex(idx)
+            self._set_tag_combo_neutral_display(
+                contrast_combo,
+                "contrast",
+                self.image_settings[row]['image_type'] != 'microscope',
+            )
             contrast_combo.currentIndexChanged.connect(lambda idx, r=row, c=contrast_combo: self._on_contrast_changed(r, c))
             self.image_table.setCellWidget(row, 4, contrast_combo)
 
@@ -6625,10 +6674,34 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             idx = mount_combo.findData(current_mount)
             if idx >= 0:
                 mount_combo.setCurrentIndex(idx)
+            self._set_tag_combo_neutral_display(
+                mount_combo,
+                "mount",
+                self.image_settings[row]['image_type'] != 'microscope',
+            )
             mount_combo.currentIndexChanged.connect(lambda idx, r=row, c=mount_combo: self._on_mount_changed(r, c))
             self.image_table.setCellWidget(row, 5, mount_combo)
 
-            # Column 6: Sample type dropdown
+            # Column 6: Stain dropdown
+            stain_combo = QComboBox()
+            stain_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
+            self._populate_tag_combo(stain_combo, "stain", self.stain_options)
+            current_stain = DatabaseTerms.canonicalize(
+                "stain",
+                self.image_settings[row].get('stain', self.stain_default),
+            )
+            idx = stain_combo.findData(current_stain)
+            if idx >= 0:
+                stain_combo.setCurrentIndex(idx)
+            self._set_tag_combo_neutral_display(
+                stain_combo,
+                "stain",
+                self.image_settings[row]['image_type'] != 'microscope',
+            )
+            stain_combo.currentIndexChanged.connect(lambda idx, r=row, c=stain_combo: self._on_stain_changed(r, c))
+            self.image_table.setCellWidget(row, 6, stain_combo)
+
+            # Column 7: Sample type dropdown
             sample_combo = QComboBox()
             sample_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
             self._populate_tag_combo(sample_combo, "sample", self.sample_options)
@@ -6639,8 +6712,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             idx = sample_combo.findData(current_sample)
             if idx >= 0:
                 sample_combo.setCurrentIndex(idx)
+            self._set_tag_combo_neutral_display(
+                sample_combo,
+                "sample",
+                self.image_settings[row]['image_type'] != 'microscope',
+            )
             sample_combo.currentIndexChanged.connect(lambda idx, r=row, c=sample_combo: self._on_sample_changed(r, c))
-            self.image_table.setCellWidget(row, 6, sample_combo)
+            self.image_table.setCellWidget(row, 7, sample_combo)
 
         # Select the last row
         if self.image_table.rowCount() > 0:
@@ -6657,12 +6735,40 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             contrast_combo = self.image_table.cellWidget(row, 4)
             if contrast_combo:
                 contrast_combo.setEnabled(image_type == 'microscope')
+                self._set_tag_combo_neutral_display(contrast_combo, 'contrast', image_type != 'microscope')
             mount_combo = self.image_table.cellWidget(row, 5)
             if mount_combo:
                 mount_combo.setEnabled(image_type == 'microscope')
-            sample_combo = self.image_table.cellWidget(row, 6)
+                self._set_tag_combo_neutral_display(mount_combo, 'mount', image_type != 'microscope')
+            stain_combo = self.image_table.cellWidget(row, 6)
+            if stain_combo:
+                stain_combo.setEnabled(image_type == 'microscope')
+                self._set_tag_combo_neutral_display(stain_combo, 'stain', image_type != 'microscope')
+            sample_combo = self.image_table.cellWidget(row, 7)
             if sample_combo:
                 sample_combo.setEnabled(image_type == 'microscope')
+                self._set_tag_combo_neutral_display(sample_combo, 'sample', image_type != 'microscope')
+            if image_type != 'microscope':
+                self.image_settings[row]['contrast'] = self._field_tag_value('contrast')
+                self.image_settings[row]['mount_medium'] = self._field_tag_value('mount')
+                self.image_settings[row]['stain'] = self._field_tag_value('stain')
+                self.image_settings[row]['sample_type'] = self._field_tag_value('sample')
+                if contrast_combo:
+                    idx = contrast_combo.findData(self.image_settings[row]['contrast'])
+                    if idx >= 0:
+                        contrast_combo.setCurrentIndex(idx)
+                if mount_combo:
+                    idx = mount_combo.findData(self.image_settings[row]['mount_medium'])
+                    if idx >= 0:
+                        mount_combo.setCurrentIndex(idx)
+                if stain_combo:
+                    idx = stain_combo.findData(self.image_settings[row]['stain'])
+                    if idx >= 0:
+                        stain_combo.setCurrentIndex(idx)
+                if sample_combo:
+                    idx = sample_combo.findData(self.image_settings[row]['sample_type'])
+                    if idx >= 0:
+                        sample_combo.setCurrentIndex(idx)
 
     def _on_objective_changed(self, row, combo):
         """Handle objective dropdown change."""
@@ -6671,6 +6777,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_mount_changed(self, row, combo):
         """Handle mount medium change."""
         self.image_settings[row]['mount_medium'] = combo.currentData()
+
+    def _on_stain_changed(self, row, combo):
+        """Handle stain change."""
+        self.image_settings[row]['stain'] = combo.currentData()
 
     def _on_contrast_changed(self, row, combo):
         """Handle contrast change."""
@@ -7964,6 +8074,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "objective": item.objective,
                 "contrast": item.contrast,
                 "mount_medium": item.mount_medium,
+                "stain": item.stain,
                 "sample_type": item.sample_type,
             })
         return settings
@@ -7979,6 +8090,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "objective": item.objective,
                 "contrast": item.contrast,
                 "mount_medium": item.mount_medium,
+                "stain": item.stain,
                 "sample_type": item.sample_type
             })
         return entries
@@ -8439,6 +8551,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         legacy_default_key = {
             "contrast": "contrast_default",
             "mount": "mount_default",
+            "stain": "stain_default",
             "sample": "sample_default",
         }.get(category, "")
         preferred = SettingsDB.get_setting(DatabaseTerms.last_used_key(category), None)
@@ -8451,10 +8564,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             options.insert(0, preferred)
         return options[0] if options else fallback
 
+    def _field_tag_value(self, category: str) -> str:
+        mapping = {
+            "contrast": DatabaseTerms.CONTRAST_METHODS[0],
+            "mount": DatabaseTerms.MOUNT_MEDIA[0],
+            "stain": DatabaseTerms.STAIN_TYPES[0],
+            "sample": DatabaseTerms.SAMPLE_TYPES[0],
+        }
+        return mapping[category]
+
     def _populate_tag_combo(self, combo: QComboBox, category: str, options: list[str]) -> None:
         combo.clear()
         for canonical in options:
             combo.addItem(DatabaseTerms.translate(category, canonical), canonical)
+
+    def _set_tag_combo_neutral_display(self, combo: QComboBox, category: str, blank: bool) -> None:
+        neutral_value = self._field_tag_value(category)
+        idx = combo.findData(neutral_value)
+        if idx < 0:
+            return
+        combo.setItemText(idx, "" if blank else DatabaseTerms.translate(category, neutral_value))
 
     def _load_objectives(self):
         """Load objectives from JSON file."""

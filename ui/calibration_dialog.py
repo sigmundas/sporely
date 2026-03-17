@@ -30,7 +30,7 @@ from database.schema import (
 )
 from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
-from utils.exif_reader import get_exif_data
+from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
 from .hint_status import HintBar, HintLabel, HintStatusController
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
@@ -2478,9 +2478,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
         group = QGroupBox(self.tr("Calibration History"))
         layout = QVBoxLayout(group)
 
-        self.history_table = QTableWidget(0, 12)
+        self.history_table = QTableWidget(0, 13)
         self.history_table.setHorizontalHeaderLabels([
             self.tr("Date"),
+            self.tr("Image date"),
             self.tr("nm/px"),
             self.tr("MP"),
             self.tr("n"),
@@ -2498,11 +2499,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Date - fixed width
         header.setSectionResizeMode(0, QHeaderView.Fixed)
         self.history_table.setColumnWidth(0, 120)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        self.history_table.setColumnWidth(1, 120)
         # Data columns - resize to contents
-        for col in range(1, 11):
+        for col in range(2, 12):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         # Notes - stretch to fill remaining space
-        header.setSectionResizeMode(11, QHeaderView.Stretch)
+        header.setSectionResizeMode(12, QHeaderView.Stretch)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.verticalHeader().setDefaultSectionSize(26)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -3278,21 +3281,18 @@ class CalibrationDialog(GeometryMixin, QDialog):
             base_w,
             base_h,
             self.export_scale_percent,
-            self.export_format,
             parent=self,
         )
         if export_dialog.exec() != QDialog.Accepted:
             return
         export_settings = export_dialog.get_settings()
         self.export_scale_percent = float(export_settings["scale_percent"])
-        export_format = str(export_settings["format"] or "png")
-        self.export_format = export_format
 
         ext_map = {"png": ".png", "jpg": ".jpg", "svg": ".svg"}
-        default_ext = ext_map.get(export_format, ".png")
+        default_ext = ext_map.get(self.export_format, ".png")
         default_name = f"{objective_name}_{date_stamp}{default_ext}"
         default_path = str(Path(self._get_default_export_dir()) / default_name)
-        save_path, _selected_filter = QFileDialog.getSaveFileName(
+        save_path, selected_filter = QFileDialog.getSaveFileName(
             self,
             self.tr("Export Image"),
             default_path,
@@ -3301,10 +3301,24 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if not save_path:
             return
 
+        filter_map = {
+            self.tr("PNG Image (*.png)"): "png",
+            self.tr("JPEG Image (*.jpg *.jpeg)"): "jpg",
+            self.tr("SVG Files (*.svg)"): "svg",
+        }
+        export_format = filter_map.get(selected_filter)
         suffix = Path(save_path).suffix.lower()
+        if export_format is None:
+            if suffix == ".svg":
+                export_format = "svg"
+            elif suffix in {".jpg", ".jpeg"}:
+                export_format = "jpg"
+            else:
+                export_format = "png"
+        final_ext = ext_map.get(export_format, ".png")
         if not suffix:
-            suffix = default_ext
-            save_path = f"{save_path}{suffix}"
+            save_path = f"{save_path}{final_ext}"
+        self.export_format = export_format
         self._remember_export_dir(save_path)
 
         layers = self._collect_export_layers(img_data)
@@ -3425,11 +3439,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _extract_camera_text(self, path: str) -> str | None:
         if not path:
             return None
-        exif = get_exif_data(path)
-        make = exif.get("Make") or ""
-        model = exif.get("Model") or ""
-        camera = " ".join(str(part).strip() for part in (make, model) if part).strip()
-        return camera or None
+        return get_camera_model(path)
 
     def _collect_camera_summary(self) -> str | None:
         cameras = []
@@ -4421,10 +4431,15 @@ class CalibrationDialog(GeometryMixin, QDialog):
             date_str = cal.get("calibration_date", "")[:16]
             self.history_table.setItem(row_idx, 0, QTableWidgetItem(date_str))
 
+            # Image date (latest EXIF date among calibration images)
+            image_date_raw = cal.get("calibration_image_date") or ""
+            image_date_str = image_date_raw[:16] or "--"
+            self.history_table.setItem(row_idx, 1, QTableWidgetItem(image_date_str))
+
             # nm/px
             scale_um = cal.get("microns_per_pixel", 0)
             scale_nm = um_to_nm(scale_um)
-            self.history_table.setItem(row_idx, 1, QTableWidgetItem(f"{scale_nm:.2f}"))
+            self.history_table.setItem(row_idx, 2, QTableWidgetItem(f"{scale_nm:.2f}"))
 
             # MP (megapixels used)
             mp_value = cal.get("megapixels")
@@ -4438,12 +4453,12 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 mp_value = estimate
             mp_value = self._effective_megapixels(mp_value, cal)
             mp_text = f"{float(mp_value):.3f}" if isinstance(mp_value, (int, float)) and mp_value > 0 else "--"
-            self.history_table.setItem(row_idx, 2, QTableWidgetItem(mp_text))
+            self.history_table.setItem(row_idx, 3, QTableWidgetItem(mp_text))
 
             # n (calibration measurements)
             n = cal.get("num_measurements", 0)
             n_text = str(n) if n else "man"
-            self.history_table.setItem(row_idx, 3, QTableWidgetItem(n_text))
+            self.history_table.setItem(row_idx, 4, QTableWidgetItem(n_text))
 
             # Diff%
             diff = cal.get("diff_from_first_percent")
@@ -4452,7 +4467,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 diff_text = f"{sign}{diff:.2f}%"
             else:
                 diff_text = "--"
-            self.history_table.setItem(row_idx, 4, QTableWidgetItem(diff_text))
+            self.history_table.setItem(row_idx, 5, QTableWidgetItem(diff_text))
 
             # Auto quality metrics (if available)
             mad_text = "--"
@@ -4488,30 +4503,30 @@ class CalibrationDialog(GeometryMixin, QDialog):
                         if residual_vals:
                             residual_text = f"{float(np.mean(residual_vals)):.2f} deg"
 
-            self.history_table.setItem(row_idx, 5, QTableWidgetItem(mad_text))
-            self.history_table.setItem(row_idx, 6, QTableWidgetItem(iqr_text))
-            self.history_table.setItem(row_idx, 7, QTableWidgetItem(residual_text))
+            self.history_table.setItem(row_idx, 6, QTableWidgetItem(mad_text))
+            self.history_table.setItem(row_idx, 7, QTableWidgetItem(iqr_text))
+            self.history_table.setItem(row_idx, 8, QTableWidgetItem(residual_text))
 
             # Observations count
             obs_count = usage.get("observation_count", 0)
             obs_item = QTableWidgetItem(str(obs_count))
             obs_item.setTextAlignment(Qt.AlignCenter)
-            self.history_table.setItem(row_idx, 8, obs_item)
+            self.history_table.setItem(row_idx, 9, obs_item)
 
             # Camera
-            camera_text = cal.get("camera") or "--"
-            self.history_table.setItem(row_idx, 9, QTableWidgetItem(camera_text))
+            camera_text = self._extract_camera_text(cal.get("image_filepath")) or cal.get("camera") or "--"
+            self.history_table.setItem(row_idx, 10, QTableWidgetItem(camera_text))
 
             # Active
             is_active = cal.get("is_active", 0)
             active_text = "✓" if is_active else ""
             active_item = QTableWidgetItem(active_text)
             active_item.setTextAlignment(Qt.AlignCenter)
-            self.history_table.setItem(row_idx, 10, active_item)
+            self.history_table.setItem(row_idx, 11, active_item)
 
             # Notes
             notes = cal.get("notes", "") or ""
-            self.history_table.setItem(row_idx, 11, QTableWidgetItem(notes))
+            self.history_table.setItem(row_idx, 12, QTableWidgetItem(notes))
 
     def _on_history_row_clicked(self, row: int, column: int):
         """Handle click on a history table row to view that calibration."""
@@ -4713,6 +4728,21 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Show notes
         self.notes_input.setText(cal.get("notes", ""))
 
+    def _latest_calibration_image_date(self) -> str | None:
+        latest_dt: datetime | None = None
+        for img_data in self.calibration_images:
+            image_path = img_data.get("path")
+            if not image_path:
+                continue
+            dt = get_image_datetime(image_path)
+            if dt is None:
+                continue
+            if latest_dt is None or dt > latest_dt:
+                latest_dt = dt
+        if latest_dt is None:
+            return None
+        return latest_dt.strftime("%Y-%m-%d %H:%M:%S")
+
     def _on_save_calibration(self):
         """Save the current calibration."""
         if not self.current_objective_key:
@@ -4800,12 +4830,14 @@ class CalibrationDialog(GeometryMixin, QDialog):
             }
             notes = self.tr("Automatic image calibration")
             image_filepath = first_saved_path
+            image_date = self._latest_calibration_image_date()
             cal_width, cal_height = self._collect_image_dimensions_summary()
             resample_factor = 1.0
 
             calibration_id = CalibrationDB.add_calibration(
                 objective_key=self.current_objective_key,
                 microns_per_pixel=scale_um,
+                calibration_image_date=image_date,
                 microns_per_pixel_std=nm_to_um(std_nm) if std_nm is not None else None,
                 num_measurements=len(auto_images),
                 measurements_json=json.dumps(calibration_data),
@@ -4860,6 +4892,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 calibration_id = CalibrationDB.add_calibration(
                     objective_key=self.current_objective_key,
                     microns_per_pixel=provisional_um,
+                    calibration_image_date=self._latest_calibration_image_date(),
                     num_measurements=0,
                     measurements_json=json.dumps(calibration_data),
                     image_filepath=None,
@@ -4932,6 +4965,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         # First image filepath for backward compatibility
         image_filepath = saved_image_paths[0] if saved_image_paths else None
+        image_date = self._latest_calibration_image_date()
 
         notes = self.notes_input.text().strip()
         if not notes:
@@ -4946,6 +4980,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         calibration_id = CalibrationDB.add_calibration(
             objective_key=self.current_objective_key,
             microns_per_pixel=mean,
+            calibration_image_date=image_date,
             microns_per_pixel_std=std,
             confidence_interval_low=ci_low,
             confidence_interval_high=ci_high,
@@ -5023,6 +5058,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         calibration_id = CalibrationDB.add_calibration(
             objective_key=self.current_objective_key,
             microns_per_pixel=scale_um,
+            calibration_image_date=self._latest_calibration_image_date(),
             num_measurements=0,  # Manual entry
             camera=self._selected_camera_text(),
             megapixels=self._collect_megapixels_summary(),

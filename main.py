@@ -24,7 +24,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark
 
-APP_VERSION = "0.6.3"
+APP_VERSION = "0.6.5"
 
 
 def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
@@ -104,6 +104,7 @@ def main():
     # Create and run application
     app = QApplication(sys.argv)
     app.setApplicationName("MycoLog - Mushroom Log and Spore Analyzer")
+    app.setApplicationDisplayName("MycoLog")
     app.setApplicationVersion(APP_VERSION)
     # Fusion style gives fully consistent QSS rendering on every platform —
     # no native-style quirks that partially ignore stylesheet rules.

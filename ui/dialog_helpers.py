@@ -1,7 +1,7 @@
 """Shared dialog helpers for consistent cross-platform sizing."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -25,10 +25,13 @@ def ask_wrapped_yes_no(
     no_text: str | None = None,
 ) -> bool:
     """Show a compact wrapped Yes/No dialog with reliable Linux sizing."""
+    def _helper_tr(value: str) -> str:
+        return QCoreApplication.translate("DialogHelpers", value)
+
     host = parent
     tr = getattr(parent, "tr", None)
     if not callable(tr):
-        tr = lambda s: s
+        tr = _helper_tr
 
     dialog = QDialog(host)
     dialog.setWindowTitle(str(title))
@@ -69,8 +72,8 @@ def ask_wrapped_yes_no(
     outer.addLayout(row)
 
     buttons = QDialogButtonBox(dialog)
-    no_btn = buttons.addButton(no_text or tr("No"), QDialogButtonBox.RejectRole)
-    yes_btn = buttons.addButton(yes_text or tr("Yes"), QDialogButtonBox.AcceptRole)
+    no_btn = buttons.addButton(no_text or _helper_tr("No"), QDialogButtonBox.RejectRole)
+    yes_btn = buttons.addButton(yes_text or _helper_tr("Yes"), QDialogButtonBox.AcceptRole)
     if default_yes:
         yes_btn.setDefault(True)
         yes_btn.setAutoDefault(True)

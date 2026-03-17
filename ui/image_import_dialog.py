@@ -72,7 +72,7 @@ from database.schema import (
 from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
 from utils.vernacular_utils import normalize_vernacular_language
-from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates
+from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates, get_camera_model
 from utils.heic_converter import maybe_convert_heic
 from .image_gallery_widget import ImageGalleryWidget
 from .zoomable_image_widget import ZoomableImageLabel
@@ -94,6 +94,7 @@ class ImageImportResult:
     custom_scale: Optional[float] = None
     contrast: Optional[str] = None
     mount_medium: Optional[str] = None
+    stain: Optional[str] = None
     sample_type: Optional[str] = None
     captured_at: Optional[QDateTime] = None
     gps_latitude: Optional[float] = None
@@ -357,6 +358,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
     continueRequested = Signal(list)
     _geometry_key = "ImageImportDialog"
     CUSTOM_OBJECTIVE_KEY = "__custom__"
+    _FIELD_TAG_DEFAULTS = {
+        "contrast": DatabaseTerms.CONTRAST_METHODS[0],
+        "mount": DatabaseTerms.MOUNT_MEDIA[0],
+        "stain": DatabaseTerms.STAIN_TYPES[0],
+        "sample": DatabaseTerms.SAMPLE_TYPES[0],
+    }
 
     def __init__(
         self,
@@ -378,6 +385,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.default_objective = self._get_default_objective()
         self.contrast_options = self._load_tag_options("contrast")
         self.mount_options = self._load_tag_options("mount")
+        self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
         self.contrast_default = self._preferred_tag_value(
             "contrast",
@@ -388,6 +396,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "mount",
             self.mount_options,
             DatabaseTerms.MOUNT_MEDIA[0],
+        )
+        self.stain_default = self._preferred_tag_value(
+            "stain",
+            self.stain_options,
+            DatabaseTerms.STAIN_TYPES[0],
         )
         self.sample_default = self._preferred_tag_value(
             "sample",
@@ -475,13 +488,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "QPushButton { padding: 4px 8px; }"
             "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
         )
-        left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         content_row.addWidget(left_panel, 0)
-
-        center_container = QWidget()
-        center_layout = QVBoxLayout(center_container)
-        center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(8)
 
         self.gallery = ImageGalleryWidget(
             self.tr("Images"),
@@ -492,6 +500,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             default_height=180,
             thumbnail_size=140,
         )
+        self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.gallery.setFixedHeight(220)
         self.gallery.set_multi_select(True)
         self.gallery.imageClicked.connect(self._on_gallery_clicked)
         self.gallery.selectionChanged.connect(self._on_gallery_selection_changed)
@@ -532,26 +542,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.previous_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Left), self)
         self.previous_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.previous_image_arrow_shortcut.activated.connect(self._on_previous_image_shortcut)
-
-        center_splitter = QSplitter(Qt.Vertical)
-        center_splitter.setChildrenCollapsible(False)
-        center_splitter.addWidget(self._build_center_panel())
-        center_splitter.addWidget(self.gallery)
-        center_splitter.setStretchFactor(0, 4)
-        center_splitter.setStretchFactor(1, 1)
-        center_splitter.setSizes([700, 220])
-
-        center_layout.addWidget(center_splitter, 1)
+        center_panel = self._build_center_panel()
         self.details_panel = self._build_right_panel()
+        self.details_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.setChildrenCollapsible(False)
-        main_splitter.addWidget(center_container)
+        main_splitter.addWidget(center_panel)
         main_splitter.addWidget(self.details_panel)
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 0)
         main_splitter.setSizes([980, 400])
         content_row.addWidget(main_splitter, 1)
         main_layout.addLayout(content_row, 1)
+        main_layout.addWidget(self.gallery, 0)
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -658,6 +661,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         legacy_default_key = {
             "contrast": "contrast_default",
             "mount": "mount_default",
+            "stain": "stain_default",
             "sample": "sample_default",
         }.get(category, "")
         preferred = SettingsDB.get_setting(DatabaseTerms.last_used_key(category), None)
@@ -675,6 +679,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
         for canonical in options:
             combo.addItem(DatabaseTerms.translate(category, canonical), canonical)
 
+    def _set_tag_combo_neutral_display(self, combo: QComboBox, category: str, blank: bool) -> None:
+        idx = combo.findData(self._field_tag_value(category))
+        if idx < 0:
+            return
+        combo.setItemText(idx, "" if blank else DatabaseTerms.translate(category, self._field_tag_value(category)))
+
+    def _sync_field_tag_display(self, blank: bool) -> None:
+        self._set_tag_combo_neutral_display(self.contrast_combo, "contrast", blank)
+        self._set_tag_combo_neutral_display(self.mount_combo, "mount", blank)
+        self._set_tag_combo_neutral_display(self.stain_combo, "stain", blank)
+        self._set_tag_combo_neutral_display(self.sample_combo, "sample", blank)
+
     def _set_combo_tag_value(self, combo: QComboBox, category: str, value: str | None) -> None:
         canonical = self._canonicalize_tag(category, value)
         if not canonical:
@@ -691,6 +707,27 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if value is None:
             value = combo.currentText()
         return self._canonicalize_tag(category, value)
+
+    def _field_tag_value(self, category: str) -> str:
+        return self._FIELD_TAG_DEFAULTS[category]
+
+    def _set_field_tag_defaults_in_form(self) -> None:
+        combos = (
+            (self.contrast_combo, "contrast"),
+            (self.mount_combo, "mount"),
+            (self.stain_combo, "stain"),
+            (self.sample_combo, "sample"),
+        )
+        for combo, _category in combos:
+            combo.blockSignals(True)
+        try:
+            self._set_combo_tag_value(self.contrast_combo, "contrast", self._field_tag_value("contrast"))
+            self._set_combo_tag_value(self.mount_combo, "mount", self._field_tag_value("mount"))
+            self._set_combo_tag_value(self.stain_combo, "stain", self._field_tag_value("stain"))
+            self._set_combo_tag_value(self.sample_combo, "sample", self._field_tag_value("sample"))
+        finally:
+            for combo, _category in combos:
+                combo.blockSignals(False)
 
     def _build_left_panel(self) -> QWidget:
         container = QWidget()
@@ -758,35 +795,52 @@ class ImageImportDialog(GeometryMixin, QDialog):
         scale_layout.addWidget(self.scale_warning_label)
         layout.addWidget(self.scale_group)
 
-        self.contrast_group = QGroupBox(self.tr("Contrast"))
-        contrast_layout = QVBoxLayout(self.contrast_group)
+        # ── Microscope details group (disabled for field images) ───────────
+        self.micro_settings_group = QGroupBox(self.tr("Microscope"))
+        micro_form = QFormLayout(self.micro_settings_group)
+        micro_form.setSpacing(6)
+        micro_form.setContentsMargins(8, 8, 8, 8)
+        micro_form.setLabelAlignment(Qt.AlignLeft)
+        micro_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
         self.contrast_combo = QComboBox()
         self._apply_combo_popup_style(self.contrast_combo)
         self._populate_tag_combo(self.contrast_combo, "contrast", self.contrast_options)
         self._set_combo_tag_value(self.contrast_combo, "contrast", self.contrast_default)
         self.contrast_combo.currentIndexChanged.connect(self._on_settings_changed)
-        contrast_layout.addWidget(self.contrast_combo)
-        layout.addWidget(self.contrast_group)
+        micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
-        self.mount_group = QGroupBox(self.tr("Mount"))
-        mount_layout = QVBoxLayout(self.mount_group)
         self.mount_combo = QComboBox()
         self._apply_combo_popup_style(self.mount_combo)
         self._populate_tag_combo(self.mount_combo, "mount", self.mount_options)
         self._set_combo_tag_value(self.mount_combo, "mount", self.mount_default)
         self.mount_combo.currentIndexChanged.connect(self._on_settings_changed)
-        mount_layout.addWidget(self.mount_combo)
-        layout.addWidget(self.mount_group)
+        micro_form.addRow(self.tr("Mount:"), self.mount_combo)
 
-        self.sample_group = QGroupBox(self.tr("Sample type"))
-        sample_layout = QVBoxLayout(self.sample_group)
+        self.stain_combo = QComboBox()
+        self._apply_combo_popup_style(self.stain_combo)
+        self._populate_tag_combo(self.stain_combo, "stain", self.stain_options)
+        self._set_combo_tag_value(self.stain_combo, "stain", self.stain_default)
+        self.stain_combo.currentIndexChanged.connect(self._on_settings_changed)
+        micro_form.addRow(self.tr("Stain:"), self.stain_combo)
+
         self.sample_combo = QComboBox()
         self._apply_combo_popup_style(self.sample_combo)
         self._populate_tag_combo(self.sample_combo, "sample", self.sample_options)
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
-        sample_layout.addWidget(self.sample_combo)
-        layout.addWidget(self.sample_group)
+        micro_form.addRow(self.tr("Sample type:"), self.sample_combo)
+
+        layout.addWidget(self.micro_settings_group)
+
+        # Keep group references for backwards-compat with _update_micro_settings_state
+        self.contrast_group = self.micro_settings_group
+        self.mount_group = self.micro_settings_group
+        self.stain_group = self.micro_settings_group
+        self.sample_group = self.micro_settings_group
+
+        self._set_field_tag_defaults_in_form()
+        self._sync_field_tag_display(True)
 
         layout.addStretch()
 
@@ -1231,7 +1285,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
         # Scale can be set for both field and microscope images.
         self.scale_group.setEnabled(True)
-        # Contrast/mount/sample remain microscope-only controls.
+        # Contrast/mount/stain/sample remain microscope-only controls.
         self._update_micro_settings_state(all_micro)
         self._update_resize_group_state()
         self._update_scalebar_controls_visibility()
@@ -1328,15 +1382,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     for idx in indices
                     if 0 <= idx < len(self.import_results)
                 )
-        self.contrast_combo.setEnabled(enable)
-        self.mount_combo.setEnabled(enable)
-        self.sample_combo.setEnabled(enable)
-        if hasattr(self, "contrast_group"):
-            self.contrast_group.setEnabled(enable)
-        if hasattr(self, "mount_group"):
-            self.mount_group.setEnabled(enable)
-        if hasattr(self, "sample_group"):
-            self.sample_group.setEnabled(enable)
+        if hasattr(self, "micro_settings_group"):
+            self.micro_settings_group.setEnabled(enable)
+        self._sync_field_tag_display(not enable and bool(getattr(self, "field_radio", None) and self.field_radio.isChecked()))
 
     def _sync_scale_bar_length_unit_for_image_type(self) -> None:
         if not hasattr(self, "scale_bar_length_input"):
@@ -2158,6 +2206,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "scale": (self.tr("Scale applied"), "to"),
             "contrast": (self.tr("Contrast changed"), "for"),
             "mount": (self.tr("Mount changed"), "for"),
+            "stain": (self.tr("Stain changed"), "for"),
             "sample": (self.tr("Sample type changed"), "for"),
             "image_type": (self.tr("Image type changed"), "for"),
             "resize": (self.tr("Resize setting changed"), "for"),
@@ -2241,6 +2290,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result = ImageImportResult(
                 filepath=path,
                 preview_path=preview_path or path,
+                contrast=self._field_tag_value("contrast"),
+                mount_medium=self._field_tag_value("mount"),
+                stain=self._field_tag_value("stain"),
+                sample_type=self._field_tag_value("sample"),
                 captured_at=captured_at,
                 gps_latitude=lat,
                 gps_longitude=lon,
@@ -2637,7 +2690,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
     def _load_result_into_form(self, result: ImageImportResult) -> None:
         self._loading_form = True
-        if result.image_type == "microscope":
+        is_micro = result.image_type == "microscope"
+        if is_micro:
             self.micro_radio.setChecked(True)
         else:
             self.field_radio.setChecked(True)
@@ -2656,12 +2710,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.objective_combo.setCurrentIndex(idx)
         else:
             self.objective_combo.setCurrentIndex(0)
-        if result.contrast:
-            self._set_combo_tag_value(self.contrast_combo, "contrast", result.contrast)
-        if result.mount_medium:
-            self._set_combo_tag_value(self.mount_combo, "mount", result.mount_medium)
-        if result.sample_type:
-            self._set_combo_tag_value(self.sample_combo, "sample", result.sample_type)
+        self._set_combo_tag_value(
+            self.contrast_combo,
+            "contrast",
+            result.contrast or (self.contrast_default if is_micro else self._field_tag_value("contrast")),
+        )
+        self._set_combo_tag_value(
+            self.mount_combo,
+            "mount",
+            result.mount_medium or (self.mount_default if is_micro else self._field_tag_value("mount")),
+        )
+        self._set_combo_tag_value(
+            self.stain_combo,
+            "stain",
+            result.stain or (self.stain_default if is_micro else self._field_tag_value("stain")),
+        )
+        self._set_combo_tag_value(
+            self.sample_combo,
+            "sample",
+            result.sample_type or (self.sample_default if is_micro else self._field_tag_value("sample")),
+        )
         if result.scale_bar_length_um:
             display_len = (
                 float(result.scale_bar_length_um) / 1000.0
@@ -2697,11 +2765,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "contrast"
         elif sender is self.mount_combo:
             action = "mount"
+        elif sender is self.stain_combo:
+            action = "stain"
         elif sender is self.sample_combo:
             action = "sample"
         elif sender in (self.field_radio, self.micro_radio, self.image_type_group):
             action = "image_type"
             self._sync_scale_bar_length_unit_for_image_type()
+            if self.field_radio.isChecked():
+                self._set_field_tag_defaults_in_form()
         self._last_settings_action = action
         indices = self.selected_indices or [self.selected_index]
         self._apply_settings_to_indices(indices, action, previous_key if action == "scale" else None)
@@ -2767,7 +2839,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.objective = selected_objective or None
         result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
         result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
+        result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
         result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
+        if result.image_type != "microscope":
+            result.contrast = self._field_tag_value("contrast")
+            result.mount_medium = self._field_tag_value("mount")
+            result.stain = self._field_tag_value("stain")
+            result.sample_type = self._field_tag_value("sample")
         result.needs_scale = (
             result.image_type == "microscope"
             and not result.objective
@@ -3175,9 +3253,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._current_exif_datetime = None
             self.exif_datetime_label.setText("--")
 
-        make = exif.get("Make") or ""
-        model = exif.get("Model") or ""
-        camera = " ".join(str(part).strip() for part in (make, model) if part).strip()
+        camera = get_camera_model(exif)
         self.exif_camera_label.setText(camera if camera else "--")
 
         iso = exif.get("ISOSpeedRatings") or exif.get("PhotographicSensitivity")
@@ -3781,6 +3857,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.accept()
 
     def _save_last_used_tag_settings(self) -> None:
+        selected_indices = [
+            idx
+            for idx in self._current_selection_indices()
+            if idx is not None and 0 <= idx < len(self.import_results)
+        ]
+        if selected_indices and not any(
+            (self.import_results[idx].image_type or "field") == "microscope"
+            for idx in selected_indices
+        ):
+            return
         SettingsDB.set_setting(
             DatabaseTerms.last_used_key("contrast"),
             self._get_combo_tag_value(self.contrast_combo, "contrast"),
@@ -3788,6 +3874,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         SettingsDB.set_setting(
             DatabaseTerms.last_used_key("mount"),
             self._get_combo_tag_value(self.mount_combo, "mount"),
+        )
+        SettingsDB.set_setting(
+            DatabaseTerms.last_used_key("stain"),
+            self._get_combo_tag_value(self.stain_combo, "stain"),
         )
         SettingsDB.set_setting(
             DatabaseTerms.last_used_key("sample"),

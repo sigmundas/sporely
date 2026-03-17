@@ -2,12 +2,13 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                 QPushButton, QLabel, QFileDialog, QMessageBox,
                                 QGroupBox, QTableWidget, QTableWidgetItem,
-                                QHeaderView, QAbstractItemView, QTabWidget,
+                                 QHeaderView, QAbstractItemView, QTabWidget,
                                  QRadioButton, QButtonGroup, QSplitter, QComboBox,
                                  QCheckBox, QDoubleSpinBox, QDialog, QFormLayout,
                                  QDialogButtonBox, QSpinBox, QSizePolicy, QToolButton,
                                  QStyle, QLineEdit, QApplication, QProgressDialog,
-                                 QToolTip, QCompleter, QSplitterHandle, QFrame)
+                                 QToolTip, QCompleter, QSplitterHandle, QFrame,
+                                 QPlainTextEdit, QGraphicsDropShadowEffect)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -23,6 +24,7 @@ from PySide6.QtGui import (
     QDesktopServices,
     QStandardItemModel,
     QStandardItem,
+    QFontDatabase,
 )
 from PySide6.QtCore import (
     Qt,
@@ -1684,12 +1686,14 @@ class ReferenceValuesDialog(QDialog):
         self.source_input.setEditable(True)
         self.source_input.setInsertPolicy(QComboBox.NoInsert)
         self.mount_input = QLineEdit(self.ref_values.get("mount_medium") or "")
+        self.stain_input = QLineEdit(self.ref_values.get("stain") or "")
         self.vernacular_label = QLabel(self._vernacular_label())
         form.addRow(self.vernacular_label, self.vernacular_input)
         form.addRow(self.tr("Genus:"), self.genus_input)
         form.addRow(self.tr("Species:"), self.species_input)
         form.addRow(self.tr("Source:"), self.source_input)
         form.addRow(self.tr("Mount medium:"), self.mount_input)
+        form.addRow(self.tr("Stain:"), self.stain_input)
         layout.addLayout(form)
 
         self._genus_model = QStringListModel()
@@ -1793,6 +1797,7 @@ class ReferenceValuesDialog(QDialog):
         self.species_input.textChanged.connect(self._on_species_changed)
         self.source_input.currentTextChanged.connect(self._on_source_changed)
         self.mount_input.textChanged.connect(self._on_mount_changed)
+        self.stain_input.textChanged.connect(self._on_stain_changed)
 
     def _vernacular_label(self) -> str:
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
@@ -1828,6 +1833,7 @@ class ReferenceValuesDialog(QDialog):
             "species": self.species_input.text().strip() or None,
             "source": self.source_input.currentText().strip() or None,
             "mount_medium": self.mount_input.text().strip() or None,
+            "stain": self.stain_input.text().strip() or None,
             "length_min": self._cell_value(0, 0),
             "length_p05": self._cell_value(0, 1),
             "length_p50": self._cell_value(0, 2),
@@ -1869,6 +1875,7 @@ class ReferenceValuesDialog(QDialog):
         self.species_input.setText("")
         self.source_input.setCurrentText("")
         self.mount_input.setText("")
+        self.stain_input.setText("")
         self._clear_table()
         self.plot_requested.emit({})
 
@@ -1963,12 +1970,13 @@ class ReferenceValuesDialog(QDialog):
                         self._species_completer.complete()
         return super().eventFilter(obj, event)
 
-    def _load_reference(self, genus, species, source, mount_medium=None):
-        ref = ReferenceDB.get_reference(genus, species, source, mount_medium)
+    def _load_reference(self, genus, species, source, mount_medium=None, stain=None):
+        ref = ReferenceDB.get_reference(genus, species, source, mount_medium, stain)
         if not ref:
             return
         self._clear_table()
         self.mount_input.setText(ref.get("mount_medium") or "")
+        self.stain_input.setText(ref.get("stain") or "")
 
         def _set_cell(row, col, value):
             if value is None:
@@ -1995,20 +2003,27 @@ class ReferenceValuesDialog(QDialog):
         species = self.species_input.text().strip()
         source = self.source_input.currentText().strip()
         mount = self.mount_input.text().strip()
+        stain = self.stain_input.text().strip()
 
         if not (genus and species):
             return
 
         if source:
-            if mount:
-                ref = ReferenceDB.get_reference(genus, species, source, mount)
+            if mount or stain:
+                ref = ReferenceDB.get_reference(genus, species, source, mount or None, stain or None)
                 if ref:
-                    self._load_reference(genus, species, source, mount)
+                    self._load_reference(genus, species, source, mount or None, stain or None)
                     return
             mounts = ReferenceDB.list_mount_mediums(genus, species, source)
-            if len(mounts) == 1:
+            stains = ReferenceDB.list_stains(genus, species, source)
+            if len(mounts) == 1 and not mount:
                 self.mount_input.setText(mounts[0] or "")
-                self._load_reference(genus, species, source, mounts[0] if mounts else None)
+                mount = mounts[0] if mounts else ""
+            if len(stains) == 1 and not stain:
+                self.stain_input.setText(stains[0] or "")
+                stain = stains[0] if stains else ""
+            if (mount or stain) and (len(mounts) == 1 or len(stains) == 1):
+                self._load_reference(genus, species, source, mount or None, stain or None)
                 return
             ref = ReferenceDB.get_reference(genus, species, source)
             if ref:
@@ -2037,6 +2052,9 @@ class ReferenceValuesDialog(QDialog):
             self._maybe_load_reference()
 
     def _on_mount_changed(self, text):
+        self._maybe_load_reference()
+
+    def _on_stain_changed(self, text):
         self._maybe_load_reference()
 
     def _on_vernacular_text_changed(self, text):
@@ -2652,10 +2670,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._scale_bar_overlay_field_mm = 10.0
         self._scale_bar_overlay_micro_um = 10.0
         self._scale_bar_overlay_field_is_manual = False
+        self._current_measure_scale_bar_value_custom = False
         # Microscope overlay presets by objective; manual edits establish basis
         # used to derive values for other objectives.
         self._scale_bar_micro_manual_by_objective: dict[str, float] = {}
         self._scale_bar_micro_basis_objective: str | None = None
+        self._measure_session_view_states: dict[int, dict] = {}
 
         # Active observation tracking
         self.active_observation_id = None
@@ -2699,6 +2719,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_scatter_axis = None
         self._gallery_hist_axes: set = set()
         self._gallery_hover_hint_key = ""
+        self.gallery_selected_measurement_id = None
+        self._gallery_thumbnail_frames: dict[int, QFrame] = {}
+        self._gallery_pan_active = False
+        self._gallery_pan_axis = None
+        self._gallery_pan_start = None
+        self._gallery_pan_xlim = None
+        self._gallery_pan_ylim = None
+        self._gallery_pan_recently_dragged = False
         self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
@@ -2736,6 +2764,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._restore_geometry()
 
     def closeEvent(self, event):
+        self._save_current_image_measure_view_settings()
         self._save_geometry()
         super().closeEvent(event)
 
@@ -3111,6 +3140,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.mode_lines.toggled.connect(self.on_measure_mode_changed)
         self.mode_rect.toggled.connect(self.on_measure_mode_changed)
         mode_row.addWidget(self.mode_lines)
+        mode_row.addSpacing(16)
         mode_row.addWidget(self.mode_rect)
         mode_row.addStretch()
         measure_layout.addLayout(mode_row)
@@ -3230,7 +3260,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         info_layout = QVBoxLayout()
         self.exif_info_label = QLabel(self.tr("No image loaded"))
         self.exif_info_label.setWordWrap(True)
-        self.exif_info_label.setStyleSheet(f"color: #2c3e50; font-size: {pt(8)}pt;")
+        self.exif_info_label.setStyleSheet(f"font-size: {pt(8)}pt;")
         self.exif_info_label.setTextFormat(Qt.RichText)
         self.exif_info_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self.exif_info_label.setOpenExternalLinks(True)
@@ -3255,6 +3285,193 @@ class MainWindow(GeometryMixin, QMainWindow):
         if text in {"0", "false", "no", "off"}:
             return False
         return bool(default)
+
+    def _measure_image_view_settings_key(self, image_id: int | None = None) -> str | None:
+        target_id = int(image_id or 0)
+        if target_id <= 0:
+            return None
+        return f"measure_image_view_settings_{target_id}"
+
+    def _measure_observation_scale_bar_value_key(self, is_field: bool, observation_id: int | None = None) -> str | None:
+        target_id = int(observation_id if observation_id is not None else self.active_observation_id or 0)
+        if target_id <= 0:
+            return None
+        suffix = "field_mm" if is_field else "micro_um"
+        return f"measure_observation_scale_bar_value_{suffix}_{target_id}"
+
+    def _observation_scale_bar_fallback_value(self, is_field: bool, objective_key: str | None = None) -> float:
+        key = self._measure_observation_scale_bar_value_key(is_field)
+        if key:
+            raw = SettingsDB.get_setting(key)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                value = 0.0
+            if value > 0:
+                return value
+        if is_field:
+            return max(0.1, float(self._scale_bar_overlay_field_mm))
+        suggested_um = self._suggest_microscope_scale_bar_um_for_objective(
+            objective_key if objective_key is not None else self.current_objective_name
+        )
+        return max(0.1, float(suggested_um))
+
+    def _save_observation_scale_bar_fallback_value(self, value: float, is_field: bool) -> None:
+        key = self._measure_observation_scale_bar_value_key(is_field)
+        if not key:
+            return
+        try:
+            SettingsDB.set_setting(key, str(max(0.1, float(value))))
+        except Exception:
+            pass
+
+    def _default_measure_view_settings(self) -> dict:
+        is_field = (self.current_image_type or "").strip().lower() == "field"
+        return {
+            "show_labels": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_LABELS, default=True),
+            "show_overlays": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_OVERLAYS, default=True),
+            "show_scale_bar": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False),
+            "show_copyright": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False),
+            "scale_bar_value": self._observation_scale_bar_fallback_value(
+                is_field,
+                objective_key=self.current_objective_name,
+            ),
+            "scale_bar_value_custom": False,
+        }
+
+    def _load_measure_view_settings_for_image(self, image_id: int | None = None) -> dict:
+        settings = self._default_measure_view_settings()
+        key = self._measure_image_view_settings_key(image_id if image_id is not None else self.current_image_id)
+        if not key:
+            return settings
+        raw = SettingsDB.get_setting(key)
+        if not raw:
+            return settings
+        try:
+            loaded = json.loads(raw)
+        except Exception:
+            return settings
+        if not isinstance(loaded, dict):
+            return settings
+        for key_name in ("show_labels", "show_overlays", "show_scale_bar", "show_copyright"):
+            if key_name in loaded:
+                settings[key_name] = bool(loaded.get(key_name))
+        scale_value = loaded.get("scale_bar_value")
+        scale_custom = loaded.get("scale_bar_value_custom")
+        if isinstance(scale_value, (int, float)) and scale_value > 0:
+            settings["scale_bar_value"] = float(scale_value)
+            settings["scale_bar_value_custom"] = bool(scale_custom) if scale_custom is not None else True
+        return settings
+
+    def _collect_current_measure_view_settings(self) -> dict:
+        defaults = self._default_measure_view_settings()
+        settings = {
+            "show_labels": bool(self.show_measures_checkbox.isChecked()) if hasattr(self, "show_measures_checkbox") else defaults["show_labels"],
+            "show_overlays": bool(self.show_rectangles_checkbox.isChecked()) if hasattr(self, "show_rectangles_checkbox") else defaults["show_overlays"],
+            "show_scale_bar": bool(self.show_scale_bar_checkbox.isChecked()) if hasattr(self, "show_scale_bar_checkbox") else defaults["show_scale_bar"],
+            "show_copyright": bool(self.show_copyright_checkbox.isChecked()) if hasattr(self, "show_copyright_checkbox") else defaults["show_copyright"],
+        }
+        if bool(getattr(self, "_current_measure_scale_bar_value_custom", False)) and hasattr(self, "scale_bar_input"):
+            settings["scale_bar_value"] = max(0.1, float(self.scale_bar_input.value()))
+            settings["scale_bar_value_custom"] = True
+        return settings
+
+    def _save_current_image_measure_session_view(self) -> None:
+        """Remember zoom/pan for the current image until the app closes."""
+        image_id = int(self.current_image_id or 0)
+        if image_id <= 0 or not hasattr(self, "image_label"):
+            return
+        state = self.image_label.get_view_state()
+        if not isinstance(state, dict):
+            self._measure_session_view_states.pop(image_id, None)
+            return
+        center = state.get("center")
+        zoom = state.get("zoom")
+        size = state.get("size")
+        if center is None or zoom is None or not isinstance(size, (tuple, list)) or len(size) != 2:
+            return
+        self._measure_session_view_states[image_id] = {
+            "center": (float(center.x()), float(center.y())),
+            "zoom": float(zoom),
+            "size": (int(size[0]), int(size[1])),
+        }
+
+    def _apply_measure_session_view_for_current_image(self) -> bool:
+        """Restore session-only zoom/pan for the current image if available."""
+        image_id = int(self.current_image_id or 0)
+        if image_id <= 0 or not hasattr(self, "image_label") or not self.current_pixmap:
+            return False
+        state = self._measure_session_view_states.get(image_id)
+        if not isinstance(state, dict):
+            return False
+        center = state.get("center")
+        zoom = state.get("zoom")
+        size = state.get("size")
+        if (
+            not isinstance(center, (tuple, list))
+            or len(center) != 2
+            or not isinstance(size, (tuple, list))
+            or len(size) != 2
+            or int(size[0]) != self.current_pixmap.width()
+            or int(size[1]) != self.current_pixmap.height()
+        ):
+            self._measure_session_view_states.pop(image_id, None)
+            return False
+        try:
+            self.image_label.set_view_state(QPointF(float(center[0]), float(center[1])), float(zoom))
+        except Exception:
+            self._measure_session_view_states.pop(image_id, None)
+            return False
+        return True
+
+    def _save_current_image_measure_view_settings(self) -> None:
+        key = self._measure_image_view_settings_key()
+        if not key:
+            return
+        try:
+            SettingsDB.set_setting(key, json.dumps(self._collect_current_measure_view_settings()))
+        except Exception:
+            pass
+
+    def _apply_measure_view_settings_for_current_image(self) -> None:
+        settings = self._load_measure_view_settings_for_image()
+        self._current_measure_scale_bar_value_custom = bool(settings.get("scale_bar_value_custom", False))
+        has_scale = self._current_image_has_scale()
+        force_disable_overlays = bool((self.current_image_type or "").strip().lower() == "field" and not has_scale)
+
+        if hasattr(self, "show_measures_checkbox"):
+            self.show_measures_checkbox.blockSignals(True)
+            self.show_measures_checkbox.setChecked(bool(settings.get("show_labels", True)) and not force_disable_overlays)
+            self.show_measures_checkbox.blockSignals(False)
+        if hasattr(self, "show_rectangles_checkbox"):
+            self.show_rectangles_checkbox.blockSignals(True)
+            self.show_rectangles_checkbox.setChecked(bool(settings.get("show_overlays", True)) and not force_disable_overlays)
+            self.show_rectangles_checkbox.blockSignals(False)
+        if hasattr(self, "show_scale_bar_checkbox"):
+            self.show_scale_bar_checkbox.blockSignals(True)
+            self.show_scale_bar_checkbox.setChecked(bool(settings.get("show_scale_bar", False)) and has_scale and not force_disable_overlays)
+            self.show_scale_bar_checkbox.blockSignals(False)
+        if hasattr(self, "show_copyright_checkbox"):
+            self.show_copyright_checkbox.blockSignals(True)
+            self.show_copyright_checkbox.setChecked(bool(settings.get("show_copyright", False)))
+            self.show_copyright_checkbox.blockSignals(False)
+        if hasattr(self, "scale_bar_input"):
+            self.scale_bar_input.blockSignals(True)
+            self.scale_bar_input.setValue(max(0.1, float(settings.get("scale_bar_value", 10.0))))
+            self.scale_bar_input.blockSignals(False)
+
+        if hasattr(self, "image_label"):
+            self.image_label.set_show_measure_labels(
+                bool(self.show_measures_checkbox.isChecked()) if hasattr(self, "show_measures_checkbox") else False
+            )
+            self.image_label.set_show_measure_overlays(
+                bool(self.show_rectangles_checkbox.isChecked()) if hasattr(self, "show_rectangles_checkbox") else False
+            )
+        self.on_show_scale_bar_toggled(
+            bool(self.show_scale_bar_checkbox.isChecked()) if hasattr(self, "show_scale_bar_checkbox") else False
+        )
+        self._update_measure_copyright_overlay()
+        self._update_measure_view_option_states()
 
     def create_measure_tab(self):
         """Create the measure tab with control panel, image panel, and stats panel."""
@@ -3298,6 +3515,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.toggle_measurement_shortcut = QShortcut(QKeySequence(Qt.Key_M), tab)
         self.toggle_measurement_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.toggle_measurement_shortcut.activated.connect(self._on_measure_button_clicked)
+
+        self.cancel_measurement_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), tab)
+        self.cancel_measurement_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.cancel_measurement_shortcut.activated.connect(self._cancel_measurement_shortcut)
 
         self.delete_measurement_shortcuts = []
         for seq in (QKeySequence(Qt.Key_Delete), QKeySequence("Alt+D"), QKeySequence("Meta+D")):
@@ -3386,6 +3607,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "bins": 8,
             "histogram": True,
             "ci": True,
+            "image_color": False,
             "legend": False,
             "avg_q": False,
             "q_minmax": False,
@@ -3425,6 +3647,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_ci_checkbox.setChecked(bool(self.gallery_plot_settings.get("ci", True)))
         self.gallery_ci_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_ci_checkbox)
+
+        self.gallery_image_color_checkbox = QCheckBox(self.tr("Image color"))
+        self.gallery_image_color_checkbox.setChecked(bool(self.gallery_plot_settings.get("image_color", False)))
+        self.gallery_image_color_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
+        plot_layout.addRow("", self.gallery_image_color_checkbox)
 
         self.gallery_avg_q_checkbox = QCheckBox(self.tr("Plot Avg Q"))
         self.gallery_avg_q_checkbox.setChecked(bool(self.gallery_plot_settings.get("avg_q", False)))
@@ -3485,17 +3712,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_export_btn.setToolTip(self.tr("Export the thumbnail gallery as a mosaic"))
         self.gallery_export_btn.clicked.connect(self.export_gallery_composite)
 
-        self.gallery_copy_stats_btn = QPushButton(self.tr("Copy stats"))
-        self.gallery_copy_stats_btn.setMinimumHeight(35)
-        self.gallery_copy_stats_btn.setMinimumWidth(110)
-        self.gallery_copy_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_copy_stats_btn = QPushButton(self.tr("Export statistics"))
         self.gallery_copy_stats_btn.setToolTip(self.tr("Copy spore statistics and individual measurements to the clipboard"))
         self.gallery_copy_stats_btn.clicked.connect(self.copy_spore_stats)
 
-        self.gallery_save_stats_btn = QPushButton(self.tr("Save stats"))
-        self.gallery_save_stats_btn.setMinimumHeight(35)
-        self.gallery_save_stats_btn.setMinimumWidth(110)
-        self.gallery_save_stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.gallery_save_stats_btn = QPushButton(self.tr("Save statistics"))
         self.gallery_save_stats_btn.setToolTip(self.tr("Save spore statistics and individual measurements to a text file"))
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
@@ -3519,18 +3740,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_layout.setSpacing(6)
 
         plot_hint_row = QHBoxLayout()
-        plot_hint_row.addStretch()
         self.gallery_clear_filter_btn = QPushButton(self.tr("Clear filter"))
         self.gallery_clear_filter_btn.setFixedHeight(20)
         self.gallery_clear_filter_btn.setStyleSheet(f"font-size: {pt(8)}pt; padding: 2px 6px;")
         self.gallery_clear_filter_btn.clicked.connect(self.clear_gallery_filter)
         plot_hint_row.addWidget(self.gallery_clear_filter_btn)
+        plot_hint_row.addStretch()
+        self.gallery_include_details_checkbox = QCheckBox(self.tr("Include details"))
+        self.gallery_include_details_checkbox.setChecked(False)
+        self.gallery_include_details_checkbox.toggled.connect(self.on_gallery_stats_setting_changed)
+        plot_hint_row.addWidget(self.gallery_include_details_checkbox)
+        for button in (self.gallery_copy_stats_btn, self.gallery_save_stats_btn):
+            button.setFixedHeight(20)
+            button.setStyleSheet(f"font-size: {pt(8)}pt; padding: 2px 6px;")
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            plot_hint_row.addWidget(button)
         plot_layout.addLayout(plot_hint_row)
 
         self.gallery_plot_figure = Figure(figsize=(6, 3.8))
         self.gallery_plot_canvas = FigureCanvas(self.gallery_plot_figure)
         self.gallery_plot_canvas.mpl_connect("pick_event", self.on_gallery_plot_pick)
+        self.gallery_plot_canvas.mpl_connect("scroll_event", self._on_gallery_plot_scroll)
+        self.gallery_plot_canvas.mpl_connect("button_press_event", self._on_gallery_plot_press)
         self.gallery_plot_canvas.mpl_connect("motion_notify_event", self._on_gallery_plot_motion)
+        self.gallery_plot_canvas.mpl_connect("button_release_event", self._on_gallery_plot_release)
         self.gallery_plot_canvas.mpl_connect("figure_leave_event", self._on_gallery_plot_leave)
 
         plot_canvas_frame = QFrame()
@@ -3544,14 +3777,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.plot_width_splitter = QSplitter(Qt.Horizontal)
         self.plot_width_splitter.setHandleWidth(6)
         self.plot_width_splitter.addWidget(plot_canvas_frame)
-        _plot_spacer = QWidget()
-        _plot_spacer.setMinimumWidth(0)
-        self.plot_width_splitter.addWidget(_plot_spacer)
-        self.plot_width_splitter.setCollapsible(0, False)  # canvas never collapses
-        self.plot_width_splitter.setCollapsible(1, True)   # spacer can collapse to 0
+        self.gallery_stats_preview = QPlainTextEdit()
+        self.gallery_stats_preview.setReadOnly(True)
+        self.gallery_stats_preview.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.gallery_stats_preview.setMinimumWidth(180)
+        self.gallery_stats_preview.setPlaceholderText(self.tr("No observation selected"))
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        fixed_font.setPointSize(max(9, fixed_font.pointSize()))
+        self.gallery_stats_preview.setFont(fixed_font)
+        self.gallery_stats_preview.setTabStopDistance(8 * self.gallery_stats_preview.fontMetrics().horizontalAdvance(" "))
+        self.plot_width_splitter.addWidget(self.gallery_stats_preview)
+        self.plot_width_splitter.setCollapsible(0, False)
+        self.plot_width_splitter.setCollapsible(1, False)
         self.plot_width_splitter.setStretchFactor(0, 1)
         self.plot_width_splitter.setStretchFactor(1, 0)
-        self.plot_width_splitter.setSizes([700, 0])
+        self.plot_width_splitter.setSizes([760, 280])
+        self.plot_width_splitter.splitterMoved.connect(self._on_plot_width_splitter_moved)
         plot_layout.addWidget(self.plot_width_splitter)
 
         gallery_panel = QWidget()
@@ -3615,8 +3856,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         action_row.setSpacing(6)
         action_row.addWidget(self.gallery_plot_export_btn)
         action_row.addWidget(self.gallery_export_btn)
-        action_row.addWidget(self.gallery_copy_stats_btn)
-        action_row.addWidget(self.gallery_save_stats_btn)
         bottom_row.addLayout(action_row, 0)
         main_layout.addLayout(bottom_row)
 
@@ -3661,16 +3900,40 @@ class MainWindow(GeometryMixin, QMainWindow):
                 hint_key = "scatter"
             elif hovered_axis in getattr(self, "_gallery_hist_axes", set()):
                 hint_key = "hist"
+            if (
+                self._gallery_pan_active
+                and hovered_axis is self._gallery_pan_axis
+                and event.xdata is not None
+                and event.ydata is not None
+                and self._gallery_pan_start is not None
+                and self._gallery_pan_xlim is not None
+                and self._gallery_pan_ylim is not None
+            ):
+                start_x, start_y = self._gallery_pan_start
+                dx = float(event.xdata) - float(start_x)
+                dy = float(event.ydata) - float(start_y)
+                self._gallery_pan_axis.set_xlim(
+                    float(self._gallery_pan_xlim[0]) - dx,
+                    float(self._gallery_pan_xlim[1]) - dx,
+                )
+                self._gallery_pan_axis.set_ylim(
+                    float(self._gallery_pan_ylim[0]) - dy,
+                    float(self._gallery_pan_ylim[1]) - dy,
+                )
+                if hasattr(self, "gallery_plot_canvas"):
+                    self.gallery_plot_canvas.draw_idle()
+                if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                    self._gallery_pan_recently_dragged = True
         if hint_key == self._gallery_hover_hint_key:
             return
         self._gallery_hover_hint_key = hint_key
         if hint_key == "scatter":
             self._set_gallery_hint(
-                self.tr("Scatter plot")
+                self.tr("Click to filter image gallery")
             )
         elif hint_key == "hist":
             self._set_gallery_hint(
-                self.tr("Histogram")
+                self.tr("Click to filter image gallery")
             )
         else:
             self._set_gallery_hint("")
@@ -3679,6 +3942,55 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self._gallery_hover_hint_key:
             self._gallery_hover_hint_key = ""
             self._set_gallery_hint("")
+
+    def _on_gallery_plot_scroll(self, event) -> None:
+        axis = getattr(event, "inaxes", None)
+        if axis is None or event.xdata is None or event.ydata is None:
+            return
+        direction = getattr(event, "button", "")
+        if direction not in {"up", "down"}:
+            return
+        scale = 1 / 1.2 if direction == "up" else 1.2
+        x0, x1 = axis.get_xlim()
+        y0, y1 = axis.get_ylim()
+        xdata = float(event.xdata)
+        ydata = float(event.ydata)
+        axis.set_xlim(
+            xdata - (xdata - float(x0)) * scale,
+            xdata + (float(x1) - xdata) * scale,
+        )
+        axis.set_ylim(
+            ydata - (ydata - float(y0)) * scale,
+            ydata + (float(y1) - ydata) * scale,
+        )
+        if hasattr(self, "gallery_plot_canvas"):
+            self.gallery_plot_canvas.draw_idle()
+
+    def _on_gallery_plot_press(self, event) -> None:
+        axis = getattr(event, "inaxes", None)
+        if axis is None or getattr(event, "button", None) != 1:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        self._gallery_pan_active = True
+        self._gallery_pan_axis = axis
+        self._gallery_pan_start = (float(event.xdata), float(event.ydata))
+        self._gallery_pan_xlim = axis.get_xlim()
+        self._gallery_pan_ylim = axis.get_ylim()
+        self._gallery_pan_recently_dragged = False
+
+    def _on_gallery_plot_release(self, event) -> None:
+        if getattr(event, "button", None) == 1 and self._gallery_pan_active:
+            dragged = bool(self._gallery_pan_recently_dragged)
+            self._gallery_pan_active = False
+            self._gallery_pan_axis = None
+            self._gallery_pan_start = None
+            self._gallery_pan_xlim = None
+            self._gallery_pan_ylim = None
+            if dragged:
+                QTimer.singleShot(180, lambda: setattr(self, "_gallery_pan_recently_dragged", False))
+            else:
+                self._gallery_pan_recently_dragged = False
 
     def _set_gallery_strip_height(self):
         if not hasattr(self, "gallery_splitter"):
@@ -3725,6 +4037,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_collapsed = collapsed
             self.gallery_splitter._is_collapsed = collapsed
             self.gallery_splitter.collapse_toggled.emit(collapsed)
+        self._save_gallery_settings()
+
+    def _on_plot_width_splitter_moved(self, _pos, _index):
+        if not hasattr(self, "plot_width_splitter"):
+            return
+        self._save_gallery_settings()
 
     def _build_reference_panel(self):
         panel = QWidget()
@@ -4002,7 +4320,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             return ("points", genus, species, source_type, label)
         source = (data.get("source") or "").strip()
         mount = (data.get("mount_medium") or "").strip()
-        return ("reference", genus, species, source, mount)
+        stain = (data.get("stain") or "").strip()
+        return ("reference", genus, species, source, mount, stain)
 
     def _format_reference_series_label(self, data: dict) -> str:
         genus = (data.get("genus") or "").strip()
@@ -4013,10 +4332,17 @@ class MainWindow(GeometryMixin, QMainWindow):
             or (data.get("points_label") or "")
             or (data.get("source_label") or "")
         ).strip()
+        mount = (data.get("mount_medium") or "").strip()
+        stain = (data.get("stain") or "").strip()
         genus_label = f"{genus[0].upper()}." if genus else ""
         base = f"{genus_label} {species}".strip() if genus_label else (f"{genus} {species}".strip() or species)
+        prep_parts = [part for part in (mount, stain) if part]
+        prep = ", ".join(prep_parts).strip()
         if source:
-            return f"{base} ({source})".strip()
+            label = f"{base} ({source})".strip()
+            return f"{label} [{prep}]".strip() if prep else label
+        if prep:
+            return f"{base} [{prep}]".strip()
         return base or self.tr("Reference")
 
     def _refresh_reference_series_table(self):
@@ -5801,16 +6127,15 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         if hasattr(self, "scale_bar_input"):
             if is_field:
-                display_value = max(0.1, float(self._scale_bar_overlay_field_mm))
+                display_value = self._observation_scale_bar_fallback_value(True)
                 suffix = " mm"
                 tooltip = self.tr("Length of the displayed scale bar in millimeters.")
                 current_um = display_value * 1000.0
             else:
-                suggested_um = self._suggest_microscope_scale_bar_um_for_objective(
-                    self.current_objective_name
+                display_value = self._observation_scale_bar_fallback_value(
+                    False,
+                    objective_key=self.current_objective_name,
                 )
-                self._scale_bar_overlay_micro_um = float(suggested_um)
-                display_value = max(0.1, float(suggested_um))
                 suffix = " \u03bcm"
                 tooltip = self.tr("Length of the displayed scale bar in micrometers.")
                 current_um = display_value
@@ -5893,6 +6218,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def load_image_record(self, image_data, display_name=None, refresh_table=True):
         """Load an image record into the viewer."""
+        incoming_image_id = int(image_data.get("id") or 0)
+        current_image_id = int(self.current_image_id or 0)
+        if current_image_id > 0 and incoming_image_id > 0 and current_image_id != incoming_image_id:
+            self._save_current_image_measure_session_view()
+            self._save_current_image_measure_view_settings()
+
         original_path = image_data['filepath']
         output_dir = Path(__file__).parent.parent / "data" / "imports"
         converted_path = maybe_convert_heic(original_path, output_dir)
@@ -5920,7 +6251,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.current_pixmap = self._load_pixmap_cached(self.current_image_path)
         self.image_label.set_image(self.current_pixmap)
         self.update_exif_panel(self.current_image_path)
-        QTimer.singleShot(0, self.image_label.reset_view)
+        QTimer.singleShot(
+            0,
+            lambda: self.image_label.reset_view()
+            if not self._apply_measure_session_view_for_current_image()
+            else None,
+        )
 
         filename = Path(self.current_image_path).name
         if hasattr(self, "image_info_label"):
@@ -5934,6 +6270,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.apply_image_scale(image_data)
         self.image_label.set_microns_per_pixel(self.microns_per_pixel)
         self.update_controls_for_image_type(image_data.get("image_type"))
+        self._apply_measure_view_settings_for_current_image()
         self._update_scale_mismatch_warning()
         if self.current_objective_name:
             self.image_label.set_objective_color(
@@ -6290,6 +6627,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def clear_current_image_display(self):
         """Clear the current image and overlays."""
+        self._save_current_image_measure_session_view()
+        self._save_current_image_measure_view_settings()
         self.current_image_id = None
         self.current_image_path = None
         self.current_pixmap = None
@@ -6401,8 +6740,18 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         for btn, btn_color in getattr(self, "measure_color_buttons", []):
             selected = btn_color.name() == self.measure_color.name()
-            border = "3px solid #2c3e50" if selected else "1px solid #bdc3c7"
-            btn.setStyleSheet(f"background-color: {btn_color.name()}; border: {border};")
+            if selected:
+                # Border colour that contrasts with the button itself
+                lum = (0.299 * btn_color.red() + 0.587 * btn_color.green()
+                       + 0.114 * btn_color.blue())
+                ring = "#ffffff" if lum < 160 else "#000000"
+                border = f"3px solid {ring}"
+            else:
+                border = "1px solid rgba(128,128,128,80)"
+            btn.setStyleSheet(
+                f"background-color: {btn_color.name()}; border: {border};"
+                f" border-radius: 3px;"
+            )
             btn.setChecked(selected)
 
     def on_show_measures_toggled(self, checked):
@@ -6410,6 +6759,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         SettingsDB.set_setting(self.SETTING_MEASURE_SHOW_LABELS, "1" if checked else "0")
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_labels(checked)
+        self._save_current_image_measure_view_settings()
 
     def on_show_rectangles_toggled(self, checked):
         """Toggle measurement overlays on the main image."""
@@ -6417,25 +6767,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_overlays(checked)
         self.update_display_lines()
+        self._save_current_image_measure_view_settings()
         return
 
     def on_show_scale_bar_toggled(self, checked):
         """Toggle scale bar display."""
-        SettingsDB.set_setting(self.SETTING_MEASURE_SHOW_SCALE_BAR, "1" if checked else "0")
         if checked and not self._current_image_has_scale():
             checked = False
         if hasattr(self, "scale_bar_container"):
             self.scale_bar_container.setVisible(bool(checked) and self._current_image_has_scale())
         scale_value = float(self.scale_bar_input.value()) if hasattr(self, "scale_bar_input") else 10.0
         is_field = (self.current_image_type or "").strip().lower() == "field"
-        if is_field:
-            self._scale_bar_overlay_field_mm = max(0.1, float(scale_value))
-        else:
-            self._register_microscope_scale_bar_manual_value(float(scale_value))
-            scale_value = float(self._scale_bar_overlay_micro_um)
         scale_um = scale_value * 1000.0 if is_field else scale_value
         unit = "mm" if is_field else "\u03bcm"
         self.image_label.set_scale_bar(checked, scale_um, unit=unit)
+        self._save_current_image_measure_view_settings()
 
     def on_scale_bar_value_changed(self, value):
         """Update scale bar size."""
@@ -6445,21 +6791,26 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.image_label.set_scale_bar(False, 0.0, unit=unit)
             return
         is_field = (self.current_image_type or "").strip().lower() == "field"
+        default_value = self._observation_scale_bar_fallback_value(
+            is_field,
+            objective_key=self.current_objective_name,
+        )
         if is_field:
-            self._scale_bar_overlay_field_mm = max(0.1, float(value))
-            self._scale_bar_overlay_field_is_manual = True
+            value = max(0.1, float(value))
         else:
-            self._register_microscope_scale_bar_manual_value(float(value))
-            snapped = float(self._scale_bar_overlay_micro_um)
+            snapped = float(self._snap_scale_bar_length_um(float(value)))
             if hasattr(self, "scale_bar_input") and abs(float(value) - snapped) > 1e-9:
                 self.scale_bar_input.blockSignals(True)
                 self.scale_bar_input.setValue(snapped)
                 self.scale_bar_input.blockSignals(False)
             value = snapped
+        self._save_observation_scale_bar_fallback_value(float(value), is_field)
+        self._current_measure_scale_bar_value_custom = abs(float(value) - float(default_value)) > 1e-9
         if hasattr(self, "show_scale_bar_checkbox") and self.show_scale_bar_checkbox.isChecked():
             scale_um = float(value) * 1000.0 if is_field else float(value)
             unit = "mm" if is_field else "\u03bcm"
             self.image_label.set_scale_bar(True, scale_um, unit=unit)
+        self._save_current_image_measure_view_settings()
 
     def on_show_copyright_toggled(self, _checked):
         """Toggle copyright text on the Measure image view/export."""
@@ -6468,6 +6819,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "1" if bool(self.show_copyright_checkbox.isChecked()) else "0",
         )
         self._update_measure_copyright_overlay()
+        self._save_current_image_measure_view_settings()
 
     def _observation_year_for_copyright(self, observation_date) -> int:
         """Return a year extracted from observation date input."""
@@ -6652,6 +7004,30 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measure_status_label.setText(self.tr("Aborted - Start measuring"))
             self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
 
+    def _measurement_in_progress(self) -> bool:
+        """Return whether a line/rectangle measurement is mid-click."""
+        return bool(self.points or self.rect_stage > 0 or self.temp_lines)
+
+    def _reset_measure_prompt(self) -> None:
+        """Restore the first-click prompt for the active measure mode."""
+        if not self.measurement_active:
+            self.measure_status_label.setText(self.tr("Start measuring to begin"))
+            self.measure_status_label.setStyleSheet(f"color: #7f8c8d; font-weight: bold; font-size: {pt(9)}pt;")
+            return
+        if self.measure_mode == "rectangle":
+            self.measure_status_label.setText(self.tr("Rectangle: Click point 1"))
+            self.measure_status_label.setStyleSheet(f"color: #3498db; font-weight: bold; font-size: {pt(9)}pt;")
+        else:
+            self.measure_status_label.setText(self.tr("Line: Click start point"))
+            self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
+
+    def _cancel_measurement_shortcut(self) -> None:
+        """Cancel the current in-progress measurement without leaving measure mode."""
+        if not self.measurement_active or not self._measurement_in_progress():
+            return
+        self.abort_measurement(show_status=False)
+        self._reset_measure_prompt()
+
     def on_measure_mode_changed(self):
         """Switch between line and rectangle measurement modes."""
         if self.mode_lines.isChecked():
@@ -6659,16 +7035,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             self.measure_mode = "rectangle"
         self.abort_measurement(show_status=False)
-        if self.measurement_active:
-            if self.measure_mode == "rectangle":
-                self.measure_status_label.setText(self.tr("Rectangle: Click point 1"))
-                self.measure_status_label.setStyleSheet(f"color: #3498db; font-weight: bold; font-size: {pt(9)}pt;")
-            else:
-                self.measure_status_label.setText(self.tr("Line: Click start point"))
-                self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
-        else:
-            self.measure_status_label.setText(self.tr("Start measuring to begin"))
-            self.measure_status_label.setStyleSheet(f"color: #7f8c8d; font-weight: bold; font-size: {pt(9)}pt;")
+        self._reset_measure_prompt()
 
     def image_clicked(self, pos):
         """Handle image clicks for measurement or calibration."""
@@ -6882,7 +7249,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.rect_line2_start,
                 self.rect_line2_end,
                 self.rect_width_dir,
-                "line1"
+                "line1",
+                reference_start=self.rect_line1_start,
+                reference_end=self.rect_line1_end,
             )
             self.rect_stage = 3
             self.measure_status_label.setText(self.tr("Rectangle: Adjust start line, click point 4"))
@@ -6892,14 +7261,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self.rect_stage == 3:
             if not self.rect_width_dir or not self.rect_length_dir:
                 return
-            line2_mid = QPointF(
-                (self.rect_line2_start.x() + self.rect_line2_end.x()) / 2,
-                (self.rect_line2_start.y() + self.rect_line2_end.y()) / 2
+            line1_ref_mid = QPointF(
+                (self.rect_line1_start.x() + self.rect_line1_end.x()) / 2,
+                (self.rect_line1_start.y() + self.rect_line1_end.y()) / 2
             )
-            delta = pos - line2_mid
-            width_distance = delta.x() * self.rect_width_dir.x() + delta.y() * self.rect_width_dir.y()
-            line1_start = self.rect_line2_start + self.rect_width_dir * width_distance
-            line1_end = self.rect_line2_end + self.rect_width_dir * width_distance
+            current_distance = (
+                (pos.x() - line1_ref_mid.x()) * self.rect_width_dir.x()
+                + (pos.y() - line1_ref_mid.y()) * self.rect_width_dir.y()
+            )
+            line1_start = self.rect_line1_start + self.rect_width_dir * current_distance
+            line1_end = self.rect_line1_end + self.rect_width_dir * current_distance
 
             self.image_label.clear_preview_rectangle()
 
@@ -7752,27 +8123,34 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if name:
                     default_name = name
 
+        current_view_crop = self.image_label.get_current_view_crop_rect()
         dialog = SharedExportImageDialog(
             self.current_pixmap.width(),
             self.current_pixmap.height(),
             self.export_scale_percent,
-            self.export_format,
-            parent=self
+            parent=self,
+            crop_width=(max(1, current_view_crop[2] - current_view_crop[0]) if current_view_crop else None),
+            crop_height=(max(1, current_view_crop[3] - current_view_crop[1]) if current_view_crop else None),
+            crop_enabled=bool(current_view_crop),
         )
+        self.image_label.set_export_crop_preview(False)
+        if hasattr(dialog, "crop_to_view_checkbox"):
+            dialog.crop_to_view_checkbox.toggled.connect(self.image_label.set_export_crop_preview)
         if dialog.exec() != QDialog.Accepted:
+            self.image_label.set_export_crop_preview(False)
             return
+        self.image_label.set_export_crop_preview(False)
 
         export_settings = dialog.get_settings()
         self.export_scale_percent = export_settings["scale_percent"]
-        export_format = export_settings["format"]
         ext_map = {
             "jpg": ".jpg",
             "png": ".png",
             "svg": ".svg",
         }
-        default_ext = ext_map.get(export_format, ".png")
+        default_ext = ext_map.get(self.export_format, ".png")
         default_path = str(Path(self._get_default_export_dir()) / f"{default_name}{default_ext}")
-        filename, _ = QFileDialog.getSaveFileName(
+        filename, selected_filter = QFileDialog.getSaveFileName(
             self,
             "Export Image",
             default_path,
@@ -7780,18 +8158,42 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         if not filename:
             return
+        filter_map = {
+            "PNG Images (*.png)": "png",
+            "JPEG Images (*.jpg)": "jpg",
+            "SVG Files (*.svg)": "svg",
+        }
+        selected_format = filter_map.get(selected_filter)
+        suffix = Path(filename).suffix.lower()
+        if selected_format is None:
+            if suffix == ".svg":
+                selected_format = "svg"
+            elif suffix in {".jpg", ".jpeg"}:
+                selected_format = "jpg"
+            else:
+                selected_format = "png"
+        final_ext = ext_map.get(selected_format, ".png")
         if not re.search(r"\.(png|jpe?g|svg)$", filename, re.IGNORECASE):
-            filename += default_ext
+            filename += final_ext
         self._remember_export_dir(filename)
+        self.export_format = selected_format
+        crop_rect = current_view_crop if export_settings.get("crop_to_view") else None
 
         target_w = export_settings["width"]
         target_h = export_settings["height"]
-        if export_format == "svg":
-            if self.image_label.export_annotated_svg(filename, (target_w, target_h)):
+        if selected_format == "svg":
+            if self.image_label.export_annotated_svg(
+                filename,
+                (target_w, target_h),
+                crop_rect=crop_rect,
+            ):
                 self.export_format = "svg"
             return
 
-        exported = self.image_label.export_annotated_pixmap()
+        exported = self.image_label.export_annotated_pixmap(
+            crop_rect=crop_rect,
+            match_screen_appearance=True,
+        )
         if exported:
             if target_w and target_h:
                 exported = exported.scaled(
@@ -7800,7 +8202,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
-            fmt = "JPEG" if export_format == "jpg" else "PNG"
+            fmt = "JPEG" if selected_format == "jpg" else "PNG"
             quality = export_settings["quality"]
             if fmt == "JPEG":
                 exported.save(filename, fmt, quality)
@@ -8494,6 +8896,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_image_labels = image_labels
 
         all_measurements = self.get_gallery_measurements()
+        all_measurement_ids = {int(m.get("id")) for m in all_measurements if m.get("id")}
+        if self.gallery_selected_measurement_id and self.gallery_selected_measurement_id not in all_measurement_ids:
+            self.gallery_selected_measurement_id = None
         self.update_graph_plots(all_measurements)
 
         if self._gallery_collapsed:
@@ -8505,6 +8910,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             item = self.gallery_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._gallery_thumbnail_frames = {}
         self._update_gallery_container_size(0)
 
         measurements = self._filter_gallery_measurements(all_measurements)
@@ -8589,6 +8995,67 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_thumb_cache = {}
             self._gallery_pixmap_cache = {}
 
+    def _analysis_gallery_frame_style(self, selected: bool = False) -> str:
+        border = "#2980b9" if selected else "#bdc3c7"
+        return (
+            "QFrame { border: 2px solid %s; border-radius: 5px; background: transparent; }"
+        ) % border
+
+    def _apply_analysis_gallery_frame_glow(self, frame: QFrame, selected: bool, hovered: bool = False) -> None:
+        if selected:
+            effect = QGraphicsDropShadowEffect(frame)
+            effect.setBlurRadius(30)
+            effect.setOffset(0, 0)
+            effect.setColor(QColor(52, 152, 219, 230))
+            frame.setGraphicsEffect(effect)
+        elif hovered:
+            hover_color = QColor(255, 255, 255, 220) if self._is_dark_theme() else QColor(80, 80, 80, 160)
+            effect = QGraphicsDropShadowEffect(frame)
+            effect.setBlurRadius(26)
+            effect.setOffset(0, 0)
+            effect.setColor(hover_color)
+            frame.setGraphicsEffect(effect)
+        else:
+            frame.setGraphicsEffect(None)
+
+    def _refresh_analysis_gallery_frame_state(self, measurement_id: int | None = None, hovered: bool = False) -> None:
+        if measurement_id is None:
+            for existing_id in list(self._gallery_thumbnail_frames.keys()):
+                self._refresh_analysis_gallery_frame_state(existing_id, hovered=False)
+            return
+        frame = self._gallery_thumbnail_frames.get(int(measurement_id))
+        if frame is None:
+            return
+        is_selected = int(measurement_id) == int(self.gallery_selected_measurement_id or 0)
+        frame.setStyleSheet(self._analysis_gallery_frame_style(selected=is_selected))
+        self._apply_analysis_gallery_frame_glow(frame, is_selected, hovered=hovered and not is_selected)
+
+    def _select_analysis_gallery_measurement(self, measurement_id: int | None, update_plot: bool = True) -> None:
+        normalized_id = int(measurement_id) if measurement_id else None
+        if normalized_id and int(self.gallery_selected_measurement_id or 0) == normalized_id:
+            self.gallery_selected_measurement_id = None
+        else:
+            self.gallery_selected_measurement_id = normalized_id
+        self._refresh_analysis_gallery_frame_state()
+        if update_plot and hasattr(self, "gallery_plot_figure"):
+            self.update_graph_plots_only()
+
+    def _prepare_analysis_gallery_for_tab_switch(self) -> None:
+        """Clear transient Analysis gallery UI effects before hiding the tab."""
+        self._gallery_hover_hint_key = ""
+        self._set_gallery_hint("")
+        for frame in list(self._gallery_thumbnail_frames.values()):
+            try:
+                frame.setGraphicsEffect(None)
+            except Exception:
+                pass
+        if hasattr(self, "gallery_scroll") and self.gallery_scroll is not None:
+            try:
+                self.gallery_scroll.clearFocus()
+            except Exception:
+                pass
+        self.setFocus(Qt.OtherFocusReason)
+
     def _invalidate_gallery_thumbnail_cache(self, measurement_id):
         if not self._gallery_thumb_cache:
             return
@@ -8621,19 +9088,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         image_labels = render_state["image_labels"]
         image_id = measurement.get('image_id')
         measurement_id = measurement.get('id')
+        if measurement_id is None:
+            return
 
         container = QFrame()
         container.setFixedSize(thumbnail_size, thumbnail_size)
+        container.setCursor(Qt.PointingHandCursor)
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
+        self._gallery_thumbnail_frames[int(measurement_id)] = container
+
+        thumb_frame = QFrame(container)
+        thumb_frame.setStyleSheet("QFrame { border: none; border-radius: 4px; background: white; }")
+        thumb_layout = QVBoxLayout(thumb_frame)
+        thumb_layout.setContentsMargins(3, 3, 3, 3)
+        thumb_layout.setSpacing(0)
+        container_layout.addWidget(thumb_frame)
 
         label = QLabel2()
         label.setPixmap(thumbnail)
-        label.setFixedSize(thumbnail_size, thumbnail_size)
-        label.setStyleSheet("border: 2px solid #3498db; background: white;")
+        label.setFixedSize(max(1, thumbnail_size - 6), max(1, thumbnail_size - 6))
+        label.setStyleSheet("border: none; background: transparent;")
         label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        container_layout.addWidget(label)
+        thumb_layout.addWidget(label)
 
         if orient:
             rotate_btn = QToolButton(container)
@@ -8678,6 +9156,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         row = (display_index - 1) // items_per_row
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
+        container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
+        container.enterEvent = lambda _event, mid=int(measurement_id): self._refresh_analysis_gallery_frame_state(mid, hovered=True)
+        container.leaveEvent = lambda _event, mid=int(measurement_id): self._refresh_analysis_gallery_frame_state(mid, hovered=False)
+        self._refresh_analysis_gallery_frame_state(int(measurement_id))
         render_state["display_index"] = display_index + 1
         self._update_gallery_container_size(render_state["display_index"] - 1)
 
@@ -8856,6 +9338,66 @@ class MainWindow(GeometryMixin, QMainWindow):
                 for txt in leg.get_texts():
                     txt.set_color("#2c3e50")
 
+    def _gallery_highlighted_measurement_ids(self, measurements) -> set[int]:
+        """Return measurement ids highlighted by the active plot selection."""
+        highlighted_ids = set()
+        if self.gallery_selected_measurement_id:
+            highlighted_ids.add(int(self.gallery_selected_measurement_id))
+        if self.gallery_filter_mode == "points" and self.gallery_filter_ids:
+            highlighted_ids.update(int(measurement_id) for measurement_id in self.gallery_filter_ids if measurement_id)
+            return highlighted_ids
+        if self.gallery_filter_mode != "bin" or not self.gallery_filter_value:
+            return highlighted_ids
+        metric, min_val, max_val = self.gallery_filter_value
+        for measurement in measurements or []:
+            measurement_id = measurement.get("id")
+            length = measurement.get("length_um")
+            width = measurement.get("width_um")
+            if not measurement_id or length is None or width is None or width <= 0:
+                continue
+            if metric == "L":
+                value = length
+            elif metric == "W":
+                value = width
+            else:
+                value = length / width
+            if min_val <= value <= max_val:
+                highlighted_ids.add(int(measurement_id))
+        return highlighted_ids
+
+    def _gallery_plot_width_ratios(self, histogram_count_max: int | None) -> tuple[float, float]:
+        """Choose scatter/histogram width ratios based on available plot width."""
+        canvas_width = 0
+        if hasattr(self, "gallery_plot_canvas") and self.gallery_plot_canvas is not None:
+            try:
+                canvas_width = int(self.gallery_plot_canvas.width())
+            except Exception:
+                canvas_width = 0
+        canvas_width = max(420, canvas_width)
+
+        digits = len(str(max(0, int(histogram_count_max or 0))))
+        digits = max(2, digits)
+        hist_min_px = max(150, 72 + digits * 11)
+        hist_fraction = min(0.42, max(0.24, hist_min_px / float(canvas_width)))
+        scatter_fraction = max(0.58, 1.0 - hist_fraction)
+        hist_fraction = min(hist_fraction, 1.0 - scatter_fraction)
+        return (scatter_fraction, hist_fraction)
+
+    def _gallery_histogram_y_tick_settings(self, show_q: bool) -> tuple[int, float]:
+        """Choose y-axis tick density/length based on the available histogram height."""
+        canvas_height = 0
+        if hasattr(self, "gallery_plot_canvas") and self.gallery_plot_canvas is not None:
+            try:
+                canvas_height = int(self.gallery_plot_canvas.height())
+            except Exception:
+                canvas_height = 0
+        canvas_height = max(300, canvas_height)
+        histogram_count = 3 if show_q else 2
+        axis_height = max(80.0, (canvas_height - 36.0) / float(histogram_count))
+        max_ticks = max(3, min(6, int(axis_height / 26.0)))
+        tick_length = max(2.0, min(4.5, axis_height / 42.0))
+        return max_ticks, tick_length
+
     def update_graph_plots(self, measurements):
         """Update analysis graphs from measurement data."""
         if not hasattr(self, "gallery_plot_figure"):
@@ -8865,6 +9407,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         bins = int(plot_settings.get("bins", 8))
         show_hist = bool(plot_settings.get("histogram", True))
         show_ci = bool(plot_settings.get("ci", True))
+        show_image_color = bool(plot_settings.get("image_color", False))
         show_legend = bool(plot_settings.get("legend", False))
         show_avg_q = bool(plot_settings.get("avg_q", True))
         show_q_minmax = bool(plot_settings.get("q_minmax", True))
@@ -8884,10 +9427,28 @@ class MainWindow(GeometryMixin, QMainWindow):
             measurement_ids.append(m.get("id"))
             measurement_image_ids.append(m.get("image_id"))
 
+        histogram_count_max = None
+        if lengths:
+            try:
+                length_counts, _ = np.histogram(lengths, bins=bins)
+                width_counts, _ = np.histogram(widths, bins=bins)
+                count_max = max(
+                    int(length_counts.max()) if len(length_counts) else 0,
+                    int(width_counts.max()) if len(width_counts) else 0,
+                )
+                q_values = [length / width for length, width in zip(lengths, widths) if width > 0]
+                if q_values:
+                    q_counts, _ = np.histogram(q_values, bins=bins)
+                    count_max = max(count_max, int(q_counts.max()) if len(q_counts) else 0)
+                histogram_count_max = count_max
+            except Exception:
+                histogram_count_max = None
+
         self.gallery_plot_figure.clear()
         if show_hist:
+            width_ratios = self._gallery_plot_width_ratios(histogram_count_max)
             gs = self.gallery_plot_figure.add_gridspec(
-                3, 2, width_ratios=[3.8, 1.2], hspace=0.7, wspace=0.30
+                3, 2, width_ratios=width_ratios, hspace=0.7, wspace=0.30
             )
             ax_scatter = self.gallery_plot_figure.add_subplot(gs[:, 0])
             ax_len = self.gallery_plot_figure.add_subplot(gs[0, 1])
@@ -8952,6 +9513,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             except Exception:
                 pass
             self.gallery_plot_canvas.draw()
+            self._update_gallery_stats_preview()
             return
 
         L = np.asarray(lengths)
@@ -8967,12 +9529,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_scatter_id_map = {}
         ax_scatter.set_xlabel(self.tr("Length (\u03bcm)"))
         ax_scatter.set_ylabel(self.tr("Width (\u03bcm)"))
+        highlighted_ids = self._gallery_highlighted_measurement_ids(measurements)
 
         image_labels = getattr(self, "gallery_image_labels", {}) or {}
         image_color_map = {}
         hist_color = hist_color_dark if dark else "#3498db"
 
-        if show_legend and image_labels:
+        if show_image_color:
             grouped = {}
             for length, width, measurement_id, image_id in zip(
                 L, W, measurement_ids, measurement_image_ids
@@ -8982,7 +9545,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                 grouped[image_id]["W"].append(width)
                 grouped[image_id]["ids"].append(measurement_id)
 
-            for image_id in image_labels.keys():
+            ordered_image_ids = list(image_labels.keys())
+            ordered_image_ids.extend(
+                image_id for image_id in grouped.keys()
+                if image_id not in image_labels
+            )
+            for image_id in ordered_image_ids:
                 if image_id not in grouped:
                     continue
                 label = image_labels.get(image_id, f"Image {image_id}")
@@ -8990,25 +9558,61 @@ class MainWindow(GeometryMixin, QMainWindow):
                 image_color_map[image_id] = color
                 data = grouped[image_id]
                 collection = ax_scatter.scatter(
-                    data["L"], data["W"], s=20, alpha=0.8, picker=5, label=label, color=color
+                    data["L"],
+                    data["W"],
+                    s=20,
+                    alpha=0.8,
+                    picker=5,
+                    label=label if show_legend else "_nolegend_",
+                    color=color,
                 )
                 self.gallery_scatter_id_map[collection] = data["ids"]
-            for image_id, data in grouped.items():
-                if image_id in image_labels:
-                    continue
-                color = image_color_map.get(image_id) or ax_scatter._get_lines.get_next_color()
-                image_color_map[image_id] = color
-                collection = ax_scatter.scatter(
-                    data["L"], data["W"], s=20, alpha=0.8, picker=5, label=f"Image {image_id}", color=color
-                )
-                self.gallery_scatter_id_map[collection] = data["ids"]
-            if category_label:
+            if show_legend and category_label:
                 ax_scatter.plot([], [], marker="o", color=hist_color, linestyle="", label=category_label)
         else:
             self.gallery_scatter = ax_scatter.scatter(
                 L, W, s=20, alpha=0.8, picker=5, color=hist_color, label=category_label
             )
             self.gallery_scatter_id_map[self.gallery_scatter] = measurement_ids
+
+        if highlighted_ids:
+            highlight_x = []
+            highlight_y = []
+            selected_x = []
+            selected_y = []
+            selected_measurement_id = int(self.gallery_selected_measurement_id or 0)
+            for length, width, measurement_id in zip(L, W, measurement_ids):
+                if measurement_id in highlighted_ids:
+                    highlight_x.append(length)
+                    highlight_y.append(width)
+                if selected_measurement_id and measurement_id == selected_measurement_id:
+                    selected_x.append(length)
+                    selected_y.append(width)
+            if highlight_x:
+                highlight_edge = "#fff27a" if dark else "#2b124c"
+                ax_scatter.scatter(
+                    highlight_x,
+                    highlight_y,
+                    s=74,
+                    marker="s",
+                    facecolors="none",
+                    edgecolors=highlight_edge,
+                    alpha=0.95,
+                    linewidths=1.5,
+                    zorder=6,
+                )
+            if selected_x and selected_y and self.gallery_filter_mode in {"bin", "points"}:
+                ax_scatter.scatter(
+                    selected_x,
+                    selected_y,
+                    s=92,
+                    marker="s",
+                    facecolors="none",
+                    edgecolors="#d93025",
+                    alpha=0.98,
+                    linewidths=1.2,
+                    zorder=7,
+                )
 
         max_len = float(np.max(L))
         min_len = float(np.min(L))
@@ -9209,6 +9813,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             ax_scatter.legend(loc="best", fontsize=8)
 
         if show_hist:
+            hist_tick_max, hist_tick_length = self._gallery_histogram_y_tick_settings(show_q)
             l_bins = np.histogram_bin_edges(L, bins=bins)
             w_bins = np.histogram_bin_edges(W, bins=bins)
             q_bins = np.histogram_bin_edges(Q, bins=bins) if show_q else None
@@ -9265,11 +9870,14 @@ class MainWindow(GeometryMixin, QMainWindow):
                         self.gallery_hist_patches[patch] = ("Q", q_bins[i], q_bins[i + 1])
             ax_len.set_ylabel("Count")
             ax_wid.set_ylabel("Count")
-            ax_len.yaxis.set_major_locator(MaxNLocator(integer=True))
-            ax_wid.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax_len.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=hist_tick_max, min_n_ticks=3))
+            ax_wid.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=hist_tick_max, min_n_ticks=3))
+            ax_len.tick_params(axis="y", length=hist_tick_length)
+            ax_wid.tick_params(axis="y", length=hist_tick_length)
             if show_q:
                 ax_q.set_ylabel("Count")
-                ax_q.yaxis.set_major_locator(MaxNLocator(integer=True))
+                ax_q.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=hist_tick_max, min_n_ticks=3))
+                ax_q.tick_params(axis="y", length=hist_tick_length)
             for entry in reference_point_hist:
                 ref_L = entry.get("L")
                 ref_W = entry.get("W")
@@ -9346,6 +9954,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         except Exception:
             pass
         self.gallery_plot_canvas.draw()
+        self._update_gallery_stats_preview()
 
     def export_graph_plot_svg(self):
         """Export analysis graphs to SVG, PNG, or JPEG."""
@@ -9407,7 +10016,19 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._apply_plot_light_theme(fig, axes)
 
             fmt = "jpeg" if export_format == "jpg" else export_format
-            save_kwargs = {"format": fmt}
+            canvas = getattr(fig, "canvas", None)
+            if canvas is not None:
+                canvas.draw()
+
+            save_kwargs = {
+                "format": fmt,
+                "facecolor": fig.get_facecolor(),
+                "edgecolor": "none",
+                "transparent": False,
+            }
+            if export_format == "svg":
+                save_kwargs["bbox_inches"] = "tight"
+                save_kwargs["pad_inches"] = 0.04
             if export_format == "jpg":
                 save_kwargs["pil_kwargs"] = {"quality": export_quality}
             fig.savefig(filename, **save_kwargs)
@@ -9498,6 +10119,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_gallery_plot_pick(self, event):
         """Handle pick events from gallery plots."""
+        if self._gallery_pan_recently_dragged:
+            return
         scatter_map = getattr(self, "gallery_scatter_id_map", {})
         if event.artist in scatter_map:
             indices = getattr(event, "ind", [])
@@ -9512,6 +10135,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.gallery_filter_mode = "points"
                 self.gallery_filter_value = None
                 self.gallery_filter_ids = selected_ids
+                if len(selected_ids) == 1:
+                    self.gallery_selected_measurement_id = next(iter(selected_ids))
                 self._update_gallery_filter_label()
                 self.schedule_gallery_refresh()
             return
@@ -9570,7 +10195,15 @@ class MainWindow(GeometryMixin, QMainWindow):
                 stats_line = self.tr("All measurements")
 
         measurements = MeasurementDB.get_measurements_for_observation(self.active_observation_id)
+        include_details = bool(
+            hasattr(self, "gallery_include_details_checkbox")
+            and self.gallery_include_details_checkbox.isChecked()
+        )
+        image_labels = getattr(self, "gallery_image_labels", {}) or {}
+        image_details_cache: dict[int, dict] = {}
         rows = ["Width\tLength\tQ"]
+        if include_details:
+            rows[0] += "\tImage\tContrast\tMount\tStain\tSample\tObjective"
         for measurement in measurements or []:
             if category and category != "all":
                 m_category = self.normalize_measurement_category(measurement.get("measurement_type"))
@@ -9581,10 +10214,47 @@ class MainWindow(GeometryMixin, QMainWindow):
             if length is None or width is None or width <= 0:
                 continue
             q = length / width if width > 0 else 0
-            rows.append(f"{width:.2f}\t{length:.2f}\t{q:.2f}")
+            row = f"{width:.2f}\t{length:.2f}\t{q:.2f}"
+            if include_details:
+                image_id = measurement.get("image_id")
+                image_data = {}
+                if image_id:
+                    image_id = int(image_id)
+                    if image_id not in image_details_cache:
+                        image_details_cache[image_id] = ImageDB.get_image(image_id) or {}
+                    image_data = image_details_cache.get(image_id, {})
+                image_label = image_labels.get(image_id) if image_id else None
+                image_display = ""
+                if image_label:
+                    parts = str(image_label).split()
+                    image_display = parts[-1] if parts else str(image_label)
+                elif image_id:
+                    image_display = str(image_id)
+                contrast = DatabaseTerms.translate("contrast", image_data.get("contrast"))
+                mount = DatabaseTerms.translate("mount", image_data.get("mount_medium"))
+                stain = DatabaseTerms.translate("stain", image_data.get("stain"))
+                sample = DatabaseTerms.translate("sample", image_data.get("sample_type"))
+                objective = str(image_data.get("objective_name") or "").strip()
+                row += "\t" + "\t".join(
+                    [
+                        image_display,
+                        contrast,
+                        mount,
+                        stain,
+                        sample,
+                        objective,
+                    ]
+                )
+            rows.append(row)
 
         text = "\n".join([first_line, stats_line] + rows)
         return text, display_name, date_value
+
+    def _update_gallery_stats_preview(self):
+        if not hasattr(self, "gallery_stats_preview"):
+            return
+        text, _name, _date = self._build_stats_text()
+        self.gallery_stats_preview.setPlainText(text or "")
 
     def copy_spore_stats(self):
         """Copy stats + table to clipboard."""
@@ -9636,6 +10306,14 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def open_measurement_from_gallery(self, measurement_id):
         """Open a measurement in the Measure tab from the gallery."""
+        measurement_id = int(measurement_id or 0)
+        if not measurement_id:
+            return
+        self._prepare_analysis_gallery_for_tab_switch()
+        QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
+
+    def _open_measurement_from_gallery_impl(self, measurement_id: int):
+        """Deferred gallery-to-measure navigation to avoid tab-switch crashes mid-click."""
         if self.measurement_active:
             self.stop_measurement()
         measurement = self._get_measurement_by_id(measurement_id)
@@ -10285,6 +10963,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         apply_palette(theme)
         self.setStyleSheet(get_style(theme))
         self._sync_appearance_menu()
+        if hasattr(self, "gallery_plot_figure") and hasattr(self, "gallery_plot_canvas"):
+            self.update_graph_plots_only()
 
     def _on_system_color_scheme_changed(self):
         if SettingsDB.get_setting("ui_theme", "auto") == "auto":
@@ -10369,6 +11049,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "bins": int(self.gallery_bins_spin.value()) if hasattr(self, "gallery_bins_spin") else 8,
             "histogram": bool(self.gallery_hist_checkbox.isChecked()) if hasattr(self, "gallery_hist_checkbox") else True,
             "ci": bool(self.gallery_ci_checkbox.isChecked()) if hasattr(self, "gallery_ci_checkbox") else True,
+            "image_color": bool(self.gallery_image_color_checkbox.isChecked()) if hasattr(self, "gallery_image_color_checkbox") else False,
             "legend": bool(getattr(self, "gallery_plot_settings", {}).get("legend", False)),
             "avg_q": bool(self.gallery_avg_q_checkbox.isChecked()) if hasattr(self, "gallery_avg_q_checkbox") else False,
             "q_minmax": bool(self.gallery_q_minmax_checkbox.isChecked()) if hasattr(self, "gallery_q_minmax_checkbox") else False,
@@ -10381,6 +11062,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._sync_gallery_histogram_controls()
         self._save_gallery_settings()
         self.update_graph_plots_only()
+
+    def on_gallery_stats_setting_changed(self):
+        """Persist stats-view settings and refresh the text preview."""
+        self._save_gallery_settings()
+        self._update_gallery_stats_preview()
 
     def _collect_reference_panel_state(self) -> dict:
         if not hasattr(self, "ref_genus_input"):
@@ -10532,6 +11218,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         ci_checkbox.setChecked(bool(settings.get("ci", True)))
         layout.addRow("", ci_checkbox)
 
+        image_color_checkbox = QCheckBox(self.tr("Image color"))
+        image_color_checkbox.setChecked(bool(settings.get("image_color", False)))
+        layout.addRow("", image_color_checkbox)
+
         avg_q_checkbox = QCheckBox(self.tr("Plot Avg Q"))
         avg_q_checkbox.setChecked(bool(settings.get("avg_q", False)))
         layout.addRow("", avg_q_checkbox)
@@ -10558,6 +11248,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_plot_settings = {
             "bins": int(bins_spin.value()),
             "ci": bool(ci_checkbox.isChecked()),
+            "image_color": bool(image_color_checkbox.isChecked()),
             "legend": bool(settings.get("legend", False)),
             "avg_q": bool(avg_q_checkbox.isChecked()),
             "q_minmax": bool(q_minmax_checkbox.isChecked()),
@@ -10602,6 +11293,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "bins": int(plot_settings.get("bins", 8)),
             "histogram": bool(plot_settings.get("histogram", True)),
             "ci": bool(plot_settings.get("ci", True)),
+            "image_color": bool(plot_settings.get("image_color", False)),
             "legend": bool(plot_settings.get("legend", False)),
             "avg_q": bool(plot_settings.get("avg_q", True)),
             "q_minmax": bool(plot_settings.get("q_minmax", True)),
@@ -10612,9 +11304,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             "y_max": None,
             "orient": bool(self.orient_checkbox.isChecked()) if hasattr(self, "orient_checkbox") else False,
             "uniform_scale": bool(self.uniform_scale_checkbox.isChecked()) if hasattr(self, "uniform_scale_checkbox") else False,
+            "include_details": bool(self.gallery_include_details_checkbox.isChecked()) if hasattr(self, "gallery_include_details_checkbox") else False,
             "reference_panel": self._collect_reference_panel_state(),
             "reference_values": self._serialize_reference_data_for_settings(self.reference_values),
             "reference_series": serialized_reference_series,
+            "plot_width_splitter_sizes": self.plot_width_splitter.sizes() if hasattr(self, "plot_width_splitter") else [],
         }
 
     def _save_gallery_settings(self):
@@ -10632,6 +11326,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "bins": int(settings.get("bins", self.gallery_plot_settings.get("bins", 8))),
             "histogram": bool(settings.get("histogram", self.gallery_plot_settings.get("histogram", True))),
             "ci": bool(settings.get("ci", self.gallery_plot_settings.get("ci", True))),
+            "image_color": bool(settings.get("image_color", self.gallery_plot_settings.get("image_color", False))),
             "legend": bool(settings.get("legend", self.gallery_plot_settings.get("legend", False))),
             "avg_q": bool(settings.get("avg_q", self.gallery_plot_settings.get("avg_q", False))),
             "q_minmax": bool(settings.get("q_minmax", self.gallery_plot_settings.get("q_minmax", False))),
@@ -10653,6 +11348,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_ci_checkbox.blockSignals(True)
             self.gallery_ci_checkbox.setChecked(bool(self.gallery_plot_settings.get("ci", True)))
             self.gallery_ci_checkbox.blockSignals(False)
+        if hasattr(self, "gallery_image_color_checkbox"):
+            self.gallery_image_color_checkbox.blockSignals(True)
+            self.gallery_image_color_checkbox.setChecked(bool(self.gallery_plot_settings.get("image_color", False)))
+            self.gallery_image_color_checkbox.blockSignals(False)
         if hasattr(self, "gallery_avg_q_checkbox"):
             self.gallery_avg_q_checkbox.blockSignals(True)
             self.gallery_avg_q_checkbox.setChecked(bool(self.gallery_plot_settings.get("avg_q", False)))
@@ -10674,10 +11373,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.uniform_scale_checkbox.blockSignals(True)
             self.uniform_scale_checkbox.setChecked(bool(settings.get("uniform_scale", False)))
             self.uniform_scale_checkbox.blockSignals(False)
+        if hasattr(self, "gallery_include_details_checkbox"):
+            self.gallery_include_details_checkbox.blockSignals(True)
+            self.gallery_include_details_checkbox.setChecked(bool(settings.get("include_details", False)))
+            self.gallery_include_details_checkbox.blockSignals(False)
+        if hasattr(self, "plot_width_splitter"):
+            splitter_sizes = settings.get("plot_width_splitter_sizes")
+            if (
+                isinstance(splitter_sizes, list)
+                and len(splitter_sizes) >= 2
+                and all(isinstance(value, (int, float)) for value in splitter_sizes[:2])
+            ):
+                self.plot_width_splitter.setSizes([max(0, int(splitter_sizes[0])), max(0, int(splitter_sizes[1]))])
         if settings.get("measurement_type"):
             self._pending_gallery_category = settings.get("measurement_type")
         self._set_gallery_strip_height()
         self._apply_saved_reference_state(settings)
+        self._update_gallery_stats_preview()
 
     def update_graph_plots_only(self):
         """Update analysis graphs without rebuilding thumbnails."""
@@ -10847,7 +11559,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
 
     def _delete_selected_measurement_shortcut(self) -> None:
-        """Delete selected measurement from keyboard shortcuts in field photos."""
+        """Delete the previewed measurement in measure mode, else selected field measurement."""
+        if self.measurement_active and hasattr(self, "spore_preview"):
+            preview_measurement_id = getattr(self.spore_preview, "measurement_id", None)
+            if preview_measurement_id:
+                self.delete_measurement(int(preview_measurement_id))
+                return
+
         image_type = (self.current_image_type or "").strip().lower()
         if image_type != "field":
             return
@@ -11149,6 +11867,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_measure_copyright_overlay()
         self.refresh_observation_images()
         self.update_measurements_table()
+        self._update_gallery_stats_preview()
 
     def _on_observation_selected_impl(self, observation_id, display_name, switch_tab=True, schedule_gallery=True):
         """Internal handler for observation selection."""
@@ -11167,6 +11886,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()
+        self._update_gallery_stats_preview()
         self.refresh_gallery_filter_options()
         if schedule_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
@@ -11253,6 +11973,23 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_image_selected(self, image_id, observation_id, display_name):
         """Handle image selection from the Observations tab - load the image."""
+        image_id = int(image_id or 0)
+        observation_id = int(observation_id or 0)
+        if not image_id or not observation_id:
+            return
+        if hasattr(self, "observations_tab") and hasattr(self.observations_tab, "gallery_widget"):
+            try:
+                self.observations_tab.gallery_widget.prepare_for_tab_switch()
+            except Exception:
+                pass
+        QTimer.singleShot(
+            75,
+            lambda img_id=image_id, obs_id=observation_id, name=display_name:
+                self._on_image_selected_impl(img_id, obs_id, name),
+        )
+
+    def _on_image_selected_impl(self, image_id, observation_id, display_name):
+        """Deferred image-selection handler to avoid crashes during tab hiding."""
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
         self.update_observation_header(observation_id)

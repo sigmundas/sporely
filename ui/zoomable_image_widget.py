@@ -1,6 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QPainterPath, QImageReader
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
@@ -8,6 +8,8 @@ import math
 
 class ZoomableImageLabel(QLabel):
     """Custom label that supports zoom, pan, and measurement overlays."""
+
+    SVG_EXPORT_FONT_FAMILY = "Arial"
 
     clicked = Signal(QPointF)  # Emits click position in original image coordinates
     cropChanged = Signal(object)  # Emits (x1, y1, x2, y2) in image coords or None
@@ -60,6 +62,7 @@ class ZoomableImageLabel(QLabel):
         self.pan_without_shift = False
         self.pan_click_candidate = False
         self.measurement_active = False
+        self._export_crop_preview_active = False
 
         # Zoom and pan state
         self.zoom_level = 1.0
@@ -354,27 +357,29 @@ class ZoomableImageLabel(QLabel):
         text: str,
         color: QColor | None = None,
     ) -> None:
-        """Draw measure text with Inkscape-like white outline underlay.
-
-        Approximation of: 2.5 mm text + 1 mm white stroke @ 40% opacity,
-        implemented as a size-relative stroke (~40% of current font height).
-        """
+        """Draw measure text with one offset underlay copy behind the main text."""
         if not text:
             return
         metrics = painter.fontMetrics()
-        stroke_w = max(1.0, float(metrics.height()) * 0.4)
-        path = QPainterPath()
-        path.addText(float(x), float(y), painter.font(), text)
-        outline_pen = QPen(QColor(255, 255, 255, 102), stroke_w)
-        outline_pen.setJoinStyle(Qt.RoundJoin)
-        outline_pen.setCapStyle(Qt.RoundCap)
+        stroke_w = max(1.0, float(metrics.height()) / 6.0)
+        underlay_dx = stroke_w * 0.55
+        underlay_dy = stroke_w * 0.85
+        underlay_path = QPainterPath()
+        underlay_path.addText(float(x + underlay_dx), float(y + underlay_dy), painter.font(), text)
+
         painter.save()
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(outline_pen)
-        painter.drawPath(path)
+        underlay_pen = QPen(QColor(255, 255, 255, 150), stroke_w)
+        underlay_pen.setJoinStyle(Qt.RoundJoin)
+        underlay_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(underlay_pen)
+        painter.setBrush(QColor(255, 255, 255, 72))
+        painter.drawPath(underlay_path)
         painter.restore()
+
+        painter.save()
         painter.setPen(QColor(color) if color is not None else QColor(self.measure_color))
         painter.drawText(int(x), int(y), text)
+        painter.restore()
 
     def _format_measure_label_value(self, value, unit: str | None) -> str:
         """Format overlay values.
@@ -383,7 +388,7 @@ class ZoomableImageLabel(QLabel):
         Field images (no unit): 2 significant figures.
         """
         v = float(value)
-        if str(unit or "").strip().lower() in ("\u03bcm", "um"):
+        if str(unit or "").strip().lower() in ("\u03bcm", "\u00b5m", "um"):
             return f"{v:.1f}"
         # Field / unitless: 2 significant figures
         if v == 0:
@@ -403,24 +408,91 @@ class ZoomableImageLabel(QLabel):
         outline_opacity: float = 0.4,
         outline_width_ratio: float = 0.4,
     ) -> None:
-        """Draw text with a stroked outline underlay (Inkscape-like)."""
+        """Draw text with a soft duplicate-text underlay."""
+        self._draw_text_with_underlay(
+            painter,
+            x,
+            y,
+            text,
+            fill_color=fill_color,
+            underlay_color=outline_color,
+            underlay_opacity=outline_opacity,
+            underlay_width_ratio=outline_width_ratio,
+        )
+
+    def _draw_text_with_underlay(
+        self,
+        painter: QPainter,
+        x: float,
+        y: float,
+        text: str,
+        fill_color: QColor,
+        underlay_color: QColor,
+        underlay_opacity: float = 0.4,
+        underlay_width_ratio: float = 0.4,
+    ) -> None:
+        """Draw editable text with a duplicate-text glow/shadow underneath."""
         if not text:
             return
         metrics = painter.fontMetrics()
-        stroke_w = max(1.0, float(metrics.height()) * float(outline_width_ratio))
-        alpha = max(0, min(255, int(round(255 * float(outline_opacity)))))
-        path = QPainterPath()
-        path.addText(float(x), float(y), painter.font(), text)
-        pen = QPen(QColor(outline_color.red(), outline_color.green(), outline_color.blue(), alpha), stroke_w)
-        pen.setJoinStyle(Qt.RoundJoin)
-        pen.setCapStyle(Qt.RoundCap)
+        radius = max(1.0, float(metrics.height()) * float(underlay_width_ratio))
+        alpha = max(0, min(255, int(round(255 * float(underlay_opacity)))))
+        underlay = QColor(underlay_color)
+        underlay.setAlpha(alpha)
+        offsets = (
+            (-radius, 0.0),
+            (radius, 0.0),
+            (0.0, -radius),
+            (0.0, radius),
+            (-radius * 0.7, -radius * 0.7),
+            (-radius * 0.7, radius * 0.7),
+            (radius * 0.7, -radius * 0.7),
+            (radius * 0.7, radius * 0.7),
+        )
         painter.save()
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(pen)
-        painter.drawPath(path)
+        painter.setPen(underlay)
+        for dx, dy in offsets:
+            painter.drawText(int(round(x + dx)), int(round(y + dy)), text)
         painter.restore()
+        painter.save()
         painter.setPen(fill_color)
-        painter.drawText(int(x), int(y), text)
+        painter.drawText(int(round(x)), int(round(y)), text)
+        painter.restore()
+
+    def _draw_text_with_shadow(
+        self,
+        painter: QPainter,
+        x: float,
+        y: float,
+        text: str,
+        fill_color: QColor,
+        shadow_color: QColor,
+        shadow_opacity: float = 0.67,
+        shadow_offset_ratio: float = 0.12,
+    ) -> None:
+        """Draw text with a single offset shadow, like the plate dialog."""
+        if not text:
+            return
+        metrics = painter.fontMetrics()
+        offset = max(1.0, float(metrics.height()) * float(shadow_offset_ratio))
+        alpha = max(0, min(255, int(round(255 * float(shadow_opacity)))))
+        shadow = QColor(shadow_color)
+        shadow.setAlpha(alpha)
+        painter.save()
+        painter.setPen(shadow)
+        painter.drawText(int(round(x + offset)), int(round(y + offset)), text)
+        painter.restore()
+        painter.save()
+        painter.setPen(fill_color)
+        painter.drawText(int(round(x)), int(round(y)), text)
+        painter.restore()
+
+    def _apply_svg_export_font_family(self, painter: QPainter) -> None:
+        """Use a predictable editable font family in SVG exports."""
+        font = QFont(painter.font())
+        font.setFamily(self.SVG_EXPORT_FONT_FAMILY)
+        font.setStyleHint(QFont.SansSerif)
+        painter.setFont(font)
 
     def _label_positions_from_lines(self, line1, line2, center, offset):
         """Return label positions using the same logic as the preview widget."""
@@ -498,16 +570,15 @@ class ZoomableImageLabel(QLabel):
 
     def set_microns_per_pixel(self, mpp):
         """Set scale for converting microns to pixels."""
-        if mpp and mpp > 0:
-            self.microns_per_pixel = mpp
+        self.microns_per_pixel = float(mpp) if mpp and mpp > 0 else 0.0
         self.update()
 
-    def set_scale_bar(self, show, microns, unit="\u03bcm"):
+    def set_scale_bar(self, show, microns, unit="\u00b5m"):
         """Toggle and set scale bar size in microns, with display unit."""
         self.show_scale_bar = bool(show)
         if microns and microns > 0:
             self.scale_bar_um = float(microns)
-        self.scale_bar_unit = str(unit or "\u03bcm")
+        self.scale_bar_unit = str(unit or "\u00b5m")
         self.update()
 
     def set_export_measure_label_scale_multiplier(self, multiplier):
@@ -568,6 +639,11 @@ class ZoomableImageLabel(QLabel):
     def set_measurement_active(self, active):
         """Toggle measurement-active border."""
         self.measurement_active = bool(active)
+        self.update()
+
+    def set_export_crop_preview(self, active: bool) -> None:
+        """Preview crop-to-view export overlay placement on screen."""
+        self._export_crop_preview_active = bool(active)
         self.update()
 
     def get_view_state(self):
@@ -724,13 +800,23 @@ class ZoomableImageLabel(QLabel):
         self.preview_line = None
         self.update()
 
-    def set_preview_rectangle(self, base_start, base_end, width_dir, moving_line):
+    def set_preview_rectangle(
+        self,
+        base_start,
+        base_end,
+        width_dir,
+        moving_line,
+        reference_start=None,
+        reference_end=None,
+    ):
         """Set preview rectangle data based on a fixed base line and moving side."""
         self.preview_rect = {
             "base_start": base_start,
             "base_end": base_end,
             "width_dir": width_dir,
             "moving_line": moving_line,
+            "reference_start": reference_start,
+            "reference_end": reference_end,
         }
         self.update()
 
@@ -1064,6 +1150,7 @@ class ZoomableImageLabel(QLabel):
                 if self.original_pixmap:
                     orig_pos = self.screen_to_image(event.position())
                     if orig_pos:
+                        self.current_mouse_pos = QPointF(orig_pos)
                         self.clicked.emit(orig_pos)
 
     def mouseMoveEvent(self, event):
@@ -1432,28 +1519,77 @@ class ZoomableImageLabel(QLabel):
 
         return QRect(int(x), int(y), int(scaled_width), int(scaled_height))
 
-    def export_annotated_pixmap(self):
+    def get_current_view_crop_rect(self) -> tuple[int, int, int, int] | None:
+        """Return the visible image region in original-image coordinates."""
+        if not self.original_pixmap or self.zoom_level <= 0:
+            return None
+        display_rect = QRectF(self.get_display_rect())
+        if display_rect.isNull():
+            return None
+        visible_rect = display_rect.intersected(QRectF(self.rect()))
+        if visible_rect.isEmpty():
+            return None
+        x1 = (visible_rect.left() - display_rect.left()) / float(self.zoom_level)
+        y1 = (visible_rect.top() - display_rect.top()) / float(self.zoom_level)
+        x2 = (visible_rect.right() - display_rect.left()) / float(self.zoom_level)
+        y2 = (visible_rect.bottom() - display_rect.top()) / float(self.zoom_level)
+        max_w = float(self.original_pixmap.width())
+        max_h = float(self.original_pixmap.height())
+        left = max(0, min(int(math.floor(x1)), self.original_pixmap.width() - 1))
+        top = max(0, min(int(math.floor(y1)), self.original_pixmap.height() - 1))
+        right = max(left + 1, min(int(math.ceil(min(x2, max_w))), self.original_pixmap.width()))
+        bottom = max(top + 1, min(int(math.ceil(min(y2, max_h))), self.original_pixmap.height()))
+        if right <= left or bottom <= top:
+            return None
+        full_width = int(self.original_pixmap.width())
+        full_height = int(self.original_pixmap.height())
+        if left <= 0 and top <= 0 and right >= full_width and bottom >= full_height:
+            return None
+        return (left, top, right, bottom)
+
+    def export_annotated_pixmap(
+        self,
+        crop_rect: tuple[int, int, int, int] | None = None,
+        match_screen_appearance: bool = False,
+    ):
         """Render annotations on the original image resolution."""
         if not self.original_pixmap:
             return None
 
-        result = QPixmap(self.original_pixmap.size())
+        source_rect = None
+        if crop_rect and len(crop_rect) == 4:
+            x1, y1, x2, y2 = (int(v) for v in crop_rect)
+            if x2 > x1 and y2 > y1:
+                source_rect = QRect(x1, y1, x2 - x1, y2 - y1)
+        result_size = source_rect.size() if source_rect is not None else self.original_pixmap.size()
+        result = QPixmap(result_size)
         result.fill(Qt.transparent)
 
         painter = QPainter(result)
-        scale_factor = self._export_overlay_scale_factor()
+        scale_factor = self._export_overlay_scale_factor(match_screen_appearance=match_screen_appearance)
 
-        self._render_export(painter, scale_factor)
+        self._render_export(painter, scale_factor, crop_rect=crop_rect)
 
         painter.end()
         return result
 
-    def export_annotated_svg(self, filename, target_size=None):
+    def export_annotated_svg(
+        self,
+        filename,
+        target_size=None,
+        crop_rect: tuple[int, int, int, int] | None = None,
+        match_screen_appearance: bool = False,
+    ):
         """Export annotations to an SVG with the image embedded."""
         if not self.original_pixmap:
             return False
 
-        base_size = self.original_pixmap.size()
+        source_rect = None
+        if crop_rect and len(crop_rect) == 4:
+            x1, y1, x2, y2 = (int(v) for v in crop_rect)
+            if x2 > x1 and y2 > y1:
+                source_rect = QRect(x1, y1, x2 - x1, y2 - y1)
+        base_size = source_rect.size() if source_rect is not None else self.original_pixmap.size()
         target_w = base_size.width()
         target_h = base_size.height()
         if target_size:
@@ -1463,17 +1599,22 @@ class ZoomableImageLabel(QLabel):
         generator = QSvgGenerator()
         generator.setFileName(filename)
         generator.setSize(QSize(target_w, target_h))
-        generator.setViewBox(QRect(0, 0, base_size.width(), base_size.height()))
+        generator.setViewBox(QRect(0, 0, target_w, target_h))
         generator.setTitle("MycoLog Export")
         generator.setDescription("Annotated image export")
 
         painter = QPainter(generator)
-        scale_factor = self._export_overlay_scale_factor()
-        self._render_export(painter, scale_factor)
+        scale_factor = self._export_overlay_scale_factor(match_screen_appearance=match_screen_appearance)
+        self._render_export(
+            painter,
+            scale_factor,
+            crop_rect=crop_rect,
+            output_size=(target_w, target_h),
+        )
         painter.end()
         return True
 
-    def _export_overlay_scale_factor(self) -> float:
+    def _export_overlay_scale_factor(self, match_screen_appearance: bool = False) -> float:
         """Scale export overlays by zoom-in only; never enlarge when view is zoomed out/fit."""
         scale_factor = 1.0
         if self.zoom_level and self.zoom_level > 0:
@@ -1481,6 +1622,8 @@ class ZoomableImageLabel(QLabel):
                 scale_factor = 1.0 / float(self.zoom_level)
             except Exception:
                 scale_factor = 1.0
+        if match_screen_appearance:
+            return max(0.25, min(12.0, scale_factor))
         # Hidden/offscreen widgets often auto-fit images (zoom < 1), which used to inflate
         # export labels/strokes dramatically. Clamp so exports do not get larger overlays
         # just because the widget view was zoomed out.
@@ -1514,31 +1657,108 @@ class ZoomableImageLabel(QLabel):
             baseline = min(baseline, max_baseline_y)
         baseline = max(min_baseline, baseline)
 
-        self._draw_text_with_outline(
+        self._draw_text_with_shadow(
             painter,
             x,
             baseline,
             self.copyright_text,
             fill_color=QColor(255, 255, 255, 225),
-            outline_color=QColor(0, 0, 0),
-            outline_opacity=0.4,
-            outline_width_ratio=0.4,
+            shadow_color=QColor(0, 0, 0),
+            shadow_opacity=0.67,
+            shadow_offset_ratio=0.12,
         )
 
-    def _render_export(self, painter, scale_factor):
+    def _render_export(
+        self,
+        painter,
+        scale_factor,
+        crop_rect: tuple[int, int, int, int] | None = None,
+        output_size: tuple[int, int] | None = None,
+    ):
+        crop_offset_x = 0.0
+        crop_offset_y = 0.0
+        source_width = float(self.original_pixmap.width())
+        source_height = float(self.original_pixmap.height())
+        source_rect = None
+        if crop_rect and len(crop_rect) == 4:
+            x1, y1, x2, y2 = (int(v) for v in crop_rect)
+            if x2 > x1 and y2 > y1:
+                source_rect = QRect(x1, y1, x2 - x1, y2 - y1)
+                crop_offset_x = float(x1)
+                crop_offset_y = float(y1)
+                source_width = float(source_rect.width())
+                source_height = float(source_rect.height())
+
+        export_width = float(output_size[0]) if output_size else source_width
+        export_height = float(output_size[1]) if output_size else source_height
+        scale_x = export_width / max(1.0, source_width)
+        scale_y = export_height / max(1.0, source_height)
+        geometry_scale = min(scale_x, scale_y)
+
+        def _shift_point(point: QPointF) -> QPointF:
+            return QPointF(
+                (point.x() - crop_offset_x) * scale_x,
+                (point.y() - crop_offset_y) * scale_y,
+            )
+
+        def _shift_line(line) -> tuple[QPointF, QPointF]:
+            return (
+                QPointF(
+                    (float(line[0]) - crop_offset_x) * scale_x,
+                    (float(line[1]) - crop_offset_y) * scale_y,
+                ),
+                QPointF(
+                    (float(line[2]) - crop_offset_x) * scale_x,
+                    (float(line[3]) - crop_offset_y) * scale_y,
+                ),
+            )
+
+        try:
+            device = painter.device()
+        except Exception:
+            device = None
+        is_svg_export = isinstance(device, QSvgGenerator)
+        if is_svg_export:
+            self._apply_svg_export_font_family(painter)
+        label_scale_factor = (
+            self._export_overlay_scale_factor(match_screen_appearance=True)
+            if is_svg_export
+            else scale_factor
+        )
+
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.drawPixmap(0, 0, self.original_pixmap)
+        target_rect = QRectF(0.0, 0.0, export_width, export_height)
+        if is_svg_export:
+            if source_rect is not None:
+                cropped_image = self.original_pixmap.copy(source_rect).toImage()
+                raster_image = cropped_image
+            else:
+                raster_image = self.original_pixmap.toImage()
+            if raster_image.width() != int(round(export_width)) or raster_image.height() != int(round(export_height)):
+                raster_image = raster_image.scaled(
+                    int(round(export_width)),
+                    int(round(export_height)),
+                    Qt.IgnoreAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            painter.drawImage(target_rect, raster_image)
+        else:
+            if source_rect is not None:
+                painter.drawPixmap(target_rect, self.original_pixmap, QRectF(source_rect))
+            else:
+                painter.drawPixmap(target_rect, self.original_pixmap, QRectF(self.original_pixmap.rect()))
 
-        thin_width = max(1.0, 1.0 * scale_factor)
-        wide_width = max(1.0, 3.0 * scale_factor)
+        thin_width = max(1.0, 1.0 * scale_factor * geometry_scale)
+        wide_width = max(1.0, 3.0 * scale_factor * geometry_scale)
 
         # Draw measurement rectangles
         if self.show_measure_overlays and self.measurement_rectangles:
             for rect in self.measurement_rectangles:
+                shifted_rect = QPolygonF([_shift_point(QPointF(corner)) for corner in rect])
                 self._draw_dual_stroke_polygon(
                     painter,
-                    QPolygonF(rect),
+                    shifted_rect,
                     color=self.measure_color,
                     thin_width=thin_width,
                     wide_width=wide_width,
@@ -1547,8 +1767,7 @@ class ZoomableImageLabel(QLabel):
         # Draw measurement lines
         if self.show_measure_overlays and self.measurement_lines:
             for line in self.measurement_lines:
-                p1 = QPointF(line[0], line[1])
-                p2 = QPointF(line[2], line[3])
+                p1, p2 = _shift_line(line)
                 self._draw_dual_stroke_line(
                     painter,
                     p1,
@@ -1564,7 +1783,7 @@ class ZoomableImageLabel(QLabel):
                 if length > 0:
                     perp_x = -dy / length
                     perp_y = dx / length
-                    mark_len = 5 * scale_factor
+                    mark_len = 5 * scale_factor * geometry_scale
                     self._draw_dual_stroke_line(
                         painter,
                         QPointF(p1.x() - perp_x * mark_len, p1.y() - perp_y * mark_len),
@@ -1623,7 +1842,7 @@ class ZoomableImageLabel(QLabel):
 
                 # SVG exports should use the authored stroke width directly; scaling by
                 # widget zoom can inflate strokes dramatically (for example ~16pt).
-                stroke_width = float(width)
+                stroke_width = float(width) * geometry_scale
                 try:
                     device = painter.device()
                 except Exception:
@@ -1635,8 +1854,7 @@ class ZoomableImageLabel(QLabel):
                     pen.setStyle(Qt.DashLine)
                 painter.setPen(pen)
                 for line in lines:
-                    p1 = QPointF(line[0], line[1])
-                    p2 = QPointF(line[2], line[3])
+                    p1, p2 = _shift_line(line)
                     painter.drawLine(p1, p2)
 
                     if show_endcaps:
@@ -1661,11 +1879,15 @@ class ZoomableImageLabel(QLabel):
         if self.show_measure_labels and self.measurement_labels:
             export_label_ui_scale = max(0.5, float(getattr(self, "export_measure_label_scale_multiplier", 1.0)))
             font = painter.font()
-            font.setPointSize(max(8, int(round(9 * 1.3 * scale_factor * export_label_ui_scale))))
+            label_px = max(8, int(round(9 * 1.3 * label_scale_factor * export_label_ui_scale * geometry_scale)))
+            if is_svg_export:
+                font.setPixelSize(label_px)
+            else:
+                font.setPointSize(label_px)
             font.setBold(False)
             painter.setFont(font)
             painter.setPen(self.measure_color)
-            offset = 12 * scale_factor
+            offset = 12 * label_scale_factor * geometry_scale
             for label in self.measurement_labels:
                 length_um = label.get("length_um")
                 width_um = label.get("width_um")
@@ -1676,14 +1898,13 @@ class ZoomableImageLabel(QLabel):
                     if value is None:
                         value = length_um
                     if line and length_um is not None:
-                        p1 = QPointF(line[0], line[1])
-                        p2 = QPointF(line[2], line[3])
+                        p1, p2 = _shift_line(line)
                         self._draw_rotated_label_on_line(
                             painter,
                             p1,
                             p2,
                             self._format_measure_label_value(value, unit),
-                            padding_px=max(3.0, 3.0 * scale_factor * export_label_ui_scale),
+                            padding_px=max(3.0, 3.0 * label_scale_factor * export_label_ui_scale * geometry_scale),
                         )
                     continue
                 line1 = label.get("line1")
@@ -1699,10 +1920,9 @@ class ZoomableImageLabel(QLabel):
                 if (length_um is None or width_um is None or
                         line1 is None or line2 is None or center is None):
                     continue
-                p1 = QPointF(line1[0], line1[1])
-                p2 = QPointF(line1[2], line1[3])
-                p3 = QPointF(line2[0], line2[1])
-                p4 = QPointF(line2[2], line2[3])
+                p1, p2 = _shift_line(line1)
+                p3, p4 = _shift_line(line2)
+                center = _shift_point(center)
                 corners = self._compute_corners_from_lines((p1, p2), (p3, p4))
                 if corners:
                     line1_vec = QPointF(p2.x() - p1.x(), p2.y() - p1.y())
@@ -1737,22 +1957,22 @@ class ZoomableImageLabel(QLabel):
                         self._format_measure_label_value(length_value, unit),
                         length_edge,
                         center,
-                        max(3.0, 3.0 * export_label_ui_scale),
+                        max(3.0, 3.0 * export_label_ui_scale * geometry_scale),
                     )
                     self._draw_rotated_label_outside(
                         painter,
                         self._format_measure_label_value(width_value, unit),
                         width_edge,
                         center,
-                        max(3.0, 3.0 * export_label_ui_scale),
+                        max(3.0, 3.0 * export_label_ui_scale * geometry_scale),
                     )
 
         # Draw scale bar
         if self.show_scale_bar and self.microns_per_pixel > 0:
             bar_um = self.scale_bar_um
-            bar_pixels = bar_um / self.microns_per_pixel
+            bar_pixels = (bar_um / self.microns_per_pixel) * scale_x
             bar_pixels = max(10.0, bar_pixels)
-            bar_pixels = min(bar_pixels, self.original_pixmap.width() * 0.6)
+            bar_pixels = min(bar_pixels, export_width * 0.6)
 
             # Published/exported images are often downscaled by the target website.
             # Compensate for hidden-widget fit zoom so scale-bar UI (font/line/padding)
@@ -1763,6 +1983,7 @@ class ZoomableImageLabel(QLabel):
                     scale_bar_ui_scale = max(1.0, min(6.0, 1.0 / float(self.zoom_level)))
                 except Exception:
                     scale_bar_ui_scale = 1.0
+            scale_bar_ui_scale *= geometry_scale
 
             font = painter.font()
             # Slightly smaller label text than the previous tuning.
@@ -1773,7 +1994,7 @@ class ZoomableImageLabel(QLabel):
                 label_value = bar_um / 1000.0
                 label = f"{label_value:g} mm"
             else:
-                label = f"{bar_um:g} \u03bcm"
+                label = f"{bar_um:g} \u00b5m"
             metrics = painter.fontMetrics()
             label_w = metrics.horizontalAdvance(label)
             label_h = metrics.height()
@@ -1782,8 +2003,8 @@ class ZoomableImageLabel(QLabel):
             pad = max(6.0, 6.0 * scale_bar_ui_scale)
             box_w = max(bar_pixels, label_w) + pad * 2
             box_h = label_h + pad * 2 + max(6.0, 6.0 * scale_bar_ui_scale)
-            box_x = self.original_pixmap.width() - box_w - margin
-            box_y = self.original_pixmap.height() - box_h - margin
+            box_x = export_width - box_w - margin
+            box_y = export_height - box_h - margin
 
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(255, 255, 255, self.scale_bar_bg_alpha))
@@ -1803,7 +2024,7 @@ class ZoomableImageLabel(QLabel):
 
         self._draw_copyright_text(
             painter,
-            QRectF(0, 0, self.original_pixmap.width(), self.original_pixmap.height()),
+            QRectF(0, 0, export_width, export_height),
             scale_factor=scale_factor,
         )
 
@@ -1828,6 +2049,8 @@ class ZoomableImageLabel(QLabel):
 
         # Get display rectangle
         display_rect = self.get_display_rect()
+        visible_view_rect = QRectF(display_rect).intersected(QRectF(self.rect()))
+        preview_crop_active = bool(self._export_crop_preview_active and not visible_view_rect.isEmpty())
 
         # Draw the image
         painter.drawPixmap(display_rect, self.original_pixmap)
@@ -2067,47 +2290,175 @@ class ZoomableImageLabel(QLabel):
             )
 
         # Draw preview rectangle (based on fixed base line and mouse width)
-        if self.preview_rect is not None and self.current_mouse_pos is not None:
+        if self.preview_rect is not None:
             base_start = self.preview_rect["base_start"]
             base_end = self.preview_rect["base_end"]
             width_dir = self.preview_rect["width_dir"]
             moving_line = self.preview_rect["moving_line"]
+            reference_start = self.preview_rect.get("reference_start")
+            reference_end = self.preview_rect.get("reference_end")
 
             base_mid = QPointF(
                 (base_start.x() + base_end.x()) / 2,
                 (base_start.y() + base_end.y()) / 2
             )
-            delta = self.current_mouse_pos - base_mid
-            width_distance = delta.x() * width_dir.x() + delta.y() * width_dir.y()
-            offset = width_dir * width_distance
 
-            if moving_line == "line2":
-                line1_start = base_start
-                line1_end = base_end
-                line2_start = base_start + offset
-                line2_end = base_end + offset
-            else:
-                line2_start = base_start
-                line2_end = base_end
-                line1_start = base_start + offset
-                line1_end = base_end + offset
+            line1_start = line1_end = line2_start = line2_end = None
+            moving_start = moving_end = None
 
-            corners = [line1_start, line1_end, line2_end, line2_start]
-            screen_points = []
-            for corner in corners:
-                x = display_rect.x() + corner.x() * self.zoom_level
-                y = display_rect.y() + corner.y() * self.zoom_level
-                screen_points.append(QPointF(x, y))
+            if moving_line == "line1" and reference_start is not None and reference_end is not None:
+                # Stage 3: reference=line1 (original, always drawn solid),
+                # base=line2 (clicked, always drawn solid).
+                # Dashed line follows cursor. Connectors extend to cursor if it goes beyond line2.
+                reference_mid = QPointF(
+                    (reference_start.x() + reference_end.x()) / 2,
+                    (reference_start.y() + reference_end.y()) / 2,
+                )
+                fixed_distance = (
+                    (base_mid.x() - reference_mid.x()) * width_dir.x()
+                    + (base_mid.y() - reference_mid.y()) * width_dir.y()
+                )
+                if self.current_mouse_pos is not None:
+                    current_distance = (
+                        (self.current_mouse_pos.x() - reference_mid.x()) * width_dir.x()
+                        + (self.current_mouse_pos.y() - reference_mid.y()) * width_dir.y()
+                    )
+                else:
+                    current_distance = fixed_distance
 
-            self._draw_dual_stroke_polygon(
-                painter,
-                QPolygonF(screen_points),
-                color=self.measure_color,
-                thin_width=1.0,
-                wide_width=3.0,
-                dashed=True,
-            )
+                cursor_start = reference_start + width_dir * current_distance
+                cursor_end = reference_end + width_dir * current_distance
 
+                # Far end (line2 side): extend to cursor if cursor went past line2
+                cursor_beyond_line2 = fixed_distance * current_distance > fixed_distance * fixed_distance
+                far_start = cursor_start if cursor_beyond_line2 else base_start
+                far_end = cursor_end if cursor_beyond_line2 else base_end
+
+                # Near end (line1 side): extend to cursor if cursor went past line1
+                # (opposite side from line2 — fixed_distance and current_distance have opposite signs)
+                cursor_beyond_line1 = fixed_distance * current_distance < 0
+                near_start = cursor_start if cursor_beyond_line1 else reference_start
+                near_end = cursor_end if cursor_beyond_line1 else reference_end
+
+                def _s(pt):
+                    return QPointF(
+                        display_rect.x() + pt.x() * self.zoom_level,
+                        display_rect.y() + pt.y() * self.zoom_level,
+                    )
+
+                # Base line (line2): always solid
+                self._draw_dual_stroke_line(
+                    painter, _s(base_start), _s(base_end),
+                    color=self.measure_color, thin_width=1.0, wide_width=3.0, dashed=False,
+                )
+                # Two connector lines (solid): near endpoints → far endpoints
+                self._draw_dual_stroke_line(
+                    painter, _s(near_start), _s(far_start),
+                    color=self.measure_color, thin_width=1.0, wide_width=3.0, dashed=False,
+                )
+                self._draw_dual_stroke_line(
+                    painter, _s(near_end), _s(far_end),
+                    color=self.measure_color, thin_width=1.0, wide_width=3.0, dashed=False,
+                )
+                # Dashed cursor line (only when cursor is known)
+                if self.current_mouse_pos is not None:
+                    self._draw_dual_stroke_line(
+                        painter, _s(cursor_start), _s(cursor_end),
+                        color=self.measure_color, thin_width=1.0, wide_width=3.0, dashed=True,
+                    )
+
+                line1_start = None  # skip generic drawing below
+
+            elif self.current_mouse_pos is not None:
+                # Stage 2: dashed line follows cursor; cursor required to determine geometry.
+                delta = self.current_mouse_pos - base_mid
+                width_distance = delta.x() * width_dir.x() + delta.y() * width_dir.y()
+                offset = width_dir * width_distance
+
+                if moving_line == "line2":
+                    line1_start = base_start
+                    line1_end = base_end
+                    line2_start = base_start + offset
+                    line2_end = base_end + offset
+                else:
+                    line2_start = base_start
+                    line2_end = base_end
+                    line1_start = base_start + offset
+                    line1_end = base_end + offset
+                moving_start = line2_start if moving_line == "line2" else line1_start
+                moving_end = line2_end if moving_line == "line2" else line1_end
+
+            if line1_start is not None:
+                screen_line1_start = QPointF(
+                    display_rect.x() + line1_start.x() * self.zoom_level,
+                    display_rect.y() + line1_start.y() * self.zoom_level,
+                )
+                screen_line1_end = QPointF(
+                    display_rect.x() + line1_end.x() * self.zoom_level,
+                    display_rect.y() + line1_end.y() * self.zoom_level,
+                )
+                screen_line2_start = QPointF(
+                    display_rect.x() + line2_start.x() * self.zoom_level,
+                    display_rect.y() + line2_start.y() * self.zoom_level,
+                )
+                screen_line2_end = QPointF(
+                    display_rect.x() + line2_end.x() * self.zoom_level,
+                    display_rect.y() + line2_end.y() * self.zoom_level,
+                )
+
+                fixed_start = screen_line1_start if moving_line == "line2" else screen_line2_start
+                fixed_end = screen_line1_end if moving_line == "line2" else screen_line2_end
+                moving_screen_start = None
+                moving_screen_end = None
+                if moving_start is not None and moving_end is not None:
+                    moving_screen_start = QPointF(
+                        display_rect.x() + moving_start.x() * self.zoom_level,
+                        display_rect.y() + moving_start.y() * self.zoom_level,
+                    )
+                    moving_screen_end = QPointF(
+                        display_rect.x() + moving_end.x() * self.zoom_level,
+                        display_rect.y() + moving_end.y() * self.zoom_level,
+                    )
+                support_is_final = moving_line != "line2"
+
+                if support_is_final:
+                    self._draw_dual_stroke_line(
+                        painter,
+                        fixed_start,
+                        fixed_end,
+                        color=self.measure_color,
+                        thin_width=1.0,
+                        wide_width=3.0,
+                        dashed=False,
+                    )
+                self._draw_dual_stroke_line(
+                    painter,
+                    screen_line1_start,
+                    screen_line2_start,
+                    color=self.measure_color,
+                    thin_width=1.0,
+                    wide_width=3.0,
+                    dashed=False,
+                )
+                self._draw_dual_stroke_line(
+                    painter,
+                    screen_line1_end,
+                    screen_line2_end,
+                    color=self.measure_color,
+                    thin_width=1.0,
+                    wide_width=3.0,
+                    dashed=False,
+                )
+                if moving_screen_start is not None and moving_screen_end is not None:
+                    self._draw_dual_stroke_line(
+                        painter,
+                        moving_screen_start,
+                        moving_screen_end,
+                        color=self.measure_color,
+                        thin_width=1.0,
+                        wide_width=3.0,
+                        dashed=True,
+                    )
         # Draw measurement labels
         if self.show_measure_labels and self.measurement_labels:
             painter.setPen(self.measure_color)
@@ -2301,7 +2652,8 @@ class ZoomableImageLabel(QLabel):
             bar_pixels = bar_um / self.microns_per_pixel
             bar_screen = bar_pixels * self.zoom_level
             bar_screen = max(10.0, bar_screen)
-            bar_screen = min(bar_screen, display_rect.width() * 0.6)
+            anchor_rect = visible_view_rect if preview_crop_active else QRectF(display_rect)
+            bar_screen = min(bar_screen, anchor_rect.width() * 0.6)
 
             font = painter.font()
             font.setPointSize(9)
@@ -2311,7 +2663,7 @@ class ZoomableImageLabel(QLabel):
                 label_value = bar_um / 1000.0
                 label = f"{label_value:g} mm"
             else:
-                label = f"{bar_um:g} \u03bcm"
+                label = f"{bar_um:g} \u00b5m"
             metrics = painter.fontMetrics()
             label_w = metrics.horizontalAdvance(label)
             label_h = metrics.height()
@@ -2320,8 +2672,8 @@ class ZoomableImageLabel(QLabel):
             pad = 6
             box_w = max(bar_screen, label_w) + pad * 2
             box_h = label_h + pad * 2 + 6
-            box_x = display_rect.right() - box_w - margin
-            box_y = display_rect.bottom() - box_h - margin
+            box_x = anchor_rect.right() - box_w - margin
+            box_y = anchor_rect.bottom() - box_h - margin
             scale_bar_box = QRectF(box_x, box_y, box_w, box_h)
 
             painter.setPen(Qt.NoPen)
@@ -2341,7 +2693,7 @@ class ZoomableImageLabel(QLabel):
 
         self._draw_copyright_text(
             painter,
-            QRectF(display_rect),
+            visible_view_rect if preview_crop_active else QRectF(display_rect),
             scale_factor=1.0,
         )
 

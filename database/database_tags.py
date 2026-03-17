@@ -14,8 +14,21 @@ class DatabaseTerms:
         return QCoreApplication.translate("DatabaseTerms", text)
     
     # Canonical English names (stored in database)
-    CONTRAST_METHODS = ["BF", "DF", "DIC", "Phase", "HMC"]
-    MOUNT_MEDIA = ["Not_set", "Water", "KOH", "NH3", "Melzer", "Glycerine", "Congo_Red", "Cotton_Blue"]
+    CONTRAST_METHODS = ["Not_set", "BF", "DF", "DIC", "Phase", "HMC"]
+    MOUNT_MEDIA = [
+        "Not_set",
+        "Water",
+        "KOH",
+        "NH3",
+        "Melzer",
+        "Glycerine",
+    ]
+    STAIN_TYPES = [
+        "Not_set",
+        "Congo_Red",
+        "Cotton_Blue",
+        "Lactofuchsin",
+    ]
     SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
     MEASURE_CATEGORIES = [
         "Spores", "Field", "Basidia", "Pileipellis",
@@ -24,6 +37,7 @@ class DatabaseTerms:
     
     # Display name mappings (for translation)
     CONTRAST_DISPLAY = {
+        "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
         "BF": QT_TRANSLATE_NOOP("DatabaseTerms", "BF"),
         "DF": QT_TRANSLATE_NOOP("DatabaseTerms", "DF"),
         "DIC": QT_TRANSLATE_NOOP("DatabaseTerms", "DIC"),
@@ -38,8 +52,13 @@ class DatabaseTerms:
         "NH3": QT_TRANSLATE_NOOP("DatabaseTerms", "NH₃"),
         "Melzer": QT_TRANSLATE_NOOP("DatabaseTerms", "Melzer"),
         "Glycerine": QT_TRANSLATE_NOOP("DatabaseTerms", "Glycerine"),
+    }
+
+    STAIN_DISPLAY = {
+        "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
         "Congo_Red": QT_TRANSLATE_NOOP("DatabaseTerms", "Congo Red"),
         "Cotton_Blue": QT_TRANSLATE_NOOP("DatabaseTerms", "Cotton Blue"),
+        "Lactofuchsin": QT_TRANSLATE_NOOP("DatabaseTerms", "Lactofuchsin"),
     }
     
     SAMPLE_DISPLAY = {
@@ -131,6 +150,14 @@ class DatabaseTerms:
         return canonical or cls._fallback_canonical(value)
 
     @classmethod
+    def canonicalize_stain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        lookup = cls._build_lookup(cls.STAIN_DISPLAY)
+        canonical = lookup.get(cls._normalize_token(value))
+        return canonical or cls._fallback_canonical(value)
+
+    @classmethod
     def canonicalize_measure(cls, value: str | None) -> str | None:
         if value is None:
             return None
@@ -144,6 +171,8 @@ class DatabaseTerms:
             return cls.canonicalize_contrast(value)
         if category == "mount":
             return cls.canonicalize_mount(value)
+        if category == "stain":
+            return cls.canonicalize_stain(value)
         if category == "sample":
             return cls.canonicalize_sample(value)
         if category == "measure":
@@ -167,6 +196,13 @@ class DatabaseTerms:
         canonical = cls.canonicalize_mount(canonical_name)
         display = cls.MOUNT_DISPLAY.get(canonical or "", cls._fallback_display(canonical_name))
         return cls.tr(display)
+
+    @classmethod
+    def translate_stain(cls, canonical_name: str | None) -> str:
+        """Get translated display name for stain type."""
+        canonical = cls.canonicalize_stain(canonical_name)
+        display = cls.STAIN_DISPLAY.get(canonical or "", cls._fallback_display(canonical_name))
+        return cls.tr(display)
     
     @classmethod
     def translate_sample(cls, canonical_name: str | None) -> str:
@@ -188,6 +224,8 @@ class DatabaseTerms:
             return cls.translate_contrast(canonical_name)
         if category == "mount":
             return cls.translate_mount(canonical_name)
+        if category == "stain":
+            return cls.translate_stain(canonical_name)
         if category == "sample":
             return cls.translate_sample(canonical_name)
         if category == "measure":
@@ -200,6 +238,8 @@ class DatabaseTerms:
             return list(cls.CONTRAST_METHODS)
         if category == "mount":
             return list(cls.MOUNT_MEDIA)
+        if category == "stain":
+            return list(cls.STAIN_TYPES)
         if category == "sample":
             return list(cls.SAMPLE_TYPES)
         if category == "measure":
@@ -211,6 +251,7 @@ class DatabaseTerms:
         mapping = {
             "contrast": "contrast_options",
             "mount": "mount_options",
+            "stain": "stain_options",
             "sample": "sample_options",
             "measure": "measure_categories",
         }
@@ -221,6 +262,7 @@ class DatabaseTerms:
         mapping = {
             "contrast": "last_used_contrast",
             "mount": "last_used_mount",
+            "stain": "last_used_stain",
             "sample": "last_used_sample",
             "measure": "last_used_measure",
         }

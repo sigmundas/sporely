@@ -3,6 +3,7 @@ import json
 import sqlite3
 import shutil
 from database.schema import get_database_path, load_objectives, resolve_objective_key
+from database.database_tags import DatabaseTerms
 
 _DEFAULT_MEASURE_CATEGORIES = [
     "Spores",
@@ -16,6 +17,7 @@ _DEFAULT_MEASURE_CATEGORIES = [
 ]
 
 _DEFAULT_CONTRAST_METHODS = [
+    "Not_set",
     "BF",
     "DF",
     "DIC",
@@ -121,6 +123,7 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             return None
         normalized = "".join(ch for ch in text.lower() if ch.isalnum())
         mapping = {
+            "notset": "Not_set",
             "bf": "BF",
             "brightfield": "BF",
             "df": "DF",
@@ -188,6 +191,60 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             """,
             (key, json.dumps(merged)),
         )
+
+
+def _migrate_mount_and_stain_settings(cursor: sqlite3.Cursor) -> None:
+    def _load_list(key: str) -> list[str]:
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            return []
+        try:
+            parsed = json.loads(row[0])
+        except (TypeError, json.JSONDecodeError):
+            parsed = []
+        return parsed if isinstance(parsed, list) else []
+
+    def _save_value(key: str, value) -> None:
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, json.dumps(value) if isinstance(value, list) else value),
+        )
+
+    default_mounts = list(DatabaseTerms.MOUNT_MEDIA)
+    default_stains = list(DatabaseTerms.STAIN_TYPES)
+    mount_values = DatabaseTerms.canonicalize_list("mount", _load_list("mount_options") or default_mounts)
+    stain_values = DatabaseTerms.canonicalize_list("stain", _load_list("stain_options") or default_stains)
+
+    moved_stains = []
+    kept_mounts = []
+    for value in mount_values:
+        canonical_stain = DatabaseTerms.canonicalize("stain", value)
+        if canonical_stain in default_stains[1:]:
+            if canonical_stain not in moved_stains:
+                moved_stains.append(canonical_stain)
+        else:
+            kept_mounts.append(value)
+
+    merged_mounts = list(kept_mounts)
+    for value in default_mounts:
+        if value not in merged_mounts:
+            merged_mounts.append(value)
+
+    merged_stains = list(stain_values)
+    for value in moved_stains:
+        if value not in merged_stains:
+            merged_stains.append(value)
+    for value in default_stains:
+        if value not in merged_stains:
+            merged_stains.append(value)
+
+    _save_value("mount_options", merged_mounts)
+    _save_value("stain_options", merged_stains)
 
 
 def migrate_database():
@@ -318,6 +375,8 @@ def migrate_database():
     if cursor.fetchone():
         cursor.execute("PRAGMA table_info(images)")
         columns = {col[1] for col in cursor.fetchall()}
+        if "stain" not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN stain TEXT")
         if "artsobs_web_unpublished" not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN artsobs_web_unpublished INTEGER DEFAULT 0")
         if "scale_bar_x1" not in columns:
@@ -325,6 +384,16 @@ def migrate_database():
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y1 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_x2 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y2 REAL")
+        cursor.execute("SELECT id, mount_medium, stain FROM images")
+        for image_id, mount_medium, stain in cursor.fetchall():
+            if str(stain or "").strip():
+                continue
+            canonical_stain = DatabaseTerms.canonicalize("stain", mount_medium)
+            if canonical_stain in DatabaseTerms.STAIN_TYPES[1:]:
+                cursor.execute(
+                    "UPDATE images SET stain = ?, mount_medium = NULL WHERE id = ?",
+                    (canonical_stain, image_id),
+                )
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
     if cursor.fetchone():
@@ -380,6 +449,7 @@ def migrate_database():
         """
     )
     _migrate_contrast_options_setting(cursor)
+    _migrate_mount_and_stain_settings(cursor)
     _migrate_measure_categories_setting(cursor)
 
     conn.commit()

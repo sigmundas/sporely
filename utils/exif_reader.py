@@ -170,6 +170,36 @@ def get_camera_settings(image_path: str) -> Dict[str, Any]:
     }
 
 
+def _clean_exif_text(value: Any) -> str:
+    """Normalize EXIF text fields to a trimmed Unicode string."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8", errors="ignore")
+        except Exception:
+            value = str(value)
+    return str(value).strip()
+
+
+def get_camera_model(exif_or_path: Dict[str, Any] | str | Path | None) -> Optional[str]:
+    """
+    Return the camera model text shown by the app.
+
+    Prefer the EXIF Model field to match Finder's "Device model" display,
+    and fall back to Make only if Model is unavailable.
+    """
+    if isinstance(exif_or_path, dict):
+        exif = exif_or_path
+    else:
+        exif = get_exif_data(str(exif_or_path)) if exif_or_path else {}
+    model = _clean_exif_text(exif.get("Model"))
+    if model:
+        return model
+    make = _clean_exif_text(exif.get("Make"))
+    return make or None
+
+
 
 def get_image_datetime(image_path: str) -> Optional[datetime]:
     """

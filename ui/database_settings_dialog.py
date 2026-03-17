@@ -39,6 +39,7 @@ class DatabaseSettingsDialog(QDialog):
     TAG_CATEGORIES = (
         ("contrast", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Contrast methods")),
         ("mount", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Mount media")),
+        ("stain", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Stains")),
         ("sample", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Sample types")),
         ("measure", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Measure categories")),
     )
@@ -48,6 +49,18 @@ class DatabaseSettingsDialog(QDialog):
         "dic": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DIC - Differential interference contrast"),
         "phase": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Phase - Phase contrast"),
         "hmc": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "HMC - Hoffman modulation contrast"),
+    }
+    MOUNT_HINTS = {
+        "water": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Water - neutral reference measurements"),
+        "koh": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "KOH - clearing tissue, pigment reactions"),
+        "nh3": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "NH₃ - pigment reactions"),
+        "melzer": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Melzer - amyloid/dextrinoid reactions"),
+        "glycerine": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Glycerine - semi-permanent mounts"),
+    }
+    STAIN_HINTS = {
+        "congored": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Congo Red - wall staining / contrast"),
+        "cottonblue": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Cotton Blue - chitin staining"),
+        "lactofuchsin": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Lactofuchsin - strong general fungal stain"),
     }
 
     def __init__(self, parent=None):
@@ -183,6 +196,18 @@ class DatabaseSettingsDialog(QDialog):
                 contrast_hint = self.CONTRAST_HINTS.get(str(canonical).strip().lower())
                 if contrast_hint:
                     item.setData(Qt.UserRole + 2, self.tr(contrast_hint))
+            elif category == "mount":
+                mount_hint = self.MOUNT_HINTS.get(
+                    DatabaseTerms._normalize_token(canonical)
+                )
+                if mount_hint:
+                    item.setData(Qt.UserRole + 2, self.tr(mount_hint))
+            elif category == "stain":
+                stain_hint = self.STAIN_HINTS.get(
+                    DatabaseTerms._normalize_token(canonical)
+                )
+                if stain_hint:
+                    item.setData(Qt.UserRole + 2, self.tr(stain_hint))
             tag_list.addItem(item)
 
         for canonical in current_tags:

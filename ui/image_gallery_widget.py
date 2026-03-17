@@ -80,6 +80,7 @@ class ImageGalleryWidget(QGroupBox):
     imageClicked = Signal(object, str)
     imageSelected = Signal(object, str)
     imageDoubleClicked = Signal(object, str)
+    measureBadgeClicked = Signal(object, str)
     deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
@@ -200,6 +201,7 @@ class ImageGalleryWidget(QGroupBox):
                     "gps_tag_text": item.get("gps_tag_text"),
                     "gps_tag_highlight": item.get("gps_tag_highlight", False),
                     "publish_selected": publish_selected,
+                    "frame_border_color": item.get("frame_border_color"),
                 }
             )
         self._render()
@@ -363,7 +365,12 @@ class ImageGalleryWidget(QGroupBox):
         for frame in self._frames:
             is_selected = getattr(frame, "image_id", None) == image_id and image_id is not None
             frame.setProperty("selected", is_selected)
-            frame.setStyleSheet(self._frame_style(selected=is_selected))
+            frame.setStyleSheet(
+                self._frame_style(
+                    selected=is_selected,
+                    border_color=getattr(frame, "frame_border_color", None),
+                )
+            )
             self._apply_frame_glow(frame, is_selected)
         if image_id is not None:
             self._center_on_key(image_id)
@@ -446,8 +453,8 @@ class ImageGalleryWidget(QGroupBox):
     def minimumSizeHint(self) -> QSize:
         return QSize(120, self._min_height)
 
-    def _frame_style(self, selected: bool = False) -> str:
-        border = "#2980b9" if selected else "#bdc3c7"
+    def _frame_style(self, selected: bool = False, border_color: str | None = None) -> str:
+        border = border_color or ("#2980b9" if selected else "#bdc3c7")
         return (
             "QFrame { border: 2px solid %s; border-radius: 5px; background: white; }"
         ) % border
@@ -474,7 +481,7 @@ class ImageGalleryWidget(QGroupBox):
 
     def _create_thumbnail_widget(self, item: dict) -> QFrame:
         frame = QFrame()
-        frame.setStyleSheet(self._frame_style())
+        frame.setStyleSheet(self._frame_style(border_color=item.get("frame_border_color")))
         frame.setFixedSize(self._thumb_size, self._thumb_size)
         frame.setCursor(Qt.PointingHandCursor)
 
@@ -575,11 +582,17 @@ class ImageGalleryWidget(QGroupBox):
         overlay_layout.addStretch()
 
         if self._show_badges and item.get("has_measurements"):
-            badge = QLabel("M")
+            badge = QToolButton()
+            badge.setText("M")
             badge.setFixedSize(16, 16)
-            badge.setAlignment(Qt.AlignCenter)
             badge.setStyleSheet(
-                f"background-color: #27ae60; color: white; border-radius: 8px; font-size: {pt(8)}pt;"
+                "QToolButton { background-color: #27ae60; color: white; border-radius: 8px; border: none;"
+                f" font-size: {pt(8)}pt; font-weight: bold; padding: 0px; }}"
+                "QToolButton:hover { background-color: #229954; }"
+            )
+            badge.setToolTip(self.tr("Open in Measure tab"))
+            badge.clicked.connect(
+                lambda _checked=False, img_id=item.get("id"), path=item.get("filepath"): self.measureBadgeClicked.emit(img_id, path or "")
             )
             overlay_layout.addWidget(badge)
 
@@ -615,6 +628,7 @@ class ImageGalleryWidget(QGroupBox):
         frame.image_id = item.get("id")
         frame.image_path = item.get("filepath")
         frame.image_key = item.get("id") if item.get("id") is not None else item.get("filepath")
+        frame.frame_border_color = item.get("frame_border_color")
         frame.thumb_label = thumb_label
         frame.publish_checkbox = publish_checkbox
         if self._thumbnail_tooltip:
@@ -678,7 +692,12 @@ class ImageGalleryWidget(QGroupBox):
             key = getattr(frame, "image_key", None)
             is_selected = key in self._selected_keys if key is not None else False
             frame.setProperty("selected", is_selected)
-            frame.setStyleSheet(self._frame_style(selected=is_selected))
+            frame.setStyleSheet(
+                self._frame_style(
+                    selected=is_selected,
+                    border_color=getattr(frame, "frame_border_color", None),
+                )
+            )
             self._apply_frame_glow(frame, is_selected)
 
     def _frame_for_key(self, key) -> QFrame | None:
@@ -715,6 +734,23 @@ class ImageGalleryWidget(QGroupBox):
         target = int(round(frame_center_x - (viewport.width() / 2.0)))
         target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
         scrollbar.setValue(target)
+
+    def prepare_for_tab_switch(self) -> None:
+        """Clear transient focus/effects before a parent tab is hidden."""
+        try:
+            self.clearFocus()
+        except Exception:
+            pass
+        if self._scroll is not None:
+            try:
+                self._scroll.clearFocus()
+            except Exception:
+                pass
+        for frame in list(self._frames):
+            try:
+                frame.setGraphicsEffect(None)
+            except Exception:
+                pass
 
     def _on_click(self, event, img_id, path):
         key = img_id if img_id is not None else path

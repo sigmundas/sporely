@@ -619,6 +619,7 @@ class ImageDB:
                   scale: float = None, notes: str = None,
                   micro_category: str = None, objective_name: str = None,
                   measure_color: str = None, mount_medium: str = None,
+                  stain: str = None,
                   sample_type: str = None, contrast: str = None,
                   calibration_id: int = None,
                   ai_crop_box: tuple[float, float, float, float] | None = None,
@@ -734,13 +735,13 @@ class ImageDB:
         cursor.execute('''
             INSERT INTO images (observation_id, filepath, image_type, micro_category,
                               objective_name, scale_microns_per_pixel, resample_scale_factor,
-                              mount_medium, sample_type, contrast, measure_color, notes, calibration_id,
+                              mount_medium, stain, sample_type, contrast, measure_color, notes, calibration_id,
                               ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
                               ai_crop_source_w, ai_crop_source_h, gps_source, original_filepath,
                               artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (observation_id, final_filepath, image_type, micro_category,
-              objective_name, scale, resample_scale_factor, mount_medium, sample_type, contrast, measure_color, notes,
+              objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
               calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, gps_source_value,
               final_original_filepath, artsobs_web_unpublished))
 
@@ -889,7 +890,7 @@ class ImageDB:
                      scale: float = None, notes: str = None,
                      objective_name: str = None, filepath: str = None,
                      measure_color: str = None, image_type: str = None,
-                     mount_medium: str = None, sample_type: str = None,
+                     mount_medium: str = None, stain: str = None, sample_type: str = None,
                      contrast: str = None, calibration_id: int | None | object = _UNSET,
                      ai_crop_box: tuple[float, float, float, float] | None | object = _UNSET,
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
@@ -921,6 +922,9 @@ class ImageDB:
         if mount_medium is not None:
             updates.append('mount_medium = ?')
             values.append(mount_medium)
+        if stain is not None:
+            updates.append('stain = ?')
+            values.append(stain)
         if sample_type is not None:
             updates.append('sample_type = ?')
             values.append(sample_type)
@@ -1291,17 +1295,37 @@ class ReferenceDB:
     """Handle reference spore size values."""
 
     @staticmethod
-    def get_reference(genus: str, species: str, source: str = None, mount_medium: str = None) -> Optional[dict]:
+    def get_reference(
+        genus: str,
+        species: str,
+        source: str = None,
+        mount_medium: str = None,
+        stain: str = None,
+    ) -> Optional[dict]:
         conn = get_reference_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        if source and mount_medium:
+        if source and mount_medium is not None and stain is not None:
+            cursor.execute('''
+                SELECT * FROM reference_values
+                WHERE genus = ? AND species = ? AND source = ? AND mount_medium = ? AND stain = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (genus, species, source, mount_medium, stain))
+        elif source and mount_medium is not None:
             cursor.execute('''
                 SELECT * FROM reference_values
                 WHERE genus = ? AND species = ? AND source = ? AND mount_medium = ?
                 ORDER BY updated_at DESC
                 LIMIT 1
             ''', (genus, species, source, mount_medium))
+        elif source and stain is not None:
+            cursor.execute('''
+                SELECT * FROM reference_values
+                WHERE genus = ? AND species = ? AND source = ? AND stain = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ''', (genus, species, source, stain))
         elif source:
             cursor.execute('''
                 SELECT * FROM reference_values
@@ -1330,27 +1354,31 @@ class ReferenceDB:
             WHERE genus = ? AND species = ?
               AND (source = ? OR (? IS NULL AND source IS NULL))
               AND (mount_medium = ? OR (? IS NULL AND mount_medium IS NULL))
+              AND (stain = ? OR (? IS NULL AND stain IS NULL))
         ''', (
             values.get("genus"),
             values.get("species"),
             values.get("source"),
             values.get("source"),
             values.get("mount_medium"),
-            values.get("mount_medium")
+            values.get("mount_medium"),
+            values.get("stain"),
+            values.get("stain"),
         ))
 
         cursor.execute('''
             INSERT INTO reference_values (
-                genus, species, source, mount_medium,
+                genus, species, source, mount_medium, stain,
                 length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                 width_min, width_p05, width_p50, width_p95, width_max, width_avg,
                 q_min, q_p50, q_max, q_avg
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             values.get("genus"),
             values.get("species"),
             values.get("source"),
             values.get("mount_medium"),
+            values.get("stain"),
             values.get("length_min"),
             values.get("length_p05"),
             values.get("length_p50"),
@@ -1446,6 +1474,26 @@ class ReferenceDB:
                 SELECT DISTINCT mount_medium FROM reference_values
                 WHERE genus = ? AND species = ? AND source = ?
                 ORDER BY mount_medium
+            ''', (genus, species, source))
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows if row and row[0]]
+
+    @staticmethod
+    def list_stains(genus: str, species: str, source: str, prefix: str = "") -> List[str]:
+        conn = get_reference_connection()
+        cursor = conn.cursor()
+        if prefix:
+            cursor.execute('''
+                SELECT DISTINCT stain FROM reference_values
+                WHERE genus = ? AND species = ? AND source = ? AND stain LIKE ?
+                ORDER BY stain
+            ''', (genus, species, source, f"{prefix}%"))
+        else:
+            cursor.execute('''
+                SELECT DISTINCT stain FROM reference_values
+                WHERE genus = ? AND species = ? AND source = ?
+                ORDER BY stain
             ''', (genus, species, source))
         rows = cursor.fetchall()
         conn.close()
@@ -1783,6 +1831,7 @@ class CalibrationDB:
         objective_key: str,
         microns_per_pixel: float,
         calibration_date: str = None,
+        calibration_image_date: str | None = None,
         microns_per_pixel_std: float = None,
         confidence_interval_low: float = None,
         confidence_interval_high: float = None,
@@ -1818,6 +1867,7 @@ class CalibrationDB:
         insert_cols = [
             "objective_key",
             "calibration_date",
+            "calibration_image_date",
             "microns_per_pixel",
             "microns_per_pixel_std",
             "confidence_interval_low",
@@ -1829,6 +1879,7 @@ class CalibrationDB:
         values = [
             objective_key,
             calibration_date,
+            calibration_image_date,
             microns_per_pixel,
             microns_per_pixel_std,
             confidence_interval_low,

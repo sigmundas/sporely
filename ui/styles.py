@@ -10,10 +10,15 @@ override has been applied (i.e. call get_style before apply_palette, or
 just rely on the stored setting).
 """
 from __future__ import annotations
+from pathlib import Path as _Path
 
 # Cached native dark-mode state, captured before any palette override runs.
 # Call cache_system_dark() once at startup (before _apply_light_palette).
 _system_dark_cached: bool | None = None
+
+# White checkmark SVG file — drawn on top of the blue indicator background.
+_ASSETS_DIR = _Path(__file__).parent.parent / "assets" / "icons"
+_CHK_URL = f"url('{(_ASSETS_DIR / 'checkmark_white.svg').as_posix()}')"
 
 
 def cache_system_dark() -> None:
@@ -180,6 +185,9 @@ def get_style(theme: str = "auto") -> str:
         indicator_border = "#8e8e93"
         indicator_bg = "#232325"
         indicator_disabled = "#555557"
+        outline_btn_bg = "rgba(74,144,217,0.13)"  # subtle blue tint, matches light mode approach
+        data_brd   = "#585860"   # more visible than border in dark
+        data_fg    = "#a8a8b0"   # slightly brighter than text_dim
     else:
         bg         = "#f5f5f5"
         surface    = "white"
@@ -204,6 +212,11 @@ def get_style(theme: str = "auto") -> str:
         indicator_border = "#7f8c8d"
         indicator_bg = "#ffffff"
         indicator_disabled = "#bdc3c7"
+        outline_btn_bg = "rgba(52,152,219,0.10)"  # subtle tint so white icons stay visible
+        data_brd   = border
+        data_fg    = text_dim
+
+    chk_url = _CHK_URL
 
     return f"""
 QMainWindow {{
@@ -254,6 +267,80 @@ QPushButton:pressed {{
 QPushButton:disabled {{
     background-color: {dis_bg};
     color: {dis_fg};
+}}
+
+QPushButton#outlineButton {{
+    background-color: {outline_btn_bg};
+    color: {accent};
+    border: 2px solid {accent};
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-weight: bold;
+}}
+
+QPushButton#outlineButton:hover {{
+    background-color: {accent};
+    color: white;
+}}
+
+QPushButton#outlineButton:pressed {{
+    background-color: {accent_p};
+    border-color: {accent_p};
+    color: white;
+}}
+
+QPushButton#outlineButton:disabled {{
+    background-color: transparent;
+    color: {dis_fg};
+    border: 2px solid {dis_fg};
+}}
+
+QPushButton#dataButton {{
+    background-color: transparent;
+    color: {data_fg};
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-weight: normal;
+}}
+
+QPushButton#dataButton:hover {{
+    color: {text};
+    border-color: {text_dim};
+}}
+
+QPushButton#dataButton:pressed {{
+    background-color: {dis_bg};
+}}
+
+QPushButton#dataButton:disabled {{
+    color: {dis_fg};
+    border-color: {dis_bg};
+}}
+
+QPushButton#destructiveButton {{
+    background-color: transparent;
+    color: #c0392b;
+    border: 1px solid #c0392b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-weight: normal;
+}}
+
+QPushButton#destructiveButton:hover {{
+    background-color: #c0392b;
+    color: white;
+}}
+
+QPushButton#destructiveButton:pressed {{
+    background-color: #a93226;
+    border-color: #a93226;
+    color: white;
+}}
+
+QPushButton#destructiveButton:disabled {{
+    color: {dis_fg};
+    border-color: {dis_bg};
 }}
 
 QPushButton#measureButton {{
@@ -327,22 +414,34 @@ QCheckBox::indicator {{
 }}
 
 QCheckBox::indicator:hover {{
-    border-color: {accent};
+    border: 2px solid {accent};
+    border-radius: 4px;
 }}
 
 QCheckBox::indicator:checked {{
     background-color: {accent};
-    border-color: {accent};
+    border: 2px solid {accent};
+    border-radius: 4px;
+    image: {chk_url};
+}}
+
+QCheckBox::indicator:checked:disabled {{
+    background-color: {dis_bg};
+    border: 2px solid {indicator_disabled};
+    border-radius: 4px;
+    image: {chk_url};
 }}
 
 QCheckBox::indicator:unchecked {{
     background-color: {indicator_bg};
-    border-color: {indicator_border};
+    border: 2px solid {indicator_border};
+    border-radius: 4px;
 }}
 
-QCheckBox::indicator:disabled {{
+QCheckBox::indicator:unchecked:disabled {{
     background-color: {dis_bg};
-    border-color: {indicator_disabled};
+    border: 2px solid {indicator_disabled};
+    border-radius: 4px;
 }}
 
 QRadioButton {{
@@ -359,22 +458,26 @@ QRadioButton::indicator {{
 }}
 
 QRadioButton::indicator:hover {{
-    border-color: {accent};
+    border: 2px solid {accent};
+    border-radius: 8px;
 }}
 
 QRadioButton::indicator:checked {{
     background-color: {accent};
-    border: 4px solid {indicator_border};
+    border: 4px solid {indicator_bg};
+    border-radius: 8px;
 }}
 
 QRadioButton::indicator:unchecked {{
     background-color: {indicator_bg};
-    border-color: {indicator_border};
+    border: 2px solid {indicator_border};
+    border-radius: 8px;
 }}
 
 QRadioButton::indicator:disabled {{
     background-color: {dis_bg};
-    border-color: {indicator_disabled};
+    border: 2px solid {indicator_disabled};
+    border-radius: 8px;
 }}
 
 QTableView,
