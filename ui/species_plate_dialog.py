@@ -33,6 +33,8 @@ from database.models import ImageDB, MeasurementDB, SettingsDB, CalibrationDB
 from database.database_tags import DatabaseTerms
 from database.schema import get_app_settings, update_app_settings, get_database_path
 from ui.hint_status import HintBar, HintStatusController
+from app_identity import APP_NAME, SETTINGS_ORG
+from ui.dialog_helpers import make_github_help_button
 
 # ── Canvas geometry ───────────────────────────────────────────────────────────
 _W, _H = 3200, 2000
@@ -121,8 +123,12 @@ def _cover_source_rect(
 
     vis_w = target_w / z
     vis_h = target_h / z
-    center_x = max(vis_w / 2.0, min(target_w - vis_w / 2.0, target_w / 2.0 + float(crop.off_x)))
-    center_y = max(vis_h / 2.0, min(target_h - vis_h / 2.0, target_h / 2.0 + float(crop.off_y)))
+    # Clamp offset so the visible window never overruns the covered image area.
+    # half_x/half_y is the maximum shift from centre in each axis.
+    half_x = (cover_w - vis_w) / 2.0
+    half_y = (cover_h - vis_h) / 2.0
+    center_x = target_w / 2.0 + max(-half_x, min(half_x, float(crop.off_x)))
+    center_y = target_h / 2.0 + max(-half_y, min(half_y, float(crop.off_y)))
     sub_x = center_x - vis_w / 2.0
     sub_y = center_y - vis_h / 2.0
 
@@ -1954,7 +1960,7 @@ class SpeciesPlateDialog(QDialog):
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def _load_settings(self) -> None:
-        s = QSettings("MycoLog", "SpeciesPlate")
+        s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         self._ins_r = max(_INS_R_MIN, min(_INS_R_MAX, int(s.value("ins_r", self._ins_r))))
         self._text_scale = max(0.90, float(s.value("text_scale", self._text_scale)))
         self._se_step = max(0, min(_SHAPE_STEPS - 1, int(s.value("se_step", self._se_step))))
@@ -1981,7 +1987,7 @@ class SpeciesPlateDialog(QDialog):
         self._equal_scale_init = s.value("equal_scale", False, type=bool)
 
     def _save_settings(self) -> None:
-        s = QSettings("MycoLog", "SpeciesPlate")
+        s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         s.setValue("ins_r", self._ins_r)
         s.setValue("text_scale", self._text_scale)
         s.setValue("se_step", self._se_step)
@@ -2018,7 +2024,7 @@ class SpeciesPlateDialog(QDialog):
         """Restore per-observation plate state (image assignments, crops, labels)."""
         if not self._obs_id:
             return
-        s = QSettings("MycoLog", "SpeciesPlate")
+        s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         s.beginGroup(f"obs_{self._obs_id}")
         id_map = {img["id"]: img for img in self._all_images if img.get("id") is not None}
         for slot in _SLOT_KEYS:
@@ -2072,7 +2078,7 @@ class SpeciesPlateDialog(QDialog):
         """Save per-observation plate state (image assignments, crops, labels)."""
         if not self._obs_id:
             return
-        s = QSettings("MycoLog", "SpeciesPlate")
+        s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         s.beginGroup(f"obs_{self._obs_id}")
         for slot in _SLOT_KEYS:
             img = self._slot_images.get(slot)
@@ -2447,6 +2453,7 @@ class SpeciesPlateDialog(QDialog):
         self._hint_ctrl = HintStatusController(self._hint_bar, self)
         self._hint_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         action_row.addWidget(self._hint_bar, 1)
+        action_row.addWidget(make_github_help_button(self, "species-plate-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self._export_btn = QPushButton(self.tr("Export…"))
         self._export_btn.clicked.connect(self._on_export)
@@ -2603,6 +2610,62 @@ class SpeciesPlateDialog(QDialog):
             self._crops[slot].off_x = 0.0
             self._crops[slot].off_y = 0.0
 
+    def _fit_new_slot_to_current_scale(self, new_slot: str) -> None:
+        """Zoom the newly assigned slot to match the existing shared µm/pixel scale.
+
+        Unlike _equalize_circle_scales(), this does NOT touch any other slot's zoom.
+        If no existing slot has a known scale, falls back to _equalize_circle_scales().
+        """
+        slots = _OVERLAY_SLOT_KEYS if self._inset_layout == "3" else _SLOT_KEYS
+        overlay_params = None
+        if self._inset_layout == "3":
+            overlay_params = _overlay_slot_params(self._ins_r, self._overlay_positions, self._overlay_radii)
+
+        def _coefficient(slot: str) -> float | None:
+            img = self._slot_images.get(slot)
+            if not img:
+                return None
+            if str(img.get("image_type") or "").strip().lower() != "microscope":
+                return None
+            spp = _image_scale_mpp(img)
+            if not spp:
+                return None
+            fp = img.get("filepath", "")
+            if not fp or not os.path.isfile(fp):
+                return None
+            pix = _load_pix(fp)
+            if pix.isNull() or pix.width() == 0 or pix.height() == 0:
+                return None
+            if overlay_params and slot in overlay_params:
+                diam = max(1, int(round(overlay_params[slot][2] * 2)))
+            else:
+                diam = max(1, int(self._ins_r * 2))
+            cover_s = max(diam / pix.width(), diam / pix.height())
+            return float(spp) / cover_s
+
+        # Find current display µm/pixel from any existing (non-new) equalized slot
+        display_mpp: float | None = None
+        for slot in slots:
+            if slot == new_slot:
+                continue
+            coeff = _coefficient(slot)
+            if coeff is None:
+                continue
+            zoom = self._crops[slot].zoom
+            if zoom > 0:
+                display_mpp = coeff / zoom
+                break
+
+        new_coeff = _coefficient(new_slot)
+        if new_coeff is None or display_mpp is None:
+            # No reference scale yet — equalize all as before
+            self._equalize_circle_scales()
+            return
+
+        self._crops[new_slot].zoom = max(1.0, new_coeff / display_mpp)
+        self._crops[new_slot].off_x = 0.0
+        self._crops[new_slot].off_y = 0.0
+
     def _on_bg_layout_changed(self, layout: str) -> None:
         import random as _random
         old_count = len(_background_panel_rects(self._bg_layout))
@@ -2730,7 +2793,7 @@ class SpeciesPlateDialog(QDialog):
             self._slot_labels[active] = filtered or _SLOT_FALLBACK_LABEL.get(active, active)
             # Keep circles equalized when a new image is assigned
             if hasattr(self, "_equal_scale_chk") and self._equal_scale_chk.isChecked():
-                self._equalize_circle_scales()
+                self._fit_new_slot_to_current_scale(active)
         self._refresh_gallery()
         self._refresh_preview()
 
@@ -3590,7 +3653,7 @@ class SpeciesPlateDialog(QDialog):
         gen.setViewBox(QRectF(0, 0, _W, _H))
         gen.setTitle(
             f"{self._obs.get('genus', '')} {self._obs.get('species', '')} plate")
-        gen.setDescription("Generated by MycoLog")
+        gen.setDescription(f"Generated by {APP_NAME}")
         p = QPainter(gen)
         self._paint_native(p, as_paths=True, for_export=True)
         p.end()

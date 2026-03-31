@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional
 from PIL import Image
 from database.schema import get_connection
+from app_identity import APP_NAME
 
 
 def export_coco_format(
@@ -62,7 +63,7 @@ def export_coco_format(
             "description": "Mushroom Spore Dataset",
             "version": "1.0",
             "year": datetime.now().year,
-            "contributor": "MycoLog",
+            "contributor": APP_NAME,
             "date_created": datetime.now().isoformat()
         },
         "licenses": [

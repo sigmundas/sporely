@@ -31,6 +31,8 @@ sopp.jpg
 
 # Keep required app databases
 !database/vernacular_multilanguage.sqlite3
+!database/parmasto_reference_merged.csv
+!database/reference_values.db
 
 # App local data folders
 /images/

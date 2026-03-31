@@ -39,7 +39,7 @@ Calibrating a microscope requires a calibration slide, or "stage micrometer" for
 Check the deviation on three different measurements and check that the deviation is acceptable.
 
 ### Automatic calibration
-MycoLog recognizes horizontal or vertical lines. All you have to do is specify the line distance, then click ***Calibrate***.
+Sporely recognizes horizontal or vertical lines. All you have to do is specify the line distance, then click ***Calibrate***.
 
 You may have to select a cropped area if the lines are not uniform. Like here:
 ![auto calibration](images/autocalibrate.png)
@@ -73,7 +73,7 @@ Use **Resize to optimal sampling (R)** to preview and apply downsampling based o
 
 ### Nyquist Sampling
 
-MycoLog uses a Nyquist-based ideal pixel size:
+Sporely uses a Nyquist-based ideal pixel size:
 
 $$
 p_{\mathrm{ideal}} = \frac{\lambda}{4\,\mathrm{NA}}
@@ -95,7 +95,7 @@ where $f$ is the linear resampling factor ($0 < f \le 1$), $p_{\mathrm{full}}$ i
 original scale in $\mathrm{\mu m}/\mathrm{px}$, $p_{\mathrm{target}}$ is the resampled scale in $\mathrm{\mu m}/\mathrm{px}$,
 $M_{\mathrm{full}}$ is the original megapixels, and $M_{\mathrm{target}}$ is the resampled megapixels.
 
-MycoLog uses this relationship instead of requiring a second calibration on the
+Sporely uses this relationship instead of requiring a second calibration on the
 downsampled image.
 
 ## Resolution Mismatch Warning
@@ -106,7 +106,7 @@ The mismatch warning is still active, but only shown when all of these are true:
 - A calibration with usable resolution info exists
 - The image/calibration resolution difference is large enough to matter
 
-MycoLog compares calibration megapixels with the image megapixels and accounts for resize factor when relevant.  
+Sporely compares calibration megapixels with the image megapixels and accounts for resize factor when relevant.  
 A mismatch can be expected for heavily cropped images.
 
 You may see this warning in both:
@@ -154,6 +154,7 @@ You can also trigger this dialog from the **No Scale Set** prompt when you start
 
 ## See also
 
+- [Database Settings](./database-settings.md)
 - [Field photography](./field-photography.md)
 - [Spore measurements](./spore-measurements.md)
 - [Taxonomy integration](./taxonomy-integration.md)

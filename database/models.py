@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime
 from .schema import get_connection, get_reference_connection, get_images_dir, get_calibrations_dir
+from utils.publish_targets import (
+    PUBLISH_TARGET_ARTSOBS_NO,
+    normalize_publish_target,
+    infer_publish_target_from_coords,
+)
 
 _UNSET = object()
 
@@ -78,11 +83,108 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         conn.close()
 
 
+def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: str) -> int | None:
+    try:
+        from utils.vernacular_utils import resolve_vernacular_db_path
+    except Exception:
+        return None
+    db_path = resolve_vernacular_db_path()
+    if not db_path or not db_path.exists():
+        return None
+    scientific_name = f"{genus} {species}".strip()
+    try:
+        conn = sqlite3.connect(db_path)
+    except Exception:
+        return None
+    try:
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {str(row[0] or "") for row in cur.fetchall()}
+        cur = conn.execute("PRAGMA table_info(taxon_min)")
+        columns = {(row[1] or "").lower() for row in cur.fetchall()}
+
+        if source_system == "artportalen":
+            if "taxon_external_id_min" in tables:
+                row = conn.execute(
+                    """
+                    SELECT e.external_id
+                    FROM taxon_min t
+                    JOIN taxon_external_id_min e
+                      ON e.taxon_id = t.taxon_id
+                     AND e.source_system = ?
+                    LEFT JOIN scientific_name_min s
+                      ON s.taxon_id = t.taxon_id
+                    WHERE (
+                            t.genus = ? COLLATE NOCASE
+                        AND t.specific_epithet = ? COLLATE NOCASE
+                    )
+                       OR (
+                            t.canonical_scientific_name = ? COLLATE NOCASE
+                    )
+                       OR (
+                            s.scientific_name = ? COLLATE NOCASE
+                    )
+                    ORDER BY e.is_preferred DESC, s.is_preferred_name DESC, e.external_id
+                    LIMIT 1
+                    """,
+                    (source_system, genus, species, scientific_name, scientific_name),
+                ).fetchone()
+                if row and row[0] is not None:
+                    try:
+                        return int(row[0])
+                    except (TypeError, ValueError):
+                        return None
+            if "swedish_taxon_id" in columns:
+                row = conn.execute(
+                    """
+                    SELECT swedish_taxon_id
+                    FROM taxon_min
+                    WHERE genus = ? COLLATE NOCASE
+                      AND specific_epithet = ? COLLATE NOCASE
+                      AND swedish_taxon_id IS NOT NULL
+                    LIMIT 1
+                    """,
+                    (genus, species),
+                ).fetchone()
+                if row and row[0] is not None:
+                    try:
+                        return int(row[0])
+                    except (TypeError, ValueError):
+                        return None
+
+        if source_system == "inaturalist" and "inaturalist_taxon_id" in columns:
+            row = conn.execute(
+                """
+                SELECT inaturalist_taxon_id
+                FROM taxon_min
+                WHERE genus = ? COLLATE NOCASE
+                  AND specific_epithet = ? COLLATE NOCASE
+                  AND inaturalist_taxon_id IS NOT NULL
+                LIMIT 1
+                """,
+                (genus, species),
+            ).fetchone()
+            if row and row[0] is not None:
+                try:
+                    return int(row[0])
+                except (TypeError, ValueError):
+                    return None
+        return None
+    finally:
+        conn.close()
+
+
 def _resolve_adb_taxon_id(genus: str | None, species: str | None) -> int | None:
     key = _normalize_taxon_key(genus, species)
     if not key:
         return None
     return _lookup_adb_taxon_id_from_db(*key)
+
+
+def _resolve_external_taxon_id(genus: str | None, species: str | None, source_system: str) -> int | None:
+    key = _normalize_taxon_key(genus, species)
+    if not key:
+        return None
+    return _lookup_external_taxon_id_from_db(*key, source_system=source_system)
 
 
 def sanitize_folder_name(name: str) -> str:
@@ -99,8 +201,47 @@ class ObservationDB:
     """Handle observation database operations"""
 
     @staticmethod
+    def _build_observation_folder_path(
+        genus: str | None,
+        species: str | None,
+        date: str | None,
+    ) -> Path:
+        genus_folder = sanitize_folder_name(genus) if genus else "unknown"
+        species_name = sanitize_folder_name(species) if species else "sp"
+        date_part = date.replace(':', '-') if date else datetime.now().strftime('%Y-%m-%d %H-%M')
+        folder_name = f"{species_name} - {date_part}"
+        return _images_dir() / genus_folder / folder_name
+
+    @staticmethod
+    def _ensure_unique_observation_folder_path(
+        cursor,
+        desired_path: Path,
+        exclude_observation_id: int | None = None,
+    ) -> Path:
+        desired_path = Path(desired_path)
+        parent = desired_path.parent
+        stem = desired_path.name
+        suffix = 2
+        candidate = desired_path
+        while True:
+            query = 'SELECT id FROM observations WHERE folder_path = ?'
+            params: list[object] = [str(candidate)]
+            if exclude_observation_id is not None:
+                query += ' AND id != ?'
+                params.append(int(exclude_observation_id))
+            row = cursor.execute(query, tuple(params)).fetchone()
+            if not row and not candidate.exists():
+                return candidate
+            candidate = parent / f"{stem} ({suffix})"
+            suffix += 1
+
+    @staticmethod
     def resolve_adb_taxon_id(genus: str | None, species: str | None) -> int | None:
         return _resolve_adb_taxon_id(genus, species)
+
+    @staticmethod
+    def resolve_external_taxon_id(genus: str | None, species: str | None, source_system: str) -> int | None:
+        return _resolve_external_taxon_id(genus, species, source_system)
 
     @staticmethod
     def _infer_image_folder(cursor, observation_id: int) -> Optional[str]:
@@ -157,10 +298,12 @@ class ObservationDB:
                           species_guess: str = None, notes: str = None,
                           open_comment: str = None, private_comment: str = None, interesting_comment: bool = False,
                           uncertain: bool = False, inaturalist_id: int = None,
+                          artportalen_id: int | None = None,
                           gps_latitude: float = None, gps_longitude: float = None,
                           author: str = None, source_type: str = "personal",
                           citation: str = None, data_provider: str = None,
                           artsdata_id: int | None = None,
+                          publish_target: str | None = None,
                           unspontaneous: bool = False,
                           determination_method: int | None = None,
                           habitat_nin2_path: str | None = None,
@@ -170,7 +313,8 @@ class ObservationDB:
                           habitat_host_common_name: str | None = None,
                           habitat_nin2_note: str | None = None,
                           habitat_substrate_note: str | None = None,
-                          habitat_grows_on_note: str | None = None) -> int:
+                          habitat_grows_on_note: str | None = None,
+                          ai_state_json: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -185,26 +329,33 @@ class ObservationDB:
             species_guess = ' '.join(parts)
 
         # Create folder path: genus/species date-time
-        genus_folder = sanitize_folder_name(genus) if genus else "unknown"
-        species_name = sanitize_folder_name(species) if species else "sp"
-        # Parse date to create folder name (keep spaces for readability, avoid ':' for Windows)
-        date_part = date.replace(':', '-') if date else datetime.now().strftime('%Y-%m-%d %H-%M')
-        folder_name = f"{species_name} - {date_part}"
-        folder_path = str(_images_dir() / genus_folder / folder_name)
+        folder_path = str(
+            ObservationDB._ensure_unique_observation_folder_path(
+                cursor,
+                ObservationDB._build_observation_folder_path(genus, species, date),
+            )
+        )
+        resolved_publish_target = normalize_publish_target(
+            publish_target,
+            fallback=(
+                infer_publish_target_from_coords(gps_latitude, gps_longitude)
+                or PUBLISH_TARGET_ARTSOBS_NO
+            ),
+        )
 
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
-                                     artsdata_id, species_guess, notes, uncertain, unspontaneous,
+                                     artsdata_id, artportalen_id, publish_target, species_guess, notes, uncertain, unspontaneous,
                                      determination_method,
                                      folder_path, inaturalist_id, gps_latitude, gps_longitude,
                                      author, source_type, citation, data_provider,
                                      habitat_nin2_path, habitat_substrate_path,
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
-                                     open_comment, private_comment, interesting_comment)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     open_comment, private_comment, interesting_comment, ai_state_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
-              species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
+              artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               determination_method,
               folder_path,
               inaturalist_id, gps_latitude, gps_longitude, author, source_type,
@@ -212,7 +363,7 @@ class ObservationDB:
               habitat_nin2_path, habitat_substrate_path,
               habitat_host_genus, habitat_host_species, habitat_host_common_name,
               habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
-              open_comment, private_comment, 1 if interesting_comment else 0))
+              open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -228,6 +379,8 @@ class ObservationDB:
                            gps_latitude: float | object = _UNSET, gps_longitude: float | object = _UNSET,
                            allow_nulls: bool = False,
                            artsdata_id: int | None | object = _UNSET,
+                           artportalen_id: int | None | object = _UNSET,
+                           publish_target: str | object = _UNSET,
                            unspontaneous: bool | object = _UNSET,
                            determination_method: int | None | object = _UNSET,
                            habitat_nin2_path: str | object = _UNSET,
@@ -237,7 +390,8 @@ class ObservationDB:
                            habitat_host_common_name: str | object = _UNSET,
                            habitat_nin2_note: str | object = _UNSET,
                            habitat_substrate_note: str | object = _UNSET,
-                           habitat_grows_on_note: str | object = _UNSET) -> Optional[str]:
+                           habitat_grows_on_note: str | object = _UNSET,
+                           ai_state_json: str | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -262,11 +416,17 @@ class ObservationDB:
                 new_genus = current.get('genus') if genus is _UNSET else genus
                 new_species = current.get('species') if species is _UNSET else species
 
-                genus_folder = sanitize_folder_name(new_genus) if new_genus else "unknown"
-                species_name = sanitize_folder_name(new_species) if new_species else "sp"
-                date_part = current['date'].replace(':', '-') if current['date'] else 'unknown'
-                folder_name = f"{species_name} - {date_part}"
-                new_folder_path = str(_images_dir() / genus_folder / folder_name)
+                new_folder_path = str(
+                    ObservationDB._ensure_unique_observation_folder_path(
+                        cursor,
+                        ObservationDB._build_observation_folder_path(
+                            new_genus,
+                            new_species,
+                            current['date'],
+                        ),
+                        exclude_observation_id=observation_id,
+                    )
+                )
 
             # Rename folder if it exists (or infer it from image paths)
             inferred_folder = None
@@ -319,6 +479,12 @@ class ObservationDB:
             if artsdata_id is not _UNSET and (allow_nulls or artsdata_id is not None):
                 updates.append('artsdata_id = ?')
                 values.append(artsdata_id)
+            if artportalen_id is not _UNSET and (allow_nulls or artportalen_id is not None):
+                updates.append('artportalen_id = ?')
+                values.append(artportalen_id)
+            if publish_target is not _UNSET and (allow_nulls or publish_target is not None):
+                updates.append('publish_target = ?')
+                values.append(normalize_publish_target(str(publish_target) if publish_target is not None else None))
             if uncertain is not _UNSET and (allow_nulls or uncertain is not None):
                 updates.append('uncertain = ?')
                 values.append(1 if uncertain else 0)
@@ -361,6 +527,9 @@ class ObservationDB:
             if habitat_grows_on_note is not _UNSET and (allow_nulls or habitat_grows_on_note is not None):
                 updates.append('habitat_grows_on_note = ?')
                 values.append(habitat_grows_on_note)
+            if ai_state_json is not _UNSET and (allow_nulls or ai_state_json is not None):
+                updates.append('ai_state_json = ?')
+                values.append(ai_state_json)
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)
@@ -417,6 +586,35 @@ class ObservationDB:
         return [dict(row) for row in rows]
 
     @staticmethod
+    def get_personal_observations_for_species(
+        genus: str,
+        species: str,
+        exclude_observation_id: int | None = None,
+    ) -> List[dict]:
+        """Return personal observations for a species that have spore measurements."""
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        where = [
+            "o.genus = ?",
+            "o.species = ?",
+            "o.source_type = 'personal'",
+            "EXISTS (SELECT 1 FROM spore_measurements m JOIN images i ON m.image_id = i.id"
+            " WHERE i.observation_id = o.id AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL)",
+        ]
+        params: list = [genus, species]
+        if exclude_observation_id:
+            where.append("o.id != ?")
+            params.append(exclude_observation_id)
+        cursor.execute(
+            f"SELECT id, date, author FROM observations o WHERE {' AND '.join(where)} ORDER BY date DESC",
+            tuple(params),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    @staticmethod
     def get_observation(observation_id: int) -> Optional[dict]:
         """Get a single observation by ID"""
         conn = get_connection()
@@ -456,6 +654,54 @@ class ObservationDB:
             WHERE id = ?
             ''',
             (observation_id,),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def clear_artportalen_id(observation_id: int) -> None:
+        """Clear Artportalen ID without touching other observation fields."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE observations
+            SET artportalen_id = NULL
+            WHERE id = ?
+            ''',
+            (observation_id,),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def set_artportalen_id(observation_id: int, artportalen_id: int | None) -> None:
+        """Set Artportalen ID for an observation."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE observations
+            SET artportalen_id = ?
+            WHERE id = ?
+            ''',
+            (artportalen_id, observation_id),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def set_publish_target(observation_id: int, publish_target: str | None) -> None:
+        """Set the preferred Norway/Sweden reporting target for an observation."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE observations
+            SET publish_target = ?
+            WHERE id = ?
+            ''',
+            (normalize_publish_target(publish_target), observation_id),
         )
         conn.commit()
         conn.close()
@@ -514,10 +760,13 @@ class ObservationDB:
         Returns a list of file or folder paths that could not be deleted.
         """
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         folder_path = None
         image_rows = []
         failed_paths: list[str] = []
+        shared_file_refs: dict[str, bool] = {}
+        shared_folder_ref = False
         try:
             # Collect image filepaths and observation folder before deleting rows
             cursor.execute('SELECT folder_path FROM observations WHERE id = ?', (observation_id,))
@@ -530,6 +779,52 @@ class ObservationDB:
                 (observation_id,),
             )
             image_rows = cursor.fetchall()
+
+            for row in image_rows:
+                for candidate in (row["filepath"], row["original_filepath"]):
+                    if not candidate:
+                        continue
+                    ref_row = cursor.execute(
+                        '''
+                        SELECT 1
+                        FROM images
+                        WHERE observation_id != ?
+                          AND (filepath = ? OR original_filepath = ?)
+                        LIMIT 1
+                        ''',
+                        (observation_id, candidate, candidate),
+                    ).fetchone()
+                    shared_file_refs[str(candidate)] = bool(ref_row)
+
+            if folder_path:
+                shared_folder_row = cursor.execute(
+                    '''
+                    SELECT 1
+                    FROM observations
+                    WHERE id != ?
+                      AND folder_path = ?
+                    LIMIT 1
+                    ''',
+                    (observation_id, folder_path),
+                ).fetchone()
+                if shared_folder_row:
+                    shared_folder_ref = True
+                else:
+                    folder_prefix = f"{folder_path.rstrip('/')}%"
+                    shared_image_row = cursor.execute(
+                        '''
+                        SELECT 1
+                        FROM images
+                        WHERE observation_id != ?
+                          AND (
+                                filepath LIKE ?
+                             OR original_filepath LIKE ?
+                          )
+                        LIMIT 1
+                        ''',
+                        (observation_id, folder_prefix, folder_prefix),
+                    ).fetchone()
+                    shared_folder_ref = bool(shared_image_row)
 
             # Delete dependent rows first (annotations -> measurements -> thumbnails -> images)
             cursor.execute('''
@@ -577,6 +872,8 @@ class ObservationDB:
             for candidate in (filepath, original_filepath):
                 if not candidate:
                     continue
+                if shared_file_refs.get(str(candidate)):
+                    continue
                 try:
                     path = Path(candidate).resolve()
                     root = images_root.resolve()
@@ -591,7 +888,11 @@ class ObservationDB:
             try:
                 obs_folder = Path(folder_path).resolve()
                 root = images_root.resolve()
-                if obs_folder.exists() and obs_folder.is_relative_to(root):
+                if (
+                    not shared_folder_ref
+                    and obs_folder.exists()
+                    and obs_folder.is_relative_to(root)
+                ):
                     shutil.rmtree(obs_folder)
             except Exception as e:
                 print(f"Warning: Could not delete observation folder {folder_path}: {e}")
@@ -621,9 +922,11 @@ class ImageDB:
                   measure_color: str = None, mount_medium: str = None,
                   stain: str = None,
                   sample_type: str = None, contrast: str = None,
+                  sort_order: int | None = None,
                   calibration_id: int = None,
                   ai_crop_box: tuple[float, float, float, float] | None = None,
                   ai_crop_source_size: tuple[int, int] | None = None,
+                  crop_mode: str | None = None,
                   gps_source: bool | None = None,
                   resample_scale_factor: float | None = None,
                   original_filepath: str | None = None,
@@ -649,13 +952,26 @@ class ImageDB:
         artsobs_web_unpublished = 0
 
         if observation_id:
-            cursor.execute('SELECT artsdata_id FROM observations WHERE id = ?', (observation_id,))
+            cursor.execute('SELECT artsdata_id, publish_target FROM observations WHERE id = ?', (observation_id,))
             obs_row = cursor.fetchone()
             try:
-                if obs_row and int(obs_row["artsdata_id"] or 0) > 0:
+                target = normalize_publish_target(obs_row["publish_target"] if obs_row else None)
+                if obs_row and target == PUBLISH_TARGET_ARTSOBS_NO and int(obs_row["artsdata_id"] or 0) > 0:
                     artsobs_web_unpublished = 1
             except (TypeError, ValueError):
                 artsobs_web_unpublished = 0
+            if sort_order is None:
+                cursor.execute(
+                    'SELECT COALESCE(MAX(sort_order), -1) + 1 FROM images WHERE observation_id = ?',
+                    (observation_id,),
+                )
+                row = cursor.fetchone()
+                try:
+                    sort_order = int(row[0] if row else 0)
+                except (TypeError, ValueError):
+                    sort_order = 0
+        elif sort_order is None:
+            sort_order = 0
 
         # Copy image to observation folder if requested
         if copy_to_folder and observation_id:
@@ -737,13 +1053,13 @@ class ImageDB:
                               objective_name, scale_microns_per_pixel, resample_scale_factor,
                               mount_medium, stain, sample_type, contrast, measure_color, notes, calibration_id,
                               ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
-                              ai_crop_source_w, ai_crop_source_h, gps_source, original_filepath,
+                              ai_crop_source_w, ai_crop_source_h, crop_mode, gps_source, original_filepath, sort_order,
                               artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (observation_id, final_filepath, image_type, micro_category,
               objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
-              calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, gps_source_value,
-              final_original_filepath, artsobs_web_unpublished))
+              calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
+              final_original_filepath, sort_order, artsobs_web_unpublished))
 
         img_id = cursor.lastrowid
         conn.commit()
@@ -773,7 +1089,13 @@ class ImageDB:
         cursor.execute('''
             SELECT * FROM images
             WHERE observation_id = ?
-            ORDER BY image_type, micro_category, created_at
+            ORDER BY
+                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                sort_order,
+                image_type,
+                micro_category,
+                created_at,
+                id
         ''', (observation_id,))
 
         rows = cursor.fetchall()
@@ -790,7 +1112,12 @@ class ImageDB:
         cursor.execute('''
             SELECT * FROM images
             WHERE observation_id = ? AND image_type = ?
-            ORDER BY micro_category, created_at
+            ORDER BY
+                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                sort_order,
+                micro_category,
+                created_at,
+                id
         ''', (observation_id, image_type))
 
         rows = cursor.fetchall()
@@ -815,7 +1142,11 @@ class ImageDB:
             JOIN observations o ON o.id = i.observation_id
             WHERE COALESCE(i.artsobs_web_unpublished, 0) = 1
               AND COALESCE(o.artsdata_id, 0) > 0
-            ORDER BY i.created_at, i.id
+            ORDER BY
+                CASE WHEN i.sort_order IS NULL THEN 1 ELSE 0 END,
+                i.sort_order,
+                i.created_at,
+                i.id
         ''')
         rows = cursor.fetchall()
         conn.close()
@@ -890,10 +1221,12 @@ class ImageDB:
                      scale: float = None, notes: str = None,
                      objective_name: str = None, filepath: str = None,
                      measure_color: str = None, image_type: str = None,
+                     sort_order: int | None = None,
                      mount_medium: str = None, stain: str = None, sample_type: str = None,
                      contrast: str = None, calibration_id: int | None | object = _UNSET,
                      ai_crop_box: tuple[float, float, float, float] | None | object = _UNSET,
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
+                     crop_mode: str | None | object = _UNSET,
                      gps_source: bool | None | object = _UNSET,
                      resample_scale_factor: float | None | object = _UNSET,
                      original_filepath: str | None | object = _UNSET,
@@ -919,6 +1252,9 @@ class ImageDB:
         if image_type is not None:
             updates.append('image_type = ?')
             values.append(image_type)
+        if sort_order is not None and 'sort_order' in image_columns:
+            updates.append('sort_order = ?')
+            values.append(int(sort_order))
         if mount_medium is not None:
             updates.append('mount_medium = ?')
             values.append(mount_medium)
@@ -966,6 +1302,9 @@ class ImageDB:
                 crop_w, crop_h = ai_crop_source_size
             updates.extend(['ai_crop_source_w = ?', 'ai_crop_source_h = ?'])
             values.extend([crop_w, crop_h])
+        if crop_mode is not _UNSET and 'crop_mode' in image_columns:
+            updates.append('crop_mode = ?')
+            values.append(crop_mode)
         if gps_source is not _UNSET:
             gps_value = None if gps_source is None else (1 if gps_source else 0)
             updates.append('gps_source = ?')
@@ -988,22 +1327,109 @@ class ImageDB:
         conn.close()
 
     @staticmethod
+    def reorder_images(observation_id: int, ordered_image_ids: List[int]) -> None:
+        """Persist a new image order for one observation."""
+        try:
+            obs_id = int(observation_id)
+        except (TypeError, ValueError):
+            return
+
+        normalized_ids: list[int] = []
+        seen: set[int] = set()
+        for value in ordered_image_ids or []:
+            try:
+                image_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if image_id in seen:
+                continue
+            seen.add(image_id)
+            normalized_ids.append(image_id)
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id FROM images
+            WHERE observation_id = ?
+            ORDER BY
+                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                sort_order,
+                image_type,
+                micro_category,
+                created_at,
+                id
+            ''',
+            (obs_id,),
+        )
+        existing_ids = [int(row[0]) for row in cursor.fetchall()]
+        if not existing_ids:
+            conn.close()
+            return
+
+        existing_set = set(existing_ids)
+        ordered = [image_id for image_id in normalized_ids if image_id in existing_set]
+        ordered.extend(image_id for image_id in existing_ids if image_id not in ordered)
+        for index, image_id in enumerate(ordered):
+            cursor.execute(
+                'UPDATE images SET sort_order = ? WHERE id = ? AND observation_id = ?',
+                (index, image_id, obs_id),
+            )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
     def delete_image(image_id: int):
         """Delete an image and its measurements"""
         conn = get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        # Delete measurements first
-        cursor.execute('DELETE FROM spore_measurements WHERE image_id = ?', (image_id,))
-        # Delete annotations
-        cursor.execute('DELETE FROM spore_annotations WHERE image_id = ?', (image_id,))
-        # Delete thumbnails
-        cursor.execute('DELETE FROM thumbnails WHERE image_id = ?', (image_id,))
-        # Delete the image
-        cursor.execute('DELETE FROM images WHERE id = ?', (image_id,))
+            # Delete dependent rows first to satisfy foreign keys.
+            cursor.execute(
+                '''
+                DELETE FROM spore_annotations
+                WHERE image_id = ?
+                ''',
+                (image_id,),
+            )
+            cursor.execute(
+                '''
+                DELETE FROM spore_annotations
+                WHERE measurement_id IN (
+                    SELECT id FROM spore_measurements WHERE image_id = ?
+                )
+                ''',
+                (image_id,),
+            )
+            cursor.execute(
+                '''
+                DELETE FROM spore_measurements
+                WHERE image_id = ?
+                ''',
+                (image_id,),
+            )
+            cursor.execute(
+                '''
+                DELETE FROM thumbnails
+                WHERE image_id = ?
+                ''',
+                (image_id,),
+            )
+            cursor.execute(
+                '''
+                DELETE FROM images
+                WHERE id = ?
+                ''',
+                (image_id,),
+            )
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 class MeasurementDB:
     """Handle spore measurement database operations"""
@@ -1369,16 +1795,30 @@ class ReferenceDB:
         cursor.execute('''
             INSERT INTO reference_values (
                 genus, species, source, mount_medium, stain,
+                plot_color,
+                parmasto_length_mean, parmasto_width_mean, parmasto_q_mean,
+                parmasto_v_sp_length, parmasto_v_sp_width, parmasto_v_sp_q,
+                parmasto_v_ind_length, parmasto_v_ind_width, parmasto_v_ind_q,
                 length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                 width_min, width_p05, width_p50, width_p95, width_max, width_avg,
                 q_min, q_p50, q_max, q_avg
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             values.get("genus"),
             values.get("species"),
             values.get("source"),
             values.get("mount_medium"),
             values.get("stain"),
+            values.get("plot_color"),
+            values.get("parmasto_length_mean"),
+            values.get("parmasto_width_mean"),
+            values.get("parmasto_q_mean"),
+            values.get("parmasto_v_sp_length"),
+            values.get("parmasto_v_sp_width"),
+            values.get("parmasto_v_sp_q"),
+            values.get("parmasto_v_ind_length"),
+            values.get("parmasto_v_ind_width"),
+            values.get("parmasto_v_ind_q"),
             values.get("length_min"),
             values.get("length_p05"),
             values.get("length_p50"),
@@ -1397,6 +1837,38 @@ class ReferenceDB:
             values.get("q_avg")
         ))
 
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def delete_reference(
+        genus: str,
+        species: str,
+        source: str = None,
+        mount_medium: str = None,
+        stain: str = None,
+    ) -> None:
+        conn = get_reference_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            DELETE FROM reference_values
+            WHERE genus = ? AND species = ?
+              AND (source = ? OR (? IS NULL AND source IS NULL))
+              AND (mount_medium = ? OR (? IS NULL AND mount_medium IS NULL))
+              AND (stain = ? OR (? IS NULL AND stain IS NULL))
+            ''',
+            (
+                genus,
+                species,
+                source,
+                source,
+                mount_medium,
+                mount_medium,
+                stain,
+                stain,
+            ),
+        )
         conn.commit()
         conn.close()
 
@@ -1595,6 +2067,15 @@ class SpeciesDataAvailability:
                OR q_p50 IS NOT NULL
                OR q_max IS NOT NULL
                OR q_avg IS NOT NULL
+               OR parmasto_length_mean IS NOT NULL
+               OR parmasto_width_mean IS NOT NULL
+               OR parmasto_q_mean IS NOT NULL
+               OR parmasto_v_sp_length IS NOT NULL
+               OR parmasto_v_sp_width IS NOT NULL
+               OR parmasto_v_sp_q IS NOT NULL
+               OR parmasto_v_ind_length IS NOT NULL
+               OR parmasto_v_ind_width IS NOT NULL
+               OR parmasto_v_ind_q IS NOT NULL
             GROUP BY genus, species
         ''')
 

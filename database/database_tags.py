@@ -7,6 +7,10 @@ from PySide6.QtCore import QCoreApplication, QT_TRANSLATE_NOOP
 
 class DatabaseTerms:
     """Translatable database terms for microscopy observations."""
+
+    TERM_ALIASES = {
+        "Trypan_Blue": ("Tryptan Blue", "Tryptan_Blue"),
+    }
     
     @staticmethod
     def tr(text: str) -> str:
@@ -14,20 +18,24 @@ class DatabaseTerms:
         return QCoreApplication.translate("DatabaseTerms", text)
     
     # Canonical English names (stored in database)
-    CONTRAST_METHODS = ["Not_set", "BF", "DF", "DIC", "Phase", "HMC"]
+    CONTRAST_METHODS = ["Not_set", "BF", "DF", "DIC", "Oblique", "Phase", "HMC"]
     MOUNT_MEDIA = [
         "Not_set",
         "Water",
         "KOH",
         "NH3",
-        "Melzer",
         "Glycerine",
+        "L4",
     ]
     STAIN_TYPES = [
         "Not_set",
+        "Melzer",
         "Congo_Red",
         "Cotton_Blue",
         "Lactofuchsin",
+        "Cresyl_Blue",
+        "Trypan_Blue",
+        "Chlorazol_Black_E",
     ]
     SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
     MEASURE_CATEGORIES = [
@@ -41,6 +49,7 @@ class DatabaseTerms:
         "BF": QT_TRANSLATE_NOOP("DatabaseTerms", "BF"),
         "DF": QT_TRANSLATE_NOOP("DatabaseTerms", "DF"),
         "DIC": QT_TRANSLATE_NOOP("DatabaseTerms", "DIC"),
+        "Oblique": QT_TRANSLATE_NOOP("DatabaseTerms", "Oblique"),
         "Phase": QT_TRANSLATE_NOOP("DatabaseTerms", "Phase"),
         "HMC": QT_TRANSLATE_NOOP("DatabaseTerms", "HMC"),
     }
@@ -50,15 +59,19 @@ class DatabaseTerms:
         "Water": QT_TRANSLATE_NOOP("DatabaseTerms", "Water"),
         "KOH": QT_TRANSLATE_NOOP("DatabaseTerms", "KOH"),
         "NH3": QT_TRANSLATE_NOOP("DatabaseTerms", "NH₃"),
-        "Melzer": QT_TRANSLATE_NOOP("DatabaseTerms", "Melzer"),
         "Glycerine": QT_TRANSLATE_NOOP("DatabaseTerms", "Glycerine"),
+        "L4": QT_TRANSLATE_NOOP("DatabaseTerms", "L4"),
     }
 
     STAIN_DISPLAY = {
         "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
+        "Melzer": QT_TRANSLATE_NOOP("DatabaseTerms", "Melzer"),
         "Congo_Red": QT_TRANSLATE_NOOP("DatabaseTerms", "Congo Red"),
         "Cotton_Blue": QT_TRANSLATE_NOOP("DatabaseTerms", "Cotton Blue"),
         "Lactofuchsin": QT_TRANSLATE_NOOP("DatabaseTerms", "Lactofuchsin"),
+        "Cresyl_Blue": QT_TRANSLATE_NOOP("DatabaseTerms", "Cresyl Blue"),
+        "Trypan_Blue": QT_TRANSLATE_NOOP("DatabaseTerms", "Trypan Blue"),
+        "Chlorazol_Black_E": QT_TRANSLATE_NOOP("DatabaseTerms", "Chlorazol Black E"),
     }
     
     SAMPLE_DISPLAY = {
@@ -104,6 +117,7 @@ class DatabaseTerms:
                 canonical.replace("_", "-"),
                 display.replace(" ", "_"),
             }
+            candidates.update(cls.TERM_ALIASES.get(canonical, ()))
             for candidate in candidates:
                 norm = cls._normalize_token(candidate)
                 if norm:

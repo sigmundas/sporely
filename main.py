@@ -19,16 +19,36 @@ if sys.platform.startswith("linux"):
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer
+from app_identity import APP_DISPLAY_NAME, APP_FULL_NAME, LEGACY_APP_NAME, migrate_legacy_storage
 from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
 from ui.main_window import MainWindow
-from ui.styles import cache_system_dark
+from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.6.5"
+APP_VERSION = "0.6.7"
 
 
-def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
-    logo_path = Path(__file__).parent / "docs" / "images" / "mycolog-logo.png"
+def _canonical_ui_language(code: str | None) -> str | None:
+    """Map stored/system language codes to the app's supported UI locales."""
+    text = str(code or "").strip().replace("-", "_")
+    if not text:
+        return None
+    prefix = text.split("_", 1)[0].lower()
+    if prefix == "de":
+        return "de_DE"
+    if prefix in {"nb", "nn", "no"}:
+        return "nb_NO"
+    if prefix == "sv":
+        return "sv_SE"
+    if prefix == "en":
+        return "en"
+    return None
+
+
+def _create_splash(app: QApplication, version: str, theme: str = "auto") -> QSplashScreen | None:
+    dark = _is_dark(theme)
+    logo_name = "sporely-logo-light.png" if dark else "sporely-logo-dark.png"
+    logo_path = Path(__file__).parent / "docs" / "images" / logo_name
     if not logo_path.exists():
         return None
     logo = QPixmap(str(logo_path))
@@ -37,11 +57,11 @@ def _create_splash(app: QApplication, version: str) -> QSplashScreen | None:
 
     extra_height = 36
     splash_pixmap = QPixmap(logo.width(), logo.height() + extra_height)
-    splash_pixmap.fill(Qt.white)
+    splash_pixmap.fill(QColor("#1c1c1e") if dark else QColor("#ffffff"))
 
     painter = QPainter(splash_pixmap)
     painter.drawPixmap(0, 0, logo)
-    painter.setPen(QColor(60, 60, 60))
+    painter.setPen(QColor("#e8e8e8") if dark else QColor(60, 60, 60))
     font = QFont(app.font())
     font.setPointSize(max(9, font.pointSize() - 1))
     painter.setFont(font)
@@ -103,13 +123,15 @@ def main():
     """Initialize and run the application."""
     # Create and run application
     app = QApplication(sys.argv)
-    app.setApplicationName("MycoLog - Mushroom Log and Spore Analyzer")
-    app.setApplicationDisplayName("MycoLog")
+    app.setApplicationName(APP_FULL_NAME)
+    app.setApplicationDisplayName(APP_DISPLAY_NAME)
     app.setApplicationVersion(APP_VERSION)
     # Fusion style gives fully consistent QSS rendering on every platform —
     # no native-style quirks that partially ignore stylesheet rules.
     app.setStyle("Fusion")
     cache_system_dark()   # snapshot native dark state before palette override
+    migrate_legacy_storage()
+    app_settings = get_app_settings()
     _apply_light_palette(app)
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets
     # accept the decimal separator the user's OS is configured for.
@@ -119,7 +141,14 @@ def main():
         app_font.setPointSize(10)
         app.setFont(app_font)
 
-    splash = _create_splash(app, APP_VERSION)
+    splash_theme = str(app_settings.get("ui_theme", "") or "").strip().lower()
+    if splash_theme not in {"auto", "light", "dark"}:
+        splash_theme = str(SettingsDB.get_setting("ui_theme", "auto") or "auto").strip().lower()
+    if splash_theme not in {"auto", "light", "dark"}:
+        splash_theme = "auto"
+    if app_settings.get("ui_theme") != splash_theme:
+        update_app_settings({"ui_theme": splash_theme})
+    splash = _create_splash(app, APP_VERSION, theme=splash_theme)
     splash_shown_at: float | None = None
     if splash:
         splash.show()
@@ -133,25 +162,18 @@ def main():
 
     translator = QTranslator()
     app_settings = get_app_settings()
-    lang_code = app_settings.get("ui_language")
+    lang_code = _canonical_ui_language(app_settings.get("ui_language"))
     if not lang_code:
-        lang_code = SettingsDB.get_setting("ui_language")
+        lang_code = _canonical_ui_language(SettingsDB.get_setting("ui_language"))
     if not lang_code:
-        system_locale = QLocale.system().name().lower()
-        system_prefix = system_locale.split("_")[0]
-        if system_prefix in ("de",):
-            lang_code = "de_DE"
-        elif system_prefix in ("nb", "no"):
-            lang_code = "nb_NO"
-        elif system_prefix in ("en",):
-            lang_code = "en"
-        else:
-            lang_code = "en"
+        lang_code = _canonical_ui_language(QLocale.system().name()) or "en"
         update_app_settings({"ui_language": lang_code})
         SettingsDB.set_setting("ui_language", lang_code)
     if lang_code != "en":
-        qm_path = Path(__file__).parent / "i18n" / f"MycoLog_{lang_code}.qm"
-        if translator.load(str(qm_path)):
+        qm_dir = Path(__file__).parent / "i18n"
+        qm_path = qm_dir / f"Sporely_{lang_code}.qm"
+        legacy_qm_path = qm_dir / f"{LEGACY_APP_NAME}_{lang_code}.qm"
+        if translator.load(str(qm_path if qm_path.exists() else legacy_qm_path)):
             app.installTranslator(translator)
             app._translator = translator
 

@@ -6,6 +6,7 @@ from typing import Callable, Optional, Protocol
 
 import requests
 
+from utils.artportalen_submit import ArtportalenWebClient
 from utils.artsobservasjoner_submit import ArtsObservasjonerClient, ArtsObservasjonerWebClient
 
 ProgressCallback = Callable[[str, int, int], None]
@@ -101,6 +102,52 @@ class ArtsobsWebUploader:
         progress_cb: Optional[ProgressCallback] = None,
     ) -> UploadResult:
         client = ArtsObservasjonerWebClient()
+        client.set_cookies_from_browser(cookies)
+        result = client.submit_observation_web(
+            taxon_id=observation["taxon_id"],
+            observed_datetime=observation["observed_datetime"],
+            site_id=observation.get("site_id"),
+            site_name=observation.get("site_name"),
+            latitude=observation.get("latitude"),
+            longitude=observation.get("longitude"),
+            accuracy_meters=observation.get("accuracy_meters"),
+            count=observation.get("count", 1),
+            habitat=observation.get("habitat"),
+            notes=observation.get("notes"),
+            open_comment=observation.get("open_comment"),
+            private_comment=observation.get("private_comment"),
+            interesting_comment=bool(observation.get("interesting_comment")),
+            uncertain=bool(observation.get("uncertain")),
+            unspontaneous=bool(observation.get("unspontaneous")),
+            determination_method=observation.get("determination_method"),
+            habitat_nin2_path=observation.get("habitat_nin2_path"),
+            habitat_substrate_path=observation.get("habitat_substrate_path"),
+            habitat_nin2_note=observation.get("habitat_nin2_note"),
+            habitat_substrate_note=observation.get("habitat_substrate_note"),
+            habitat_grows_on_note=observation.get("habitat_grows_on_note"),
+            habitat_host_scientific=observation.get("habitat_host_scientific"),
+            habitat_host_common_name=observation.get("habitat_host_common_name"),
+            habitat_host_taxon_id=observation.get("habitat_host_taxon_id"),
+            image_paths=image_paths,
+            media_license=observation.get("image_license_code"),
+            progress_cb=progress_cb,
+        )
+        return UploadResult(sighting_id=result.get("sighting_id"), raw=result)
+
+
+class ArtportalenUploader:
+    key = "artportalen"
+    label = "Artportalen"
+    login_url = "https://www.artportalen.se/"
+
+    def upload(
+        self,
+        observation: dict,
+        image_paths: list[str],
+        cookies: dict,
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -> UploadResult:
+        client = ArtportalenWebClient()
         client.set_cookies_from_browser(cookies)
         result = client.submit_observation_web(
             taxon_id=observation["taxon_id"],
@@ -388,6 +435,7 @@ class MushroomObserverUploader:
 
 _UPLOADERS = {
     ArtsobsWebUploader.key: ArtsobsWebUploader(),
+    ArtportalenUploader.key: ArtportalenUploader(),
     INaturalistUploader.key: INaturalistUploader(),
     MushroomObserverUploader.key: MushroomObserverUploader(),
 }

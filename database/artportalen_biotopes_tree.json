@@ -1,0 +1,5934 @@
+[
+  {
+    "id": 1,
+    "name": "MARKSLAG",
+    "children": [
+      {
+        "id": 2,
+        "name": "Öppen fastmark - med eller utan enstaka träd",
+        "children": [
+          {
+            "id": 3,
+            "name": "Blottat mark - utan träd och ej slutet växttäcke",
+            "children": [
+              {
+                "id": 4,
+                "name": "Glaciär och glaciärförland",
+                "children": [
+                  {
+                    "id": 5,
+                    "name": "Glaciär"
+                  },
+                  {
+                    "id": 6,
+                    "name": "Glaciärförland"
+                  }
+                ]
+              },
+              {
+                "id": 7,
+                "name": "Öppen klippa",
+                "children": [
+                  {
+                    "id": 8,
+                    "name": "Klippa vid havet",
+                    "children": [
+                      {
+                        "id": 9,
+                        "name": "Kusthäll"
+                      },
+                      {
+                        "id": 10,
+                        "name": "Kustbrant"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 11,
+                    "name": "Klippa vid sötvatten"
+                  },
+                  {
+                    "id": 12,
+                    "name": "Klippa vid fors"
+                  }
+                ]
+              },
+              {
+                "id": 13,
+                "name": "Öppen blockmark",
+                "children": [
+                  {
+                    "id": 14,
+                    "name": "Blockstrand vid havet"
+                  },
+                  {
+                    "id": 15,
+                    "name": "Blockstrand vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 16,
+                "name": "Öppen sten-/grusmark",
+                "children": [
+                  {
+                    "id": 17,
+                    "name": "Sten/grusstrand vid havet"
+                  },
+                  {
+                    "id": 18,
+                    "name": "Sten/grusstrand vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 19,
+                "name": "Öppen sand",
+                "children": [
+                  {
+                    "id": 20,
+                    "name": "Vit dyn",
+                    "children": [
+                      {
+                        "id": 21,
+                        "name": "Vit kustdyn"
+                      },
+                      {
+                        "id": 22,
+                        "name": "Vit inlandsdyn"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 23,
+                    "name": "Sandstrand vid havet"
+                  },
+                  {
+                    "id": 24,
+                    "name": "Sandstrand vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 25,
+                "name": "Öppen finjord",
+                "children": [
+                  {
+                    "id": 26,
+                    "name": "Lerstrand vid havet"
+                  },
+                  {
+                    "id": 27,
+                    "name": "Lerstrand vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 28,
+                "name": "Öppen moränmark",
+                "children": [
+                  {
+                    "id": 29,
+                    "name": "Moränstrand vid havet"
+                  },
+                  {
+                    "id": 30,
+                    "name": "Moränstrand vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 31,
+                "name": "Öppen rasmark",
+                "children": [
+                  {
+                    "id": 32,
+                    "name": "Blockrasmark"
+                  },
+                  {
+                    "id": 33,
+                    "name": "Sten/grusrasmark"
+                  },
+                  {
+                    "id": 34,
+                    "name": "Sandrasmark"
+                  }
+                ]
+              },
+              {
+                "id": 35,
+                "name": "Öppen jordbrant",
+                "children": [
+                  {
+                    "id": 36,
+                    "name": "Öppen jordbrant vid havet"
+                  },
+                  {
+                    "id": 37,
+                    "name": "Öppen jordbrant vid sötvatten"
+                  }
+                ]
+              },
+              {
+                "id": 38,
+                "name": "Grotta"
+              },
+              {
+                "id": 39,
+                "name": "Öppen kemisk avlagring",
+                "children": [
+                  {
+                    "id": 40,
+                    "name": "Kalkblekefält"
+                  },
+                  {
+                    "id": 41,
+                    "name": "Kalktuff"
+                  }
+                ]
+              },
+              {
+                "id": 42,
+                "name": "Öppen organisk avlagring",
+                "children": [
+                  {
+                    "id": 43,
+                    "name": "Blottad torv"
+                  },
+                  {
+                    "id": 44,
+                    "name": "Driftvall vid havet"
+                  },
+                  {
+                    "id": 45,
+                    "name": "Driftvall vid sötvatten"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 46,
+            "name": "Gräs- och rismark i låglandet",
+            "children": [
+              {
+                "id": 47,
+                "name": "Hällmarksmosaik",
+                "children": [
+                  {
+                    "id": 48,
+                    "name": "Hällmarksmosaik med tall"
+                  },
+                  {
+                    "id": 49,
+                    "name": "Hällmarksmosaik med ek"
+                  },
+                  {
+                    "id": 50,
+                    "name": "Hällmarksmosaik med björk"
+                  },
+                  {
+                    "id": 51,
+                    "name": "Hällmarksmosaik med enbuskar"
+                  },
+                  {
+                    "id": 52,
+                    "name": "Klipphed",
+                    "children": [
+                      {
+                        "id": 53,
+                        "name": "Klipphed med tall"
+                      },
+                      {
+                        "id": 54,
+                        "name": "Klipphed med ek"
+                      },
+                      {
+                        "id": 55,
+                        "name": "Klipphed med björk"
+                      },
+                      {
+                        "id": 56,
+                        "name": "Klipphed med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 57,
+                    "name": "Klippäng",
+                    "children": [
+                      {
+                        "id": 58,
+                        "name": "Klippäng med tall"
+                      },
+                      {
+                        "id": 59,
+                        "name": "Klippäng med ek"
+                      },
+                      {
+                        "id": 60,
+                        "name": "Klippäng med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 61,
+                    "name": "Alvarmark",
+                    "children": [
+                      {
+                        "id": 62,
+                        "name": "Alvarmark med tall"
+                      },
+                      {
+                        "id": 63,
+                        "name": "Alvar med enbuskar"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 64,
+                "name": "Hed",
+                "children": [
+                  {
+                    "id": 65,
+                    "name": "Hed med tall"
+                  },
+                  {
+                    "id": 66,
+                    "name": "Hed med ek"
+                  },
+                  {
+                    "id": 67,
+                    "name": "Hed med bok"
+                  },
+                  {
+                    "id": 68,
+                    "name": "Hed med björk"
+                  },
+                  {
+                    "id": 69,
+                    "name": "Hed med buskar"
+                  },
+                  {
+                    "id": 70,
+                    "name": "Hed med enbuskar"
+                  },
+                  {
+                    "id": 71,
+                    "name": "Torr-frisk hed",
+                    "children": [
+                      {
+                        "id": 72,
+                        "name": "Ljunghed"
+                      },
+                      {
+                        "id": 73,
+                        "name": "Lavhed"
+                      },
+                      {
+                        "id": 74,
+                        "name": "Torr-frisk hed med tall"
+                      },
+                      {
+                        "id": 75,
+                        "name": "Torr-frisk hed med ek"
+                      },
+                      {
+                        "id": 76,
+                        "name": "Torr-frisk hed med bok"
+                      },
+                      {
+                        "id": 77,
+                        "name": "Torr-frisk hed med björk"
+                      },
+                      {
+                        "id": 78,
+                        "name": "Torr-frisk hed med buskar"
+                      },
+                      {
+                        "id": 79,
+                        "name": "Torr-frisk hed med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 80,
+                    "name": "Fukthed",
+                    "children": [
+                      {
+                        "id": 81,
+                        "name": "Klockljungshed"
+                      },
+                      {
+                        "id": 82,
+                        "name": "Fukthed med björk"
+                      },
+                      {
+                        "id": 83,
+                        "name": "Fukted med buskar"
+                      },
+                      {
+                        "id": 84,
+                        "name": "Fukthed med enbuskar"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 85,
+                "name": "Torr gräsmark",
+                "children": [
+                  {
+                    "id": 86,
+                    "name": "Torr gräsmark med tall"
+                  },
+                  {
+                    "id": 87,
+                    "name": "Torr gräsmark med ek"
+                  },
+                  {
+                    "id": 88,
+                    "name": "Torr gräsmark med björk"
+                  },
+                  {
+                    "id": 89,
+                    "name": "Torr gräsmark med buskar"
+                  },
+                  {
+                    "id": 90,
+                    "name": "Torr gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 91,
+                    "name": "Sandgräsmark",
+                    "children": [
+                      {
+                        "id": 92,
+                        "name": "Silikatgräsmark på sand"
+                      },
+                      {
+                        "id": 93,
+                        "name": "Sandstäpp"
+                      },
+                      {
+                        "id": 94,
+                        "name": "Grå dyn"
+                      },
+                      {
+                        "id": 95,
+                        "name": "Dynhed"
+                      },
+                      {
+                        "id": 96,
+                        "name": "Sandgräsmark med tall"
+                      },
+                      {
+                        "id": 97,
+                        "name": "Sandgräsmark med ek"
+                      },
+                      {
+                        "id": 98,
+                        "name": "Sandgräsmark med björk"
+                      },
+                      {
+                        "id": 99,
+                        "name": "Sandgräsmark med buskar"
+                      },
+                      {
+                        "id": 100,
+                        "name": "Sandgräsmark med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 101,
+                    "name": "Torr silikatgräsmark",
+                    "children": [
+                      {
+                        "id": 102,
+                        "name": "Torr silikatgräsmark med tall"
+                      },
+                      {
+                        "id": 103,
+                        "name": "Torr silikatgräsmark med ek"
+                      },
+                      {
+                        "id": 104,
+                        "name": "Torr silikatgräsmark med bok"
+                      },
+                      {
+                        "id": 105,
+                        "name": "Torr silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 106,
+                        "name": "Torr silikatgräsmark med buskar"
+                      },
+                      {
+                        "id": 107,
+                        "name": "Torr silikatgräsmark med slån"
+                      },
+                      {
+                        "id": 108,
+                        "name": "Torr silikatgräsmark med rosor"
+                      },
+                      {
+                        "id": 109,
+                        "name": "Torr silikatgräsmark med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 110,
+                    "name": "Torr kalkgräsmark",
+                    "children": [
+                      {
+                        "id": 111,
+                        "name": "Torr kalkgräsmark med tall"
+                      },
+                      {
+                        "id": 112,
+                        "name": "Torr kalkgräsmark med ek"
+                      },
+                      {
+                        "id": 113,
+                        "name": "Torr kalkgräsmark med buskar"
+                      },
+                      {
+                        "id": 114,
+                        "name": "Torr kalkgräsmark med slån"
+                      },
+                      {
+                        "id": 115,
+                        "name": "Torr kalkgräsmark med rosor"
+                      },
+                      {
+                        "id": 116,
+                        "name": "Torr kalkgräsmark med enbuskar"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 117,
+                "name": "Frisk gräsmark",
+                "children": [
+                  {
+                    "id": 118,
+                    "name": "Frisk gräsmark med gran"
+                  },
+                  {
+                    "id": 119,
+                    "name": "Frisk gräsmark med lövträd"
+                  },
+                  {
+                    "id": 120,
+                    "name": "Frisk gräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 121,
+                    "name": "Frisk gräsmark med ek"
+                  },
+                  {
+                    "id": 122,
+                    "name": "Frisk gräsmark med bok"
+                  },
+                  {
+                    "id": 123,
+                    "name": "Frisk gräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 124,
+                    "name": "Frisk gräsmark med björk"
+                  },
+                  {
+                    "id": 125,
+                    "name": "Frisk gräsmark med buskar"
+                  },
+                  {
+                    "id": 126,
+                    "name": "Frisk gräsmark med slån"
+                  },
+                  {
+                    "id": 127,
+                    "name": "Frisk gräsmark med rosor"
+                  },
+                  {
+                    "id": 128,
+                    "name": "Frisk gräsmark med björnbär"
+                  },
+                  {
+                    "id": 129,
+                    "name": "Frisk gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 130,
+                    "name": "Frisk silikatgräsmark",
+                    "children": [
+                      {
+                        "id": 131,
+                        "name": "Frisk silikatgräsmark med gran"
+                      },
+                      {
+                        "id": 132,
+                        "name": "Frisk silikatgräsmark med lövträd"
+                      },
+                      {
+                        "id": 133,
+                        "name": "Frisk silikatgräsmark med ädellövträd"
+                      },
+                      {
+                        "id": 134,
+                        "name": "Frisk silikatgräsmark med ek"
+                      },
+                      {
+                        "id": 135,
+                        "name": "Frisk silikatgräsmark med bok"
+                      },
+                      {
+                        "id": 136,
+                        "name": "Frisk silikatgräsmark med hassel"
+                      },
+                      {
+                        "id": 137,
+                        "name": "Frisk silikatgräsmark med triviallövträd"
+                      },
+                      {
+                        "id": 138,
+                        "name": "Frisk silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 139,
+                        "name": "Frisk silikatgräsmark med buskar"
+                      },
+                      {
+                        "id": 140,
+                        "name": "Frisk silikatgräsmark med slån"
+                      },
+                      {
+                        "id": 141,
+                        "name": "Frisk silikatgräsmark med rosor"
+                      },
+                      {
+                        "id": 142,
+                        "name": "Frisk silikatgräsmark med björnbär"
+                      },
+                      {
+                        "id": 143,
+                        "name": "Frisk silikatgräsmark med enbuskar"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 144,
+                    "name": "Frisk kalkgräsmark",
+                    "children": [
+                      {
+                        "id": 145,
+                        "name": "Frisk kalkgräsmark med gran"
+                      },
+                      {
+                        "id": 146,
+                        "name": "Frisk kalkgräsmark med lövträd"
+                      },
+                      {
+                        "id": 147,
+                        "name": "Frisk kalkgräsmark med ädellövträd"
+                      },
+                      {
+                        "id": 148,
+                        "name": "Frisk kalkgräsmark med ek"
+                      },
+                      {
+                        "id": 149,
+                        "name": "Frisk kalkgräsmark med ask"
+                      },
+                      {
+                        "id": 150,
+                        "name": "Frisk kalkgräsmark med alm"
+                      },
+                      {
+                        "id": 151,
+                        "name": "Frisk kalkgräsmark med hassel"
+                      },
+                      {
+                        "id": 152,
+                        "name": "Frisk kalkgräsmark med triviallövträd"
+                      },
+                      {
+                        "id": 153,
+                        "name": "Frisk kalkgräsmark med björk"
+                      },
+                      {
+                        "id": 154,
+                        "name": "Frisk kalkgräsmark med buskar"
+                      },
+                      {
+                        "id": 155,
+                        "name": "Frisk kalkgräsmark med slån"
+                      },
+                      {
+                        "id": 156,
+                        "name": "Frisk kalkgräsmark med rosor"
+                      },
+                      {
+                        "id": 157,
+                        "name": "Frisk kalkgräsmark med björnbär"
+                      },
+                      {
+                        "id": 158,
+                        "name": "Frisk kalkgräsmark med enbuskar"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 159,
+                "name": "Fuktig gräsmark",
+                "children": [
+                  {
+                    "id": 160,
+                    "name": "Fuktig gräsmark med gran"
+                  },
+                  {
+                    "id": 161,
+                    "name": "Fuktig gräsmark med lövträd"
+                  },
+                  {
+                    "id": 162,
+                    "name": "Fuktig gräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 163,
+                    "name": "Fuktig gräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 164,
+                    "name": "Fuktig gräsmark med björk"
+                  },
+                  {
+                    "id": 165,
+                    "name": "Fuktig gräsmark med al"
+                  },
+                  {
+                    "id": 166,
+                    "name": "Fuktig gräsmark med buskar"
+                  },
+                  {
+                    "id": 167,
+                    "name": "Fuktig gräsmark med vide"
+                  },
+                  {
+                    "id": 168,
+                    "name": "Sandfuktmark",
+                    "children": [
+                      {
+                        "id": 169,
+                        "name": "Silikatsandfuktmark"
+                      },
+                      {
+                        "id": 170,
+                        "name": "Kalksandfuktmark"
+                      },
+                      {
+                        "id": 171,
+                        "name": "Sandfuktmark med tall"
+                      },
+                      {
+                        "id": 172,
+                        "name": "Sandfuktmark med lövträd"
+                      },
+                      {
+                        "id": 173,
+                        "name": "Sandfuktmark med ädellöv"
+                      },
+                      {
+                        "id": 174,
+                        "name": "Sandfuktmark med triviallövträd"
+                      },
+                      {
+                        "id": 175,
+                        "name": "Sandfuktmark med björk"
+                      },
+                      {
+                        "id": 176,
+                        "name": "Sandfuktmark med al"
+                      },
+                      {
+                        "id": 177,
+                        "name": "Sandfuktmark med buskar"
+                      },
+                      {
+                        "id": 178,
+                        "name": "Sandfuktmark med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 179,
+                    "name": "Fuktig silikatgräsmark",
+                    "children": [
+                      {
+                        "id": 180,
+                        "name": "Fuktig silikatgräsmark med lövträd"
+                      },
+                      {
+                        "id": 181,
+                        "name": "Fuktig silikatgräsmark med ädellövträd"
+                      },
+                      {
+                        "id": 182,
+                        "name": "Fuktig silikatgräsmark med triviallövträd"
+                      },
+                      {
+                        "id": 183,
+                        "name": "Fuktig silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 184,
+                        "name": "Fuktig silikatgräsmark med al"
+                      },
+                      {
+                        "id": 185,
+                        "name": "Fuktig silikatgräsmark med buskar"
+                      },
+                      {
+                        "id": 186,
+                        "name": "Fuktig silikatgräsmark med björnbär"
+                      },
+                      {
+                        "id": 187,
+                        "name": "Fuktig silikatgräsmark med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 188,
+                    "name": "Fuktig kalkgräsmark",
+                    "children": [
+                      {
+                        "id": 189,
+                        "name": "Fuktig kalkgräsmark med gran"
+                      },
+                      {
+                        "id": 190,
+                        "name": "Fuktig kalkgräsmark med lövträd"
+                      },
+                      {
+                        "id": 191,
+                        "name": "Fuktig kalkgräsmark med ädellövträd"
+                      },
+                      {
+                        "id": 192,
+                        "name": "Fuktig kalkgräsmark med triviallövträd"
+                      },
+                      {
+                        "id": 193,
+                        "name": "Fuktig kalkgräsmark med björk"
+                      },
+                      {
+                        "id": 194,
+                        "name": "Fuktig kalkgräsmark med al"
+                      },
+                      {
+                        "id": 195,
+                        "name": "Fuktig kalkgräsmark med buskar"
+                      },
+                      {
+                        "id": 196,
+                        "name": "Fuktig kalkgräsmark med björnbär"
+                      },
+                      {
+                        "id": 197,
+                        "name": "Fuktig kalkgräsmark med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 198,
+                    "name": "Högörtäng i låglandet",
+                    "children": [
+                      {
+                        "id": 199,
+                        "name": "Högörtäng med buskar"
+                      },
+                      {
+                        "id": 200,
+                        "name": "Högörtäng med vide"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 201,
+                "name": "Översvämningspräglad äng",
+                "children": [
+                  {
+                    "id": 202,
+                    "name": "Svämäng vid havet"
+                  },
+                  {
+                    "id": 203,
+                    "name": "Svämäng vid sötvatten"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 204,
+            "name": "Alpin gräs- och rismark",
+            "children": [
+              {
+                "id": 205,
+                "name": "Alpin hed",
+                "children": [
+                  {
+                    "id": 206,
+                    "name": "Alpin hed med björk"
+                  },
+                  {
+                    "id": 207,
+                    "name": "Alpin hed med buskar"
+                  },
+                  {
+                    "id": 208,
+                    "name": "Alpin hed med enbuskar"
+                  },
+                  {
+                    "id": 209,
+                    "name": "Alpin hed med björkbuskar"
+                  },
+                  {
+                    "id": 210,
+                    "name": "Alpin busklavhed",
+                    "children": [
+                      {
+                        "id": 211,
+                        "name": "Alpin busklavhed med björk"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 212,
+                    "name": "Alpin rished",
+                    "children": [
+                      {
+                        "id": 213,
+                        "name": "Alpin kalkrished"
+                      },
+                      {
+                        "id": 214,
+                        "name": "Alpin blåbärhed"
+                      },
+                      {
+                        "id": 215,
+                        "name": "Alpin rished med björk"
+                      },
+                      {
+                        "id": 216,
+                        "name": "Alpin rished med buskar"
+                      },
+                      {
+                        "id": 217,
+                        "name": "Alpin rished med enbuskar"
+                      },
+                      {
+                        "id": 218,
+                        "name": "Alpin rished med björkbuskar"
+                      },
+                      {
+                        "id": 710,
+                        "name": "Alpin kråkrished"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 219,
+                    "name": "Alpin vide/dvärgbjörkshed",
+                    "children": [
+                      {
+                        "id": 220,
+                        "name": "Alpin vide/dvärgbjörkhed med björk"
+                      },
+                      {
+                        "id": 221,
+                        "name": "Alpin vide/dvärbjörkshed med buskar"
+                      },
+                      {
+                        "id": 222,
+                        "name": "Alpin vide/dvärbjörkshed med enbuskar"
+                      },
+                      {
+                        "id": 223,
+                        "name": "Alpin vide/dvärbjörkshed med björkbuskar"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 224,
+                "name": "Alpin gräsmark",
+                "children": [
+                  {
+                    "id": 225,
+                    "name": "Alpin gräsmark med björk"
+                  },
+                  {
+                    "id": 226,
+                    "name": "Alpin gräsmark med buskar"
+                  },
+                  {
+                    "id": 227,
+                    "name": "Alpin gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 228,
+                    "name": "Alpin gräsmark med björkbuskar"
+                  },
+                  {
+                    "id": 229,
+                    "name": "Alpin gräsmark med vide"
+                  },
+                  {
+                    "id": 230,
+                    "name": "Sur alpin gräsmark",
+                    "children": [
+                      {
+                        "id": 231,
+                        "name": "Sur alpin gräsmark med björk"
+                      },
+                      {
+                        "id": 232,
+                        "name": "Sur alpin gräsmark med buskar"
+                      },
+                      {
+                        "id": 233,
+                        "name": "Sur alpin gräsmark med enbuskar"
+                      },
+                      {
+                        "id": 234,
+                        "name": "Sur alpin gräsmark med björkbuskar"
+                      },
+                      {
+                        "id": 235,
+                        "name": "Sur alpin gräsmark med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 236,
+                    "name": "Kalkrik alpin gräsmark",
+                    "children": [
+                      {
+                        "id": 237,
+                        "name": "Kalkrik alpin gräsmark med björk"
+                      },
+                      {
+                        "id": 238,
+                        "name": "Kalkrik alpin gräsmark med buskar"
+                      },
+                      {
+                        "id": 239,
+                        "name": "Kalkrik alpin gräsmark med enbuskar"
+                      },
+                      {
+                        "id": 240,
+                        "name": "Kalkrik alpin gräsmark med björkbuskar"
+                      },
+                      {
+                        "id": 241,
+                        "name": "Kalkrik alpin gräsmark med vide"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 242,
+                "name": "Alpin högörtäng",
+                "children": [
+                  {
+                    "id": 243,
+                    "name": "Alpin högörtäng med björk"
+                  },
+                  {
+                    "id": 244,
+                    "name": "Alpin högörtäng med buskar"
+                  },
+                  {
+                    "id": 245,
+                    "name": "Alpin högörtäng med björkbuskar"
+                  },
+                  {
+                    "id": 246,
+                    "name": "Alpin högörtäng med vide"
+                  }
+                ]
+              },
+              {
+                "id": 247,
+                "name": "Högfjällsmosaik"
+              },
+              {
+                "id": 248,
+                "name": "Snölega",
+                "children": [
+                  {
+                    "id": 249,
+                    "name": "Tidig snölega"
+                  },
+                  {
+                    "id": 250,
+                    "name": "Intermediär snölega"
+                  },
+                  {
+                    "id": 251,
+                    "name": "Sen snölega"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 252,
+        "name": "Skogsmark",
+        "children": [
+          {
+            "id": 253,
+            "name": "Häll- och blockskog",
+            "children": [
+              {
+                "id": 254,
+                "name": "Hällmarksskog",
+                "children": [
+                  {
+                    "id": 255,
+                    "name": "Hällmarksbarrskog"
+                  },
+                  {
+                    "id": 256,
+                    "name": "Hällmarkstallskog"
+                  },
+                  {
+                    "id": 257,
+                    "name": "Hällmarksblandskog"
+                  },
+                  {
+                    "id": 258,
+                    "name": "Hällmarkslövskog"
+                  },
+                  {
+                    "id": 259,
+                    "name": "Hällmarksekskog"
+                  },
+                  {
+                    "id": 260,
+                    "name": "Hällmarksbjörkskog"
+                  },
+                  {
+                    "id": 261,
+                    "name": "Hällmarksaspskog"
+                  }
+                ]
+              },
+              {
+                "id": 262,
+                "name": "Skog på kalkhällmark",
+                "children": [
+                  {
+                    "id": 263,
+                    "name": "Barrskog på kalkhällmark"
+                  },
+                  {
+                    "id": 264,
+                    "name": "Tallskog på kalkhällmark"
+                  },
+                  {
+                    "id": 265,
+                    "name": "Blandskog på kalkhällmark"
+                  },
+                  {
+                    "id": 266,
+                    "name": "Lövskog på kalkhällmark"
+                  },
+                  {
+                    "id": 267,
+                    "name": "Ädellövskog på kalkhällmark"
+                  },
+                  {
+                    "id": 268,
+                    "name": "Triviallövskog på kalkhällmark"
+                  }
+                ]
+              },
+              {
+                "id": 269,
+                "name": "Skog på blockmark",
+                "children": [
+                  {
+                    "id": 270,
+                    "name": "Barrskog på blockmark"
+                  },
+                  {
+                    "id": 271,
+                    "name": "Tallskog på blockmark"
+                  },
+                  {
+                    "id": 272,
+                    "name": "Blandskog på blockmark"
+                  },
+                  {
+                    "id": 273,
+                    "name": "Lövskog på blockmark"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 274,
+            "name": "Sandskog",
+            "children": [
+              {
+                "id": 275,
+                "name": "Sandbarrskog"
+              },
+              {
+                "id": 276,
+                "name": "Sandgranskog"
+              },
+              {
+                "id": 277,
+                "name": "Sandtallskog"
+              },
+              {
+                "id": 278,
+                "name": "Sandblandskog"
+              },
+              {
+                "id": 279,
+                "name": "Sandlövskog"
+              },
+              {
+                "id": 280,
+                "name": "Sandädellövskog"
+              },
+              {
+                "id": 281,
+                "name": "Sandekskog"
+              },
+              {
+                "id": 282,
+                "name": "Sandtriviallövskog"
+              },
+              {
+                "id": 283,
+                "name": "Sandbjörkskog"
+              },
+              {
+                "id": 284,
+                "name": "Sandalskog"
+              },
+              {
+                "id": 285,
+                "name": "Sanddynskog",
+                "children": [
+                  {
+                    "id": 286,
+                    "name": "Dynbarrskog"
+                  },
+                  {
+                    "id": 287,
+                    "name": "Dyntallskog"
+                  },
+                  {
+                    "id": 288,
+                    "name": "Dynblandskog"
+                  },
+                  {
+                    "id": 289,
+                    "name": "Dynlövskog"
+                  },
+                  {
+                    "id": 290,
+                    "name": "Dynekskog"
+                  },
+                  {
+                    "id": 291,
+                    "name": "Dyntriviallövskog"
+                  },
+                  {
+                    "id": 292,
+                    "name": "Dynbjörkskog"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 293,
+            "name": "Brantskog",
+            "children": [
+              {
+                "id": 294,
+                "name": "Barrskog i branter"
+              },
+              {
+                "id": 295,
+                "name": "Granskog i branter"
+              },
+              {
+                "id": 296,
+                "name": "Tallskog i branter"
+              },
+              {
+                "id": 297,
+                "name": "Blandskog i branter"
+              },
+              {
+                "id": 298,
+                "name": "Lövskog i branter"
+              },
+              {
+                "id": 299,
+                "name": "Ädellövskog i branter"
+              },
+              {
+                "id": 300,
+                "name": "Ekskog i branter"
+              },
+              {
+                "id": 301,
+                "name": "Bokskog i branter"
+              },
+              {
+                "id": 302,
+                "name": "Triviallövskog i branter"
+              }
+            ]
+          },
+          {
+            "id": 303,
+            "name": "Hedskog",
+            "children": [
+              {
+                "id": 304,
+                "name": "Hedbarrskog"
+              },
+              {
+                "id": 305,
+                "name": "Hedgranskog"
+              },
+              {
+                "id": 306,
+                "name": "Hedtallskog"
+              },
+              {
+                "id": 307,
+                "name": "Hedblandskog"
+              },
+              {
+                "id": 308,
+                "name": "Hedlövskog"
+              },
+              {
+                "id": 309,
+                "name": "Hedekskog"
+              },
+              {
+                "id": 310,
+                "name": "Hedbokskog"
+              },
+              {
+                "id": 311,
+                "name": "Hedtriviallövskog"
+              },
+              {
+                "id": 312,
+                "name": "Hedbjörkskog"
+              },
+              {
+                "id": 313,
+                "name": "Hedaspskog"
+              },
+              {
+                "id": 314,
+                "name": "Lavhedskog",
+                "children": [
+                  {
+                    "id": 315,
+                    "name": "Lavtallskog"
+                  }
+                ]
+              },
+              {
+                "id": 316,
+                "name": "Gräshedskog",
+                "children": [
+                  {
+                    "id": 317,
+                    "name": "Gräsbarrskog"
+                  },
+                  {
+                    "id": 318,
+                    "name": "Gräsgranskog"
+                  },
+                  {
+                    "id": 319,
+                    "name": "Grästallskog"
+                  },
+                  {
+                    "id": 320,
+                    "name": "Gräsblandskog"
+                  },
+                  {
+                    "id": 321,
+                    "name": "Gräslövskog"
+                  },
+                  {
+                    "id": 322,
+                    "name": "Gräsekskog"
+                  },
+                  {
+                    "id": 323,
+                    "name": "Gräsbokskog"
+                  },
+                  {
+                    "id": 324,
+                    "name": "Grästriviallövskog"
+                  },
+                  {
+                    "id": 325,
+                    "name": "Gräsbjörkskog"
+                  },
+                  {
+                    "id": 326,
+                    "name": "Gräsaspskog"
+                  }
+                ]
+              },
+              {
+                "id": 327,
+                "name": "Rishedskog",
+                "children": [
+                  {
+                    "id": 328,
+                    "name": "Blåbärsbarrskog"
+                  },
+                  {
+                    "id": 329,
+                    "name": "Blåbärsgranskog"
+                  },
+                  {
+                    "id": 330,
+                    "name": "Lingontallskog"
+                  },
+                  {
+                    "id": 331,
+                    "name": "Blåbärsblandskog"
+                  },
+                  {
+                    "id": 332,
+                    "name": "Blåbärslövskog"
+                  },
+                  {
+                    "id": 333,
+                    "name": "Blåbärsekskog"
+                  },
+                  {
+                    "id": 334,
+                    "name": "Blåbärsbokskog"
+                  },
+                  {
+                    "id": 335,
+                    "name": "Blåbärstriviallövskog"
+                  },
+                  {
+                    "id": 336,
+                    "name": "Blåbärsbjörkskog"
+                  },
+                  {
+                    "id": 337,
+                    "name": "Blåbärsaspskog"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 338,
+            "name": "Ängsskog",
+            "children": [
+              {
+                "id": 339,
+                "name": "Ängsbarrskog"
+              },
+              {
+                "id": 340,
+                "name": "Ängsgranskog"
+              },
+              {
+                "id": 341,
+                "name": "Ängstallskog"
+              },
+              {
+                "id": 342,
+                "name": "Ängsblandskog"
+              },
+              {
+                "id": 343,
+                "name": "Ängslövskog"
+              },
+              {
+                "id": 344,
+                "name": "Ängsädellövskog"
+              },
+              {
+                "id": 345,
+                "name": "Ängsekskog"
+              },
+              {
+                "id": 346,
+                "name": "Ängsbokskog"
+              },
+              {
+                "id": 347,
+                "name": "Ängsaskskog"
+              },
+              {
+                "id": 348,
+                "name": "Ängsalmskog"
+              },
+              {
+                "id": 349,
+                "name": "Ängstriviallövskog"
+              },
+              {
+                "id": 350,
+                "name": "Ängsbjörkskog"
+              },
+              {
+                "id": 351,
+                "name": "Ängsalskog"
+              },
+              {
+                "id": 352,
+                "name": "Ängsaspskog"
+              },
+              {
+                "id": 353,
+                "name": "Lågörtängsskog",
+                "children": [
+                  {
+                    "id": 354,
+                    "name": "Lågörtbarrskog"
+                  },
+                  {
+                    "id": 355,
+                    "name": "Lågörtgranskog"
+                  },
+                  {
+                    "id": 356,
+                    "name": "Lågörttallskog"
+                  },
+                  {
+                    "id": 357,
+                    "name": "Lågörtblandskog"
+                  },
+                  {
+                    "id": 358,
+                    "name": "Lågörtlövskog"
+                  },
+                  {
+                    "id": 359,
+                    "name": "Lågörtädellövskog"
+                  },
+                  {
+                    "id": 360,
+                    "name": "Lågörtekskog"
+                  },
+                  {
+                    "id": 361,
+                    "name": "Lågörtbokskog"
+                  },
+                  {
+                    "id": 362,
+                    "name": "Lågörtaskskog"
+                  },
+                  {
+                    "id": 363,
+                    "name": "Lågörtalmskog"
+                  }
+                ]
+              },
+              {
+                "id": 364,
+                "name": "Högörtängsskog",
+                "children": [
+                  {
+                    "id": 365,
+                    "name": "Högörtbarrskog"
+                  },
+                  {
+                    "id": 366,
+                    "name": "Högörtgranskog"
+                  },
+                  {
+                    "id": 367,
+                    "name": "Högörttallskog"
+                  },
+                  {
+                    "id": 368,
+                    "name": "Högörtblandskog"
+                  },
+                  {
+                    "id": 369,
+                    "name": "Högörtlövskog"
+                  },
+                  {
+                    "id": 370,
+                    "name": "Högörtädellövskog"
+                  },
+                  {
+                    "id": 371,
+                    "name": "Högörtekskog"
+                  },
+                  {
+                    "id": 372,
+                    "name": "Högörtbokskog"
+                  },
+                  {
+                    "id": 373,
+                    "name": "Högörtaskskog"
+                  },
+                  {
+                    "id": 374,
+                    "name": "Högörtalmskog"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 375,
+            "name": "Fjällskog",
+            "children": [
+              {
+                "id": 376,
+                "name": "Fjällblandskog"
+              },
+              {
+                "id": 377,
+                "name": "Fjällbjörkskog"
+              },
+              {
+                "id": 378,
+                "name": "Fjällskog av lav-ristyp",
+                "children": [
+                  {
+                    "id": 379,
+                    "name": "Fjällblandskog av lav-ristyp"
+                  },
+                  {
+                    "id": 380,
+                    "name": "Fjällbjörkskog av lav-ristyp"
+                  }
+                ]
+              },
+              {
+                "id": 381,
+                "name": "Fjällskog av lågörtstyp",
+                "children": [
+                  {
+                    "id": 382,
+                    "name": "Fjällblandskog av lågörttyp"
+                  },
+                  {
+                    "id": 383,
+                    "name": "Fjällbjörkskog av lågörttyp"
+                  }
+                ]
+              },
+              {
+                "id": 384,
+                "name": "Fjällskog av högörtstyp",
+                "children": [
+                  {
+                    "id": 385,
+                    "name": "Fjällblandskog av högörttyp"
+                  },
+                  {
+                    "id": 386,
+                    "name": "Fjällbjörkskog av högörttyp"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 387,
+            "name": "Sumpskog",
+            "children": [
+              {
+                "id": 388,
+                "name": "Barrsumpskog"
+              },
+              {
+                "id": 389,
+                "name": "Gransumpskog"
+              },
+              {
+                "id": 390,
+                "name": "Tallsumpskog"
+              },
+              {
+                "id": 391,
+                "name": "Blandsumpskog"
+              },
+              {
+                "id": 392,
+                "name": "Lövsumpskog"
+              },
+              {
+                "id": 393,
+                "name": "Ädellövsumpskog"
+              },
+              {
+                "id": 394,
+                "name": "Asksumpskog"
+              },
+              {
+                "id": 395,
+                "name": "Björksumpskog"
+              },
+              {
+                "id": 396,
+                "name": "Alsumpskog"
+              }
+            ]
+          },
+          {
+            "id": 397,
+            "name": "Landhöjningsskog",
+            "children": [
+              {
+                "id": 398,
+                "name": "Landhöjningsblandskog"
+              },
+              {
+                "id": 399,
+                "name": "Landhöjningslövskog"
+              },
+              {
+                "id": 400,
+                "name": "Landhöjningstriviallövskog"
+              },
+              {
+                "id": 401,
+                "name": "Landhöjningsbjörkskog"
+              },
+              {
+                "id": 402,
+                "name": "Landhöjningsalskog"
+              }
+            ]
+          },
+          {
+            "id": 403,
+            "name": "Svämskog",
+            "children": [
+              {
+                "id": 404,
+                "name": "Svämgranskog"
+              },
+              {
+                "id": 405,
+                "name": "Svämblandskog"
+              },
+              {
+                "id": 406,
+                "name": "Svämlövskog"
+              },
+              {
+                "id": 407,
+                "name": "Svämädellövskog"
+              },
+              {
+                "id": 408,
+                "name": "Svämekskog"
+              },
+              {
+                "id": 409,
+                "name": "Svämaskskog"
+              },
+              {
+                "id": 410,
+                "name": "Svämtriviallövskog"
+              },
+              {
+                "id": 411,
+                "name": "Svämbjörkskog"
+              },
+              {
+                "id": 412,
+                "name": "Svämalskog"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 413,
+        "name": "Våtmark",
+        "children": [
+          {
+            "id": 414,
+            "name": "Myr",
+            "children": [
+              {
+                "id": 415,
+                "name": "Mosse",
+                "children": [
+                  {
+                    "id": 416,
+                    "name": "Mosse med tall"
+                  },
+                  {
+                    "id": 417,
+                    "name": "Mosse med björk"
+                  }
+                ]
+              },
+              {
+                "id": 418,
+                "name": "Kärr",
+                "children": [
+                  {
+                    "id": 419,
+                    "name": "Kärr med barrträd"
+                  },
+                  {
+                    "id": 420,
+                    "name": "Kärr med gran"
+                  },
+                  {
+                    "id": 421,
+                    "name": "Kärr med tall"
+                  },
+                  {
+                    "id": 422,
+                    "name": "Kärr med lövträd"
+                  },
+                  {
+                    "id": 423,
+                    "name": "Kärr med ädellövträd"
+                  },
+                  {
+                    "id": 424,
+                    "name": "Kärr med ask"
+                  },
+                  {
+                    "id": 425,
+                    "name": "Kärr med trivallövträd"
+                  },
+                  {
+                    "id": 426,
+                    "name": "Kärr med björk"
+                  },
+                  {
+                    "id": 427,
+                    "name": "Kärr med al"
+                  },
+                  {
+                    "id": 428,
+                    "name": "Kärr med buskar"
+                  },
+                  {
+                    "id": 429,
+                    "name": "Kärr med vide"
+                  },
+                  {
+                    "id": 430,
+                    "name": "Fattigkärr",
+                    "children": [
+                      {
+                        "id": 431,
+                        "name": "Fattigkärr med barrträd"
+                      },
+                      {
+                        "id": 432,
+                        "name": "Fattigkärr med gran"
+                      },
+                      {
+                        "id": 433,
+                        "name": "Fattigkärr med tall"
+                      },
+                      {
+                        "id": 434,
+                        "name": "Fattigkärr med lövträd"
+                      },
+                      {
+                        "id": 435,
+                        "name": "Fattigkärr med trivallövträd"
+                      },
+                      {
+                        "id": 436,
+                        "name": "Fattigkärr med björk"
+                      },
+                      {
+                        "id": 437,
+                        "name": "Fattigkärr med al"
+                      },
+                      {
+                        "id": 438,
+                        "name": "Fattigkärr med buskar"
+                      },
+                      {
+                        "id": 439,
+                        "name": "Fattigkärr med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 440,
+                    "name": "Intermediärt kärr",
+                    "children": [
+                      {
+                        "id": 441,
+                        "name": "Intermediärt kärr med barrträd"
+                      },
+                      {
+                        "id": 442,
+                        "name": "Intermediärt kärr med gran"
+                      },
+                      {
+                        "id": 443,
+                        "name": "Intermediärt kärr med tall"
+                      },
+                      {
+                        "id": 444,
+                        "name": "Intermediärt kärr med lövträd"
+                      },
+                      {
+                        "id": 445,
+                        "name": "Intermediärt kärr med ädellövträd"
+                      },
+                      {
+                        "id": 446,
+                        "name": "Intermediärt kärr med trivallövträd"
+                      },
+                      {
+                        "id": 447,
+                        "name": "Intermediärt kärr med björk"
+                      },
+                      {
+                        "id": 448,
+                        "name": "Intermediärt kärr med al"
+                      },
+                      {
+                        "id": 449,
+                        "name": "Intermediärt kärr med buskar"
+                      },
+                      {
+                        "id": 450,
+                        "name": "Intermediärt kärr med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 451,
+                    "name": "Rikkärr",
+                    "children": [
+                      {
+                        "id": 452,
+                        "name": "Rikkärr med barrträd"
+                      },
+                      {
+                        "id": 453,
+                        "name": "Rikkärr med gran"
+                      },
+                      {
+                        "id": 454,
+                        "name": "Rikkärr med tall"
+                      },
+                      {
+                        "id": 455,
+                        "name": "Rikkärr med lövträd"
+                      },
+                      {
+                        "id": 456,
+                        "name": "Rikkärr med ädellövträd"
+                      },
+                      {
+                        "id": 457,
+                        "name": "Rikkärr med trivallövträd"
+                      },
+                      {
+                        "id": 458,
+                        "name": "Rikkärr med björk"
+                      },
+                      {
+                        "id": 459,
+                        "name": "Rikkärr med al"
+                      },
+                      {
+                        "id": 460,
+                        "name": "Rikkärr med buskar"
+                      },
+                      {
+                        "id": 461,
+                        "name": "Rikkärr med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 462,
+                    "name": "Extremrikkärr",
+                    "children": [
+                      {
+                        "id": 463,
+                        "name": "Extremrikkärr med barrträd"
+                      },
+                      {
+                        "id": 464,
+                        "name": "Extremrikkärr med gran"
+                      },
+                      {
+                        "id": 465,
+                        "name": "Extremrikkärr med tall"
+                      },
+                      {
+                        "id": 466,
+                        "name": "Extremrikkärr med lövträd"
+                      },
+                      {
+                        "id": 467,
+                        "name": "Extremrikkärr med ädellövträd"
+                      },
+                      {
+                        "id": 468,
+                        "name": "Extremrikkärr med trivallövträd"
+                      },
+                      {
+                        "id": 469,
+                        "name": "Extremrikkärr med björk"
+                      },
+                      {
+                        "id": 470,
+                        "name": "Extremrikkärr med al"
+                      },
+                      {
+                        "id": 471,
+                        "name": "Extremrikkärr med buskar"
+                      },
+                      {
+                        "id": 472,
+                        "name": "Extremrikkärr med vide"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 473,
+                    "name": "Källkärr"
+                  }
+                ]
+              },
+              {
+                "id": 474,
+                "name": "Blandmyr (Aapamyr)",
+                "children": [
+                  {
+                    "id": 475,
+                    "name": "Blandmyr med barrträd"
+                  },
+                  {
+                    "id": 476,
+                    "name": "Blandmyr med gran"
+                  },
+                  {
+                    "id": 477,
+                    "name": "Blandmyr med tall"
+                  },
+                  {
+                    "id": 478,
+                    "name": "Blandmyr med trivallövträd"
+                  },
+                  {
+                    "id": 479,
+                    "name": "Blandmyr med björk"
+                  },
+                  {
+                    "id": 480,
+                    "name": "Blandmyr med al"
+                  },
+                  {
+                    "id": 481,
+                    "name": "Blandmyr med buskar"
+                  },
+                  {
+                    "id": 482,
+                    "name": "Blandmyr med vide"
+                  },
+                  {
+                    "id": 483,
+                    "name": "Sträng-flarkmyr",
+                    "children": [
+                      {
+                        "id": 484,
+                        "name": "Sträng-flarkmyr med barrträd"
+                      },
+                      {
+                        "id": 485,
+                        "name": "Sträng-flarkmyr med gran"
+                      },
+                      {
+                        "id": 486,
+                        "name": "Sträng-flarkmyr med tall"
+                      },
+                      {
+                        "id": 487,
+                        "name": "Sträng-flarkmyr med trivallövträd"
+                      },
+                      {
+                        "id": 488,
+                        "name": "Sträng-flarkmyr med björk"
+                      },
+                      {
+                        "id": 489,
+                        "name": "Sträng-flarkmyr med al"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 490,
+                    "name": "Palsmyr"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 491,
+            "name": "Strandvåtmark",
+            "children": [
+              {
+                "id": 492,
+                "name": "Limnisk strandvåtmark",
+                "children": [
+                  {
+                    "id": 493,
+                    "name": "Mad (strandkärr)"
+                  },
+                  {
+                    "id": 494,
+                    "name": "Gungfly"
+                  }
+                ]
+              },
+              {
+                "id": 495,
+                "name": "Marin strandvåtmark"
+              }
+            ]
+          },
+          {
+            "id": 496,
+            "name": "Våtmark,ej i anknytning till sötvattenstränder",
+            "children": [
+              {
+                "id": 497,
+                "name": "Ej torvbildande våtmark i fjällen",
+                "children": [
+                  {
+                    "id": 498,
+                    "name": "Alpint översilningskärr"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 499,
+            "name": "Småvatten (<1 ha)",
+            "children": [
+              {
+                "id": 500,
+                "name": "Småvatten i jordbrukslandskapet"
+              },
+              {
+                "id": 501,
+                "name": "Småvatten i skogen"
+              },
+              {
+                "id": 502,
+                "name": "Småvatten i fjällen"
+              },
+              {
+                "id": 503,
+                "name": "Källa"
+              },
+              {
+                "id": 504,
+                "name": "Hällkar"
+              },
+              {
+                "id": 505,
+                "name": "Glup"
+              },
+              {
+                "id": 506,
+                "name": "Vät"
+              },
+              {
+                "id": 711,
+                "name": "Småvatten i myr"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 507,
+        "name": "Sjö (>1 ha)",
+        "children": [
+          {
+            "id": 508,
+            "name": "Sjöbotten",
+            "children": [
+              {
+                "id": 509,
+                "name": "Vattenstrand",
+                "children": [
+                  {
+                    "id": 510,
+                    "name": "Vattensstrandshårdbotten",
+                    "children": [
+                      {
+                        "id": 511,
+                        "name": "Hårdbottenstrand i näringsfattig sjö"
+                      },
+                      {
+                        "id": 512,
+                        "name": "Hårdbottenstrand i klarvattensjö"
+                      },
+                      {
+                        "id": 513,
+                        "name": "Hårdbottenstrand i brunvattensjö"
+                      },
+                      {
+                        "id": 514,
+                        "name": "Hårdbottenstrand i kalkblekesjö"
+                      },
+                      {
+                        "id": 515,
+                        "name": "Hårdbottenstrand i kransalgssjö"
+                      },
+                      {
+                        "id": 516,
+                        "name": "Hårdbottenstrand i intermediär sjö"
+                      },
+                      {
+                        "id": 517,
+                        "name": "Hårdbottenstrand i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 518,
+                    "name": "Vattensstrand på sand/grus",
+                    "children": [
+                      {
+                        "id": 519,
+                        "name": "Sand/grusstrand i näringsfattig sjö"
+                      },
+                      {
+                        "id": 520,
+                        "name": "Sand/grusstrand i klarvattensjö"
+                      },
+                      {
+                        "id": 521,
+                        "name": "Sand/grusstrand i brunvattensjö"
+                      },
+                      {
+                        "id": 522,
+                        "name": "Sand/grusstrand i kalkblekesjö"
+                      },
+                      {
+                        "id": 523,
+                        "name": "Sand/grusstrand i kransalgssjö"
+                      },
+                      {
+                        "id": 524,
+                        "name": "Sand/grusstrand i intermediär sjö"
+                      },
+                      {
+                        "id": 525,
+                        "name": "Sand/grusstrand i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 526,
+                    "name": "Vattensstrand mjukbotten",
+                    "children": [
+                      {
+                        "id": 527,
+                        "name": "Mjukbottenstrand i näringsfattig sjö"
+                      },
+                      {
+                        "id": 528,
+                        "name": "Mjukbottenstrand i klarvattensjö"
+                      },
+                      {
+                        "id": 529,
+                        "name": "Mjukbottenstrand i brunvattensjö"
+                      },
+                      {
+                        "id": 530,
+                        "name": "Mjukbottenstrand i kalkblekesjö"
+                      },
+                      {
+                        "id": 531,
+                        "name": "Mjukbottenstrand i kransalgssjö"
+                      },
+                      {
+                        "id": 532,
+                        "name": "Mjukbottenstrand i intermediär sjö"
+                      },
+                      {
+                        "id": 533,
+                        "name": "Mjukbottenstrand i näringsrik sjö"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 534,
+                "name": "Grundbotten",
+                "children": [
+                  {
+                    "id": 535,
+                    "name": "Grund hårdbotten",
+                    "children": [
+                      {
+                        "id": 536,
+                        "name": "Grund hårdbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 537,
+                        "name": "Grund hårdbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 538,
+                        "name": "Grund hårdbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 539,
+                        "name": "Grund hårdbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 540,
+                        "name": "Grund hårdbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 541,
+                        "name": "Grund hårdbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 542,
+                        "name": "Grund hårdbotten i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 543,
+                    "name": "Grund sand/grusbotten",
+                    "children": [
+                      {
+                        "id": 544,
+                        "name": "Grund sand/grusbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 545,
+                        "name": "Grund sand/grusbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 546,
+                        "name": "Grund sand/grusbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 547,
+                        "name": "Grund sand/grusbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 548,
+                        "name": "Grund sand/grusbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 549,
+                        "name": "Grund sand/grusbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 550,
+                        "name": "Grund sand/grusbotten i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 551,
+                    "name": "Grund mjukbotten",
+                    "children": [
+                      {
+                        "id": 552,
+                        "name": "Grund mjukbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 553,
+                        "name": "Grund mjukbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 554,
+                        "name": "Grund mjukbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 555,
+                        "name": "Grund mjukbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 556,
+                        "name": "Grund mjukbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 557,
+                        "name": "Grund mjukbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 558,
+                        "name": "Grund mjukbotten i näringsrik sjö"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 559,
+                "name": "Djupbotten",
+                "children": [
+                  {
+                    "id": 560,
+                    "name": "Djup hårdbotten",
+                    "children": [
+                      {
+                        "id": 561,
+                        "name": "Djup hårdbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 562,
+                        "name": "Djup hårdbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 563,
+                        "name": "Djup hårdbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 564,
+                        "name": "Djup hårdbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 565,
+                        "name": "Djup hårdbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 566,
+                        "name": "Djup hårdbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 567,
+                        "name": "Djup hårdbotten i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 568,
+                    "name": "Djup sand/grusbotten",
+                    "children": [
+                      {
+                        "id": 569,
+                        "name": "Djup sand/grusbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 570,
+                        "name": "Djup sand/grusbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 571,
+                        "name": "Djup sand/grusbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 572,
+                        "name": "Djup sand/grusbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 573,
+                        "name": "Djup sand/grusbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 574,
+                        "name": "Djup sand/grusbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 575,
+                        "name": "Djup sand/grusbotten i näringsrik sjö"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 576,
+                    "name": "Djup mjukbotten",
+                    "children": [
+                      {
+                        "id": 577,
+                        "name": "Djup mjukbotten i näringsfattig sjö"
+                      },
+                      {
+                        "id": 578,
+                        "name": "Djup mjukbotten i klarvattensjö"
+                      },
+                      {
+                        "id": 579,
+                        "name": "Djup mjukbotten i brunvattensjö"
+                      },
+                      {
+                        "id": 580,
+                        "name": "Djup mjukbotten i kalkblekesjö"
+                      },
+                      {
+                        "id": 581,
+                        "name": "Djup mjukbotten i kransalgssjö"
+                      },
+                      {
+                        "id": 582,
+                        "name": "Djup mjukbotten i intermediär sjö"
+                      },
+                      {
+                        "id": 583,
+                        "name": "Djup mjukbotten i näringsrik sjö"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 584,
+            "name": "Sjöpelagial",
+            "children": [
+              {
+                "id": 585,
+                "name": "Ytnära vatten",
+                "children": [
+                  {
+                    "id": 586,
+                    "name": "Ytvatten i näringsfattig sjö"
+                  },
+                  {
+                    "id": 587,
+                    "name": "Ytvatten i klarvattensjö"
+                  },
+                  {
+                    "id": 588,
+                    "name": "Ytvatten i brunvattensjö"
+                  },
+                  {
+                    "id": 589,
+                    "name": "Ytvatten i kalkblekesjö"
+                  },
+                  {
+                    "id": 590,
+                    "name": "Ytvatten i kransalgssjö"
+                  },
+                  {
+                    "id": 591,
+                    "name": "Ytvatten i intermediär sjö"
+                  },
+                  {
+                    "id": 592,
+                    "name": "Ytvatten i näringsrik sjö"
+                  }
+                ]
+              },
+              {
+                "id": 593,
+                "name": "Djupvatten",
+                "children": [
+                  {
+                    "id": 594,
+                    "name": "Djupvatten i näringsfattig sjö"
+                  },
+                  {
+                    "id": 595,
+                    "name": "Djupvatten i klarvattensjö"
+                  },
+                  {
+                    "id": 596,
+                    "name": "Djupvatten i brunvattensjö"
+                  },
+                  {
+                    "id": 597,
+                    "name": "Djupvatten i kalkblekesjö"
+                  },
+                  {
+                    "id": 598,
+                    "name": "Djupvatten i kransalgssjö"
+                  },
+                  {
+                    "id": 599,
+                    "name": "Djupvatten i intermediär sjö"
+                  },
+                  {
+                    "id": 600,
+                    "name": "Djupvatten i näringsrik sjö"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 601,
+            "name": "Sjövattenyta",
+            "children": [
+              {
+                "id": 602,
+                "name": "Vattenyta i näringsfattig sjö"
+              },
+              {
+                "id": 603,
+                "name": "Vattenyta i klarvattensjö"
+              },
+              {
+                "id": 604,
+                "name": "Vattenyta i brunvattensjö"
+              },
+              {
+                "id": 605,
+                "name": "Vattenyta i kalkblekesjö"
+              },
+              {
+                "id": 606,
+                "name": "Vattenyta i kransalgssjö"
+              },
+              {
+                "id": 607,
+                "name": "Vattenyta i intermediär sjö"
+              },
+              {
+                "id": 608,
+                "name": "Vattenyta i näringsrik sjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 609,
+        "name": "Vattendrag",
+        "children": [
+          {
+            "id": 610,
+            "name": "Vattendragsbotten",
+            "children": [
+              {
+                "id": 611,
+                "name": "Vattendragsbotten av häll",
+                "children": [
+                  {
+                    "id": 612,
+                    "name": "Hällbotten i älv"
+                  },
+                  {
+                    "id": 613,
+                    "name": "Hällbotten i å"
+                  },
+                  {
+                    "id": 614,
+                    "name": "Hällbotten i bäck"
+                  }
+                ]
+              },
+              {
+                "id": 615,
+                "name": "Vattendragsbotten av block-sten",
+                "children": [
+                  {
+                    "id": 616,
+                    "name": "Block-stenbotten i älv"
+                  },
+                  {
+                    "id": 617,
+                    "name": "Block-stenbotten i å"
+                  },
+                  {
+                    "id": 618,
+                    "name": "Block-stenbotten i bäck"
+                  }
+                ]
+              },
+              {
+                "id": 619,
+                "name": "Vattendragsbotten av sand-grus",
+                "children": [
+                  {
+                    "id": 620,
+                    "name": "Sand-grusbotten i älv"
+                  },
+                  {
+                    "id": 621,
+                    "name": "Sand-grusbotten i å"
+                  },
+                  {
+                    "id": 622,
+                    "name": "Sand-grusbotten i bäck"
+                  }
+                ]
+              },
+              {
+                "id": 623,
+                "name": "Vattendragsbotten - mjukbotten",
+                "children": [
+                  {
+                    "id": 624,
+                    "name": "Mjukbotten i älv"
+                  },
+                  {
+                    "id": 625,
+                    "name": "Mjukbotten i å"
+                  },
+                  {
+                    "id": 626,
+                    "name": "Mjukbotten i bäck"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 627,
+            "name": "Vatten i vattendrag",
+            "children": [
+              {
+                "id": 628,
+                "name": "Vatten i älv"
+              },
+              {
+                "id": 629,
+                "name": "Vatten i å"
+              },
+              {
+                "id": 630,
+                "name": "Vatten i bäck"
+              }
+            ]
+          },
+          {
+            "id": 631,
+            "name": "Vattenyta i vattendrag",
+            "children": [
+              {
+                "id": 632,
+                "name": "Vattenyta i älv"
+              },
+              {
+                "id": 633,
+                "name": "Vattenyta i å"
+              },
+              {
+                "id": 634,
+                "name": "Vattenyta i bäck"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 635,
+        "name": "Hav",
+        "children": [
+          {
+            "id": 636,
+            "name": "Havsbotten",
+            "children": [
+              {
+                "id": 637,
+                "name": "Grund havsbotten",
+                "children": [
+                  {
+                    "id": 638,
+                    "name": "Grund marin hårdbotten",
+                    "children": [
+                      {
+                        "id": 639,
+                        "name": "Grund marin hårdbotten - berg/häll"
+                      },
+                      {
+                        "id": 640,
+                        "name": "Grund marin hårdbotten - block/sten"
+                      },
+                      {
+                        "id": 641,
+                        "name": "Grund marin hårdbotten - hård lera"
+                      },
+                      {
+                        "id": 642,
+                        "name": "Grund marin hårdbotten - organisk"
+                      },
+                      {
+                        "id": 643,
+                        "name": "Grund marin hårdbotten - artificell"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 644,
+                    "name": "Grund marin mjukbotten",
+                    "children": [
+                      {
+                        "id": 645,
+                        "name": "Grund marin mjukbotten - grus"
+                      },
+                      {
+                        "id": 646,
+                        "name": "Grund marin mjukbotten - sand"
+                      },
+                      {
+                        "id": 647,
+                        "name": "Grund marin mjukbotten - lera/silt"
+                      },
+                      {
+                        "id": 648,
+                        "name": "Grund marin mjukbotten - blandat sediment"
+                      },
+                      {
+                        "id": 649,
+                        "name": "Grund marin mjukbotten - gyttja"
+                      },
+                      {
+                        "id": 650,
+                        "name": "Grund marin mjukbotten - skalgrus"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 651,
+                    "name": "Grunda gasstrukturer"
+                  }
+                ]
+              },
+              {
+                "id": 652,
+                "name": "Djup havsbotten",
+                "children": [
+                  {
+                    "id": 653,
+                    "name": "Djup marin hårdbotten",
+                    "children": [
+                      {
+                        "id": 654,
+                        "name": "Djup marin hårdbotten - berg/häll"
+                      },
+                      {
+                        "id": 655,
+                        "name": "Djup marin hårdbotten - block/sten"
+                      },
+                      {
+                        "id": 656,
+                        "name": "Djup marin hårdbotten - hård lera"
+                      },
+                      {
+                        "id": 657,
+                        "name": "Djup marin hårdbotten - organisk"
+                      },
+                      {
+                        "id": 658,
+                        "name": "Djup marin hårdbotten - artificell"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 659,
+                    "name": "Djup marin mjukbotten",
+                    "children": [
+                      {
+                        "id": 660,
+                        "name": "Djup marin mjukbotten - grus"
+                      },
+                      {
+                        "id": 661,
+                        "name": "Djup marin mjukbotten - sand"
+                      },
+                      {
+                        "id": 662,
+                        "name": "Djup marin mjukbotten - lera"
+                      },
+                      {
+                        "id": 663,
+                        "name": "Djup marin mjukbotten - blandat sediment"
+                      },
+                      {
+                        "id": 664,
+                        "name": "Djup marin mjukbotten - gyttja/detritus"
+                      },
+                      {
+                        "id": 665,
+                        "name": "Djup marin mjukbotten - skalgrus"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 666,
+                    "name": "Djupa gasstrukturer"
+                  }
+                ]
+              },
+              {
+                "id": 667,
+                "name": "Havsgrotta"
+              }
+            ]
+          },
+          {
+            "id": 668,
+            "name": "Havspelagial",
+            "children": [
+              {
+                "id": 669,
+                "name": "Ytnära havsvattenmassa"
+              },
+              {
+                "id": 670,
+                "name": "Djupvatten i havet"
+              }
+            ]
+          },
+          {
+            "id": 671,
+            "name": "Havsyta"
+          }
+        ]
+      },
+      {
+        "id": 672,
+        "name": "Artificiell miljö",
+        "children": [
+          {
+            "id": 673,
+            "name": "Kultiverad mark",
+            "children": [
+              {
+                "id": 674,
+                "name": "Öppen odling",
+                "children": [
+                  {
+                    "id": 675,
+                    "name": "Åker"
+                  },
+                  {
+                    "id": 676,
+                    "name": "Vall"
+                  },
+                  {
+                    "id": 677,
+                    "name": "Anlagd gräsmark"
+                  }
+                ]
+              },
+              {
+                "id": 678,
+                "name": "Träd/buskodling",
+                "children": [
+                  {
+                    "id": 679,
+                    "name": "Julgransodling"
+                  },
+                  {
+                    "id": 681,
+                    "name": "Energiskog",
+                    "children": [
+                      {
+                        "id": 682,
+                        "name": "Buskodling"
+                      },
+                      {
+                        "id": 683,
+                        "name": "Salix-odling"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 684,
+            "name": "Konstruerad mark",
+            "children": [
+              {
+                "id": 685,
+                "name": "Anläggning på land",
+                "children": [
+                  {
+                    "id": 686,
+                    "name": "Parkmiljö",
+                    "children": [
+                      {
+                        "id": 687,
+                        "name": "Park med barrträd"
+                      },
+                      {
+                        "id": 688,
+                        "name": "Park med barr-/lövträd"
+                      },
+                      {
+                        "id": 689,
+                        "name": "Park med lövträd"
+                      },
+                      {
+                        "id": 690,
+                        "name": "Park med ädellöv"
+                      },
+                      {
+                        "id": 691,
+                        "name": "Park med triviallöv"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 692,
+                    "name": "Trädgård"
+                  },
+                  {
+                    "id": 693,
+                    "name": "Allé",
+                    "children": [
+                      {
+                        "id": 694,
+                        "name": "Barrträdsallé"
+                      },
+                      {
+                        "id": 695,
+                        "name": "Ädellövallé"
+                      },
+                      {
+                        "id": 696,
+                        "name": "Ekallé"
+                      },
+                      {
+                        "id": 697,
+                        "name": "Bokallé"
+                      },
+                      {
+                        "id": 698,
+                        "name": "Askallé"
+                      },
+                      {
+                        "id": 699,
+                        "name": "Alm allé"
+                      },
+                      {
+                        "id": 700,
+                        "name": "Lindallé"
+                      },
+                      {
+                        "id": 701,
+                        "name": "Triviallövallé"
+                      },
+                      {
+                        "id": 702,
+                        "name": "Björkallé"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 703,
+                    "name": "Kyrkogård",
+                    "children": [
+                      {
+                        "id": 704,
+                        "name": "Kyrkogård med barrträd"
+                      },
+                      {
+                        "id": 705,
+                        "name": "Kyrkogård med barr-/lövträd"
+                      },
+                      {
+                        "id": 706,
+                        "name": "Kyrkogård med lövträd"
+                      },
+                      {
+                        "id": 707,
+                        "name": "Kyrkogård med ädellöv"
+                      },
+                      {
+                        "id": 708,
+                        "name": "Kyrkogård med triviallöv"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 709,
+                    "name": "Stadsmiljö"
+                  },
+                  {
+                    "id": 712,
+                    "name": "Industriområde"
+                  },
+                  {
+                    "id": 713,
+                    "name": "Hamn"
+                  },
+                  {
+                    "id": 714,
+                    "name": "Fabrik"
+                  },
+                  {
+                    "id": 715,
+                    "name": "Byggnad"
+                  },
+                  {
+                    "id": 716,
+                    "name": "Grustag"
+                  },
+                  {
+                    "id": 717,
+                    "name": "Torvtäkt"
+                  },
+                  {
+                    "id": 718,
+                    "name": "Gruva"
+                  },
+                  {
+                    "id": 719,
+                    "name": "Stenmur"
+                  },
+                  {
+                    "id": 720,
+                    "name": "Dike"
+                  },
+                  {
+                    "id": 721,
+                    "name": "Damm/viltvatten"
+                  },
+                  {
+                    "id": 722,
+                    "name": "Kanal"
+                  },
+                  {
+                    "id": 723,
+                    "name": "Reglerat vattenmagasin"
+                  },
+                  {
+                    "id": 724,
+                    "name": "Väg"
+                  },
+                  {
+                    "id": 725,
+                    "name": "Vägkant"
+                  },
+                  {
+                    "id": 726,
+                    "name": "Järnväg/banvall"
+                  },
+                  {
+                    "id": 727,
+                    "name": "Bangård"
+                  },
+                  {
+                    "id": 728,
+                    "name": "Soptipp"
+                  },
+                  {
+                    "id": 729,
+                    "name": "Slaggdeponi/varphög"
+                  },
+                  {
+                    "id": 730,
+                    "name": "Trädgårdsdeponi/utkast"
+                  }
+                ]
+              },
+              {
+                "id": 731,
+                "name": "Anläggning i sjö och vattendrag",
+                "children": [
+                  {
+                    "id": 732,
+                    "name": "Artificiell hårdbotten i sjö"
+                  },
+                  {
+                    "id": 733,
+                    "name": "Artificiell hårdbotten i vattendrag"
+                  }
+                ]
+              },
+              {
+                "id": 734,
+                "name": "Anläggning i hav",
+                "children": [
+                  {
+                    "id": 735,
+                    "name": "Artificiell marin hårdbotten",
+                    "children": [
+                      {
+                        "id": 643,
+                        "name": "Grund marin hårdbotten - artificell"
+                      },
+                      {
+                        "id": 658,
+                        "name": "Djup marin hårdbotten - artificell"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 736,
+                "name": "Restmarker",
+                "children": [
+                  {
+                    "id": 737,
+                    "name": "Ruderatmark"
+                  },
+                  {
+                    "id": 738,
+                    "name": "Övergivet industriområde"
+                  },
+                  {
+                    "id": 739,
+                    "name": "Ödetomt"
+                  },
+                  {
+                    "id": 740,
+                    "name": "Utfyllnad"
+                  },
+                  {
+                    "id": 741,
+                    "name": "Torvgrav"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 742,
+    "name": "SJÖTYP",
+    "children": [
+      {
+        "id": 743,
+        "name": "Näringsfattig sjö",
+        "children": [
+          {
+            "id": 602,
+            "name": "Vattenyta i näringsfattig sjö"
+          },
+          {
+            "id": 744,
+            "name": "Vattensstrand i näringsfattig sjö",
+            "children": [
+              {
+                "id": 511,
+                "name": "Hårdbottenstrand i näringsfattig sjö"
+              },
+              {
+                "id": 519,
+                "name": "Sand/grusstrand i näringsfattig sjö"
+              },
+              {
+                "id": 527,
+                "name": "Mjukbottenstrand i näringsfattig sjö"
+              }
+            ]
+          },
+          {
+            "id": 745,
+            "name": "Grundbotten i näringsfattig sjö",
+            "children": [
+              {
+                "id": 536,
+                "name": "Grund hårdbotten i näringsfattig sjö"
+              },
+              {
+                "id": 544,
+                "name": "Grund sand/grusbotten i näringsfattig sjö"
+              },
+              {
+                "id": 552,
+                "name": "Grund mjukbotten i näringsfattig sjö"
+              }
+            ]
+          },
+          {
+            "id": 746,
+            "name": "Djupbotten i näringsfattig sjö",
+            "children": [
+              {
+                "id": 561,
+                "name": "Djup hårdbotten i näringsfattig sjö"
+              },
+              {
+                "id": 569,
+                "name": "Djup sand/grusbotten i näringsfattig sjö"
+              },
+              {
+                "id": 577,
+                "name": "Djup mjukbotten i näringsfattig sjö"
+              }
+            ]
+          },
+          {
+            "id": 747,
+            "name": "Pelagial i näringsfattig sjö",
+            "children": [
+              {
+                "id": 586,
+                "name": "Ytvatten i näringsfattig sjö"
+              },
+              {
+                "id": 594,
+                "name": "Djupvatten i näringsfattig sjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 749,
+        "name": "Klarvattensjö",
+        "children": [
+          {
+            "id": 603,
+            "name": "Vattenyta i klarvattensjö"
+          },
+          {
+            "id": 750,
+            "name": "Vattensstrand i klarvattensjö",
+            "children": [
+              {
+                "id": 512,
+                "name": "Hårdbottenstrand i klarvattensjö"
+              },
+              {
+                "id": 520,
+                "name": "Sand/grusstrand i klarvattensjö"
+              },
+              {
+                "id": 528,
+                "name": "Mjukbottenstrand i klarvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 751,
+            "name": "Grundbotten i klarvattensjö",
+            "children": [
+              {
+                "id": 537,
+                "name": "Grund hårdbotten i klarvattensjö"
+              },
+              {
+                "id": 545,
+                "name": "Grund sand/grusbotten i klarvattensjö"
+              },
+              {
+                "id": 553,
+                "name": "Grund mjukbotten i klarvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 752,
+            "name": "Djupbotten i klarvattensjö",
+            "children": [
+              {
+                "id": 562,
+                "name": "Djup hårdbotten i klarvattensjö"
+              },
+              {
+                "id": 570,
+                "name": "Djup sand/grusbotten i klarvattensjö"
+              },
+              {
+                "id": 578,
+                "name": "Djup mjukbotten i klarvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 753,
+            "name": "Pelagial i klarvattensjö",
+            "children": [
+              {
+                "id": 587,
+                "name": "Ytvatten i klarvattensjö"
+              },
+              {
+                "id": 595,
+                "name": "Djupvatten i klarvattensjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 755,
+        "name": "Brunvattensjö",
+        "children": [
+          {
+            "id": 604,
+            "name": "Vattenyta i brunvattensjö"
+          },
+          {
+            "id": 756,
+            "name": "Vattensstrand i brunvattensjö",
+            "children": [
+              {
+                "id": 513,
+                "name": "Hårdbottenstrand i brunvattensjö"
+              },
+              {
+                "id": 521,
+                "name": "Sand/grusstrand i brunvattensjö"
+              },
+              {
+                "id": 529,
+                "name": "Mjukbottenstrand i brunvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 757,
+            "name": "Grundbotten i brunvattensjö",
+            "children": [
+              {
+                "id": 538,
+                "name": "Grund hårdbotten i brunvattensjö"
+              },
+              {
+                "id": 546,
+                "name": "Grund sand/grusbotten i brunvattensjö"
+              },
+              {
+                "id": 554,
+                "name": "Grund mjukbotten i brunvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 759,
+            "name": "Djupbotten i brunvattensjö",
+            "children": [
+              {
+                "id": 563,
+                "name": "Djup hårdbotten i brunvattensjö"
+              },
+              {
+                "id": 571,
+                "name": "Djup sand/grusbotten i brunvattensjö"
+              },
+              {
+                "id": 579,
+                "name": "Djup mjukbotten i brunvattensjö"
+              }
+            ]
+          },
+          {
+            "id": 760,
+            "name": "Pelagial i brunvattensjö",
+            "children": [
+              {
+                "id": 588,
+                "name": "Ytvatten i brunvattensjö"
+              },
+              {
+                "id": 596,
+                "name": "Djupvatten i brunvattensjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 762,
+        "name": "Kalkblekesjö",
+        "children": [
+          {
+            "id": 605,
+            "name": "Vattenyta i kalkblekesjö"
+          },
+          {
+            "id": 763,
+            "name": "Vattensstrand i kalkblekesjö",
+            "children": [
+              {
+                "id": 514,
+                "name": "Hårdbottenstrand i kalkblekesjö"
+              },
+              {
+                "id": 522,
+                "name": "Sand/grusstrand i kalkblekesjö"
+              },
+              {
+                "id": 530,
+                "name": "Mjukbottenstrand i kalkblekesjö"
+              }
+            ]
+          },
+          {
+            "id": 764,
+            "name": "Grundbotten i kalkblekesjö",
+            "children": [
+              {
+                "id": 539,
+                "name": "Grund hårdbotten i kalkblekesjö"
+              },
+              {
+                "id": 547,
+                "name": "Grund sand/grusbotten i kalkblekesjö"
+              },
+              {
+                "id": 555,
+                "name": "Grund mjukbotten i kalkblekesjö"
+              }
+            ]
+          },
+          {
+            "id": 765,
+            "name": "Djupbotten i kalkblekesjö",
+            "children": [
+              {
+                "id": 564,
+                "name": "Djup hårdbotten i kalkblekesjö"
+              },
+              {
+                "id": 572,
+                "name": "Djup sand/grusbotten i kalkblekesjö"
+              },
+              {
+                "id": 580,
+                "name": "Djup mjukbotten i kalkblekesjö"
+              }
+            ]
+          },
+          {
+            "id": 766,
+            "name": "Pelagial i kalkblekesjö",
+            "children": [
+              {
+                "id": 589,
+                "name": "Ytvatten i kalkblekesjö"
+              },
+              {
+                "id": 597,
+                "name": "Djupvatten i kalkblekesjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 768,
+        "name": "Kransalgsjö",
+        "children": [
+          {
+            "id": 606,
+            "name": "Vattenyta i kransalgssjö"
+          },
+          {
+            "id": 769,
+            "name": "Vattensstrand i kransalgssjö",
+            "children": [
+              {
+                "id": 515,
+                "name": "Hårdbottenstrand i kransalgssjö"
+              },
+              {
+                "id": 523,
+                "name": "Sand/grusstrand i kransalgssjö"
+              },
+              {
+                "id": 531,
+                "name": "Mjukbottenstrand i kransalgssjö"
+              }
+            ]
+          },
+          {
+            "id": 770,
+            "name": "Grundbotten i kransalgssjö",
+            "children": [
+              {
+                "id": 540,
+                "name": "Grund hårdbotten i kransalgssjö"
+              },
+              {
+                "id": 548,
+                "name": "Grund sand/grusbotten i kransalgssjö"
+              },
+              {
+                "id": 556,
+                "name": "Grund mjukbotten i kransalgssjö"
+              }
+            ]
+          },
+          {
+            "id": 771,
+            "name": "Djupbotten i kransalgssjö",
+            "children": [
+              {
+                "id": 565,
+                "name": "Djup hårdbotten i kransalgssjö"
+              },
+              {
+                "id": 573,
+                "name": "Djup sand/grusbotten i kransalgssjö"
+              },
+              {
+                "id": 581,
+                "name": "Djup mjukbotten i kransalgssjö"
+              }
+            ]
+          },
+          {
+            "id": 772,
+            "name": "Pelagial i kransalgssjö",
+            "children": [
+              {
+                "id": 590,
+                "name": "Ytvatten i kransalgssjö"
+              },
+              {
+                "id": 598,
+                "name": "Djupvatten i kransalgssjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 774,
+        "name": "Intermediär sjö",
+        "children": [
+          {
+            "id": 607,
+            "name": "Vattenyta i intermediär sjö"
+          },
+          {
+            "id": 775,
+            "name": "Vattensstrand i intermediär sjö",
+            "children": [
+              {
+                "id": 516,
+                "name": "Hårdbottenstrand i intermediär sjö"
+              },
+              {
+                "id": 524,
+                "name": "Sand/grusstrand i intermediär sjö"
+              },
+              {
+                "id": 532,
+                "name": "Mjukbottenstrand i intermediär sjö"
+              }
+            ]
+          },
+          {
+            "id": 776,
+            "name": "Grundbotten i intermediär sjö",
+            "children": [
+              {
+                "id": 541,
+                "name": "Grund hårdbotten i intermediär sjö"
+              },
+              {
+                "id": 549,
+                "name": "Grund sand/grusbotten i intermediär sjö"
+              },
+              {
+                "id": 557,
+                "name": "Grund mjukbotten i intermediär sjö"
+              }
+            ]
+          },
+          {
+            "id": 777,
+            "name": "Djupbotten i intermediär sjö",
+            "children": [
+              {
+                "id": 566,
+                "name": "Djup hårdbotten i intermediär sjö"
+              },
+              {
+                "id": 574,
+                "name": "Djup sand/grusbotten i intermediär sjö"
+              },
+              {
+                "id": 582,
+                "name": "Djup mjukbotten i intermediär sjö"
+              }
+            ]
+          },
+          {
+            "id": 778,
+            "name": "Pelagial i intermediär sjö",
+            "children": [
+              {
+                "id": 591,
+                "name": "Ytvatten i intermediär sjö"
+              },
+              {
+                "id": 599,
+                "name": "Djupvatten i intermediär sjö"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 780,
+        "name": "Näringsrik sjö",
+        "children": [
+          {
+            "id": 608,
+            "name": "Vattenyta i näringsrik sjö"
+          },
+          {
+            "id": 781,
+            "name": "Vattensstrand i näringsrik sjö",
+            "children": [
+              {
+                "id": 517,
+                "name": "Hårdbottenstrand i näringsrik sjö"
+              },
+              {
+                "id": 525,
+                "name": "Sand/grusstrand i näringsrik sjö"
+              },
+              {
+                "id": 533,
+                "name": "Mjukbottenstrand i näringsrik sjö"
+              }
+            ]
+          },
+          {
+            "id": 782,
+            "name": "Grundbotten i näringsrik sjö",
+            "children": [
+              {
+                "id": 542,
+                "name": "Grund hårdbotten i näringsrik sjö"
+              },
+              {
+                "id": 550,
+                "name": "Grund sand/grusbotten i näringsrik sjö"
+              },
+              {
+                "id": 558,
+                "name": "Grund mjukbotten i näringsrik sjö"
+              }
+            ]
+          },
+          {
+            "id": 783,
+            "name": "Djupbotten i näringsrik sjö",
+            "children": [
+              {
+                "id": 567,
+                "name": "Djup hårdbotten i näringsrik sjö"
+              },
+              {
+                "id": 575,
+                "name": "Djup sand/grusbotten i näringsrik sjö"
+              },
+              {
+                "id": 583,
+                "name": "Djup mjukbotten i näringsrik sjö"
+              }
+            ]
+          },
+          {
+            "id": 784,
+            "name": "Pelagial i näringsrik sjö",
+            "children": [
+              {
+                "id": 592,
+                "name": "Ytvatten i näringsrik sjö"
+              },
+              {
+                "id": 600,
+                "name": "Djupvatten i näringsrik sjö"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 786,
+    "name": "VATTENDRAGSTYP",
+    "children": [
+      {
+        "id": 787,
+        "name": "Älv",
+        "children": [
+          {
+            "id": 628,
+            "name": "Vatten i älv"
+          },
+          {
+            "id": 632,
+            "name": "Vattenyta i älv"
+          },
+          {
+            "id": 788,
+            "name": "Vattendragsbotten i älv",
+            "children": [
+              {
+                "id": 612,
+                "name": "Hällbotten i älv"
+              },
+              {
+                "id": 616,
+                "name": "Block-stenbotten i älv"
+              },
+              {
+                "id": 620,
+                "name": "Sand-grusbotten i älv"
+              },
+              {
+                "id": 624,
+                "name": "Mjukbotten i älv"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 791,
+        "name": "Å",
+        "children": [
+          {
+            "id": 629,
+            "name": "Vatten i å"
+          },
+          {
+            "id": 633,
+            "name": "Vattenyta i å"
+          },
+          {
+            "id": 792,
+            "name": "Vattendragsbotten i å",
+            "children": [
+              {
+                "id": 613,
+                "name": "Hällbotten i å"
+              },
+              {
+                "id": 617,
+                "name": "Block-stenbotten i å"
+              },
+              {
+                "id": 621,
+                "name": "Sand-grusbotten i å"
+              },
+              {
+                "id": 625,
+                "name": "Mjukbotten i å"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 795,
+        "name": "Bäck",
+        "children": [
+          {
+            "id": 630,
+            "name": "Vatten i bäck"
+          },
+          {
+            "id": 634,
+            "name": "Vattenyta i bäck"
+          },
+          {
+            "id": 796,
+            "name": "Vattendragsbotten i bäck",
+            "children": [
+              {
+                "id": 614,
+                "name": "Hällbotten i bäck"
+              },
+              {
+                "id": 618,
+                "name": "Block-stenbotten i bäck"
+              },
+              {
+                "id": 622,
+                "name": "Sand-grusbotten i bäck"
+              },
+              {
+                "id": 626,
+                "name": "Mjukbotten i bäck"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 799,
+    "name": "TRÄDSLAG/BUSKAR",
+    "children": [
+      {
+        "id": 800,
+        "name": "Barrträd",
+        "children": [
+          {
+            "id": 801,
+            "name": "Barrskog",
+            "children": [
+              {
+                "id": 255,
+                "name": "Hällmarksbarrskog"
+              },
+              {
+                "id": 263,
+                "name": "Barrskog på kalkhällmark"
+              },
+              {
+                "id": 270,
+                "name": "Barrskog på blockmark"
+              },
+              {
+                "id": 275,
+                "name": "Sandbarrskog"
+              },
+              {
+                "id": 286,
+                "name": "Dynbarrskog"
+              },
+              {
+                "id": 294,
+                "name": "Barrskog i branter"
+              },
+              {
+                "id": 304,
+                "name": "Hedbarrskog"
+              },
+              {
+                "id": 317,
+                "name": "Gräsbarrskog"
+              },
+              {
+                "id": 328,
+                "name": "Blåbärsbarrskog"
+              },
+              {
+                "id": 339,
+                "name": "Ängsbarrskog"
+              },
+              {
+                "id": 354,
+                "name": "Lågörtbarrskog"
+              },
+              {
+                "id": 365,
+                "name": "Högörtbarrskog"
+              },
+              {
+                "id": 388,
+                "name": "Barrsumpskog"
+              }
+            ]
+          },
+          {
+            "id": 802,
+            "name": "Våtmark med barrträd",
+            "children": [
+              {
+                "id": 419,
+                "name": "Kärr med barrträd"
+              },
+              {
+                "id": 431,
+                "name": "Fattigkärr med barrträd"
+              },
+              {
+                "id": 441,
+                "name": "Intermediärt kärr med barrträd"
+              },
+              {
+                "id": 452,
+                "name": "Rikkärr med barrträd"
+              },
+              {
+                "id": 463,
+                "name": "Extremrikkärr med barrträd"
+              },
+              {
+                "id": 475,
+                "name": "Blandmyr med barrträd"
+              },
+              {
+                "id": 484,
+                "name": "Sträng-flarkmyr med barrträd"
+              }
+            ]
+          },
+          {
+            "id": 803,
+            "name": "Artificiell miljö med barrträd",
+            "children": [
+              {
+                "id": 687,
+                "name": "Park med barrträd"
+              },
+              {
+                "id": 694,
+                "name": "Barrträdsallé"
+              },
+              {
+                "id": 704,
+                "name": "Kyrkogård med barrträd"
+              }
+            ]
+          },
+          {
+            "id": 804,
+            "name": "Gran",
+            "children": [
+              {
+                "id": 805,
+                "name": "Granskog",
+                "children": [
+                  {
+                    "id": 276,
+                    "name": "Sandgranskog"
+                  },
+                  {
+                    "id": 295,
+                    "name": "Granskog i branter"
+                  },
+                  {
+                    "id": 305,
+                    "name": "Hedgranskog"
+                  },
+                  {
+                    "id": 318,
+                    "name": "Gräsgranskog"
+                  },
+                  {
+                    "id": 329,
+                    "name": "Blåbärsgranskog"
+                  },
+                  {
+                    "id": 340,
+                    "name": "Ängsgranskog"
+                  },
+                  {
+                    "id": 355,
+                    "name": "Lågörtgranskog"
+                  },
+                  {
+                    "id": 366,
+                    "name": "Högörtgranskog"
+                  },
+                  {
+                    "id": 389,
+                    "name": "Gransumpskog"
+                  },
+                  {
+                    "id": 404,
+                    "name": "Svämgranskog"
+                  }
+                ]
+              },
+              {
+                "id": 806,
+                "name": "Öppen mark med gran",
+                "children": [
+                  {
+                    "id": 118,
+                    "name": "Frisk gräsmark med gran"
+                  },
+                  {
+                    "id": 131,
+                    "name": "Frisk silikatgräsmark med gran"
+                  },
+                  {
+                    "id": 145,
+                    "name": "Frisk kalkgräsmark med gran"
+                  },
+                  {
+                    "id": 160,
+                    "name": "Fuktig gräsmark med gran"
+                  },
+                  {
+                    "id": 189,
+                    "name": "Fuktig kalkgräsmark med gran"
+                  }
+                ]
+              },
+              {
+                "id": 807,
+                "name": "Våtmark med gran",
+                "children": [
+                  {
+                    "id": 420,
+                    "name": "Kärr med gran"
+                  },
+                  {
+                    "id": 432,
+                    "name": "Fattigkärr med gran"
+                  },
+                  {
+                    "id": 442,
+                    "name": "Intermediärt kärr med gran"
+                  },
+                  {
+                    "id": 453,
+                    "name": "Rikkärr med gran"
+                  },
+                  {
+                    "id": 464,
+                    "name": "Extremrikkärr med gran"
+                  },
+                  {
+                    "id": 476,
+                    "name": "Blandmyr med gran"
+                  },
+                  {
+                    "id": 485,
+                    "name": "Sträng-flarkmyr med gran"
+                  }
+                ]
+              },
+              {
+                "id": 808,
+                "name": "Artificiell miljö med gran",
+                "children": [
+                  {
+                    "id": 679,
+                    "name": "Julgransodling"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 809,
+            "name": "Tall",
+            "children": [
+              {
+                "id": 810,
+                "name": "Tallskog",
+                "children": [
+                  {
+                    "id": 256,
+                    "name": "Hällmarkstallskog"
+                  },
+                  {
+                    "id": 264,
+                    "name": "Tallskog på kalkhällmark"
+                  },
+                  {
+                    "id": 271,
+                    "name": "Tallskog på blockmark"
+                  },
+                  {
+                    "id": 277,
+                    "name": "Sandtallskog"
+                  },
+                  {
+                    "id": 287,
+                    "name": "Dyntallskog"
+                  },
+                  {
+                    "id": 296,
+                    "name": "Tallskog i branter"
+                  },
+                  {
+                    "id": 306,
+                    "name": "Hedtallskog"
+                  },
+                  {
+                    "id": 315,
+                    "name": "Lavtallskog"
+                  },
+                  {
+                    "id": 319,
+                    "name": "Grästallskog"
+                  },
+                  {
+                    "id": 330,
+                    "name": "Lingontallskog"
+                  },
+                  {
+                    "id": 341,
+                    "name": "Ängstallskog"
+                  },
+                  {
+                    "id": 356,
+                    "name": "Lågörttallskog"
+                  },
+                  {
+                    "id": 367,
+                    "name": "Högörttallskog"
+                  },
+                  {
+                    "id": 390,
+                    "name": "Tallsumpskog"
+                  }
+                ]
+              },
+              {
+                "id": 811,
+                "name": "Öppen mark med tall",
+                "children": [
+                  {
+                    "id": 48,
+                    "name": "Hällmarksmosaik med tall"
+                  },
+                  {
+                    "id": 53,
+                    "name": "Klipphed med tall"
+                  },
+                  {
+                    "id": 58,
+                    "name": "Klippäng med tall"
+                  },
+                  {
+                    "id": 62,
+                    "name": "Alvarmark med tall"
+                  },
+                  {
+                    "id": 65,
+                    "name": "Hed med tall"
+                  },
+                  {
+                    "id": 74,
+                    "name": "Torr-frisk hed med tall"
+                  },
+                  {
+                    "id": 86,
+                    "name": "Torr gräsmark med tall"
+                  },
+                  {
+                    "id": 96,
+                    "name": "Sandgräsmark med tall"
+                  },
+                  {
+                    "id": 102,
+                    "name": "Torr silikatgräsmark med tall"
+                  },
+                  {
+                    "id": 111,
+                    "name": "Torr kalkgräsmark med tall"
+                  },
+                  {
+                    "id": 171,
+                    "name": "Sandfuktmark med tall"
+                  }
+                ]
+              },
+              {
+                "id": 812,
+                "name": "Våtmark med tall",
+                "children": [
+                  {
+                    "id": 416,
+                    "name": "Mosse med tall"
+                  },
+                  {
+                    "id": 421,
+                    "name": "Kärr med tall"
+                  },
+                  {
+                    "id": 433,
+                    "name": "Fattigkärr med tall"
+                  },
+                  {
+                    "id": 443,
+                    "name": "Intermediärt kärr med tall"
+                  },
+                  {
+                    "id": 454,
+                    "name": "Rikkärr med tall"
+                  },
+                  {
+                    "id": 465,
+                    "name": "Extremrikkärr med tall"
+                  },
+                  {
+                    "id": 477,
+                    "name": "Blandmyr med tall"
+                  },
+                  {
+                    "id": 486,
+                    "name": "Sträng-flarkmyr med tall"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 813,
+        "name": "Barr-/lövbland",
+        "children": [
+          {
+            "id": 814,
+            "name": "Blandskog",
+            "children": [
+              {
+                "id": 257,
+                "name": "Hällmarksblandskog"
+              },
+              {
+                "id": 265,
+                "name": "Blandskog på kalkhällmark"
+              },
+              {
+                "id": 272,
+                "name": "Blandskog på blockmark"
+              },
+              {
+                "id": 278,
+                "name": "Sandblandskog"
+              },
+              {
+                "id": 288,
+                "name": "Dynblandskog"
+              },
+              {
+                "id": 297,
+                "name": "Blandskog i branter"
+              },
+              {
+                "id": 307,
+                "name": "Hedblandskog"
+              },
+              {
+                "id": 320,
+                "name": "Gräsblandskog"
+              },
+              {
+                "id": 331,
+                "name": "Blåbärsblandskog"
+              },
+              {
+                "id": 342,
+                "name": "Ängsblandskog"
+              },
+              {
+                "id": 357,
+                "name": "Lågörtblandskog"
+              },
+              {
+                "id": 368,
+                "name": "Högörtblandskog"
+              },
+              {
+                "id": 376,
+                "name": "Fjällblandskog"
+              },
+              {
+                "id": 379,
+                "name": "Fjällblandskog av lav-ristyp"
+              },
+              {
+                "id": 382,
+                "name": "Fjällblandskog av lågörttyp"
+              },
+              {
+                "id": 385,
+                "name": "Fjällblandskog av högörttyp"
+              },
+              {
+                "id": 391,
+                "name": "Blandsumpskog"
+              },
+              {
+                "id": 398,
+                "name": "Landhöjningsblandskog"
+              },
+              {
+                "id": 405,
+                "name": "Svämblandskog"
+              }
+            ]
+          },
+          {
+            "id": 815,
+            "name": "Artificiell miljö med barr-/lövträd",
+            "children": [
+              {
+                "id": 688,
+                "name": "Park med barr-/lövträd"
+              },
+              {
+                "id": 705,
+                "name": "Kyrkogård med barr-/lövträd"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 816,
+        "name": "Lövträd",
+        "children": [
+          {
+            "id": 817,
+            "name": "Lövskog",
+            "children": [
+              {
+                "id": 258,
+                "name": "Hällmarkslövskog"
+              },
+              {
+                "id": 266,
+                "name": "Lövskog på kalkhällmark"
+              },
+              {
+                "id": 273,
+                "name": "Lövskog på blockmark"
+              },
+              {
+                "id": 279,
+                "name": "Sandlövskog"
+              },
+              {
+                "id": 289,
+                "name": "Dynlövskog"
+              },
+              {
+                "id": 298,
+                "name": "Lövskog i branter"
+              },
+              {
+                "id": 308,
+                "name": "Hedlövskog"
+              },
+              {
+                "id": 321,
+                "name": "Gräslövskog"
+              },
+              {
+                "id": 332,
+                "name": "Blåbärslövskog"
+              },
+              {
+                "id": 343,
+                "name": "Ängslövskog"
+              },
+              {
+                "id": 358,
+                "name": "Lågörtlövskog"
+              },
+              {
+                "id": 369,
+                "name": "Högörtlövskog"
+              },
+              {
+                "id": 392,
+                "name": "Lövsumpskog"
+              },
+              {
+                "id": 399,
+                "name": "Landhöjningslövskog"
+              },
+              {
+                "id": 406,
+                "name": "Svämlövskog"
+              }
+            ]
+          },
+          {
+            "id": 818,
+            "name": "Öppen mark med lövträd",
+            "children": [
+              {
+                "id": 119,
+                "name": "Frisk gräsmark med lövträd"
+              },
+              {
+                "id": 132,
+                "name": "Frisk silikatgräsmark med lövträd"
+              },
+              {
+                "id": 146,
+                "name": "Frisk kalkgräsmark med lövträd"
+              },
+              {
+                "id": 161,
+                "name": "Fuktig gräsmark med lövträd"
+              },
+              {
+                "id": 172,
+                "name": "Sandfuktmark med lövträd"
+              },
+              {
+                "id": 180,
+                "name": "Fuktig silikatgräsmark med lövträd"
+              },
+              {
+                "id": 190,
+                "name": "Fuktig kalkgräsmark med lövträd"
+              }
+            ]
+          },
+          {
+            "id": 819,
+            "name": "Våtmark med lövträd",
+            "children": [
+              {
+                "id": 422,
+                "name": "Kärr med lövträd"
+              },
+              {
+                "id": 434,
+                "name": "Fattigkärr med lövträd"
+              },
+              {
+                "id": 444,
+                "name": "Intermediärt kärr med lövträd"
+              },
+              {
+                "id": 455,
+                "name": "Rikkärr med lövträd"
+              },
+              {
+                "id": 466,
+                "name": "Extremrikkärr med lövträd"
+              }
+            ]
+          },
+          {
+            "id": 820,
+            "name": "Artificiell miljö med lövträd",
+            "children": [
+              {
+                "id": 689,
+                "name": "Park med lövträd"
+              },
+              {
+                "id": 706,
+                "name": "Kyrkogård med lövträd"
+              }
+            ]
+          },
+          {
+            "id": 822,
+            "name": "Ädellöv",
+            "children": [
+              {
+                "id": 823,
+                "name": "Ädellövskog",
+                "children": [
+                  {
+                    "id": 267,
+                    "name": "Ädellövskog på kalkhällmark"
+                  },
+                  {
+                    "id": 280,
+                    "name": "Sandädellövskog"
+                  },
+                  {
+                    "id": 299,
+                    "name": "Ädellövskog i branter"
+                  },
+                  {
+                    "id": 344,
+                    "name": "Ängsädellövskog"
+                  },
+                  {
+                    "id": 359,
+                    "name": "Lågörtädellövskog"
+                  },
+                  {
+                    "id": 370,
+                    "name": "Högörtädellövskog"
+                  },
+                  {
+                    "id": 393,
+                    "name": "Ädellövsumpskog"
+                  },
+                  {
+                    "id": 407,
+                    "name": "Svämädellövskog"
+                  }
+                ]
+              },
+              {
+                "id": 824,
+                "name": "Öppen mark med ädellövträd",
+                "children": [
+                  {
+                    "id": 120,
+                    "name": "Frisk gräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 133,
+                    "name": "Frisk silikatgräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 147,
+                    "name": "Frisk kalkgräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 162,
+                    "name": "Fuktig gräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 173,
+                    "name": "Sandfuktmark med ädellöv"
+                  },
+                  {
+                    "id": 181,
+                    "name": "Fuktig silikatgräsmark med ädellövträd"
+                  },
+                  {
+                    "id": 191,
+                    "name": "Fuktig kalkgräsmark med ädellövträd"
+                  }
+                ]
+              },
+              {
+                "id": 825,
+                "name": "Våtmark med äldelövträd",
+                "children": [
+                  {
+                    "id": 423,
+                    "name": "Kärr med ädellövträd"
+                  },
+                  {
+                    "id": 445,
+                    "name": "Intermediärt kärr med ädellövträd"
+                  },
+                  {
+                    "id": 456,
+                    "name": "Rikkärr med ädellövträd"
+                  },
+                  {
+                    "id": 467,
+                    "name": "Extremrikkärr med ädellövträd"
+                  }
+                ]
+              },
+              {
+                "id": 826,
+                "name": "Artificiell miljö med ädellövträd",
+                "children": [
+                  {
+                    "id": 690,
+                    "name": "Park med ädellöv"
+                  },
+                  {
+                    "id": 695,
+                    "name": "Ädellövallé"
+                  },
+                  {
+                    "id": 707,
+                    "name": "Kyrkogård med ädellöv"
+                  }
+                ]
+              },
+              {
+                "id": 827,
+                "name": "Ek",
+                "children": [
+                  {
+                    "id": 828,
+                    "name": "Ekskog",
+                    "children": [
+                      {
+                        "id": 259,
+                        "name": "Hällmarksekskog"
+                      },
+                      {
+                        "id": 281,
+                        "name": "Sandekskog"
+                      },
+                      {
+                        "id": 290,
+                        "name": "Dynekskog"
+                      },
+                      {
+                        "id": 300,
+                        "name": "Ekskog i branter"
+                      },
+                      {
+                        "id": 309,
+                        "name": "Hedekskog"
+                      },
+                      {
+                        "id": 322,
+                        "name": "Gräsekskog"
+                      },
+                      {
+                        "id": 333,
+                        "name": "Blåbärsekskog"
+                      },
+                      {
+                        "id": 345,
+                        "name": "Ängsekskog"
+                      },
+                      {
+                        "id": 360,
+                        "name": "Lågörtekskog"
+                      },
+                      {
+                        "id": 371,
+                        "name": "Högörtekskog"
+                      },
+                      {
+                        "id": 408,
+                        "name": "Svämekskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 829,
+                    "name": "Öppen mark med ek",
+                    "children": [
+                      {
+                        "id": 49,
+                        "name": "Hällmarksmosaik med ek"
+                      },
+                      {
+                        "id": 54,
+                        "name": "Klipphed med ek"
+                      },
+                      {
+                        "id": 59,
+                        "name": "Klippäng med ek"
+                      },
+                      {
+                        "id": 66,
+                        "name": "Hed med ek"
+                      },
+                      {
+                        "id": 75,
+                        "name": "Torr-frisk hed med ek"
+                      },
+                      {
+                        "id": 87,
+                        "name": "Torr gräsmark med ek"
+                      },
+                      {
+                        "id": 97,
+                        "name": "Sandgräsmark med ek"
+                      },
+                      {
+                        "id": 103,
+                        "name": "Torr silikatgräsmark med ek"
+                      },
+                      {
+                        "id": 112,
+                        "name": "Torr kalkgräsmark med ek"
+                      },
+                      {
+                        "id": 121,
+                        "name": "Frisk gräsmark med ek"
+                      },
+                      {
+                        "id": 134,
+                        "name": "Frisk silikatgräsmark med ek"
+                      },
+                      {
+                        "id": 148,
+                        "name": "Frisk kalkgräsmark med ek"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 830,
+                    "name": "Artificiell miljö med ek",
+                    "children": [
+                      {
+                        "id": 696,
+                        "name": "Ekallé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 831,
+                "name": "Bok",
+                "children": [
+                  {
+                    "id": 832,
+                    "name": "Bokskog",
+                    "children": [
+                      {
+                        "id": 301,
+                        "name": "Bokskog i branter"
+                      },
+                      {
+                        "id": 310,
+                        "name": "Hedbokskog"
+                      },
+                      {
+                        "id": 323,
+                        "name": "Gräsbokskog"
+                      },
+                      {
+                        "id": 334,
+                        "name": "Blåbärsbokskog"
+                      },
+                      {
+                        "id": 346,
+                        "name": "Ängsbokskog"
+                      },
+                      {
+                        "id": 361,
+                        "name": "Lågörtbokskog"
+                      },
+                      {
+                        "id": 372,
+                        "name": "Högörtbokskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 833,
+                    "name": "Öppen mark med bok",
+                    "children": [
+                      {
+                        "id": 67,
+                        "name": "Hed med bok"
+                      },
+                      {
+                        "id": 76,
+                        "name": "Torr-frisk hed med bok"
+                      },
+                      {
+                        "id": 104,
+                        "name": "Torr silikatgräsmark med bok"
+                      },
+                      {
+                        "id": 122,
+                        "name": "Frisk gräsmark med bok"
+                      },
+                      {
+                        "id": 135,
+                        "name": "Frisk silikatgräsmark med bok"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 834,
+                    "name": "Artificiell miljö med bok",
+                    "children": [
+                      {
+                        "id": 697,
+                        "name": "Bokallé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 835,
+                "name": "Ask",
+                "children": [
+                  {
+                    "id": 836,
+                    "name": "Askskog",
+                    "children": [
+                      {
+                        "id": 347,
+                        "name": "Ängsaskskog"
+                      },
+                      {
+                        "id": 362,
+                        "name": "Lågörtaskskog"
+                      },
+                      {
+                        "id": 373,
+                        "name": "Högörtaskskog"
+                      },
+                      {
+                        "id": 394,
+                        "name": "Asksumpskog"
+                      },
+                      {
+                        "id": 409,
+                        "name": "Svämaskskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 837,
+                    "name": "Öppen mark med ask",
+                    "children": [
+                      {
+                        "id": 149,
+                        "name": "Frisk kalkgräsmark med ask"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 838,
+                    "name": "Våtmark med ask",
+                    "children": [
+                      {
+                        "id": 424,
+                        "name": "Kärr med ask"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 839,
+                    "name": "Artificiell miljö med ask",
+                    "children": [
+                      {
+                        "id": 698,
+                        "name": "Askallé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 840,
+                "name": "Alm",
+                "children": [
+                  {
+                    "id": 841,
+                    "name": "Almskog",
+                    "children": [
+                      {
+                        "id": 348,
+                        "name": "Ängsalmskog"
+                      },
+                      {
+                        "id": 363,
+                        "name": "Lågörtalmskog"
+                      },
+                      {
+                        "id": 374,
+                        "name": "Högörtalmskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 842,
+                    "name": "Öppen mark med alm",
+                    "children": [
+                      {
+                        "id": 150,
+                        "name": "Frisk kalkgräsmark med alm"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 843,
+                    "name": "Artificiell miljö alm",
+                    "children": [
+                      {
+                        "id": 699,
+                        "name": "Alm allé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 844,
+                "name": "Lind",
+                "children": [
+                  {
+                    "id": 845,
+                    "name": "Artificiell miljö med lind",
+                    "children": [
+                      {
+                        "id": 700,
+                        "name": "Lindallé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 846,
+                "name": "Hassel",
+                "children": [
+                  {
+                    "id": 847,
+                    "name": "Öppen mark med hassel",
+                    "children": [
+                      {
+                        "id": 136,
+                        "name": "Frisk silikatgräsmark med hassel"
+                      },
+                      {
+                        "id": 151,
+                        "name": "Frisk kalkgräsmark med hassel"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 848,
+            "name": "Triviallöv",
+            "children": [
+              {
+                "id": 849,
+                "name": "Triviallövskog",
+                "children": [
+                  {
+                    "id": 268,
+                    "name": "Triviallövskog på kalkhällmark"
+                  },
+                  {
+                    "id": 282,
+                    "name": "Sandtriviallövskog"
+                  },
+                  {
+                    "id": 291,
+                    "name": "Dyntriviallövskog"
+                  },
+                  {
+                    "id": 302,
+                    "name": "Triviallövskog i branter"
+                  },
+                  {
+                    "id": 311,
+                    "name": "Hedtriviallövskog"
+                  },
+                  {
+                    "id": 324,
+                    "name": "Grästriviallövskog"
+                  },
+                  {
+                    "id": 335,
+                    "name": "Blåbärstriviallövskog"
+                  },
+                  {
+                    "id": 349,
+                    "name": "Ängstriviallövskog"
+                  },
+                  {
+                    "id": 400,
+                    "name": "Landhöjningstriviallövskog"
+                  },
+                  {
+                    "id": 410,
+                    "name": "Svämtriviallövskog"
+                  }
+                ]
+              },
+              {
+                "id": 850,
+                "name": "Öppen mark med triviallövträd",
+                "children": [
+                  {
+                    "id": 123,
+                    "name": "Frisk gräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 137,
+                    "name": "Frisk silikatgräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 152,
+                    "name": "Frisk kalkgräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 163,
+                    "name": "Fuktig gräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 174,
+                    "name": "Sandfuktmark med triviallövträd"
+                  },
+                  {
+                    "id": 182,
+                    "name": "Fuktig silikatgräsmark med triviallövträd"
+                  },
+                  {
+                    "id": 192,
+                    "name": "Fuktig kalkgräsmark med triviallövträd"
+                  }
+                ]
+              },
+              {
+                "id": 851,
+                "name": "Våtmark med triviallövträd",
+                "children": [
+                  {
+                    "id": 425,
+                    "name": "Kärr med trivallövträd"
+                  },
+                  {
+                    "id": 435,
+                    "name": "Fattigkärr med trivallövträd"
+                  },
+                  {
+                    "id": 446,
+                    "name": "Intermediärt kärr med trivallövträd"
+                  },
+                  {
+                    "id": 457,
+                    "name": "Rikkärr med trivallövträd"
+                  },
+                  {
+                    "id": 468,
+                    "name": "Extremrikkärr med trivallövträd"
+                  },
+                  {
+                    "id": 478,
+                    "name": "Blandmyr med trivallövträd"
+                  },
+                  {
+                    "id": 487,
+                    "name": "Sträng-flarkmyr med trivallövträd"
+                  }
+                ]
+              },
+              {
+                "id": 852,
+                "name": "Artificiell miljö med triviallövträd",
+                "children": [
+                  {
+                    "id": 691,
+                    "name": "Park med triviallöv"
+                  },
+                  {
+                    "id": 701,
+                    "name": "Triviallövallé"
+                  },
+                  {
+                    "id": 708,
+                    "name": "Kyrkogård med triviallöv"
+                  }
+                ]
+              },
+              {
+                "id": 853,
+                "name": "Björk",
+                "children": [
+                  {
+                    "id": 854,
+                    "name": "Björkskog",
+                    "children": [
+                      {
+                        "id": 260,
+                        "name": "Hällmarksbjörkskog"
+                      },
+                      {
+                        "id": 283,
+                        "name": "Sandbjörkskog"
+                      },
+                      {
+                        "id": 292,
+                        "name": "Dynbjörkskog"
+                      },
+                      {
+                        "id": 312,
+                        "name": "Hedbjörkskog"
+                      },
+                      {
+                        "id": 325,
+                        "name": "Gräsbjörkskog"
+                      },
+                      {
+                        "id": 336,
+                        "name": "Blåbärsbjörkskog"
+                      },
+                      {
+                        "id": 350,
+                        "name": "Ängsbjörkskog"
+                      },
+                      {
+                        "id": 377,
+                        "name": "Fjällbjörkskog"
+                      },
+                      {
+                        "id": 380,
+                        "name": "Fjällbjörkskog av lav-ristyp"
+                      },
+                      {
+                        "id": 383,
+                        "name": "Fjällbjörkskog av lågörttyp"
+                      },
+                      {
+                        "id": 386,
+                        "name": "Fjällbjörkskog av högörttyp"
+                      },
+                      {
+                        "id": 395,
+                        "name": "Björksumpskog"
+                      },
+                      {
+                        "id": 401,
+                        "name": "Landhöjningsbjörkskog"
+                      },
+                      {
+                        "id": 411,
+                        "name": "Svämbjörkskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 855,
+                    "name": "Öppen mark med björk",
+                    "children": [
+                      {
+                        "id": 50,
+                        "name": "Hällmarksmosaik med björk"
+                      },
+                      {
+                        "id": 55,
+                        "name": "Klipphed med björk"
+                      },
+                      {
+                        "id": 68,
+                        "name": "Hed med björk"
+                      },
+                      {
+                        "id": 77,
+                        "name": "Torr-frisk hed med björk"
+                      },
+                      {
+                        "id": 82,
+                        "name": "Fukthed med björk"
+                      },
+                      {
+                        "id": 88,
+                        "name": "Torr gräsmark med björk"
+                      },
+                      {
+                        "id": 98,
+                        "name": "Sandgräsmark med björk"
+                      },
+                      {
+                        "id": 105,
+                        "name": "Torr silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 124,
+                        "name": "Frisk gräsmark med björk"
+                      },
+                      {
+                        "id": 138,
+                        "name": "Frisk silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 153,
+                        "name": "Frisk kalkgräsmark med björk"
+                      },
+                      {
+                        "id": 164,
+                        "name": "Fuktig gräsmark med björk"
+                      },
+                      {
+                        "id": 175,
+                        "name": "Sandfuktmark med björk"
+                      },
+                      {
+                        "id": 183,
+                        "name": "Fuktig silikatgräsmark med björk"
+                      },
+                      {
+                        "id": 193,
+                        "name": "Fuktig kalkgräsmark med björk"
+                      },
+                      {
+                        "id": 206,
+                        "name": "Alpin hed med björk"
+                      },
+                      {
+                        "id": 211,
+                        "name": "Alpin busklavhed med björk"
+                      },
+                      {
+                        "id": 215,
+                        "name": "Alpin rished med björk"
+                      },
+                      {
+                        "id": 220,
+                        "name": "Alpin vide/dvärgbjörkhed med björk"
+                      },
+                      {
+                        "id": 225,
+                        "name": "Alpin gräsmark med björk"
+                      },
+                      {
+                        "id": 231,
+                        "name": "Sur alpin gräsmark med björk"
+                      },
+                      {
+                        "id": 237,
+                        "name": "Kalkrik alpin gräsmark med björk"
+                      },
+                      {
+                        "id": 243,
+                        "name": "Alpin högörtäng med björk"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 856,
+                    "name": "Våtmark med björk",
+                    "children": [
+                      {
+                        "id": 417,
+                        "name": "Mosse med björk"
+                      },
+                      {
+                        "id": 426,
+                        "name": "Kärr med björk"
+                      },
+                      {
+                        "id": 436,
+                        "name": "Fattigkärr med björk"
+                      },
+                      {
+                        "id": 447,
+                        "name": "Intermediärt kärr med björk"
+                      },
+                      {
+                        "id": 458,
+                        "name": "Rikkärr med björk"
+                      },
+                      {
+                        "id": 469,
+                        "name": "Extremrikkärr med björk"
+                      },
+                      {
+                        "id": 479,
+                        "name": "Blandmyr med björk"
+                      },
+                      {
+                        "id": 488,
+                        "name": "Sträng-flarkmyr med björk"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 857,
+                    "name": "Artificiell miljö med björk",
+                    "children": [
+                      {
+                        "id": 702,
+                        "name": "Björkallé"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 858,
+                "name": "Al",
+                "children": [
+                  {
+                    "id": 859,
+                    "name": "Alskog",
+                    "children": [
+                      {
+                        "id": 284,
+                        "name": "Sandalskog"
+                      },
+                      {
+                        "id": 351,
+                        "name": "Ängsalskog"
+                      },
+                      {
+                        "id": 396,
+                        "name": "Alsumpskog"
+                      },
+                      {
+                        "id": 402,
+                        "name": "Landhöjningsalskog"
+                      },
+                      {
+                        "id": 412,
+                        "name": "Svämalskog"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 860,
+                    "name": "Öppen mark med al",
+                    "children": [
+                      {
+                        "id": 165,
+                        "name": "Fuktig gräsmark med al"
+                      },
+                      {
+                        "id": 176,
+                        "name": "Sandfuktmark med al"
+                      },
+                      {
+                        "id": 184,
+                        "name": "Fuktig silikatgräsmark med al"
+                      },
+                      {
+                        "id": 194,
+                        "name": "Fuktig kalkgräsmark med al"
+                      }
+                    ]
+                  },
+                  {
+                    "id": 861,
+                    "name": "Våtmark med al",
+                    "children": [
+                      {
+                        "id": 427,
+                        "name": "Kärr med al"
+                      },
+                      {
+                        "id": 437,
+                        "name": "Fattigkärr med al"
+                      },
+                      {
+                        "id": 448,
+                        "name": "Intermediärt kärr med al"
+                      },
+                      {
+                        "id": 459,
+                        "name": "Rikkärr med al"
+                      },
+                      {
+                        "id": 470,
+                        "name": "Extremrikkärr med al"
+                      },
+                      {
+                        "id": 480,
+                        "name": "Blandmyr med al"
+                      },
+                      {
+                        "id": 489,
+                        "name": "Sträng-flarkmyr med al"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 862,
+                "name": "Asp",
+                "children": [
+                  {
+                    "id": 863,
+                    "name": "Aspskog",
+                    "children": [
+                      {
+                        "id": 261,
+                        "name": "Hällmarksaspskog"
+                      },
+                      {
+                        "id": 313,
+                        "name": "Hedaspskog"
+                      },
+                      {
+                        "id": 326,
+                        "name": "Gräsaspskog"
+                      },
+                      {
+                        "id": 337,
+                        "name": "Blåbärsaspskog"
+                      },
+                      {
+                        "id": 352,
+                        "name": "Ängsaspskog"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 864,
+        "name": "Buskar",
+        "children": [
+          {
+            "id": 865,
+            "name": "Öppen mark med buskar",
+            "children": [
+              {
+                "id": 69,
+                "name": "Hed med buskar"
+              },
+              {
+                "id": 78,
+                "name": "Torr-frisk hed med buskar"
+              },
+              {
+                "id": 83,
+                "name": "Fukted med buskar"
+              },
+              {
+                "id": 89,
+                "name": "Torr gräsmark med buskar"
+              },
+              {
+                "id": 99,
+                "name": "Sandgräsmark med buskar"
+              },
+              {
+                "id": 106,
+                "name": "Torr silikatgräsmark med buskar"
+              },
+              {
+                "id": 113,
+                "name": "Torr kalkgräsmark med buskar"
+              },
+              {
+                "id": 125,
+                "name": "Frisk gräsmark med buskar"
+              },
+              {
+                "id": 139,
+                "name": "Frisk silikatgräsmark med buskar"
+              },
+              {
+                "id": 154,
+                "name": "Frisk kalkgräsmark med buskar"
+              },
+              {
+                "id": 166,
+                "name": "Fuktig gräsmark med buskar"
+              },
+              {
+                "id": 177,
+                "name": "Sandfuktmark med buskar"
+              },
+              {
+                "id": 185,
+                "name": "Fuktig silikatgräsmark med buskar"
+              },
+              {
+                "id": 195,
+                "name": "Fuktig kalkgräsmark med buskar"
+              },
+              {
+                "id": 199,
+                "name": "Högörtäng med buskar"
+              },
+              {
+                "id": 207,
+                "name": "Alpin hed med buskar"
+              },
+              {
+                "id": 216,
+                "name": "Alpin rished med buskar"
+              },
+              {
+                "id": 221,
+                "name": "Alpin vide/dvärbjörkshed med buskar"
+              },
+              {
+                "id": 226,
+                "name": "Alpin gräsmark med buskar"
+              },
+              {
+                "id": 232,
+                "name": "Sur alpin gräsmark med buskar"
+              },
+              {
+                "id": 238,
+                "name": "Kalkrik alpin gräsmark med buskar"
+              },
+              {
+                "id": 244,
+                "name": "Alpin högörtäng med buskar"
+              }
+            ]
+          },
+          {
+            "id": 866,
+            "name": "Våtmark med buskar",
+            "children": [
+              {
+                "id": 428,
+                "name": "Kärr med buskar"
+              },
+              {
+                "id": 438,
+                "name": "Fattigkärr med buskar"
+              },
+              {
+                "id": 449,
+                "name": "Intermediärt kärr med buskar"
+              },
+              {
+                "id": 460,
+                "name": "Rikkärr med buskar"
+              },
+              {
+                "id": 471,
+                "name": "Extremrikkärr med buskar"
+              },
+              {
+                "id": 481,
+                "name": "Blandmyr med buskar"
+              }
+            ]
+          },
+          {
+            "id": 867,
+            "name": "Artificiell miljö med buskar",
+            "children": [
+              {
+                "id": 682,
+                "name": "Buskodling"
+              }
+            ]
+          },
+          {
+            "id": 868,
+            "name": "Slån",
+            "children": [
+              {
+                "id": 869,
+                "name": "Öppen mark med slån",
+                "children": [
+                  {
+                    "id": 107,
+                    "name": "Torr silikatgräsmark med slån"
+                  },
+                  {
+                    "id": 114,
+                    "name": "Torr kalkgräsmark med slån"
+                  },
+                  {
+                    "id": 126,
+                    "name": "Frisk gräsmark med slån"
+                  },
+                  {
+                    "id": 140,
+                    "name": "Frisk silikatgräsmark med slån"
+                  },
+                  {
+                    "id": 155,
+                    "name": "Frisk kalkgräsmark med slån"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 870,
+            "name": "Rosor",
+            "children": [
+              {
+                "id": 871,
+                "name": "Öppen mark med rosor",
+                "children": [
+                  {
+                    "id": 108,
+                    "name": "Torr silikatgräsmark med rosor"
+                  },
+                  {
+                    "id": 115,
+                    "name": "Torr kalkgräsmark med rosor"
+                  },
+                  {
+                    "id": 127,
+                    "name": "Frisk gräsmark med rosor"
+                  },
+                  {
+                    "id": 141,
+                    "name": "Frisk silikatgräsmark med rosor"
+                  },
+                  {
+                    "id": 156,
+                    "name": "Frisk kalkgräsmark med rosor"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 872,
+            "name": "Björnbär",
+            "children": [
+              {
+                "id": 873,
+                "name": "Öppen mark med björnbär",
+                "children": [
+                  {
+                    "id": 128,
+                    "name": "Frisk gräsmark med björnbär"
+                  },
+                  {
+                    "id": 142,
+                    "name": "Frisk silikatgräsmark med björnbär"
+                  },
+                  {
+                    "id": 157,
+                    "name": "Frisk kalkgräsmark med björnbär"
+                  },
+                  {
+                    "id": 186,
+                    "name": "Fuktig silikatgräsmark med björnbär"
+                  },
+                  {
+                    "id": 196,
+                    "name": "Fuktig kalkgräsmark med björnbär"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 874,
+            "name": "Enbuskar",
+            "children": [
+              {
+                "id": 875,
+                "name": "Öppen mark med enbuskar",
+                "children": [
+                  {
+                    "id": 51,
+                    "name": "Hällmarksmosaik med enbuskar"
+                  },
+                  {
+                    "id": 56,
+                    "name": "Klipphed med enbuskar"
+                  },
+                  {
+                    "id": 60,
+                    "name": "Klippäng med enbuskar"
+                  },
+                  {
+                    "id": 63,
+                    "name": "Alvar med enbuskar"
+                  },
+                  {
+                    "id": 70,
+                    "name": "Hed med enbuskar"
+                  },
+                  {
+                    "id": 79,
+                    "name": "Torr-frisk hed med enbuskar"
+                  },
+                  {
+                    "id": 84,
+                    "name": "Fukthed med enbuskar"
+                  },
+                  {
+                    "id": 90,
+                    "name": "Torr gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 100,
+                    "name": "Sandgräsmark med enbuskar"
+                  },
+                  {
+                    "id": 109,
+                    "name": "Torr silikatgräsmark med enbuskar"
+                  },
+                  {
+                    "id": 116,
+                    "name": "Torr kalkgräsmark med enbuskar"
+                  },
+                  {
+                    "id": 129,
+                    "name": "Frisk gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 143,
+                    "name": "Frisk silikatgräsmark med enbuskar"
+                  },
+                  {
+                    "id": 158,
+                    "name": "Frisk kalkgräsmark med enbuskar"
+                  },
+                  {
+                    "id": 208,
+                    "name": "Alpin hed med enbuskar"
+                  },
+                  {
+                    "id": 217,
+                    "name": "Alpin rished med enbuskar"
+                  },
+                  {
+                    "id": 222,
+                    "name": "Alpin vide/dvärbjörkshed med enbuskar"
+                  },
+                  {
+                    "id": 227,
+                    "name": "Alpin gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 233,
+                    "name": "Sur alpin gräsmark med enbuskar"
+                  },
+                  {
+                    "id": 239,
+                    "name": "Kalkrik alpin gräsmark med enbuskar"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 876,
+            "name": "Björkbuskar",
+            "children": [
+              {
+                "id": 877,
+                "name": "Öppen mark med börkbuskar",
+                "children": [
+                  {
+                    "id": 209,
+                    "name": "Alpin hed med björkbuskar"
+                  },
+                  {
+                    "id": 218,
+                    "name": "Alpin rished med björkbuskar"
+                  },
+                  {
+                    "id": 223,
+                    "name": "Alpin vide/dvärbjörkshed med björkbuskar"
+                  },
+                  {
+                    "id": 228,
+                    "name": "Alpin gräsmark med björkbuskar"
+                  },
+                  {
+                    "id": 234,
+                    "name": "Sur alpin gräsmark med björkbuskar"
+                  },
+                  {
+                    "id": 240,
+                    "name": "Kalkrik alpin gräsmark med björkbuskar"
+                  },
+                  {
+                    "id": 245,
+                    "name": "Alpin högörtäng med björkbuskar"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": 878,
+            "name": "Vide",
+            "children": [
+              {
+                "id": 879,
+                "name": "Öppen mark med vide",
+                "children": [
+                  {
+                    "id": 167,
+                    "name": "Fuktig gräsmark med vide"
+                  },
+                  {
+                    "id": 178,
+                    "name": "Sandfuktmark med vide"
+                  },
+                  {
+                    "id": 187,
+                    "name": "Fuktig silikatgräsmark med vide"
+                  },
+                  {
+                    "id": 197,
+                    "name": "Fuktig kalkgräsmark med vide"
+                  },
+                  {
+                    "id": 200,
+                    "name": "Högörtäng med vide"
+                  },
+                  {
+                    "id": 229,
+                    "name": "Alpin gräsmark med vide"
+                  },
+                  {
+                    "id": 235,
+                    "name": "Sur alpin gräsmark med vide"
+                  },
+                  {
+                    "id": 241,
+                    "name": "Kalkrik alpin gräsmark med vide"
+                  },
+                  {
+                    "id": 246,
+                    "name": "Alpin högörtäng med vide"
+                  }
+                ]
+              },
+              {
+                "id": 880,
+                "name": "Våtmark med vide",
+                "children": [
+                  {
+                    "id": 429,
+                    "name": "Kärr med vide"
+                  },
+                  {
+                    "id": 439,
+                    "name": "Fattigkärr med vide"
+                  },
+                  {
+                    "id": 450,
+                    "name": "Intermediärt kärr med vide"
+                  },
+                  {
+                    "id": 461,
+                    "name": "Rikkärr med vide"
+                  },
+                  {
+                    "id": 472,
+                    "name": "Extremrikkärr med vide"
+                  },
+                  {
+                    "id": 482,
+                    "name": "Blandmyr med vide"
+                  }
+                ]
+              },
+              {
+                "id": 881,
+                "name": "Artificiell miljö med vide",
+                "children": [
+                  {
+                    "id": 683,
+                    "name": "Salix-odling"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QDialogButtonBox, QSpinBox, QSizePolicy, QToolButton,
                                  QStyle, QLineEdit, QApplication, QProgressDialog,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
-                                 QPlainTextEdit, QGraphicsDropShadowEffect)
+                                 QPlainTextEdit, QSlider, QGraphicsOpacityEffect)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -25,6 +25,8 @@ from PySide6.QtGui import (
     QStandardItemModel,
     QStandardItem,
     QFontDatabase,
+    QPolygonF,
+    QCursor,
 )
 from PySide6.QtCore import (
     Qt,
@@ -84,9 +86,26 @@ from utils.vernacular_utils import (
     resolve_vernacular_db_path,
     list_available_vernacular_languages,
 )
+from utils.publish_targets import (
+    PUBLISH_TARGET_ARTPORTALEN_SE,
+    PUBLISH_TARGET_ARTSOBS_NO,
+    SETTING_ACTIVE_REPORTING_TARGET,
+    normalize_publish_target,
+    publish_target_label,
+)
 from .image_gallery_widget import ImageGalleryWidget
-from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no
+from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
 from .calibration_dialog import CalibrationDialog
+from .measurement_overlay_style import (
+    DEFAULT_RECTANGLE_STYLE,
+    DEFAULT_RECTANGLE_THICKNESS,
+    clamp_rectangle_thickness,
+    clamp_stroke_width,
+    measure_text_uses_halo,
+    normalize_rectangle_style,
+    rectangle_thin_stroke_width,
+    rectangle_corner_segments,
+)
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
@@ -99,18 +118,252 @@ from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle, Ellipse
+from matplotlib.patches import Ellipse
 from matplotlib.ticker import MaxNLocator
 
 
-def _timing_debug_enabled() -> bool:
-    return str(os.environ.get("MYCOLOG_DEBUG_TIMING", "")).strip().lower() in {"1", "true", "yes", "on"}
+def _draw_gallery_rectangle_overlay(
+    painter: QPainter,
+    polygon: QPolygonF,
+    color: QColor,
+    rectangle_style: str,
+    wide_width: float = 4.0,
+    thin_width: float = 1.5,
+) -> None:
+    if polygon.isEmpty():
+        return
+    thin_pen = QPen(QColor(color), clamp_stroke_width(thin_width))
+    wide_pen = QPen(QColor(color), clamp_stroke_width(wide_width))
+    painter.save()
+    painter.setBrush(Qt.NoBrush)
+    resolved_style = normalize_rectangle_style(rectangle_style)
+    if resolved_style == DEFAULT_RECTANGLE_STYLE:
+        painter.setPen(wide_pen)
+        painter.drawPolygon(polygon)
+        painter.setPen(thin_pen)
+        painter.drawPolygon(polygon)
+        painter.restore()
+        return
+    painter.setPen(thin_pen)
+    painter.drawPolygon(polygon)
+    painter.setPen(wide_pen)
+    for seg_start, seg_end in rectangle_corner_segments(polygon):
+        painter.drawLine(seg_start, seg_end)
+    painter.restore()
 
 
-def _timing_log(message: str) -> None:
-    if _timing_debug_enabled():
-        print(f"[timing][main] {message}")
+class AnalysisGalleryTile(QWidget):
+    def __init__(self, rectangle_style: str, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._rectangle_style = normalize_rectangle_style(rectangle_style)
+        self._measurement_polygon = QPolygonF()
+        self._hovered_measure = False
+        self._selected_measure = False
+        self._link_button: QToolButton | None = None
+        self._rotate_button: QToolButton | None = None
+        self._overlay = QWidget(self)
+        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._overlay.setAttribute(Qt.WA_NoSystemBackground, True)
+        self._overlay.setGeometry(self.rect())
+        self._overlay.raise_()
 
+        def _overlay_paint(_event):
+            if self._measurement_polygon.isEmpty():
+                return
+            if not (self._hovered_measure or self._selected_measure):
+                return
+            painter = QPainter(self._overlay)
+            painter.setRenderHint(QPainter.Antialiasing)
+            if self._selected_measure:
+                _draw_gallery_rectangle_overlay(
+                    painter,
+                    self._measurement_polygon,
+                    QColor(52, 152, 219, 150),
+                    self._rectangle_style,
+                    wide_width=3.0,
+                    thin_width=1.2,
+                )
+            if self._hovered_measure:
+                _draw_gallery_rectangle_overlay(
+                    painter,
+                    self._measurement_polygon,
+                    QColor(231, 76, 60),
+                    self._rectangle_style,
+                    wide_width=4.0,
+                    thin_width=1.5,
+                )
+            painter.end()
+
+        self._overlay.paintEvent = _overlay_paint
+
+    def set_measurement_polygon(self, polygon: QPolygonF | None) -> None:
+        self._measurement_polygon = QPolygonF(polygon or [])
+        self._reposition_overlay_buttons()
+        self._overlay.update()
+
+    def set_overlay_buttons(self, link_button: QToolButton, rotate_button: QToolButton) -> None:
+        self._link_button = link_button
+        self._rotate_button = rotate_button
+        self._reposition_overlay_buttons()
+        self._overlay.raise_()
+        self._sync_overlay_buttons()
+
+    def set_measure_selected(self, selected: bool) -> None:
+        selected = bool(selected)
+        if self._selected_measure == selected:
+            return
+        self._selected_measure = selected
+        self._overlay.raise_()
+        self._overlay.update()
+
+    def set_measure_hovered(self, hovered: bool) -> None:
+        hovered = bool(hovered)
+        if self._hovered_measure == hovered:
+            return
+        self._hovered_measure = hovered
+        self._overlay.raise_()
+        self._sync_overlay_buttons()
+        self._overlay.update()
+
+    def _sync_overlay_buttons(self) -> None:
+        self._overlay.raise_()
+        visible = bool(not self._measurement_polygon.isEmpty())
+        for button in (self._link_button, self._rotate_button):
+            if button is not None:
+                button.setVisible(visible)
+                if visible:
+                    button.raise_()
+
+    def _reposition_overlay_buttons(self) -> None:
+        if self._measurement_polygon.isEmpty():
+            return
+        buttons = [button for button in (self._link_button, self._rotate_button) if button is not None]
+        if not buttons:
+            return
+        top_y = 2
+        if self._link_button is not None:
+            self._link_button.move(4, top_y)
+        if self._rotate_button is not None:
+            self._rotate_button.move(self.width() - self._rotate_button.width() - 4, top_y)
+
+    def _cursor_inside_measurement(self, pos: QPointF) -> bool:
+        if self._measurement_polygon.isEmpty():
+            return False
+        bounds = self._measurement_polygon.boundingRect().adjusted(-3.0, -3.0, 3.0, 3.0)
+        return bounds.contains(pos) or self._measurement_polygon.containsPoint(pos, Qt.OddEvenFill)
+
+    def event(self, event) -> bool:
+        event_type = event.type()
+        if event_type in (QEvent.HoverMove, QEvent.MouseMove):
+            pos = event.position() if hasattr(event, "position") else QPointF()
+            self.set_measure_hovered(self._cursor_inside_measurement(pos))
+        elif event_type in (QEvent.HoverEnter, QEvent.Enter):
+            pos = event.position() if hasattr(event, "position") else QPointF(self.mapFromGlobal(QCursor.pos()))
+            self.set_measure_hovered(self._cursor_inside_measurement(pos))
+        elif event_type in (QEvent.HoverLeave, QEvent.Leave):
+            self.set_measure_hovered(False)
+        return super().event(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        self.set_measure_hovered(self._cursor_inside_measurement(event.position()))
+        super().mouseMoveEvent(event)
+
+    def enterEvent(self, event) -> None:
+        pos = self.mapFromGlobal(QCursor.pos())
+        self.set_measure_hovered(self._cursor_inside_measurement(QPointF(pos)))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.set_measure_hovered(False)
+        super().leaveEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        self._overlay.setGeometry(self.rect())
+        self._overlay.raise_()
+        self._reposition_overlay_buttons()
+        super().resizeEvent(event)
+from app_identity import APP_NAME, LEGACY_APP_NAME, app_data_dir
+
+
+_REFERENCE_PLOT_PALETTE = [
+    "#0072bd",
+    "#d95319",
+    "#edb120",
+    "#7e2f8e",
+    "#77ac30",
+    "#4dbeee",
+    "#a2142f",
+]
+
+
+def _blend_reference_palette_color(color: str, target: str, ratio: float) -> str:
+    """Blend a palette colour toward black or white for darker/lighter variants."""
+    base = QColor(color)
+    mix = QColor(target)
+    ratio = max(0.0, min(1.0, float(ratio)))
+    red = round(base.red() + (mix.red() - base.red()) * ratio)
+    green = round(base.green() + (mix.green() - base.green()) * ratio)
+    blue = round(base.blue() + (mix.blue() - base.blue()) * ratio)
+    return QColor(red, green, blue).name().lower()
+
+
+def reference_plot_palette_groups(_dark: bool | None = None) -> list[tuple[str, list[str]]]:
+    """Return darker, medium, and lighter reference colour rows."""
+    medium = list(_REFERENCE_PLOT_PALETTE)
+    dark = [_blend_reference_palette_color(color, "#000000", 0.22) for color in medium]
+    light = [_blend_reference_palette_color(color, "#ffffff", 0.28) for color in medium]
+    return [
+        ("dark", dark),
+        ("medium", medium),
+        ("light", light),
+    ]
+
+
+def reference_plot_palette(_dark: bool | None = None) -> list[str]:
+    """Return the medium palette used for automatic reference-series colours."""
+    for name, colors in reference_plot_palette_groups(_dark):
+        if name == "medium":
+            return list(colors)
+    return list(_REFERENCE_PLOT_PALETTE)
+
+
+def measure_overlay_palette_groups(_dark: bool | None = None) -> list[tuple[str, list[str]]]:
+    """Return the analysis-style palette with black/grey/white folded into dark/medium/light."""
+    groups: list[tuple[str, list[str]]] = []
+    for name, colors in reference_plot_palette_groups(_dark):
+        extended = list(colors)
+        if name == "dark":
+            extended.append("#000000")
+        elif name == "medium":
+            extended.append("#808080")
+        elif name == "light":
+            extended.append("#ffffff")
+        groups.append((name, extended))
+    return groups
+
+
+class JumpSlider(QSlider):
+    """Slider that jumps to the clicked position instead of paging by step."""
+
+    def mousePressEvent(self, event) -> None:
+        if getattr(event, "button", lambda: None)() == Qt.LeftButton:
+            if self.orientation() == Qt.Horizontal:
+                span = max(1, self.width())
+                pos = int(event.position().x())
+            else:
+                span = max(1, self.height())
+                pos = span - int(event.position().y())
+            value = QStyle.sliderValueFromPosition(
+                self.minimum(),
+                self.maximum(),
+                pos,
+                span,
+                self.invertedAppearance(),
+            )
+            self.setValue(value)
+        super().mousePressEvent(event)
 
 class SpinnerWidget(QWidget):
     """Simple spinning doughnut indicator."""
@@ -448,7 +701,9 @@ class LanguageSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        restart_notice = QLabel(self.tr("Language change will apply after restart."))
+        restart_notice = QLabel(
+            self.tr("Language change will apply after restart. Incomplete translations fall back to English.")
+        )
         restart_notice.setWordWrap(True)
         restart_notice.setStyleSheet("color: #34495e;")
         layout.addWidget(restart_notice)
@@ -456,6 +711,7 @@ class LanguageSettingsDialog(QDialog):
         self.ui_combo = QComboBox()
         self.ui_combo.addItem(self.tr("English"), "en")
         self.ui_combo.addItem(self.tr("Norwegian"), "nb_NO")
+        self.ui_combo.addItem(self.tr("Swedish"), "sv_SE")
         self.ui_combo.addItem(self.tr("German"), "de_DE")
         form.addRow(self.tr("UI language:"), self.ui_combo)
 
@@ -483,7 +739,16 @@ class LanguageSettingsDialog(QDialog):
         self.vernacular_combo.blockSignals(False)
 
     def _load_settings(self):
-        current_ui = SettingsDB.get_setting("ui_language", "en")
+        current_ui = str(SettingsDB.get_setting("ui_language", "en") or "en").replace("-", "_")
+        current_prefix = current_ui.split("_", 1)[0].lower()
+        if current_prefix == "de":
+            current_ui = "de_DE"
+        elif current_prefix in {"nb", "nn", "no"}:
+            current_ui = "nb_NO"
+        elif current_prefix == "sv":
+            current_ui = "sv_SE"
+        else:
+            current_ui = "en"
         current_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         ui_index = self.ui_combo.findData(current_ui)
         if ui_index >= 0:
@@ -580,6 +845,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     """Dialog for Artsobservasjoner login and upload preferences."""
 
     SETTING_UPLOAD_TARGET = "artsobs_upload_target"
+    SETTING_ENABLED_UPLOAD_TARGETS = "artsobs_enabled_upload_targets"
+    SETTING_ACTIVE_REPORTING_TARGET = SETTING_ACTIVE_REPORTING_TARGET
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
@@ -595,6 +862,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     UPLOADER_LABELS = {
         "mobile": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner"),
         "web": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artsobservasjoner"),
+        "artportalen": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Artportalen"),
         "inat": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "iNaturalist"),
         "mo": QT_TRANSLATE_NOOP("ArtsobservasjonerSettingsDialog", "Mushroom Observer"),
     }
@@ -635,11 +903,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        from platformdirs import user_data_dir
         from utils.artsobs_uploaders import list_uploaders
         self.cookies_file = (
-            Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
-            / "artsobservasjoner_cookies.json"
+            app_data_dir() / "artsobservasjoner_cookies.json"
         )
         self._auth_widget = None
         self._uploaders = list_uploaders()
@@ -866,25 +1132,60 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.setContentsMargins(10, 10, 10, 10)
         websites_layout.setSpacing(8)
 
-        self.targets_table = QTableWidget(0, 2, self)
+        reporting_group = QGroupBox(self.tr("Reporting system"), self)
+        reporting_layout = QHBoxLayout(reporting_group)
+        reporting_layout.setContentsMargins(10, 10, 10, 10)
+        reporting_layout.setSpacing(12)
+        self.reporting_target_group = QButtonGroup(self)
+        self.reporting_target_group.setExclusive(True)
+        self.reporting_target_no_radio = QRadioButton(self.tr("Norway"))
+        self.reporting_target_se_radio = QRadioButton(self.tr("Sweden"))
+        self.reporting_target_group.addButton(self.reporting_target_no_radio)
+        self.reporting_target_group.addButton(self.reporting_target_se_radio)
+        self.reporting_target_no_radio.toggled.connect(self._on_reporting_target_changed)
+        self.reporting_target_se_radio.toggled.connect(self._on_reporting_target_changed)
+        reporting_layout.addWidget(self.reporting_target_no_radio)
+        reporting_layout.addWidget(self.reporting_target_se_radio)
+        reporting_layout.addStretch(1)
+        websites_layout.addWidget(reporting_group)
+
+        reporting_note = QLabel(
+            self.tr("This controls the biotope/substrate choices in the observation editor and which Nordic publish target appears on the Publish button.")
+        )
+        reporting_note.setWordWrap(True)
+        reporting_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        websites_layout.addWidget(reporting_note)
+
+        self.targets_table = QTableWidget(0, 3, self)
         self.targets_table.setHorizontalHeaderLabels(
-            [self.tr("Publish target"), self.tr("Status")]
+            [self.tr("Use"), self.tr("Publish target"), self.tr("Status")]
         )
         self.targets_table.verticalHeader().setVisible(False)
         self.targets_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.targets_table.setSelectionMode(QTableWidget.SingleSelection)
         self.targets_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.targets_table.setAlternatingRowColors(True)
-        self.targets_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.targets_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.targets_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.targets_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.targets_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         for uploader in self._uploaders:
             row = self.targets_table.rowCount()
             self.targets_table.insertRow(row)
+            use_item = QTableWidgetItem()
+            use_item.setFlags(
+                Qt.ItemIsEnabled
+                | Qt.ItemIsSelectable
+                | Qt.ItemIsUserCheckable
+            )
+            use_item.setCheckState(Qt.Checked)
+            use_item.setData(Qt.UserRole, uploader.key)
             target_item = QTableWidgetItem(self._uploader_display_label(uploader))
             target_item.setData(Qt.UserRole, uploader.key)
             status_item = QTableWidgetItem(self.tr("Not logged in"))
-            self.targets_table.setItem(row, 0, target_item)
-            self.targets_table.setItem(row, 1, status_item)
+            self.targets_table.setItem(row, 0, use_item)
+            self.targets_table.setItem(row, 1, target_item)
+            self.targets_table.setItem(row, 2, status_item)
+        self.targets_table.itemChanged.connect(self._on_target_enabled_item_changed)
         self.targets_table.itemSelectionChanged.connect(self._on_target_selection_changed)
         websites_layout.addWidget(self.targets_table, 1)
 
@@ -1001,6 +1302,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
         bottom_row.addWidget(self.hint_bar, 1)
+        bottom_row.addWidget(
+            make_github_help_button(self, "artsobservasjoner.md"),
+            0,
+            Qt.AlignRight | Qt.AlignVCenter,
+        )
 
         buttons = QDialogButtonBox(self)
         close_button = buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
@@ -1053,6 +1359,15 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._update_controls()
         if not self._loading_settings:
             self._save_settings()
+
+    def _on_reporting_target_changed(self) -> None:
+        if not self._loading_settings:
+            self._save_settings()
+
+    def _on_target_enabled_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._loading_settings or item is None or item.column() != 0:
+            return
+        self._save_settings()
 
     @staticmethod
     def _setting_enabled(key: str, default: bool = False) -> bool:
@@ -1110,6 +1425,20 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if selected_uploader:
             SettingsDB.set_setting(self.SETTING_UPLOAD_TARGET, selected_uploader.key)
         SettingsDB.set_setting(
+            self.SETTING_ENABLED_UPLOAD_TARGETS,
+            json.dumps(self._enabled_target_keys_from_table()),
+        )
+        selected_reporting_target = (
+            PUBLISH_TARGET_ARTPORTALEN_SE
+            if getattr(self, "reporting_target_se_radio", None) is not None
+            and self.reporting_target_se_radio.isChecked()
+            else PUBLISH_TARGET_ARTSOBS_NO
+        )
+        SettingsDB.set_setting(
+            self.SETTING_ACTIVE_REPORTING_TARGET,
+            selected_reporting_target,
+        )
+        SettingsDB.set_setting(
             self.SETTING_INCLUDE_ANNOTATIONS,
             "1" if self.include_annotations_checkbox.isChecked() else "0",
         )
@@ -1145,12 +1474,71 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not rows:
             return self._uploaders[0]
         row = rows[0].row()
-        item = self.targets_table.item(row, 0)
+        item = self.targets_table.item(row, 1)
         selected_key = item.data(Qt.UserRole) if item else None
         for uploader in self._uploaders:
             if uploader.key == selected_key:
                 return uploader
         return self._uploaders[0]
+
+    def _enabled_target_keys_from_table(self) -> list[str]:
+        enabled: list[str] = []
+        for row in range(self.targets_table.rowCount()):
+            use_item = self.targets_table.item(row, 0)
+            if use_item is None or use_item.checkState() != Qt.Checked:
+                continue
+            key = str(use_item.data(Qt.UserRole) or "").strip().lower()
+            if key:
+                enabled.append(key)
+        return enabled
+
+    @classmethod
+    def _stored_enabled_upload_target_keys(cls, uploaders: list | None = None) -> list[str]:
+        available_keys = [
+            str(getattr(uploader, "key", "")).strip().lower()
+            for uploader in (uploaders or [])
+            if getattr(uploader, "key", None)
+        ]
+        if not available_keys:
+            return []
+        raw = SettingsDB.get_setting(cls.SETTING_ENABLED_UPLOAD_TARGETS, "")
+        enabled: list[str] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                parsed = []
+            if isinstance(parsed, list):
+                enabled = [
+                    str(value).strip().lower()
+                    for value in parsed
+                    if str(value).strip().lower() in available_keys
+                ]
+        if not enabled:
+            enabled = list(available_keys)
+        return enabled
+
+    @classmethod
+    def active_reporting_target(cls) -> str:
+        return normalize_publish_target(
+            SettingsDB.get_setting(cls.SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
+            fallback=PUBLISH_TARGET_ARTSOBS_NO,
+        )
+
+    @classmethod
+    def enabled_upload_target_keys(cls, uploaders: list | None = None) -> list[str]:
+        available_keys = cls._stored_enabled_upload_target_keys(uploaders)
+        if not available_keys:
+            return []
+        active_uploader = "artportalen" if cls.active_reporting_target() == PUBLISH_TARGET_ARTPORTALEN_SE else "web"
+        enabled: list[str] = []
+        for key in available_keys:
+            if key in {"web", "mobile", "artportalen"}:
+                if key == active_uploader:
+                    enabled.append(key)
+            else:
+                enabled.append(key)
+        return enabled
 
     def _refresh_target_status(self) -> None:
         status = {uploader.key: False for uploader in self._uploaders}
@@ -1166,6 +1554,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         status[uploader.key] = bool(inat and inat.get_valid_access_token())
                     except Exception:
                         status[uploader.key] = False
+                elif uploader.key == "artportalen":
+                    try:
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        status[uploader.key] = bool(ArtportalenAuth().get_valid_cookies())
+                    except Exception:
+                        status[uploader.key] = False
                 elif uploader.key == "mo":
                     app_key, user_key = self._mushroomobserver_credentials()
                     status[uploader.key] = bool(app_key and user_key)
@@ -1178,6 +1573,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     try:
                         inat = self._inat_oauth_client(require_credentials=False)
                         status[uploader.key] = bool(inat and inat.get_valid_access_token())
+                    except Exception:
+                        status[uploader.key] = False
+                elif uploader.key == "artportalen":
+                    try:
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        status[uploader.key] = bool(ArtportalenAuth().get_valid_cookies())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -1198,8 +1600,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         selected = self._selected_uploader()
         selected_logged_in = bool(selected and self._is_logged_in(selected.key))
         for row in range(self.targets_table.rowCount()):
-            target_item = self.targets_table.item(row, 0)
-            status_item = self.targets_table.item(row, 1)
+            target_item = self.targets_table.item(row, 1)
+            status_item = self.targets_table.item(row, 2)
             key = target_item.data(Qt.UserRole) if target_item else None
             logged_in = self._is_logged_in(key)
             if logged_in:
@@ -1276,6 +1678,29 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 )
                 return
             self._on_login_success({"user_key": user_key}, target_key="mo", already_saved=True)
+            return
+        if selected_uploader.key == "artportalen":
+            try:
+                from utils.artportalen_auth import ArtportalenAuth
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Login Unavailable"),
+                    self.tr(f"Could not load the Artportalen login helper.\n\n{exc}"),
+                )
+                return
+            try:
+                cookies = ArtportalenAuth().login_with_gui(parent=self)
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Login Failed"),
+                    self.tr("Artportalen login failed.\n\n{error}").format(error=exc),
+                )
+                return
+            if not cookies:
+                return
+            self._on_login_success(cookies, target_key="artportalen", already_saved=True)
             return
 
         try:
@@ -1358,6 +1783,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._update_status()
             self._update_controls()
             return
+        if selected_uploader and selected_uploader.key == "artportalen":
+            try:
+                from utils.artportalen_auth import ArtportalenAuth
+
+                ArtportalenAuth().clear_cookies()
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Logout Failed"),
+                    self.tr(f"Unable to remove Artportalen session.\n\n{exc}")
+                )
+                return
+            self._update_status()
+            self._update_controls()
+            return
 
         try:
             from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
@@ -1384,14 +1824,29 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             selected_target = (SettingsDB.get_setting(self.SETTING_UPLOAD_TARGET, "") or "").strip().lower()
             if selected_target == "mobile":
                 selected_target = "web"
+            active_target = self.active_reporting_target()
+            self.reporting_target_no_radio.blockSignals(True)
+            self.reporting_target_se_radio.blockSignals(True)
+            self.reporting_target_no_radio.setChecked(active_target == PUBLISH_TARGET_ARTSOBS_NO)
+            self.reporting_target_se_radio.setChecked(active_target == PUBLISH_TARGET_ARTPORTALEN_SE)
+            self.reporting_target_no_radio.blockSignals(False)
+            self.reporting_target_se_radio.blockSignals(False)
             selected_row = -1
             if selected_target:
                 for row in range(self.targets_table.rowCount()):
-                    target_item = self.targets_table.item(row, 0)
+                    target_item = self.targets_table.item(row, 1)
                     target_key = str(target_item.data(Qt.UserRole) if target_item else "").strip().lower()
                     if target_key == selected_target:
                         selected_row = row
                         break
+            enabled_keys = set(self._stored_enabled_upload_target_keys(self._uploaders))
+            self.targets_table.blockSignals(True)
+            for row in range(self.targets_table.rowCount()):
+                use_item = self.targets_table.item(row, 0)
+                key = str(use_item.data(Qt.UserRole) if use_item else "").strip().lower()
+                if use_item is not None:
+                    use_item.setCheckState(Qt.Checked if key in enabled_keys else Qt.Unchecked)
+            self.targets_table.blockSignals(False)
             if selected_row >= 0:
                 self.targets_table.selectRow(selected_row)
             elif self.targets_table.rowCount() > 0:
@@ -1482,9 +1937,20 @@ class VernacularDB:
         self.db_path = db_path
         self.language_code = normalize_vernacular_language(language_code) if language_code else None
         self._has_language_column = None
+        self._tables: set[str] | None = None
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
+
+    def _table_names(self) -> set[str]:
+        if self._tables is None:
+            with self._connect() as conn:
+                cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                self._tables = {str(row[0] or "") for row in cur.fetchall()}
+        return self._tables
+
+    def _has_scientific_name_table(self) -> bool:
+        return "scientific_name_min" in self._table_names()
 
     def _has_language(self) -> bool:
         if self._has_language_column is None:
@@ -1551,6 +2017,9 @@ class VernacularDB:
         species = species.strip() if species else None
         if not genus and not species:
             return []
+        resolved = self.taxon_from_scientific(genus or "", species or "") if genus and species else None
+        if resolved:
+            genus, species, _family = resolved
         lang_clause, lang_params = self._language_clause(None)
         with self._connect() as conn:
             cur = conn.cursor()
@@ -1597,9 +2066,65 @@ class VernacularDB:
                 return None
             return row[0], row[1], row[2]
 
+    def taxon_from_scientific(self, genus: str, species: str) -> tuple[str, str, str | None] | None:
+        genus = (genus or "").strip()
+        species = (species or "").strip()
+        if not genus or not species:
+            return None
+        scientific_name = f"{genus} {species}".strip()
+        with self._connect() as conn:
+            cur = conn.cursor()
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT t.genus, t.specific_epithet, t.family
+                    FROM taxon_min t
+                    LEFT JOIN scientific_name_min s ON s.taxon_id = t.taxon_id
+                    WHERE (
+                            t.genus = ? COLLATE NOCASE
+                        AND t.specific_epithet = ? COLLATE NOCASE
+                    )
+                       OR (
+                            t.canonical_scientific_name = ? COLLATE NOCASE
+                    )
+                       OR (
+                            s.scientific_name = ? COLLATE NOCASE
+                    )
+                    ORDER BY
+                        CASE
+                            WHEN t.genus = ? COLLATE NOCASE AND t.specific_epithet = ? COLLATE NOCASE THEN 0
+                            WHEN s.is_preferred_name = 1 THEN 1
+                            ELSE 2
+                        END,
+                        t.genus,
+                        t.specific_epithet
+                    LIMIT 1
+                    """,
+                    (genus, species, scientific_name, scientific_name, genus, species),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT genus, specific_epithet, family
+                    FROM taxon_min
+                    WHERE genus = ? COLLATE NOCASE
+                      AND specific_epithet = ? COLLATE NOCASE
+                    ORDER BY genus, specific_epithet
+                    LIMIT 1
+                    """,
+                    (genus, species),
+                )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row[0], row[1], row[2]
+
     def vernacular_from_taxon(self, genus: str, species: str) -> str | None:
         if not genus or not species:
             return None
+        resolved = self.taxon_from_scientific(genus, species)
+        if resolved:
+            genus, species, _family = resolved
         lang_clause, lang_params = self._language_clause(None)
         with self._connect() as conn:
             cur = conn.cursor()
@@ -1627,6 +2152,8 @@ class VernacularDB:
             return []
         with self._connect() as conn:
             cur = conn.cursor()
+            values: list[str] = []
+            seen: set[str] = set()
             cur.execute(
                 """
                 SELECT DISTINCT genus
@@ -1637,7 +2164,31 @@ class VernacularDB:
                 """,
                 (prefix,),
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            for row in cur.fetchall():
+                genus = str(row[0] or "").strip()
+                lowered = genus.casefold()
+                if genus and lowered not in seen:
+                    seen.add(lowered)
+                    values.append(genus)
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT DISTINCT scientific_name
+                    FROM scientific_name_min
+                    WHERE scientific_name LIKE ? || ' %'
+                    ORDER BY scientific_name
+                    LIMIT 400
+                    """,
+                    (prefix,),
+                )
+                for row in cur.fetchall():
+                    scientific_name = str(row[0] or "").strip()
+                    genus = scientific_name.split(" ", 1)[0].strip() if scientific_name else ""
+                    lowered = genus.casefold()
+                    if genus and lowered not in seen:
+                        seen.add(lowered)
+                        values.append(genus)
+            return values[:200]
 
     def suggest_species(self, genus: str, prefix: str) -> list[str]:
         genus = genus.strip()
@@ -1646,18 +2197,47 @@ class VernacularDB:
             return []
         with self._connect() as conn:
             cur = conn.cursor()
+            values: list[str] = []
+            seen: set[str] = set()
             cur.execute(
                 """
                 SELECT DISTINCT specific_epithet
                 FROM taxon_min
-                WHERE genus = ?
+                WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet LIKE ? || '%'
                 ORDER BY specific_epithet
                 LIMIT 200
                 """,
                 (genus, prefix),
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            for row in cur.fetchall():
+                species = str(row[0] or "").strip()
+                lowered = species.casefold()
+                if species and lowered not in seen:
+                    seen.add(lowered)
+                    values.append(species)
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT DISTINCT scientific_name
+                    FROM scientific_name_min
+                    WHERE scientific_name LIKE ? || ' ' || ? || '%'
+                    ORDER BY scientific_name
+                    LIMIT 400
+                    """,
+                    (genus, prefix),
+                )
+                for row in cur.fetchall():
+                    scientific_name = str(row[0] or "").strip()
+                    parts = scientific_name.split()
+                    if len(parts) < 2 or parts[0].casefold() != genus.casefold():
+                        continue
+                    species = parts[1].strip()
+                    lowered = species.casefold()
+                    if species and lowered not in seen:
+                        seen.add(lowered)
+                        values.append(species)
+            return values[:200]
 
 class ReferenceValuesDialog(QDialog):
     """Dialog for editing reference spore size values."""
@@ -1740,6 +2320,9 @@ class ReferenceValuesDialog(QDialog):
         self.table.setMinimumHeight(120)
         layout.addWidget(self.table)
 
+        info_row = QHBoxLayout()
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(8)
         info_label = QLabel(
             self.tr(
                 "Percentiles assume an approximately normal distribution. "
@@ -1748,7 +2331,9 @@ class ReferenceValuesDialog(QDialog):
         )
         info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         info_label.setWordWrap(True)
-        layout.addWidget(info_label)
+        info_row.addWidget(info_label, 1)
+        info_row.addWidget(make_github_help_button(self, "reference-data-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
+        layout.addLayout(info_row)
 
         def _set_cell(row, col, value):
             if value is None:
@@ -2356,6 +2941,7 @@ class ReferenceAddDialog(QDialog):
         vernacular: str | None = None,
         data: dict | None = None,
         title: str | None = None,
+        allow_delete: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title or parent.tr("Add reference data"))
@@ -2368,6 +2954,9 @@ class ReferenceAddDialog(QDialog):
         self._species = species
         self._prefill_data = data or {}
         self._hint_controller: HintStatusController | None = None
+        self._plot_color = None
+        self._allow_delete = bool(allow_delete)
+        self._delete_requested = False
         self._default_hint_text = self.tr("Paste from Excel/csv or type values")
         self._minmax_header_hints = {
             0: self.tr("Min: Minimum value in the data set"),
@@ -2378,7 +2967,6 @@ class ReferenceAddDialog(QDialog):
         }
 
         layout = QVBoxLayout(self)
-
         sci_label = QLabel(f"{genus} {species}".strip())
         sci_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(sci_label)
@@ -2417,6 +3005,36 @@ class ReferenceAddDialog(QDialog):
         spore_layout.addWidget(self.spore_table)
         self.tabs.addTab(spore_tab, self.tr("Spore data"))
 
+        parmasto_tab = QWidget()
+        parmasto_layout = QFormLayout(parmasto_tab)
+        parmasto_layout.setContentsMargins(8, 8, 8, 8)
+        parmasto_layout.setSpacing(6)
+        parmasto_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        self.parmasto_inputs: dict[str, QLineEdit] = {}
+        def _math_label(html: str, description: str) -> QLabel:
+            label = QLabel(f"{html}:")
+            label.setTextFormat(Qt.RichText)
+            label.setToolTip(description)
+            return label
+        parmasto_fields = [
+            ("parmasto_length_mean", "<span style=\"text-decoration: overline;\">L</span>", self.tr("Species mean length")),
+            ("parmasto_width_mean", "<span style=\"text-decoration: overline;\">W</span>", self.tr("Species mean width")),
+            ("parmasto_q_mean", "<span style=\"text-decoration: overline;\">Q</span>", self.tr("Species mean quotient")),
+            ("parmasto_v_sp_length", "V<sub>spL</sub>", self.tr("Inter-specimen CV for length means (%)")),
+            ("parmasto_v_sp_width", "V<sub>spW</sub>", self.tr("Inter-specimen CV for width means (%)")),
+            ("parmasto_v_sp_q", "V<sub>spQ</sub>", self.tr("Inter-specimen CV for quotient means (%)")),
+            ("parmasto_v_ind_length", "<span style=\"text-decoration: overline;\">V</span><sub>indL</sub>", self.tr("Average intra-specimen variation for length (%)")),
+            ("parmasto_v_ind_width", "<span style=\"text-decoration: overline;\">V</span><sub>indW</sub>", self.tr("Average intra-specimen variation for width (%)")),
+            ("parmasto_v_ind_q", "<span style=\"text-decoration: overline;\">V</span><sub>indE</sub>", self.tr("Average intra-specimen variation for quotient (Parmasto VindE) (%)")),
+        ]
+        for key, math_label, description in parmasto_fields:
+            line_edit = QLineEdit()
+            line_edit.setPlaceholderText(description)
+            line_edit.setToolTip(description)
+            parmasto_layout.addRow(_math_label(math_label, description), line_edit)
+            self.parmasto_inputs[key] = line_edit
+        self.tabs.addTab(parmasto_tab, self.tr("Parmasto Biometrics"))
+
         source_row = QFormLayout()
         self.source_input = QLineEdit()
         source_prefill = (
@@ -2433,13 +3051,19 @@ class ReferenceAddDialog(QDialog):
         button_row = QHBoxLayout()
         self.hint_bar = HintBar(self)
         button_row.addWidget(self.hint_bar, 1)
+        button_row.addWidget(make_github_help_button(self, "reference-data-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         self._hint_controller.set_hint(self._default_hint_text)
 
         self.save_btn = QPushButton(self.tr("Save"))
         self.save_btn.clicked.connect(self._on_save)
+        self.delete_btn = QPushButton(self.tr("Delete"))
+        self.delete_btn.clicked.connect(self._on_delete)
+        self.delete_btn.setVisible(self._allow_delete)
         self.cancel_btn = QPushButton(self.tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
+        if self._allow_delete:
+            button_row.addWidget(self.delete_btn)
         button_row.addWidget(self.save_btn)
         button_row.addWidget(self.cancel_btn)
         layout.addLayout(button_row)
@@ -2505,11 +3129,33 @@ class ReferenceAddDialog(QDialog):
         finally:
             self._formatting_minmax = False
 
-    def _minmax_data(self):
+    def _parmasto_value(self, key: str):
+        widget = self.parmasto_inputs.get(key)
+        if widget is None:
+            return None
+        text = widget.text().strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    def _reference_record_data(self):
         data = {
             "genus": self._genus,
             "species": self._species,
             "source": self.source_input.text().strip() or None,
+            "plot_color": self._plot_color,
+            "parmasto_length_mean": self._parmasto_value("parmasto_length_mean"),
+            "parmasto_width_mean": self._parmasto_value("parmasto_width_mean"),
+            "parmasto_q_mean": self._parmasto_value("parmasto_q_mean"),
+            "parmasto_v_sp_length": self._parmasto_value("parmasto_v_sp_length"),
+            "parmasto_v_sp_width": self._parmasto_value("parmasto_v_sp_width"),
+            "parmasto_v_sp_q": self._parmasto_value("parmasto_v_sp_q"),
+            "parmasto_v_ind_length": self._parmasto_value("parmasto_v_ind_length"),
+            "parmasto_v_ind_width": self._parmasto_value("parmasto_v_ind_width"),
+            "parmasto_v_ind_q": self._parmasto_value("parmasto_v_ind_q"),
             "length_min": self._table_value(0, 0),
             "length_p05": self._table_value(0, 1),
             "length_p50": self._table_value(0, 2),
@@ -2537,6 +3183,15 @@ class ReferenceAddDialog(QDialog):
                 "width_p50",
                 "width_p95",
                 "width_max",
+                "parmasto_length_mean",
+                "parmasto_width_mean",
+                "parmasto_q_mean",
+                "parmasto_v_sp_length",
+                "parmasto_v_sp_width",
+                "parmasto_v_sp_q",
+                "parmasto_v_ind_length",
+                "parmasto_v_ind_width",
+                "parmasto_v_ind_q",
             )
         )
         if not has_values:
@@ -2556,21 +3211,13 @@ class ReferenceAddDialog(QDialog):
             "species": self._species,
             "points": points,
             "points_label": source_label,
+            "plot_color": self._plot_color,
             "source_kind": "points",
             "source_type": "custom",
         }
 
     def _on_save(self):
-        if self.tabs.currentIndex() == 0:
-            data = self._minmax_data()
-            if not data:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Missing Data"),
-                    self.tr("Enter at least one length or width value.")
-                )
-                return
-        else:
+        if self.tabs.currentIndex() == 1:
             data = self._points_data()
             if not data:
                 QMessageBox.warning(
@@ -2579,15 +3226,47 @@ class ReferenceAddDialog(QDialog):
                     self.tr("Enter at least one length and width value.")
                 )
                 return
+        else:
+            data = self._reference_record_data()
+            if not data:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Missing Data"),
+                    self.tr("Enter at least one reference or Parmasto value.")
+                )
+                return
         self._result = data
         self.accept()
 
     def result_data(self):
         return self._result
 
+    def delete_requested(self) -> bool:
+        return bool(self._delete_requested)
+
+    def _set_plot_color(self, color: str | None) -> None:
+        self._plot_color = str(color).strip().lower() if color else None
+
+    def _on_delete(self) -> None:
+        if not self._allow_delete:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.tr("Delete Reference"),
+            self.tr("Delete the selected stored reference?"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self._delete_requested = True
+        self._result = None
+        self.accept()
+
     def _apply_prefill(self):
         data = self._prefill_data
         if not data:
+            self._set_plot_color(None)
             return
 
         def _set_cell(row, col, value):
@@ -2622,6 +3301,17 @@ class ReferenceAddDialog(QDialog):
                     self.spore_table.setItem(row, 1, QTableWidgetItem(f"{width:g}"))
                 self.spore_table._update_q_for_row(row)
             self.tabs.setCurrentIndex(1)
+        parmasto_has_values = False
+        for key, widget in self.parmasto_inputs.items():
+            value = data.get(key)
+            if value is None:
+                widget.clear()
+                continue
+            widget.setText(f"{float(value):g}")
+            parmasto_has_values = True
+        if parmasto_has_values and not points:
+            self.tabs.setCurrentIndex(2)
+        self._set_plot_color(data.get("plot_color"))
 
 class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
@@ -2631,10 +3321,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     SETTING_MEASURE_SHOW_OVERLAYS = "measure_view_show_overlays"
     SETTING_MEASURE_SHOW_SCALE_BAR = "measure_view_show_scale_bar"
     SETTING_MEASURE_SHOW_COPYRIGHT = "measure_view_show_copyright"
+    SETTING_MEASURE_RECTANGLE_STYLE = "measure_view_rectangle_style"
+    SETTING_MEASURE_RECTANGLE_THICKNESS = "measure_view_rectangle_thickness"
 
     def __init__(self, app_version: str | None = None):
         super().__init__()
-        self.setWindowTitle("MycoLog")
+        self.setWindowTitle(APP_NAME)
         self.setGeometry(100, 100, 1600, 900)
         self.app_version = app_version or ""
         self._update_check_started = False
@@ -2708,6 +3400,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_refresh_pending = False
         self._gallery_last_refresh_time = 0.0
         self._gallery_thumb_cache = {}
+        self._gallery_thumb_geometry_cache = {}
         self._gallery_thumb_cache_observation_id = None
         self._gallery_pixmap_cache = {}
         self._gallery_render_timer = None
@@ -2721,6 +3414,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_hover_hint_key = ""
         self.gallery_selected_measurement_id = None
         self._gallery_thumbnail_frames: dict[int, QFrame] = {}
+        self._gallery_thumbnail_labels: dict[int, QWidget] = {}
+        self._gallery_measurement_lookup: dict[int, dict] = {}
+        self._gallery_thumbnail_render_state: dict | None = None
         self._gallery_pan_active = False
         self._gallery_pan_axis = None
         self._gallery_pan_start = None
@@ -2777,6 +3473,13 @@ class MainWindow(GeometryMixin, QMainWindow):
                     QToolTip.showText(obj.mapToGlobal(QPoint(0, obj.height())), tip, obj)
             elif event.type() == QEvent.Leave:
                 QToolTip.hideText()
+        if obj.property("gallery_fade_icon"):
+            effect = obj.graphicsEffect()
+            if isinstance(effect, QGraphicsOpacityEffect):
+                if event.type() == QEvent.Enter:
+                    effect.setOpacity(1.0)
+                elif event.type() == QEvent.Leave:
+                    effect.setOpacity(float(obj.property("gallery_idle_opacity") or 0.28))
         if event.type() == QEvent.FocusIn:
             if obj == getattr(self, "ref_genus_input", None):
                 text = self._clean_ref_genus_text(self.ref_genus_input.text())
@@ -2831,6 +3534,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Observations tab (new - first tab)
         self.observations_tab = ObservationsTab()
         self.observations_tab.observation_selected.connect(self.on_observation_selected)
+        self.observations_tab.observation_highlighted.connect(self.update_observation_header)
         self.observations_tab.image_selected.connect(self.on_image_selected)
         self.observations_tab.observation_deleted.connect(self.on_observation_deleted)
         self.tab_widget.addTab(self.observations_tab, self.tr("Observations ({alt}O)").format(alt=_ALT_LABEL))
@@ -2958,7 +3662,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         
         # Use Atom feed instead of API - no rate limits!
         req = QNetworkRequest(QUrl("https://github.com/sigmundas/mycolog/releases.atom"))
-        req.setHeader(QNetworkRequest.UserAgentHeader, f"MycoLog/{self.app_version}")
+        req.setHeader(QNetworkRequest.UserAgentHeader, f"{APP_NAME}/{self.app_version}")
         
         reply = self._update_network.get(req)
         reply.finished.connect(
@@ -3037,7 +3741,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Information)
         box.setWindowTitle(self.tr("Update available"))
-        box.setText(self.tr("A newer version of MycoLog is available."))
+        box.setText(
+            self.tr("A newer version of MycoLog is available.").replace(LEGACY_APP_NAME, APP_NAME)
+        )
         box.setInformativeText(
             self.tr("Current version: {current}\nLatest version: {latest}").format(
                 current=current,
@@ -3145,33 +3851,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         mode_row.addStretch()
         measure_layout.addLayout(mode_row)
 
-        palette_row = QHBoxLayout()
-        palette_row.addWidget(QLabel(self.tr("Color:")))
-        self.color_button_group = QButtonGroup(self)
-        self.color_button_group.setExclusive(True)
-        self.measure_color_buttons = []
-        palette_colors = [
-            ("Blue", QColor("#0044aa")),
-            ("Red", QColor("#d40000")),
-            ("Green", QColor("#00aa00")),
-            ("Magenta", QColor("#ff00ff")),
-            ("Orange", QColor("#ffd42a")),
-            ("Cyan", QColor("#00ffff")),
-            ("Black", QColor("#000000")),
-        ]
-        for name, color in palette_colors:
-            btn = QPushButton()
-            btn.setFixedSize(18, 18)
-            btn.setCheckable(True)
-            btn.clicked.connect(lambda _, c=color: self.set_measure_color(c))
-            self.color_button_group.addButton(btn)
-            self.measure_color_buttons.append((btn, color))
-            palette_row.addWidget(btn)
-        palette_row.addStretch()
-        measure_layout.addLayout(palette_row)
-
-        self.set_measure_color(self.measure_color)
-
         self.measure_status_label = QLabel("")
         self.measure_status_label.setWordWrap(True)
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
@@ -3201,6 +3880,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         view_buttons_row.setStretch(1, 1)
         zoom_layout.addLayout(view_buttons_row)
 
+        color_row = QHBoxLayout()
+        color_row.setContentsMargins(0, 0, 0, 0)
+        color_row.setSpacing(8)
+        self.measure_color_label = QLabel(self.tr("Color:"))
+        self.measure_color_menu_button = QToolButton()
+        self.measure_color_menu_button.setFixedSize(28, 22)
+        self.measure_color_menu_button.setAutoRaise(False)
+        self.measure_color_menu_button.clicked.connect(
+            lambda _checked=False, btn=self.measure_color_menu_button: self._open_measure_color_menu(btn)
+        )
+        color_row.addWidget(self.measure_color_label)
+        color_row.addWidget(self.measure_color_menu_button)
+        color_row.addStretch()
+        zoom_layout.addLayout(color_row)
+
         self.show_measures_checkbox = QCheckBox(self.tr("Show measures"))
         self.show_measures_checkbox.setChecked(
             self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_LABELS, default=True)
@@ -3215,19 +3909,62 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.show_rectangles_checkbox.toggled.connect(self.on_show_rectangles_toggled)
         zoom_layout.addWidget(self.show_rectangles_checkbox)
 
+        self.rectangle_style_container = QWidget()
+        rectangle_style_layout = QVBoxLayout(self.rectangle_style_container)
+        rectangle_style_layout.setContentsMargins(18, 0, 0, 0)
+        rectangle_style_layout.setSpacing(6)
+
+        style_row = QHBoxLayout()
+        style_row.setContentsMargins(0, 0, 0, 0)
+        style_row.setSpacing(8)
+        self.rectangle_style_label = QLabel(self.tr("Style"))
+        self.rectangle_style_a_radio = QRadioButton("A")
+        self.rectangle_style_b_radio = QRadioButton("B")
+        self.rectangle_style_group = QButtonGroup(self.rectangle_style_container)
+        self.rectangle_style_group.addButton(self.rectangle_style_a_radio)
+        self.rectangle_style_group.addButton(self.rectangle_style_b_radio)
+        self.rectangle_style_a_radio.setMinimumWidth(42)
+        self.rectangle_style_b_radio.setMinimumWidth(42)
+        style_value = normalize_rectangle_style(
+            self._measure_view_setting_text(self.SETTING_MEASURE_RECTANGLE_STYLE, DEFAULT_RECTANGLE_STYLE)
+        )
+        thickness_value = int(round(clamp_rectangle_thickness(
+            self._measure_view_setting_text(
+                self.SETTING_MEASURE_RECTANGLE_THICKNESS,
+                str(int(DEFAULT_RECTANGLE_THICKNESS)),
+            )
+        )))
+        self.rectangle_thick_label = QLabel(self.tr("T:"))
+        self.rectangle_thick_checkbox = QCheckBox()
+        self.rectangle_thick_checkbox.setText("")
+        self.rectangle_thick_checkbox.setToolTip(self.tr("Use thicker rectangle corners/stroke."))
+        self.rectangle_style_a_radio.setChecked(style_value == "a")
+        self.rectangle_style_b_radio.setChecked(style_value == "b")
+        self.rectangle_thick_checkbox.setChecked(thickness_value >= 2)
+        self.rectangle_style_a_radio.toggled.connect(self.on_measure_rectangle_style_changed)
+        self.rectangle_style_b_radio.toggled.connect(self.on_measure_rectangle_style_changed)
+        self.rectangle_thick_checkbox.toggled.connect(self.on_measure_rectangle_thickness_changed)
+        style_row.addWidget(self.rectangle_style_label)
+        style_row.addSpacing(6)
+        style_row.addWidget(self.rectangle_style_a_radio)
+        style_row.addWidget(self.rectangle_style_b_radio)
+        style_row.addSpacing(10)
+        style_row.addWidget(self.rectangle_thick_label)
+        style_row.addWidget(self.rectangle_thick_checkbox)
+        style_row.addStretch()
+        rectangle_style_layout.addLayout(style_row)
+
+        self.rectangle_style_container.setVisible(self.show_rectangles_checkbox.isChecked())
+        zoom_layout.addWidget(self.rectangle_style_container)
+
+        self.set_measure_color(self.measure_color)
+
         self.show_scale_bar_checkbox = QCheckBox(self.tr("Show scale bar"))
         self.show_scale_bar_checkbox.setChecked(
             self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False)
         )
         self.show_scale_bar_checkbox.toggled.connect(self.on_show_scale_bar_toggled)
         zoom_layout.addWidget(self.show_scale_bar_checkbox)
-
-        self.show_copyright_checkbox = QCheckBox(self.tr("Show copyright"))
-        self.show_copyright_checkbox.setChecked(
-            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False)
-        )
-        self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
-        zoom_layout.addWidget(self.show_copyright_checkbox)
 
         scale_bar_row = QHBoxLayout()
         scale_bar_row.setContentsMargins(0, 0, 0, 0)
@@ -3252,6 +3989,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_bar_container.setToolTip(self.tr("Settings for the 'Show scale bar' option."))
         self.scale_bar_container.setVisible(False)
         zoom_layout.addWidget(self.scale_bar_container)
+
+        self.show_copyright_checkbox = QCheckBox(self.tr("Show copyright"))
+        self.show_copyright_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False)
+        )
+        self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
+        zoom_layout.addWidget(self.show_copyright_checkbox)
 
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
@@ -3285,6 +4029,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         if text in {"0", "false", "no", "off"}:
             return False
         return bool(default)
+
+    @staticmethod
+    def _measure_view_setting_text(key: str, default: str = "") -> str:
+        raw = SettingsDB.get_setting(key, default)
+        text = str(raw or "").strip()
+        return text if text else str(default)
+
+    def _current_measure_rectangle_style(self) -> str:
+        if hasattr(self, "rectangle_style_b_radio") and self.rectangle_style_b_radio.isChecked():
+            return "b"
+        return "a"
+
+    def _current_measure_rectangle_thickness(self) -> float:
+        if hasattr(self, "rectangle_thick_checkbox") and self.rectangle_thick_checkbox.isChecked():
+            return 2.0
+        if hasattr(self, "rectangle_thick_checkbox"):
+            return 1.0
+        return DEFAULT_RECTANGLE_THICKNESS
+
+    def _apply_measure_rectangle_appearance(self, *, refresh_gallery: bool = False) -> None:
+        style = self._current_measure_rectangle_style()
+        thickness = self._current_measure_rectangle_thickness()
+        if hasattr(self, "image_label"):
+            self.image_label.set_measurement_rectangle_appearance(style=style, thickness=thickness)
+        if hasattr(self, "spore_preview"):
+            self.spore_preview.set_measurement_rectangle_appearance(style=style, thickness=thickness)
+        if refresh_gallery:
+            self._gallery_thumb_cache = {}
+            self._gallery_thumb_geometry_cache = {}
+            self.schedule_gallery_refresh()
 
     def _measure_image_view_settings_key(self, image_id: int | None = None) -> str | None:
         target_id = int(image_id or 0)
@@ -3332,6 +4106,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             "show_overlays": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_OVERLAYS, default=True),
             "show_scale_bar": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False),
             "show_copyright": self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False),
+            "rectangle_style": normalize_rectangle_style(
+                self._measure_view_setting_text(self.SETTING_MEASURE_RECTANGLE_STYLE, DEFAULT_RECTANGLE_STYLE)
+            ),
+            "rectangle_thickness": clamp_rectangle_thickness(
+                self._measure_view_setting_text(
+                    self.SETTING_MEASURE_RECTANGLE_THICKNESS,
+                    str(int(DEFAULT_RECTANGLE_THICKNESS)),
+                )
+            ),
             "scale_bar_value": self._observation_scale_bar_fallback_value(
                 is_field,
                 objective_key=self.current_objective_name,
@@ -3356,6 +4139,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         for key_name in ("show_labels", "show_overlays", "show_scale_bar", "show_copyright"):
             if key_name in loaded:
                 settings[key_name] = bool(loaded.get(key_name))
+        if "rectangle_style" in loaded:
+            settings["rectangle_style"] = normalize_rectangle_style(loaded.get("rectangle_style"))
+        if "rectangle_thickness" in loaded:
+            settings["rectangle_thickness"] = clamp_rectangle_thickness(loaded.get("rectangle_thickness"))
         scale_value = loaded.get("scale_bar_value")
         scale_custom = loaded.get("scale_bar_value_custom")
         if isinstance(scale_value, (int, float)) and scale_value > 0:
@@ -3370,6 +4157,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             "show_overlays": bool(self.show_rectangles_checkbox.isChecked()) if hasattr(self, "show_rectangles_checkbox") else defaults["show_overlays"],
             "show_scale_bar": bool(self.show_scale_bar_checkbox.isChecked()) if hasattr(self, "show_scale_bar_checkbox") else defaults["show_scale_bar"],
             "show_copyright": bool(self.show_copyright_checkbox.isChecked()) if hasattr(self, "show_copyright_checkbox") else defaults["show_copyright"],
+            "rectangle_style": self._current_measure_rectangle_style() if hasattr(self, "rectangle_style_a_radio") else defaults["rectangle_style"],
+            "rectangle_thickness": self._current_measure_rectangle_thickness() if hasattr(self, "rectangle_thick_checkbox") else defaults["rectangle_thickness"],
         }
         if bool(getattr(self, "_current_measure_scale_bar_value_custom", False)) and hasattr(self, "scale_bar_input"):
             settings["scale_bar_value"] = max(0.1, float(self.scale_bar_input.value()))
@@ -3459,6 +4248,19 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.scale_bar_input.blockSignals(True)
             self.scale_bar_input.setValue(max(0.1, float(settings.get("scale_bar_value", 10.0))))
             self.scale_bar_input.blockSignals(False)
+        rectangle_style = normalize_rectangle_style(settings.get("rectangle_style", DEFAULT_RECTANGLE_STYLE))
+        if hasattr(self, "rectangle_style_a_radio") and hasattr(self, "rectangle_style_b_radio"):
+            self.rectangle_style_a_radio.blockSignals(True)
+            self.rectangle_style_b_radio.blockSignals(True)
+            self.rectangle_style_a_radio.setChecked(rectangle_style == "a")
+            self.rectangle_style_b_radio.setChecked(rectangle_style == "b")
+            self.rectangle_style_a_radio.blockSignals(False)
+            self.rectangle_style_b_radio.blockSignals(False)
+        rectangle_thickness = int(round(clamp_rectangle_thickness(settings.get("rectangle_thickness", DEFAULT_RECTANGLE_THICKNESS))))
+        if hasattr(self, "rectangle_thick_checkbox"):
+            self.rectangle_thick_checkbox.blockSignals(True)
+            self.rectangle_thick_checkbox.setChecked(rectangle_thickness >= 2)
+            self.rectangle_thick_checkbox.blockSignals(False)
 
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_labels(
@@ -3467,6 +4269,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.image_label.set_show_measure_overlays(
                 bool(self.show_rectangles_checkbox.isChecked()) if hasattr(self, "show_rectangles_checkbox") else False
             )
+        self._apply_measure_rectangle_appearance(refresh_gallery=False)
         self.on_show_scale_bar_toggled(
             bool(self.show_scale_bar_checkbox.isChecked()) if hasattr(self, "show_scale_bar_checkbox") else False
         )
@@ -3547,6 +4350,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.image_label.set_show_measure_labels(self.show_measures_checkbox.isChecked())
         if hasattr(self, "show_rectangles_checkbox"):
             self.image_label.set_show_measure_overlays(self.show_rectangles_checkbox.isChecked())
+        self.image_label.set_measurement_rectangle_appearance(
+            style=self._current_measure_rectangle_style(),
+            thickness=self._current_measure_rectangle_thickness(),
+        )
         self._update_measure_copyright_overlay()
 
         self.measure_gallery = ImageGalleryWidget(
@@ -3589,7 +4396,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 12, 0)
+        left_layout.setContentsMargins(0, 0, 4, 0)
         left_layout.setSpacing(8)
 
         category_row = QHBoxLayout()
@@ -3597,7 +4404,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_category_label.setToolTip(self.tr("Select the measurement category you want to plot"))
         category_row.addWidget(self.gallery_category_label)
         self.gallery_filter_combo = QComboBox()
-        self.gallery_filter_combo.setFixedWidth(160)
+        self.gallery_filter_combo.setFixedWidth(190)
         self.gallery_filter_combo.currentIndexChanged.connect(self.on_gallery_thumbnail_setting_changed)
         category_row.addWidget(self.gallery_filter_combo)
         category_row.addStretch()
@@ -3606,11 +4413,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_plot_settings = {
             "bins": 8,
             "histogram": True,
+            "plot_style": "ellipse",
+            "ellipse_coverage_percent": 95,
             "ci": True,
+            "kde": False,
+            "kde_bandwidth": 1.0,
+            "kde_contours": 6,
+            "kde_coverage_percent": 95,
+            "comparison_mode": "range",
+            "reference_minmax": True,
+            "reference_ci": True,
+            "reference_shape": "ellipse",
             "image_color": False,
             "legend": False,
             "avg_q": False,
             "q_minmax": False,
+            "q_extreme_minmax": False,
             "axis_equal": False,
             "x_min": None,
             "x_max": None,
@@ -3623,30 +4441,198 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_layout.setContentsMargins(8, 8, 8, 8)
         plot_layout.setSpacing(6)
 
+        histogram_row = QWidget()
+        histogram_row_layout = QHBoxLayout(histogram_row)
+        histogram_row_layout.setContentsMargins(0, 0, 0, 0)
+        histogram_row_layout.setSpacing(6)
         self.gallery_hist_checkbox = QCheckBox(self.tr("Histogram"))
         self.gallery_hist_checkbox.setChecked(bool(self.gallery_plot_settings.get("histogram", True)))
         self.gallery_hist_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
-        plot_layout.addRow("", self.gallery_hist_checkbox)
-
-        bins_row = QWidget()
-        bins_row_layout = QHBoxLayout(bins_row)
-        bins_row_layout.setContentsMargins(0, 0, 0, 0)
-        bins_row_layout.setSpacing(6)
-        bins_row_layout.addSpacing(16)
+        histogram_row_layout.addWidget(self.gallery_hist_checkbox)
         self.gallery_bins_label = QLabel(self.tr("Bins:"))
-        bins_row_layout.addWidget(self.gallery_bins_label)
+        histogram_row_layout.addWidget(self.gallery_bins_label)
         self.gallery_bins_spin = QSpinBox()
         self.gallery_bins_spin.setRange(3, 50)
         self.gallery_bins_spin.setValue(int(self.gallery_plot_settings.get("bins", 8)))
         self.gallery_bins_spin.valueChanged.connect(self.on_gallery_plot_setting_changed)
-        bins_row_layout.addWidget(self.gallery_bins_spin)
-        bins_row_layout.addStretch()
-        plot_layout.addRow("", bins_row)
+        histogram_row_layout.addWidget(self.gallery_bins_spin)
+        histogram_row_layout.addStretch()
+        plot_layout.addRow("", histogram_row)
 
-        self.gallery_ci_checkbox = QCheckBox(self.tr("Confidence interval (95%)"))
-        self.gallery_ci_checkbox.setChecked(bool(self.gallery_plot_settings.get("ci", True)))
-        self.gallery_ci_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
-        plot_layout.addRow("", self.gallery_ci_checkbox)
+        plot_style_row = QWidget()
+        plot_style_layout = QHBoxLayout(plot_style_row)
+        plot_style_layout.setContentsMargins(0, 0, 0, 0)
+        plot_style_layout.setSpacing(8)
+        plot_style_label = QLabel(self.tr("Plot:"))
+        plot_style_layout.addWidget(plot_style_label)
+        self.gallery_plot_style_group = QButtonGroup(self)
+        self.gallery_plot_style_ellipse_radio = QRadioButton(self.tr("Ellipse"))
+        self.gallery_plot_style_kde_radio = QRadioButton(self.tr("Kernel density"))
+        self.gallery_plot_style_mean_radio = QRadioButton(self.tr("Mean range"))
+        for radio in (
+            self.gallery_plot_style_ellipse_radio,
+            self.gallery_plot_style_kde_radio,
+            self.gallery_plot_style_mean_radio,
+        ):
+            self.gallery_plot_style_group.addButton(radio)
+            plot_style_layout.addWidget(radio)
+        plot_style_layout.addStretch()
+        plot_layout.addRow("", plot_style_row)
+
+        plot_style = self._gallery_plot_style(self.gallery_plot_settings)
+        if plot_style == "kde":
+            self.gallery_plot_style_kde_radio.setChecked(True)
+        elif plot_style == "mean":
+            self.gallery_plot_style_mean_radio.setChecked(True)
+        else:
+            self.gallery_plot_style_ellipse_radio.setChecked(True)
+        for radio in (
+            self.gallery_plot_style_ellipse_radio,
+            self.gallery_plot_style_kde_radio,
+            self.gallery_plot_style_mean_radio,
+        ):
+            radio.toggled.connect(self.on_gallery_plot_setting_changed)
+
+        self._register_gallery_hint_widget(
+            self.gallery_plot_style_ellipse_radio,
+            self.tr("Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_plot_style_kde_radio,
+            self.tr("Kernel density estimate (Gaussian KDE) of the spore cloud. Filled bands and contour labels show enclosed probability mass."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_plot_style_mean_radio,
+            self.tr("Parmasto-style mean comparison: show the mean point, mean Q line, and the expected mean range instead of the full spore cloud outline."),
+        )
+
+        self.gallery_ellipse_coverage_row = QWidget()
+        ellipse_coverage_layout = QHBoxLayout(self.gallery_ellipse_coverage_row)
+        ellipse_coverage_layout.setContentsMargins(0, 0, 0, 0)
+        ellipse_coverage_layout.setSpacing(6)
+        ellipse_coverage_layout.addSpacing(16)
+        self.gallery_ellipse_coverage_label = QLabel(self.tr("Coverage:"))
+        ellipse_coverage_layout.addWidget(self.gallery_ellipse_coverage_label)
+        self.gallery_ellipse_coverage_slider = JumpSlider(Qt.Horizontal)
+        self.gallery_ellipse_coverage_slider.setRange(50, 99)
+        self.gallery_ellipse_coverage_slider.setSingleStep(1)
+        self.gallery_ellipse_coverage_slider.setPageStep(5)
+        self.gallery_ellipse_coverage_slider.setTracking(False)
+        self.gallery_ellipse_coverage_slider.setValue(int(self.gallery_plot_settings.get("ellipse_coverage_percent", 95)))
+        self.gallery_ellipse_coverage_slider.valueChanged.connect(self.on_gallery_plot_setting_changed)
+        self.gallery_ellipse_coverage_slider.sliderMoved.connect(
+            lambda value: self.gallery_ellipse_coverage_value.setText(f"{int(value)}%")
+        )
+        ellipse_coverage_layout.addWidget(self.gallery_ellipse_coverage_slider, 1)
+        self.gallery_ellipse_coverage_value = QLabel()
+        self.gallery_ellipse_coverage_value.setMinimumWidth(40)
+        ellipse_coverage_layout.addWidget(self.gallery_ellipse_coverage_value)
+        plot_layout.addRow("", self.gallery_ellipse_coverage_row)
+
+        self._register_gallery_hint_widget(
+            self.gallery_ellipse_coverage_slider,
+            self.tr("Coverage of the data ellipse in percent. The same percentage is written on the ellipse itself."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_ellipse_coverage_label,
+            self.tr("Coverage of the data ellipse in percent. The same percentage is written on the ellipse itself."),
+        )
+
+        self.gallery_kde_bandwidth_row = QWidget()
+        kde_bandwidth_layout = QHBoxLayout(self.gallery_kde_bandwidth_row)
+        kde_bandwidth_layout.setContentsMargins(0, 0, 0, 0)
+        kde_bandwidth_layout.setSpacing(6)
+        kde_bandwidth_layout.addSpacing(16)
+        self.gallery_kde_bandwidth_label = QLabel(self.tr("Bandwidth:"))
+        kde_bandwidth_layout.addWidget(self.gallery_kde_bandwidth_label)
+        self.gallery_kde_bandwidth_slider = JumpSlider(Qt.Horizontal)
+        self.gallery_kde_bandwidth_slider.setRange(50, 150)
+        self.gallery_kde_bandwidth_slider.setSingleStep(1)
+        self.gallery_kde_bandwidth_slider.setPageStep(5)
+        self.gallery_kde_bandwidth_slider.setTracking(False)
+        self.gallery_kde_bandwidth_slider.setValue(
+            int(round(float(self.gallery_plot_settings.get("kde_bandwidth", 1.0)) * 100.0))
+        )
+        self.gallery_kde_bandwidth_slider.valueChanged.connect(self.on_gallery_plot_setting_changed)
+        self.gallery_kde_bandwidth_slider.sliderMoved.connect(
+            lambda value: self.gallery_kde_bandwidth_value.setText(f"{max(0.5, min(1.5, float(value) / 100.0)):.2f}")
+        )
+        kde_bandwidth_layout.addWidget(self.gallery_kde_bandwidth_slider, 1)
+        self.gallery_kde_bandwidth_value = QLabel()
+        self.gallery_kde_bandwidth_value.setMinimumWidth(36)
+        kde_bandwidth_layout.addWidget(self.gallery_kde_bandwidth_value)
+        plot_layout.addRow("", self.gallery_kde_bandwidth_row)
+
+        self.gallery_kde_contours_row = QWidget()
+        kde_contours_layout = QHBoxLayout(self.gallery_kde_contours_row)
+        kde_contours_layout.setContentsMargins(0, 0, 0, 0)
+        kde_contours_layout.setSpacing(6)
+        kde_contours_layout.addSpacing(16)
+        self.gallery_kde_contours_label = QLabel(self.tr("Contours:"))
+        kde_contours_layout.addWidget(self.gallery_kde_contours_label)
+        self.gallery_kde_contours_slider = JumpSlider(Qt.Horizontal)
+        self.gallery_kde_contours_slider.setRange(1, 10)
+        self.gallery_kde_contours_slider.setSingleStep(1)
+        self.gallery_kde_contours_slider.setPageStep(1)
+        self.gallery_kde_contours_slider.setTracking(False)
+        self.gallery_kde_contours_slider.setValue(int(self.gallery_plot_settings.get("kde_contours", 6)))
+        self.gallery_kde_contours_slider.valueChanged.connect(self.on_gallery_plot_setting_changed)
+        self.gallery_kde_contours_slider.sliderMoved.connect(
+            lambda value: self.gallery_kde_contours_value.setText(str(int(value)))
+        )
+        kde_contours_layout.addWidget(self.gallery_kde_contours_slider, 1)
+        self.gallery_kde_contours_value = QLabel()
+        self.gallery_kde_contours_value.setMinimumWidth(24)
+        kde_contours_layout.addWidget(self.gallery_kde_contours_value)
+        plot_layout.addRow("", self.gallery_kde_contours_row)
+
+        self.gallery_kde_coverage_row = QWidget()
+        kde_coverage_layout = QHBoxLayout(self.gallery_kde_coverage_row)
+        kde_coverage_layout.setContentsMargins(0, 0, 0, 0)
+        kde_coverage_layout.setSpacing(6)
+        kde_coverage_layout.addSpacing(16)
+        self.gallery_kde_coverage_label = QLabel(self.tr("Coverage:"))
+        kde_coverage_layout.addWidget(self.gallery_kde_coverage_label)
+        self.gallery_kde_coverage_slider = JumpSlider(Qt.Horizontal)
+        self.gallery_kde_coverage_slider.setRange(50, 99)
+        self.gallery_kde_coverage_slider.setSingleStep(1)
+        self.gallery_kde_coverage_slider.setPageStep(5)
+        self.gallery_kde_coverage_slider.setTracking(False)
+        self.gallery_kde_coverage_slider.setValue(int(self.gallery_plot_settings.get("kde_coverage_percent", 95)))
+        self.gallery_kde_coverage_slider.valueChanged.connect(self.on_gallery_plot_setting_changed)
+        self.gallery_kde_coverage_slider.sliderMoved.connect(
+            lambda value: self.gallery_kde_coverage_value.setText(f"{int(value)}%")
+        )
+        kde_coverage_layout.addWidget(self.gallery_kde_coverage_slider, 1)
+        self.gallery_kde_coverage_value = QLabel()
+        self.gallery_kde_coverage_value.setMinimumWidth(40)
+        kde_coverage_layout.addWidget(self.gallery_kde_coverage_value)
+        plot_layout.addRow("", self.gallery_kde_coverage_row)
+
+        self._register_gallery_hint_widget(
+            self.gallery_kde_bandwidth_slider,
+            self.tr("Bandwidth controls KDE smoothing. Lower values follow local bumps more closely; higher values smooth the density into broader regions."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_kde_bandwidth_label,
+            self.tr("Bandwidth controls KDE smoothing. Lower values follow local bumps more closely; higher values smooth the density into broader regions."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_kde_contours_slider,
+            self.tr("Number of KDE contour rings. The rings are evenly spaced enclosed-mass levels up to the selected coverage."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_kde_contours_label,
+            self.tr("Number of KDE contour rings. The rings are evenly spaced enclosed-mass levels up to the selected coverage."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_kde_coverage_slider,
+            self.tr("Coverage of the outer KDE contour in percent. Contour labels show the enclosed density mass for each ring."),
+        )
+        self._register_gallery_hint_widget(
+            self.gallery_kde_coverage_label,
+            self.tr("Coverage of the outer KDE contour in percent. Contour labels show the enclosed density mass for each ring."),
+        )
 
         self.gallery_image_color_checkbox = QCheckBox(self.tr("Image color"))
         self.gallery_image_color_checkbox.setChecked(bool(self.gallery_plot_settings.get("image_color", False)))
@@ -3658,20 +4644,32 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_avg_q_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_avg_q_checkbox)
 
-        self.gallery_q_minmax_checkbox = QCheckBox(self.tr("Plot Q min/max"))
+        self.gallery_q_minmax_checkbox = QCheckBox(self.tr("Plot Q 90% range (5%-95%)"))
+        self.gallery_q_minmax_checkbox.setToolTip(self.tr("Show Q lines for the 5th to 95th percentile range"))
         self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
         self.gallery_q_minmax_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_q_minmax_checkbox)
+
+        self.gallery_q_extreme_minmax_checkbox = QCheckBox(self.tr("Plot Q min/max"))
+        self.gallery_q_extreme_minmax_checkbox.setToolTip(self.tr("Show Q lines for the true minimum and maximum values"))
+        self.gallery_q_extreme_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_extreme_minmax", False)))
+        self.gallery_q_extreme_minmax_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
+        plot_layout.addRow("", self.gallery_q_extreme_minmax_checkbox)
 
         self.gallery_axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))
         self.gallery_axis_equal_checkbox.setToolTip(self.tr("Use the same scale on X and Y axes"))
         self.gallery_axis_equal_checkbox.setChecked(bool(self.gallery_plot_settings.get("axis_equal", False)))
         self.gallery_axis_equal_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_axis_equal_checkbox)
+
+        self._sync_gallery_kde_controls()
         plot_section = CollapsibleSection(self.tr("Plot settings"), plot_panel, expanded=False)
         reference_section = CollapsibleSection(self.tr("Reference values"), self._build_reference_panel(), expanded=True)
+        plot_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        reference_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        gallery_group = QGroupBox(self.tr("Gallery settings"))
+        gallery_group = QGroupBox(self.tr("Gallery"))
+        gallery_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         gallery_controls = QVBoxLayout(gallery_group)
         gallery_controls.setContentsMargins(8, 8, 8, 8)
         gallery_controls.setSpacing(6)
@@ -3686,6 +4684,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.uniform_scale_checkbox.setToolTip(self.tr("Use the same scale for all thumbnails"))
         self.uniform_scale_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.uniform_scale_checkbox)
+
+        gallery_row.addSpacing(8)
+        gallery_row.addWidget(QLabel(self.tr("Sort:")))
+        self.gallery_sort_combo = QComboBox()
+        self.gallery_sort_combo.addItem(self.tr(""), "")
+        self.gallery_sort_combo.addItem(self.tr("Images"), "images")
+        self.gallery_sort_combo.addItem(self.tr("Width"), "width")
+        self.gallery_sort_combo.addItem(self.tr("Length"), "length")
+        self.gallery_sort_combo.addItem(self.tr("Q"), "q")
+        self.gallery_sort_combo.setToolTip(self.tr("Sort thumbnails from smallest to largest"))
+        self.gallery_sort_combo.currentIndexChanged.connect(self.on_gallery_thumbnail_setting_changed)
+        gallery_row.addWidget(self.gallery_sort_combo)
         gallery_row.addStretch()
         gallery_controls.addLayout(gallery_row)
 
@@ -3693,24 +4703,37 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_filter_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         gallery_controls.addWidget(self.gallery_filter_label)
 
-        left_layout.addWidget(plot_section)
-        left_layout.addWidget(reference_section)
-        left_layout.addStretch()
+        top_sections = QWidget()
+        top_sections.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        top_sections_layout = QVBoxLayout(top_sections)
+        top_sections_layout.setContentsMargins(0, 0, 0, 0)
+        top_sections_layout.setSpacing(8)
+        top_sections_layout.addWidget(plot_section)
+        top_sections_layout.addWidget(reference_section, 1)
+
+        left_layout.addWidget(top_sections, 0)
+        left_layout.addStretch(1)
         left_layout.addWidget(gallery_group)
 
         self.gallery_plot_export_btn = QPushButton(self.tr("Export Plot"))
-        self.gallery_plot_export_btn.setMinimumHeight(35)
         self.gallery_plot_export_btn.setMinimumWidth(110)
         self.gallery_plot_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_plot_export_btn.setToolTip(self.tr("Export the width vs length plot"))
         self.gallery_plot_export_btn.clicked.connect(self.export_graph_plot_svg)
 
         self.gallery_export_btn = QPushButton(self.tr("Export gallery"))
-        self.gallery_export_btn.setMinimumHeight(35)
         self.gallery_export_btn.setMinimumWidth(110)
         self.gallery_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_export_btn.setToolTip(self.tr("Export the thumbnail gallery as a mosaic"))
         self.gallery_export_btn.clicked.connect(self.export_gallery_composite)
+        self.gallery_plot_export_btn.setFixedHeight(analysis_button_height)
+        self.gallery_export_btn.setFixedHeight(analysis_button_height)
+        gallery_export_row = QHBoxLayout()
+        gallery_export_row.setContentsMargins(0, 0, 0, 0)
+        gallery_export_row.setSpacing(0)
+        gallery_export_row.addWidget(self.gallery_export_btn)
+        gallery_export_row.addStretch()
+        gallery_controls.addLayout(gallery_export_row)
 
         self.gallery_copy_stats_btn = QPushButton(self.tr("Export statistics"))
         self.gallery_copy_stats_btn.setToolTip(self.tr("Copy spore statistics and individual measurements to the clipboard"))
@@ -3721,8 +4744,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
 
-        left_panel.setMinimumWidth(285)
-        left_panel.setMaximumWidth(285)
+        left_panel.setMinimumWidth(400)
+        left_panel.setMaximumWidth(400)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        left_scroll.setWidget(left_panel)
+        left_scroll.setMinimumWidth(420)
+        left_scroll.setMaximumWidth(420)
 
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -3740,19 +4772,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_layout.setSpacing(6)
 
         plot_hint_row = QHBoxLayout()
+        plot_hint_row.addWidget(self.gallery_plot_export_btn)
         self.gallery_clear_filter_btn = QPushButton(self.tr("Clear filter"))
-        self.gallery_clear_filter_btn.setFixedHeight(20)
-        self.gallery_clear_filter_btn.setStyleSheet(f"font-size: {pt(8)}pt; padding: 2px 6px;")
+        self.gallery_clear_filter_btn.setFixedHeight(analysis_button_height)
         self.gallery_clear_filter_btn.clicked.connect(self.clear_gallery_filter)
         plot_hint_row.addWidget(self.gallery_clear_filter_btn)
+        self.gallery_reset_plot_btn = QPushButton(self.tr("Reset plot"))
+        self.gallery_reset_plot_btn.setFixedHeight(analysis_button_height)
+        self.gallery_reset_plot_btn.clicked.connect(self.reset_gallery_plot_view)
+        plot_hint_row.addWidget(self.gallery_reset_plot_btn)
         plot_hint_row.addStretch()
         self.gallery_include_details_checkbox = QCheckBox(self.tr("Include details"))
         self.gallery_include_details_checkbox.setChecked(False)
         self.gallery_include_details_checkbox.toggled.connect(self.on_gallery_stats_setting_changed)
         plot_hint_row.addWidget(self.gallery_include_details_checkbox)
         for button in (self.gallery_copy_stats_btn, self.gallery_save_stats_btn):
-            button.setFixedHeight(20)
-            button.setStyleSheet(f"font-size: {pt(8)}pt; padding: 2px 6px;")
+            button.setFixedHeight(analysis_button_height)
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             plot_hint_row.addWidget(button)
         plot_layout.addLayout(plot_hint_row)
@@ -3812,7 +4847,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_container = QWidget()
         self.gallery_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.gallery_grid = QGridLayout(self.gallery_container)
-        self.gallery_grid.setSpacing(10)
+        self.gallery_grid.setContentsMargins(0, 0, 0, 0)
+        self.gallery_grid.setSpacing(0)
         self.gallery_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         self.gallery_scroll.setWidget(self.gallery_container)
@@ -3825,11 +4861,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_splitter.setSizes([650, 220])
         right_layout.addWidget(self.gallery_splitter)
 
-        main_splitter.addWidget(left_panel)
+        main_splitter.addWidget(left_scroll)
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([285, 1000])
+        main_splitter.setSizes([380, 905])
 
         main_layout.addWidget(main_splitter, 1)
 
@@ -3851,12 +4887,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
             self._pending_gallery_hint_widgets.clear()
 
-        action_row = QHBoxLayout()
-        action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(6)
-        action_row.addWidget(self.gallery_plot_export_btn)
-        action_row.addWidget(self.gallery_export_btn)
-        bottom_row.addLayout(action_row, 0)
         main_layout.addLayout(bottom_row)
 
         self._set_gallery_strip_height()
@@ -3943,6 +4973,35 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_hover_hint_key = ""
             self._set_gallery_hint("")
 
+    def _store_gallery_plot_view(self) -> None:
+        axis = getattr(self, "_gallery_scatter_axis", None)
+        if axis is None:
+            return
+        try:
+            x0, x1 = axis.get_xlim()
+            y0, y1 = axis.get_ylim()
+            x0 = float(x0)
+            x1 = float(x1)
+            y0 = float(y0)
+            y1 = float(y1)
+        except Exception:
+            return
+        settings = dict(getattr(self, "gallery_plot_settings", {}) or {})
+        settings["x_min"] = x0
+        settings["x_max"] = x1
+        settings["y_min"] = y0
+        settings["y_max"] = y1
+        self.gallery_plot_settings = settings
+
+    def reset_gallery_plot_view(self) -> None:
+        settings = dict(getattr(self, "gallery_plot_settings", {}) or {})
+        settings["x_min"] = None
+        settings["x_max"] = None
+        settings["y_min"] = None
+        settings["y_max"] = None
+        self.gallery_plot_settings = settings
+        self.update_graph_plots_only()
+
     def _on_gallery_plot_scroll(self, event) -> None:
         axis = getattr(event, "inaxes", None)
         if axis is None or event.xdata is None or event.ydata is None:
@@ -3963,6 +5022,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             ydata - (ydata - float(y0)) * scale,
             ydata + (float(y1) - ydata) * scale,
         )
+        self._store_gallery_plot_view()
         if hasattr(self, "gallery_plot_canvas"):
             self.gallery_plot_canvas.draw_idle()
 
@@ -3988,6 +5048,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_pan_xlim = None
             self._gallery_pan_ylim = None
             if dragged:
+                self._store_gallery_plot_view()
                 QTimer.singleShot(180, lambda: setattr(self, "_gallery_pan_recently_dragged", False))
             else:
                 self._gallery_pan_recently_dragged = False
@@ -3995,9 +5056,18 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _set_gallery_strip_height(self):
         if not hasattr(self, "gallery_splitter"):
             return
-        thumbnail_size = self._gallery_thumbnail_size()
-        target_height = thumbnail_size + 30
         gallery_widget = self.gallery_splitter.widget(1)
+        rendered_height = max(
+            self._gallery_tile_metrics()["image_height"],
+            int(getattr(self, "_gallery_render_max_height", 0)),
+        )
+        target_height = rendered_height + 8
+        if hasattr(self, "gallery_scroll") and self.gallery_scroll is not None:
+            target_height += int(self.gallery_scroll.frameWidth()) * 2
+        if gallery_widget and gallery_widget.layout() is not None:
+            layout = gallery_widget.layout()
+            target_height += layout.contentsMargins().top() + layout.contentsMargins().bottom()
+            target_height += layout.spacing()
         if gallery_widget:
             gallery_widget.setMaximumHeight(target_height)
             gallery_widget.setMinimumHeight(0)
@@ -4011,6 +5081,38 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _gallery_thumbnail_size(self):
         return 200
+
+    def _gallery_tile_metrics(self, thumbnail_size: int | None = None) -> dict[str, int]:
+        image_height = int(thumbnail_size or self._gallery_thumbnail_size())
+        icon_size = 18
+        return {
+            "image_height": image_height,
+            "icon_size": icon_size,
+        }
+
+    def _gallery_export_grid_shape(
+        self,
+        count: int,
+        tile_width: int,
+        tile_height: int,
+        target_ratio: float = 4.0 / 3.0,
+    ) -> tuple[int, int]:
+        if count <= 0:
+            return 0, 0
+        best_cols = 1
+        best_rows = count
+        best_score = None
+        for cols in range(1, count + 1):
+            rows = int(math.ceil(count / float(cols)))
+            ratio = (float(cols) * float(tile_width)) / max(1.0, float(rows) * float(tile_height))
+            ratio_diff = abs(ratio - float(target_ratio))
+            empty_slots = rows * cols - count
+            score = (ratio_diff, empty_slots, rows * cols)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_cols = cols
+                best_rows = rows
+        return best_cols, best_rows
 
     def _on_gallery_collapse_toggled(self, collapsed):
         self._gallery_collapsed = bool(collapsed)
@@ -4027,6 +5129,74 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_bins_spin.setEnabled(enabled)
         if hasattr(self, "gallery_bins_label"):
             self.gallery_bins_label.setEnabled(enabled)
+
+    def _gallery_kde_bandwidth_value(self, slider_value: int | None = None) -> float:
+        if slider_value is None:
+            slider = getattr(self, "gallery_kde_bandwidth_slider", None)
+            slider_value = int(slider.value()) if slider is not None else 100
+        return max(0.5, min(1.5, float(slider_value) / 100.0))
+
+    def _gallery_plot_style(self, settings: dict | None = None) -> str:
+        source = settings if isinstance(settings, dict) else (getattr(self, "gallery_plot_settings", {}) or {})
+        style = str(source.get("plot_style") or "").strip().lower()
+        if style in {"ellipse", "kde", "mean"}:
+            return style
+        comparison_mode = str(source.get("comparison_mode", "range") or "range").strip().lower()
+        if comparison_mode == "mean":
+            return "mean"
+        if bool(source.get("kde", False)):
+            return "kde"
+        return "ellipse"
+
+    def _gallery_plot_style_from_controls(self) -> str:
+        if hasattr(self, "gallery_plot_style_kde_radio") and self.gallery_plot_style_kde_radio.isChecked():
+            return "kde"
+        if hasattr(self, "gallery_plot_style_mean_radio") and self.gallery_plot_style_mean_radio.isChecked():
+            return "mean"
+        return "ellipse"
+
+    def _apply_gallery_plot_style(self, settings: dict, plot_style: str) -> dict:
+        style = str(plot_style or "ellipse").strip().lower()
+        if style not in {"ellipse", "kde", "mean"}:
+            style = "ellipse"
+        settings["plot_style"] = style
+        settings["ci"] = style == "ellipse"
+        settings["kde"] = style == "kde"
+        settings["comparison_mode"] = "mean" if style == "mean" else "range"
+        settings["reference_ci"] = style != "mean"
+        return settings
+
+    def _sync_gallery_kde_controls(self) -> None:
+        plot_style = self._gallery_plot_style()
+        enabled = plot_style == "kde"
+        ellipse_enabled = plot_style == "ellipse"
+        ellipse_row = getattr(self, "gallery_ellipse_coverage_row", None)
+        if ellipse_row is not None:
+            ellipse_row.setVisible(ellipse_enabled)
+        row = getattr(self, "gallery_kde_bandwidth_row", None)
+        if row is not None:
+            row.setVisible(enabled)
+        contours_row = getattr(self, "gallery_kde_contours_row", None)
+        if contours_row is not None:
+            contours_row.setVisible(enabled)
+        coverage_row = getattr(self, "gallery_kde_coverage_row", None)
+        if coverage_row is not None:
+            coverage_row.setVisible(enabled)
+        value_label = getattr(self, "gallery_kde_bandwidth_value", None)
+        if value_label is not None:
+            value_label.setText(f"{self._gallery_kde_bandwidth_value():.2f}")
+        contours_label = getattr(self, "gallery_kde_contours_value", None)
+        contours_slider = getattr(self, "gallery_kde_contours_slider", None)
+        if contours_label is not None and contours_slider is not None:
+            contours_label.setText(str(int(contours_slider.value())))
+        coverage_label = getattr(self, "gallery_kde_coverage_value", None)
+        coverage_slider = getattr(self, "gallery_kde_coverage_slider", None)
+        if coverage_label is not None and coverage_slider is not None:
+            coverage_label.setText(f"{int(coverage_slider.value())}%")
+        ellipse_value_label = getattr(self, "gallery_ellipse_coverage_value", None)
+        ellipse_slider = getattr(self, "gallery_ellipse_coverage_slider", None)
+        if ellipse_value_label is not None and ellipse_slider is not None:
+            ellipse_value_label.setText(f"{int(ellipse_slider.value())}%")
 
     def _on_gallery_splitter_moved(self, _pos, _index):
         if not hasattr(self, "gallery_splitter"):
@@ -4046,13 +5216,23 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _build_reference_panel(self):
         panel = QWidget()
+        panel.setMinimumWidth(0)
+        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
+
+        def _add_section_divider():
+            divider = QFrame(panel)
+            divider.setFrameShape(QFrame.HLine)
+            divider.setFrameShadow(QFrame.Plain)
+            divider.setStyleSheet("color: rgba(127, 140, 141, 0.35);")
+            layout.addWidget(divider)
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(6)
+        form.setSpacing(8)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         self.ref_vernacular_label = QLabel(self._reference_vernacular_label())
         self.ref_vernacular_input = QLineEdit()
@@ -4064,6 +5244,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_source_input = QComboBox()
         self.ref_source_input.setEditable(True)
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
+        self.ref_source_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._style_dropdown_popup_readability(self.ref_source_input.view(), self.ref_source_input)
 
         form.addRow(self.ref_vernacular_label, self.ref_vernacular_input)
@@ -4071,9 +5252,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         form.addRow(self.tr("Species:"), self.ref_species_input)
         form.addRow(self.tr("Source:"), self.ref_source_input)
         layout.addLayout(form)
+        _add_section_divider()
 
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         self.ref_plot_btn = QPushButton(self.tr("Plot"))
         self.ref_plot_btn.clicked.connect(self._on_reference_panel_plot_clicked)
         self._register_gallery_hint_widget(
@@ -4095,23 +5278,65 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.tr("Edit reference data"),
             allow_when_disabled=True,
         )
+        analysis_button_height = self.ref_plot_btn.sizeHint().height()
         for btn in (self.ref_plot_btn, self.ref_add_btn, self.ref_edit_btn):
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.setFixedHeight(analysis_button_height)
         btn_row.addWidget(self.ref_plot_btn, 1)
         btn_row.addWidget(self.ref_add_btn, 1)
         btn_row.addWidget(self.ref_edit_btn, 1)
         layout.addLayout(btn_row)
+        _add_section_divider()
 
-        self.ref_series_table = QTableWidget(0, 2)
-        self.ref_series_table.setHorizontalHeaderLabels(["", self.tr("Data set")])
+        shape_row_widget = QWidget()
+        shape_row = QHBoxLayout(shape_row_widget)
+        shape_row.setContentsMargins(0, 0, 0, 0)
+        shape_row.setSpacing(10)
+        shape_label = QLabel(self.tr("Reference shape:"))
+        shape_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        shape_row.addWidget(shape_label)
+        self.ref_shape_group = QButtonGroup(self)
+        self.ref_shape_ellipse_radio = QRadioButton(self.tr("Ellipse"))
+        self.ref_shape_square_radio = QRadioButton(self.tr("Square"))
+        self.ref_shape_group.addButton(self.ref_shape_ellipse_radio)
+        self.ref_shape_group.addButton(self.ref_shape_square_radio)
+        reference_shape = str(self.gallery_plot_settings.get("reference_shape", "ellipse") or "ellipse").strip().lower()
+        if reference_shape == "square":
+            self.ref_shape_square_radio.setChecked(True)
+        else:
+            self.ref_shape_ellipse_radio.setChecked(True)
+        self.ref_shape_ellipse_radio.toggled.connect(self.on_reference_overlay_setting_changed)
+        self.ref_shape_square_radio.toggled.connect(self.on_reference_overlay_setting_changed)
+        self.ref_shape_ellipse_radio.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.ref_shape_square_radio.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        shape_row.addWidget(self.ref_shape_ellipse_radio)
+        shape_row.addWidget(self.ref_shape_square_radio)
+        shape_row.addSpacing(12)
+        self.ref_show_minmax_checkbox = QCheckBox(self.tr("Min/Max"))
+        self.ref_show_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("reference_minmax", True)))
+        self.ref_show_minmax_checkbox.toggled.connect(self.on_reference_overlay_setting_changed)
+        self.ref_show_minmax_checkbox.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        shape_row.addWidget(self.ref_show_minmax_checkbox)
+        shape_row.addStretch()
+        layout.addWidget(shape_row_widget)
+        _add_section_divider()
+
+        self.ref_series_table = QTableWidget(0, 4)
+        self.ref_series_table.setHorizontalHeaderLabels(
+            [self.tr("Plot"), "", self.tr("Data set"), self.tr("Color")]
+        )
         self.ref_series_table.verticalHeader().setVisible(False)
         self.ref_series_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.ref_series_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.ref_series_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.ref_series_table.horizontalHeader().setStretchLastSection(True)
+        self.ref_series_table.horizontalHeader().setStretchLastSection(False)
         self.ref_series_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.ref_series_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.ref_series_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.ref_series_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.ref_series_table.setShowGrid(False)
-        self.ref_series_table.setMinimumHeight(80)
+        self.ref_series_table.setMinimumHeight(240)
+        self.ref_series_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.ref_series_table.cellClicked.connect(self._on_reference_series_row_clicked)
         layout.addWidget(self.ref_series_table)
 
@@ -4120,6 +5345,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._apply_reference_panel_values(self.reference_values)
         self._refresh_reference_series_table()
         self._update_reference_add_state()
+        self._sync_reference_overlay_controls_state()
         return panel
 
     def _style_dropdown_popup_readability(self, popup, font_source=None):
@@ -4281,6 +5507,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         source_data = self.ref_source_input.currentData()
         if isinstance(source_data, dict):
             kind = source_data.get("kind")
+            if kind == "observation":
+                return bool(source_data.get("observation_id"))
             if kind == "points":
                 return True
             if kind == "reference":
@@ -4292,6 +5520,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         item_data = self.ref_source_input.itemData(idx)
         if isinstance(item_data, dict):
             kind = item_data.get("kind")
+            if kind == "observation":
+                return bool(item_data.get("observation_id"))
             if kind == "points":
                 return True
             if kind == "reference":
@@ -4314,6 +5544,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
         kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
+        if kind == "observation":
+            obs_id = data.get("observation_id") or ""
+            return ("observation", genus, species, str(obs_id))
         if kind == "points":
             source_type = (data.get("source_type") or "").strip()
             label = (data.get("points_label") or data.get("source_label") or "").strip()
@@ -4327,6 +5560,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
         kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
+        genus_label = f"{genus[0].upper()}." if genus else ""
+        base = f"{genus_label} {species}".strip() if genus_label else (f"{genus} {species}".strip() or species)
+        if kind == "observation":
+            author = (data.get("author") or "").strip()
+            if not author:
+                profile = SettingsDB.get_profile()
+                author = (profile.get("name") or "").strip()
+            date_str = (data.get("date") or "").strip()
+            info_parts = [p for p in (author, date_str) if p]
+            info = ", ".join(info_parts)
+            if info:
+                return f"{base} ({info})".strip()
+            return base or self.tr("Reference")
         source = (
             (data.get("source") or "")
             or (data.get("points_label") or "")
@@ -4334,8 +5580,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         ).strip()
         mount = (data.get("mount_medium") or "").strip()
         stain = (data.get("stain") or "").strip()
-        genus_label = f"{genus[0].upper()}." if genus else ""
-        base = f"{genus_label} {species}".strip() if genus_label else (f"{genus} {species}".strip() or species)
         prep_parts = [part for part in (mount, stain) if part]
         prep = ", ".join(prep_parts).strip()
         if source:
@@ -4345,40 +5589,302 @@ class MainWindow(GeometryMixin, QMainWindow):
             return f"{base} [{prep}]".strip()
         return base or self.tr("Reference")
 
+    def _normalize_reference_series_entry(self, entry: dict | None) -> dict | None:
+        if not isinstance(entry, dict) or not entry:
+            return None
+        has_wrapper = isinstance(entry.get("data"), dict)
+        data = entry.get("data") if has_wrapper else entry
+        if not isinstance(data, dict) or not data:
+            return None
+        key = entry.get("key") if has_wrapper else None
+        if not key:
+            key = self._reference_series_key(data)
+        if not key:
+            return None
+        label = entry.get("label") if has_wrapper else None
+        if not label:
+            label = self._format_reference_series_label(data)
+        enabled = bool(entry.get("enabled", True)) if has_wrapper else bool(entry.get("enabled", True))
+        return {
+            "key": key,
+            "data": data,
+            "label": label,
+            "enabled": enabled,
+        }
+
+    def _ensure_reference_series_entries(self) -> list[dict]:
+        if self.reference_series:
+            return self.reference_series
+        fallback = self._normalize_reference_series_entry(self.reference_values)
+        if fallback:
+            self.reference_series = [fallback]
+        return self.reference_series
+
+    def _resolved_reference_series_entries(self, dark: bool | None = None) -> list[dict]:
+        resolved: list[dict] = []
+        hist_color = "#4a90d9" if dark else "#3498db"
+        ref_palette = reference_plot_palette(dark)
+        source_entries = self.reference_series or ([self.reference_values] if self.reference_values else [])
+        for entry_index, raw_entry in enumerate(source_entries):
+            entry = self._normalize_reference_series_entry(raw_entry)
+            if not entry:
+                continue
+            data = entry["data"]
+            preferred_color = str(data.get("plot_color") or "").strip().lower()
+            if preferred_color and not QColor(preferred_color).isValid():
+                preferred_color = ""
+            if preferred_color:
+                color = QColor(preferred_color).name().lower()
+            else:
+                color = ref_palette[entry_index % len(ref_palette)]
+                if color == hist_color and ref_palette:
+                    color = ref_palette[(entry_index + 1) % len(ref_palette)]
+            resolved.append({
+                **entry,
+                "color": color,
+                "preferred_color": preferred_color or None,
+            })
+        return resolved
+
+    def _style_reference_color_button(
+        self,
+        button: QPushButton | QToolButton,
+        color: str,
+        *,
+        auto: bool = False,
+        selected: bool = False,
+    ) -> None:
+        qcolor = QColor(color if QColor(color).isValid() else "#adb5bd")
+        lum = (0.299 * qcolor.red() + 0.587 * qcolor.green() + 0.114 * qcolor.blue())
+        border = "2px solid #3498db" if selected else "1px solid #666"
+        inner = "#111" if lum > 160 else "#fff"
+        text = self.tr("A") if auto else ""
+        if hasattr(button, "setText"):
+            button.setText(text)
+        button.setToolTip(
+            self.tr("Auto ({color})").format(color=qcolor.name())
+            if auto
+            else qcolor.name()
+        )
+        button.setStyleSheet(
+            f"background-color: {qcolor.name()};"
+            f"border: {border};"
+            "border-radius: 6px;"
+            f"color: {inner};"
+            "font-weight: bold;"
+        )
+
+    def _open_reference_series_color_menu(self, key: tuple, button: QWidget) -> None:
+        if not key or button is None:
+            return
+        entry = None
+        for candidate in self._resolved_reference_series_entries(self._is_dark_theme()):
+            if candidate.get("key") == key:
+                entry = candidate
+                break
+        if not entry:
+            return
+
+        from PySide6.QtWidgets import QGridLayout, QMenu, QWidgetAction
+
+        menu = QMenu(self)
+        panel = QWidget(menu)
+        grid = QGridLayout(panel)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
+
+        current_preference = entry.get("preferred_color")
+
+        def _apply(color: str | None) -> None:
+            self._set_reference_series_color(key, color)
+            menu.close()
+
+        auto_btn = QPushButton(self.tr("Auto"), panel)
+        auto_btn.setFixedHeight(24)
+        auto_btn.clicked.connect(lambda _checked=False: _apply(None))
+        auto_btn.setStyleSheet(
+            "padding: 2px 8px; border-radius: 6px; "
+            f"border: {'2px solid #3498db' if current_preference is None else '1px solid #777'};"
+        )
+        grid.addWidget(auto_btn, 0, 0, 1, 2)
+
+        row_titles = {
+            "dark": self.tr("Darker"),
+            "medium": self.tr("Medium"),
+            "light": self.tr("Lighter"),
+        }
+        for row_index, (name, colors) in enumerate(reference_plot_palette_groups(self._is_dark_theme()), start=1):
+            grid.addWidget(QLabel(row_titles.get(name, name.title()), panel), row_index, 0)
+            for col_index, color in enumerate(colors, start=1):
+                swatch = QToolButton(panel)
+                swatch.setFixedSize(22, 22)
+                self._style_reference_color_button(
+                    swatch,
+                    color,
+                    selected=(current_preference == color),
+                )
+                swatch.clicked.connect(lambda _checked=False, c=color: _apply(c))
+                grid.addWidget(swatch, row_index, col_index)
+
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(panel)
+        menu.addAction(action)
+        menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+
+    def _refresh_measure_color_button(self) -> None:
+        if not hasattr(self, "measure_color_menu_button"):
+            return
+        color_name = QColor(self.measure_color).name().lower() if QColor(self.measure_color).isValid() else "#000000"
+        self._style_reference_color_button(self.measure_color_menu_button, color_name, selected=False)
+
+    def _open_measure_color_menu(self, button: QWidget) -> None:
+        if button is None:
+            return
+
+        from PySide6.QtWidgets import QGridLayout, QMenu, QWidgetAction
+
+        menu = QMenu(self)
+        panel = QWidget(menu)
+        grid = QGridLayout(panel)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
+
+        current_color = QColor(self.measure_color).name().lower() if QColor(self.measure_color).isValid() else "#000000"
+        row_titles = {
+            "dark": self.tr("Darker"),
+            "medium": self.tr("Medium"),
+            "light": self.tr("Lighter"),
+        }
+
+        def _apply(color: str) -> None:
+            self.set_measure_color(color)
+            menu.close()
+
+        for row_index, (name, colors) in enumerate(measure_overlay_palette_groups(self._is_dark_theme())):
+            grid.addWidget(QLabel(row_titles.get(name, name.title()), panel), row_index, 0)
+            for col_index, color in enumerate(colors, start=1):
+                swatch = QToolButton(panel)
+                swatch.setFixedSize(22, 22)
+                self._style_reference_color_button(
+                    swatch,
+                    color,
+                    selected=(current_color == QColor(color).name().lower()),
+                )
+                swatch.clicked.connect(lambda _checked=False, c=color: _apply(c))
+                grid.addWidget(swatch, row_index, col_index)
+
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(panel)
+        menu.addAction(action)
+        menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+
+    def _sync_reference_values_from_series_data(self, key: tuple, data: dict) -> None:
+        current = self.reference_values if isinstance(self.reference_values, dict) else None
+        if current and self._reference_series_key(current) == key:
+            self.reference_values = dict(data)
+
+    def _set_reference_series_enabled(self, key: tuple, enabled: bool) -> None:
+        if not key:
+            return
+        changed = False
+        for entry in self._ensure_reference_series_entries():
+            if isinstance(entry, dict) and entry.get("key") == key:
+                if bool(entry.get("enabled", True)) != bool(enabled):
+                    entry["enabled"] = bool(enabled)
+                    changed = True
+                break
+        if not changed:
+            return
+        self.update_graph_plots_only()
+        self._save_gallery_settings()
+
+    def _set_reference_series_color(self, key: tuple, color: str | None) -> None:
+        if not key:
+            return
+        normalized_color = QColor(color).name().lower() if color and QColor(color).isValid() else None
+        changed = False
+        updated_data = None
+        for entry in self._ensure_reference_series_entries():
+            if not isinstance(entry, dict) or entry.get("key") != key:
+                continue
+            data = entry.get("data", {})
+            if not isinstance(data, dict):
+                break
+            if data.get("plot_color") == normalized_color:
+                return
+            data["plot_color"] = normalized_color
+            entry["data"] = data
+            updated_data = data
+            changed = True
+            break
+        if not changed or not isinstance(updated_data, dict):
+            return
+        self._sync_reference_values_from_series_data(key, updated_data)
+        if updated_data.get("source_kind") == "reference":
+            ReferenceDB.set_reference(updated_data)
+        self._refresh_reference_series_table()
+        self.update_graph_plots_only()
+        self._save_gallery_settings()
+
     def _refresh_reference_series_table(self):
         if not hasattr(self, "ref_series_table"):
             return
         self.ref_series_table.setRowCount(0)
         self._ref_series_row_entries = []
-        for entry in self.reference_series:
-            if not isinstance(entry, dict):
-                data = entry
-                key = self._reference_series_key(data)
-                label = self._format_reference_series_label(data)
-            else:
-                data = entry.get("data", entry)
-                key = entry.get("key") or self._reference_series_key(data)
-                label = entry.get("label") or self._format_reference_series_label(data)
-            if not key:
-                continue
+        for entry in self._resolved_reference_series_entries(self._is_dark_theme()):
+            data = entry.get("data", {})
+            key = entry.get("key")
+            label = entry.get("label") or self._format_reference_series_label(data)
             row = self.ref_series_table.rowCount()
             self.ref_series_table.insertRow(row)
+
+            toggle_holder = QWidget()
+            toggle_layout = QHBoxLayout(toggle_holder)
+            toggle_layout.setContentsMargins(0, 0, 0, 0)
+            toggle_layout.setAlignment(Qt.AlignCenter)
+            toggle_checkbox = QCheckBox(toggle_holder)
+            toggle_checkbox.setChecked(bool(entry.get("enabled", True)))
+            toggle_checkbox.toggled.connect(lambda checked, k=key: self._set_reference_series_enabled(k, checked))
+            toggle_layout.addWidget(toggle_checkbox)
+            self._register_gallery_hint_widget(toggle_checkbox, self.tr("Show or hide this reference plot"))
+            self.ref_series_table.setCellWidget(row, 0, toggle_holder)
+
             remove_btn = QToolButton()
             remove_btn.setText("X")
             remove_btn.setAutoRaise(True)
             remove_btn.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(11)}pt;")
             remove_btn.clicked.connect(lambda _checked=False, k=key: self._remove_reference_series_key(k))
             self._register_gallery_hint_widget(remove_btn, self.tr("Remove this plot"))
-            self.ref_series_table.setCellWidget(row, 0, remove_btn)
+            self.ref_series_table.setCellWidget(row, 1, remove_btn)
+
             label_item = QTableWidgetItem(label)
             label_item.setFlags(Qt.ItemIsEnabled)
-            self.ref_series_table.setItem(row, 1, label_item)
-            self.ref_series_table.setRowHeight(row, 26)
-            self._ref_series_row_entries.append({"key": key, "data": data, "label": label})
+            self.ref_series_table.setItem(row, 2, label_item)
+
+            color_btn = QToolButton()
+            color_btn.setFixedSize(28, 22)
+            color_btn.setAutoRaise(False)
+            self._style_reference_color_button(
+                color_btn,
+                str(entry.get("color") or "#adb5bd"),
+                auto=entry.get("preferred_color") is None,
+            )
+            color_btn.clicked.connect(
+                lambda _checked=False, k=key, btn=color_btn: self._open_reference_series_color_menu(k, btn)
+            )
+            self._register_gallery_hint_widget(color_btn, self.tr("Change the plot color"))
+            self.ref_series_table.setCellWidget(row, 3, color_btn)
+
+            self.ref_series_table.setRowHeight(row, 28)
+            self._ref_series_row_entries.append(entry)
         self.ref_series_table.resizeColumnToContents(0)
+        self.ref_series_table.resizeColumnToContents(1)
+        self.ref_series_table.resizeColumnToContents(3)
 
     def _on_reference_series_row_clicked(self, row: int, col: int):
-        if col == 0:
+        if col in (0, 1, 3):
             return
         entries = getattr(self, "_ref_series_row_entries", []) or []
         if row < 0 or row >= len(entries):
@@ -4422,34 +5928,28 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _set_reference_series(self, series: list[dict]):
         self.reference_series = []
-        for data in series or []:
-            if not isinstance(data, dict) or not data:
-                continue
-            key = self._reference_series_key(data)
-            if not key:
-                continue
-            label = self._format_reference_series_label(data)
-            self.reference_series.append({"key": key, "data": data, "label": label})
+        for item in series or []:
+            normalized = self._normalize_reference_series_entry(item)
+            if normalized:
+                self.reference_series.append(normalized)
         self._refresh_reference_series_table()
         self._update_reference_add_state()
         self.update_graph_plots_only()
 
     def _add_reference_series_entry(self, data: dict) -> bool:
-        if not isinstance(data, dict) or not data:
+        normalized = self._normalize_reference_series_entry(data)
+        if not normalized:
             return False
-        key = self._reference_series_key(data)
-        if not key:
-            return False
+        key = normalized.get("key")
         for entry in self.reference_series:
             if isinstance(entry, dict) and entry.get("key") == key:
-                entry["data"] = data
-                entry["label"] = self._format_reference_series_label(data)
+                entry["data"] = normalized.get("data")
+                entry["label"] = normalized.get("label")
                 self._refresh_reference_series_table()
                 self.update_graph_plots_only()
                 self._save_gallery_settings()
                 return True
-        label = self._format_reference_series_label(data)
-        self.reference_series.append({"key": key, "data": data, "label": label})
+        self.reference_series.append(normalized)
         self._refresh_reference_series_table()
         self._update_reference_add_state()
         self.update_graph_plots_only()
@@ -4463,6 +5963,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             entry for entry in self.reference_series
             if not (isinstance(entry, dict) and entry.get("key") == key)
         ]
+        current = self.reference_values if isinstance(self.reference_values, dict) else None
+        if current and self._reference_series_key(current) == key:
+            self.reference_values = {}
         if not self.reference_series:
             self.reference_values = {}
         self._refresh_reference_series_table()
@@ -4473,11 +5976,15 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:
             return ""
-        tokens = str(text).strip().split()
-        for token in tokens:
-            if re.search(r"[A-Za-z]", token):
-                return token.strip()
-        return str(text).strip()
+        cleaned = str(text).strip()
+        if not cleaned:
+            return ""
+        availability_tokens = {
+            str(getattr(self.species_availability, "DATA_POINT_EMOJI", "") or "").strip(),
+            str(getattr(self.species_availability, "MINMAX_EMOJI", "") or "").strip(),
+        }
+        tokens = [token for token in cleaned.split() if token.strip() and token.strip() not in availability_tokens]
+        return " ".join(tokens).strip()
 
     def _clean_ref_genus_text(self, text: str | None) -> str:
         if not text:
@@ -4677,10 +6184,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 genus_provider=lambda: self._clean_ref_genus_text(self.ref_genus_input.text()),
             )
         )
-        species_popup.clicked.connect(self._on_ref_species_popup_clicked)
         self._ref_genus_completer.activated[QModelIndex].connect(self._on_ref_genus_selected)
         self._ref_species_completer.activated[QModelIndex].connect(self._on_ref_species_selected)
-        self._ref_genus_completer.popup().clicked.connect(self._on_ref_genus_popup_clicked)
         self.ref_genus_input.textChanged.connect(self._on_ref_genus_text_changed)
         self.ref_species_input.textChanged.connect(self._on_ref_species_text_changed)
         self.ref_genus_input.editingFinished.connect(self._on_ref_taxon_editing_finished)
@@ -4705,7 +6210,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_vernacular_input.setCompleter(self._ref_vernacular_completer)
         self._style_dropdown_popup_readability(self._ref_vernacular_completer.popup(), self.ref_vernacular_input)
         self._ref_vernacular_completer.activated[QModelIndex].connect(self._on_ref_vernacular_selected)
-        self._ref_vernacular_completer.popup().clicked.connect(self._on_ref_vernacular_popup_clicked)
         self.ref_vernacular_input.textChanged.connect(self._on_ref_vernacular_text_changed)
         self.ref_vernacular_input.editingFinished.connect(self._on_ref_vernacular_editing_finished)
 
@@ -4915,7 +6419,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         QTimer.singleShot(0, lambda: self._ref_species_completer.popup().hide() if self._ref_species_completer.popup() else None)
         self._populate_reference_panel_sources()
         self._maybe_load_reference_panel_reference()
-        self._maybe_set_ref_vernacular_from_taxon()
+        self._sync_ref_vernacular_from_taxon()
         self._update_reference_add_state()
 
     def _on_ref_vernacular_selected(self, index: QModelIndex):
@@ -4954,7 +6458,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.ref_genus_input.blockSignals(False)
         self._populate_reference_panel_sources()
         self._maybe_load_reference_panel_reference()
-        self._maybe_set_ref_vernacular_from_taxon()
+        self._sync_ref_vernacular_from_taxon()
         self._update_reference_add_state()
 
     def _on_ref_source_changed(self, _text):
@@ -5038,6 +6542,39 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
+    def _sync_ref_vernacular_from_taxon(self) -> None:
+        if not self.ref_vernacular_db:
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
+        species = self._clean_ref_species_text(self.ref_species_input.text())
+        current = self.ref_vernacular_input.text().strip()
+        if not genus or not species:
+            if current:
+                self.ref_vernacular_input.blockSignals(True)
+                self.ref_vernacular_input.setText("")
+                self.ref_vernacular_input.blockSignals(False)
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
+
+        suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        current_taxon = self.ref_vernacular_db.taxon_from_vernacular(current) if current else None
+        current_matches = bool(
+            current_taxon
+            and str(current_taxon[0] or "").strip().lower() == genus.lower()
+            and str(current_taxon[1] or "").strip().lower() == species.lower()
+        )
+        if current_matches:
+            self._set_ref_vernacular_placeholder_from_suggestions([])
+            return
+
+        new_value = suggestions[0] if suggestions else ""
+        if current != new_value:
+            self.ref_vernacular_input.blockSignals(True)
+            self.ref_vernacular_input.setText(new_value)
+            self.ref_vernacular_input.blockSignals(False)
+        self._set_ref_vernacular_placeholder_from_suggestions([] if new_value else suggestions)
+
     def _populate_reference_panel_sources(self, auto_select_single: bool = True):
         if not hasattr(self, "ref_source_input"):
             return
@@ -5091,6 +6628,24 @@ class MainWindow(GeometryMixin, QMainWindow):
                 options.append(
                     (self.tr("Published measurements"), {"kind": "points", "source_type": "published"})
                 )
+        personal_obs = ObservationDB.get_personal_observations_for_species(
+            genus, species, exclude_observation_id=exclude_id
+        )
+        for obs in personal_obs:
+            date_str = (obs.get("date") or "").split(" ")[0].split("T")[0]
+            author = (obs.get("author") or "").strip()
+            label = f"{self.tr('My data')} {date_str}".strip() if date_str else self.tr("My data")
+            options.append((
+                label,
+                {
+                    "kind": "observation",
+                    "observation_id": int(obs["id"]),
+                    "date": date_str,
+                    "author": author,
+                    "genus": genus,
+                    "species": species,
+                },
+            ))
         sources = ReferenceDB.list_sources(genus or "", species or "", "")
         for source in sources:
             if not source:
@@ -5160,6 +6715,39 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.reference_values = ref
                 self._apply_reference_panel_values(ref)
                 return
+            self.reference_values = {}
+            self._apply_reference_panel_values({})
+            return
+        if isinstance(data, dict) and data.get("kind") == "observation":
+            obs_id = data.get("observation_id")
+            if obs_id:
+                raw = MeasurementDB.get_measurements_for_observation(obs_id)
+                points = [
+                    m for m in raw
+                    if m.get("length_um") is not None
+                    and m.get("width_um") is not None
+                    and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
+                ]
+                author = (data.get("author") or "").strip()
+                if not author:
+                    obs = ObservationDB.get_observation(obs_id)
+                    if obs:
+                        author = (obs.get("author") or "").strip()
+                if points:
+                    stats = self._reference_stats_from_points(points)
+                    ref = {
+                        **stats,
+                        "points": points,
+                        "source_kind": "observation",
+                        "observation_id": obs_id,
+                        "date": data.get("date") or "",
+                        "author": author,
+                        "genus": genus,
+                        "species": species,
+                    }
+                    self.reference_values = ref
+                    self._apply_reference_panel_values(ref)
+                    return
             self.reference_values = {}
             self._apply_reference_panel_values({})
             return
@@ -5287,6 +6875,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self._maybe_load_reference_panel_reference()
         data = self.reference_values if isinstance(self.reference_values, dict) else {}
+        source_data = self.ref_source_input.currentData()
+        allow_delete = bool(isinstance(source_data, dict) and source_data.get("kind") == "reference")
         vernacular = self.ref_vernacular_input.text().strip() if hasattr(self, "ref_vernacular_input") else ""
         dialog = ReferenceAddDialog(
             self,
@@ -5295,8 +6885,29 @@ class MainWindow(GeometryMixin, QMainWindow):
             vernacular=vernacular,
             data=data,
             title=self.tr("Edit selected reference data"),
+            allow_delete=allow_delete,
         )
         if dialog.exec() != QDialog.Accepted:
+            return
+        if dialog.delete_requested():
+            ReferenceDB.delete_reference(
+                genus,
+                species,
+                data.get("source"),
+                data.get("mount_medium"),
+                data.get("stain"),
+            )
+            key = self._reference_series_key(data)
+            self._refresh_reference_species_availability()
+            self.ref_source_input.blockSignals(True)
+            self.ref_source_input.setCurrentText("")
+            self.ref_source_input.blockSignals(False)
+            self.reference_values = {}
+            self._apply_reference_panel_values({})
+            if key:
+                self._remove_reference_series_key(key)
+            self._populate_reference_panel_sources(auto_select_single=False)
+            self._update_reference_add_state()
             return
         updated = dialog.result_data()
         if not isinstance(updated, dict) or not updated:
@@ -5354,6 +6965,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
         self.spore_preview.delete_requested.connect(self.delete_measurement)
         self.spore_preview.set_measure_color(self.measure_color)
+        self.spore_preview.set_measurement_rectangle_appearance(
+            style=self._current_measure_rectangle_style(),
+            thickness=self._current_measure_rectangle_thickness(),
+        )
         preview_layout.addWidget(self.spore_preview)
 
         self.preview_group.setLayout(preview_layout)
@@ -6038,6 +7653,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.scale_bar_input.setEnabled(has_scale and not force_disable_overlays)
         if hasattr(self, "scale_bar_length_label"):
             self.scale_bar_length_label.setEnabled(has_scale and not force_disable_overlays)
+        rectangles_enabled = bool(
+            hasattr(self, "show_rectangles_checkbox")
+            and self.show_rectangles_checkbox.isChecked()
+            and not force_disable_overlays
+        )
+        if hasattr(self, "rectangle_style_container"):
+            self.rectangle_style_container.setVisible(rectangles_enabled)
+        for widget_name in (
+            "rectangle_style_label",
+            "rectangle_style_a_radio",
+            "rectangle_style_b_radio",
+            "rectangle_thick_label",
+            "rectangle_thick_checkbox",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setEnabled(rectangles_enabled)
         if hasattr(self, "scale_bar_container"):
             show_container = bool(
                 (has_scale and not force_disable_overlays)
@@ -6300,7 +7932,6 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def refresh_observation_images(self, select_image_id=None):
         """Refresh the image list for the active observation."""
-        _t0 = time.perf_counter()
         if not self.active_observation_id:
             self.observation_images = []
             self.current_image_index = -1
@@ -6310,7 +7941,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.update_image_navigation_ui()
             if hasattr(self, "measure_gallery"):
                 self.measure_gallery.clear()
-            _timing_log(f"refresh_observation_images obs=None took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
 
         if self._pixmap_cache_observation_id != self.active_observation_id:
@@ -6342,10 +7972,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_image_navigation_ui()
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
-        _timing_log(
-            f"refresh_observation_images obs={int(self.active_observation_id)} "
-            f"images={len(self.observation_images)} took={(time.perf_counter()-_t0)*1000:.1f}ms"
-        )
 
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -6569,7 +8195,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             next_idx = idx + 1 if idx + 1 < len(ids) else idx - 1
             next_id = ids[next_idx] if next_idx >= 0 else None
 
-        ImageDB.delete_image(image_id)
+        try:
+            ImageDB.delete_image(image_id)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self.tr("Delete failed"),
+                self.tr("Could not delete image: {error}").format(error=exc),
+            )
+            return
 
         if next_id:
             next_image = ImageDB.get_image(next_id)
@@ -6738,21 +8372,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.current_image_id,
                 measure_color=self.measure_color.name()
             )
-        for btn, btn_color in getattr(self, "measure_color_buttons", []):
-            selected = btn_color.name() == self.measure_color.name()
-            if selected:
-                # Border colour that contrasts with the button itself
-                lum = (0.299 * btn_color.red() + 0.587 * btn_color.green()
-                       + 0.114 * btn_color.blue())
-                ring = "#ffffff" if lum < 160 else "#000000"
-                border = f"3px solid {ring}"
-            else:
-                border = "1px solid rgba(128,128,128,80)"
-            btn.setStyleSheet(
-                f"background-color: {btn_color.name()}; border: {border};"
-                f" border-radius: 3px;"
-            )
-            btn.setChecked(selected)
+        self._refresh_measure_color_button()
 
     def on_show_measures_toggled(self, checked):
         """Toggle measurement labels on the main image."""
@@ -6767,8 +8387,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_overlays(checked)
         self.update_display_lines()
+        self._update_measure_view_option_states()
         self._save_current_image_measure_view_settings()
         return
+
+    def on_measure_rectangle_style_changed(self, checked):
+        if not checked:
+            return
+        style = self._current_measure_rectangle_style()
+        SettingsDB.set_setting(self.SETTING_MEASURE_RECTANGLE_STYLE, style)
+        self._apply_measure_rectangle_appearance(refresh_gallery=True)
+        self._save_current_image_measure_view_settings()
+
+    def on_measure_rectangle_thickness_changed(self, checked):
+        thickness = self._current_measure_rectangle_thickness()
+        SettingsDB.set_setting(self.SETTING_MEASURE_RECTANGLE_THICKNESS, str(int(round(thickness))))
+        self._apply_measure_rectangle_appearance(refresh_gallery=True)
+        self._save_current_image_measure_view_settings()
 
     def on_show_scale_bar_toggled(self, checked):
         """Toggle scale bar display."""
@@ -6882,6 +8517,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def start_measurement(self):
         """Enable measurement mode."""
+        if hasattr(self, "show_rectangles_checkbox") and not self.show_rectangles_checkbox.isChecked():
+            self.show_rectangles_checkbox.setChecked(True)
         self.measurement_active = True
         self.update_measurement_button_state()
         if hasattr(self, "measurements_table"):
@@ -7023,7 +8660,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _cancel_measurement_shortcut(self) -> None:
         """Cancel the current in-progress measurement without leaving measure mode."""
-        if not self.measurement_active or not self._measurement_in_progress():
+        if not self.measurement_active:
+            self._clear_measurement_selection()
+            return
+        if not self._measurement_in_progress():
             return
         self.abort_measurement(show_status=False)
         self._reset_measure_prompt()
@@ -8688,6 +10328,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def format_measurement_category(self, category):
         """Format measurement categories for display."""
+        if str(category or "").strip().lower() == "all_except_spores":
+            return self.tr("All except spores")
         canonical = DatabaseTerms.canonicalize_measure(category)
         if canonical:
             return DatabaseTerms.translate("measure", canonical)
@@ -8706,7 +10348,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 saved_measurement_type = saved_settings.get("measurement_type")
         self.gallery_filter_combo.blockSignals(True)
         self.gallery_filter_combo.clear()
-        self.gallery_filter_combo.addItem("All", "all")
+        self.gallery_filter_combo.addItem(self.tr("All except spores"), "all_except_spores")
 
         if self.active_observation_id:
             raw_types = MeasurementDB.get_measurement_types_for_observation(self.active_observation_id)
@@ -8739,6 +10381,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             desired = saved_measurement_type
         if str(desired).strip().lower() == "spore":
             desired = "spores"
+        if str(desired).strip().lower() == "all":
+            desired = "all_except_spores"
         selected_category = None
         if desired and self.gallery_filter_combo.findData(desired) >= 0:
             self.gallery_filter_combo.setCurrentIndex(self.gallery_filter_combo.findData(desired))
@@ -8749,10 +10393,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.gallery_filter_combo.setCurrentIndex(idx)
                 selected_category = "spores"
             else:
-                idx = self.gallery_filter_combo.findData("all")
+                idx = self.gallery_filter_combo.findData("all_except_spores")
                 if idx >= 0:
                     self.gallery_filter_combo.setCurrentIndex(idx)
-                    selected_category = "all"
+                    selected_category = "all_except_spores"
                 elif current and self.gallery_filter_combo.findData(current) >= 0:
                     self.gallery_filter_combo.setCurrentIndex(self.gallery_filter_combo.findData(current))
                     selected_category = current
@@ -8805,10 +10449,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.refresh_gallery_filter_options()
             self._refresh_reference_species_availability()
             self.schedule_gallery_refresh()
-        _timing_log(
-            f"on_tab_changed index={int(index)} active_obs={int(self.active_observation_id or 0)} "
-            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
-        )
 
     def schedule_gallery_refresh(self):
         """Coalesce multiple refresh requests into a single gallery update."""
@@ -8851,7 +10491,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             if self.normalize_measurement_category(m.get("measurement_type")) != "calibration"
         ]
 
-        if category and category != "all":
+        if category == "all_except_spores":
+            measurements = [
+                m for m in measurements
+                if self.normalize_measurement_category(m.get("measurement_type")) != "spores"
+            ]
+        elif category:
             measurements = [
                 m for m in measurements
                 if self.normalize_measurement_category(m.get("measurement_type")) == category
@@ -8911,9 +10556,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         self._gallery_thumbnail_frames = {}
+        self._gallery_thumbnail_labels = {}
+        self._gallery_measurement_lookup = {}
+        self._gallery_thumbnail_render_state = None
         self._update_gallery_container_size(0)
 
         measurements = self._filter_gallery_measurements(all_measurements)
+        measurements = self._sort_gallery_measurements(measurements)
         if not measurements:
             self._complete_gallery_refresh()
             return
@@ -8944,7 +10593,18 @@ class MainWindow(GeometryMixin, QMainWindow):
             "uniform_length_um": uniform_length_um,
             "image_color_cache": {},
             "display_index": 1,
+            "running_width": 0,
+            "max_height": 0,
         }
+        self._gallery_thumbnail_render_state = {
+            "thumbnail_size": thumbnail_size,
+            "orient": orient,
+            "uniform_scale": uniform_scale,
+            "uniform_length_um": uniform_length_um,
+            "image_color_cache": render_state["image_color_cache"],
+        }
+        self._gallery_render_total_width = 0
+        self._gallery_render_max_height = thumbnail_size
 
         immediate_count = min(7, total)
         for measurement in measurements[:immediate_count]:
@@ -8984,6 +10644,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._complete_gallery_refresh()
 
     def _complete_gallery_refresh(self):
+        self._set_gallery_strip_height()
         self._gallery_last_refresh_time = time.perf_counter()
         self._gallery_refresh_in_progress = False
         if self._gallery_refresh_pending:
@@ -8993,30 +10654,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self._gallery_thumb_cache_observation_id != self.active_observation_id:
             self._gallery_thumb_cache_observation_id = self.active_observation_id
             self._gallery_thumb_cache = {}
+            self._gallery_thumb_geometry_cache = {}
             self._gallery_pixmap_cache = {}
 
     def _analysis_gallery_frame_style(self, selected: bool = False) -> str:
-        border = "#2980b9" if selected else "#bdc3c7"
-        return (
-            "QFrame { border: 2px solid %s; border-radius: 5px; background: transparent; }"
-        ) % border
+        return "QWidget { border: none; background: transparent; }"
 
     def _apply_analysis_gallery_frame_glow(self, frame: QFrame, selected: bool, hovered: bool = False) -> None:
-        if selected:
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(30)
-            effect.setOffset(0, 0)
-            effect.setColor(QColor(52, 152, 219, 230))
-            frame.setGraphicsEffect(effect)
-        elif hovered:
-            hover_color = QColor(255, 255, 255, 220) if self._is_dark_theme() else QColor(80, 80, 80, 160)
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(26)
-            effect.setOffset(0, 0)
-            effect.setColor(hover_color)
-            frame.setGraphicsEffect(effect)
-        else:
-            frame.setGraphicsEffect(None)
+        frame.setGraphicsEffect(None)
 
     def _refresh_analysis_gallery_frame_state(self, measurement_id: int | None = None, hovered: bool = False) -> None:
         if measurement_id is None:
@@ -9028,15 +10673,22 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         is_selected = int(measurement_id) == int(self.gallery_selected_measurement_id or 0)
         frame.setStyleSheet(self._analysis_gallery_frame_style(selected=is_selected))
+        if hasattr(frame, "set_measure_selected"):
+            frame.set_measure_selected(is_selected)
+        if hasattr(frame, "set_measure_hovered"):
+            frame.set_measure_hovered(hovered and not is_selected)
         self._apply_analysis_gallery_frame_glow(frame, is_selected, hovered=hovered and not is_selected)
 
     def _select_analysis_gallery_measurement(self, measurement_id: int | None, update_plot: bool = True) -> None:
+        previous_selected = int(self.gallery_selected_measurement_id) if self.gallery_selected_measurement_id else None
         normalized_id = int(measurement_id) if measurement_id else None
-        if normalized_id and int(self.gallery_selected_measurement_id or 0) == normalized_id:
+        if normalized_id and previous_selected == normalized_id:
             self.gallery_selected_measurement_id = None
         else:
             self.gallery_selected_measurement_id = normalized_id
-        self._refresh_analysis_gallery_frame_state()
+        if previous_selected != self.gallery_selected_measurement_id:
+            self._refresh_analysis_gallery_frame_state(previous_selected, hovered=False)
+            self._refresh_analysis_gallery_frame_state(self.gallery_selected_measurement_id, hovered=False)
         if update_plot and hasattr(self, "gallery_plot_figure"):
             self.update_graph_plots_only()
 
@@ -9062,24 +10714,47 @@ class MainWindow(GeometryMixin, QMainWindow):
         keys_to_remove = [key for key in self._gallery_thumb_cache if key[0] == measurement_id]
         for key in keys_to_remove:
             self._gallery_thumb_cache.pop(key, None)
+            self._gallery_thumb_geometry_cache.pop(key, None)
 
-    def _gallery_thumbnail_cache_key(self, measurement_id, orient, uniform_scale,
-                                     uniform_length_um, thumbnail_size, extra_rotation, color_key):
+    def _gallery_thumbnail_cache_key(
+        self,
+        measurement_id,
+        orient,
+        uniform_scale,
+        uniform_length_um,
+        thumbnail_size,
+        extra_rotation,
+        color_key,
+        rectangle_style,
+        rectangle_thickness,
+        selected,
+    ):
         if uniform_scale:
             uniform_key = round(float(uniform_length_um or 0.0), 6)
         else:
             uniform_key = None
-        return (measurement_id, orient, uniform_scale, uniform_key, thumbnail_size, extra_rotation, color_key)
+        return (
+            measurement_id,
+            orient,
+            uniform_scale,
+            uniform_key,
+            thumbnail_size,
+            extra_rotation,
+            color_key,
+            normalize_rectangle_style(rectangle_style),
+            round(clamp_rectangle_thickness(rectangle_thickness), 3),
+            bool(selected),
+        )
 
     def _add_gallery_item(self, measurement, render_state):
-        from PySide6.QtWidgets import QLabel as QLabel2, QFrame, QVBoxLayout, QToolButton
-        from PySide6.QtCore import QPointF
+        from PySide6.QtWidgets import QLabel as QLabel2, QToolButton
 
         if not all(measurement.get(f'p{i}_{axis}') is not None
                    for i in range(1, 5) for axis in ['x', 'y']):
             return
 
-        thumbnail = self._get_gallery_thumbnail(measurement, render_state)
+        thumbnail_meta: dict = {}
+        thumbnail = self._get_gallery_thumbnail(measurement, render_state, thumbnail_meta)
         if thumbnail is None:
             return
 
@@ -9090,66 +10765,69 @@ class MainWindow(GeometryMixin, QMainWindow):
         measurement_id = measurement.get('id')
         if measurement_id is None:
             return
+        self._gallery_measurement_lookup[int(measurement_id)] = measurement
 
-        container = QFrame()
-        container.setFixedSize(thumbnail_size, thumbnail_size)
+        container = AnalysisGalleryTile(self._current_measure_rectangle_style())
+        tile_width = thumbnail.width()
+        tile_height = thumbnail.height()
+        container.setFixedSize(tile_width, tile_height)
         container.setCursor(Qt.PointingHandCursor)
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(0)
         self._gallery_thumbnail_frames[int(measurement_id)] = container
-
-        thumb_frame = QFrame(container)
-        thumb_frame.setStyleSheet("QFrame { border: none; border-radius: 4px; background: white; }")
-        thumb_layout = QVBoxLayout(thumb_frame)
-        thumb_layout.setContentsMargins(3, 3, 3, 3)
-        thumb_layout.setSpacing(0)
-        container_layout.addWidget(thumb_frame)
+        container.set_measurement_polygon(thumbnail_meta.get("polygon"))
 
         label = QLabel2()
         label.setPixmap(thumbnail)
-        label.setFixedSize(max(1, thumbnail_size - 6), max(1, thumbnail_size - 6))
+        label.setFixedSize(tile_width, tile_height)
         label.setStyleSheet("border: none; background: transparent;")
         label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        thumb_layout.addWidget(label)
-
-        if orient:
-            rotate_btn = QToolButton(container)
-            rotate_btn.setIcon(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "rotate.svg")))
-            rotate_btn.setToolTip(self.tr("Rotate 180"))
-            rotate_btn.setProperty("instant_tooltip", True)
-            rotate_btn.installEventFilter(self)
-            rotate_btn.setFixedSize(24, 24)
-            rotate_btn.setIconSize(QSize(22, 22))
-            rotate_btn.setStyleSheet(
-                "QToolButton { background: transparent; border: none; }"
-                "QToolButton:hover { background-color: rgba(0, 0, 0, 0.08); }"
-            )
-            rotate_btn.move(thumbnail_size - 28, thumbnail_size - 28)
-            rotate_btn.show()
-            rotate_btn.clicked.connect(
-                lambda checked, mid=measurement_id: self.rotate_gallery_thumbnail(mid)
-            )
-            rotate_btn.raise_()
+        label.setParent(container)
+        label.move(0, 0)
+        label.show()
+        self._gallery_thumbnail_labels[int(measurement_id)] = label
 
         link_btn = QToolButton(container)
         link_btn.setIcon(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "link.svg")))
         link_label = image_labels.get(image_id, "Image ?")
         link_btn.setToolTip(link_label)
         link_btn.setProperty("instant_tooltip", True)
+        link_btn.setProperty("gallery_fade_icon", True)
+        link_btn.setProperty("gallery_idle_opacity", 0.28)
         link_btn.installEventFilter(self)
-        link_btn.setFixedSize(24, 24)
-        link_btn.setIconSize(QSize(22, 22))
+        link_btn.setFixedSize(18, 18)
+        link_btn.setIconSize(QSize(18, 18))
         link_btn.setStyleSheet(
             "QToolButton { background: transparent; border: none; }"
             "QToolButton:hover { background-color: rgba(0, 0, 0, 0.08); }"
         )
-        link_btn.move(4, 4)
-        link_btn.show()
+        link_opacity = QGraphicsOpacityEffect(link_btn)
+        link_opacity.setOpacity(0.28)
+        link_btn.setGraphicsEffect(link_opacity)
         link_btn.clicked.connect(
             lambda checked, mid=measurement_id: self.open_measurement_from_gallery(mid)
         )
         link_btn.raise_()
+
+        rotate_btn = QToolButton(container)
+        rotate_btn.setIcon(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "rotate.svg")))
+        rotate_btn.setToolTip(self.tr("Rotate 180"))
+        rotate_btn.setProperty("instant_tooltip", True)
+        rotate_btn.setProperty("gallery_fade_icon", True)
+        rotate_btn.setProperty("gallery_idle_opacity", 0.28)
+        rotate_btn.installEventFilter(self)
+        rotate_btn.setFixedSize(18, 18)
+        rotate_btn.setIconSize(QSize(18, 18))
+        rotate_btn.setStyleSheet(
+            "QToolButton { background: transparent; border: none; }"
+            "QToolButton:hover { background-color: rgba(0, 0, 0, 0.08); }"
+        )
+        rotate_opacity = QGraphicsOpacityEffect(rotate_btn)
+        rotate_opacity.setOpacity(0.28)
+        rotate_btn.setGraphicsEffect(rotate_opacity)
+        rotate_btn.clicked.connect(
+            lambda checked, mid=measurement_id: self.rotate_gallery_thumbnail(mid)
+        )
+        rotate_btn.raise_()
+        container.set_overlay_buttons(link_btn, rotate_btn)
 
         display_index = render_state["display_index"]
         items_per_row = render_state["items_per_row"]
@@ -9157,13 +10835,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
         container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
-        container.enterEvent = lambda _event, mid=int(measurement_id): self._refresh_analysis_gallery_frame_state(mid, hovered=True)
-        container.leaveEvent = lambda _event, mid=int(measurement_id): self._refresh_analysis_gallery_frame_state(mid, hovered=False)
         self._refresh_analysis_gallery_frame_state(int(measurement_id))
         render_state["display_index"] = display_index + 1
+        render_state["running_width"] = int(render_state.get("running_width", 0)) + tile_width
+        render_state["max_height"] = max(int(render_state.get("max_height", 0)), tile_height)
+        self._gallery_render_total_width = render_state["running_width"]
+        self._gallery_render_max_height = render_state["max_height"]
         self._update_gallery_container_size(render_state["display_index"] - 1)
 
-    def _get_gallery_thumbnail(self, measurement, render_state):
+    def _get_gallery_thumbnail(self, measurement, render_state, metadata_out: dict | None = None):
         from PySide6.QtCore import QPointF
 
         pixmap = self.get_measurement_pixmap(measurement, self._gallery_pixmap_cache)
@@ -9192,6 +10872,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         measure_color = QColor(stored_color) if stored_color else self.default_measure_color
         color_key = measure_color.name()
+        rectangle_style = self._current_measure_rectangle_style()
+        rectangle_thickness = self._current_measure_rectangle_thickness()
         cache_key = self._gallery_thumbnail_cache_key(
             measurement_id,
             render_state["orient"],
@@ -9199,9 +10881,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             render_state["uniform_length_um"],
             render_state["thumbnail_size"],
             extra_rotation,
-            color_key
+            color_key,
+            rectangle_style,
+            rectangle_thickness,
+            False,
         )
         if cache_key in self._gallery_thumb_cache:
+            if metadata_out is not None:
+                metadata_out.update(self._gallery_thumb_geometry_cache.get(cache_key, {}))
             return self._gallery_thumb_cache[cache_key]
 
         points = [
@@ -9227,6 +10914,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             if mpp and mpp > 0:
                 uniform_length_px = float(render_state["uniform_length_um"]) / float(mpp)
 
+        thumbnail_meta: dict = {}
         thumbnail = self.create_spore_thumbnail(
             pixmap,
             points,
@@ -9237,10 +10925,17 @@ class MainWindow(GeometryMixin, QMainWindow):
             orient=render_state["orient"],
             extra_rotation=extra_rotation,
             uniform_length_px=uniform_length_px,
-            color=measure_color
+            color=measure_color,
+            rectangle_style=rectangle_style,
+            rectangle_thickness=rectangle_thickness,
+            selected=False,
+            metadata=thumbnail_meta,
         )
         if thumbnail:
             self._gallery_thumb_cache[cache_key] = thumbnail
+            self._gallery_thumb_geometry_cache[cache_key] = dict(thumbnail_meta)
+            if metadata_out is not None:
+                metadata_out.update(thumbnail_meta)
         return thumbnail
 
     def _update_gallery_container_size(self, count):
@@ -9249,13 +10944,50 @@ class MainWindow(GeometryMixin, QMainWindow):
         if count <= 0:
             self.gallery_container.setMinimumWidth(0)
             return
-        spacing = self.gallery_grid.spacing()
         margins = self.gallery_grid.contentsMargins()
-        thumb = self._gallery_thumbnail_size()
-        width = count * thumb + max(0, count - 1) * spacing + margins.left() + margins.right()
-        height = thumb + margins.top() + margins.bottom()
+        width = int(getattr(self, "_gallery_render_total_width", 0))
+        height = int(getattr(self, "_gallery_render_max_height", self._gallery_tile_metrics()["image_height"]))
+        width += margins.left() + margins.right()
+        height += margins.top() + margins.bottom()
         self.gallery_container.setMinimumWidth(width)
         self.gallery_container.setMinimumHeight(height)
+
+    def _sort_gallery_measurements(self, measurements):
+        """Sort measurements by the selected gallery sort key (ascending)."""
+        if not hasattr(self, "gallery_sort_combo"):
+            return measurements
+        sort_key = self.gallery_sort_combo.currentData() or ""
+        if not sort_key:
+            return measurements
+        image_order_map = {}
+        if sort_key == "images" and self.active_observation_id:
+            try:
+                ordered_images = ImageDB.get_images_for_observation(self.active_observation_id)
+                image_order_map = {
+                    int(image.get("id")): idx
+                    for idx, image in enumerate(ordered_images)
+                    if image.get("id") is not None
+                }
+            except Exception:
+                image_order_map = {}
+        def _key(m):
+            l = m.get("length_um") or 0.0
+            w = m.get("width_um") or 0.0
+            if sort_key == "images":
+                image_id = int(m.get("image_id") or 0)
+                measurement_id = int(m.get("id") or 0)
+                return (
+                    image_order_map.get(image_id, 10**9),
+                    measurement_id,
+                )
+            if sort_key == "length":
+                return float(l)
+            if sort_key == "width":
+                return float(w)
+            if sort_key == "q":
+                return float(l) / float(w) if w else 0.0
+            return 0.0
+        return sorted(measurements, key=_key)
 
     def _filter_gallery_measurements(self, measurements):
         """Apply gallery selection filter to measurements."""
@@ -9287,6 +11019,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_filter_mode = None
         self.gallery_filter_value = None
         self.gallery_filter_ids = set()
+        self.gallery_selected_measurement_id = None
         self._update_gallery_filter_label()
         self.schedule_gallery_refresh()
 
@@ -9406,11 +11139,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_settings = getattr(self, "gallery_plot_settings", {}) or {}
         bins = int(plot_settings.get("bins", 8))
         show_hist = bool(plot_settings.get("histogram", True))
-        show_ci = bool(plot_settings.get("ci", True))
+        plot_style = self._gallery_plot_style(plot_settings)
+        show_ci = plot_style == "ellipse"
+        show_kde = plot_style == "kde"
+        ellipse_coverage_percent = max(50, min(99, int(plot_settings.get("ellipse_coverage_percent", 95) or 95)))
+        kde_bandwidth = max(0.5, min(1.5, float(plot_settings.get("kde_bandwidth", 1.0) or 1.0)))
+        kde_contours = max(1, min(10, int(plot_settings.get("kde_contours", 6) or 6)))
+        kde_coverage_percent = max(50, min(99, int(plot_settings.get("kde_coverage_percent", 95) or 95)))
+        mean_comparison = plot_style == "mean"
+        show_reference_minmax = bool(plot_settings.get("reference_minmax", True))
+        show_reference_ci = plot_style != "mean"
+        reference_shape = str(plot_settings.get("reference_shape", "ellipse") or "ellipse").strip().lower()
+        if reference_shape not in {"ellipse", "square"}:
+            reference_shape = "ellipse"
         show_image_color = bool(plot_settings.get("image_color", False))
         show_legend = bool(plot_settings.get("legend", False))
         show_avg_q = bool(plot_settings.get("avg_q", True))
         show_q_minmax = bool(plot_settings.get("q_minmax", True))
+        show_q_extreme_minmax = bool(plot_settings.get("q_extreme_minmax", False))
         axis_equal = bool(plot_settings.get("axis_equal", False))
 
         lengths = []
@@ -9468,9 +11214,14 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         dark = self._is_dark_theme()
         hist_color_dark = "#4a90d9"   # brighter blue for dark bg
-        q_line_color = "#8e8e93" if dark else "black"
+        q_line_style = (0, (3.5, 2.0))
+        q_line_width = 1.5 if dark else 1.35
+        q_line_alpha = 0.95
 
-        if not lengths:
+        L = np.asarray(lengths, dtype=float)
+        W = np.asarray(widths, dtype=float)
+
+        if L.size == 0:
             self.gallery_scatter_id_map = {}
             self.gallery_hist_patches = {}
             all_axes = [ax_scatter, ax_len if show_hist else None,
@@ -9516,13 +11267,26 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._update_gallery_stats_preview()
             return
 
-        L = np.asarray(lengths)
-        W = np.asarray(widths)
         category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
         normalized = self.normalize_measurement_category(category) if category else None
-        show_q = normalized in (None, "spores", "all")
+        show_q = normalized in (None, "spores")
         Q = L / W
+        specimen_parmasto = self._parmasto_specimen_metrics(L, W)
         category_label = self._format_observation_legend_label()
+
+        def _append_mean_q_label(label, q_value):
+            try:
+                q_value = float(q_value)
+            except (TypeError, ValueError):
+                return label
+            if q_value <= 0:
+                return label
+            base_label = str(label or "").strip()
+            q_label = f"Qₘ={q_value:.2f}"
+            return f"{base_label}, {q_label}" if base_label else q_label
+
+        if show_q and (show_avg_q or mean_comparison) and stats and stats.get("ratio_mean") is not None:
+            category_label = _append_mean_q_label(category_label, stats.get("ratio_mean"))
 
         self.gallery_hist_patches = {}
         self.gallery_scatter = None
@@ -9534,6 +11298,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         image_labels = getattr(self, "gallery_image_labels", {}) or {}
         image_color_map = {}
         hist_color = hist_color_dark if dark else "#3498db"
+        specimen_point_alpha = 0.22 if mean_comparison else 0.8
+        specimen_point_size = 14 if mean_comparison else 20
+        reference_point_alpha = 0.20 if mean_comparison else 0.7
+        reference_point_size = 14 if mean_comparison else 18
 
         if show_image_color:
             grouped = {}
@@ -9560,8 +11328,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 collection = ax_scatter.scatter(
                     data["L"],
                     data["W"],
-                    s=20,
-                    alpha=0.8,
+                    s=specimen_point_size,
+                    alpha=specimen_point_alpha,
                     picker=5,
                     label=label if show_legend else "_nolegend_",
                     color=color,
@@ -9571,9 +11339,185 @@ class MainWindow(GeometryMixin, QMainWindow):
                 ax_scatter.plot([], [], marker="o", color=hist_color, linestyle="", label=category_label)
         else:
             self.gallery_scatter = ax_scatter.scatter(
-                L, W, s=20, alpha=0.8, picker=5, color=hist_color, label=category_label
+                L,
+                W,
+                s=specimen_point_size,
+                alpha=specimen_point_alpha,
+                picker=5,
+                color=hist_color,
+                label=category_label,
             )
             self.gallery_scatter_id_map[self.gallery_scatter] = measurement_ids
+
+        def _q_segment_for_box(q_value, x_left, x_right, y_bottom, y_top):
+            try:
+                q_value = float(q_value)
+                x_left = float(x_left)
+                x_right = float(x_right)
+                y_bottom = float(y_bottom)
+                y_top = float(y_top)
+            except (TypeError, ValueError):
+                return None
+            if q_value <= 0:
+                return None
+            left = min(x_left, x_right)
+            right = max(x_left, x_right)
+            bottom = min(y_bottom, y_top)
+            top = max(y_bottom, y_top)
+
+            start_y = bottom
+            end_y = top
+            start_x = q_value * start_y
+            end_x = q_value * end_y
+
+            if start_x < left:
+                start_x = left
+                start_y = left / q_value
+            if end_x > right:
+                end_x = right
+                end_y = right / q_value
+
+            if end_x < left - 1e-9 or start_x > right + 1e-9:
+                return None
+            if start_y < bottom - 1e-9 or start_y > top + 1e-9:
+                return None
+            if end_y < bottom - 1e-9 or end_y > top + 1e-9:
+                return None
+
+            start = (float(start_x), float(start_y))
+            end = (float(end_x), float(end_y))
+            if abs(start[0] - end[0]) < 1e-9 and abs(start[1] - end[1]) < 1e-9:
+                return None
+            return start, end
+
+        def _plot_q_guideline(q_value, x_left, x_right, y_bottom, y_top, color, label=None):
+            segment = _q_segment_for_box(q_value, x_left, x_right, y_bottom, y_top)
+            if segment is None:
+                return
+            (x_start, y_start), (x_end, y_end) = segment
+            ax_scatter.plot(
+                [x_start, x_end],
+                [y_start, y_end],
+                color=color,
+                linestyle=q_line_style,
+                linewidth=q_line_width,
+                alpha=q_line_alpha,
+                dash_capstyle="round",
+                zorder=2.3,
+                label=label if label else "_nolegend_",
+            )
+
+        def _plot_data_ellipse(x_values, y_values, color_value, linewidth=1.6):
+            if len(x_values) < 3 or len(y_values) < 3:
+                return
+            ellipse = self._confidence_ellipse_points(
+                x_values,
+                y_values,
+                confidence=float(ellipse_coverage_percent) / 100.0,
+            )
+            if ellipse is None:
+                return
+            ex, ey = ellipse
+            ax_scatter.plot(
+                ex,
+                ey,
+                color=color_value,
+                linewidth=linewidth,
+                alpha=0.98,
+                zorder=6.05,
+            )
+            try:
+                label_index = int(np.argmax(ey))
+                ax_scatter.text(
+                    float(ex[label_index]),
+                    float(ey[label_index]),
+                    f"{ellipse_coverage_percent}%",
+                    color=color_value,
+                    fontsize=7,
+                    alpha=0.78,
+                    ha="center",
+                    va="bottom",
+                    zorder=6.15,
+                )
+            except Exception:
+                pass
+
+        def _rgba_with_alpha(color_value, alpha_value):
+            qcolor = QColor(color_value)
+            return (
+                qcolor.redF(),
+                qcolor.greenF(),
+                qcolor.blueF(),
+                max(0.0, min(1.0, float(alpha_value))),
+            )
+
+        def _plot_kde_overlay(x_values, y_values, color_value):
+            if not show_kde or len(x_values) < 3 or len(y_values) < 3:
+                return
+            kde_grid = self._gaussian_kde_grid(x_values, y_values, bw_method=kde_bandwidth)
+            if kde_grid is None:
+                return
+            xx, yy, density, cell_area = kde_grid
+            max_density = float(np.nanmax(density))
+            if not np.isfinite(max_density):
+                return
+            density = density / max_density
+            contour_info = self._kde_contour_levels(
+                density,
+                cell_area,
+                contour_count=kde_contours,
+                coverage_percent=kde_coverage_percent,
+            )
+            if not contour_info:
+                return
+            kde_levels, contour_label_map = contour_info
+            fill_levels = list(kde_levels)
+            top_level = 1.0 + 1e-6
+            if top_level <= fill_levels[-1]:
+                top_level = fill_levels[-1] + max(abs(fill_levels[-1]) * 1e-6, 1e-12)
+            fill_levels.append(top_level)
+            fill_alphas = np.linspace(
+                0.06 if mean_comparison else 0.08,
+                0.16 if mean_comparison else 0.22,
+                num=max(1, len(fill_levels) - 1),
+            )
+            fill_colors = [_rgba_with_alpha(color_value, alpha) for alpha in fill_alphas]
+            ax_scatter.contourf(
+                xx,
+                yy,
+                density,
+                levels=fill_levels,
+                colors=fill_colors,
+                zorder=1.7,
+            )
+            contour_widths = np.linspace(0.8, 1.15, num=len(kde_levels))
+            contour_alpha = 0.45 if mean_comparison else 0.55
+            contour_set = ax_scatter.contour(
+                xx,
+                yy,
+                density,
+                levels=kde_levels,
+                colors=[color_value],
+                linewidths=contour_widths.tolist(),
+                alpha=contour_alpha,
+                zorder=2.02,
+            )
+            for collection in getattr(contour_set, "collections", []):
+                collection.set_alpha(contour_alpha)
+            try:
+                contour_labels = ax_scatter.clabel(
+                    contour_set,
+                    contour_set.levels,
+                    fmt=contour_label_map,
+                    inline=True,
+                    inline_spacing=3,
+                    fontsize=7,
+                    colors=[color_value],
+                )
+                for text in contour_labels:
+                    text.set_alpha(max(0.72, contour_alpha))
+            except Exception:
+                pass
 
         if highlighted_ids:
             highlight_x = []
@@ -9618,35 +11562,78 @@ class MainWindow(GeometryMixin, QMainWindow):
         min_len = float(np.min(L))
         min_w = float(np.min(W))
         max_w = float(np.max(W))
-        if show_q and show_avg_q:
-            avg_q = float(np.mean(Q))
-            line_w = np.array([min_w, max_w])
-            line_l = avg_q * line_w
-            ax_scatter.plot(line_l, line_w, linestyle="--", color="#7f8c8d", label=f"Avg Q={avg_q:.1f}")
+        own_l_p05 = float(stats.get("length_p5")) if stats and stats.get("length_p5") is not None else min_len
+        own_l_p95 = float(stats.get("length_p95")) if stats and stats.get("length_p95") is not None else max_len
+        own_w_p05 = float(stats.get("width_p5")) if stats and stats.get("width_p5") is not None else min_w
+        own_w_p95 = float(stats.get("width_p95")) if stats and stats.get("width_p95") is not None else max_w
+        if show_q and (show_avg_q or mean_comparison):
+            avg_q = float(stats.get("ratio_mean", np.mean(Q)))
+            _plot_q_guideline(
+                avg_q,
+                own_l_p05,
+                own_l_p95,
+                own_w_p05,
+                own_w_p95,
+                hist_color,
+            )
 
-        if show_q and show_q_minmax:
-            q_min = float(np.min(Q))
-            q_max = float(np.max(Q))
-            if q_min > 0:
-                start_x = max(min_len, min_w * q_min)
-                if start_x < max_len:
-                    end_y = min(max_w, max_len / q_min)
-                    end_x = min(max_len, end_y * q_min)
-                    ax_scatter.plot([start_x, end_x], [start_x / q_min, end_x / q_min],
-                                    color=q_line_color, linewidth=1.0, label="Q min/max")
-            if q_max > 0:
-                start_x = max(min_len, min_w * q_max)
-                if start_x < max_len:
-                    end_y = min(max_w, max_len / q_max)
-                    end_x = min(max_len, end_y * q_max)
-                    ax_scatter.plot([start_x, end_x], [start_x / q_max, end_x / q_max],
-                                    color=q_line_color, linewidth=1.0)
+        if show_q and show_q_minmax and not mean_comparison:
+            q_min = float(stats.get("ratio_p5", stats.get("ratio_min", np.min(Q))))
+            q_max = float(stats.get("ratio_p95", stats.get("ratio_max", np.max(Q))))
+            _plot_q_guideline(
+                q_min,
+                own_l_p05,
+                own_l_p95,
+                own_w_p05,
+                own_w_p95,
+                hist_color,
+            )
+            _plot_q_guideline(
+                q_max,
+                own_l_p05,
+                own_l_p95,
+                own_w_p05,
+                own_w_p95,
+                hist_color,
+            )
 
-        if show_ci and len(L) >= 3:
-            ellipse = self._confidence_ellipse_points(L, W, confidence=0.95)
-            if ellipse is not None:
-                ex, ey = ellipse
-                ax_scatter.plot(ex, ey, color=hist_color, linewidth=1.5, label="95% ellipse")
+        if show_q and show_q_extreme_minmax and not mean_comparison:
+            q_extreme_min = float(stats.get("ratio_min", np.min(Q)))
+            q_extreme_max = float(stats.get("ratio_max", np.max(Q)))
+            _plot_q_guideline(
+                q_extreme_min,
+                min_len,
+                max_len,
+                min_w,
+                max_w,
+                hist_color,
+                label=f"Q min/max={q_extreme_min:.1f}-{q_extreme_max:.1f}",
+            )
+            _plot_q_guideline(
+                q_extreme_max,
+                min_len,
+                max_len,
+                min_w,
+                max_w,
+                hist_color,
+            )
+
+        if show_kde and len(L) >= 3:
+            _plot_kde_overlay(L, W, hist_color)
+
+        if show_ci and len(L) >= 3 and not mean_comparison:
+            _plot_data_ellipse(L, W, hist_color, linewidth=1.8)
+
+        if mean_comparison and specimen_parmasto:
+            ax_scatter.scatter(
+                [specimen_parmasto["L_m"]],
+                [specimen_parmasto["W_m"]],
+                marker="+",
+                s=260,
+                color=hist_color,
+                linewidths=2.4,
+                zorder=6.2,
+            )
 
         x_min = plot_settings.get("x_min")
         x_max = plot_settings.get("x_max")
@@ -9661,14 +11648,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             ax_scatter.set_aspect("auto")
 
-        reference_series = []
-        if self.reference_series:
-            for entry in self.reference_series:
-                data = entry.get("data", entry) if isinstance(entry, dict) else entry
-                if isinstance(data, dict) and data:
-                    reference_series.append(data)
-        elif isinstance(self.reference_values, dict) and self.reference_values:
-            reference_series.append(self.reference_values)
+        reference_series = self._resolved_reference_series_entries(dark)
 
         def _fallback(low, mid_low, mid_high, high):
             left = low if low is not None else mid_low
@@ -9679,8 +11659,75 @@ class MainWindow(GeometryMixin, QMainWindow):
                 right = left
             return left, right
 
-        def _add_range_ellipse(x_left, x_right, y_bottom, y_top, edge_color, linestyle):
+        def _clip_polygon_to_q_constraint(points, q_value, keep_greater):
+            try:
+                q_value = float(q_value)
+            except (TypeError, ValueError):
+                return points
+            if q_value <= 0 or not points:
+                return points
+
+            def _metric(point):
+                return float(point[0]) - q_value * float(point[1])
+
+            def _inside(point):
+                value = _metric(point)
+                return value >= -1e-9 if keep_greater else value <= 1e-9
+
+            clipped = []
+            previous = points[-1]
+            previous_inside = _inside(previous)
+            previous_metric = _metric(previous)
+            for current in points:
+                current_inside = _inside(current)
+                current_metric = _metric(current)
+                if current_inside != previous_inside:
+                    denominator = previous_metric - current_metric
+                    if abs(denominator) > 1e-12:
+                        t = previous_metric / denominator
+                        intersection = (
+                            float(previous[0]) + (float(current[0]) - float(previous[0])) * t,
+                            float(previous[1]) + (float(current[1]) - float(previous[1])) * t,
+                        )
+                        clipped.append(intersection)
+                if current_inside:
+                    clipped.append((float(current[0]), float(current[1])))
+                previous = current
+                previous_inside = current_inside
+                previous_metric = current_metric
+            return clipped
+
+        def _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=None, q_high=None):
             if x_left is None or x_right is None or y_bottom is None or y_top is None:
+                return None
+            left = float(min(x_left, x_right))
+            right = float(max(x_left, x_right))
+            bottom = float(min(y_bottom, y_top))
+            top = float(max(y_bottom, y_top))
+            if right <= left or top <= bottom:
+                return None
+            polygon = [
+                (left, bottom),
+                (right, bottom),
+                (right, top),
+                (left, top),
+            ]
+            polygon = _clip_polygon_to_q_constraint(polygon, q_low, keep_greater=True)
+            polygon = _clip_polygon_to_q_constraint(polygon, q_high, keep_greater=False)
+            if len(polygon) < 3:
+                return None
+            return polygon
+
+        def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None):
+            if x_left is None or x_right is None or y_bottom is None or y_top is None:
+                return
+            if reference_shape == "square":
+                polygon = _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=q_low, q_high=q_high)
+                if not polygon:
+                    return
+                xs = [point[0] for point in polygon] + [polygon[0][0]]
+                ys = [point[1] for point in polygon] + [polygon[0][1]]
+                ax_scatter.plot(xs, ys, color=edge_color, linewidth=1.5, linestyle=linestyle)
                 return
             width = abs(x_right - x_left)
             height = abs(y_top - y_bottom)
@@ -9698,41 +11745,201 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             ax_scatter.add_patch(ellipse)
 
-        ref_palette = ["#e67e22", "#2ecc71", "#9b59b6", "#e74c3c", "#16a085", "#f39c12", "#34495e"]
-        ref_color_index = 0
+        def _plot_reference_mean_shape(
+            x_left,
+            x_right,
+            y_bottom,
+            y_top,
+            color,
+            mean_q=None,
+            mean_x=None,
+            mean_y=None,
+            center_q=None,
+            fill_alpha=0.10,
+            show_center_marker=True,
+        ):
+            polygon = _constrained_box_polygon(
+                x_left,
+                x_right,
+                y_bottom,
+                y_top,
+                q_low=mean_q[0] if isinstance(mean_q, tuple) else None,
+                q_high=mean_q[1] if isinstance(mean_q, tuple) else None,
+            )
+            if polygon:
+                xs = [point[0] for point in polygon] + [polygon[0][0]]
+                ys = [point[1] for point in polygon] + [polygon[0][1]]
+                ax_scatter.fill(xs, ys, color=color, alpha=fill_alpha, zorder=1.1)
+                ax_scatter.plot(xs, ys, color=color, linewidth=1.25, alpha=0.9, zorder=1.8)
+            if show_center_marker and mean_x is not None and mean_y is not None:
+                ax_scatter.scatter(
+                    [mean_x],
+                    [mean_y],
+                    marker="+",
+                    s=250,
+                    color=color,
+                    linewidths=2.2,
+                    zorder=6,
+                )
+            if show_q:
+                try:
+                    center_q = float(center_q) if center_q is not None else None
+                except (TypeError, ValueError):
+                    center_q = None
+                if center_q is None:
+                    try:
+                        center_q = float(mean_x) / float(mean_y) if mean_x and mean_y else None
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        center_q = None
+                if center_q is not None:
+                    _plot_q_guideline(center_q, x_left, x_right, y_bottom, y_top, color)
+
         reference_hist_overlays = []
         reference_point_hist = []
+        parmasto_reference_present = False
 
-        for data in reference_series:
+        for entry in reference_series:
+            if not bool(entry.get("enabled", True)):
+                continue
+            data = entry.get("data", {})
             if not isinstance(data, dict) or not data:
                 continue
             kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
             if kind == "points" and not self._reference_allow_points():
                 continue
-            color = ref_palette[ref_color_index % len(ref_palette)]
-            ref_color_index += 1
-            if color == hist_color:
-                color = ref_palette[ref_color_index % len(ref_palette)]
-                ref_color_index += 1
-            label = self._format_reference_series_label(data)
+            if kind == "observation" and not (data.get("points") or data.get("observation_id")):
+                continue
+            color = str(entry.get("color") or "#adb5bd")
+            label = entry.get("label") or self._format_reference_series_label(data)
+
+            if kind == "observation":
+                points = data.get("points") or []
+                ref_L = np.array([p.get("length_um") for p in points if p.get("length_um") is not None], dtype=float)
+                ref_W = np.array([p.get("width_um") for p in points if p.get("width_um") is not None], dtype=float)
+                if ref_L.size and ref_W.size:
+                    ref_Q = ref_L / ref_W
+                    _plot_kde_overlay(ref_L, ref_W, color)
+                    if show_q and (show_avg_q or mean_comparison):
+                        label = _append_mean_q_label(label, np.mean(ref_Q))
+                    if mean_comparison:
+                        ax_scatter.scatter(
+                            ref_L,
+                            ref_W,
+                            s=reference_point_size,
+                            alpha=reference_point_alpha,
+                            facecolors="none",
+                            edgecolors=color,
+                            linewidths=0.9,
+                            label=label,
+                        )
+                        ref_Q = ref_L / ref_W
+                        _plot_reference_mean_shape(
+                            float(np.percentile(ref_L, 5)),
+                            float(np.percentile(ref_L, 95)),
+                            float(np.percentile(ref_W, 5)),
+                            float(np.percentile(ref_W, 95)),
+                            color,
+                            mean_q=(
+                                float(np.percentile(ref_Q, 5)),
+                                float(np.percentile(ref_Q, 95)),
+                            ),
+                            mean_x=float(np.mean(ref_L)),
+                            mean_y=float(np.mean(ref_W)),
+                            center_q=float(np.mean(ref_Q)),
+                            fill_alpha=0.07,
+                        )
+                    else:
+                        ax_scatter.scatter(
+                            ref_L, ref_W, s=22, alpha=0.85,
+                            facecolors="none", edgecolors=color, linewidths=1.2,
+                            label=label,
+                        )
+                        if show_ci and ref_L.size >= 3:
+                            _plot_data_ellipse(ref_L, ref_W, color, linewidth=1.6)
+                        if show_q and show_avg_q and ref_Q.size:
+                            avg_q = float(np.mean(ref_Q))
+                            l_p05 = float(np.percentile(ref_L, 5))
+                            l_p95 = float(np.percentile(ref_L, 95))
+                            w_p05 = float(np.percentile(ref_W, 5))
+                            w_p95 = float(np.percentile(ref_W, 95))
+                            _plot_q_guideline(avg_q, l_p05, l_p95, w_p05, w_p95, color)
+                        if show_q and show_q_minmax and ref_Q.size:
+                            l_p05 = float(np.percentile(ref_L, 5))
+                            l_p95 = float(np.percentile(ref_L, 95))
+                            w_p05 = float(np.percentile(ref_W, 5))
+                            w_p95 = float(np.percentile(ref_W, 95))
+                            _plot_q_guideline(float(np.percentile(ref_Q, 5)), l_p05, l_p95, w_p05, w_p95, color)
+                            _plot_q_guideline(float(np.percentile(ref_Q, 95)), l_p05, l_p95, w_p05, w_p95, color)
+                        if show_q and show_q_extreme_minmax and ref_Q.size:
+                            _plot_q_guideline(float(np.min(ref_Q)), float(np.min(ref_L)), float(np.max(ref_L)), float(np.min(ref_W)), float(np.max(ref_W)), color)
+                            _plot_q_guideline(float(np.max(ref_Q)), float(np.min(ref_L)), float(np.max(ref_L)), float(np.min(ref_W)), float(np.max(ref_W)), color)
+                    if show_hist:
+                        reference_point_hist.append({
+                            "L": ref_L,
+                            "W": ref_W,
+                            "Q": ref_Q if show_q else None,
+                            "color": color,
+                        })
+                continue
 
             if kind == "points":
                 points = data.get("points") or []
                 ref_L = np.array([p.get("length_um") for p in points if p.get("length_um") is not None], dtype=float)
                 ref_W = np.array([p.get("width_um") for p in points if p.get("width_um") is not None], dtype=float)
                 if ref_L.size and ref_W.size:
-                    ax_scatter.scatter(ref_L, ref_W, s=18, alpha=0.7, color=color, label=label)
-                    if show_ci and ref_L.size >= 3:
-                        ref_ellipse = self._confidence_ellipse_points(ref_L, ref_W, confidence=0.95)
-                        if ref_ellipse is not None:
-                            ex, ey = ref_ellipse
-                            ax_scatter.plot(ex, ey, color=color, linewidth=1.5)
+                    ref_Q = ref_L / ref_W
+                    _plot_kde_overlay(ref_L, ref_W, color)
+                    if mean_comparison:
+                        if show_q and ref_Q.size:
+                            label = _append_mean_q_label(label, np.mean(ref_Q))
+                        ax_scatter.scatter(
+                            ref_L,
+                            ref_W,
+                            s=reference_point_size,
+                            alpha=reference_point_alpha,
+                            color=color,
+                            label=label,
+                        )
+                        _plot_reference_mean_shape(
+                            float(np.percentile(ref_L, 5)),
+                            float(np.percentile(ref_L, 95)),
+                            float(np.percentile(ref_W, 5)),
+                            float(np.percentile(ref_W, 95)),
+                            color,
+                            mean_q=(
+                                float(np.percentile(ref_Q, 5)),
+                                float(np.percentile(ref_Q, 95)),
+                            ) if ref_Q.size else None,
+                            mean_x=float(np.mean(ref_L)),
+                            mean_y=float(np.mean(ref_W)),
+                            center_q=float(np.mean(ref_Q)) if ref_Q.size else None,
+                            fill_alpha=0.07,
+                        )
+                    else:
+                        ax_scatter.scatter(ref_L, ref_W, s=18, alpha=0.7, color=color, label=label)
+                        if show_ci and ref_L.size >= 3:
+                            _plot_data_ellipse(ref_L, ref_W, color, linewidth=1.6)
+                        if show_q and show_avg_q and ref_Q.size:
+                            l_p05 = float(np.percentile(ref_L, 5))
+                            l_p95 = float(np.percentile(ref_L, 95))
+                            w_p05 = float(np.percentile(ref_W, 5))
+                            w_p95 = float(np.percentile(ref_W, 95))
+                            _plot_q_guideline(float(np.mean(ref_Q)), l_p05, l_p95, w_p05, w_p95, color)
+                        if show_q and show_q_minmax and ref_Q.size:
+                            l_p05 = float(np.percentile(ref_L, 5))
+                            l_p95 = float(np.percentile(ref_L, 95))
+                            w_p05 = float(np.percentile(ref_W, 5))
+                            w_p95 = float(np.percentile(ref_W, 95))
+                            _plot_q_guideline(float(np.percentile(ref_Q, 5)), l_p05, l_p95, w_p05, w_p95, color)
+                            _plot_q_guideline(float(np.percentile(ref_Q, 95)), l_p05, l_p95, w_p05, w_p95, color)
+                        if show_q and show_q_extreme_minmax and ref_Q.size:
+                            _plot_q_guideline(float(np.min(ref_Q)), float(np.min(ref_L)), float(np.max(ref_L)), float(np.min(ref_W)), float(np.max(ref_W)), color)
+                            _plot_q_guideline(float(np.max(ref_Q)), float(np.min(ref_L)), float(np.max(ref_L)), float(np.min(ref_W)), float(np.max(ref_W)), color)
                     if show_hist:
-                        ref_Q = ref_L / ref_W if show_q else None
                         reference_point_hist.append({
                             "L": ref_L,
                             "W": ref_W,
-                            "Q": ref_Q,
+                            "Q": ref_Q if show_q else None,
                             "color": color,
                         })
                 continue
@@ -9749,53 +11956,158 @@ class MainWindow(GeometryMixin, QMainWindow):
             ref_w_p05 = data.get("width_p05")
             ref_w_p50 = data.get("width_p50")
             ref_w_p95 = data.get("width_p95")
-            ref_q_min = data.get("q_min")
-            ref_q_max = data.get("q_max")
+            ref_q_min = data.get("q_p05")
+            if ref_q_min is None:
+                ref_q_min = data.get("q_p5")
+            if ref_q_min is None:
+                ref_q_min = data.get("q_min")
+            ref_q_max = data.get("q_p95")
+            if ref_q_max is None:
+                ref_q_max = data.get("q_max")
             ref_q_avg = data.get("q_p50")
+            if show_q and (show_avg_q or mean_comparison) and ref_q_avg is not None:
+                label = _append_mean_q_label(label, ref_q_avg)
+            parmasto_ref = self._parmasto_reference_metrics(data)
+            if parmasto_ref:
+                parmasto_reference_present = True
 
             l_left, l_right = _fallback(ref_l_min, ref_l_p05, ref_l_p95, ref_l_max)
             w_bottom, w_top = _fallback(ref_w_min, ref_w_p05, ref_w_p95, ref_w_max)
 
             any_reference = any(
                 value is not None
-                for value in (l_left, l_right, w_bottom, w_top, ref_l_p05, ref_l_p95, ref_w_p05, ref_w_p95)
+                for value in (
+                    l_left, l_right, w_bottom, w_top,
+                    ref_l_p05, ref_l_p95, ref_w_p05, ref_w_p95,
+                    parmasto_ref.get("L_bar") if parmasto_ref else None,
+                    parmasto_ref.get("W_bar") if parmasto_ref else None,
+                )
             )
 
-            if l_left is not None and l_right is not None and w_bottom is not None and w_top is not None:
-                _add_range_ellipse(l_left, l_right, w_bottom, w_top, color, ":")
-            if show_ci and ref_l_p05 is not None and ref_l_p95 is not None and ref_w_p05 is not None and ref_w_p95 is not None:
-                _add_range_ellipse(ref_l_p05, ref_l_p95, ref_w_p05, ref_w_p95, color, "--")
+            def _validated_q_pair(low_value, high_value):
+                try:
+                    low = float(low_value) if low_value is not None else None
+                    high = float(high_value) if high_value is not None else None
+                except (TypeError, ValueError):
+                    return (None, None)
+                if low is None or high is None or low >= high:
+                    return (None, None)
+                return (low, high)
+
+            q_range_low, q_range_high = _validated_q_pair(ref_q_min, ref_q_max)
+            q_extreme_low, q_extreme_high = _validated_q_pair(data.get("q_min"), data.get("q_max"))
+            range_shape_q_low = q_range_low if q_range_low is not None else q_extreme_low
+            range_shape_q_high = q_range_high if q_range_high is not None else q_extreme_high
+            minmax_shape_q_low = q_extreme_low if q_extreme_low is not None else q_range_low
+            minmax_shape_q_high = q_extreme_high if q_extreme_high is not None else q_range_high
+
+            if (
+                not mean_comparison
+                and show_reference_minmax
+                and l_left is not None and l_right is not None and w_bottom is not None and w_top is not None
+            ):
+                _plot_reference_range_shape(
+                    l_left,
+                    l_right,
+                    w_bottom,
+                    w_top,
+                    color,
+                    ":",
+                    q_low=minmax_shape_q_low,
+                    q_high=minmax_shape_q_high,
+                )
+            if (
+                not mean_comparison
+                and show_reference_ci
+                and ref_l_p05 is not None and ref_l_p95 is not None and ref_w_p05 is not None and ref_w_p95 is not None
+            ):
+                _plot_reference_range_shape(
+                    ref_l_p05,
+                    ref_l_p95,
+                    ref_w_p05,
+                    ref_w_p95,
+                    color,
+                    "-",
+                    q_low=range_shape_q_low,
+                    q_high=range_shape_q_high,
+                )
 
             if any_reference:
-                ax_scatter.plot([], [], color=color, linestyle=":", label=label)
+                legend_style = "-" if show_reference_ci else ":"
+                ax_scatter.plot([], [], color=color, linestyle=legend_style, label=label)
 
-            if ref_l_avg is not None and ref_w_avg is not None:
-                ref_radius = 0.03 * max(float(np.max(L)), float(np.max(W)), ref_l_avg, ref_w_avg)
-                circ = Circle((ref_l_avg, ref_w_avg), ref_radius, fill=False, edgecolor=color, linewidth=1.5)
-                ax_scatter.add_patch(circ)
+            if mean_comparison:
+                mean_x = parmasto_ref.get("L_bar") if parmasto_ref and parmasto_ref.get("L_bar") is not None else ref_l_avg
+                mean_y = parmasto_ref.get("W_bar") if parmasto_ref and parmasto_ref.get("W_bar") is not None else ref_w_avg
+                mean_q_range = None
+                x_left = ref_l_p05 if ref_l_p05 is not None else l_left
+                x_right = ref_l_p95 if ref_l_p95 is not None else l_right
+                y_bottom = ref_w_p05 if ref_w_p05 is not None else w_bottom
+                y_top = ref_w_p95 if ref_w_p95 is not None else w_top
+                if parmasto_ref:
+                    parmasto_l_range = self._parmasto_expected_range(
+                        parmasto_ref.get("L_bar"),
+                        parmasto_ref.get("V_spL"),
+                    )
+                    parmasto_w_range = self._parmasto_expected_range(
+                        parmasto_ref.get("W_bar"),
+                        parmasto_ref.get("V_spW"),
+                    )
+                    parmasto_q_range = self._parmasto_expected_range(
+                        parmasto_ref.get("Q_bar"),
+                        parmasto_ref.get("V_spQ"),
+                    )
+                    if parmasto_l_range:
+                        x_left, x_right = parmasto_l_range
+                    if parmasto_w_range:
+                        y_bottom, y_top = parmasto_w_range
+                    mean_q_range = parmasto_q_range
+                elif ref_q_min is not None and ref_q_max is not None:
+                    try:
+                        mean_q_range = (float(ref_q_min), float(ref_q_max))
+                    except (TypeError, ValueError):
+                        mean_q_range = None
+                _plot_reference_mean_shape(
+                    x_left,
+                    x_right,
+                    y_bottom,
+                    y_top,
+                    color,
+                    mean_q=mean_q_range,
+                    mean_x=mean_x,
+                    mean_y=mean_y,
+                    center_q=parmasto_ref.get("Q_bar") if parmasto_ref and parmasto_ref.get("Q_bar") is not None else ref_q_avg,
+                    fill_alpha=0.10,
+                    show_center_marker=not bool(parmasto_ref),
+                )
+
+            mean_x = parmasto_ref.get("L_bar") if parmasto_ref and parmasto_ref.get("L_bar") is not None else ref_l_avg
+            mean_y = parmasto_ref.get("W_bar") if parmasto_ref and parmasto_ref.get("W_bar") is not None else ref_w_avg
+            if not mean_comparison and not parmasto_ref and mean_x is not None and mean_y is not None:
+                ax_scatter.scatter(
+                    [mean_x],
+                    [mean_y],
+                    marker="+",
+                    s=260,
+                    color=color,
+                    linewidths=2.2,
+                    zorder=6,
+                )
 
             if show_q:
-                ref_line_max = ref_l_max if ref_l_max is not None else float(np.max(L))
-                if show_q_minmax:
-                    if ref_q_min is not None and ref_q_min > 0:
-                        start_x = max(min_len, min_w * ref_q_min)
-                        if start_x < ref_line_max:
-                            end_y = min(max_w, ref_line_max / ref_q_min)
-                            end_x = min(ref_line_max, end_y * ref_q_min)
-                            ax_scatter.plot([start_x, end_x], [start_x / ref_q_min, end_x / ref_q_min],
-                                            color=color, linestyle=":", linewidth=1.0)
-                    if ref_q_max is not None and ref_q_max > 0:
-                        start_x = max(min_len, min_w * ref_q_max)
-                        if start_x < ref_line_max:
-                            end_y = min(max_w, ref_line_max / ref_q_max)
-                            end_x = min(ref_line_max, end_y * ref_q_max)
-                            ax_scatter.plot([start_x, end_x], [start_x / ref_q_max, end_x / ref_q_max],
-                                            color=color, linestyle=":", linewidth=1.0)
-                if show_avg_q and ref_q_avg is not None and ref_q_avg > 0:
-                    start_x = max(min_len, min_w * ref_q_avg)
-                    if start_x < ref_line_max:
-                        ax_scatter.plot([start_x, ref_line_max], [start_x / ref_q_avg, ref_line_max / ref_q_avg],
-                                        color=color, linestyle="-.", linewidth=1.0)
+                ref_q_l_left = ref_l_p05 if ref_l_p05 is not None else l_left
+                ref_q_l_right = ref_l_p95 if ref_l_p95 is not None else l_right
+                ref_q_w_bottom = ref_w_p05 if ref_w_p05 is not None else w_bottom
+                ref_q_w_top = ref_w_p95 if ref_w_p95 is not None else w_top
+                if (show_avg_q or mean_comparison) and ref_q_avg is not None and ref_q_avg > 0 and not mean_comparison:
+                    _plot_q_guideline(
+                        ref_q_avg,
+                        ref_q_l_left,
+                        ref_q_l_right,
+                        ref_q_w_bottom,
+                        ref_q_w_top,
+                        color,
+                    )
 
             reference_hist_overlays.append({
                 "color": color,
@@ -9808,9 +12120,31 @@ class MainWindow(GeometryMixin, QMainWindow):
                 "width_p05": ref_w_p05,
                 "width_p95": ref_w_p95,
             })
+        if parmasto_reference_present and specimen_parmasto and not mean_comparison:
+            specimen_lm = specimen_parmasto.get("L_m")
+            specimen_wm = specimen_parmasto.get("W_m")
+            if specimen_lm is not None and specimen_wm is not None:
+                ax_scatter.scatter(
+                    [specimen_lm],
+                    [specimen_wm],
+                    marker="+",
+                    s=300,
+                    color=hist_color,
+                    linewidths=2.4,
+                    zorder=6,
+                )
         handles, labels = ax_scatter.get_legend_handles_labels()
         if labels:
-            ax_scatter.legend(loc="best", fontsize=8)
+            ordered = sorted(
+                zip(labels, handles),
+                key=lambda item: str(item[0]).casefold(),
+            )
+            ax_scatter.legend(
+                [handle for _, handle in ordered],
+                [label for label, _ in ordered],
+                loc="best",
+                fontsize=8,
+            )
 
         if show_hist:
             hist_tick_max, hist_tick_length = self._gallery_histogram_y_tick_settings(show_q)
@@ -10121,6 +12455,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Handle pick events from gallery plots."""
         if self._gallery_pan_recently_dragged:
             return
+        mouse_event = getattr(event, "mouseevent", None)
+        if (
+            mouse_event is None
+            or getattr(mouse_event, "name", "") != "button_press_event"
+            or getattr(mouse_event, "button", None) != 1
+        ):
+            return
         scatter_map = getattr(self, "gallery_scatter_id_map", {})
         if event.artist in scatter_map:
             indices = getattr(event, "ind", [])
@@ -10132,6 +12473,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     if measurement_id:
                         selected_ids.add(measurement_id)
             if selected_ids:
+                self._store_gallery_plot_view()
                 self.gallery_filter_mode = "points"
                 self.gallery_filter_value = None
                 self.gallery_filter_ids = selected_ids
@@ -10142,6 +12484,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
 
         if hasattr(self, "gallery_hist_patches") and event.artist in self.gallery_hist_patches:
+            self._store_gallery_plot_view()
             metric, min_val, max_val = self.gallery_hist_patches[event.artist]
             self.gallery_filter_mode = "bin"
             self.gallery_filter_value = (metric, min_val, max_val)
@@ -10160,59 +12503,65 @@ class MainWindow(GeometryMixin, QMainWindow):
             label = f"{name}: {min_val:.2f} - {max_val:.2f}"
         self.gallery_filter_label.setText(label)
 
-    def _build_stats_text(self):
-        if not self.active_observation_id:
-            return None, None, None
-        obs = ObservationDB.get_observation(self.active_observation_id)
-        if not obs:
-            return None, None, None
-        genus = obs.get("genus") or ""
-        species = obs.get("species") or obs.get("species_guess") or ""
-        display_name = f"{genus} {species}".strip()
-        if not display_name:
-            display_name = obs.get("display_name") or obs.get("name") or self.tr("Observation")
-        date_value = obs.get("date") or ""
-        first_line = f"{display_name}\t{date_value}".rstrip()
-
-        category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
+    def _measurement_stats_records_for_category(self, measurements: list[dict], category: str | None = None) -> list[dict]:
+        records: list[dict] = []
         normalized = self.normalize_measurement_category(category) if category else None
-        if normalized == "spores":
-            spore_stats = MeasurementDB.get_statistics_for_observation(
-                self.active_observation_id,
-                measurement_category="spores"
-            )
-            stats_line = self.format_literature_string(spore_stats) if spore_stats else self.tr("Spores: -")
-        else:
-            if category in (None, "all"):
-                spore_stats = MeasurementDB.get_statistics_for_observation(
-                    self.active_observation_id,
-                    measurement_category="spores"
-                )
-                stats_line = self.format_literature_string(spore_stats) if spore_stats else self.tr("All measurements")
-            elif category and category != "all":
-                stats_line = self.format_measurement_category(category)
-            else:
-                stats_line = self.tr("All measurements")
-
-        measurements = MeasurementDB.get_measurements_for_observation(self.active_observation_id)
-        include_details = bool(
-            hasattr(self, "gallery_include_details_checkbox")
-            and self.gallery_include_details_checkbox.isChecked()
-        )
-        image_labels = getattr(self, "gallery_image_labels", {}) or {}
-        image_details_cache: dict[int, dict] = {}
-        rows = ["Width\tLength\tQ"]
-        if include_details:
-            rows[0] += "\tImage\tContrast\tMount\tStain\tSample\tObjective"
         for measurement in measurements or []:
-            if category and category != "all":
-                m_category = self.normalize_measurement_category(measurement.get("measurement_type"))
-                if m_category != normalized:
-                    continue
+            measurement_category = self.normalize_measurement_category(measurement.get("measurement_type"))
+            if measurement_category == "calibration":
+                continue
+            if normalized == "all_except_spores" and measurement_category == "spores":
+                continue
+            if normalized and measurement_category != normalized:
+                continue
             length = measurement.get("length_um")
             width = measurement.get("width_um")
             if length is None or width is None or width <= 0:
                 continue
+            records.append(measurement)
+        return records
+
+    def _stats_from_measurement_records(self, measurements: list[dict]) -> tuple[dict | None, list[float], list[float]]:
+        lengths = [float(m.get("length_um")) for m in measurements if m.get("length_um") is not None]
+        widths = [float(m.get("width_um")) for m in measurements if m.get("width_um") is not None and float(m.get("width_um")) > 0]
+        stats = self._stats_from_measurements(lengths, widths) if lengths and widths else None
+        return stats, lengths, widths
+
+    def _format_measurement_stats_string(self, stats: dict | None, category: str | None = "spores") -> str:
+        label = self.format_measurement_category(category or "spores") if category and category != "spores" else self.tr("Spores")
+        if not stats:
+            return f"{label}: -"
+
+        stats_text = (
+            f"{label}: ({stats['length_min']:.1f}-){stats['length_p5']:.1f}-"
+            f"{stats['length_p95']:.1f}(-{stats['length_max']:.1f}) um"
+        )
+        if "width_mean" in stats and stats.get("width_mean", 0) > 0:
+            stats_text += (
+                f" x ({stats['width_min']:.1f}-){stats['width_p5']:.1f}-"
+                f"{stats['width_p95']:.1f}(-{stats['width_max']:.1f}) um"
+            )
+            stats_text += (
+                f", Q = ({stats['ratio_min']:.1f}-){stats['ratio_p5']:.1f}-"
+                f"{stats['ratio_p95']:.1f}(-{stats['ratio_max']:.1f})"
+            )
+            stats_text += f", Qm = {stats['ratio_mean']:.1f}"
+        stats_text += f", n = {stats['count']}"
+        return stats_text
+
+    def _build_measurement_stats_table_rows(
+        self,
+        measurements: list[dict],
+        include_details: bool,
+        image_labels: dict,
+        image_details_cache: dict[int, dict],
+    ) -> list[str]:
+        rows = ["Width\tLength\tQ"]
+        if include_details:
+            rows[0] += "\tImage\tContrast\tMount\tStain\tSample\tObjective"
+        for measurement in measurements:
+            length = float(measurement.get("length_um"))
+            width = float(measurement.get("width_um"))
             q = length / width if width > 0 else 0
             row = f"{width:.2f}\t{length:.2f}\t{q:.2f}"
             if include_details:
@@ -10235,19 +12584,97 @@ class MainWindow(GeometryMixin, QMainWindow):
                 stain = DatabaseTerms.translate("stain", image_data.get("stain"))
                 sample = DatabaseTerms.translate("sample", image_data.get("sample_type"))
                 objective = str(image_data.get("objective_name") or "").strip()
-                row += "\t" + "\t".join(
-                    [
-                        image_display,
-                        contrast,
-                        mount,
-                        stain,
-                        sample,
-                        objective,
-                    ]
-                )
+                row += "\t" + "\t".join([image_display, contrast, mount, stain, sample, objective])
             rows.append(row)
+        return rows
 
-        text = "\n".join([first_line, stats_line] + rows)
+    def _ordered_stats_categories(self, categories: list[str]) -> list[str]:
+        normalized = [self.normalize_measurement_category(category) for category in categories if category]
+        ordered: list[str] = []
+        if "spores" in normalized:
+            ordered.append("spores")
+        for category in normalized:
+            if category not in ordered and category != "calibration":
+                ordered.append(category)
+        return ordered
+
+    def _build_stats_text(self):
+        if not self.active_observation_id:
+            return None, None, None
+        obs = ObservationDB.get_observation(self.active_observation_id)
+        if not obs:
+            return None, None, None
+        genus = obs.get("genus") or ""
+        species = obs.get("species") or obs.get("species_guess") or ""
+        display_name = f"{genus} {species}".strip()
+        if not display_name:
+            display_name = obs.get("display_name") or obs.get("name") or self.tr("Observation")
+        date_value = obs.get("date") or ""
+        first_line = f"{display_name}\t{date_value}".rstrip()
+
+        category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
+        normalized = self.normalize_measurement_category(category) if category else None
+        measurements = MeasurementDB.get_measurements_for_observation(self.active_observation_id)
+        include_details = bool(
+            hasattr(self, "gallery_include_details_checkbox")
+            and self.gallery_include_details_checkbox.isChecked()
+        )
+        image_labels = getattr(self, "gallery_image_labels", {}) or {}
+        image_details_cache: dict[int, dict] = {}
+        body_lines: list[str] = []
+
+        if category is None:
+            categories = self._ordered_stats_categories(
+                [
+                    self.normalize_measurement_category(measurement.get("measurement_type"))
+                    for measurement in (measurements or [])
+                    if self.normalize_measurement_category(measurement.get("measurement_type")) != "calibration"
+                ]
+            )
+            if not categories:
+                body_lines.append(self.tr("No measurements"))
+            for index, section_category in enumerate(categories):
+                section_measurements = self._measurement_stats_records_for_category(measurements, section_category)
+                section_stats, section_lengths, section_widths = self._stats_from_measurement_records(section_measurements)
+                if index > 0:
+                    body_lines.append("")
+                body_lines.append(self._format_measurement_stats_string(section_stats, section_category))
+                if section_category == "spores":
+                    parmasto_lines = self._parmasto_fit_summary_lines(
+                        self._parmasto_specimen_metrics(section_lengths, section_widths),
+                        self._active_reference_data_for_stats(),
+                    )
+                    if parmasto_lines:
+                        body_lines.extend(parmasto_lines)
+                body_lines.extend(
+                    self._build_measurement_stats_table_rows(
+                        section_measurements,
+                        include_details,
+                        image_labels,
+                        image_details_cache,
+                    )
+                )
+        else:
+            filtered_measurements = self._measurement_stats_records_for_category(measurements, normalized)
+            filtered_stats, filtered_lengths, filtered_widths = self._stats_from_measurement_records(filtered_measurements)
+            body_lines.append(self._format_measurement_stats_string(filtered_stats, normalized))
+            if normalized == "spores":
+                parmasto_lines = self._parmasto_fit_summary_lines(
+                    self._parmasto_specimen_metrics(filtered_lengths, filtered_widths),
+                    self._active_reference_data_for_stats(),
+                )
+                if parmasto_lines:
+                    body_lines.extend(parmasto_lines)
+            body_lines.extend(
+                self._build_measurement_stats_table_rows(
+                    filtered_measurements,
+                    include_details,
+                    image_labels,
+                    image_details_cache,
+                )
+            )
+
+        text = "\n".join([first_line] + body_lines)
         return text, display_name, date_value
 
     def _update_gallery_stats_preview(self):
@@ -10362,18 +12789,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.image_label.set_selected_rect_index(-1)
             self.image_label.set_selected_line_indices([])
 
+    def _clear_measurement_selection(self) -> None:
+        if hasattr(self, "measurements_table"):
+            self.measurements_table.clearSelection()
+        if hasattr(self, "spore_preview"):
+            self.spore_preview.clear()
+        self._clear_measurement_highlight()
+
     def _confidence_ellipse_points(self, x, y, confidence=0.95, n_points=300):
-        """Return ellipse points for a confidence region."""
+        """Return ellipse points for a data ellipse of the observed distribution."""
         if len(x) < 3 or len(y) < 3:
             return None
-        chi2_map = {
-            0.90: 4.605170185988092,
-            0.95: 5.991464547107979,
-            0.99: 9.210340371976184,
-        }
-        chi2_val = chi2_map.get(confidence)
-        if chi2_val is None:
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
             return None
+        confidence = max(0.01, min(0.999, confidence))
+        chi2_val = -2.0 * math.log(max(1e-12, 1.0 - confidence))
 
         mean = np.array([np.mean(x), np.mean(y)])
         cov = np.cov(x, y, ddof=1)
@@ -10388,12 +12820,127 @@ class MainWindow(GeometryMixin, QMainWindow):
         ellipse = (eigvecs @ (axis_lengths[:, None] * circle)) + mean[:, None]
         return ellipse[0, :], ellipse[1, :]
 
+    def _gaussian_kde_grid(self, x, y, bw_method=1.0, grid_size=180):
+        """Evaluate a 2D Gaussian KDE on a regular grid for contour plotting."""
+        bw_method = max(0.5, min(1.5, float(bw_method)))
+
+        try:
+            from scipy.stats import gaussian_kde
+        except Exception:
+            gaussian_kde = None
+
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        valid = np.isfinite(x) & np.isfinite(y)
+        if np.count_nonzero(valid) < 3:
+            return None
+        x = x[valid]
+        y = y[valid]
+        if x.size < 3 or y.size < 3:
+            return None
+
+        x_span = float(np.ptp(x))
+        y_span = float(np.ptp(y))
+        if x_span <= 0 or y_span <= 0:
+            return None
+
+        x_pad = max(x_span * 0.08, 0.2)
+        y_pad = max(y_span * 0.08, 0.1)
+        grid_x = np.linspace(float(np.min(x)) - x_pad, float(np.max(x)) + x_pad, int(grid_size))
+        grid_y = np.linspace(float(np.min(y)) - y_pad, float(np.max(y)) + y_pad, int(grid_size))
+        xx, yy = np.meshgrid(grid_x, grid_y)
+        positions = np.vstack([xx.ravel(), yy.ravel()])
+        if gaussian_kde is not None:
+            try:
+                kde = gaussian_kde(np.vstack([x, y]), bw_method=bw_method)
+                density = np.reshape(kde(positions), xx.shape)
+            except Exception:
+                return None
+        else:
+            samples = np.column_stack((x, y))
+            sample_count = samples.shape[0]
+            dims = samples.shape[1]
+            if sample_count < 3 or dims != 2:
+                return None
+            covariance = np.cov(samples, rowvar=False, ddof=1)
+            if covariance.shape != (2, 2):
+                return None
+            scott_factor = float(sample_count) ** (-1.0 / (dims + 4.0))
+            scaled_covariance = covariance * (scott_factor * bw_method) ** 2
+            scaled_covariance = scaled_covariance + np.eye(dims) * 1e-12
+            try:
+                inv_covariance = np.linalg.inv(scaled_covariance)
+                det_covariance = float(np.linalg.det(scaled_covariance))
+            except np.linalg.LinAlgError:
+                return None
+            if not np.isfinite(det_covariance) or det_covariance <= 0:
+                return None
+            normalizer = float(sample_count) * math.sqrt(((2.0 * math.pi) ** dims) * det_covariance)
+            if normalizer <= 0 or not np.isfinite(normalizer):
+                return None
+
+            grid_points = np.column_stack((xx.ravel(), yy.ravel()))
+            density_flat = np.empty(grid_points.shape[0], dtype=float)
+            chunk_size = 2048
+            for start in range(0, grid_points.shape[0], chunk_size):
+                stop = min(start + chunk_size, grid_points.shape[0])
+                chunk = grid_points[start:stop]
+                diff = chunk[:, None, :] - samples[None, :, :]
+                exponent = np.einsum("...i,ij,...j->...", diff, inv_covariance, diff)
+                density_flat[start:stop] = np.exp(-0.5 * exponent).sum(axis=1) / normalizer
+            density = density_flat.reshape(xx.shape)
+
+        if grid_x.size < 2 or grid_y.size < 2:
+            return None
+        cell_area = float(grid_x[1] - grid_x[0]) * float(grid_y[1] - grid_y[0])
+        if not np.isfinite(cell_area) or cell_area <= 0:
+            return None
+        return xx, yy, density, cell_area
+
+    def _kde_contour_levels(self, density, cell_area, contour_count: int = 6, coverage_percent: int = 95):
+        """Convert KDE density into contour thresholds enclosing target probability mass."""
+        finite = np.asarray(density, dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size == 0:
+            return None
+        ordered = np.sort(finite)[::-1]
+        cumulative = np.cumsum(ordered) * float(cell_area)
+        total = float(cumulative[-1]) if cumulative.size else 0.0
+        if total <= 0:
+            return None
+
+        contour_count = max(1, min(10, int(contour_count)))
+        coverage_percent = max(50, min(99, int(coverage_percent)))
+        outer_mass = float(coverage_percent) / 100.0
+        if contour_count == 1:
+            mass_levels = np.asarray([outer_mass], dtype=float)
+        else:
+            mass_levels = np.linspace(outer_mass / float(contour_count), outer_mass, contour_count)
+        thresholds = []
+        for level in mass_levels:
+            idx = int(np.searchsorted(cumulative, total * float(level), side="left"))
+            idx = max(0, min(idx, ordered.size - 1))
+            thresholds.append(float(ordered[idx]))
+
+        threshold_labels: dict[float, str] = {}
+        for threshold, level in zip(thresholds, mass_levels):
+            if np.isfinite(threshold) and threshold > 0:
+                threshold_labels[float(threshold)] = f"{int(round(float(level) * 100.0))}%"
+
+        contour_levels = sorted({value for value in thresholds if np.isfinite(value) and value > 0})
+        if not contour_levels:
+            return None
+        label_map = {float(level): threshold_labels.get(float(level), "") for level in contour_levels}
+        return contour_levels, label_map
+
     def _stats_from_measurements(self, lengths, widths):
         """Compute stats dictionary from length/width lists."""
-        if not lengths:
+        if lengths is None:
             return None
-        lengths = np.asarray(lengths)
-        widths = np.asarray(widths) if widths else np.asarray([])
+        lengths = np.asarray(lengths, dtype=float)
+        if lengths.size == 0:
+            return None
+        widths = np.asarray(widths, dtype=float) if widths is not None else np.asarray([], dtype=float)
         stats = {
             "count": int(len(lengths)),
             "length_mean": float(np.mean(lengths)),
@@ -10420,6 +12967,185 @@ class MainWindow(GeometryMixin, QMainWindow):
             })
         return stats
 
+    def _parmasto_specimen_metrics(self, lengths, widths):
+        """Compute specimen-level Parmasto metrics from raw spore measurements."""
+        if lengths is None or widths is None:
+            return None
+        L = np.asarray(lengths, dtype=float)
+        W = np.asarray(widths, dtype=float)
+        if L.size == 0 or W.size == 0:
+            return None
+        valid = W > 0
+        if not np.any(valid):
+            return None
+        L = L[valid]
+        W = W[valid]
+        Q = L / W
+
+        def _cv_percent(values):
+            values = np.asarray(values, dtype=float)
+            if values.size == 0:
+                return None
+            mean = float(np.mean(values))
+            if mean == 0:
+                return None
+            if values.size < 2:
+                return 0.0
+            std = float(np.std(values, ddof=1))
+            return (std / mean) * 100.0
+
+        return {
+            "L_m": float(np.mean(L)),
+            "W_m": float(np.mean(W)),
+            "Q_m": float(np.mean(Q)),
+            "V_indL": _cv_percent(L),
+            "V_indW": _cv_percent(W),
+            "V_indQ": _cv_percent(Q),
+        }
+
+    def _parmasto_expected_range(self, mean_value, cv_percent):
+        """Return the approximate 95% Parmasto range around a species mean."""
+        try:
+            mean_value = float(mean_value)
+            cv_percent = float(cv_percent)
+        except (TypeError, ValueError):
+            return None
+        spread = 2.0 * (cv_percent / 100.0) * mean_value
+        return (mean_value - spread, mean_value + spread)
+
+    def _parmasto_reference_metrics(self, data: dict | None):
+        """Extract persisted Parmasto biometrics from a reference record."""
+        if not isinstance(data, dict) or not data:
+            return None
+        keys = (
+            "parmasto_length_mean",
+            "parmasto_width_mean",
+            "parmasto_q_mean",
+            "parmasto_v_sp_length",
+            "parmasto_v_sp_width",
+            "parmasto_v_sp_q",
+            "parmasto_v_ind_length",
+            "parmasto_v_ind_width",
+            "parmasto_v_ind_q",
+        )
+        if not any(data.get(key) is not None for key in keys):
+            return None
+        return {
+            "L_bar": data.get("parmasto_length_mean"),
+            "W_bar": data.get("parmasto_width_mean"),
+            "Q_bar": data.get("parmasto_q_mean"),
+            "V_spL": data.get("parmasto_v_sp_length"),
+            "V_spW": data.get("parmasto_v_sp_width"),
+            "V_spQ": data.get("parmasto_v_sp_q"),
+            "V_indL_bar": data.get("parmasto_v_ind_length"),
+            "V_indW_bar": data.get("parmasto_v_ind_width"),
+            "V_indE_bar": data.get("parmasto_v_ind_q"),
+        }
+
+    def _active_reference_data_for_stats(self) -> dict | None:
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
+        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
+        if genus and species and hasattr(self, "ref_source_input"):
+            selected_source = self.ref_source_input.currentText().strip() or None
+            selected_data = self.ref_source_input.currentData()
+            if isinstance(selected_data, dict):
+                selected_kind = (selected_data.get("kind") or "").strip().lower()
+                if selected_kind == "reference":
+                    selected_source = selected_data.get("source") or selected_source
+            if selected_source:
+                selected_reference = ReferenceDB.get_reference(genus, species, selected_source)
+                if isinstance(selected_reference, dict) and self._parmasto_reference_metrics(selected_reference):
+                    selected_reference["source_kind"] = "reference"
+                    return selected_reference
+
+        current = self.reference_values if isinstance(self.reference_values, dict) else None
+        if current and self._parmasto_reference_metrics(current):
+            return current
+        for entry in self.reference_series or []:
+            if not isinstance(entry, dict):
+                continue
+            if not bool(entry.get("enabled", True)):
+                continue
+            data = entry.get("data")
+            if isinstance(data, dict) and self._parmasto_reference_metrics(data):
+                return data
+        for entry in self.reference_series or []:
+            if not isinstance(entry, dict):
+                continue
+            data = entry.get("data")
+            if isinstance(data, dict) and self._parmasto_reference_metrics(data):
+                return data
+        return current if isinstance(current, dict) and current else None
+
+    def _parmasto_fit_summary_lines(self, specimen_metrics: dict | None, reference_data: dict | None) -> list[str]:
+        """Summarize Parmasto fit checks for the current specimen vs reference."""
+        specimen = specimen_metrics or {}
+        reference = self._parmasto_reference_metrics(reference_data)
+        if not specimen:
+            return []
+
+        def _fmt(value):
+            try:
+                return f"{float(value):.2f}"
+            except (TypeError, ValueError):
+                return "-"
+
+        lines = [
+            self.tr(
+                "Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}"
+            ).format(
+                lm=_fmt(specimen.get("L_m")),
+                wm=_fmt(specimen.get("W_m")),
+                qm=_fmt(specimen.get("Q_m")),
+            ),
+            self.tr(
+                "Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%"
+            ).format(
+                vindl=_fmt(specimen.get("V_indL")),
+                vindw=_fmt(specimen.get("V_indW")),
+                vinde=_fmt(specimen.get("V_indQ")),
+            ),
+        ]
+
+        if not reference:
+            return lines
+
+        fit_parts = []
+        comparisons = [
+            ("L", specimen.get("L_m"), reference.get("L_bar"), reference.get("V_spL")),
+            ("W", specimen.get("W_m"), reference.get("W_bar"), reference.get("V_spW")),
+            ("Q", specimen.get("Q_m"), reference.get("Q_bar"), reference.get("V_spQ")),
+        ]
+        for name, specimen_value, ref_mean, ref_cv in comparisons:
+            expected = self._parmasto_expected_range(ref_mean, ref_cv)
+            if expected is None or specimen_value is None:
+                continue
+            low, high = expected
+            status = self.tr("OK") if low <= float(specimen_value) <= high else self.tr("Outlier")
+            fit_parts.append(
+                f"{name}={status} [{low:.2f}-{high:.2f}]"
+            )
+        if fit_parts:
+            lines.append(f"{self.tr('Parmasto fit')}: " + "; ".join(fit_parts))
+
+        ref_v_ind_e = reference.get("V_indE_bar")
+        specimen_v_ind_e = specimen.get("V_indQ")
+        try:
+            if ref_v_ind_e is not None and specimen_v_ind_e is not None and float(specimen_v_ind_e) > float(ref_v_ind_e):
+                lines.append(
+                    self.tr(
+                        "Parmasto warning: specimen spore shape is more variable than typical "
+                        "(VindE {specimen}% > reference {reference}%)."
+                    ).format(
+                        specimen=_fmt(specimen_v_ind_e),
+                        reference=_fmt(ref_v_ind_e),
+                    )
+                )
+        except (TypeError, ValueError):
+            pass
+
+        return lines
+
     def rotate_gallery_thumbnail(self, measurement_id):
         """Rotate a gallery thumbnail by 180 degrees."""
         current = self.gallery_rotations.get(measurement_id, 0)
@@ -10438,7 +13164,11 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def create_spore_thumbnail(self, pixmap, points, length_um, width_um, size,
                                measurement_num=0, orient=False, extra_rotation=0,
-                               uniform_length_px=None, color=None):
+                               uniform_length_px=None, color=None,
+                               rectangle_style=None, rectangle_thickness=None,
+                               selected: bool = False,
+                               export_mode: bool = False,
+                               metadata: dict | None = None):
         """Create a thumbnail image of a single measurement.
 
         Args:
@@ -10458,6 +13188,27 @@ class MainWindow(GeometryMixin, QMainWindow):
         def _measure_stroke_style(stroke_color):
             base = QColor(stroke_color) if stroke_color is not None else QColor("#0044aa")
             presets = (
+                {"match": QColor("#005993"), "thin": QColor("#005993"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+                {"match": QColor("#a94114"), "thin": QColor("#a94114"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#b98a19"), "thin": QColor("#b98a19"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#62256f"), "thin": QColor("#62256f"), "glow": QColor("#7e2f8e"), "opacity": 0.48, "blend": "screen"},
+                {"match": QColor("#5d8625"), "thin": QColor("#5d8625"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#3c94ba"), "thin": QColor("#3c94ba"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#7e1025"), "thin": QColor("#7e1025"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#0072bd"), "thin": QColor("#0072bd"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+                {"match": QColor("#d95319"), "thin": QColor("#d95319"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#edb120"), "thin": QColor("#edb120"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#7e2f8e"), "thin": QColor("#7e2f8e"), "glow": QColor("#7e2f8e"), "opacity": 0.5, "blend": "screen"},
+                {"match": QColor("#77ac30"), "thin": QColor("#77ac30"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#4dbeee"), "thin": QColor("#4dbeee"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#a2142f"), "thin": QColor("#a2142f"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+                {"match": QColor("#4799cf"), "thin": QColor("#4799cf"), "glow": QColor("#4799cf"), "opacity": 0.5, "blend": "screen"},
+                {"match": QColor("#e48359"), "thin": QColor("#e48359"), "glow": QColor("#e48359"), "opacity": 0.54, "blend": "screen"},
+                {"match": QColor("#f2c75e"), "thin": QColor("#f2c75e"), "glow": QColor("#f2c75e"), "opacity": 0.54, "blend": "screen"},
+                {"match": QColor("#a269ae"), "thin": QColor("#a269ae"), "glow": QColor("#a269ae"), "opacity": 0.46, "blend": "screen"},
+                {"match": QColor("#9dc36a"), "thin": QColor("#9dc36a"), "glow": QColor("#9dc36a"), "opacity": 0.54, "blend": "screen"},
+                {"match": QColor("#7fd0f3"), "thin": QColor("#7fd0f3"), "glow": QColor("#7fd0f3"), "opacity": 0.54, "blend": "screen"},
+                {"match": QColor("#bc5669"), "thin": QColor("#bc5669"), "glow": QColor("#bc5669"), "opacity": 0.54, "blend": "screen"},
                 {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
                 {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
                 {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
@@ -10465,7 +13216,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
                 {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
                 {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
-                {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+                {"match": QColor("#808080"), "thin": QColor("#808080"), "glow": QColor("#a8a8a8"), "opacity": 0.5, "blend": "screen"},
+                {"match": QColor("#ffffff"), "thin": QColor("#ffffff"), "glow": QColor("#ffffff"), "opacity": 0.42, "blend": "screen"},
+                {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#7a7a7a"), "opacity": 0.5, "blend": "screen"},
             )
             def _dist2(c1, c2):
                 dr = c1.red() - c2.red()
@@ -10488,25 +13241,100 @@ class MainWindow(GeometryMixin, QMainWindow):
             elif comp_name == "lighten":
                 p.setCompositionMode(QPainter.CompositionMode_Lighten)
 
-        def _draw_dual_polygon(p: QPainter, polygon: QPolygonF, stroke_color):
+        def _draw_dual_polygon(
+            p: QPainter,
+            polygon: QPolygonF,
+            stroke_color,
+            thin_width: float,
+            wide_width: float,
+            use_blend: bool = True,
+        ):
             style = _measure_stroke_style(stroke_color)
-            thin_pen = QPen(QColor(style["thin"]), 1)
-            wide_pen = QPen(QColor(style["glow"]), 3)
-            p.save()
-            _set_comp(p, str(style["blend"]))
-            p.setPen(wide_pen)
-            p.setBrush(Qt.NoBrush)
-            p.drawPolygon(polygon)
-            p.restore()
+            thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+            wide_pen = QPen(QColor(style["glow"]), clamp_stroke_width(wide_width))
+            if use_blend:
+                p.save()
+                _set_comp(p, str(style["blend"]))
+                p.setPen(wide_pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawPolygon(polygon)
+                p.restore()
+            else:
+                p.setPen(wide_pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawPolygon(polygon)
             p.setBrush(Qt.NoBrush)
             p.setPen(thin_pen)
             p.drawPolygon(polygon)
+
+        def _draw_dual_line(
+            p: QPainter,
+            a: QPointF,
+            b: QPointF,
+            stroke_color,
+            thin_width: float,
+            wide_width: float,
+            use_blend: bool = True,
+        ):
+            style = _measure_stroke_style(stroke_color)
+            thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+            wide_pen = QPen(QColor(style["glow"]), clamp_stroke_width(wide_width))
+            if use_blend:
+                p.save()
+                _set_comp(p, str(style["blend"]))
+                p.setPen(wide_pen)
+                p.drawLine(a, b)
+                p.restore()
+            else:
+                p.setPen(wide_pen)
+                p.drawLine(a, b)
+            p.setPen(thin_pen)
+            p.drawLine(a, b)
+
+        def _draw_polygon_outline(p: QPainter, polygon: QPolygonF, stroke_color, thin_width: float):
+            style = _measure_stroke_style(stroke_color)
+            thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+            p.setBrush(Qt.NoBrush)
+            p.setPen(thin_pen)
+            p.drawPolygon(polygon)
+
+        def _draw_measurement_rectangle(
+            p: QPainter,
+            polygon: QPolygonF,
+            stroke_color,
+            style_name: str,
+            wide_width: float,
+        ):
+            resolved_style_name = normalize_rectangle_style(style_name)
+            thin_width = rectangle_thin_stroke_width(resolved_style_name, wide_width)
+            if resolved_style_name == DEFAULT_RECTANGLE_STYLE:
+                _draw_dual_polygon(p, polygon, stroke_color, thin_width, wide_width)
+                return
+
+            _draw_polygon_outline(p, polygon, stroke_color, thin_width)
+            for seg_start, seg_end in rectangle_corner_segments(polygon):
+                _draw_dual_line(
+                    p,
+                    seg_start,
+                    seg_end,
+                    stroke_color,
+                    thin_width,
+                    wide_width,
+                    use_blend=False,
+                )
 
         def _draw_halo_text(p: QPainter, x: int, y: int, text: str, stroke_color):
             style = _measure_stroke_style(stroke_color)
             text_color = QColor(style["thin"])
             path = QPainterPath()
             path.addText(float(x), float(y), p.font(), text)
+            if not measure_text_uses_halo(text_color):
+                p.save()
+                p.setPen(Qt.NoPen)
+                p.setBrush(text_color)
+                p.drawPath(path)
+                p.restore()
+                return
             stroke_w = max(1.0, float(p.fontMetrics().height()) * 0.4)
             pen = QPen(QColor(255, 255, 255, 102), stroke_w)
             pen.setJoinStyle(Qt.RoundJoin)
@@ -10516,11 +13344,17 @@ class MainWindow(GeometryMixin, QMainWindow):
             p.setPen(pen)
             p.drawPath(path)
             p.restore()
-            p.setPen(text_color)
-            p.drawText(x, y, text)
+            p.save()
+            p.setPen(Qt.NoPen)
+            p.setBrush(text_color)
+            p.drawPath(path)
+            p.restore()
 
         if not pixmap:
             return None
+
+        resolved_rectangle_style = normalize_rectangle_style(rectangle_style)
+        resolved_rectangle_thickness = clamp_rectangle_thickness(rectangle_thickness)
 
         # Calculate center and dimensions
         line1_mid = QPointF((points[0].x() + points[1].x()) / 2, (points[0].y() + points[1].y()) / 2)
@@ -10577,50 +13411,54 @@ class MainWindow(GeometryMixin, QMainWindow):
             width_px = line2_len
             rotation_angle = 0
 
-        # Crop parameters
-        max_dim = uniform_length_px if uniform_length_px else max(length_px, width_px)
-        padding = max_dim * 0.15
-        crop_size = max_dim + padding * 2
+        padding_x = 20.0
+        padding_y = 10.0 if export_mode else 15.0
 
-        # Create crop rectangle
+        axis_length_img = QPointF(-line1_vec.x() / line1_len, -line1_vec.y() / line1_len)
+        axis_width_img = QPointF(-(axis_length_img.y()), axis_length_img.x())
+        corners_img = [
+            center + axis_width_img * (-width_px / 2.0) + axis_length_img * (-length_px / 2.0),
+            center + axis_width_img * (width_px / 2.0) + axis_length_img * (-length_px / 2.0),
+            center + axis_width_img * (width_px / 2.0) + axis_length_img * (length_px / 2.0),
+            center + axis_width_img * (-width_px / 2.0) + axis_length_img * (length_px / 2.0),
+        ]
+        min_x = min(point.x() for point in corners_img) - padding_x
+        max_x = max(point.x() for point in corners_img) + padding_x
+        min_y = min(point.y() for point in corners_img) - padding_y
+        max_y = max(point.y() for point in corners_img) + padding_y
+
+        if uniform_length_px:
+            desired_height = max(max_y - min_y, float(uniform_length_px) + padding_y * 2.0)
+            center_y = (min_y + max_y) / 2.0
+            min_y = center_y - desired_height / 2.0
+            max_y = center_y + desired_height / 2.0
+
         crop_rect = QRectF(
-            center.x() - crop_size / 2,
-            center.y() - crop_size / 2,
-            crop_size,
-            crop_size
-        )
+            max(0.0, min_x),
+            max(0.0, min_y),
+            max(1.0, min(float(pixmap.width()), max_x) - max(0.0, min_x)),
+            max(1.0, min(float(pixmap.height()), max_y) - max(0.0, min_y)),
+        ).intersected(QRectF(0, 0, pixmap.width(), pixmap.height()))
 
-        # Ensure within bounds
-        crop_rect = crop_rect.intersected(
-            QRectF(0, 0, pixmap.width(), pixmap.height())
-        )
-
-        # Crop and scale
         cropped = pixmap.copy(crop_rect.toRect())
-        scaled = cropped.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scale_factor = float(size) / max(1.0, crop_rect.height())
+        tile_width = max(1, int(round(crop_rect.width() * scale_factor)))
+        tile_height = max(1, int(round(crop_rect.height() * scale_factor)))
+        scaled = cropped.scaled(
+            tile_width,
+            tile_height,
+            Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation,
+        )
 
-        # Draw overlay
-        result = QPixmap(size, size)
-        result.fill(QColor(236, 240, 241))
+        result = QPixmap(tile_width, tile_height)
+        result.fill(Qt.transparent)
 
         painter = QPainter(result)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        # Calculate center position for drawing
-        img_x = (size - scaled.width()) / 2
-        img_y = (size - scaled.height()) / 2
-
-        # Apply rotation if needed (orient mode or extra rotation)
-        if abs(rotation_angle) > 0.1:
-            painter.save()
-            painter.translate(size / 2, size / 2)
-            painter.rotate(rotation_angle)
-            painter.translate(-size / 2, -size / 2)
-            painter.drawPixmap(int(img_x), int(img_y), scaled)
-            painter.restore()
-        else:
-            painter.drawPixmap(int(img_x), int(img_y), scaled)
+        painter.drawPixmap(0, 0, scaled)
 
         # Draw rectangle overlay
         length_dir = QPointF(line1_vec.x() / line1_len, line1_vec.y() / line1_len)
@@ -10628,19 +13466,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         half_length = length_px / 2
         half_width = width_px / 2
 
-        img_scale = min(
-            scaled.width() / cropped.width(),
-            scaled.height() / cropped.height()
-        )
+        scale_x = float(tile_width) / max(1.0, crop_rect.width())
+        scale_y = float(tile_height) / max(1.0, crop_rect.height())
 
         # Calculate where the measurement center appears on screen
-        # When crop_rect gets clipped by intersected(), the measurement center
-        # is no longer at the center of the cropped image
         center_in_crop_x = center.x() - crop_rect.x()
         center_in_crop_y = center.y() - crop_rect.y()
         screen_center = QPointF(
-            img_x + center_in_crop_x * img_scale,
-            img_y + center_in_crop_y * img_scale
+            center_in_crop_x * scale_x,
+            center_in_crop_y * scale_y
         )
 
         # Apply rotation to the rectangle overlay as well
@@ -10648,7 +13482,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             # Rotate the screen_center around the image center
             rad = math.radians(rotation_angle)
             cos_a, sin_a = math.cos(rad), math.sin(rad)
-            cx, cy = size / 2, size / 2
+            cx = tile_width / 2
+            cy = tile_height / 2
             dx = screen_center.x() - cx
             dy = screen_center.y() - cy
             screen_center = QPointF(
@@ -10670,20 +13505,51 @@ class MainWindow(GeometryMixin, QMainWindow):
         axis_length = QPointF(-length_dir.x(), -length_dir.y())
         axis_width = width_dir
         corners = [
-            screen_center + axis_width * (-half_width * img_scale) + axis_length * (-half_length * img_scale),
-            screen_center + axis_width * (half_width * img_scale) + axis_length * (-half_length * img_scale),
-            screen_center + axis_width * (half_width * img_scale) + axis_length * (half_length * img_scale),
-            screen_center + axis_width * (-half_width * img_scale) + axis_length * (half_length * img_scale),
+            screen_center + QPointF(axis_width.x() * (-half_width * scale_x) + axis_length.x() * (-half_length * scale_x),
+                                    axis_width.y() * (-half_width * scale_y) + axis_length.y() * (-half_length * scale_y)),
+            screen_center + QPointF(axis_width.x() * (half_width * scale_x) + axis_length.x() * (-half_length * scale_x),
+                                    axis_width.y() * (half_width * scale_y) + axis_length.y() * (-half_length * scale_y)),
+            screen_center + QPointF(axis_width.x() * (half_width * scale_x) + axis_length.x() * (half_length * scale_x),
+                                    axis_width.y() * (half_width * scale_y) + axis_length.y() * (half_length * scale_y)),
+            screen_center + QPointF(axis_width.x() * (-half_width * scale_x) + axis_length.x() * (half_length * scale_x),
+                                    axis_width.y() * (-half_width * scale_y) + axis_length.y() * (half_length * scale_y)),
         ]
 
         stroke_color = QColor(color) if color else QColor("#0044aa")
-        _draw_dual_polygon(painter, QPolygonF(corners), stroke_color)
+        _draw_measurement_rectangle(
+            painter,
+            QPolygonF(corners),
+            stroke_color,
+            resolved_rectangle_style,
+            resolved_rectangle_thickness,
+        )
+        if selected:
+            _draw_measurement_rectangle(
+                painter,
+                QPolygonF(corners),
+                QColor(231, 76, 60),
+                DEFAULT_RECTANGLE_STYLE,
+                6.0,
+            )
 
-        # Draw dimensions
+        rect_min_x = min(point.x() for point in corners)
+        rect_max_x = max(point.x() for point in corners)
+        rect_min_y = min(point.y() for point in corners)
+        rect_max_y = max(point.y() for point in corners)
+        if metadata is not None:
+            metadata["polygon"] = QPolygonF(corners)
+            metadata["bounds"] = QRectF(rect_min_x, rect_min_y, rect_max_x - rect_min_x, rect_max_y - rect_min_y)
+
+        # Draw dimensions on the image, just below the rectangle.
         font = painter.font()
-        font.setPointSize(max(8, int(size * 0.045)))
+        font.setPointSize(max(8, int(tile_height * 0.055)))
         painter.setFont(font)
-        _draw_halo_text(painter, 5, size - 10, f"{length_um:.2f} x {width_um:.2f}", stroke_color)
+        metrics = painter.fontMetrics()
+        dim_text = f"{float(length_um):.1f} x {float(width_um):.1f}"
+        text_width = metrics.horizontalAdvance(dim_text)
+        text_x = int(max(4.0, min(float(tile_width - text_width - 4), ((rect_min_x + rect_max_x) / 2.0) - (text_width / 2.0))))
+        text_y = int(min(float(tile_height - 4), rect_max_y + 8.0 + metrics.ascent()))
+        _draw_halo_text(painter, text_x, text_y, dim_text, stroke_color)
 
         painter.end()
         return result
@@ -10760,9 +13626,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         orient = hasattr(self, 'orient_checkbox') and self.orient_checkbox.isChecked()
         uniform_scale = hasattr(self, 'uniform_scale_checkbox') and self.uniform_scale_checkbox.isChecked()
         filtered_measurements = self._filter_gallery_measurements(valid_measurements)
+        filtered_measurements = self._sort_gallery_measurements(filtered_measurements)
         if not filtered_measurements:
             return
-        items_per_row = max(1, int(math.ceil(math.sqrt(len(filtered_measurements)))))
 
         uniform_length_um = None
         if uniform_scale:
@@ -10804,6 +13670,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 stored_color = cached.get("measure_color") if cached else None
                 mpp = cached.get("mpp") if cached else None
             measure_color = QColor(stored_color) if stored_color else self.default_measure_color
+            rectangle_style = self._current_measure_rectangle_style()
+            rectangle_thickness = self._current_measure_rectangle_thickness()
             uniform_length_px = None
             if uniform_scale and uniform_length_um:
                 if not mpp or mpp <= 0:
@@ -10830,7 +13698,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 orient=orient,
                 extra_rotation=extra_rotation,
                 uniform_length_px=uniform_length_px,
-                color=measure_color
+                color=measure_color,
+                rectangle_style=rectangle_style,
+                rectangle_thickness=rectangle_thickness,
+                selected=False,
+                export_mode=True,
             )
 
             if thumbnail:
@@ -10840,11 +13712,24 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
 
         num_items = len(thumbnails)
-        num_rows = (num_items + items_per_row - 1) // items_per_row
+        average_tile_width = int(round(sum(thumbnail.width() for thumbnail in thumbnails) / max(1, num_items)))
+        tile_height = max(thumbnail.height() for thumbnail in thumbnails)
+        items_per_row, num_rows = self._gallery_export_grid_shape(
+            num_items,
+            average_tile_width,
+            tile_height,
+        )
 
-        spacing = 2
-        composite_width = items_per_row * thumbnail_size + (items_per_row - 1) * spacing
-        composite_height = num_rows * thumbnail_size + (num_rows - 1) * spacing
+        spacing = 0
+        row_widths = []
+        for row in range(num_rows):
+            row_items = thumbnails[row * items_per_row:(row + 1) * items_per_row]
+            row_width = sum(thumbnail.width() for thumbnail in row_items)
+            if row_items:
+                row_width += max(0, len(row_items) - 1) * spacing
+            row_widths.append(row_width)
+        composite_width = max(row_widths) if row_widths else 0
+        composite_height = num_rows * tile_height + (num_rows - 1) * spacing
 
         if export_format == "svg":
             from PySide6.QtSvg import QSvgGenerator
@@ -10856,9 +13741,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             painter = QPainter(generator)
             for idx, thumbnail in enumerate(thumbnails):
                 row = idx // items_per_row
-                col = idx % items_per_row
-                x = col * (thumbnail_size + spacing)
-                y = row * (thumbnail_size + spacing)
+                x = sum(
+                    thumbnails[row * items_per_row + col_index].width() + spacing
+                    for col_index in range(idx % items_per_row)
+                )
+                y = row * (tile_height + spacing)
                 painter.drawPixmap(x, y, thumbnail)
             painter.end()
         else:
@@ -10867,9 +13754,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             painter = QPainter(composite)
             for idx, thumbnail in enumerate(thumbnails):
                 row = idx // items_per_row
-                col = idx % items_per_row
-                x = col * (thumbnail_size + spacing)
-                y = row * (thumbnail_size + spacing)
+                x = sum(
+                    thumbnails[row * items_per_row + col_index].width() + spacing
+                    for col_index in range(idx % items_per_row)
+                )
+                y = row * (tile_height + spacing)
                 painter.drawPixmap(x, y, thumbnail)
             painter.end()
             if export_format == "jpg":
@@ -10933,6 +13822,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Open online publishing settings dialog."""
         dialog = ArtsobservasjonerSettingsDialog(self)
         dialog.exec()
+        if hasattr(self, "observations_tab"):
+            try:
+                self.observations_tab._build_publish_menu()
+                self.observations_tab._invalidate_publish_login_status_cache()
+                self.observations_tab._update_publish_controls()
+            except Exception:
+                pass
 
     def open_language_settings_dialog(self):
         """Open language settings dialog."""
@@ -11045,23 +13941,57 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_gallery_plot_setting_changed(self):
         """Persist gallery settings and refresh plots only."""
-        self.gallery_plot_settings = {
+        plot_style = self._gallery_plot_style_from_controls()
+        self.gallery_plot_settings = self._apply_gallery_plot_style({
             "bins": int(self.gallery_bins_spin.value()) if hasattr(self, "gallery_bins_spin") else 8,
             "histogram": bool(self.gallery_hist_checkbox.isChecked()) if hasattr(self, "gallery_hist_checkbox") else True,
-            "ci": bool(self.gallery_ci_checkbox.isChecked()) if hasattr(self, "gallery_ci_checkbox") else True,
+            "ellipse_coverage_percent": int(self.gallery_ellipse_coverage_slider.value()) if hasattr(self, "gallery_ellipse_coverage_slider") else int(getattr(self, "gallery_plot_settings", {}).get("ellipse_coverage_percent", 95)),
+            "kde_bandwidth": self._gallery_kde_bandwidth_value() if hasattr(self, "gallery_kde_bandwidth_slider") else float(getattr(self, "gallery_plot_settings", {}).get("kde_bandwidth", 1.0)),
+            "kde_contours": int(self.gallery_kde_contours_slider.value()) if hasattr(self, "gallery_kde_contours_slider") else int(getattr(self, "gallery_plot_settings", {}).get("kde_contours", 6)),
+            "kde_coverage_percent": int(self.gallery_kde_coverage_slider.value()) if hasattr(self, "gallery_kde_coverage_slider") else int(getattr(self, "gallery_plot_settings", {}).get("kde_coverage_percent", 95)),
+            "reference_minmax": bool(self.ref_show_minmax_checkbox.isChecked()) if hasattr(self, "ref_show_minmax_checkbox") else bool(getattr(self, "gallery_plot_settings", {}).get("reference_minmax", True)),
+            "reference_shape": (
+                "square"
+                if hasattr(self, "ref_shape_square_radio") and self.ref_shape_square_radio.isChecked()
+                else "ellipse"
+            ),
             "image_color": bool(self.gallery_image_color_checkbox.isChecked()) if hasattr(self, "gallery_image_color_checkbox") else False,
             "legend": bool(getattr(self, "gallery_plot_settings", {}).get("legend", False)),
             "avg_q": bool(self.gallery_avg_q_checkbox.isChecked()) if hasattr(self, "gallery_avg_q_checkbox") else False,
             "q_minmax": bool(self.gallery_q_minmax_checkbox.isChecked()) if hasattr(self, "gallery_q_minmax_checkbox") else False,
+            "q_extreme_minmax": bool(self.gallery_q_extreme_minmax_checkbox.isChecked()) if hasattr(self, "gallery_q_extreme_minmax_checkbox") else False,
             "axis_equal": bool(self.gallery_axis_equal_checkbox.isChecked()) if hasattr(self, "gallery_axis_equal_checkbox") else False,
             "x_min": None,
             "x_max": None,
             "y_min": None,
             "y_max": None,
-        }
+        }, plot_style)
         self._sync_gallery_histogram_controls()
+        self._sync_gallery_kde_controls()
+        self._sync_reference_overlay_controls_state()
         self._save_gallery_settings()
         self.update_graph_plots_only()
+
+    def on_reference_overlay_setting_changed(self):
+        """Persist reference overlay visibility and refresh plots."""
+        settings = dict(getattr(self, "gallery_plot_settings", {}) or {})
+        settings["reference_minmax"] = bool(self.ref_show_minmax_checkbox.isChecked()) if hasattr(self, "ref_show_minmax_checkbox") else True
+        settings["reference_shape"] = (
+            "square"
+            if hasattr(self, "ref_shape_square_radio") and self.ref_shape_square_radio.isChecked()
+            else "ellipse"
+        )
+        self.gallery_plot_settings = settings
+        self._sync_reference_overlay_controls_state()
+        self._save_gallery_settings()
+        self.update_graph_plots_only()
+
+    def _sync_reference_overlay_controls_state(self) -> None:
+        range_mode = self._gallery_plot_style() != "mean"
+        for widget_name in ("ref_show_minmax_checkbox", "ref_shape_ellipse_radio", "ref_shape_square_radio"):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.setEnabled(range_mode)
 
     def on_gallery_stats_setting_changed(self):
         """Persist stats-view settings and refresh the text preview."""
@@ -11137,8 +14067,43 @@ class MainWindow(GeometryMixin, QMainWindow):
                 **stats,
                 "points": points,
                 "points_label": (data.get("points_label") or data.get("source_label") or ""),
+                "plot_color": data.get("plot_color"),
                 "source_kind": "points",
                 "source_type": source_type,
+                "genus": genus,
+                "species": species,
+            }
+
+        if kind == "observation":
+            try:
+                obs_id = int(data.get("observation_id") or 0)
+            except (TypeError, ValueError):
+                obs_id = 0
+            if not obs_id:
+                return None
+            raw = MeasurementDB.get_measurements_for_observation(obs_id)
+            points = [
+                m for m in raw
+                if m.get("length_um") is not None
+                and m.get("width_um") is not None
+                and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
+            ]
+            if not points:
+                return None
+            stats = self._reference_stats_from_points(points)
+            author = (data.get("author") or "").strip()
+            if not author:
+                obs = ObservationDB.get_observation(obs_id)
+                if obs:
+                    author = (obs.get("author") or "").strip()
+            return {
+                **stats,
+                "points": points,
+                "plot_color": data.get("plot_color"),
+                "source_kind": "observation",
+                "observation_id": obs_id,
+                "date": data.get("date") or "",
+                "author": author,
                 "genus": genus,
                 "species": species,
             }
@@ -11148,6 +14113,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             ref = ReferenceDB.get_reference(genus, species, source)
             if ref:
                 ref["source_kind"] = "reference"
+                if "plot_color" in data:
+                    ref["plot_color"] = data.get("plot_color")
                 return ref
         return data
 
@@ -11180,12 +14147,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         saved_series = settings.get("reference_series")
         if isinstance(saved_series, list):
             for item in saved_series:
-                restored = self._restore_reference_data_from_settings(item)
+                enabled = True
+                saved_item = item
+                if isinstance(item, dict) and isinstance(item.get("data"), dict):
+                    enabled = bool(item.get("enabled", True))
+                    saved_item = item.get("data")
+                restored = self._restore_reference_data_from_settings(saved_item)
                 if isinstance(restored, dict) and restored:
-                    restored_series.append(restored)
+                    restored_series.append({
+                        "data": restored,
+                        "enabled": enabled,
+                    })
 
         if restored_series:
-            self.reference_values = restored_series[-1]
+            last_entry = restored_series[-1]
+            self.reference_values = dict(last_entry.get("data", {}))
             self._set_reference_series(restored_series)
             self._apply_reference_panel_values(self.reference_values)
             self._update_reference_add_state()
@@ -11214,9 +14190,129 @@ class MainWindow(GeometryMixin, QMainWindow):
         bins_spin.setValue(int(settings.get("bins", 8)))
         layout.addRow(self.tr("Bins:"), bins_spin)
 
-        ci_checkbox = QCheckBox(self.tr("Confidence interval (95%)"))
-        ci_checkbox.setChecked(bool(settings.get("ci", True)))
-        layout.addRow("", ci_checkbox)
+        plot_style_row = QWidget()
+        plot_style_layout = QHBoxLayout(plot_style_row)
+        plot_style_layout.setContentsMargins(0, 0, 0, 0)
+        plot_style_layout.setSpacing(10)
+        plot_style_layout.addWidget(QLabel(self.tr("Plot:")))
+        plot_style_group = QButtonGroup(dialog)
+        plot_style_ellipse_radio = QRadioButton(self.tr("Ellipse"))
+        plot_style_kde_radio = QRadioButton(self.tr("Kernel density"))
+        plot_style_mean_radio = QRadioButton(self.tr("Mean range"))
+        plot_style_ellipse_radio.setToolTip(
+            self.tr("Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.")
+        )
+        plot_style_kde_radio.setToolTip(
+            self.tr("Show Gaussian KDE filled density bands for the measured spore distribution.")
+        )
+        plot_style_mean_radio.setToolTip(
+            self.tr("Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.")
+        )
+        for radio in (plot_style_ellipse_radio, plot_style_kde_radio, plot_style_mean_radio):
+            plot_style_group.addButton(radio)
+            plot_style_layout.addWidget(radio)
+        plot_style_layout.addStretch()
+        layout.addRow("", plot_style_row)
+
+        plot_style = self._gallery_plot_style(settings)
+        if plot_style == "kde":
+            plot_style_kde_radio.setChecked(True)
+        elif plot_style == "mean":
+            plot_style_mean_radio.setChecked(True)
+        else:
+            plot_style_ellipse_radio.setChecked(True)
+
+        ellipse_coverage_row = QWidget()
+        ellipse_coverage_layout = QHBoxLayout(ellipse_coverage_row)
+        ellipse_coverage_layout.setContentsMargins(0, 0, 0, 0)
+        ellipse_coverage_layout.setSpacing(6)
+        ellipse_coverage_layout.addSpacing(16)
+        ellipse_coverage_layout.addWidget(QLabel(self.tr("Coverage:")))
+        ellipse_coverage_slider = JumpSlider(Qt.Horizontal)
+        ellipse_coverage_slider.setRange(50, 99)
+        ellipse_coverage_slider.setSingleStep(1)
+        ellipse_coverage_slider.setPageStep(5)
+        ellipse_coverage_slider.setValue(int(settings.get("ellipse_coverage_percent", 95)))
+        ellipse_coverage_layout.addWidget(ellipse_coverage_slider, 1)
+        ellipse_coverage_value = QLabel()
+        ellipse_coverage_value.setMinimumWidth(40)
+        ellipse_coverage_layout.addWidget(ellipse_coverage_value)
+        layout.addRow("", ellipse_coverage_row)
+
+        kde_bandwidth_row = QWidget()
+        kde_bandwidth_layout = QHBoxLayout(kde_bandwidth_row)
+        kde_bandwidth_layout.setContentsMargins(0, 0, 0, 0)
+        kde_bandwidth_layout.setSpacing(8)
+        kde_bandwidth_layout.addSpacing(16)
+        kde_bandwidth_layout.addWidget(QLabel(self.tr("Bandwidth:")))
+        kde_bandwidth_slider = JumpSlider(Qt.Horizontal)
+        kde_bandwidth_slider.setRange(50, 150)
+        kde_bandwidth_slider.setSingleStep(1)
+        kde_bandwidth_slider.setPageStep(5)
+        kde_bandwidth_slider.setValue(
+            int(round(max(0.5, min(1.5, float(settings.get("kde_bandwidth", 1.0)))) * 100.0))
+        )
+        kde_bandwidth_layout.addWidget(kde_bandwidth_slider, 1)
+        kde_bandwidth_value = QLabel()
+        kde_bandwidth_value.setMinimumWidth(36)
+        kde_bandwidth_layout.addWidget(kde_bandwidth_value)
+        layout.addRow("", kde_bandwidth_row)
+
+        kde_contours_row = QWidget()
+        kde_contours_layout = QHBoxLayout(kde_contours_row)
+        kde_contours_layout.setContentsMargins(0, 0, 0, 0)
+        kde_contours_layout.setSpacing(6)
+        kde_contours_layout.addSpacing(16)
+        kde_contours_layout.addWidget(QLabel(self.tr("Contours:")))
+        kde_contours_slider = JumpSlider(Qt.Horizontal)
+        kde_contours_slider.setRange(1, 10)
+        kde_contours_slider.setSingleStep(1)
+        kde_contours_slider.setPageStep(1)
+        kde_contours_slider.setValue(int(settings.get("kde_contours", 6)))
+        kde_contours_layout.addWidget(kde_contours_slider, 1)
+        kde_contours_value = QLabel()
+        kde_contours_value.setMinimumWidth(24)
+        kde_contours_layout.addWidget(kde_contours_value)
+        layout.addRow("", kde_contours_row)
+
+        kde_coverage_row = QWidget()
+        kde_coverage_layout = QHBoxLayout(kde_coverage_row)
+        kde_coverage_layout.setContentsMargins(0, 0, 0, 0)
+        kde_coverage_layout.setSpacing(6)
+        kde_coverage_layout.addSpacing(16)
+        kde_coverage_layout.addWidget(QLabel(self.tr("Coverage:")))
+        kde_coverage_slider = JumpSlider(Qt.Horizontal)
+        kde_coverage_slider.setRange(50, 99)
+        kde_coverage_slider.setSingleStep(1)
+        kde_coverage_slider.setPageStep(5)
+        kde_coverage_slider.setValue(int(settings.get("kde_coverage_percent", 95)))
+        kde_coverage_layout.addWidget(kde_coverage_slider, 1)
+        kde_coverage_value = QLabel()
+        kde_coverage_value.setMinimumWidth(40)
+        kde_coverage_layout.addWidget(kde_coverage_value)
+        layout.addRow("", kde_coverage_row)
+
+        def _sync_dialog_kde_controls() -> None:
+            ellipse_enabled = bool(plot_style_ellipse_radio.isChecked())
+            ellipse_coverage_row.setVisible(ellipse_enabled)
+            ellipse_coverage_value.setText(f"{int(ellipse_coverage_slider.value())}%")
+            bandwidth = max(0.5, min(1.5, float(kde_bandwidth_slider.value()) / 100.0))
+            kde_bandwidth_value.setText(f"{bandwidth:.2f}")
+            kde_enabled = bool(plot_style_kde_radio.isChecked())
+            kde_bandwidth_row.setVisible(kde_enabled)
+            kde_contours_row.setVisible(kde_enabled)
+            kde_contours_value.setText(str(int(kde_contours_slider.value())))
+            kde_coverage_row.setVisible(kde_enabled)
+            kde_coverage_value.setText(f"{int(kde_coverage_slider.value())}%")
+            reference_shape_row.setEnabled(not bool(plot_style_mean_radio.isChecked()))
+
+        plot_style_ellipse_radio.toggled.connect(_sync_dialog_kde_controls)
+        plot_style_kde_radio.toggled.connect(_sync_dialog_kde_controls)
+        plot_style_mean_radio.toggled.connect(_sync_dialog_kde_controls)
+        ellipse_coverage_slider.valueChanged.connect(_sync_dialog_kde_controls)
+        kde_bandwidth_slider.valueChanged.connect(_sync_dialog_kde_controls)
+        kde_contours_slider.valueChanged.connect(_sync_dialog_kde_controls)
+        kde_coverage_slider.valueChanged.connect(_sync_dialog_kde_controls)
 
         image_color_checkbox = QCheckBox(self.tr("Image color"))
         image_color_checkbox.setChecked(bool(settings.get("image_color", False)))
@@ -11226,9 +14322,35 @@ class MainWindow(GeometryMixin, QMainWindow):
         avg_q_checkbox.setChecked(bool(settings.get("avg_q", False)))
         layout.addRow("", avg_q_checkbox)
 
-        q_minmax_checkbox = QCheckBox(self.tr("Plot Q min/max"))
+        q_minmax_checkbox = QCheckBox(self.tr("Plot Q 90% range (5%-95%)"))
+        q_minmax_checkbox.setToolTip(self.tr("Show Q lines for the 5th to 95th percentile range"))
         q_minmax_checkbox.setChecked(bool(settings.get("q_minmax", False)))
         layout.addRow("", q_minmax_checkbox)
+
+        q_extreme_minmax_checkbox = QCheckBox(self.tr("Plot Q min/max"))
+        q_extreme_minmax_checkbox.setToolTip(self.tr("Show Q lines for the true minimum and maximum values"))
+        q_extreme_minmax_checkbox.setChecked(bool(settings.get("q_extreme_minmax", False)))
+        layout.addRow("", q_extreme_minmax_checkbox)
+
+        reference_shape_row = QWidget()
+        reference_shape_layout = QHBoxLayout(reference_shape_row)
+        reference_shape_layout.setContentsMargins(0, 0, 0, 0)
+        reference_shape_layout.setSpacing(8)
+        reference_shape_layout.addWidget(QLabel(self.tr("Reference shape:")))
+        reference_shape_group = QButtonGroup(dialog)
+        reference_shape_ellipse_radio = QRadioButton(self.tr("Ellipse"))
+        reference_shape_square_radio = QRadioButton(self.tr("Square"))
+        reference_shape_group.addButton(reference_shape_ellipse_radio)
+        reference_shape_group.addButton(reference_shape_square_radio)
+        if str(settings.get("reference_shape", "ellipse") or "ellipse").strip().lower() == "square":
+            reference_shape_square_radio.setChecked(True)
+        else:
+            reference_shape_ellipse_radio.setChecked(True)
+        reference_shape_layout.addWidget(reference_shape_ellipse_radio)
+        reference_shape_layout.addWidget(reference_shape_square_radio)
+        reference_shape_layout.addStretch()
+        layout.addRow("", reference_shape_row)
+        _sync_dialog_kde_controls()
 
         axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))
         axis_equal_checkbox.setToolTip(self.tr("Use the same scale on X and Y axes"))
@@ -11245,19 +14367,32 @@ class MainWindow(GeometryMixin, QMainWindow):
         if dialog.exec() != QDialog.Accepted:
             return
 
-        self.gallery_plot_settings = {
+        new_settings = {
             "bins": int(bins_spin.value()),
-            "ci": bool(ci_checkbox.isChecked()),
+            "histogram": bool(settings.get("histogram", self.gallery_plot_settings.get("histogram", True))),
+            "ellipse_coverage_percent": int(ellipse_coverage_slider.value()),
+            "kde_bandwidth": max(0.5, min(1.5, float(kde_bandwidth_slider.value()) / 100.0)),
+            "kde_contours": int(kde_contours_slider.value()),
+            "kde_coverage_percent": int(kde_coverage_slider.value()),
+            "reference_minmax": bool(settings.get("reference_minmax", self.gallery_plot_settings.get("reference_minmax", True))),
+            "reference_shape": "square" if reference_shape_square_radio.isChecked() else "ellipse",
             "image_color": bool(image_color_checkbox.isChecked()),
             "legend": bool(settings.get("legend", False)),
             "avg_q": bool(avg_q_checkbox.isChecked()),
             "q_minmax": bool(q_minmax_checkbox.isChecked()),
+            "q_extreme_minmax": bool(q_extreme_minmax_checkbox.isChecked()),
             "axis_equal": bool(axis_equal_checkbox.isChecked()),
             "x_min": None,
             "x_max": None,
             "y_min": None,
             "y_max": None,
         }
+        selected_plot_style = "ellipse"
+        if plot_style_kde_radio.isChecked():
+            selected_plot_style = "kde"
+        elif plot_style_mean_radio.isChecked():
+            selected_plot_style = "mean"
+        self.gallery_plot_settings = self._apply_gallery_plot_style(new_settings, selected_plot_style)
 
         self._save_gallery_settings()
         self.update_graph_plots_only()
@@ -11287,16 +14422,30 @@ class MainWindow(GeometryMixin, QMainWindow):
             data = entry.get("data", entry) if isinstance(entry, dict) else entry
             serialized = self._serialize_reference_data_for_settings(data)
             if serialized:
-                serialized_reference_series.append(serialized)
+                serialized_reference_series.append({
+                    "enabled": bool(entry.get("enabled", True)) if isinstance(entry, dict) else True,
+                    "data": serialized,
+                })
         return {
             "measurement_type": self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None,
             "bins": int(plot_settings.get("bins", 8)),
             "histogram": bool(plot_settings.get("histogram", True)),
+            "plot_style": self._gallery_plot_style(plot_settings),
+            "ellipse_coverage_percent": int(plot_settings.get("ellipse_coverage_percent", 95)),
             "ci": bool(plot_settings.get("ci", True)),
+            "kde": bool(plot_settings.get("kde", False)),
+            "kde_bandwidth": float(plot_settings.get("kde_bandwidth", 1.0)),
+            "kde_contours": int(plot_settings.get("kde_contours", 6)),
+            "kde_coverage_percent": int(plot_settings.get("kde_coverage_percent", 95)),
+            "comparison_mode": str(plot_settings.get("comparison_mode", "range") or "range"),
+            "reference_minmax": bool(plot_settings.get("reference_minmax", True)),
+            "reference_ci": bool(plot_settings.get("reference_ci", True)),
+            "reference_shape": str(plot_settings.get("reference_shape", "ellipse") or "ellipse"),
             "image_color": bool(plot_settings.get("image_color", False)),
             "legend": bool(plot_settings.get("legend", False)),
             "avg_q": bool(plot_settings.get("avg_q", True)),
             "q_minmax": bool(plot_settings.get("q_minmax", True)),
+            "q_extreme_minmax": bool(plot_settings.get("q_extreme_minmax", False)),
             "axis_equal": bool(plot_settings.get("axis_equal", False)),
             "x_min": None,
             "x_max": None,
@@ -11304,6 +14453,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "y_max": None,
             "orient": bool(self.orient_checkbox.isChecked()) if hasattr(self, "orient_checkbox") else False,
             "uniform_scale": bool(self.uniform_scale_checkbox.isChecked()) if hasattr(self, "uniform_scale_checkbox") else False,
+            "gallery_sort": self.gallery_sort_combo.currentData() if hasattr(self, "gallery_sort_combo") else "",
             "include_details": bool(self.gallery_include_details_checkbox.isChecked()) if hasattr(self, "gallery_include_details_checkbox") else False,
             "reference_panel": self._collect_reference_panel_state(),
             "reference_values": self._serialize_reference_data_for_settings(self.reference_values),
@@ -11322,20 +14472,31 @@ class MainWindow(GeometryMixin, QMainWindow):
         settings = self._load_gallery_settings()
         if not settings:
             return
-        self.gallery_plot_settings = {
+        loaded_plot_settings = {
             "bins": int(settings.get("bins", self.gallery_plot_settings.get("bins", 8))),
             "histogram": bool(settings.get("histogram", self.gallery_plot_settings.get("histogram", True))),
-            "ci": bool(settings.get("ci", self.gallery_plot_settings.get("ci", True))),
+            "ellipse_coverage_percent": int(settings.get("ellipse_coverage_percent", self.gallery_plot_settings.get("ellipse_coverage_percent", 95))),
+            "kde_bandwidth": float(settings.get("kde_bandwidth", self.gallery_plot_settings.get("kde_bandwidth", 1.0))),
+            "kde_contours": int(settings.get("kde_contours", self.gallery_plot_settings.get("kde_contours", 6))),
+            "kde_coverage_percent": int(settings.get("kde_coverage_percent", self.gallery_plot_settings.get("kde_coverage_percent", 95))),
+            "reference_minmax": bool(settings.get("reference_minmax", self.gallery_plot_settings.get("reference_minmax", True))),
+            "reference_shape": str(settings.get("reference_shape", self.gallery_plot_settings.get("reference_shape", "ellipse")) or "ellipse"),
             "image_color": bool(settings.get("image_color", self.gallery_plot_settings.get("image_color", False))),
             "legend": bool(settings.get("legend", self.gallery_plot_settings.get("legend", False))),
             "avg_q": bool(settings.get("avg_q", self.gallery_plot_settings.get("avg_q", False))),
             "q_minmax": bool(settings.get("q_minmax", self.gallery_plot_settings.get("q_minmax", False))),
+            "q_extreme_minmax": bool(settings.get("q_extreme_minmax", self.gallery_plot_settings.get("q_extreme_minmax", False))),
             "axis_equal": bool(settings.get("axis_equal", self.gallery_plot_settings.get("axis_equal", False))),
             "x_min": None,
             "x_max": None,
             "y_min": None,
             "y_max": None,
         }
+        plot_style = self._gallery_plot_style({
+            **self.gallery_plot_settings,
+            **settings,
+        })
+        self.gallery_plot_settings = self._apply_gallery_plot_style(loaded_plot_settings, plot_style)
         if hasattr(self, "gallery_bins_spin"):
             self.gallery_bins_spin.blockSignals(True)
             self.gallery_bins_spin.setValue(int(self.gallery_plot_settings.get("bins", 8)))
@@ -11344,10 +14505,48 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_hist_checkbox.blockSignals(True)
             self.gallery_hist_checkbox.setChecked(bool(self.gallery_plot_settings.get("histogram", True)))
             self.gallery_hist_checkbox.blockSignals(False)
-        if hasattr(self, "gallery_ci_checkbox"):
-            self.gallery_ci_checkbox.blockSignals(True)
-            self.gallery_ci_checkbox.setChecked(bool(self.gallery_plot_settings.get("ci", True)))
-            self.gallery_ci_checkbox.blockSignals(False)
+        plot_style = self._gallery_plot_style(self.gallery_plot_settings)
+        if hasattr(self, "gallery_plot_style_ellipse_radio") and hasattr(self, "gallery_plot_style_kde_radio") and hasattr(self, "gallery_plot_style_mean_radio"):
+            self.gallery_plot_style_ellipse_radio.blockSignals(True)
+            self.gallery_plot_style_kde_radio.blockSignals(True)
+            self.gallery_plot_style_mean_radio.blockSignals(True)
+            self.gallery_plot_style_ellipse_radio.setChecked(plot_style == "ellipse")
+            self.gallery_plot_style_kde_radio.setChecked(plot_style == "kde")
+            self.gallery_plot_style_mean_radio.setChecked(plot_style == "mean")
+            self.gallery_plot_style_mean_radio.blockSignals(False)
+            self.gallery_plot_style_kde_radio.blockSignals(False)
+            self.gallery_plot_style_ellipse_radio.blockSignals(False)
+        if hasattr(self, "gallery_ellipse_coverage_slider"):
+            self.gallery_ellipse_coverage_slider.blockSignals(True)
+            self.gallery_ellipse_coverage_slider.setValue(int(self.gallery_plot_settings.get("ellipse_coverage_percent", 95)))
+            self.gallery_ellipse_coverage_slider.blockSignals(False)
+        if hasattr(self, "gallery_kde_bandwidth_slider"):
+            self.gallery_kde_bandwidth_slider.blockSignals(True)
+            self.gallery_kde_bandwidth_slider.setValue(
+                int(round(max(0.5, min(1.5, float(self.gallery_plot_settings.get("kde_bandwidth", 1.0)))) * 100.0))
+            )
+            self.gallery_kde_bandwidth_slider.blockSignals(False)
+        if hasattr(self, "gallery_kde_contours_slider"):
+            self.gallery_kde_contours_slider.blockSignals(True)
+            self.gallery_kde_contours_slider.setValue(int(self.gallery_plot_settings.get("kde_contours", 6)))
+            self.gallery_kde_contours_slider.blockSignals(False)
+        if hasattr(self, "gallery_kde_coverage_slider"):
+            self.gallery_kde_coverage_slider.blockSignals(True)
+            self.gallery_kde_coverage_slider.setValue(int(self.gallery_plot_settings.get("kde_coverage_percent", 95)))
+            self.gallery_kde_coverage_slider.blockSignals(False)
+        if hasattr(self, "ref_show_minmax_checkbox"):
+            self.ref_show_minmax_checkbox.blockSignals(True)
+            self.ref_show_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("reference_minmax", True)))
+            self.ref_show_minmax_checkbox.blockSignals(False)
+        if hasattr(self, "ref_shape_ellipse_radio") and hasattr(self, "ref_shape_square_radio"):
+            reference_shape = str(self.gallery_plot_settings.get("reference_shape", "ellipse") or "ellipse").strip().lower()
+            self.ref_shape_ellipse_radio.blockSignals(True)
+            self.ref_shape_square_radio.blockSignals(True)
+            self.ref_shape_square_radio.setChecked(reference_shape == "square")
+            self.ref_shape_ellipse_radio.setChecked(reference_shape != "square")
+            self.ref_shape_square_radio.blockSignals(False)
+            self.ref_shape_ellipse_radio.blockSignals(False)
+        self._sync_reference_overlay_controls_state()
         if hasattr(self, "gallery_image_color_checkbox"):
             self.gallery_image_color_checkbox.blockSignals(True)
             self.gallery_image_color_checkbox.setChecked(bool(self.gallery_plot_settings.get("image_color", False)))
@@ -11360,11 +14559,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_q_minmax_checkbox.blockSignals(True)
             self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
             self.gallery_q_minmax_checkbox.blockSignals(False)
+        if hasattr(self, "gallery_q_extreme_minmax_checkbox"):
+            self.gallery_q_extreme_minmax_checkbox.blockSignals(True)
+            self.gallery_q_extreme_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_extreme_minmax", False)))
+            self.gallery_q_extreme_minmax_checkbox.blockSignals(False)
         if hasattr(self, "gallery_axis_equal_checkbox"):
             self.gallery_axis_equal_checkbox.blockSignals(True)
             self.gallery_axis_equal_checkbox.setChecked(bool(self.gallery_plot_settings.get("axis_equal", False)))
             self.gallery_axis_equal_checkbox.blockSignals(False)
         self._sync_gallery_histogram_controls()
+        self._sync_gallery_kde_controls()
         if hasattr(self, "orient_checkbox"):
             self.orient_checkbox.blockSignals(True)
             self.orient_checkbox.setChecked(bool(settings.get("orient", False)))
@@ -11373,6 +14577,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.uniform_scale_checkbox.blockSignals(True)
             self.uniform_scale_checkbox.setChecked(bool(settings.get("uniform_scale", False)))
             self.uniform_scale_checkbox.blockSignals(False)
+        if hasattr(self, "gallery_sort_combo"):
+            self.gallery_sort_combo.blockSignals(True)
+            sort_val = settings.get("gallery_sort", "") or ""
+            idx = self.gallery_sort_combo.findData(sort_val)
+            if idx >= 0:
+                self.gallery_sort_combo.setCurrentIndex(idx)
+            self.gallery_sort_combo.blockSignals(False)
         if hasattr(self, "gallery_include_details_checkbox"):
             self.gallery_include_details_checkbox.blockSignals(True)
             self.gallery_include_details_checkbox.setChecked(bool(settings.get("include_details", False)))
@@ -11408,7 +14619,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if options_dialog.exec() != QDialog.Accepted:
             return
         options = options_dialog.get_options()
-        default_path = str(Path(self._get_default_export_dir()) / "MycoLog_DB.zip")
+        default_path = str(Path(self._get_default_export_dir()) / "Sporely_DB.zip")
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export Database",
@@ -11628,13 +14839,13 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return
             raise
 
-    def format_literature_string(self, stats):
+    def format_literature_string(self, stats, label: str | None = None):
         """Format the literature string for spore statistics."""
         if not stats:
             return ""
 
         lit_format = (
-            f"{self.tr('Spores:')} ({stats['length_min']:.1f}-){stats['length_p5']:.1f}-"
+            f"{label or self.tr('Spores:')} ({stats['length_min']:.1f}-){stats['length_p5']:.1f}-"
             f"{stats['length_p95']:.1f}(-{stats['length_max']:.1f}) um"
         )
 
@@ -11850,10 +15061,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._suppress_gallery_update = previous_suppress
         if suppress_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
-        _timing_log(
-            f"on_observation_selected obs={int(observation_id or 0)} switch_tab={bool(switch_tab)} "
-            f"suppress_gallery={bool(suppress_gallery)} took={(time.perf_counter()-_t0)*1000:.1f}ms"
-        )
 
     def on_observation_deleted(self, observation_id: int):
         if observation_id != getattr(self, "active_observation_id", None):
@@ -11871,7 +15078,6 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_observation_selected_impl(self, observation_id, display_name, switch_tab=True, schedule_gallery=True):
         """Internal handler for observation selection."""
-        _t0 = time.perf_counter()
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
         self._update_measure_copyright_overlay()
@@ -11900,11 +15106,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Switch to the Measure tab
         if switch_tab:
             self.tab_widget.setCurrentIndex(1)
-        _timing_log(
-            f"_on_observation_selected_impl obs={int(observation_id or 0)} switch_tab={bool(switch_tab)} "
-            f"schedule_gallery={bool(schedule_gallery)} images={len(self.observation_images)} "
-            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
-        )
 
     def load_image_for_observation(self):
         """Load microscope images and link them to the active observation."""

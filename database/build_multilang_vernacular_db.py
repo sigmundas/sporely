@@ -50,7 +50,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 DEFAULT_LANGS = ["en", "de", "fr", "es", "da", "sv", "no", "fi", "pl", "pt", "it"]
 DEFAULT_INPUT_CSV = "vernacular_inat_11lang.csv"
-DEFAULT_OUTPUT_DB = "vernacular_multilanguage.sqlite3"
+DEFAULT_OUTPUT_DB = "vernacular_multilanguage_legacy.sqlite3"
 DEFAULT_NO_TAXON = "taxon.txt"
 DEFAULT_NO_VERNACULAR = "vernacularname.txt"
 

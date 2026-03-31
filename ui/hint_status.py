@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolTip, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QToolTip, QWidget
 
 from .styles import pt
 
@@ -12,6 +12,54 @@ try:
 except Exception:  # pragma: no cover - fallback for environments without shiboken helper
     def _qt_is_valid(obj) -> bool:
         return obj is not None
+
+
+def _palette_is_dark() -> bool:
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    return app.palette().window().color().lightness() < 128 if app else False
+
+
+def style_progress_widgets(
+    progress_bar: QProgressBar | None,
+    status_label: QLabel | None = None,
+    percent_label: QLabel | None = None,
+) -> None:
+    """Apply a readable light/dark palette to progress UI elements."""
+    dark = _palette_is_dark()
+    if dark:
+        bar_bg = "#25292f"
+        bar_border = "#68707a"
+        chunk = "#5aa2f2"
+        text = "#eef5ff"
+        status = "#7fc0ff"
+    else:
+        bar_bg = "#edf3f8"
+        bar_border = "#aac3da"
+        chunk = "#2f87d1"
+        text = "#1f2d3d"
+        status = "#1e6fb8"
+
+    if progress_bar is not None:
+        progress_bar.setStyleSheet(
+            "QProgressBar {"
+            f"background: {bar_bg};"
+            f"border: 1px solid {bar_border};"
+            "border-radius: 6px;"
+            f"color: {text};"
+            "text-align: center;"
+            "padding: 0 4px;"
+            f"font-size: {pt(9)}pt;"
+            "}"
+            "QProgressBar::chunk {"
+            f"background-color: {chunk};"
+            "border-radius: 5px;"
+            "}"
+        )
+    if status_label is not None:
+        status_label.setStyleSheet(f"color: {status}; font-size: {pt(9)}pt;")
+    if percent_label is not None:
+        percent_label.setStyleSheet(f"color: {text}; font-size: {pt(9)}pt;")
 
 
 class HintBar(QFrame):
@@ -214,9 +262,7 @@ class HintStatusController(QObject):
 
     @staticmethod
     def _palette_is_dark() -> bool:
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        return app.palette().window().color().lightness() < 128 if app else False
+        return _palette_is_dark()
 
     def _apply_idle_style(self) -> None:
         self._set_label_text("")

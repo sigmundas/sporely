@@ -47,6 +47,7 @@ class DatabaseSettingsDialog(QDialog):
         "bf": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "BF - Brightfield"),
         "df": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DF - Darkfield"),
         "dic": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "DIC - Differential interference contrast"),
+        "oblique": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Oblique - side illumination / oblique lighting"),
         "phase": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Phase - Phase contrast"),
         "hmc": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "HMC - Hoffman modulation contrast"),
     }
@@ -54,13 +55,17 @@ class DatabaseSettingsDialog(QDialog):
         "water": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Water - neutral reference measurements"),
         "koh": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "KOH - clearing tissue, pigment reactions"),
         "nh3": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "NH₃ - pigment reactions"),
-        "melzer": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Melzer - amyloid/dextrinoid reactions"),
         "glycerine": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Glycerine - semi-permanent mounts"),
+        "l4": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "L4 - alkaline glycerol mount with KOH, NaCl, and glycerol for clearer, slower-drying fungal mounts. Clémençon (1972), Zeitschrift für Pilzkunde 38: 49–53."),
     }
     STAIN_HINTS = {
+        "melzer": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Melzer - iodine reagent for amyloid and dextrinoid reactions in spores and other fungal structures."),
         "congored": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Congo Red - wall staining / contrast"),
         "cottonblue": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Cotton Blue - chitin staining"),
         "lactofuchsin": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Lactofuchsin - strong general fungal stain"),
+        "cresylblue": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Cresyl Blue - basic oxazine stain that can show metachromatic shifts and improve contrast in walls and cell contents."),
+        "trypanblue": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Trypan Blue - blue diazo counterstain used to increase contrast in fungal tissues and damaged cells."),
+        "chlorazolblacke": QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Chlorazol Black E - dark direct dye with strong affinity for chitin-rich fungal walls, septa, and fine outlines."),
     }
 
     def __init__(self, parent=None):
@@ -195,19 +200,25 @@ class DatabaseSettingsDialog(QDialog):
             if category == "contrast":
                 contrast_hint = self.CONTRAST_HINTS.get(str(canonical).strip().lower())
                 if contrast_hint:
-                    item.setData(Qt.UserRole + 2, self.tr(contrast_hint))
+                    translated_hint = self.tr(contrast_hint)
+                    item.setData(Qt.UserRole + 2, translated_hint)
+                    item.setToolTip(translated_hint)
             elif category == "mount":
                 mount_hint = self.MOUNT_HINTS.get(
                     DatabaseTerms._normalize_token(canonical)
                 )
                 if mount_hint:
-                    item.setData(Qt.UserRole + 2, self.tr(mount_hint))
+                    translated_hint = self.tr(mount_hint)
+                    item.setData(Qt.UserRole + 2, translated_hint)
+                    item.setToolTip(translated_hint)
             elif category == "stain":
                 stain_hint = self.STAIN_HINTS.get(
                     DatabaseTerms._normalize_token(canonical)
                 )
                 if stain_hint:
-                    item.setData(Qt.UserRole + 2, self.tr(stain_hint))
+                    translated_hint = self.tr(stain_hint)
+                    item.setData(Qt.UserRole + 2, translated_hint)
+                    item.setToolTip(translated_hint)
             tag_list.addItem(item)
 
         for canonical in current_tags:

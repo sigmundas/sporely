@@ -1,14 +1,15 @@
-"""Artsobservasjoner login and cookie capture for MycoLog."""
+"""Artsobservasjoner login and cookie capture for Sporely."""
 
 import json
 import re
 from pathlib import Path
 import requests
-from platformdirs import user_data_dir
 from typing import Dict, Optional, Callable
+from app_identity import app_data_dir
 
 _ARTSOBS_WEB_USERNAME_KEY = "artsobs_web_username"
-_ARTSOBS_WEB_KEYRING_SERVICE = "MycoLog.Artsobservasjoner"
+_ARTSOBS_WEB_KEYRING_SERVICE = "Sporely.Artsobservasjoner"
+_ARTSOBS_WEB_LEGACY_KEYRING_SERVICE = "MycoLog.Artsobservasjoner"
 _ARTSOBS_WEB_KEYRING_ACCOUNT = "web_password"
 
 
@@ -42,13 +43,21 @@ def _load_saved_web_credentials() -> tuple[str, Optional[str], bool]:
     if keyring is None:
         return username, None, False
     try:
-        password = keyring.get_password(
-            _ARTSOBS_WEB_KEYRING_SERVICE,
-            _ARTSOBS_WEB_KEYRING_ACCOUNT,
-        )
+        password = keyring.get_password(_ARTSOBS_WEB_KEYRING_SERVICE, _ARTSOBS_WEB_KEYRING_ACCOUNT)
+        if password is None:
+            password = keyring.get_password(
+                _ARTSOBS_WEB_LEGACY_KEYRING_SERVICE,
+                _ARTSOBS_WEB_KEYRING_ACCOUNT,
+            )
     except Exception:
         return username, None, False
     return username, password, True
+
+
+def has_saved_web_login() -> bool:
+    """Return True when saved Artsobservasjoner web credentials are available."""
+    username, password, _ = _load_saved_web_credentials()
+    return bool(username and password)
 
 
 def _save_web_credentials(username: str, password: str) -> None:
@@ -71,13 +80,11 @@ def _clear_saved_web_credentials() -> None:
     keyring = _get_keyring_module()
     if keyring is None:
         return
-    try:
-        keyring.delete_password(
-            _ARTSOBS_WEB_KEYRING_SERVICE,
-            _ARTSOBS_WEB_KEYRING_ACCOUNT,
-        )
-    except Exception:
-        return
+    for service_name in (_ARTSOBS_WEB_KEYRING_SERVICE, _ARTSOBS_WEB_LEGACY_KEYRING_SERVICE):
+        try:
+            keyring.delete_password(service_name, _ARTSOBS_WEB_KEYRING_ACCOUNT)
+        except Exception:
+            continue
 
 
 def _prompt_web_credentials(
@@ -434,10 +441,7 @@ class ArtsObservasjonerAuth:
             cookies_file: Where to cache cookies (default: ~/.myco_log/artsobservasjoner_cookies.json)
         """
         if cookies_file is None:
-            cookies_file = (
-                Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
-                / "artsobservasjoner_cookies.json"
-            )
+            cookies_file = app_data_dir() / "artsobservasjoner_cookies.json"
         self.cookies_file = Path(cookies_file)
         stem = self.cookies_file.stem
         suffix = self.cookies_file.suffix or ".json"

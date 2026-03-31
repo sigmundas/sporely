@@ -4,6 +4,17 @@ from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QPolygonF, QBrush, QP
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 import math
 
+from .measurement_overlay_style import (
+    DEFAULT_RECTANGLE_STYLE,
+    DEFAULT_RECTANGLE_THICKNESS,
+    clamp_rectangle_thickness,
+    clamp_stroke_width,
+    measure_text_uses_halo,
+    normalize_rectangle_style,
+    rectangle_thin_stroke_width,
+    rectangle_corner_segments,
+)
+
 
 class SporePreviewWidget(QWidget):
     """Widget that shows a magnified spore with draggable dimension overlay."""
@@ -28,6 +39,8 @@ class SporePreviewWidget(QWidget):
         self.display_divisor = 1.0
         self.measurement_id = None
         self.measure_color = QColor("#0044aa")
+        self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
+        self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
         self.show_dimension_labels = True
         self.line_mode = False
 
@@ -144,6 +157,14 @@ class SporePreviewWidget(QWidget):
         """Set the measurement color for the preview."""
         self.measure_color = QColor(color)
         self.image_label.set_measure_color(self.measure_color)
+        self.update_preview()
+
+    def set_measurement_rectangle_appearance(self, style=None, thickness=None):
+        if style is not None:
+            self.measure_rectangle_style = normalize_rectangle_style(style)
+        if thickness is not None:
+            self.measure_rectangle_thickness = clamp_rectangle_thickness(thickness)
+        self.image_label.set_measurement_rectangle_appearance(style=style, thickness=thickness)
         self.update_preview()
 
     def set_show_dimension_labels(self, show: bool):
@@ -489,6 +510,8 @@ class PreviewImageLabel(QLabel):
         self.rotation_arrow_positions = []  # Positions of rotation arrow handles
         self.preview_scale = 1.0
         self.measure_color = QColor("#0044aa")
+        self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
+        self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
 
     def set_show_dimension_labels(self, show: bool):
         self.show_dimension_labels = bool(show)
@@ -499,6 +522,27 @@ class PreviewImageLabel(QLabel):
         if not base.isValid():
             base = QColor("#0044aa")
         presets = (
+            {"match": QColor("#005993"), "thin": QColor("#005993"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+            {"match": QColor("#a94114"), "thin": QColor("#a94114"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#b98a19"), "thin": QColor("#b98a19"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#62256f"), "thin": QColor("#62256f"), "glow": QColor("#7e2f8e"), "opacity": 0.48, "blend": "screen"},
+            {"match": QColor("#5d8625"), "thin": QColor("#5d8625"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#3c94ba"), "thin": QColor("#3c94ba"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#7e1025"), "thin": QColor("#7e1025"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#0072bd"), "thin": QColor("#0072bd"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+            {"match": QColor("#d95319"), "thin": QColor("#d95319"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#edb120"), "thin": QColor("#edb120"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#7e2f8e"), "thin": QColor("#7e2f8e"), "glow": QColor("#7e2f8e"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#77ac30"), "thin": QColor("#77ac30"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#4dbeee"), "thin": QColor("#4dbeee"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#a2142f"), "thin": QColor("#a2142f"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#4799cf"), "thin": QColor("#4799cf"), "glow": QColor("#4799cf"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#e48359"), "thin": QColor("#e48359"), "glow": QColor("#e48359"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#f2c75e"), "thin": QColor("#f2c75e"), "glow": QColor("#f2c75e"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#a269ae"), "thin": QColor("#a269ae"), "glow": QColor("#a269ae"), "opacity": 0.46, "blend": "screen"},
+            {"match": QColor("#9dc36a"), "thin": QColor("#9dc36a"), "glow": QColor("#9dc36a"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#7fd0f3"), "thin": QColor("#7fd0f3"), "glow": QColor("#7fd0f3"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#bc5669"), "thin": QColor("#bc5669"), "glow": QColor("#bc5669"), "opacity": 0.54, "blend": "screen"},
             {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
             {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
             {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
@@ -506,7 +550,9 @@ class PreviewImageLabel(QLabel):
             {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
             {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
             {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
-            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#808080"), "thin": QColor("#808080"), "glow": QColor("#a8a8a8"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#ffffff"), "thin": QColor("#ffffff"), "glow": QColor("#ffffff"), "opacity": 0.42, "blend": "screen"},
+            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#7a7a7a"), "opacity": 0.5, "blend": "screen"},
         )
         def _dist2(c1, c2):
             dr = c1.red() - c2.red()
@@ -532,29 +578,96 @@ class PreviewImageLabel(QLabel):
         elif comp == "lighten":
             painter.setCompositionMode(QPainter.CompositionMode_Lighten)
 
-    def _draw_dual_stroke_polygon(self, painter: QPainter, polygon: QPolygonF, color=None, thin_width=1.0, wide_width=None):
+    def _draw_dual_stroke_polygon(
+        self,
+        painter: QPainter,
+        polygon: QPolygonF,
+        color=None,
+        thin_width=1.0,
+        wide_width=None,
+        use_blend: bool = True,
+    ):
         style = self._measure_stroke_style(color=color)
-        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
-        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
-        painter.save()
-        self._set_named_composition_mode(painter, str(style.get("blend") or ""))
-        painter.setPen(wide_pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPolygon(polygon)
-        painter.restore()
+        thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+        wide_pen = QPen(
+            QColor(style["glow"]),
+            clamp_stroke_width(wide_width if wide_width is not None else float(thin_width) * 3.0),
+        )
+        if use_blend:
+            painter.save()
+            self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+            painter.setPen(wide_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolygon(polygon)
+            painter.restore()
+        else:
+            painter.setPen(wide_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolygon(polygon)
         painter.setBrush(Qt.NoBrush)
         painter.setPen(thin_pen)
         painter.drawPolygon(polygon)
 
-    def _draw_dual_stroke_line(self, painter: QPainter, a: QPointF, b: QPointF, color=None, thin_width=1.0, wide_width=None):
+    def _draw_polygon_outline(self, painter: QPainter, polygon: QPolygonF, color=None, width=1.0):
         style = self._measure_stroke_style(color=color)
-        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
-        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
-        painter.save()
-        self._set_named_composition_mode(painter, str(style.get("blend") or ""))
-        painter.setPen(wide_pen)
-        painter.drawLine(a, b)
-        painter.restore()
+        pen = QPen(QColor(style["thin"]), clamp_stroke_width(width))
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(pen)
+        painter.drawPolygon(polygon)
+
+    def _draw_measurement_rectangle(self, painter: QPainter, polygon: QPolygonF, color=None, thin_width=1.0, wide_width=None):
+        resolved_style = normalize_rectangle_style(self.measure_rectangle_style)
+        resolved_wide_width = clamp_rectangle_thickness(
+            wide_width if wide_width is not None else self.measure_rectangle_thickness
+        )
+        resolved_thin_width = rectangle_thin_stroke_width(resolved_style, resolved_wide_width)
+        if resolved_style == DEFAULT_RECTANGLE_STYLE:
+            self._draw_dual_stroke_polygon(
+                painter,
+                polygon,
+                color=color,
+                thin_width=resolved_thin_width,
+                wide_width=resolved_wide_width,
+            )
+            return
+
+        self._draw_polygon_outline(painter, polygon, color=color, width=resolved_thin_width)
+        for seg_start, seg_end in rectangle_corner_segments(polygon):
+            self._draw_dual_stroke_line(
+                painter,
+                seg_start,
+                seg_end,
+                color=color,
+                thin_width=resolved_thin_width,
+                wide_width=resolved_wide_width,
+                use_blend=False,
+            )
+
+    def _draw_dual_stroke_line(
+        self,
+        painter: QPainter,
+        a: QPointF,
+        b: QPointF,
+        color=None,
+        thin_width=1.0,
+        wide_width=None,
+        use_blend: bool = True,
+    ):
+        style = self._measure_stroke_style(color=color)
+        thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+        wide_pen = QPen(
+            QColor(style["glow"]),
+            clamp_stroke_width(wide_width if wide_width is not None else float(thin_width) * 3.0),
+        )
+        if use_blend:
+            painter.save()
+            self._set_named_composition_mode(painter, str(style.get("blend") or ""))
+            painter.setPen(wide_pen)
+            painter.drawLine(a, b)
+            painter.restore()
+        else:
+            painter.setPen(wide_pen)
+            painter.drawLine(a, b)
         painter.setPen(thin_pen)
         painter.drawLine(a, b)
 
@@ -563,6 +676,13 @@ class PreviewImageLabel(QLabel):
         text_color = QColor(style["thin"])
         path = QPainterPath()
         path.addText(float(x), float(y), painter.font(), text)
+        if not measure_text_uses_halo(text_color):
+            painter.save()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(text_color)
+            painter.drawPath(path)
+            painter.restore()
+            return
         stroke_w = max(1.0, float(painter.fontMetrics().height()) * 0.4)
         pen = QPen(QColor(255, 255, 255, 102), stroke_w)
         pen.setJoinStyle(Qt.RoundJoin)
@@ -572,12 +692,22 @@ class PreviewImageLabel(QLabel):
         painter.setPen(pen)
         painter.drawPath(path)
         painter.restore()
-        painter.setPen(text_color)
-        painter.drawText(x, y, text)
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(text_color)
+        painter.drawPath(path)
+        painter.restore()
 
     def set_measure_color(self, color):
         """Set the measurement color."""
         self.measure_color = QColor(color)
+        self.update()
+
+    def set_measurement_rectangle_appearance(self, style=None, thickness=None):
+        if style is not None:
+            self.measure_rectangle_style = normalize_rectangle_style(style)
+        if thickness is not None:
+            self.measure_rectangle_thickness = clamp_rectangle_thickness(thickness)
         self.update()
 
     def set_preview(
@@ -1012,7 +1142,13 @@ class PreviewImageLabel(QLabel):
 
         # Draw the rotated rectangle (SVG-style glow + thin stroke)
         polygon = QPolygonF(self.screen_corners)
-        self._draw_dual_stroke_polygon(painter, polygon, color=self.measure_color, thin_width=1.0, wide_width=3.0)
+        self._draw_measurement_rectangle(
+            painter,
+            polygon,
+            color=self.measure_color,
+            thin_width=1.0,
+            wide_width=self.measure_rectangle_thickness,
+        )
 
         # Draw side highlight if hovered
         highlight_side = self.dragging_side if self.dragging_side >= 0 else self.hover_side

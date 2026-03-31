@@ -8,8 +8,10 @@ pyinstaller \
   --clean \
   --onedir \
   --windowed \
-  --name MycoLog \
-  --icon "assets/icons/mycolog.icns" \
+  --name Sporely \
+  --icon "assets/icons/sporely.icns" \
+  --add-data "i18n:i18n" \
+  --add-data "database/reference_values.db:database" \
   --hidden-import pillow_heif \
   --exclude-module PySide6.QtQml \
   --exclude-module PySide6.QtQuick \

@@ -5,10 +5,11 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QImageReader
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QImageReader, QDrag, QShortcut, QKeySequence
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from PySide6.QtWidgets import (
+    QApplication,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QSizePolicy,
+    QStyle,
 )
 
 from database.models import ImageDB, MeasurementDB
@@ -26,6 +28,8 @@ from database.schema import load_objectives, objective_display_name, resolve_obj
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from .styles import pt
+
+_GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
 
 
 class _PublishToggle(QLabel):
@@ -84,6 +88,7 @@ class ImageGalleryWidget(QGroupBox):
     deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
+    itemsReordered = Signal(object)
 
     def __init__(
         self,
@@ -101,6 +106,7 @@ class ImageGalleryWidget(QGroupBox):
         super().__init__(title, parent)
         self.setCheckable(False)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._min_height = max(0, int(min_height))
         self._default_height = max(self._min_height, int(default_height))
         self.setMinimumHeight(self._min_height)
@@ -114,11 +120,17 @@ class ImageGalleryWidget(QGroupBox):
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
         self._thumb_size = self._base_thumb_size
+        self._fixed_thumbnail_size = False
+        self._compact_overlay = False
+        self._decode_max_dim = max(384, self._base_thumb_size * 4)
         self._items: list[dict] = []
         self._frames: list[QFrame] = []
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
         self._last_clicked_index: int | None = None
+        self._drag_start_pos: QPoint | None = None
+        self._drag_start_key = None
+        self._reorderable = False
         self._objectives_cache: dict | None = None
         self._publish_checked_by_key: dict[str | int, bool] = {}
         self._suppress_publish_signal = False
@@ -132,18 +144,30 @@ class ImageGalleryWidget(QGroupBox):
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setFocusPolicy(Qt.NoFocus)
         self._scroll.viewport().installEventFilter(self)
 
         self._container = QWidget()
+        self._container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self._container.setFocusPolicy(Qt.NoFocus)
         self._grid = QHBoxLayout(self._container)
+        self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._grid.setSpacing(10)
+        self._container.installEventFilter(self)
         self._scroll.setWidget(self._container)
         content_layout.addWidget(self._scroll)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._content)
+
+        self._next_image_shortcut = QShortcut(QKeySequence(Qt.Key_Tab), self)
+        self._next_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._next_image_shortcut.activated.connect(lambda: self._select_adjacent_image(1))
+        self._previous_image_shortcut = QShortcut(QKeySequence(Qt.Key_Backtab), self)
+        self._previous_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._previous_image_shortcut.activated.connect(lambda: self._select_adjacent_image(-1))
 
     def clear(self) -> None:
         self._items = []
@@ -158,6 +182,58 @@ class ImageGalleryWidget(QGroupBox):
             if item.widget():
                 item.widget().deleteLater()
         self._frames = []
+        self._sync_container_height()
+
+    def set_fixed_thumbnail_size(self, enabled: bool) -> None:
+        self._fixed_thumbnail_size = bool(enabled)
+        self._thumb_size = self._target_thumb_size()
+        self._update_thumbnail_sizes()
+
+    def set_compact_overlay(self, enabled: bool) -> None:
+        self._compact_overlay = bool(enabled)
+        if self._items:
+            self._render()
+
+    def preferred_single_row_height(self) -> int:
+        title_height = max(24, self.fontMetrics().height() + 12)
+        frame_height = int(self._scroll.frameWidth()) * 2 if self._scroll is not None else 2
+        scrollbar_height = (
+            int(self._scroll.horizontalScrollBar().sizeHint().height())
+            if self._scroll is not None
+            else 16
+        )
+        spacing = 10
+        style = self.style()
+        if style is not None:
+            try:
+                spacing = max(spacing, int(style.pixelMetric(QStyle.PM_LayoutVerticalSpacing, None, self)))
+            except Exception:
+                spacing = 10
+        margins = self.contentsMargins()
+        return (
+            margins.top()
+            + margins.bottom()
+            + title_height
+            + spacing
+            + self._base_thumb_size
+            + frame_height
+            + scrollbar_height
+            + 12
+        )
+
+    def maximum_useful_height(self) -> int:
+        """Cap single-row galleries before extra blank space becomes excessive."""
+        return self.preferred_single_row_height()
+
+    def set_reorderable(self, enabled: bool) -> None:
+        self._reorderable = bool(enabled)
+        self.setAcceptDrops(self._reorderable)
+        if hasattr(self, "_container") and self._container is not None:
+            self._container.setAcceptDrops(self._reorderable)
+        if hasattr(self, "_scroll") and self._scroll is not None:
+            self._scroll.viewport().setAcceptDrops(self._reorderable)
+        for frame in getattr(self, "_frames", []):
+            frame.setAcceptDrops(self._reorderable)
 
     def set_images(self, image_paths: Iterable[str]) -> None:
         items = []
@@ -270,6 +346,81 @@ class ImageGalleryWidget(QGroupBox):
             )
         self._items = items
         self._render()
+
+    @staticmethod
+    def _item_key(item: dict) -> str | int | None:
+        if not item:
+            return None
+        item_id = item.get("id")
+        if item_id is not None:
+            return item_id
+        filepath = item.get("filepath")
+        return str(filepath) if filepath else None
+
+    @staticmethod
+    def _encode_item_key(key) -> bytes:
+        if isinstance(key, int):
+            return f"id:{key}".encode("utf-8")
+        return f"path:{str(key)}".encode("utf-8")
+
+    @staticmethod
+    def _decode_item_key(payload: bytes | bytearray | memoryview | None):
+        if payload is None:
+            return None
+        try:
+            text = bytes(payload).decode("utf-8")
+        except Exception:
+            return None
+        if text.startswith("id:"):
+            try:
+                return int(text[3:])
+            except (TypeError, ValueError):
+                return None
+        if text.startswith("path:"):
+            return text[5:]
+        return None
+
+    def _ordered_item_keys(self) -> list[str | int]:
+        keys: list[str | int] = []
+        for item in self._items:
+            key = self._item_key(item)
+            if key is not None:
+                keys.append(key)
+        return keys
+
+    def _frame_at_global_pos(self, global_pos: QPoint | None) -> QFrame | None:
+        if global_pos is None:
+            return None
+        for frame in self._frames:
+            top_left = frame.mapToGlobal(QPoint(0, 0))
+            rect = frame.rect().translated(top_left)
+            if rect.contains(global_pos):
+                return frame
+        return None
+
+    def _reorder_item(self, source_key, target_key, insert_after: bool = False) -> bool:
+        ordered_keys = self._ordered_item_keys()
+        if source_key not in ordered_keys or target_key not in ordered_keys:
+            return False
+        source_index = ordered_keys.index(source_key)
+        target_index = ordered_keys.index(target_key)
+        if source_index == target_index and not insert_after:
+            return False
+
+        moved_item = self._items.pop(source_index)
+        if source_index < target_index:
+            target_index -= 1
+        if insert_after:
+            target_index += 1
+        target_index = max(0, min(target_index, len(self._items)))
+        self._items.insert(target_index, moved_item)
+        self._render()
+        if self._selected_keys:
+            self._apply_selection_styles()
+        if source_key is not None:
+            self._center_on_key(source_key)
+        self.itemsReordered.emit(self._ordered_item_keys())
+        return True
 
     def _get_objectives_cache(self) -> dict:
         if isinstance(self._objectives_cache, dict):
@@ -426,6 +577,7 @@ class ImageGalleryWidget(QGroupBox):
     def _render(self) -> None:
         self._clear_widgets()
         self._thumb_size = self._target_thumb_size()
+        self._sync_container_height()
         for item in self._items:
             frame = self._create_thumbnail_widget(item)
             self._frames.append(frame)
@@ -436,6 +588,34 @@ class ImageGalleryWidget(QGroupBox):
             self._apply_selection_styles()
 
     def eventFilter(self, obj, event):
+        if self._reorderable and event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
+            source_key = self._decode_item_key(event.mimeData().data(_GALLERY_REORDER_MIME))
+            if source_key is not None:
+                if event.type() in (QEvent.DragEnter, QEvent.DragMove):
+                    event.acceptProposedAction()
+                    return True
+                target_key = None
+                insert_after = False
+                target_frame = None
+                try:
+                    target_frame = self._frame_at_global_pos(event.globalPosition().toPoint())
+                except Exception:
+                    target_frame = None
+                if target_frame is None and isinstance(obj, QFrame) and obj in self._frames:
+                    target_frame = obj
+                if target_frame is not None:
+                    target_key = getattr(target_frame, "image_key", None)
+                    try:
+                        local_pos = target_frame.mapFromGlobal(event.globalPosition().toPoint())
+                        insert_after = float(local_pos.x()) >= (target_frame.width() / 2.0)
+                    except Exception:
+                        insert_after = False
+                elif obj in {self, self._container, self._scroll.viewport()} and self._frames:
+                    target_key = getattr(self._frames[-1], "image_key", None)
+                    insert_after = True
+                if target_key is not None and self._reorder_item(source_key, target_key, insert_after=insert_after):
+                    event.acceptProposedAction()
+                    return True
         if obj == self._scroll.viewport() and event.type() == QEvent.Resize:
             self._update_thumbnail_sizes()
         if event.type() in (QEvent.Enter, QEvent.Leave) and isinstance(obj, QFrame) and obj in self._frames:
@@ -484,6 +664,25 @@ class ImageGalleryWidget(QGroupBox):
         frame.setStyleSheet(self._frame_style(border_color=item.get("frame_border_color")))
         frame.setFixedSize(self._thumb_size, self._thumb_size)
         frame.setCursor(Qt.PointingHandCursor)
+        frame.setAcceptDrops(self._reorderable)
+        if self._compact_overlay:
+            overlay_btn_size = max(12, min(14, int(round(self._thumb_size * 0.10))))
+            overlay_btn_radius = max(6, overlay_btn_size // 2)
+            overlay_font_px = max(8, overlay_btn_size - 5)
+            overlay_label_font_px = max(9, min(12, int(round(self._thumb_size * 0.095))))
+            overlay_label_pad_h = max(2, min(4, int(round(self._thumb_size * 0.018))))
+            overlay_label_pad_v = max(1, min(3, int(round(self._thumb_size * 0.012))))
+            overlay_margin = 1
+            overlay_spacing = 2
+        else:
+            overlay_btn_size = 16
+            overlay_btn_radius = 8
+            overlay_font_px = pt(8)
+            overlay_label_font_px = pt(8)
+            overlay_label_pad_h = 4
+            overlay_label_pad_v = 1
+            overlay_margin = 2
+            overlay_spacing = 4
 
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -517,7 +716,9 @@ class ImageGalleryWidget(QGroupBox):
             number_label = QLabel(str(image_num))
             number_label.setStyleSheet(
                 "color: #000000; background-color: rgba(255, 255, 255, 77);"
-                f"font-size: {pt(8)}pt; padding: 1px 4px; border-radius: 3px; border: none;"
+                f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'};"
+                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px;"
+                " border-radius: 3px; border: none;"
             )
             number_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(number_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignLeft)
@@ -531,8 +732,11 @@ class ImageGalleryWidget(QGroupBox):
             weight = "bold" if gps_highlight else "normal"
             gps_label.setStyleSheet(
                 f"color: {color}; background-color: {background};"
-                f"font-size: {pt(8)}pt; font-weight: {weight}; padding: 1px 4px; border-radius: 3px; border: none;"
+                f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: {weight};"
+                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
             )
+            if self._compact_overlay:
+                gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
             gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(gps_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
 
@@ -577,17 +781,18 @@ class ImageGalleryWidget(QGroupBox):
 
         overlay = QWidget()
         overlay_layout = QHBoxLayout(overlay)
-        overlay_layout.setContentsMargins(2, 2, 2, 2)
-        overlay_layout.setSpacing(4)
+        overlay_layout.setContentsMargins(overlay_margin, overlay_margin, overlay_margin, overlay_margin)
+        overlay_layout.setSpacing(overlay_spacing)
         overlay_layout.addStretch()
 
         if self._show_badges and item.get("has_measurements"):
             badge = QToolButton()
             badge.setText("M")
-            badge.setFixedSize(16, 16)
+            badge.setFixedSize(overlay_btn_size, overlay_btn_size)
             badge.setStyleSheet(
-                "QToolButton { background-color: #27ae60; color: white; border-radius: 8px; border: none;"
-                f" font-size: {pt(8)}pt; font-weight: bold; padding: 0px; }}"
+                "QToolButton { background-color: #27ae60; color: white; border: none;"
+                f" border-radius: {overlay_btn_radius}px; font-size: {overlay_font_px}{'px' if self._compact_overlay else 'pt'};"
+                " font-weight: bold; padding: 0px; }"
                 "QToolButton:hover { background-color: #229954; }"
             )
             badge.setToolTip(self.tr("Open in Measure tab"))
@@ -600,9 +805,11 @@ class ImageGalleryWidget(QGroupBox):
         if self._show_delete and delete_key:
             delete_btn = QToolButton()
             delete_btn.setText("X")
-            delete_btn.setFixedSize(16, 16)
+            delete_btn.setFixedSize(overlay_btn_size, overlay_btn_size)
             delete_btn.setStyleSheet(
-                f"QToolButton {{ background-color: #e74c3c; color: white; border-radius: 8px; font-size: {pt(8)}pt; }}"
+                "QToolButton { background-color: #e74c3c; color: white; border: none;"
+                f" border-radius: {overlay_btn_radius}px; font-size: {overlay_font_px}{'px' if self._compact_overlay else 'pt'}; padding: 0px; }}"
+                "QToolButton:hover { background-color: #d6453a; }"
             )
             delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteRequested.emit(key))
             overlay_layout.addWidget(delete_btn)
@@ -633,10 +840,11 @@ class ImageGalleryWidget(QGroupBox):
         frame.publish_checkbox = publish_checkbox
         if self._thumbnail_tooltip:
             frame.setToolTip(self._thumbnail_tooltip)
-        frame.mousePressEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self._on_click(e, img_id, path)
+        frame.mousePressEvent = lambda e, f=frame: self._on_frame_mouse_press(e, f)
+        frame.mouseMoveEvent = lambda e, f=frame: self._on_frame_mouse_move(e, f)
+        frame.mouseReleaseEvent = lambda e: setattr(self, "_drag_start_pos", None)
         frame.mouseDoubleClickEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self.imageDoubleClicked.emit(img_id, path or "")
         frame.installEventFilter(self)
-
         return frame
 
     def set_multi_select(self, enabled: bool) -> None:
@@ -752,6 +960,83 @@ class ImageGalleryWidget(QGroupBox):
             except Exception:
                 pass
 
+    def _on_frame_mouse_press(self, event, frame: QFrame) -> None:
+        if event.button() == Qt.LeftButton:
+            self.setFocus(Qt.MouseFocusReason)
+            try:
+                self._drag_start_pos = event.position().toPoint()
+            except Exception:
+                self._drag_start_pos = QPoint()
+            self._drag_start_key = getattr(frame, "image_key", None)
+        self._on_click(event, getattr(frame, "image_id", None), getattr(frame, "image_path", ""))
+
+    def _select_adjacent_image(self, step: int) -> None:
+        if step == 0 or not self._items:
+            return
+        current_focus = QApplication.focusWidget()
+        if current_focus not in (None, self) and not self.isAncestorOf(current_focus):
+            return
+        selected_indices = [
+            idx for idx, item in enumerate(self._items)
+            if self._item_key(item) in self._selected_keys
+        ]
+        if selected_indices:
+            base_index = max(selected_indices) if step > 0 else min(selected_indices)
+        elif self._last_clicked_index is not None:
+            base_index = self._last_clicked_index
+        else:
+            base_index = -1 if step > 0 else len(self._items)
+
+        target_index = max(0, min(len(self._items) - 1, base_index + step))
+        if target_index == base_index and len(selected_indices) == 1:
+            return
+
+        target_item = self._items[target_index]
+        target_key = self._item_key(target_item)
+        target_id = target_item.get("id")
+        target_path = target_item.get("filepath") or ""
+
+        self._selected_id = target_id
+        self._selected_keys = {target_key} if target_key is not None else set()
+        self._last_clicked_index = target_index
+        self._apply_selection_styles()
+        if target_key is not None:
+            self._center_on_key(target_key)
+        if self._multi_select:
+            self.selectionChanged.emit(self.selected_paths())
+        else:
+            self.imageSelected.emit(target_id, target_path)
+        self.imageClicked.emit(target_id, target_path)
+
+    def _on_frame_mouse_move(self, event, frame: QFrame) -> None:
+        if not self._reorderable:
+            return
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        if self._drag_start_pos is None:
+            return
+        if getattr(frame, "image_key", None) != self._drag_start_key:
+            return
+        try:
+            current_pos = event.position().toPoint()
+        except Exception:
+            return
+        if (current_pos - self._drag_start_pos).manhattanLength() < QApplication.startDragDistance():
+            return
+        self._drag_start_pos = None
+        key = getattr(frame, "image_key", None)
+        if key is None:
+            return
+        mime_data = QMimeData()
+        mime_data.setData(_GALLERY_REORDER_MIME, self._encode_item_key(key))
+        drag = QDrag(frame)
+        drag.setMimeData(mime_data)
+        pixmap = getattr(getattr(frame, "thumb_label", None), "pixmap", lambda: None)()
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(current_pos)
+        drag.exec(Qt.MoveAction)
+
     def _on_click(self, event, img_id, path):
         key = img_id if img_id is not None else path
         index = self._index_for_key(key)
@@ -821,9 +1106,26 @@ class ImageGalleryWidget(QGroupBox):
         self.publishSelectionChanged.emit(self.publish_selected_ids())
 
     def _target_thumb_size(self) -> int:
-        viewport_h = self._scroll.viewport().height() if self._scroll else self._base_thumb_size
-        target = max(self._min_thumb_size, min(self._base_thumb_size, viewport_h - 16))
+        if self._fixed_thumbnail_size:
+            return self._base_thumb_size
+        if not self._scroll:
+            return self._base_thumb_size
+        # Use the scroll area's allocated height rather than the live viewport height.
+        # When the horizontal scrollbar is set to AsNeeded, basing the thumbnail size
+        # on the viewport can oscillate: larger thumbs trigger the scrollbar, which
+        # shrinks the viewport, which shrinks the thumbs enough for the scrollbar to
+        # disappear, and so on.
+        frame = max(0, int(self._scroll.frameWidth()) * 2)
+        scrollbar_h = max(0, int(self._scroll.horizontalScrollBar().sizeHint().height()))
+        available_h = max(0, int(self._scroll.height()) - frame - scrollbar_h - 8)
+        target = max(self._min_thumb_size, min(self._base_thumb_size, available_h))
         return target
+
+    def _sync_container_height(self) -> None:
+        if not hasattr(self, "_container") or self._container is None:
+            return
+        row_height = max(0, int(self._thumb_size if self._frames or self._items else 0))
+        self._container.setFixedHeight(row_height)
 
     def _update_thumbnail_sizes(self) -> None:
         if not self._frames:
@@ -832,6 +1134,7 @@ class ImageGalleryWidget(QGroupBox):
         if new_size == self._thumb_size:
             return
         self._thumb_size = new_size
+        self._sync_container_height()
         for frame in self._frames:
             if not hasattr(frame, "thumb_label"):
                 continue
@@ -842,32 +1145,58 @@ class ImageGalleryWidget(QGroupBox):
                 frame.thumb_label.setPixmap(self._scaled_thumb(pixmap, self._thumb_size))
 
     def _load_pixmap(self, item: dict) -> QPixmap | None:
-        def _load_oriented(path: str) -> QPixmap:
+        def _load_oriented(path: str, max_dim: int | None = None) -> QPixmap:
             reader = QImageReader(path)
             reader.setAutoTransform(True)
+            if max_dim and max_dim > 0:
+                size = reader.size()
+                if size.isValid():
+                    scaled_size = QSize(size)
+                    scaled_size.scale(max_dim, max_dim, Qt.KeepAspectRatio)
+                    if (
+                        scaled_size.isValid()
+                        and scaled_size.width() > 0
+                        and scaled_size.height() > 0
+                        and (
+                            scaled_size.width() < size.width()
+                            or scaled_size.height() < size.height()
+                        )
+                    ):
+                        reader.setScaledSize(scaled_size)
             image = reader.read()
             if image.isNull():
-                return QPixmap(path)
-            return QPixmap.fromImage(image)
+                pixmap = QPixmap(path)
+            else:
+                pixmap = QPixmap.fromImage(image)
+            if max_dim and not pixmap.isNull() and (
+                pixmap.width() > max_dim or pixmap.height() > max_dim
+            ):
+                pixmap = pixmap.scaled(
+                    max_dim,
+                    max_dim,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            return pixmap
 
-        def _cache_key(path: str) -> str:
+        def _cache_key(path: str, variant: str = "") -> str:
             try:
                 mtime_ns = Path(path).stat().st_mtime_ns
             except Exception:
                 mtime_ns = 0
-            return f"{path}|{mtime_ns}"
+            return f"{path}|{mtime_ns}|{variant}"
 
-        def _cache_get(path: str) -> QPixmap | None:
-            key = _cache_key(path)
+        def _cache_get(path: str, variant: str = "") -> QPixmap | None:
+            key = _cache_key(path, variant)
             pix = self._pixmap_cache.get(key)
             if pix is None or pix.isNull():
                 return None
             return pix
 
-        def _cache_put(path: str, pix: QPixmap) -> None:
+        def _cache_put(path: str, pix: QPixmap, variant: str = "") -> None:
             if pix.isNull():
                 return
-            key = _cache_key(path)
+            key = _cache_key(path, variant)
             if key in self._pixmap_cache:
                 self._pixmap_cache[key] = pix
                 return
@@ -883,19 +1212,20 @@ class ImageGalleryWidget(QGroupBox):
             thumb_path = get_thumbnail_path(img_id, "224x224")
             if thumb_path and Path(thumb_path).exists():
                 thumb_path = str(thumb_path)
-                cached = _cache_get(thumb_path)
+                cached = _cache_get(thumb_path, "thumb")
                 if cached is not None:
                     return cached
-                pixmap = _load_oriented(thumb_path)
-                _cache_put(thumb_path, pixmap)
+                pixmap = _load_oriented(thumb_path, max_dim=max(256, self._decode_max_dim))
+                _cache_put(thumb_path, pixmap, "thumb")
                 return pixmap
         if filepath:
             filepath = str(filepath)
-            cached = _cache_get(filepath)
+            variant = f"preview:{self._decode_max_dim}"
+            cached = _cache_get(filepath, variant)
             if cached is not None:
                 return cached
-            pixmap = _load_oriented(filepath)
-            _cache_put(filepath, pixmap)
+            pixmap = _load_oriented(filepath, max_dim=self._decode_max_dim)
+            _cache_put(filepath, pixmap, variant)
             return pixmap
         return None
 

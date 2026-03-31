@@ -31,12 +31,13 @@ from database.schema import (
 from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
-from .hint_status import HintBar, HintLabel, HintStatusController
+from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 from .zoomable_image_widget import ZoomableImageLabel
 from .image_gallery_widget import ImageGalleryWidget
 from .export_image_dialog import ExportImageDialog
+from .dialog_helpers import make_github_help_button
 
 
 class _FlexibleDecimalSpinBox(QDoubleSpinBox):
@@ -1061,13 +1062,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.hint_progress_status.setWordWrap(True)
         self.hint_progress_status.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.hint_progress_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_progress_status.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
         self.hint_progress_bar = QProgressBar(self)
         self.hint_progress_bar.setRange(0, 100)
         self.hint_progress_bar.setValue(0)
         self.hint_progress_bar.setTextVisible(True)
         self.hint_progress_bar.setFixedHeight(18)
         self.hint_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        style_progress_widgets(self.hint_progress_bar, self.hint_progress_status)
         progress_stack_layout.addWidget(self.hint_progress_bar, 0)
         progress_stack_layout.addWidget(self.hint_progress_status, 0)
         hint_progress_layout.addWidget(progress_stack, 1)
@@ -1075,6 +1076,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         hint_area_layout.addWidget(self.hint_progress_widget)
 
         button_row.addWidget(hint_area, 1)
+        button_row.addWidget(make_github_help_button(self, "calibration-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         if self._pending_hint_widgets:
             for widget, hint, tone, allow_when_disabled in self._pending_hint_widgets:

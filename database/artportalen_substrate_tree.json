@@ -1,0 +1,1421 @@
+[
+  {
+    "id": 1,
+    "name": "Mark/botten",
+    "children": [
+      {
+        "id": 2,
+        "name": "Sten/berg på land",
+        "children": [
+          {
+            "id": 3,
+            "name": "Sur bergart",
+            "children": [
+              {
+                "id": 4,
+                "name": "Granit"
+              },
+              {
+                "id": 5,
+                "name": "Pegmatit"
+              },
+              {
+                "id": 6,
+                "name": "Porfyr"
+              },
+              {
+                "id": 7,
+                "name": "Kvartsit"
+              },
+              {
+                "id": 8,
+                "name": "Glimmerskiffer"
+              },
+              {
+                "id": 9,
+                "name": "Gnejs"
+              },
+              {
+                "id": 10,
+                "name": "Sandsten"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "name": "Granit"
+          },
+          {
+            "id": 5,
+            "name": "Pegmatit"
+          },
+          {
+            "id": 6,
+            "name": "Porfyr"
+          },
+          {
+            "id": 7,
+            "name": "Kvartsit"
+          },
+          {
+            "id": 8,
+            "name": "Glimmerskiffer"
+          },
+          {
+            "id": 9,
+            "name": "Gnejs"
+          },
+          {
+            "id": 10,
+            "name": "Sandsten"
+          },
+          {
+            "id": 11,
+            "name": "Basisk bergart (grönsten)",
+            "children": [
+              {
+                "id": 12,
+                "name": "Basalt"
+              },
+              {
+                "id": 13,
+                "name": "Gabbro"
+              },
+              {
+                "id": 14,
+                "name": "Diabas"
+              },
+              {
+                "id": 15,
+                "name": "Hyperit"
+              },
+              {
+                "id": 16,
+                "name": "Diorit"
+              },
+              {
+                "id": 17,
+                "name": "Amfibolit"
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "name": "Basalt"
+          },
+          {
+            "id": 13,
+            "name": "Gabbro"
+          },
+          {
+            "id": 14,
+            "name": "Diabas"
+          },
+          {
+            "id": 15,
+            "name": "Hyperit"
+          },
+          {
+            "id": 16,
+            "name": "Diorit"
+          },
+          {
+            "id": 17,
+            "name": "Amfibolit"
+          },
+          {
+            "id": 18,
+            "name": "Kalksten"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "name": "Sur bergart",
+        "children": []
+      },
+      {
+        "id": 4,
+        "name": "Granit"
+      },
+      {
+        "id": 5,
+        "name": "Pegmatit"
+      },
+      {
+        "id": 6,
+        "name": "Porfyr"
+      },
+      {
+        "id": 7,
+        "name": "Kvartsit"
+      },
+      {
+        "id": 8,
+        "name": "Glimmerskiffer"
+      },
+      {
+        "id": 9,
+        "name": "Gnejs"
+      },
+      {
+        "id": 10,
+        "name": "Sandsten"
+      },
+      {
+        "id": 11,
+        "name": "Basisk bergart (grönsten)",
+        "children": []
+      },
+      {
+        "id": 12,
+        "name": "Basalt"
+      },
+      {
+        "id": 13,
+        "name": "Gabbro"
+      },
+      {
+        "id": 14,
+        "name": "Diabas"
+      },
+      {
+        "id": 15,
+        "name": "Hyperit"
+      },
+      {
+        "id": 16,
+        "name": "Diorit"
+      },
+      {
+        "id": 17,
+        "name": "Amfibolit"
+      },
+      {
+        "id": 18,
+        "name": "Kalksten"
+      },
+      {
+        "id": 19,
+        "name": "Hårdbotten"
+      },
+      {
+        "id": 20,
+        "name": "Mark/jord på land",
+        "children": [
+          {
+            "id": 21,
+            "name": "Mineraljord",
+            "children": [
+              {
+                "id": 22,
+                "name": "Morän"
+              },
+              {
+                "id": 23,
+                "name": "Block (> 200 mm)"
+              },
+              {
+                "id": 24,
+                "name": "Sten (60 - 200 mm)"
+              },
+              {
+                "id": 25,
+                "name": "Grus (2-60 mm)"
+              },
+              {
+                "id": 26,
+                "name": "Sand (0,06-2 mm)"
+              },
+              {
+                "id": 27,
+                "name": "Silt/mo/mjäla (0,002-0,06 mm)"
+              },
+              {
+                "id": 28,
+                "name": "Lera (< 0,002 mm)"
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "name": "Morän"
+          },
+          {
+            "id": 23,
+            "name": "Block (> 200 mm)"
+          },
+          {
+            "id": 24,
+            "name": "Sten (60 - 200 mm)"
+          },
+          {
+            "id": 25,
+            "name": "Grus (2-60 mm)"
+          },
+          {
+            "id": 26,
+            "name": "Sand (0,06-2 mm)"
+          },
+          {
+            "id": 27,
+            "name": "Silt/mo/mjäla (0,002-0,06 mm)"
+          },
+          {
+            "id": 28,
+            "name": "Lera (< 0,002 mm)"
+          },
+          {
+            "id": 29,
+            "name": "Organogen jord",
+            "children": [
+              {
+                "id": 30,
+                "name": "Humus"
+              },
+              {
+                "id": 31,
+                "name": "Dy"
+              },
+              {
+                "id": 32,
+                "name": "Mull"
+              },
+              {
+                "id": 33,
+                "name": "Gyttja"
+              },
+              {
+                "id": 34,
+                "name": "Torv"
+              },
+              {
+                "id": 35,
+                "name": "Förna"
+              },
+              {
+                "id": 36,
+                "name": "Tångvall eller annan driftrand"
+              },
+              {
+                "id": 37,
+                "name": "Skalgrus"
+              }
+            ]
+          },
+          {
+            "id": 30,
+            "name": "Humus"
+          },
+          {
+            "id": 31,
+            "name": "Dy"
+          },
+          {
+            "id": 32,
+            "name": "Mull"
+          },
+          {
+            "id": 33,
+            "name": "Gyttja"
+          },
+          {
+            "id": 34,
+            "name": "Torv"
+          },
+          {
+            "id": 35,
+            "name": "Förna"
+          },
+          {
+            "id": 36,
+            "name": "Tångvall eller annan driftrand"
+          },
+          {
+            "id": 37,
+            "name": "Skalgrus"
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "name": "Mineraljord",
+        "children": []
+      },
+      {
+        "id": 22,
+        "name": "Morän"
+      },
+      {
+        "id": 23,
+        "name": "Block (> 200 mm)"
+      },
+      {
+        "id": 24,
+        "name": "Sten (60 - 200 mm)"
+      },
+      {
+        "id": 25,
+        "name": "Grus (2-60 mm)"
+      },
+      {
+        "id": 26,
+        "name": "Sand (0,06-2 mm)"
+      },
+      {
+        "id": 27,
+        "name": "Silt/mo/mjäla (0,002-0,06 mm)"
+      },
+      {
+        "id": 28,
+        "name": "Lera (< 0,002 mm)"
+      },
+      {
+        "id": 29,
+        "name": "Organogen jord",
+        "children": []
+      },
+      {
+        "id": 30,
+        "name": "Humus"
+      },
+      {
+        "id": 31,
+        "name": "Dy"
+      },
+      {
+        "id": 32,
+        "name": "Mull"
+      },
+      {
+        "id": 33,
+        "name": "Gyttja"
+      },
+      {
+        "id": 34,
+        "name": "Torv"
+      },
+      {
+        "id": 35,
+        "name": "Förna"
+      },
+      {
+        "id": 36,
+        "name": "Tångvall eller annan driftrand"
+      },
+      {
+        "id": 37,
+        "name": "Skalgrus"
+      },
+      {
+        "id": 38,
+        "name": "Mjukbotten",
+        "children": [
+          {
+            "id": 39,
+            "name": "Oorganiskt bottenmaterial",
+            "children": [
+              {
+                "id": 40,
+                "name": "Block på botten (> 200 mm)"
+              },
+              {
+                "id": 41,
+                "name": "Sten på botten (60 - 200 mm)"
+              },
+              {
+                "id": 42,
+                "name": "Grus på botten (2-60 mm)"
+              },
+              {
+                "id": 43,
+                "name": "Sand på botten (0,06-2 mm)"
+              },
+              {
+                "id": 44,
+                "name": "Finsediment på botten"
+              }
+            ]
+          },
+          {
+            "id": 40,
+            "name": "Block på botten (> 200 mm)"
+          },
+          {
+            "id": 41,
+            "name": "Sten på botten (60 - 200 mm)"
+          },
+          {
+            "id": 42,
+            "name": "Grus på botten (2-60 mm)"
+          },
+          {
+            "id": 43,
+            "name": "Sand på botten (0,06-2 mm)"
+          },
+          {
+            "id": 44,
+            "name": "Finsediment på botten"
+          },
+          {
+            "id": 45,
+            "name": "Organiskt material på botten",
+            "children": [
+              {
+                "id": 46,
+                "name": "Findetritus på botten"
+              },
+              {
+                "id": 47,
+                "name": "Grovdetritus på botten"
+              }
+            ]
+          },
+          {
+            "id": 46,
+            "name": "Findetritus på botten"
+          },
+          {
+            "id": 47,
+            "name": "Grovdetritus på botten"
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "name": "Oorganiskt bottenmaterial",
+        "children": []
+      },
+      {
+        "id": 40,
+        "name": "Block på botten (> 200 mm)"
+      },
+      {
+        "id": 41,
+        "name": "Sten på botten (60 - 200 mm)"
+      },
+      {
+        "id": 42,
+        "name": "Grus på botten (2-60 mm)"
+      },
+      {
+        "id": 43,
+        "name": "Sand på botten (0,06-2 mm)"
+      },
+      {
+        "id": 44,
+        "name": "Finsediment på botten"
+      },
+      {
+        "id": 45,
+        "name": "Organiskt material på botten",
+        "children": []
+      },
+      {
+        "id": 46,
+        "name": "Findetritus på botten"
+      },
+      {
+        "id": 47,
+        "name": "Grovdetritus på botten"
+      }
+    ]
+  },
+  {
+    "id": 48,
+    "name": "Organismer som substrat",
+    "children": [
+      {
+        "id": 49,
+        "name": "Svamp, fruktkropp mm"
+      },
+      {
+        "id": 50,
+        "name": "Växt",
+        "children": [
+          {
+            "id": 51,
+            "name": "Ört/gräs",
+            "children": [
+              {
+                "id": 52,
+                "name": "Levande del av ört/gräs",
+                "children": [
+                  {
+                    "id": 53,
+                    "name": "Blomma på levande ört"
+                  },
+                  {
+                    "id": 54,
+                    "name": "Frukt"
+                  },
+                  {
+                    "id": 55,
+                    "name": "Frö från ört/gräs"
+                  },
+                  {
+                    "id": 56,
+                    "name": "Blad"
+                  },
+                  {
+                    "id": 57,
+                    "name": "Knopp från ört/gräs"
+                  },
+                  {
+                    "id": 58,
+                    "name": "Stjälk/strå"
+                  },
+                  {
+                    "id": 59,
+                    "name": "Rot av ört/gräs"
+                  }
+                ]
+              },
+              {
+                "id": 53,
+                "name": "Blomma på levande ört"
+              },
+              {
+                "id": 54,
+                "name": "Frukt"
+              },
+              {
+                "id": 55,
+                "name": "Frö från ört/gräs"
+              },
+              {
+                "id": 56,
+                "name": "Blad"
+              },
+              {
+                "id": 57,
+                "name": "Knopp från ört/gräs"
+              },
+              {
+                "id": 58,
+                "name": "Stjälk/strå"
+              },
+              {
+                "id": 59,
+                "name": "Rot av ört/gräs"
+              },
+              {
+                "id": 60,
+                "name": "Död delar av ört/gräs"
+              }
+            ]
+          },
+          {
+            "id": 52,
+            "name": "Levande del av ört/gräs",
+            "children": []
+          },
+          {
+            "id": 53,
+            "name": "Blomma på levande ört"
+          },
+          {
+            "id": 54,
+            "name": "Frukt"
+          },
+          {
+            "id": 55,
+            "name": "Frö från ört/gräs"
+          },
+          {
+            "id": 56,
+            "name": "Blad"
+          },
+          {
+            "id": 57,
+            "name": "Knopp från ört/gräs"
+          },
+          {
+            "id": 58,
+            "name": "Stjälk/strå"
+          },
+          {
+            "id": 59,
+            "name": "Rot av ört/gräs"
+          },
+          {
+            "id": 60,
+            "name": "Död delar av ört/gräs"
+          },
+          {
+            "id": 61,
+            "name": "Vedartad växt",
+            "children": [
+              {
+                "id": 62,
+                "name": "Levande vedartad växt",
+                "children": [
+                  {
+                    "id": 63,
+                    "name": "Blomma på levande träd/buske"
+                  },
+                  {
+                    "id": 64,
+                    "name": "Frö från träd/buske"
+                  },
+                  {
+                    "id": 65,
+                    "name": "Kotte"
+                  },
+                  {
+                    "id": 66,
+                    "name": "Barr/blad"
+                  },
+                  {
+                    "id": 67,
+                    "name": "Bark på levande träd"
+                  },
+                  {
+                    "id": 68,
+                    "name": "Kambium på levande träd"
+                  },
+                  {
+                    "id": 69,
+                    "name": "Inuti levande ved"
+                  },
+                  {
+                    "id": 70,
+                    "name": "Knopp från träd/buske"
+                  },
+                  {
+                    "id": 71,
+                    "name": "Gren på levande träd"
+                  },
+                  {
+                    "id": 72,
+                    "name": "Trädstam på levande träd"
+                  },
+                  {
+                    "id": 73,
+                    "name": "Trädbas"
+                  },
+                  {
+                    "id": 74,
+                    "name": "Trädrot"
+                  },
+                  {
+                    "id": 75,
+                    "name": "Hålighet i levande träd med/utan mulm"
+                  },
+                  {
+                    "id": 76,
+                    "name": "Savflöde"
+                  },
+                  {
+                    "id": 77,
+                    "name": "Brandpåverkad levande träd"
+                  }
+                ]
+              },
+              {
+                "id": 63,
+                "name": "Blomma på levande träd/buske"
+              },
+              {
+                "id": 64,
+                "name": "Frö från träd/buske"
+              },
+              {
+                "id": 65,
+                "name": "Kotte"
+              },
+              {
+                "id": 66,
+                "name": "Barr/blad"
+              },
+              {
+                "id": 67,
+                "name": "Bark på levande träd"
+              },
+              {
+                "id": 68,
+                "name": "Kambium på levande träd"
+              },
+              {
+                "id": 69,
+                "name": "Inuti levande ved"
+              },
+              {
+                "id": 70,
+                "name": "Knopp från träd/buske"
+              },
+              {
+                "id": 71,
+                "name": "Gren på levande träd"
+              },
+              {
+                "id": 72,
+                "name": "Trädstam på levande träd"
+              },
+              {
+                "id": 73,
+                "name": "Trädbas"
+              },
+              {
+                "id": 74,
+                "name": "Trädrot"
+              },
+              {
+                "id": 75,
+                "name": "Hålighet i levande träd med/utan mulm"
+              },
+              {
+                "id": 76,
+                "name": "Savflöde"
+              },
+              {
+                "id": 77,
+                "name": "Brandpåverkad levande träd"
+              },
+              {
+                "id": 78,
+                "name": "Död ved  vedartad växt",
+                "children": [
+                  {
+                    "id": 79,
+                    "name": "Bark på dött träd"
+                  },
+                  {
+                    "id": 80,
+                    "name": "Under bark på död ved"
+                  },
+                  {
+                    "id": 81,
+                    "name": "Vedyta på död ved"
+                  },
+                  {
+                    "id": 82,
+                    "name": "Inuti död ved"
+                  },
+                  {
+                    "id": 83,
+                    "name": "Död gren"
+                  },
+                  {
+                    "id": 84,
+                    "name": "Död trädstam"
+                  },
+                  {
+                    "id": 85,
+                    "name": "Stående död trädstam/högstubbe"
+                  },
+                  {
+                    "id": 86,
+                    "name": "Liggande död trädstam, utan markkontakt"
+                  },
+                  {
+                    "id": 87,
+                    "name": "Liggande död trädstam, markkontakt"
+                  },
+                  {
+                    "id": 88,
+                    "name": "Hålighet i dött träd med/utan mulm"
+                  },
+                  {
+                    "id": 89,
+                    "name": "Stubbe"
+                  },
+                  {
+                    "id": 90,
+                    "name": "Branddödat träd"
+                  },
+                  {
+                    "id": 91,
+                    "name": "Ved under vatten"
+                  }
+                ]
+              },
+              {
+                "id": 79,
+                "name": "Bark på dött träd"
+              },
+              {
+                "id": 80,
+                "name": "Under bark på död ved"
+              },
+              {
+                "id": 81,
+                "name": "Vedyta på död ved"
+              },
+              {
+                "id": 82,
+                "name": "Inuti död ved"
+              },
+              {
+                "id": 83,
+                "name": "Död gren"
+              },
+              {
+                "id": 84,
+                "name": "Död trädstam"
+              },
+              {
+                "id": 85,
+                "name": "Stående död trädstam/högstubbe"
+              },
+              {
+                "id": 86,
+                "name": "Liggande död trädstam, utan markkontakt"
+              },
+              {
+                "id": 87,
+                "name": "Liggande död trädstam, markkontakt"
+              },
+              {
+                "id": 88,
+                "name": "Hålighet i dött träd med/utan mulm"
+              },
+              {
+                "id": 89,
+                "name": "Stubbe"
+              },
+              {
+                "id": 90,
+                "name": "Branddödat träd"
+              },
+              {
+                "id": 91,
+                "name": "Ved under vatten"
+              }
+            ]
+          },
+          {
+            "id": 62,
+            "name": "Levande vedartad växt",
+            "children": []
+          },
+          {
+            "id": 63,
+            "name": "Blomma på levande träd/buske"
+          },
+          {
+            "id": 64,
+            "name": "Frö från träd/buske"
+          },
+          {
+            "id": 65,
+            "name": "Kotte"
+          },
+          {
+            "id": 66,
+            "name": "Barr/blad"
+          },
+          {
+            "id": 67,
+            "name": "Bark på levande träd"
+          },
+          {
+            "id": 68,
+            "name": "Kambium på levande träd"
+          },
+          {
+            "id": 69,
+            "name": "Inuti levande ved"
+          },
+          {
+            "id": 70,
+            "name": "Knopp från träd/buske"
+          },
+          {
+            "id": 71,
+            "name": "Gren på levande träd"
+          },
+          {
+            "id": 72,
+            "name": "Trädstam på levande träd"
+          },
+          {
+            "id": 73,
+            "name": "Trädbas"
+          },
+          {
+            "id": 74,
+            "name": "Trädrot"
+          },
+          {
+            "id": 75,
+            "name": "Hålighet i levande träd med/utan mulm"
+          },
+          {
+            "id": 76,
+            "name": "Savflöde"
+          },
+          {
+            "id": 77,
+            "name": "Brandpåverkad levande träd"
+          },
+          {
+            "id": 78,
+            "name": "Död ved  vedartad växt",
+            "children": []
+          },
+          {
+            "id": 79,
+            "name": "Bark på dött träd"
+          },
+          {
+            "id": 80,
+            "name": "Under bark på död ved"
+          },
+          {
+            "id": 81,
+            "name": "Vedyta på död ved"
+          },
+          {
+            "id": 82,
+            "name": "Inuti död ved"
+          },
+          {
+            "id": 83,
+            "name": "Död gren"
+          },
+          {
+            "id": 84,
+            "name": "Död trädstam"
+          },
+          {
+            "id": 85,
+            "name": "Stående död trädstam/högstubbe"
+          },
+          {
+            "id": 86,
+            "name": "Liggande död trädstam, utan markkontakt"
+          },
+          {
+            "id": 87,
+            "name": "Liggande död trädstam, markkontakt"
+          },
+          {
+            "id": 88,
+            "name": "Hålighet i dött träd med/utan mulm"
+          },
+          {
+            "id": 89,
+            "name": "Stubbe"
+          },
+          {
+            "id": 90,
+            "name": "Branddödat träd"
+          },
+          {
+            "id": 91,
+            "name": "Ved under vatten"
+          }
+        ]
+      },
+      {
+        "id": 51,
+        "name": "Ört/gräs",
+        "children": []
+      },
+      {
+        "id": 52,
+        "name": "Levande del av ört/gräs",
+        "children": []
+      },
+      {
+        "id": 53,
+        "name": "Blomma på levande ört"
+      },
+      {
+        "id": 54,
+        "name": "Frukt"
+      },
+      {
+        "id": 55,
+        "name": "Frö från ört/gräs"
+      },
+      {
+        "id": 56,
+        "name": "Blad"
+      },
+      {
+        "id": 57,
+        "name": "Knopp från ört/gräs"
+      },
+      {
+        "id": 58,
+        "name": "Stjälk/strå"
+      },
+      {
+        "id": 59,
+        "name": "Rot av ört/gräs"
+      },
+      {
+        "id": 60,
+        "name": "Död delar av ört/gräs"
+      },
+      {
+        "id": 61,
+        "name": "Vedartad växt",
+        "children": []
+      },
+      {
+        "id": 62,
+        "name": "Levande vedartad växt",
+        "children": []
+      },
+      {
+        "id": 63,
+        "name": "Blomma på levande träd/buske"
+      },
+      {
+        "id": 64,
+        "name": "Frö från träd/buske"
+      },
+      {
+        "id": 65,
+        "name": "Kotte"
+      },
+      {
+        "id": 66,
+        "name": "Barr/blad"
+      },
+      {
+        "id": 67,
+        "name": "Bark på levande träd"
+      },
+      {
+        "id": 68,
+        "name": "Kambium på levande träd"
+      },
+      {
+        "id": 69,
+        "name": "Inuti levande ved"
+      },
+      {
+        "id": 70,
+        "name": "Knopp från träd/buske"
+      },
+      {
+        "id": 71,
+        "name": "Gren på levande träd"
+      },
+      {
+        "id": 72,
+        "name": "Trädstam på levande träd"
+      },
+      {
+        "id": 73,
+        "name": "Trädbas"
+      },
+      {
+        "id": 74,
+        "name": "Trädrot"
+      },
+      {
+        "id": 75,
+        "name": "Hålighet i levande träd med/utan mulm"
+      },
+      {
+        "id": 76,
+        "name": "Savflöde"
+      },
+      {
+        "id": 77,
+        "name": "Brandpåverkad levande träd"
+      },
+      {
+        "id": 78,
+        "name": "Död ved  vedartad växt",
+        "children": []
+      },
+      {
+        "id": 79,
+        "name": "Bark på dött träd"
+      },
+      {
+        "id": 80,
+        "name": "Under bark på död ved"
+      },
+      {
+        "id": 81,
+        "name": "Vedyta på död ved"
+      },
+      {
+        "id": 82,
+        "name": "Inuti död ved"
+      },
+      {
+        "id": 83,
+        "name": "Död gren"
+      },
+      {
+        "id": 84,
+        "name": "Död trädstam"
+      },
+      {
+        "id": 85,
+        "name": "Stående död trädstam/högstubbe"
+      },
+      {
+        "id": 86,
+        "name": "Liggande död trädstam, utan markkontakt"
+      },
+      {
+        "id": 87,
+        "name": "Liggande död trädstam, markkontakt"
+      },
+      {
+        "id": 88,
+        "name": "Hålighet i dött träd med/utan mulm"
+      },
+      {
+        "id": 89,
+        "name": "Stubbe"
+      },
+      {
+        "id": 90,
+        "name": "Branddödat träd"
+      },
+      {
+        "id": 91,
+        "name": "Ved under vatten"
+      },
+      {
+        "id": 92,
+        "name": "Djur",
+        "children": [
+          {
+            "id": 93,
+            "name": "Levande djur",
+            "children": [
+              {
+                "id": 94,
+                "name": "Vuxet djur"
+              },
+              {
+                "id": 95,
+                "name": "Puppa"
+              },
+              {
+                "id": 96,
+                "name": "Larv"
+              },
+              {
+                "id": 97,
+                "name": "Ägg"
+              },
+              {
+                "id": 98,
+                "name": "Kroppsdel hos levande djur",
+                "children": [
+                  {
+                    "id": 99,
+                    "name": "Hår, päls, fjäll eller fjädrar"
+                  },
+                  {
+                    "id": 100,
+                    "name": "Hud, skal"
+                  }
+                ]
+              },
+              {
+                "id": 99,
+                "name": "Hår, päls, fjäll eller fjädrar"
+              },
+              {
+                "id": 100,
+                "name": "Hud, skal"
+              }
+            ]
+          },
+          {
+            "id": 94,
+            "name": "Vuxet djur"
+          },
+          {
+            "id": 95,
+            "name": "Puppa"
+          },
+          {
+            "id": 96,
+            "name": "Larv"
+          },
+          {
+            "id": 97,
+            "name": "Ägg"
+          },
+          {
+            "id": 98,
+            "name": "Kroppsdel hos levande djur",
+            "children": []
+          },
+          {
+            "id": 99,
+            "name": "Hår, päls, fjäll eller fjädrar"
+          },
+          {
+            "id": 100,
+            "name": "Hud, skal"
+          },
+          {
+            "id": 101,
+            "name": "Dött djur, kadaver"
+          },
+          {
+            "id": 102,
+            "name": "Efterlämning av djur",
+            "children": [
+              {
+                "id": 103,
+                "name": "Friliggande bo"
+              },
+              {
+                "id": 104,
+                "name": "Grävt bo i marken"
+              },
+              {
+                "id": 105,
+                "name": "Gång I ved"
+              },
+              {
+                "id": 106,
+                "name": "Gallbildning"
+              },
+              {
+                "id": 107,
+                "name": "Spillning"
+              }
+            ]
+          },
+          {
+            "id": 103,
+            "name": "Friliggande bo"
+          },
+          {
+            "id": 104,
+            "name": "Grävt bo i marken"
+          },
+          {
+            "id": 105,
+            "name": "Gång I ved"
+          },
+          {
+            "id": 106,
+            "name": "Gallbildning"
+          },
+          {
+            "id": 107,
+            "name": "Spillning"
+          }
+        ]
+      },
+      {
+        "id": 93,
+        "name": "Levande djur",
+        "children": []
+      },
+      {
+        "id": 94,
+        "name": "Vuxet djur"
+      },
+      {
+        "id": 95,
+        "name": "Puppa"
+      },
+      {
+        "id": 96,
+        "name": "Larv"
+      },
+      {
+        "id": 97,
+        "name": "Ägg"
+      },
+      {
+        "id": 98,
+        "name": "Kroppsdel hos levande djur",
+        "children": []
+      },
+      {
+        "id": 99,
+        "name": "Hår, päls, fjäll eller fjädrar"
+      },
+      {
+        "id": 100,
+        "name": "Hud, skal"
+      },
+      {
+        "id": 101,
+        "name": "Dött djur, kadaver"
+      },
+      {
+        "id": 102,
+        "name": "Efterlämning av djur",
+        "children": []
+      },
+      {
+        "id": 103,
+        "name": "Friliggande bo"
+      },
+      {
+        "id": 104,
+        "name": "Grävt bo i marken"
+      },
+      {
+        "id": 105,
+        "name": "Gång I ved"
+      },
+      {
+        "id": 106,
+        "name": "Gallbildning"
+      },
+      {
+        "id": 107,
+        "name": "Spillning"
+      }
+    ]
+  },
+  {
+    "id": 92,
+    "name": "Djur",
+    "children": []
+  },
+  {
+    "id": 108,
+    "name": "Människoskapat substrat",
+    "children": [
+      {
+        "id": 109,
+        "name": "Stolpe, trägärdesgård mm"
+      },
+      {
+        "id": 110,
+        "name": "Stenmur och -röse"
+      },
+      {
+        "id": 111,
+        "name": "Bro"
+      },
+      {
+        "id": 112,
+        "name": "Brygga/pir"
+      },
+      {
+        "id": 113,
+        "name": "Hustak"
+      },
+      {
+        "id": 114,
+        "name": "Husvägg"
+      },
+      {
+        "id": 115,
+        "name": "Gödselstack"
+      },
+      {
+        "id": 116,
+        "name": "Kompost"
+      },
+      {
+        "id": 117,
+        "name": "Sågspån"
+      }
+    ]
+  }
+]

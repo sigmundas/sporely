@@ -1,19 +1,29 @@
+#!/usr/bin/env python3
 """
-Build a multi-language vernacular CSV for MycoLog from iNaturalist only.
+Build a multilingual iNaturalist common-name CSV for Sporely.
 
-The resulting CSV (vernacular_inat_11lang.csv) is used by
-build_multilang_vernacular_db.py to create the final SQLite database.
+The output CSV is used as:
+- the vernacular-name input for the taxonomy builders
+- an iNaturalist taxon-id mapping source when it includes
+  ``inaturalist_taxon_id``
+
+The script can resume from an existing CSV unless ``--overwrite`` is used.
 """
 
+from __future__ import annotations
+
+import argparse
 import csv
 import time
-from requests.exceptions import RequestException
-import requests
-from collections import defaultdict
 from pathlib import Path
 
-TAXON_FILE = "taxon.txt" # I used Nortaxa
-OUT_CSV = "vernacular_inat_nortaxa.csv"
+import requests
+from requests.exceptions import RequestException
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_TAXON_FILE = SCRIPT_DIR / "taxon.txt"
+DEFAULT_OUT_CSV = SCRIPT_DIR / "vernacular_inat_11lang.csv"
 
 # Target filters
 ASCO_ORDERS = {"pezizales", "morchellales", "helvellales", "tuberales"}
@@ -43,13 +53,10 @@ LEXICON_TO_CODE = {
 API_BASE = "https://api.inaturalist.org/v1"
 WEB_BASE = "https://www.inaturalist.org"
 HEADERS = {
-    "User-Agent": "MycoLog/1.0 (local script; contact: sigmund.aas@gmail.com)",
+    "User-Agent": "Sporely/1.0 (taxonomy build script; contact: sigmund.aas@gmail.com)",
     "Accept-Encoding": "gzip",
 }
 
-REQUEST_DELAY = 0.05
-MAX_RETRIES = 3
-BACKOFF_BASE = 5.0
 CSV_FIELD_LIMIT = 1024 * 1024 * 10  # 10 MB
 
 
@@ -57,60 +64,31 @@ def _set_csv_field_limit() -> None:
     try:
         csv.field_size_limit(CSV_FIELD_LIMIT)
     except OverflowError:
-        csv.field_size_limit(2147483647)
+        csv.field_size_limit(2_147_483_647)
 
 
-def fetch_taxon_id(session: requests.Session, name: str) -> int | None:
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = session.get(
-                f"{API_BASE}/taxa",
-                params={"q": name, "per_page": 5},
-                headers=HEADERS,
-                timeout=30
-            )
-            if resp.status_code == 200:
-                results = resp.json().get("results", [])
-                if not results:
-                    return None
-                for item in results:
-                    if item.get("name") == name:
-                        return item.get("id")
-                return results[0].get("id")
-        except RequestException as exc:
-            print(f"  Taxa lookup failed (attempt {attempt}/{MAX_RETRIES}): {exc}")
-        time.sleep(BACKOFF_BASE * attempt)
-    return None
-
-
-def fetch_taxon_names(session: requests.Session, taxon_id: int) -> list[dict]:
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = session.get(
-                f"{WEB_BASE}/taxon_names.json",
-                params={"taxon_id": taxon_id},
-                headers=HEADERS,
-                timeout=30
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict):
-                    return data.get("results", [])
-                return data
-        except RequestException as exc:
-            print(f"  Taxon names lookup failed (attempt {attempt}/{MAX_RETRIES}): {exc}")
-        time.sleep(BACKOFF_BASE * attempt)
-    return []
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build a multilingual iNaturalist vernacular CSV with iNaturalist taxon IDs."
+    )
+    parser.add_argument("--taxon-file", type=Path, default=DEFAULT_TAXON_FILE)
+    parser.add_argument("--out-csv", type=Path, default=DEFAULT_OUT_CSV)
+    parser.add_argument("--request-delay", type=float, default=0.05)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--backoff-base", type=float, default=5.0)
+    parser.add_argument("--timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--overwrite", action="store_true", help="Rewrite the output CSV from scratch.")
+    parser.add_argument("--limit", type=int, help="Only process the first N taxa after filtering.")
+    return parser
 
 
 def normalize_lexicon(entry: dict) -> str:
-    lex = (entry.get("parameterized_lexicon") or entry.get("lexicon") or "").strip().lower()
-    return lex
+    return (entry.get("parameterized_lexicon") or entry.get("lexicon") or "").strip().lower()
 
 
-def iter_taxa():
-    with open(TAXON_FILE, encoding="utf-8") as f:
-        reader = csv.DictReader(f, delimiter="\t")
+def iter_taxa(taxon_file: Path):
+    with taxon_file.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
             phylum = (row.get("phylum") or "").strip().lower()
             order = (row.get("order") or "").strip().lower()
@@ -130,74 +108,151 @@ def iter_taxa():
             if status != "valid":
                 continue
             name = (row.get("scientificName") or "").strip()
-            if not name:
-                continue
-            yield name
+            if name:
+                yield name
+
+
+def fetch_taxon_id(
+    session: requests.Session,
+    scientific_name: str,
+    *,
+    max_retries: int,
+    backoff_base: float,
+    timeout_seconds: float,
+) -> int | None:
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = session.get(
+                f"{API_BASE}/taxa",
+                params={"q": scientific_name, "per_page": 5},
+                headers=HEADERS,
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            if not results:
+                return None
+            for item in results:
+                if (item.get("name") or "").strip() == scientific_name:
+                    return item.get("id")
+            return results[0].get("id")
+        except RequestException as exc:
+            print(f"  Taxa lookup failed (attempt {attempt}/{max_retries}): {exc}")
+            if attempt < max_retries:
+                time.sleep(backoff_base * attempt)
+    return None
+
+
+def fetch_taxon_names(
+    session: requests.Session,
+    taxon_id: int,
+    *,
+    max_retries: int,
+    backoff_base: float,
+    timeout_seconds: float,
+) -> list[dict]:
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = session.get(
+                f"{WEB_BASE}/taxon_names.json",
+                params={"taxon_id": taxon_id},
+                headers=HEADERS,
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("results", []) if isinstance(data, dict) else list(data)
+        except RequestException as exc:
+            print(f"  Taxon names lookup failed (attempt {attempt}/{max_retries}): {exc}")
+            if attempt < max_retries:
+                time.sleep(backoff_base * attempt)
+    return []
+
+
+def load_completed_taxa(out_csv: Path) -> set[str]:
+    if not out_csv.exists():
+        return set()
+    completed: set[str] = set()
+    try:
+        with out_csv.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                name = (row.get("scientificName") or "").strip()
+                if name:
+                    completed.add(name)
+    except Exception as exc:
+        print(f"Failed to read existing CSV for resume: {exc}")
+    return completed
 
 
 def main() -> None:
     _set_csv_field_limit()
-    names = sorted(set(iter_taxa()))
-    total = len(names)
-    print(f"Found {total} taxa in Ascomycota/Basidiomycota")
+    args = build_arg_parser().parse_args()
 
-    results = defaultdict(lambda: defaultdict(set))
-    out_header = ["scientificName"] + OUTPUT_LANGS
+    taxon_file = Path(args.taxon_file).resolve()
+    out_csv = Path(args.out_csv).resolve()
+    if not taxon_file.exists():
+        raise SystemExit(f"Missing taxon source: {taxon_file}")
 
-    out_path = Path(OUT_CSV)
-    done = set()
-    if out_path.exists():
-        try:
-            with open(out_path, encoding="utf-8", newline="") as f_in:
-                reader = csv.reader(f_in)
-                header = next(reader, None)
-                if header and header[0] == "scientificName":
-                    for row in reader:
-                        if row and row[0]:
-                            done.add(row[0])
-        except Exception as exc:
-            print(f"Failed to read existing CSV for resume: {exc}")
-    remaining = [n for n in names if n not in done]
-    if done:
-        print(f"Resuming: {len(done)} already written, {len(remaining)} remaining")
+    names = sorted(set(iter_taxa(taxon_file)))
+    if args.limit:
+        names = names[: max(0, int(args.limit))]
+    print(f"Found {len(names)} accepted fungal species to process")
 
-    with requests.Session() as session, open(OUT_CSV, "a", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        if not done:
-            writer.writerow(out_header)
-            f.flush()
+    completed = set() if args.overwrite else load_completed_taxa(out_csv)
+    remaining = [name for name in names if name not in completed]
+    if completed:
+        print(f"Resuming: {len(completed)} already written, {len(remaining)} remaining")
 
-        for idx, sci in enumerate(remaining, start=1):
-            print(f"[{idx}/{len(remaining)}] {sci}")
-            taxon_id = fetch_taxon_id(session, sci)
-            if not taxon_id:
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    mode = "w" if args.overwrite else "a"
+    fieldnames = ["scientificName", "inaturalist_taxon_id"] + OUTPUT_LANGS
+
+    with requests.Session() as session, out_csv.open(mode, encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if args.overwrite or not completed:
+            writer.writeheader()
+            handle.flush()
+
+        for index, scientific_name in enumerate(remaining, start=1):
+            print(f"[{index}/{len(remaining)}] {scientific_name}")
+            taxon_id = fetch_taxon_id(
+                session,
+                scientific_name,
+                max_retries=args.max_retries,
+                backoff_base=args.backoff_base,
+                timeout_seconds=args.timeout_seconds,
+            )
+            row = {field: "" for field in fieldnames}
+            row["scientificName"] = scientific_name
+            row["inaturalist_taxon_id"] = str(int(taxon_id)) if taxon_id else ""
+
+            if taxon_id:
+                entries = fetch_taxon_names(
+                    session,
+                    int(taxon_id),
+                    max_retries=args.max_retries,
+                    backoff_base=args.backoff_base,
+                    timeout_seconds=args.timeout_seconds,
+                )
+                names_by_lang: dict[str, set[str]] = {code: set() for code in OUTPUT_LANGS}
+                for entry in entries:
+                    code = LEXICON_TO_CODE.get(normalize_lexicon(entry))
+                    if not code:
+                        continue
+                    name = (entry.get("name") or "").strip()
+                    if name:
+                        names_by_lang[code].add(name)
+                for code in OUTPUT_LANGS:
+                    row[code] = "; ".join(sorted(names_by_lang[code]))
+            else:
                 print("  No taxon ID found")
-                writer.writerow([sci] + [""] * len(OUTPUT_LANGS))
-                f.flush()
-                time.sleep(REQUEST_DELAY)
-                continue
 
-            print(f"  Taxon ID: {taxon_id}")
-            entries = fetch_taxon_names(session, taxon_id)
-            print(f"  Names returned: {len(entries)}")
-
-            for entry in entries:
-                lex = normalize_lexicon(entry)
-                if lex not in LEXICON_TO_CODE:
-                    continue
-                name = entry.get("name")
-                if name:
-                    results[LEXICON_TO_CODE[lex]][sci].add(name)
-
-            row = [sci]
-            for code in OUTPUT_LANGS:
-                row.append("; ".join(sorted(results[code].get(sci, []))))
             writer.writerow(row)
-            f.flush()
+            handle.flush()
+            time.sleep(max(0.0, float(args.request_delay)))
 
-            time.sleep(REQUEST_DELAY)
-
-    print(f"Wrote {OUT_CSV}")
+    print(f"Wrote {out_csv}")
 
 
 if __name__ == "__main__":

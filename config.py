@@ -1,14 +1,15 @@
 """Application configuration settings."""
 from pathlib import Path
-from platformdirs import user_data_dir
+
+from app_identity import APP_NAME, app_data_dir
 
 # Database settings
 DB_NAME = "mushrooms.db"
-_app_dir = Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
+_app_dir = app_data_dir()
 DB_PATH = _app_dir / DB_NAME
 
 # UI settings
-WINDOW_TITLE = "MycoLog"
+WINDOW_TITLE = APP_NAME
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 IMAGE_DISPLAY_WIDTH = 1100

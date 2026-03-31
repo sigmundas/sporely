@@ -4,6 +4,18 @@ from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, 
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
+from app_identity import APP_NAME
+
+from .measurement_overlay_style import (
+    DEFAULT_RECTANGLE_STYLE,
+    DEFAULT_RECTANGLE_THICKNESS,
+    clamp_rectangle_thickness,
+    clamp_stroke_width,
+    measure_text_uses_halo,
+    normalize_rectangle_style,
+    rectangle_thin_stroke_width,
+    rectangle_corner_segments,
+)
 
 
 class ZoomableImageLabel(QLabel):
@@ -42,6 +54,8 @@ class ZoomableImageLabel(QLabel):
         self.objective_text = ""
         self.objective_color = QColor(52, 152, 219)
         self.measure_color = QColor("#0044aa")
+        self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
+        self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
         self.show_line_endcaps = True
         self.show_measure_labels = False
         self.measurement_labels = []
@@ -91,6 +105,9 @@ class ZoomableImageLabel(QLabel):
         self.crop_corner_dragging = False
         self.crop_corner_drag_index = -1
         self.crop_corner_drag_anchor = None
+        self.crop_overlay_text = "Crop"
+        self.crop_overlay_color = QColor(243, 156, 18)
+        self.crop_overlay_active_color = QColor(211, 84, 0)
 
     def set_image_sources(self, pixmap, full_path=None, preview_scaled=False):
         """Set image with optional full-resolution source."""
@@ -112,13 +129,36 @@ class ZoomableImageLabel(QLabel):
 
         presets = (
             # Representative (old palette/default) -> SVG thin/glow + blend
+            {"match": QColor("#005993"), "thin": QColor("#005993"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+            {"match": QColor("#a94114"), "thin": QColor("#a94114"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#b98a19"), "thin": QColor("#b98a19"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#62256f"), "thin": QColor("#62256f"), "glow": QColor("#7e2f8e"), "opacity": 0.48, "blend": "screen"},
+            {"match": QColor("#5d8625"), "thin": QColor("#5d8625"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#3c94ba"), "thin": QColor("#3c94ba"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#7e1025"), "thin": QColor("#7e1025"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#0072bd"), "thin": QColor("#0072bd"), "glow": QColor("#0072bd"), "opacity": 0.52, "blend": "screen"},
+            {"match": QColor("#d95319"), "thin": QColor("#d95319"), "glow": QColor("#d95319"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#edb120"), "thin": QColor("#edb120"), "glow": QColor("#edb120"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#7e2f8e"), "thin": QColor("#7e2f8e"), "glow": QColor("#7e2f8e"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#77ac30"), "thin": QColor("#77ac30"), "glow": QColor("#77ac30"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#4dbeee"), "thin": QColor("#4dbeee"), "glow": QColor("#4dbeee"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#a2142f"), "thin": QColor("#a2142f"), "glow": QColor("#a2142f"), "opacity": 0.58, "blend": "screen"},
+            {"match": QColor("#4799cf"), "thin": QColor("#4799cf"), "glow": QColor("#4799cf"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#e48359"), "thin": QColor("#e48359"), "glow": QColor("#e48359"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#f2c75e"), "thin": QColor("#f2c75e"), "glow": QColor("#f2c75e"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#a269ae"), "thin": QColor("#a269ae"), "glow": QColor("#a269ae"), "opacity": 0.46, "blend": "screen"},
+            {"match": QColor("#9dc36a"), "thin": QColor("#9dc36a"), "glow": QColor("#9dc36a"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#7fd0f3"), "thin": QColor("#7fd0f3"), "glow": QColor("#7fd0f3"), "opacity": 0.54, "blend": "screen"},
+            {"match": QColor("#bc5669"), "thin": QColor("#bc5669"), "glow": QColor("#bc5669"), "opacity": 0.54, "blend": "screen"},
             {"match": QColor("#1E90FF"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
             {"match": QColor("#FF3B30"), "thin": QColor("#d40000"), "glow": QColor("#d40000"), "opacity": 0.658163, "blend": "screen"},
             {"match": QColor("#2ECC71"), "thin": QColor("#00aa00"), "glow": QColor("#00aa00"), "opacity": 0.658163, "blend": "screen"},
             {"match": QColor("#E056FD"), "thin": QColor("#ff00ff"), "glow": QColor("#ff00ff"), "opacity": 0.433674, "blend": "screen"},
             {"match": QColor("#ECAF11"), "thin": QColor("#ffd42a"), "glow": QColor("#ffdd55"), "opacity": 0.658163, "blend": "overlay"},
             {"match": QColor("#1CEBEB"), "thin": QColor("#00ffff"), "glow": QColor("#00ffff"), "opacity": 0.658163, "blend": "overlay"},
-            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#000000"), "opacity": 0.658163, "blend": "overlay"},
+            {"match": QColor("#808080"), "thin": QColor("#808080"), "glow": QColor("#a8a8a8"), "opacity": 0.5, "blend": "screen"},
+            {"match": QColor("#ffffff"), "thin": QColor("#ffffff"), "glow": QColor("#ffffff"), "opacity": 0.42, "blend": "screen"},
+            {"match": QColor("#000000"), "thin": QColor("#000000"), "glow": QColor("#7a7a7a"), "opacity": 0.5, "blend": "screen"},
             # Also match the older widget default blue if encountered
             {"match": QColor("#3498db"), "thin": QColor("#0044aa"), "glow": QColor("#2a7fff"), "opacity": 0.576531, "blend": "screen"},
         )
@@ -165,21 +205,24 @@ class ZoomableImageLabel(QLabel):
         thin_width: float = 1.0,
         wide_width: float | None = None,
         dashed: bool = False,
+        use_blend: bool | None = None,
     ) -> None:
         style = self._measure_stroke_style(color=color)
-        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
-        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+        resolved_wide_width = clamp_stroke_width(wide_width if wide_width is not None else float(thin_width) * 3.0)
+        wide_pen = QPen(QColor(style["glow"]), resolved_wide_width)
         if dashed:
             thin_pen.setStyle(Qt.DashLine)
             wide_pen.setStyle(Qt.DashLine)
 
-        use_blend = True
-        try:
-            device = painter.device()
-        except Exception:
-            device = None
-        if isinstance(device, QSvgGenerator):
-            use_blend = False
+        if use_blend is None:
+            use_blend = True
+            try:
+                device = painter.device()
+            except Exception:
+                device = None
+            if isinstance(device, QSvgGenerator):
+                use_blend = False
 
         if use_blend:
             painter.save()
@@ -202,21 +245,24 @@ class ZoomableImageLabel(QLabel):
         thin_width: float = 1.0,
         wide_width: float | None = None,
         dashed: bool = False,
+        use_blend: bool | None = None,
     ) -> None:
         style = self._measure_stroke_style(color=color)
-        thin_pen = QPen(QColor(style["thin"]), max(1.0, float(thin_width)))
-        wide_pen = QPen(QColor(style["glow"]), max(max(1.0, float(thin_width) * 3.0), float(wide_width or 0.0)))
+        thin_pen = QPen(QColor(style["thin"]), clamp_stroke_width(thin_width))
+        resolved_wide_width = clamp_stroke_width(wide_width if wide_width is not None else float(thin_width) * 3.0)
+        wide_pen = QPen(QColor(style["glow"]), resolved_wide_width)
         if dashed:
             thin_pen.setStyle(Qt.DashLine)
             wide_pen.setStyle(Qt.DashLine)
 
-        use_blend = True
-        try:
-            device = painter.device()
-        except Exception:
-            device = None
-        if isinstance(device, QSvgGenerator):
-            use_blend = False
+        if use_blend is None:
+            use_blend = True
+            try:
+                device = painter.device()
+            except Exception:
+                device = None
+            if isinstance(device, QSvgGenerator):
+                use_blend = False
 
         if use_blend:
             painter.save()
@@ -230,6 +276,66 @@ class ZoomableImageLabel(QLabel):
 
         painter.setPen(thin_pen)
         painter.drawPolygon(polygon)
+
+    def _draw_polygon_outline(
+        self,
+        painter: QPainter,
+        polygon: QPolygonF,
+        color=None,
+        width: float = 1.0,
+        dashed: bool = False,
+    ) -> None:
+        style = self._measure_stroke_style(color=color)
+        pen = QPen(QColor(style["thin"]), clamp_stroke_width(width))
+        if dashed:
+            pen.setStyle(Qt.DashLine)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(pen)
+        painter.drawPolygon(polygon)
+
+    def _draw_measurement_rectangle(
+        self,
+        painter: QPainter,
+        polygon: QPolygonF,
+        color=None,
+        thin_width: float = 1.0,
+        wide_width: float | None = None,
+        dashed: bool = False,
+    ) -> None:
+        resolved_style = normalize_rectangle_style(self.measure_rectangle_style)
+        resolved_wide_width = clamp_rectangle_thickness(
+            wide_width if wide_width is not None else self.measure_rectangle_thickness
+        )
+        resolved_thin_width = rectangle_thin_stroke_width(resolved_style, resolved_wide_width)
+        if resolved_style == DEFAULT_RECTANGLE_STYLE:
+            self._draw_dual_stroke_polygon(
+                painter,
+                polygon,
+                color=color,
+                thin_width=resolved_thin_width,
+                wide_width=resolved_wide_width,
+                dashed=dashed,
+            )
+            return
+
+        self._draw_polygon_outline(
+            painter,
+            polygon,
+            color=color,
+            width=resolved_thin_width,
+            dashed=dashed,
+        )
+        for seg_start, seg_end in rectangle_corner_segments(polygon):
+            self._draw_dual_stroke_line(
+                painter,
+                seg_start,
+                seg_end,
+                color=color,
+                thin_width=resolved_thin_width,
+                wide_width=resolved_wide_width,
+                dashed=dashed,
+                use_blend=False,
+            )
 
     def _compute_corners_from_lines(self, line1, line2):
         """Compute rectangle corners from two measurement lines."""
@@ -357,15 +463,23 @@ class ZoomableImageLabel(QLabel):
         text: str,
         color: QColor | None = None,
     ) -> None:
-        """Draw measure text with one offset underlay copy behind the main text."""
+        """Draw measure text with a halo that shares the exact same text position."""
         if not text:
             return
         metrics = painter.fontMetrics()
         stroke_w = max(1.0, float(metrics.height()) / 6.0)
-        underlay_dx = stroke_w * 0.55
-        underlay_dy = stroke_w * 0.85
-        underlay_path = QPainterPath()
-        underlay_path.addText(float(x + underlay_dx), float(y + underlay_dy), painter.font(), text)
+        text_path = QPainterPath()
+        text_path.addText(float(x), float(y), painter.font(), text)
+        text_color = QColor(color) if color is not None else QColor(self.measure_color)
+        if not text_color.isValid():
+            text_color = QColor(self.measure_color)
+        if not measure_text_uses_halo(text_color):
+            painter.save()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(text_color)
+            painter.drawPath(text_path)
+            painter.restore()
+            return
 
         painter.save()
         underlay_pen = QPen(QColor(255, 255, 255, 150), stroke_w)
@@ -373,12 +487,13 @@ class ZoomableImageLabel(QLabel):
         underlay_pen.setCapStyle(Qt.RoundCap)
         painter.setPen(underlay_pen)
         painter.setBrush(QColor(255, 255, 255, 72))
-        painter.drawPath(underlay_path)
+        painter.drawPath(text_path)
         painter.restore()
 
         painter.save()
-        painter.setPen(QColor(color) if color is not None else QColor(self.measure_color))
-        painter.drawText(int(x), int(y), text)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(text_color)
+        painter.drawPath(text_path)
         painter.restore()
 
     def _format_measure_label_value(self, value, unit: str | None) -> str:
@@ -602,6 +717,19 @@ class ZoomableImageLabel(QLabel):
         self.hover_rect_index = -1
         self.update()
 
+    def set_measurement_rectangle_appearance(self, style=None, thickness=None):
+        if style is not None:
+            self.measure_rectangle_style = normalize_rectangle_style(style)
+        if thickness is not None:
+            self.measure_rectangle_thickness = clamp_rectangle_thickness(thickness)
+        self.update()
+
+    def set_measurement_rectangle_style(self, style):
+        self.set_measurement_rectangle_appearance(style=style)
+
+    def set_measurement_rectangle_thickness(self, thickness):
+        self.set_measurement_rectangle_appearance(thickness=thickness)
+
     def set_selected_rect_index(self, index):
         self.selected_rect_index = index if index is not None else -1
         self.update()
@@ -719,6 +847,23 @@ class ZoomableImageLabel(QLabel):
             self.crop_corner_drag_index = -1
             self.crop_corner_drag_anchor = None
         self.cropPreviewChanged.emit(self.crop_box)
+        self.update()
+
+    def set_crop_overlay_style(
+        self,
+        text: str | None = None,
+        color: QColor | str | None = None,
+        active_color: QColor | str | None = None,
+    ) -> None:
+        self.crop_overlay_text = str(text or "Crop")
+        overlay_color = QColor(color) if color is not None else QColor(243, 156, 18)
+        if not overlay_color.isValid():
+            overlay_color = QColor(243, 156, 18)
+        hover_color = QColor(active_color) if active_color is not None else overlay_color.darker(130)
+        if not hover_color.isValid():
+            hover_color = overlay_color.darker(130)
+        self.crop_overlay_color = overlay_color
+        self.crop_overlay_active_color = hover_color
         self.update()
 
     def set_crop_aspect_ratio(self, ratio):
@@ -1600,7 +1745,7 @@ class ZoomableImageLabel(QLabel):
         generator.setFileName(filename)
         generator.setSize(QSize(target_w, target_h))
         generator.setViewBox(QRect(0, 0, target_w, target_h))
-        generator.setTitle("MycoLog Export")
+        generator.setTitle(f"{APP_NAME} Export")
         generator.setDescription("Annotated image export")
 
         painter = QPainter(generator)
@@ -1756,7 +1901,7 @@ class ZoomableImageLabel(QLabel):
         if self.show_measure_overlays and self.measurement_rectangles:
             for rect in self.measurement_rectangles:
                 shifted_rect = QPolygonF([_shift_point(QPointF(corner)) for corner in rect])
-                self._draw_dual_stroke_polygon(
+                self._draw_measurement_rectangle(
                     painter,
                     shifted_rect,
                     color=self.measure_color,
@@ -2089,11 +2234,11 @@ class ZoomableImageLabel(QLabel):
             top = display_rect.y() + min(y1, y2) * self.zoom_level
             right = display_rect.x() + max(x1, x2) * self.zoom_level
             bottom = display_rect.y() + max(y1, y2) * self.zoom_level
-            crop_color = QColor(243, 156, 18)
+            crop_color = QColor(self.crop_overlay_color)
             is_highlighted = bool(self.crop_hovered or self.crop_dragging)
             if is_highlighted:
                 glow_color = QColor(192, 57, 43, 110)
-                outline_color = QColor(211, 84, 0)
+                outline_color = QColor(self.crop_overlay_active_color)
                 painter.setPen(QPen(glow_color, 6))
                 painter.setBrush(QColor(192, 57, 43, 20))
                 painter.drawRect(QRectF(left, top, right - left, bottom - top))
@@ -2108,7 +2253,7 @@ class ZoomableImageLabel(QLabel):
                 painter.setBrush(Qt.NoBrush)
             painter.drawRect(QRectF(left, top, right - left, bottom - top))
 
-            tag_text = "Crop"
+            tag_text = self.crop_overlay_text or "Crop"
             metrics = painter.fontMetrics()
             text_w = metrics.horizontalAdvance(tag_text)
             text_h = metrics.height()
@@ -2147,9 +2292,21 @@ class ZoomableImageLabel(QLabel):
                     y = display_rect.y() + corner.y() * self.zoom_level
                     screen_points.append(QPointF(x, y))
                 polygon = QPolygonF(screen_points)
-                self._draw_dual_stroke_polygon(painter, polygon, color=self.measure_color, thin_width=1.0, wide_width=3.0)
+                self._draw_measurement_rectangle(
+                    painter,
+                    polygon,
+                    color=self.measure_color,
+                    thin_width=1.0,
+                    wide_width=self.measure_rectangle_thickness,
+                )
                 if idx == self.hover_rect_index or (not self.measurement_active and idx == self.selected_rect_index):
-                    self._draw_dual_stroke_polygon(painter, polygon, color=hover_color, thin_width=2.0, wide_width=6.0)
+                    self._draw_measurement_rectangle(
+                        painter,
+                        polygon,
+                        color=hover_color,
+                        thin_width=2.0,
+                        wide_width=6.0,
+                    )
 
         # Draw measurement lines with perpendicular end marks
         if self.show_measure_overlays and self.measurement_lines:

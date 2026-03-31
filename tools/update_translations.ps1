@@ -26,10 +26,11 @@ $files = @(
     "ui\\observations_tab.py",
     "ui\\measurement_tool.py",
     "ui\\calibration_dialog.py",
+    "ui\\species_plate_dialog.py",
     "ui\\zoomable_image_widget.py",
     "ui\\stats_table_widget.py",
     "ui\\spore_preview_widget.py"
 )
 
-& $lupdateCmd $files -no-obsolete -ts i18n\\MycoLog_nb_NO.ts i18n\\MycoLog_de_DE.ts
-& $lreleaseCmd i18n\\MycoLog_nb_NO.ts i18n\\MycoLog_de_DE.ts
+& $lupdateCmd $files -no-obsolete -ts i18n\\Sporely_nb_NO.ts i18n\\Sporely_sv_SE.ts i18n\\Sporely_de_DE.ts
+& $lreleaseCmd i18n\\Sporely_nb_NO.ts i18n\\Sporely_sv_SE.ts i18n\\Sporely_de_DE.ts

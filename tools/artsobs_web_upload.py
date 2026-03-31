@@ -7,17 +7,16 @@ import json
 import sys
 from pathlib import Path
 
-from platformdirs import user_data_dir
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from app_identity import app_data_dir
 from utils.artsobservasjoner_submit import ArtsObservasjonerWebClient
 
 
 def _default_cookies_file() -> Path:
-    return Path(user_data_dir("MycoLog", appauthor=False, roaming=True)) / "artsobservasjoner_cookies.json"
+    return app_data_dir() / "artsobservasjoner_cookies.json"
 
 
 def _load_cookies(path: Path) -> dict[str, str]:

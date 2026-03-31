@@ -7,12 +7,15 @@ from typing import Optional
 import math
 import json
 import shutil
+import os
+import time
 
 from PySide6.QtCore import (
     Qt,
     QDateTime,
     QDate,
     QTime,
+    QSettings,
     QStandardPaths,
     Signal,
     QPointF,
@@ -59,6 +62,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
+from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG
 from database.schema import (
     load_objectives,
     save_objectives,
@@ -78,10 +82,62 @@ from .image_gallery_widget import ImageGalleryWidget
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
-from .hint_status import HintBar, HintLabel, HintStatusController
-from .dialog_helpers import ask_measurements_exist_delete
+from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
+from .dialog_helpers import ask_measurements_exist_delete, make_github_help_button
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
+
+SUPPORTED_IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".orf",
+    ".nef",
+}
+
+
+def _debug_import_flow_enabled() -> bool:
+    value = (
+        os.environ.get("SPORELY_DEBUG_IMPORT_FLOW", "")
+        or os.environ.get("MYCOLOG_DEBUG_IMPORT_FLOW", "")
+    )
+    return str(value).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _debug_import_flow(message: str) -> None:
+    if _debug_import_flow_enabled():
+        print(f"[{APP_NAME} debug][prepare-images] {message}", flush=True)
+
+
+def dropped_image_paths_from_mime_data(mime_data) -> list[str]:
+    """Return unique local image paths from a drag/drop payload."""
+    if mime_data is None or not mime_data.hasUrls():
+        return []
+    paths: list[str] = []
+    seen: set[str] = set()
+    for url in mime_data.urls() or []:
+        if url is None or not url.isLocalFile():
+            continue
+        local_path = str(Path(url.toLocalFile()).expanduser())
+        if not local_path or local_path in seen:
+            continue
+        suffix = Path(local_path).suffix.lower()
+        if suffix not in SUPPORTED_IMAGE_EXTENSIONS:
+            continue
+        if not Path(local_path).is_file():
+            continue
+        seen.add(local_path)
+        paths.append(local_path)
+    return paths
 
 
 @dataclass
@@ -104,6 +160,8 @@ class ImageImportResult:
     calibration_id: Optional[int] = None
     ai_crop_box: Optional[tuple[float, float, float, float]] = None
     ai_crop_source_size: Optional[tuple[int, int]] = None
+    crop_mode: Optional[str] = None
+    pending_image_crop_offset: Optional[tuple[int, int]] = None
     gps_source: bool = False
     resample_scale_factor: Optional[float] = None
     resize_to_optimal: bool = False
@@ -187,6 +245,8 @@ class AIGuessWorker(QThread):
             import requests
             url = "https://ai.artsdatabanken.no"
             for request in self.requests:
+                if self.isInterruptionRequested():
+                    break
                 index = request.get("index")
                 if index is None:
                     continue
@@ -198,17 +258,21 @@ class AIGuessWorker(QThread):
                         response = requests.post(
                             url,
                             files={"image": (temp_path.name, handle, "image/jpeg")},
-                            headers={"User-Agent": "MycoLog/AI"},
+                            headers={"User-Agent": f"{APP_NAME}/AI"},
                             timeout=30,
                         )
+                    if self.isInterruptionRequested():
+                        break
                     if response.status_code != 200:
                         with open(temp_path, "rb") as handle:
                             response = requests.post(
                                 url,
                                 files={"file": (temp_path.name, handle, "image/jpeg")},
-                                headers={"User-Agent": "MycoLog/AI"},
+                                headers={"User-Agent": f"{APP_NAME}/AI"},
                                 timeout=30,
                             )
+                    if self.isInterruptionRequested():
+                        break
                     if response is None or response.status_code != 200:
                         detail = (response.text or "").strip() if response is not None else ""
                         if detail:
@@ -226,8 +290,15 @@ class AIGuessWorker(QThread):
                     warnings = data.get("warnings")
                     self.resultReady.emit([int(index)], predictions, None, warnings, [str(temp_path)])
                 except Exception as exc:
+                    if self.isInterruptionRequested():
+                        break
                     self.error.emit([int(index)], str(exc))
                 finally:
+                    try:
+                        if response is not None:
+                            response.close()
+                    except Exception:
+                        pass
                     if temp_path is not None:
                         try:
                             temp_path.unlink(missing_ok=True)
@@ -357,6 +428,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
     continueRequested = Signal(list)
     _geometry_key = "ImageImportDialog"
+    _gallery_splitter_key = "splitter/ImageImportDialogBottom"
     CUSTOM_OBJECTIVE_KEY = "__custom__"
     _FIELD_TAG_DEFAULTS = {
         "contrast": DatabaseTerms.CONTRAST_METHODS[0],
@@ -437,6 +509,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._missing_exif_warning_scheduled = False
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_is_preview: dict[str, bool] = {}
+        self._image_size_cache: dict[str, tuple[int, int]] = {}
         self._max_preview_dim = 1600
         self._unset_datetime = QDateTime(QDate(1900, 1, 1), QTime(0, 0))
         if observation_datetime is not None and not isinstance(observation_datetime, QDateTime):
@@ -450,13 +523,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._observation_source_index: int | None = None
         self._converted_import_paths: set[str] = set()
         self._accepted = False
+        self._close_cleanup_done = False
         self._setting_from_image_source = False
         self._last_settings_action: str | None = None
         self._ai_predictions_by_index: dict[int, list[dict]] = {}
         self._ai_selected_by_index: dict[int, dict] = {}
         self._ai_selected_taxon: dict | None = None
         self._ai_crop_boxes: dict[int, tuple[float, float, float, float]] = {}
-        self._ai_crop_active = False
+        self._crop_mode_by_index: dict[int, str] = {}
+        self._crop_active_mode: str | None = None
         self._ai_thread: QThread | None = None
         self._scale_bar_dialog: ScaleBarImportDialog | None = None
         self._scale_bar_pixel_distance: float | None = None  # pixel length of last scale bar selection
@@ -464,8 +539,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._hint_controller: HintStatusController | None = None
         self._pending_hint_widgets: list[tuple[QWidget, str, str]] = []
         self._continue_to_observation_details = bool(continue_to_observation_details)
+        self._dialog_gallery_splitter_syncing = False
 
         self._build_ui()
+        self._setup_drop_targets()
         if hasattr(self, "objective_combo"):
             self._last_objective_key = self.objective_combo.currentData()
         if import_results:
@@ -475,21 +552,94 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._restore_geometry()
         self.finished.connect(self._save_geometry)
 
+    def _dialog_gallery_default_height(self) -> int:
+        gallery = getattr(self, "gallery", None)
+        if gallery is None:
+            return 180
+        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() + 20)
+
+    def _dialog_gallery_max_height(self) -> int:
+        gallery = getattr(self, "gallery", None)
+        if gallery is None:
+            return 320
+        return max(gallery.minimumHeight(), gallery.maximum_useful_height())
+
+    def _apply_dialog_gallery_splitter_height(self, gallery_height: int | None = None) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        gallery = getattr(self, "gallery", None)
+        if splitter is None or gallery is None:
+            return
+        target = self._dialog_gallery_default_height() if gallery_height is None else int(gallery_height)
+        target = max(gallery.minimumHeight(), min(self._dialog_gallery_max_height(), target))
+        gallery.setMaximumHeight(self._dialog_gallery_max_height())
+        sizes = splitter.sizes()
+        total = sum(sizes) if sizes else 0
+        if total <= 0:
+            total = splitter.height()
+        if total <= 0:
+            total = max(self.height(), target + 600)
+        if self._dialog_gallery_splitter_syncing:
+            return
+        self._dialog_gallery_splitter_syncing = True
+        try:
+            splitter.setSizes([max(0, total - target), target])
+        finally:
+            self._dialog_gallery_splitter_syncing = False
+
+    def _restore_dialog_gallery_splitter(self) -> None:
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        raw_sizes = settings.value(self._gallery_splitter_key)
+        parsed: list[int] = []
+        if isinstance(raw_sizes, (list, tuple)):
+            for value in raw_sizes[:2]:
+                try:
+                    parsed.append(max(0, int(value)))
+                except Exception:
+                    parsed.append(0)
+        gallery_height = parsed[1] if len(parsed) >= 2 else None
+        self._apply_dialog_gallery_splitter_height(gallery_height)
+
+    def _save_dialog_gallery_splitter(self) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        if splitter is None:
+            return
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        settings.setValue(self._gallery_splitter_key, splitter.sizes())
+
+    def _on_dialog_gallery_splitter_moved(self, _pos: int, _index: int) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        if splitter is None or self._dialog_gallery_splitter_syncing:
+            return
+        sizes = splitter.sizes()
+        gallery_height = sizes[1] if len(sizes) >= 2 else None
+        self._apply_dialog_gallery_splitter_height(gallery_height)
+        self._save_dialog_gallery_splitter()
+
+    def _restore_geometry(self) -> None:
+        super()._restore_geometry()
+        QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
+
+    def _save_geometry(self) -> None:
+        self._save_dialog_gallery_splitter()
+        super()._save_geometry()
+
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(8)
 
-        content_row = QHBoxLayout()
+        content_widget = QWidget(self)
+        content_row = QHBoxLayout(content_widget)
+        content_row.setContentsMargins(0, 0, 0, 0)
         content_row.setSpacing(10)
 
-        left_panel = self._build_left_panel()
-        left_panel.setFixedWidth(280)
-        left_panel.setStyleSheet(
+        self.left_panel = self._build_left_panel()
+        self.left_panel.setFixedWidth(280)
+        self.left_panel.setStyleSheet(
             "QPushButton { padding: 4px 8px; }"
             "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
         )
-        left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        content_row.addWidget(left_panel, 0)
+        self.left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        content_row.addWidget(self.left_panel, 0)
 
         self.gallery = ImageGalleryWidget(
             self.tr("Images"),
@@ -500,12 +650,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             default_height=180,
             thumbnail_size=140,
         )
-        self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.gallery.setFixedHeight(220)
+        self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.gallery.set_reorderable(True)
         self.gallery.set_multi_select(True)
+        self.gallery.setMaximumHeight(self._dialog_gallery_max_height())
         self.gallery.imageClicked.connect(self._on_gallery_clicked)
         self.gallery.selectionChanged.connect(self._on_gallery_selection_changed)
         self.gallery.deleteRequested.connect(self._on_gallery_delete_requested)
+        self.gallery.itemsReordered.connect(self._on_gallery_items_reordered)
         self.delete_shortcut = QShortcut(QKeySequence.Delete, self)
         self.delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.delete_shortcut.activated.connect(self._on_remove_selected)
@@ -518,9 +670,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.resize_preview_shortcut = QShortcut(QKeySequence("R"), self)
         self.resize_preview_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.resize_preview_shortcut.activated.connect(self._toggle_resize_preview)
-        self.ai_crop_shortcut = QShortcut(QKeySequence("C"), self)
-        self.ai_crop_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        self.ai_crop_shortcut.activated.connect(self._on_ai_crop_clicked)
+        self.crop_shortcut = QShortcut(QKeySequence("C"), self)
+        self.crop_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self.crop_shortcut.activated.connect(self._on_image_crop_clicked)
         self.field_shortcut = QShortcut(QKeySequence("F"), self)
         self.field_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.field_shortcut.activated.connect(lambda: self._apply_image_type_shortcut("field"))
@@ -542,19 +694,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.previous_image_arrow_shortcut = QShortcut(QKeySequence(Qt.Key_Left), self)
         self.previous_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.previous_image_arrow_shortcut.activated.connect(self._on_previous_image_shortcut)
-        center_panel = self._build_center_panel()
+        self.center_panel = self._build_center_panel()
         self.details_panel = self._build_right_panel()
         self.details_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        main_splitter = QSplitter(Qt.Horizontal)
-        main_splitter.setChildrenCollapsible(False)
-        main_splitter.addWidget(center_panel)
-        main_splitter.addWidget(self.details_panel)
-        main_splitter.setStretchFactor(0, 1)
-        main_splitter.setStretchFactor(1, 0)
-        main_splitter.setSizes([980, 400])
-        content_row.addWidget(main_splitter, 1)
-        main_layout.addLayout(content_row, 1)
-        main_layout.addWidget(self.gallery, 0)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(self.center_panel)
+        self.main_splitter.addWidget(self.details_panel)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setSizes([980, 400])
+        content_row.addWidget(self.main_splitter, 1)
+        self.dialog_gallery_splitter = QSplitter(Qt.Vertical)
+        self.dialog_gallery_splitter.setChildrenCollapsible(False)
+        self.dialog_gallery_splitter.addWidget(content_widget)
+        self.dialog_gallery_splitter.addWidget(self.gallery)
+        self.dialog_gallery_splitter.setStretchFactor(0, 1)
+        self.dialog_gallery_splitter.setStretchFactor(1, 0)
+        self.dialog_gallery_splitter.setSizes([760, self._dialog_gallery_default_height()])
+        self.dialog_gallery_splitter.splitterMoved.connect(self._on_dialog_gallery_splitter_moved)
+        main_layout.addWidget(self.dialog_gallery_splitter, 1)
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -577,19 +736,20 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.hint_progress_status.setWordWrap(True)
         self.hint_progress_status.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.hint_progress_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.hint_progress_status.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
         self.hint_progress_bar = QProgressBar(self)
         self.hint_progress_bar.setRange(0, 100)
         self.hint_progress_bar.setValue(0)
         self.hint_progress_bar.setTextVisible(True)
         self.hint_progress_bar.setFixedHeight(18)
         self.hint_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        style_progress_widgets(self.hint_progress_bar, self.hint_progress_status)
         progress_stack_layout.addWidget(self.hint_progress_bar, 0)
         progress_stack_layout.addWidget(self.hint_progress_status, 0)
         hint_progress_layout.addWidget(progress_stack, 1)
         self.hint_progress_widget.setVisible(False)
         hint_area_layout.addWidget(self.hint_progress_widget)
         bottom_row.addWidget(hint_area, 1)
+        bottom_row.addWidget(make_github_help_button(self, "prepare-images-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         if self._pending_hint_widgets:
             for widget, hint, tone in self._pending_hint_widgets:
@@ -609,6 +769,62 @@ class ImageImportDialog(GeometryMixin, QDialog):
         bottom_row.addWidget(self.next_btn)
         self._update_action_buttons_state()
         main_layout.addLayout(bottom_row)
+
+    def _register_drop_target(self, widget: QWidget | None) -> None:
+        if widget is None:
+            return
+        widget.setAcceptDrops(True)
+        widget.installEventFilter(self)
+
+    def _setup_drop_targets(self) -> None:
+        targets = [
+            self,
+            getattr(self, "left_panel", None),
+            getattr(self, "center_panel", None),
+            getattr(self, "main_splitter", None),
+            getattr(self, "gallery", None),
+            getattr(self, "preview", None),
+            getattr(self, "details_panel", None),
+        ]
+        targets.extend(self.findChildren(QWidget))
+        seen: set[int] = set()
+        for target in targets:
+            if target is None:
+                continue
+            marker = id(target)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            self._register_drop_target(target)
+
+    def _accept_image_drag(self, event) -> bool:
+        if not dropped_image_paths_from_mime_data(event.mimeData()):
+            return False
+        event.acceptProposedAction()
+        return True
+
+    def _handle_image_drop(self, event) -> bool:
+        paths = dropped_image_paths_from_mime_data(event.mimeData())
+        if not paths:
+            return False
+        self.add_images(paths)
+        event.acceptProposedAction()
+        return True
+
+    def dragEnterEvent(self, event) -> None:
+        if self._accept_image_drag(event):
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if self._accept_image_drag(event):
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if self._handle_image_drop(event):
+            return
+        super().dropEvent(event)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -863,8 +1079,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.set_pan_without_shift(True)
         self.preview.clicked.connect(self._on_preview_clicked)
-        self.preview.cropChanged.connect(self._on_ai_crop_changed)
-        self.preview.cropPreviewChanged.connect(self._on_ai_crop_preview_changed)
+        self.preview.cropChanged.connect(self._on_crop_changed)
+        self.preview.cropPreviewChanged.connect(self._on_crop_preview_changed)
         self.preview.scaleBarChanged.connect(self._on_scale_bar_endpoint_moved)
         self.preview.installEventFilter(self)
 
@@ -1030,22 +1246,35 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         layout.addWidget(resize_group)
 
-        ai_crop_group = QGroupBox(self.tr("AI crop"))
+        ai_crop_group = QGroupBox(self.tr("Crop"))
         ai_crop_layout = QVBoxLayout(ai_crop_group)
         ai_crop_layout.setContentsMargins(6, 6, 6, 6)
-        self.ai_crop_btn = QPushButton(self.tr("Crop (C)"))
+        crop_button_row = QHBoxLayout()
+        crop_button_row.setContentsMargins(0, 0, 0, 0)
+        crop_button_row.setSpacing(6)
+        self.image_crop_btn = QPushButton(self.tr("Crop (C)"))
+        image_crop_hint = self.tr(
+            "Draw an image crop area. Keyboard shortcut C."
+        )
+        self._register_hint_widget(self.image_crop_btn, image_crop_hint)
+        self.image_crop_btn.clicked.connect(self._on_image_crop_clicked)
+        self.image_crop_btn.setEnabled(False)
+        crop_button_row.addWidget(self.image_crop_btn)
+
+        self.ai_crop_btn = QPushButton(self.tr("AI crop"))
         crop_hint = self.tr(
-            "Draw a crop area for Artsorakelet. Keyboard shortcut C."
+            "Draw a crop area for Artsorakelet."
         )
         self._register_hint_widget(self.ai_crop_btn, crop_hint)
         self.ai_crop_btn.clicked.connect(self._on_ai_crop_clicked)
         self.ai_crop_btn.setEnabled(False)
-        ai_crop_layout.addWidget(self.ai_crop_btn)
+        crop_button_row.addWidget(self.ai_crop_btn)
+        ai_crop_layout.addLayout(crop_button_row)
         self.ai_crop_size_label = QLabel("")
         self.ai_crop_size_label.setStyleSheet("color: #7f8c8d;")
         self.ai_crop_size_label.setVisible(False)
         ai_crop_layout.addWidget(self.ai_crop_size_label)
-        self._set_ai_crop_active(False)
+        self._set_crop_active_mode(None)
 
         layout.addWidget(ai_crop_group)
         layout.addStretch(1)
@@ -1112,8 +1341,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         """Enter calibration mode directly — user clicks start/end on the preview."""
         if not getattr(self, "preview", None) or not self.preview.original_pixmap:
             return
-        if hasattr(self, "ai_crop_btn") and self.ai_crop_btn.isChecked():
-            self.ai_crop_btn.setChecked(False)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
         if hasattr(self.preview, "ensure_full_resolution"):
             self.preview.ensure_full_resolution()
         self.calibration_dialog = None
@@ -1498,6 +1727,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 return
 
     def _update_ai_controls_state(self) -> None:
+        if hasattr(self, "image_crop_btn"):
+            index = self._current_single_index()
+            enable_image_crop = index is not None and 0 <= index < len(self.import_results)
+            if self._ai_thread is not None:
+                enable_image_crop = False
+            self.image_crop_btn.setEnabled(enable_image_crop)
+            if not enable_image_crop and self._crop_active_mode == "image":
+                self._set_crop_active_mode(None)
         if hasattr(self, "ai_crop_btn"):
             index = self._current_single_index()
             enable = False
@@ -1507,9 +1744,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if self._ai_thread is not None:
                 enable = False
             self.ai_crop_btn.setEnabled(enable)
-            if not enable and self._ai_crop_active:
-                self._set_ai_crop_active(False)
-            self._set_ai_crop_button_style(enable)
+            if not enable and self._crop_active_mode == "ai":
+                self._set_crop_active_mode(None)
+            self._update_crop_button_styles()
         if hasattr(self, "ai_guess_btn"):
             indices = self._current_selection_indices()
             enable_guess = False
@@ -1562,19 +1799,30 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _update_ai_overlay(self) -> None:
         if not hasattr(self, "preview"):
             return
+        if self._crop_active_mode == "image":
+            self._apply_crop_overlay_style("image")
+            self.preview.set_crop_box(None)
+            self.preview.set_overlay_boxes([])
+            self._update_ai_crop_size_label()
+            return
         index = self._current_single_index()
         preview_pixmap = getattr(self.preview, "original_pixmap", None)
         if index is not None and preview_pixmap:
             width = preview_pixmap.width()
             height = preview_pixmap.height()
             crop_box = self._ai_crop_boxes.get(index)
+            crop_mode = self._stored_crop_mode_for_index(index)
+            self._apply_crop_overlay_style(crop_mode)
             if crop_box and width > 0 and height > 0:
                 self.preview.set_crop_box(
                     (crop_box[0] * width, crop_box[1] * height, crop_box[2] * width, crop_box[3] * height)
                 )
+            elif crop_mode == "image" and width > 0 and height > 0:
+                self.preview.set_crop_box((0.0, 0.0, float(width), float(height)))
             else:
                 self.preview.set_crop_box(None)
         else:
+            self._apply_crop_overlay_style(None)
             self.preview.set_crop_box(None)
         self.preview.set_overlay_boxes([])
         self._update_ai_crop_size_label()
@@ -1663,60 +1911,261 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_selected_taxon = pred.get("taxon") or {}
         self._set_ai_status(self.tr("Applied selected species."), "#27ae60")
 
-    def _set_ai_crop_active(self, active: bool) -> None:
-        self._ai_crop_active = bool(active)
-        if hasattr(self, "preview"):
-            self.preview.set_crop_mode(self._ai_crop_active)
-            self.preview.set_crop_aspect_ratio(None)
-        self._set_ai_crop_button_style()
+    def _crop_mode_label(self, mode: str | None) -> str:
+        return self.tr("AI crop") if mode == "ai" else self.tr("Image crop")
 
-    def _set_ai_crop_button_style(self, enabled: bool | None = None) -> None:
-        if not hasattr(self, "ai_crop_btn"):
+    def _stored_crop_mode_for_index(self, index: int | None) -> str | None:
+        if index is None:
+            return None
+        mode = self._crop_mode_by_index.get(index)
+        if mode in {"ai", "image"}:
+            return mode
+        if 0 <= index < len(self.import_results):
+            mode = str(getattr(self.import_results[index], "crop_mode", "") or "").strip().lower()
+            if mode in {"ai", "image"}:
+                return mode
+        return None
+
+    @staticmethod
+    def _normalize_crop_box(
+        box: tuple[float, float, float, float] | None,
+    ) -> tuple[float, float, float, float] | None:
+        if not box or len(box) != 4:
+            return None
+        try:
+            x1, y1, x2, y2 = (float(v) for v in box)
+        except Exception:
+            return None
+        left = max(0.0, min(1.0, min(x1, x2)))
+        top = max(0.0, min(1.0, min(y1, y2)))
+        right = max(0.0, min(1.0, max(x1, x2)))
+        bottom = max(0.0, min(1.0, max(y1, y2)))
+        if right <= left or bottom <= top:
+            return None
+        return (left, top, right, bottom)
+
+    def _normalize_crop_box_from_preview_pixels(
+        self,
+        box: tuple[float, float, float, float] | None,
+    ) -> tuple[float, float, float, float] | None:
+        if not box or len(box) != 4 or not hasattr(self, "preview"):
+            return None
+        preview_pixmap = getattr(self.preview, "original_pixmap", None)
+        if preview_pixmap is None or preview_pixmap.isNull():
+            return None
+        width = preview_pixmap.width()
+        height = preview_pixmap.height()
+        if width <= 0 or height <= 0:
+            return None
+        try:
+            x1, y1, x2, y2 = (float(v) for v in box)
+        except Exception:
+            return None
+        return self._normalize_crop_box(
+            (
+                x1 / float(width),
+                y1 / float(height),
+                x2 / float(width),
+                y2 / float(height),
+            )
+        )
+
+    @classmethod
+    def _translate_normalized_crop_box_for_crop(
+        cls,
+        box: tuple[float, float, float, float] | None,
+        crop_box: tuple[float, float, float, float] | None,
+    ) -> tuple[float, float, float, float] | None:
+        normalized_box = cls._normalize_crop_box(box)
+        normalized_crop = cls._normalize_crop_box(crop_box)
+        if not normalized_box or not normalized_crop:
+            return normalized_box
+        crop_left, crop_top, crop_right, crop_bottom = normalized_crop
+        crop_width = crop_right - crop_left
+        crop_height = crop_bottom - crop_top
+        if crop_width <= 0 or crop_height <= 0:
+            return None
+        left = (normalized_box[0] - crop_left) / crop_width
+        top = (normalized_box[1] - crop_top) / crop_height
+        right = (normalized_box[2] - crop_left) / crop_width
+        bottom = (normalized_box[3] - crop_top) / crop_height
+        translated = cls._normalize_crop_box((left, top, right, bottom))
+        if not translated:
+            return None
+        if translated[2] - translated[0] <= 0.001 or translated[3] - translated[1] <= 0.001:
+            return None
+        return translated
+
+    @staticmethod
+    def _translate_scale_bar_selection_for_crop(
+        selection: tuple | None,
+        crop_pixels: tuple[int, int, int, int] | None,
+    ) -> tuple | None:
+        if not selection or len(selection) != 2 or not crop_pixels:
+            return selection
+        try:
+            (x1, y1), (x2, y2) = selection
+            crop_x1, crop_y1, crop_x2, crop_y2 = crop_pixels
+            crop_w = max(1, int(crop_x2 - crop_x1))
+            crop_h = max(1, int(crop_y2 - crop_y1))
+            nx1 = float(x1) - float(crop_x1)
+            ny1 = float(y1) - float(crop_y1)
+            nx2 = float(x2) - float(crop_x1)
+            ny2 = float(y2) - float(crop_y1)
+        except Exception:
+            return None
+        points = ((nx1, ny1), (nx2, ny2))
+        for px, py in points:
+            if px < 0 or py < 0 or px > crop_w or py > crop_h:
+                return None
+        return points
+
+    def _apply_crop_overlay_style(self, mode: str | None = None) -> None:
+        if not hasattr(self, "preview"):
             return
-        if enabled is None:
-            enabled = self.ai_crop_btn.isEnabled()
+        overlay_mode = mode or self._stored_crop_mode_for_index(self._current_single_index()) or "ai"
+        if overlay_mode == "image":
+            self.preview.set_crop_overlay_style(
+                self.tr("Image crop"),
+                QColor("#d93025"),
+                QColor("#b3261e"),
+            )
+        else:
+            self.preview.set_crop_overlay_style(
+                self.tr("AI crop"),
+                QColor("#f39c12"),
+                QColor("#d35400"),
+            )
+
+    def _set_crop_active_mode(self, mode: str | None) -> None:
+        normalized = str(mode or "").strip().lower() or None
+        if normalized not in {"ai", "image"}:
+            normalized = None
+        self._crop_active_mode = normalized
+        if hasattr(self, "preview"):
+            self.preview.set_crop_mode(bool(normalized))
+            self.preview.set_crop_aspect_ratio(None)
+        self._apply_crop_overlay_style(normalized)
+        self._update_crop_button_styles()
+
+    def _set_crop_button_style(self, button: QPushButton | None, *, enabled: bool, active: bool, accent: str) -> None:
+        if button is None:
+            return
         if not enabled:
-            self.ai_crop_btn.setStyleSheet(
+            button.setStyleSheet(
                 "background-color: #bdc3c7; color: #7f8c8d; font-weight: bold;"
             )
             return
-        if self._ai_crop_active:
-            self.ai_crop_btn.setStyleSheet(
-                "background-color: #e74c3c; color: white; font-weight: bold;"
+        if active:
+            button.setStyleSheet(
+                f"background-color: {accent}; color: white; font-weight: bold;"
             )
-        else:
-            self.ai_crop_btn.setStyleSheet(
-                "background-color: #3498db; color: white; font-weight: bold;"
-            )
+            return
+        button.setStyleSheet(
+            "background-color: #3498db; color: white; font-weight: bold;"
+        )
 
-    def _on_ai_crop_clicked(self) -> None:
+    def _update_crop_button_styles(self) -> None:
+        image_enabled = bool(hasattr(self, "image_crop_btn") and self.image_crop_btn.isEnabled())
+        ai_enabled = bool(hasattr(self, "ai_crop_btn") and self.ai_crop_btn.isEnabled())
+        self._set_crop_button_style(
+            getattr(self, "image_crop_btn", None),
+            enabled=image_enabled,
+            active=self._crop_active_mode == "image",
+            accent="#d93025",
+        )
+        self._set_crop_button_style(
+            getattr(self, "ai_crop_btn", None),
+            enabled=ai_enabled,
+            active=self._crop_active_mode == "ai",
+            accent="#e67e22",
+        )
+
+    def _toggle_crop_mode(self, mode: str) -> None:
         index = self._current_single_index()
         if index is None:
             return
-        if index in self._ai_crop_boxes:
+        normalized = str(mode or "").strip().lower()
+        if normalized not in {"ai", "image"}:
+            return
+        if normalized == "image":
+            if self._crop_active_mode == normalized:
+                self._set_crop_active_mode(None)
+                return
+            self._set_crop_active_mode(normalized)
+            self._set_preview_for_result(self.import_results[index], preserve_view=True)
+            if hasattr(self.preview, "ensure_full_resolution"):
+                self.preview.ensure_full_resolution()
+            self._update_ai_overlay()
+            self._update_ai_crop_size_label()
+            return
+        current_mode = self._stored_crop_mode_for_index(index)
+        if index in self._ai_crop_boxes and current_mode == normalized:
             self._ai_crop_boxes.pop(index, None)
+            self._crop_mode_by_index.pop(index, None)
             if hasattr(self, "preview"):
                 self.preview.set_crop_box(None)
             if 0 <= index < len(self.import_results):
                 self.import_results[index].ai_crop_box = None
                 self.import_results[index].ai_crop_source_size = None
+                self.import_results[index].crop_mode = None
                 if self.import_results[index].image_id:
                     ImageDB.update_image(
                         self.import_results[index].image_id,
                         ai_crop_box=None,
                         ai_crop_source_size=None,
+                        crop_mode=None,
                     )
-            self._set_ai_crop_active(True)
+            self._set_crop_active_mode(normalized)
             self._update_ai_controls_state()
             return
-        if self._ai_crop_active:
-            self._set_ai_crop_active(False)
+        if self._crop_active_mode == normalized:
+            self._set_crop_active_mode(None)
             return
-        self._set_ai_crop_active(True)
+        self._set_crop_active_mode(normalized)
 
-    def _on_ai_crop_changed(self, box: tuple[float, float, float, float] | None) -> None:
+    def _on_image_crop_clicked(self) -> None:
+        self._toggle_crop_mode("image")
+
+    def _on_ai_crop_clicked(self) -> None:
+        self._toggle_crop_mode("ai")
+
+    def _on_crop_changed(self, box: tuple[float, float, float, float] | None) -> None:
         index = self._current_single_index()
         if index is None:
+            return
+        mode = self._crop_active_mode or self._stored_crop_mode_for_index(index) or "ai"
+        if mode == "image":
+            result = self.import_results[index] if 0 <= index < len(self.import_results) else None
+            normalized_box = self._normalize_crop_box_from_preview_pixels(box)
+            source_path = (
+                self._prepare_working_copy_path(index, copy_existing=True)
+                if normalized_box
+                else None
+            )
+            if (
+                result is None
+                or not source_path
+                or not normalized_box
+                or not self._crop_image_file_in_place(index, source_path, normalized_box)
+            ):
+                if self._crop_active_mode:
+                    self._set_crop_active_mode(None)
+                self._update_ai_controls_state()
+                self._update_ai_crop_size_label()
+                return
+            if result is not None:
+                if getattr(result, "ai_crop_box", None):
+                    self._crop_mode_by_index[index] = "ai"
+                    result.crop_mode = "ai"
+                else:
+                    self._crop_mode_by_index[index] = "image"
+                    result.crop_mode = "image"
+            if self._crop_active_mode:
+                self._set_crop_active_mode(None)
+            self._refresh_gallery()
+            self._select_image(index)
+            self._set_settings_hint(self.tr("Image crop applied"), "#27ae60")
             return
         if box and getattr(self.preview, "original_pixmap", None):
             width = self.preview.original_pixmap.width()
@@ -1730,45 +2179,56 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     max(0.0, min(1.0, y2 / height)),
                 )
                 self._ai_crop_boxes[index] = norm_box
+                self._crop_mode_by_index[index] = mode
                 if 0 <= index < len(self.import_results):
                     self.import_results[index].ai_crop_box = norm_box
                     self.import_results[index].ai_crop_source_size = (width, height)
+                    self.import_results[index].crop_mode = mode
                     if self.import_results[index].image_id:
                         ImageDB.update_image(
                             self.import_results[index].image_id,
                             ai_crop_box=norm_box,
                             ai_crop_source_size=(width, height),
+                            crop_mode=mode,
                         )
             else:
                 self._ai_crop_boxes.pop(index, None)
+                self._crop_mode_by_index.pop(index, None)
                 if 0 <= index < len(self.import_results):
                     self.import_results[index].ai_crop_box = None
                     self.import_results[index].ai_crop_source_size = None
+                    self.import_results[index].crop_mode = None
                     if self.import_results[index].image_id:
                         ImageDB.update_image(
                             self.import_results[index].image_id,
                             ai_crop_box=None,
                             ai_crop_source_size=None,
+                            crop_mode=None,
                         )
         else:
             self._ai_crop_boxes.pop(index, None)
+            self._crop_mode_by_index.pop(index, None)
             if 0 <= index < len(self.import_results):
                 self.import_results[index].ai_crop_box = None
                 self.import_results[index].ai_crop_source_size = None
+                self.import_results[index].crop_mode = None
                 if self.import_results[index].image_id:
                     ImageDB.update_image(
                         self.import_results[index].image_id,
                         ai_crop_box=None,
                         ai_crop_source_size=None,
+                        crop_mode=None,
                     )
-        if self._ai_crop_active:
-            self._set_ai_crop_active(False)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
         self._update_ai_controls_state()
         self._update_ai_crop_size_label()
 
-    def _on_ai_crop_preview_changed(self, box: tuple[float, float, float, float] | None) -> None:
+    def _on_crop_preview_changed(self, box: tuple[float, float, float, float] | None) -> None:
         if not hasattr(self, "ai_crop_size_label"):
             return
+        index = self._current_single_index()
+        mode = self._crop_active_mode or self._stored_crop_mode_for_index(index) or "ai"
         if (
             box
             and isinstance(box, (tuple, list))
@@ -1776,9 +2236,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
         ):
             try:
                 x1, y1, x2, y2 = (float(v) for v in box)
-                crop_w = max(1, int(round(abs(x2 - x1))))
-                crop_h = max(1, int(round(abs(y2 - y1))))
-                text = self.tr("Crop: {w}x{h}").format(w=crop_w, h=crop_h)
+                crop_w = abs(x2 - x1)
+                crop_h = abs(y2 - y1)
+                preview_pixmap = getattr(self.preview, "original_pixmap", None) if hasattr(self, "preview") else None
+                source_size = self._source_image_size_for_index(index, prefer_ai_size=(mode == "ai"))
+                if (
+                    preview_pixmap is not None
+                    and source_size
+                    and len(source_size) == 2
+                    and preview_pixmap.width() > 0
+                    and preview_pixmap.height() > 0
+                ):
+                    crop_w *= float(source_size[0]) / float(preview_pixmap.width())
+                    crop_h *= float(source_size[1]) / float(preview_pixmap.height())
+                crop_w = max(1, int(round(crop_w)))
+                crop_h = max(1, int(round(crop_h)))
+                text = self.tr("{label}: {w}x{h}").format(
+                    label=self._crop_mode_label(mode),
+                    w=crop_w,
+                    h=crop_h,
+                )
                 self.ai_crop_size_label.setText(text)
                 self.ai_crop_size_label.setVisible(True)
                 return
@@ -1793,20 +2270,24 @@ class ImageImportDialog(GeometryMixin, QDialog):
         text = ""
         if index is not None:
             crop_box = self._ai_crop_boxes.get(index)
-            source_size = None
+            crop_mode = self._stored_crop_mode_for_index(index) or "ai"
             if 0 <= index < len(self.import_results):
                 result = self.import_results[index]
                 if crop_box is None:
                     crop_box = getattr(result, "ai_crop_box", None)
-                source_size = getattr(result, "ai_crop_source_size", None)
+            source_size = self._source_image_size_for_index(index, prefer_ai_size=(crop_mode == "ai"))
+            if crop_mode == "image" and not crop_box and source_size and len(source_size) == 2:
+                try:
+                    text = self.tr("{label}: {w}x{h}").format(
+                        label=self._crop_mode_label(crop_mode),
+                        w=max(1, int(source_size[0])),
+                        h=max(1, int(source_size[1])),
+                    )
+                except Exception:
+                    text = ""
             if (
-                (not source_size or len(source_size) != 2)
-                and hasattr(self, "preview")
-                and getattr(self.preview, "original_pixmap", None)
-            ):
-                pixmap = self.preview.original_pixmap
-                source_size = (pixmap.width(), pixmap.height())
-            if (
+                not text
+                and
                 crop_box
                 and isinstance(crop_box, (tuple, list))
                 and len(crop_box) == 4
@@ -1822,7 +2303,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     y2 = max(0.0, min(1.0, float(max(crop_box[1], crop_box[3]))))
                     crop_w = max(1, int(round((x2 - x1) * src_w)))
                     crop_h = max(1, int(round((y2 - y1) * src_h)))
-                    text = self.tr("Crop: {w}x{h}").format(w=crop_w, h=crop_h)
+                    text = self.tr("{label}: {w}x{h}").format(
+                        label=self._crop_mode_label(crop_mode),
+                        w=crop_w,
+                        h=crop_h,
+                    )
                 except Exception:
                     text = ""
         self.ai_crop_size_label.setText(text)
@@ -1878,6 +2363,65 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if hasattr(self, "ai_guess_btn"):
             self.ai_guess_btn.setText(self.tr("AI guess"))
         self._update_ai_controls_state()
+
+    def _park_thread_until_finished(self, thread: QThread | None) -> None:
+        """Reparent a still-running worker so dialog close won't destroy it."""
+        if thread is None:
+            return
+        app = QApplication.instance()
+        if app is None:
+            try:
+                if thread.parent() is self:
+                    thread.setParent(None)
+            except Exception:
+                pass
+            return
+        try:
+            if thread.parent() is self or thread.parent() is None:
+                thread.setParent(app)
+        except Exception:
+            pass
+        parked = getattr(app, "_sporely_parked_threads", None)
+        if parked is None:
+            parked = set()
+            setattr(app, "_sporely_parked_threads", parked)
+        try:
+            parked.add(thread)
+        except Exception:
+            pass
+
+        def _release_thread(t=thread, a=app):
+            try:
+                parked_threads = getattr(a, "_sporely_parked_threads", None)
+                if parked_threads is not None:
+                    parked_threads.discard(t)
+            except Exception:
+                pass
+
+        try:
+            thread.finished.connect(thread.deleteLater)
+        except Exception:
+            pass
+        try:
+            thread.finished.connect(_release_thread)
+        except Exception:
+            pass
+
+    def _cleanup_dialog_threads(self) -> None:
+        if getattr(self, "_close_cleanup_done", False):
+            return
+        self._close_cleanup_done = True
+        if self._ai_thread is not None:
+            try:
+                self._ai_thread.requestInterruption()
+            except Exception:
+                pass
+            try:
+                self._ai_thread.wait(1000)
+                if self._ai_thread.isRunning():
+                    self._park_thread_until_finished(self._ai_thread)
+            except Exception:
+                pass
 
     def _on_ai_guess_finished(
         self,
@@ -2082,8 +2626,41 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         self._pixmap_cache.pop(path, None)
         self._pixmap_cache_is_preview.pop(path, None)
+        self._image_size_cache.pop(path, None)
 
-    def _prepare_rotate_source_path(self, index: int) -> str | None:
+    def _source_image_size_for_index(
+        self,
+        index: int | None,
+        *,
+        prefer_ai_size: bool = False,
+    ) -> tuple[int, int] | None:
+        if index is None or index < 0 or index >= len(self.import_results):
+            preview_pixmap = getattr(self.preview, "original_pixmap", None) if hasattr(self, "preview") else None
+            if preview_pixmap is not None and not preview_pixmap.isNull():
+                return (preview_pixmap.width(), preview_pixmap.height())
+            return None
+        result = self.import_results[index]
+        if prefer_ai_size:
+            ai_size = getattr(result, "ai_crop_source_size", None)
+            if ai_size and len(ai_size) == 2:
+                try:
+                    return (max(1, int(ai_size[0])), max(1, int(ai_size[1])))
+                except (TypeError, ValueError):
+                    pass
+        for candidate in (
+            result.filepath,
+            result.preview_path,
+            result.original_filepath,
+        ):
+            size = self._get_image_size(candidate)
+            if size:
+                return size
+        preview_pixmap = getattr(self.preview, "original_pixmap", None) if hasattr(self, "preview") else None
+        if preview_pixmap is not None and not preview_pixmap.isNull():
+            return (preview_pixmap.width(), preview_pixmap.height())
+        return None
+
+    def _prepare_working_copy_path(self, index: int, *, copy_existing: bool = False) -> str | None:
         if index < 0 or index >= len(self.import_results):
             return None
         result = self.import_results[index]
@@ -2093,7 +2670,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         source_path = Path(source)
         if not source_path.exists():
             return None
-        if result.image_id:
+        if result.image_id and not copy_existing:
             return str(source_path)
         imports_dir = get_images_dir() / "imports"
         imports_dir.mkdir(parents=True, exist_ok=True)
@@ -2119,6 +2696,109 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.image_paths[index] = str(dest)
         self._converted_import_paths.add(str(dest))
         return str(dest)
+
+    def _prepare_rotate_source_path(self, index: int) -> str | None:
+        return self._prepare_working_copy_path(index, copy_existing=False)
+
+    def _crop_image_file_in_place(
+        self,
+        index: int,
+        path: str,
+        crop_box: tuple[float, float, float, float],
+    ) -> bool:
+        from PIL import Image, ImageOps
+
+        if index < 0 or index >= len(self.import_results):
+            return False
+        result = self.import_results[index]
+        source = Path(path)
+        if not source.exists():
+            return False
+        normalized = self._normalize_crop_box(crop_box)
+        if not normalized:
+            return False
+        tmp = source.with_name(f"{source.stem}_cropping{source.suffix}")
+        crop_pixels: tuple[int, int, int, int] | None = None
+        new_size: tuple[int, int] | None = None
+        try:
+            with Image.open(source) as img:
+                normalized_img = ImageOps.exif_transpose(img)
+                width, height = normalized_img.size
+                crop_x1 = int(max(0, min(width, round(normalized[0] * width))))
+                crop_y1 = int(max(0, min(height, round(normalized[1] * height))))
+                crop_x2 = int(max(0, min(width, round(normalized[2] * width))))
+                crop_y2 = int(max(0, min(height, round(normalized[3] * height))))
+                if crop_x2 <= crop_x1:
+                    crop_x2 = min(width, crop_x1 + 1)
+                    crop_x1 = max(0, crop_x2 - 1)
+                if crop_y2 <= crop_y1:
+                    crop_y2 = min(height, crop_y1 + 1)
+                    crop_y1 = max(0, crop_y2 - 1)
+                cropped = normalized_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+                exif = normalized_img.getexif()
+                if exif is not None:
+                    exif[274] = 1
+                fmt = img.format
+                save_kwargs = {}
+                if fmt and fmt.upper() in {"JPEG", "JPG"} and cropped.mode not in {"RGB", "L"}:
+                    cropped = cropped.convert("RGB")
+                if fmt and fmt.upper() in {"JPEG", "JPG"}:
+                    save_kwargs["quality"] = 95
+                if exif is not None and len(exif) > 0:
+                    save_kwargs["exif"] = exif.tobytes()
+                try:
+                    cropped.save(tmp, format=fmt, **save_kwargs)
+                except Exception:
+                    save_kwargs.pop("exif", None)
+                    cropped.save(tmp, format=fmt, **save_kwargs)
+                crop_pixels = (crop_x1, crop_y1, crop_x2, crop_y2)
+                new_size = (crop_x2 - crop_x1, crop_y2 - crop_y1)
+            tmp.replace(source)
+        except Exception:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return False
+
+        old_filepath = result.filepath
+        old_preview = result.preview_path
+        result.filepath = path
+        result.preview_path = path
+        self.image_paths[index] = path
+        self._invalidate_cached_pixmap(old_filepath)
+        if old_preview and old_preview != old_filepath:
+            self._invalidate_cached_pixmap(old_preview)
+        self._invalidate_cached_pixmap(path)
+        if new_size:
+            translated_ai_box = self._translate_normalized_crop_box_for_crop(
+                result.ai_crop_box,
+                normalized,
+            )
+            if translated_ai_box:
+                result.ai_crop_box = translated_ai_box
+                result.ai_crop_source_size = new_size
+                self._ai_crop_boxes[index] = translated_ai_box
+                self._crop_mode_by_index[index] = "ai"
+                result.crop_mode = "ai"
+            else:
+                result.ai_crop_box = None
+                result.ai_crop_source_size = None
+                self._ai_crop_boxes.pop(index, None)
+                self._crop_mode_by_index.pop(index, None)
+                result.crop_mode = None
+            result.scale_bar_selection = self._translate_scale_bar_selection_for_crop(
+                getattr(result, "scale_bar_selection", None),
+                crop_pixels,
+            )
+        if crop_pixels:
+            offset_x, offset_y = crop_pixels[0], crop_pixels[1]
+            pending_offset = getattr(result, "pending_image_crop_offset", None) or (0, 0)
+            result.pending_image_crop_offset = (
+                int(pending_offset[0]) + int(offset_x),
+                int(pending_offset[1]) + int(offset_y),
+            )
+        return True
 
     def _rotate_image_file_counterclockwise(self, path: str) -> bool:
         from PIL import Image, ImageOps
@@ -2192,6 +2872,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                         result.image_id,
                         ai_crop_box=result.ai_crop_box,
                         ai_crop_source_size=result.ai_crop_source_size,
+                        crop_mode=getattr(result, "crop_mode", None),
                     )
                 except Exception:
                     pass
@@ -2249,6 +2930,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.add_images(paths)
 
     def add_images(self, paths: list[str]) -> None:
+        start_time = time.perf_counter()
         import_dir = get_images_dir() / "imports"
         import_dir.mkdir(parents=True, exist_ok=True)
         first_new_index = len(self.import_results)
@@ -2326,6 +3008,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_scale_group_state()
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
+        added_count = max(0, len(self.import_results) - first_new_index)
+        added_names = [Path(p).name for p in (paths or []) if p]
+        _debug_import_flow(
+            f"add_images finished in {time.perf_counter() - start_time:.3f}s; "
+            f"added={added_count}; total={len(self.import_results)}; "
+            f"files={added_names}"
+        )
         if self.image_paths:
             last_new_index = len(self.import_results) - 1
             if first_new_index <= last_new_index:
@@ -2347,6 +3036,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.import_results = []
         self.image_paths = []
         self._ai_crop_boxes = {}
+        self._crop_mode_by_index = {}
         for result in results:
             if not result:
                 continue
@@ -2355,6 +3045,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.gps_source = bool(getattr(result, "gps_source", False))
             if result.original_filepath is None:
                 result.original_filepath = result.filepath
+            if not hasattr(result, "pending_image_crop_offset"):
+                result.pending_image_crop_offset = None
             if not hasattr(result, "resize_to_optimal"):
                 result.resize_to_optimal = self.resize_to_optimal_default
             if not hasattr(result, "store_original"):
@@ -2389,8 +3081,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     dt = meta.get("datetime")
                     if dt:
                         result.captured_at = QDateTime(dt)
-            if result.ai_crop_box:
+            crop_mode = str(getattr(result, "crop_mode", "") or "").strip().lower()
+            if result.ai_crop_box and crop_mode != "image":
                 self._ai_crop_boxes[len(self.import_results)] = result.ai_crop_box
+            if crop_mode in {"ai", "image"}:
+                self._crop_mode_by_index[len(self.import_results)] = crop_mode
             self.import_results.append(result)
             self.image_paths.append(result.filepath)
         self._update_summary()
@@ -2441,6 +3136,118 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._update_ai_table()
             self._update_ai_overlay()
 
+    @staticmethod
+    def _image_result_key(result: ImageImportResult):
+        if result.image_id is not None:
+            return result.image_id
+        return str(result.filepath or "")
+
+    def _remap_index_dict_after_reorder(
+        self,
+        source: dict[int, object],
+        old_results: list[ImageImportResult],
+        new_index_by_key: dict[object, int],
+    ) -> dict[int, object]:
+        remapped: dict[int, object] = {}
+        for old_index, value in source.items():
+            if old_index < 0 or old_index >= len(old_results):
+                continue
+            key = self._image_result_key(old_results[old_index])
+            new_index = new_index_by_key.get(key)
+            if new_index is None:
+                continue
+            remapped[int(new_index)] = value
+        return remapped
+
+    def _on_gallery_items_reordered(self, ordered_keys: list[object]) -> None:
+        old_results = list(self.import_results)
+        if len(old_results) < 2:
+            return
+
+        ordered_results: list[ImageImportResult] = []
+        seen: set[object] = set()
+        for key in ordered_keys or []:
+            for result in old_results:
+                result_key = self._image_result_key(result)
+                if result_key != key or result_key in seen:
+                    continue
+                ordered_results.append(result)
+                seen.add(result_key)
+                break
+        for result in old_results:
+            result_key = self._image_result_key(result)
+            if result_key in seen:
+                continue
+            ordered_results.append(result)
+            seen.add(result_key)
+        if ordered_results == old_results:
+            return
+
+        selected_keys = []
+        for index in self.selected_indices:
+            if 0 <= index < len(old_results):
+                selected_keys.append(self._image_result_key(old_results[index]))
+        current_key = None
+        if self.selected_index is not None and 0 <= self.selected_index < len(old_results):
+            current_key = self._image_result_key(old_results[self.selected_index])
+        primary_key = None
+        if self.primary_index is not None and 0 <= self.primary_index < len(old_results):
+            primary_key = self._image_result_key(old_results[self.primary_index])
+
+        self.import_results[:] = ordered_results
+        self.image_paths = [result.filepath for result in self.import_results]
+        new_index_by_key = {
+            self._image_result_key(result): idx
+            for idx, result in enumerate(self.import_results)
+        }
+        self._ai_predictions_by_index = self._remap_index_dict_after_reorder(
+            self._ai_predictions_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self._ai_selected_by_index = self._remap_index_dict_after_reorder(
+            self._ai_selected_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self._ai_crop_boxes = self._remap_index_dict_after_reorder(
+            self._ai_crop_boxes,
+            old_results,
+            new_index_by_key,
+        )
+        self._crop_mode_by_index = self._remap_index_dict_after_reorder(
+            self._crop_mode_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self._ai_selected_taxon = None
+
+        self.selected_indices = sorted(
+            new_index_by_key[key] for key in selected_keys if key in new_index_by_key
+        )
+        self.selected_index = new_index_by_key.get(current_key)
+        self.primary_index = new_index_by_key.get(primary_key)
+        self._update_observation_source_index()
+        self._refresh_gallery()
+
+        if len(self.selected_indices) > 1:
+            selected_paths = [
+                self.import_results[idx].filepath
+                for idx in self.selected_indices
+                if 0 <= idx < len(self.import_results)
+            ]
+            self.gallery.select_paths(selected_paths)
+            self._show_multi_selection_state()
+            self._update_scale_group_state()
+            self._update_set_from_image_button_state()
+            self._update_ai_controls_state()
+            self._update_ai_table()
+            self._update_ai_overlay()
+        elif self.selected_index is not None and 0 <= self.selected_index < len(self.import_results):
+            self._select_image(self.selected_index)
+        elif self.import_results:
+            self._select_image(0)
+
     def _resolve_preview_pixmap(self, result: ImageImportResult) -> tuple[QPixmap | None, bool]:
         preview_path = result.preview_path or result.filepath
         pixmap = self._get_cached_pixmap(preview_path) if preview_path else None
@@ -2464,6 +3271,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not bool(getattr(result, "resize_to_optimal", False)):
             return pixmap, False
         if getattr(self, "_calibration_mode", False):
+            return pixmap, False
+        if self._crop_active_mode == "image":
+            return pixmap, False
+        if self._is_resized_image(result):
             return pixmap, False
         factor = self._compute_resample_scale_factor(result, respect_toggle=False)
         if factor >= 0.999:
@@ -2511,7 +3322,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if (result.image_type or "field").strip().lower() == "field":
                 self.preview.set_corner_tag("")
             else:
-                self.preview.set_corner_tag(self.tr("Original image"), QColor(149, 165, 166))
+                if self._is_resized_image(result):
+                    self.preview.set_corner_tag(self.tr("Already resized"), QColor(39, 174, 96))
+                else:
+                    self.preview.set_corner_tag(self.tr("Original image"), QColor(149, 165, 166))
 
     def _set_preview_for_result(self, result: ImageImportResult, preserve_view: bool = False) -> None:
         old_state = None
@@ -2654,6 +3468,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._apply_settings_to_indices(indices, action="image_type")
 
     def eventFilter(self, obj, event):
+        if event.type() == QEvent.DragEnter and self._accept_image_drag(event):
+            return True
+        if event.type() == QEvent.DragMove and self._accept_image_drag(event):
+            return True
+        if event.type() == QEvent.Drop and self._handle_image_drop(event):
+            return True
         if obj is getattr(self, "preview", None) and event.type() == QEvent.Resize:
             self._position_rotate_button()
             return False
@@ -2670,8 +3490,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _select_image(self, index: int, sync_gallery: bool = True) -> None:
         if index < 0 or index >= len(self.image_paths):
             return
-        if self._ai_crop_active:
-            self._set_ai_crop_active(False)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
         self._set_ai_status(None)
         self.selected_index = index
         self.primary_index = index
@@ -3177,6 +3997,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 result.gps_source = i == indices[0]
             self._apply_metadata_to_indices(indices)
         self._setting_from_image_source = False
+        _debug_import_flow(
+            "set observation metadata from current image; "
+            f"datetime={(self._observation_datetime.toString('yyyy-MM-dd HH:mm:ss') if self._observation_datetime and self._observation_datetime.isValid() else None)}; "
+            f"gps=({self._observation_lat}, {self._observation_lon}); "
+            f"source_index={self._observation_source_index}"
+        )
         self._set_settings_hint(
             self.tr("Observation date and GPS set based on current image"),
             "#27ae60",
@@ -3291,6 +4117,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _get_image_size(self, path: str | None) -> tuple[int, int] | None:
         if not path:
             return None
+        cached = self._image_size_cache.get(path)
+        if cached:
+            return cached
         reader = QImageReader(path)
         size = reader.size()
         if not size.isValid():
@@ -3299,7 +4128,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         height = size.height()
         if width <= 0 or height <= 0:
             return None
-        return width, height
+        dimensions = (width, height)
+        self._image_size_cache[path] = dimensions
+        return dimensions
 
     def _get_objective_scale_mpp(self, objective_key: str | None) -> float | None:
         if not objective_key:
@@ -3649,8 +4480,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview_stack.setCurrentWidget(self.preview_message)
         self._clear_current_image_exif()
         self._update_set_from_image_button_state()
-        if self._ai_crop_active:
-            self._set_ai_crop_active(False)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
         self._set_ai_status(None)
         self._update_ai_controls_state()
         self._update_ai_table()
@@ -3771,8 +4602,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _on_remove_selected(self) -> None:
         if not self.selected_indices:
             return
+        selected_indices = sorted(
+            {
+                idx
+                for idx in self.selected_indices
+                if idx is not None and 0 <= idx < len(self.import_results)
+            }
+        )
+        if not selected_indices:
+            return
         measurement_indices = []
-        for idx in self.selected_indices:
+        for idx in selected_indices:
             if idx is None or idx < 0 or idx >= len(self.import_results):
                 continue
             image_id = self.import_results[idx].image_id
@@ -3787,17 +4627,40 @@ class ImageImportDialog(GeometryMixin, QDialog):
             count = len(measurement_indices)
             if not ask_measurements_exist_delete(self, count=count):
                 return
-        removed_numbers = [idx + 1 for idx in self.selected_indices if idx is not None]
-        removed_indices = sorted(idx for idx in self.selected_indices if idx is not None)
-        for idx in sorted(self.selected_indices, reverse=True):
+        removed_numbers = [idx + 1 for idx in selected_indices]
+        removed_indices = list(selected_indices)
+        removed_results = [
+            self.import_results[idx]
+            for idx in removed_indices
+            if 0 <= idx < len(self.import_results)
+        ]
+        next_index = removed_indices[0]
+        for idx in sorted(selected_indices, reverse=True):
             if 0 <= idx < len(self.import_results):
                 del self.import_results[idx]
                 del self.image_paths[idx]
         if removed_indices:
             self._remap_ai_indices(removed_indices)
+        for result in removed_results:
+            self._invalidate_cached_pixmap(getattr(result, "filepath", None))
+            self._invalidate_cached_pixmap(getattr(result, "preview_path", None))
+            self._invalidate_cached_pixmap(getattr(result, "original_filepath", None))
+            for path in {
+                getattr(result, "filepath", None),
+                getattr(result, "preview_path", None),
+                getattr(result, "original_filepath", None),
+            }:
+                if not path:
+                    continue
+                self._temp_preview_paths.discard(path)
+                self._converted_import_paths.discard(path)
+                self._missing_exif_paths.discard(path)
         self.selected_indices = []
         self.selected_index = None
         self.primary_index = None
+        self._seed_observation_metadata()
+        self._update_observation_source_index()
+        self._sync_observation_metadata_inputs()
         self._refresh_gallery()
         self._update_summary()
         if removed_numbers:
@@ -3807,7 +4670,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 message = self.tr("Deleted {count} images").format(count=len(removed_numbers))
             self._set_settings_hint(message, "#e74c3c")
         if self.image_paths:
-            self._select_image(0)
+            target_index = max(0, min(next_index, len(self.image_paths) - 1))
+            self._select_image(target_index)
         else:
             self._show_multi_selection_state()
             self.preview.set_measurement_lines([])
@@ -3846,12 +4710,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_predictions_by_index = remap_dict(self._ai_predictions_by_index)
         self._ai_selected_by_index = remap_dict(self._ai_selected_by_index)
         self._ai_crop_boxes = remap_dict(self._ai_crop_boxes)
+        self._crop_mode_by_index = remap_dict(self._crop_mode_by_index)
         self._ai_selected_taxon = None
 
     def _accept_and_close(self) -> None:
+        start_time = time.perf_counter()
         self._apply_to_selected()
         self._save_last_used_tag_settings()
         self._accepted = True
+        _debug_import_flow(
+            "accept requested; "
+            f"continue_to_details={self._continue_to_observation_details}; "
+            f"images={len(self.import_results)}; "
+            f"selected_indices={list(self.selected_indices)}; "
+            f"gps=({self._observation_lat}, {self._observation_lon}); "
+            f"elapsed_before_accept={time.perf_counter() - start_time:.3f}s"
+        )
         if self._continue_to_observation_details:
             self.continueRequested.emit(self.import_results)
         self.accept()
@@ -3927,8 +4801,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def enter_calibration_mode(self, dialog):
         if not getattr(self, "preview", None) or not self.preview.original_pixmap:
             return
-        if hasattr(self, "ai_crop_btn") and self.ai_crop_btn.isChecked():
-            self.ai_crop_btn.setChecked(False)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
         if hasattr(self.preview, "ensure_full_resolution"):
             self.preview.ensure_full_resolution()
         self.calibration_dialog = dialog
@@ -4009,17 +4883,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
             # Apply scale immediately — 2nd click is the trigger
             self._apply_scale_bar_inline()
 
+    def done(self, result: int) -> None:  # noqa: N802 - Qt API
+        self._cleanup_dialog_threads()
+        super().done(result)
+
     def closeEvent(self, event):
         dialog = getattr(self, "_scale_bar_dialog", None)
         if dialog and dialog.isVisible():
             dialog.close()
         self._scale_bar_dialog = None
-        if self._ai_thread is not None:
-            try:
-                self._ai_thread.quit()
-                self._ai_thread.wait(1000)
-            except Exception:
-                pass
+        self._cleanup_dialog_threads()
         for path in list(self._temp_preview_paths):
             try:
                 Path(path).unlink(missing_ok=True)

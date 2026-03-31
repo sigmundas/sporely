@@ -2,14 +2,16 @@
 import json
 import re
 import sqlite3
+import shutil
 from pathlib import Path
-from platformdirs import user_data_dir
 
+from app_identity import app_data_dir
 from database.database_tags import DatabaseTerms
 
-_app_dir = Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
+_app_dir = app_data_dir()
 DATABASE_PATH = _app_dir / "mushrooms.db"
 REFERENCE_DATABASE_PATH = _app_dir / "reference_values.db"
+BUNDLED_REFERENCE_DATABASE_PATH = Path(__file__).resolve().with_name("reference_values.db")
 SETTINGS_PATH = _app_dir / "app_settings.json"
 
 DEFAULT_OBJECTIVES = {
@@ -40,6 +42,7 @@ _DEFAULT_CONTRAST_METHODS = [
     "BF",
     "DF",
     "DIC",
+    "Oblique",
     "Phase",
     "HMC",
 ]
@@ -49,15 +52,19 @@ _DEFAULT_MOUNT_MEDIA = [
     "Water",
     "KOH",
     "NH3",
-    "Melzer",
     "Glycerine",
+    "L4",
 ]
 
 _DEFAULT_STAIN_TYPES = [
     "Not_set",
+    "Melzer",
     "Congo_Red",
     "Cotton_Blue",
     "Lactofuchsin",
+    "Cresyl_Blue",
+    "Trypan_Blue",
+    "Chlorazol_Black_E",
 ]
 
 
@@ -351,6 +358,10 @@ def get_reference_database_path() -> Path:
         return Path(path)
     return get_database_path().parent / "reference_values.db"
 
+
+def get_bundled_reference_database_path() -> Path:
+    return BUNDLED_REFERENCE_DATABASE_PATH
+
 def get_images_dir() -> Path:
     settings = _load_app_settings()
     path = settings.get("images_dir")
@@ -382,10 +393,75 @@ def get_reference_connection():
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
-def init_reference_database():
+def _copy_reference_seed_rows(source_path: Path, target_path: Path) -> bool:
+    if not source_path.exists():
+        return False
+    try:
+        if source_path.resolve() == target_path.resolve():
+            return False
+    except FileNotFoundError:
+        return False
+
+    source_conn = sqlite3.connect(source_path)
+    target_conn = sqlite3.connect(target_path)
+    try:
+        target_cursor = target_conn.cursor()
+        target_cursor.execute("SELECT COUNT(*) FROM reference_values")
+        if int(target_cursor.fetchone()[0] or 0) > 0:
+            return False
+
+        source_cursor = source_conn.cursor()
+        source_cursor.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'reference_values'
+            """
+        )
+        if not source_cursor.fetchone():
+            return False
+
+        source_columns = [row[1] for row in source_cursor.execute("PRAGMA table_info(reference_values)").fetchall()]
+        target_columns = [row[1] for row in target_cursor.execute("PRAGMA table_info(reference_values)").fetchall()]
+        columns = [column for column in source_columns if column in target_columns and column != "id"]
+        if not columns:
+            return False
+
+        rows = source_cursor.execute(
+            f"SELECT {', '.join(columns)} FROM reference_values ORDER BY id"
+        ).fetchall()
+        if not rows:
+            return False
+
+        placeholders = ", ".join("?" for _ in columns)
+        target_cursor.executemany(
+            f"INSERT INTO reference_values ({', '.join(columns)}) VALUES ({placeholders})",
+            rows,
+        )
+        target_conn.commit()
+        return True
+    finally:
+        source_conn.close()
+        target_conn.close()
+
+
+def init_reference_database(
+    ref_path: Path | None = None,
+    *,
+    seed_from_bundle: bool = True,
+    migrate_legacy: bool = True,
+):
     """Initialize the reference values database."""
-    ref_path = get_reference_database_path()
+    ref_path = Path(ref_path) if ref_path is not None else get_reference_database_path()
     ref_path.parent.mkdir(parents=True, exist_ok=True)
+    bundled_path = get_bundled_reference_database_path()
+    if seed_from_bundle and bundled_path.exists():
+        try:
+            same_path = bundled_path.resolve() == ref_path.resolve()
+        except FileNotFoundError:
+            same_path = False
+        if not same_path and not ref_path.exists():
+            shutil.copy2(bundled_path, ref_path)
+
     conn = sqlite3.connect(ref_path)
     cursor = conn.cursor()
 
@@ -397,6 +473,16 @@ def init_reference_database():
             source TEXT,
             mount_medium TEXT,
             stain TEXT,
+            plot_color TEXT,
+            parmasto_length_mean REAL,
+            parmasto_width_mean REAL,
+            parmasto_q_mean REAL,
+            parmasto_v_sp_length REAL,
+            parmasto_v_sp_width REAL,
+            parmasto_v_sp_q REAL,
+            parmasto_v_ind_length REAL,
+            parmasto_v_ind_width REAL,
+            parmasto_v_ind_q REAL,
             length_min REAL,
             length_p05 REAL,
             length_p50 REAL,
@@ -420,18 +506,32 @@ def init_reference_database():
     conn.commit()
     conn.close()
 
-    _ensure_reference_columns()
-    _migrate_reference_values()
-    _migrate_reference_mounts_and_stains()
+    _ensure_reference_columns(ref_path)
+    if seed_from_bundle:
+        _copy_reference_seed_rows(bundled_path, ref_path)
+    if migrate_legacy:
+        _migrate_reference_values(ref_path)
+    _migrate_reference_mounts_and_stains(ref_path)
 
-def _ensure_reference_columns():
+def _ensure_reference_columns(ref_path: Path | None = None):
     """Ensure new percentile columns exist in the reference values table."""
-    conn = sqlite3.connect(get_reference_database_path())
+    path = Path(ref_path) if ref_path is not None else get_reference_database_path()
+    conn = sqlite3.connect(path)
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(reference_values)")
     existing = {row[1] for row in cursor.fetchall()}
     to_add = {
         "stain": "TEXT",
+        "plot_color": "TEXT",
+        "parmasto_length_mean": "REAL",
+        "parmasto_width_mean": "REAL",
+        "parmasto_q_mean": "REAL",
+        "parmasto_v_sp_length": "REAL",
+        "parmasto_v_sp_width": "REAL",
+        "parmasto_v_sp_q": "REAL",
+        "parmasto_v_ind_length": "REAL",
+        "parmasto_v_ind_width": "REAL",
+        "parmasto_v_ind_q": "REAL",
         "length_p05": "REAL",
         "length_p50": "REAL",
         "length_p95": "REAL",
@@ -446,9 +546,10 @@ def _ensure_reference_columns():
     conn.commit()
     conn.close()
 
-def _migrate_reference_values():
+def _migrate_reference_values(ref_path: Path | None = None):
     """Copy legacy reference values from the main database if needed."""
-    ref_conn = sqlite3.connect(get_reference_database_path())
+    path = Path(ref_path) if ref_path is not None else get_reference_database_path()
+    ref_conn = sqlite3.connect(path)
     ref_cursor = ref_conn.cursor()
     ref_cursor.execute('SELECT COUNT(*) FROM reference_values')
     ref_count = ref_cursor.fetchone()[0]
@@ -477,18 +578,58 @@ def _migrate_reference_values():
     has_wp95 = "width_p95" in main_cols
     has_qp50 = "q_p50" in main_cols
     has_stain = "stain" in main_cols
+    has_plot_color = "plot_color" in main_cols
+    has_parmasto_length_mean = "parmasto_length_mean" in main_cols
+    has_parmasto_width_mean = "parmasto_width_mean" in main_cols
+    has_parmasto_q_mean = "parmasto_q_mean" in main_cols
+    has_parmasto_v_sp_length = "parmasto_v_sp_length" in main_cols
+    has_parmasto_v_sp_width = "parmasto_v_sp_width" in main_cols
+    has_parmasto_v_sp_q = "parmasto_v_sp_q" in main_cols
+    has_parmasto_v_ind_length = "parmasto_v_ind_length" in main_cols
+    has_parmasto_v_ind_width = "parmasto_v_ind_width" in main_cols
+    has_parmasto_v_ind_q = "parmasto_v_ind_q" in main_cols
 
-    if has_p05 or has_p50 or has_p95 or has_wp05 or has_wp50 or has_wp95 or has_qp50 or has_stain:
+    if (
+        has_p05 or has_p50 or has_p95 or has_wp05 or has_wp50 or has_wp95 or has_qp50
+        or has_stain or has_plot_color
+        or has_parmasto_length_mean or has_parmasto_width_mean or has_parmasto_q_mean
+        or has_parmasto_v_sp_length or has_parmasto_v_sp_width or has_parmasto_v_sp_q
+        or has_parmasto_v_ind_length or has_parmasto_v_ind_width or has_parmasto_v_ind_q
+    ):
         main_cursor.execute('''
-            SELECT genus, species, source, mount_medium, stain,
+            SELECT genus, species, source, mount_medium,
+                   {stain_expr},
+                   {plot_color_expr},
+                   {parmasto_length_mean_expr},
+                   {parmasto_width_mean_expr},
+                   {parmasto_q_mean_expr},
+                   {parmasto_v_sp_length_expr},
+                   {parmasto_v_sp_width_expr},
+                   {parmasto_v_sp_q_expr},
+                   {parmasto_v_ind_length_expr},
+                   {parmasto_v_ind_width_expr},
+                   {parmasto_v_ind_q_expr},
                    length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                    width_min, width_p05, width_p50, width_p95, width_max, width_avg,
                    q_min, q_p50, q_max, q_avg, updated_at
             FROM reference_values
-        ''')
+        '''.format(
+            stain_expr="stain" if has_stain else "NULL",
+            plot_color_expr="plot_color" if has_plot_color else "NULL",
+            parmasto_length_mean_expr="parmasto_length_mean" if has_parmasto_length_mean else "NULL",
+            parmasto_width_mean_expr="parmasto_width_mean" if has_parmasto_width_mean else "NULL",
+            parmasto_q_mean_expr="parmasto_q_mean" if has_parmasto_q_mean else "NULL",
+            parmasto_v_sp_length_expr="parmasto_v_sp_length" if has_parmasto_v_sp_length else "NULL",
+            parmasto_v_sp_width_expr="parmasto_v_sp_width" if has_parmasto_v_sp_width else "NULL",
+            parmasto_v_sp_q_expr="parmasto_v_sp_q" if has_parmasto_v_sp_q else "NULL",
+            parmasto_v_ind_length_expr="parmasto_v_ind_length" if has_parmasto_v_ind_length else "NULL",
+            parmasto_v_ind_width_expr="parmasto_v_ind_width" if has_parmasto_v_ind_width else "NULL",
+            parmasto_v_ind_q_expr="parmasto_v_ind_q" if has_parmasto_v_ind_q else "NULL",
+        ))
     else:
         main_cursor.execute('''
-            SELECT genus, species, source, mount_medium, NULL,
+            SELECT genus, species, source, mount_medium, NULL, NULL,
+                   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                    length_min, NULL, NULL, NULL, length_max, length_avg,
                    width_min, NULL, NULL, NULL, width_max, width_avg,
                    q_min, NULL, q_max, q_avg, updated_at
@@ -500,23 +641,28 @@ def _migrate_reference_values():
     if not rows:
         return
 
-    ref_conn = sqlite3.connect(get_reference_database_path())
+    ref_conn = sqlite3.connect(path)
     ref_cursor = ref_conn.cursor()
     ref_cursor.executemany('''
         INSERT INTO reference_values (
             genus, species, source, mount_medium, stain,
+            plot_color,
+            parmasto_length_mean, parmasto_width_mean, parmasto_q_mean,
+            parmasto_v_sp_length, parmasto_v_sp_width, parmasto_v_sp_q,
+            parmasto_v_ind_length, parmasto_v_ind_width, parmasto_v_ind_q,
             length_min, length_p05, length_p50, length_p95, length_max, length_avg,
             width_min, width_p05, width_p50, width_p95, width_max, width_avg,
             q_min, q_p50, q_max, q_avg, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', rows)
     ref_conn.commit()
     ref_conn.close()
 
 
-def _migrate_reference_mounts_and_stains() -> None:
+def _migrate_reference_mounts_and_stains(ref_path: Path | None = None) -> None:
     """Move legacy stain-only mount values into the dedicated stain column."""
-    conn = sqlite3.connect(get_reference_database_path())
+    path = Path(ref_path) if ref_path is not None else get_reference_database_path()
+    conn = sqlite3.connect(path)
     cursor = conn.cursor()
     cursor.execute("SELECT id, mount_medium, stain FROM reference_values")
     for row_id, mount_medium, stain in cursor.fetchall():
@@ -634,6 +780,9 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             "darkfield": "DF",
             "dic": "DIC",
             "differentialinterferencecontrast": "DIC",
+            "oblique": "Oblique",
+            "obliquelighting": "Oblique",
+            "obliqueillumination": "Oblique",
             "phase": "Phase",
             "phasecontrast": "Phase",
             "hmc": "HMC",
@@ -781,6 +930,38 @@ def _migrate_images_mounts_and_stains(cursor: sqlite3.Cursor) -> None:
                 (canonical_stain, row_id),
             )
 
+
+def _migrate_image_sort_order(cursor: sqlite3.Cursor) -> None:
+    """Backfill and normalize per-observation image ordering."""
+    cursor.execute("SELECT DISTINCT observation_id FROM images WHERE observation_id IS NOT NULL ORDER BY observation_id")
+    observation_ids = [row[0] for row in cursor.fetchall() if row and row[0] is not None]
+    for observation_id in observation_ids:
+        cursor.execute(
+            """
+            SELECT id, sort_order, image_type, micro_category, created_at
+            FROM images
+            WHERE observation_id = ?
+            ORDER BY
+                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                sort_order,
+                image_type,
+                micro_category,
+                created_at,
+                id
+            """,
+            (observation_id,),
+        )
+        rows = cursor.fetchall()
+        for index, row in enumerate(rows):
+            image_id = row[0]
+            current_sort_order = row[1]
+            if current_sort_order == index:
+                continue
+            cursor.execute(
+                "UPDATE images SET sort_order = ? WHERE id = ?",
+                (index, image_id),
+            )
+
 def init_database():
     """Initialize the database with required tables"""
     db_path = get_database_path()
@@ -799,6 +980,8 @@ def init_database():
             genus TEXT,
             species TEXT,
             artsdata_id INTEGER,
+            artportalen_id INTEGER,
+            publish_target TEXT DEFAULT 'artsobs_no',
             common_name TEXT,
             species_guess TEXT,
             uncertain INTEGER DEFAULT 0,
@@ -825,6 +1008,7 @@ def init_database():
             open_comment TEXT,
             private_comment TEXT,
             interesting_comment INTEGER DEFAULT 0,
+            ai_state_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -858,6 +1042,18 @@ def init_database():
         cursor.execute('ALTER TABLE observations ADD COLUMN mushroomobserver_id INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    # Add Artportalen ID column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN artportalen_id INTEGER')
+    except sqlite3.OperationalError:
+        pass
+
+    # Add publish target column if it doesn't exist
+    try:
+        cursor.execute("ALTER TABLE observations ADD COLUMN publish_target TEXT DEFAULT 'artsobs_no'")
+    except sqlite3.OperationalError:
+        pass
 
     # Remove legacy adb_taxon_id column if present.
     try:
@@ -989,6 +1185,10 @@ def init_database():
         cursor.execute('ALTER TABLE observations ADD COLUMN interesting_comment INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_state_json TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Images table
     cursor.execute('''
@@ -997,6 +1197,7 @@ def init_database():
             observation_id INTEGER,
             filepath TEXT NOT NULL,
             original_filepath TEXT,
+            sort_order INTEGER,
             image_type TEXT CHECK(image_type IN ('field', 'microscope')),
             micro_category TEXT,
             objective_name TEXT,
@@ -1014,6 +1215,7 @@ def init_database():
             ai_crop_y2 REAL,
             ai_crop_source_w INTEGER,
             ai_crop_source_h INTEGER,
+            crop_mode TEXT,
             gps_source INTEGER DEFAULT 0,
             artsobs_web_unpublished INTEGER DEFAULT 0,
             scale_bar_x1 REAL,
@@ -1040,6 +1242,11 @@ def init_database():
     # Add original_filepath column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN original_filepath TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN sort_order INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -1080,6 +1287,7 @@ def init_database():
         pass  # Column already exists
 
     _migrate_images_mounts_and_stains(cursor)
+    _migrate_image_sort_order(cursor)
 
     # Add calibration_id column to link images to calibrations
     try:
@@ -1110,6 +1318,10 @@ def init_database():
         pass
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN ai_crop_source_h INTEGER')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN crop_mode TEXT')
     except sqlite3.OperationalError:
         pass
 

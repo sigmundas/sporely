@@ -11,13 +11,14 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
                                 QGridLayout)
-from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication
+from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QIcon,
     QPixmap,
     QImage,
+    QImageReader,
     QDesktopServices,
     QColor,
     QPainter,
@@ -37,6 +38,7 @@ import threading
 import time
 import os
 import sys
+import html
 import json
 import unicodedata
 from queue import SimpleQueue, Empty
@@ -68,15 +70,31 @@ from utils.vernacular_utils import (
     vernacular_language_label,
     list_available_vernacular_languages,
 )
+from utils.publish_targets import (
+    PUBLISH_TARGET_ARTPORTALEN_SE,
+    PUBLISH_TARGET_ARTSOBS_NO,
+    SETTING_ACTIVE_REPORTING_TARGET,
+    infer_publish_target_from_coords,
+    normalize_publish_target,
+    nonregional_uploader_keys,
+    publish_target_label,
+    uploader_key_for_publish_target,
+)
 from .image_gallery_widget import ImageGalleryWidget
-from .image_import_dialog import ImageImportDialog, ImageImportResult, AIGuessWorker
+from .image_import_dialog import (
+    ImageImportDialog,
+    ImageImportResult,
+    AIGuessWorker,
+    dropped_image_paths_from_mime_data,
+)
 from .calibration_dialog import get_resolution_status
-from .hint_status import HintBar, HintStatusController
+from .hint_status import HintBar, HintStatusController, style_progress_widgets
 from .zoomable_image_widget import ZoomableImageLabel
-from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no
+from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
 from .styles import pt
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
+from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
 
 def _parse_observation_datetime(value: str | None) -> QDateTime | None:
@@ -90,13 +108,29 @@ def _parse_observation_datetime(value: str | None) -> QDateTime | None:
     return dt_value if dt_value.isValid() else None
 
 
-def _timing_debug_enabled() -> bool:
-    return str(os.environ.get("MYCOLOG_DEBUG_TIMING", "")).strip().lower() in {"1", "true", "yes", "on"}
+def _normalized_observation_datetime_minute(value: str | None) -> str | None:
+    dt_value = _parse_observation_datetime(value)
+    if not dt_value or not dt_value.isValid():
+        return None
+    return dt_value.toString("yyyy-MM-dd HH:mm")
 
 
-def _timing_log(message: str) -> None:
-    if _timing_debug_enabled():
-        print(f"[timing][obs] {message}")
+def _debug_import_flow_enabled() -> bool:
+    value = (
+        os.environ.get("SPORELY_DEBUG_IMPORT_FLOW", "")
+        or os.environ.get("MYCOLOG_DEBUG_IMPORT_FLOW", "")
+    )
+    return str(value).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _debug_import_flow(message: str) -> None:
+    if _debug_import_flow_enabled():
+        print(f"[{APP_NAME} debug][obs-edit] {message}", flush=True)
 
 
 def _extract_coords_from_osm_url(text: str) -> tuple[float, float] | None:
@@ -149,6 +183,30 @@ class LocationLookupWorker(QThread):
                     self.resultReady.emit(name)
         except Exception:
             pass
+
+
+def resolve_observation_publish_target(
+    observation: dict | None,
+    default_target: str = PUBLISH_TARGET_ARTSOBS_NO,
+) -> str:
+    """Preserve an observation's own reporting system before using app defaults."""
+    obs = observation or {}
+    raw_target = str(obs.get("publish_target") or "").strip()
+    if raw_target:
+        normalized = normalize_publish_target(raw_target, fallback="")
+        if normalized:
+            return normalized
+    if obs.get("artportalen_id"):
+        return PUBLISH_TARGET_ARTPORTALEN_SE
+    if obs.get("artsdata_id"):
+        return PUBLISH_TARGET_ARTSOBS_NO
+    if obs.get("habitat_nin2_path") or obs.get("habitat_substrate_path"):
+        return PUBLISH_TARGET_ARTSOBS_NO
+    inferred = infer_publish_target_from_coords(
+        obs.get("gps_latitude"),
+        obs.get("gps_longitude"),
+    )
+    return inferred or normalize_publish_target(default_target, fallback=PUBLISH_TARGET_ARTSOBS_NO)
 
 
 class ArtsobsMobileLinkCheckWorker(QThread):
@@ -582,6 +640,7 @@ class MapServiceHelper:
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
+    SETTING_SHOW_TABLE_THUMBNAILS = "observations_table_show_thumbnails"
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
@@ -600,6 +659,8 @@ class ObservationsTab(QWidget):
 
     # Signal emitted when observation is selected (id, display_name, switch_tab)
     observation_selected = Signal(int, str, bool)
+    # Signal emitted when a single row is highlighted (id only) — for lightweight header refresh
+    observation_highlighted = Signal(int)
     # Signal emitted when an observation is deleted
     observation_deleted = Signal(int)
     # Signal emitted when an image is selected to open in Measure tab
@@ -608,6 +669,7 @@ class ObservationsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.selected_observation_id = None
+        self._observations_splitter_syncing = False
         self._publish_actions: dict[str, object] = {}
         self._artsobs_dead_by_observation_id: dict[int, bool] = {}
         self._artsobs_public_published_by_observation_id: dict[int, bool] = {}
@@ -615,14 +677,19 @@ class ObservationsTab(QWidget):
         self._artsobs_check_failed = False
         self.map_helper = MapServiceHelper(self)
         self._ai_suggestions_cache: dict[int, dict] = {}
+        self._observation_edit_draft_cache: dict[int, dict] = {}
         self._accepted_taxon_pair_cache: dict[tuple[str, str], tuple[str, str]] | None = None
         self._publish_login_status_cache: dict[str, bool] | None = None
         self._publish_login_status_cache_ts: float = 0.0
+        self._publish_saved_login_status_cache: dict[str, bool] | None = None
+        self._publish_saved_login_status_cache_ts: float = 0.0
         self._observation_table_rows_cache: list[dict] = []
+        self._observation_thumb_icon_cache: dict[str, QIcon] = {}
         self._search_refresh_timer = QTimer(self)
         self._search_refresh_timer.setSingleShot(True)
         self._search_refresh_timer.setInterval(180)
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
+        self.setAcceptDrops(True)
         self.init_ui()
         self.refresh_observations()
         # Keyboard shortcut to open Prepare Images directly from the table.
@@ -667,6 +734,15 @@ class ObservationsTab(QWidget):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         left_panel_layout.addWidget(self.search_input)
 
+        self.show_table_thumbnails_checkbox = QCheckBox(self.tr("Show thumbnail"))
+        self.show_table_thumbnails_checkbox.setChecked(
+            bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
+        )
+        self.show_table_thumbnails_checkbox.toggled.connect(
+            self._on_show_table_thumbnails_toggled
+        )
+        left_panel_layout.addWidget(self.show_table_thumbnails_checkbox)
+
         # ── Edit — frequent, single-selection ─────────────────────────────
         self.rename_btn = QPushButton(self.tr("Edit"))
         self.rename_btn.setObjectName("outlineButton")
@@ -691,6 +767,7 @@ class ObservationsTab(QWidget):
         self.publish_btn.setObjectName("outlineButton")
         self.publish_btn.setMenu(self.publish_menu)
         self.publish_btn.setEnabled(False)
+        self._publish_direct_click_connected = False
         self._build_publish_menu()
         share_row.addWidget(self.publish_btn)
 
@@ -740,12 +817,13 @@ class ObservationsTab(QWidget):
 
         # Splitter for table and detail view
         splitter = QSplitter(Qt.Vertical)
+        self.observations_splitter = splitter
 
         # Observations table
         self.table = QTableWidget()
         self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
-            self.tr("ID"),
+            self._observation_first_column_title(),
             self._common_name_column_title(),
             self.tr("Genus"),
             self.tr("Species"),
@@ -753,7 +831,7 @@ class ObservationsTab(QWidget):
             self.tr("Date"),
             self.tr("Location"),
             self.tr("Map"),
-            self.tr("Artsobs")
+            self.tr("Publish")
         ])
 
         # Set column properties
@@ -776,7 +854,7 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(5, 132)  # Date
         self.table.setColumnWidth(6, 170)  # Location
         self.table.setColumnWidth(7, 56)   # Map
-        self.table.setColumnWidth(8, 90)   # Artsobs
+        self.table.setColumnWidth(8, 90)   # Publish
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -797,6 +875,7 @@ class ObservationsTab(QWidget):
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
         self.table.setSortingEnabled(True)
+        self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
         splitter.addWidget(self.table)
 
         # Detail view (shows selected observation info and images)
@@ -816,6 +895,8 @@ class ObservationsTab(QWidget):
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for online publishing"),
         )
+        self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.gallery_widget.setFixedHeight(190)
         self.gallery_widget.set_multi_select(True)
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
@@ -824,12 +905,34 @@ class ObservationsTab(QWidget):
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
 
         detail_layout.addWidget(self.gallery_widget)
+        self.detail_widget.setMaximumHeight(self._observations_detail_max_height())
 
         splitter.addWidget(self.detail_widget)
 
         splitter.setStretchFactor(0, 2)
+        drop_targets = [
+            self,
+            left_panel,
+            splitter,
+            self.table,
+            self.table.viewport(),
+            self.detail_widget,
+            self.gallery_widget,
+        ]
+        drop_targets.extend(self.findChildren(QWidget))
+        seen_drop_targets: set[int] = set()
+        for drop_target in drop_targets:
+            if drop_target is None:
+                continue
+            marker = id(drop_target)
+            if marker in seen_drop_targets:
+                continue
+            seen_drop_targets.add(marker)
+            drop_target.setAcceptDrops(True)
+            drop_target.installEventFilter(self)
         splitter.setStretchFactor(1, 3)
         splitter.setSizes([600, 180])
+        splitter.splitterMoved.connect(self._on_observations_splitter_moved)
 
         content_layout.addWidget(splitter, 1)
         layout.addLayout(content_layout, 1)
@@ -857,11 +960,14 @@ class ObservationsTab(QWidget):
         self.status_progress_pct = QLabel("0%")
         self.status_progress_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.status_progress_pct.setFixedWidth(34)
-        self.status_progress_pct.setStyleSheet(f"color: #222222; font-size: {pt(9)}pt;")
         self.status_progress_text = QLabel("")
         self.status_progress_text.setWordWrap(True)
         self.status_progress_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.status_progress_text.setStyleSheet(f"color: #2980b9; font-size: {pt(9)}pt;")
+        style_progress_widgets(
+            self.status_progress_bar,
+            self.status_progress_text,
+            self.status_progress_pct,
+        )
         status_progress_bar_row.addWidget(self.status_progress_bar, 1)
         status_progress_bar_row.addWidget(self.status_progress_pct, 0, Qt.AlignRight)
         status_progress_layout.addLayout(status_progress_bar_row)
@@ -947,6 +1053,49 @@ class ObservationsTab(QWidget):
         if self._shortcut_blocked_by_text_input():
             return
         self.create_new_observation()
+
+    def _accept_image_drag(self, event) -> bool:
+        if not dropped_image_paths_from_mime_data(event.mimeData()):
+            return False
+        event.acceptProposedAction()
+        return True
+
+    def _handle_new_observation_drop(self, event) -> bool:
+        paths = dropped_image_paths_from_mime_data(event.mimeData())
+        if not paths:
+            return False
+        event.acceptProposedAction()
+        QTimer.singleShot(
+            0,
+            lambda dropped_paths=list(paths): self.create_new_observation(
+                initial_image_paths=dropped_paths
+            ),
+        )
+        return True
+
+    def dragEnterEvent(self, event) -> None:
+        if self._accept_image_drag(event):
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if self._accept_image_drag(event):
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if self._handle_new_observation_drop(event):
+            return
+        super().dropEvent(event)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.DragEnter and self._accept_image_drag(event):
+            return True
+        if event.type() == QEvent.DragMove and self._accept_image_drag(event):
+            return True
+        if event.type() == QEvent.Drop and self._handle_new_observation_drop(event):
+            return True
+        return super().eventFilter(obj, event)
 
     def _on_delete_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
@@ -1190,13 +1339,8 @@ class ObservationsTab(QWidget):
 
     def _find_table_row_for_observation(self, observation_id: int) -> int:
         for row in range(self.table.rowCount()):
-            id_item = self.table.item(row, 0)
-            if not id_item:
-                continue
-            value = id_item.data(Qt.UserRole)
-            try:
-                row_id = int(value if value is not None else id_item.text())
-            except (TypeError, ValueError):
+            row_id = self._observation_id_for_row(row)
+            if row_id is None:
                 continue
             if row_id == observation_id:
                 return row
@@ -1211,42 +1355,55 @@ class ObservationsTab(QWidget):
         if pending_count <= 0:
             return None
 
-        login_status = self._publish_target_login_status()
-        web_logged_in = bool(login_status.get("web", False))
-
         if pending_count == 1:
-            if web_logged_in:
-                return (
-                    self.tr("Image added to published observation. Refresh to upload the new image."),
-                    "info",
-                )
             return (
-                self.tr("Image added to published observation. Log in to Artsobservasjoner (web), then click Refresh db to upload the new image."),
+                self.tr(
+                    "Image added to published observation. Click Refresh db to upload the new image. If needed, log in to Artsobservasjoner (web) first."
+                ),
                 "warning",
             )
 
-        if web_logged_in:
-            return (
-                self.tr("{count} images added to published observations. Refresh to upload the new images.").format(
-                    count=pending_count
-                ),
-                "info",
-            )
         return (
-            self.tr("{count} images added to published observations. Log in to Artsobservasjoner (web), then click Refresh db to upload the new images.").format(
+            self.tr(
+                "{count} images added to published observations. Click Refresh db to upload the new images. If needed, log in to Artsobservasjoner (web) first."
+            ).format(
                 count=pending_count
             ),
             "warning",
         )
 
-    def _render_artsobs_cell(self, row: int, observation_id: int, arts_id: int | None) -> None:
+    def _render_publish_cell(
+        self,
+        row: int,
+        observation_id: int,
+        publish_target: str | None,
+        arts_id: int | None,
+        artportalen_id: int | None,
+    ) -> None:
         self.table.removeCellWidget(row, 8)
-        has_id = bool(arts_id)
+        normalized_target = normalize_publish_target(publish_target)
+        service_id = artportalen_id if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE else arts_id
+        has_id = bool(service_id)
         arts_item = SortableTableWidgetItem("" if has_id else "-")
-        arts_item.setData(Qt.UserRole, int(arts_id or 0))
+        arts_item.setData(Qt.UserRole, int(service_id or 0))
         arts_item.setFlags(arts_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row, 8, arts_item)
         if not has_id:
+            return
+
+        if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE:
+            artportalen_url = f"https://www.artportalen.se/Sighting/{int(service_id)}"
+            label_html = f'<a href="{artportalen_url}">AP</a>'
+            link_tooltip = self.tr("AP: Artportalen web")
+            arts_label = QLabel(label_html)
+            arts_label.setTextFormat(Qt.RichText)
+            arts_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            arts_label.setOpenExternalLinks(False)
+            arts_label.setAlignment(Qt.AlignCenter)
+            arts_label.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
+            self._status_hint_controller.register_widget(arts_label, link_tooltip)
+            arts_label.setToolTip(link_tooltip)
+            self.table.setCellWidget(row, 8, arts_label)
             return
 
         if self._artsobs_dead_by_observation_id.get(observation_id):
@@ -1257,8 +1414,8 @@ class ObservationsTab(QWidget):
             self.table.setCellWidget(row, 8, warn_label)
             return
 
-        mao_url = f"https://mobil.artsobservasjoner.no/sighting/{arts_id}"
-        wao_url = f"https://www.artsobservasjoner.no/Sighting/{arts_id}"
+        mao_url = f"https://mobil.artsobservasjoner.no/sighting/{int(service_id)}"
+        wao_url = f"https://www.artsobservasjoner.no/Sighting/{int(service_id)}"
         is_publicly_published = self._artsobs_public_published_by_observation_id.get(observation_id)
         if is_publicly_published is True:
             label_html = f'<a href="{mao_url}">MAo</a> | <a href="{wao_url}">Ao</a>'
@@ -1341,7 +1498,14 @@ class ObservationsTab(QWidget):
             arts_id = 0
         if arts_id <= 0:
             return
-        self._render_artsobs_cell(row, observation_id, arts_id)
+        obs = ObservationDB.get_observation(observation_id)
+        self._render_publish_cell(
+            row,
+            observation_id,
+            obs.get("publish_target") if obs else None,
+            obs.get("artsdata_id") if obs else arts_id,
+            obs.get("artportalen_id") if obs else None,
+        )
         self._update_publish_controls()
 
     def _on_artsobs_check_failed(self, message: str) -> None:
@@ -1432,6 +1596,8 @@ class ObservationsTab(QWidget):
     def _build_publish_menu(self) -> None:
         self.publish_menu.clear()
         self._publish_actions = {}
+        self._publish_direct_target_key = None
+        self._disconnect_publish_click_if_needed()
         try:
             from utils.artsobs_uploaders import list_uploaders
             uploaders = list_uploaders()
@@ -1446,12 +1612,100 @@ class ObservationsTab(QWidget):
             action.setEnabled(False)
             return
 
-        for uploader in uploaders:
+        enabled_keys = self._enabled_publish_uploader_keys(uploaders)
+        enabled_uploaders = [uploader for uploader in uploaders if uploader.key in enabled_keys]
+        self._publish_enabled_keys = [uploader.key for uploader in enabled_uploaders]
+
+        if not enabled_uploaders:
+            action = self.publish_menu.addAction(self.tr("No publish targets enabled"))
+            action.setEnabled(False)
+            self.publish_btn.setMenu(self.publish_menu)
+            return
+
+        if len(enabled_uploaders) == 1:
+            uploader = enabled_uploaders[0]
+            self._publish_direct_target_key = uploader.key
+            self.publish_btn.setMenu(None)
+            self.publish_btn.clicked.connect(
+                lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
+            )
+            self._publish_direct_click_connected = True
+            self.publish_btn.setText(self.tr("Publish"))
+            self.publish_btn.setProperty(
+                "_hint_text",
+                self.tr("Publish directly to {target}.").format(target=self.tr(uploader.label)),
+            )
+            return
+
+        self.publish_btn.setMenu(self.publish_menu)
+        for uploader in enabled_uploaders:
             action = self.publish_menu.addAction(self.tr(uploader.label))
             action.triggered.connect(
                 lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
             )
             self._publish_actions[uploader.key] = action
+
+    def _disconnect_publish_click_if_needed(self) -> None:
+        if not getattr(self, "_publish_direct_click_connected", False):
+            return
+        try:
+            self.publish_btn.clicked.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        self._publish_direct_click_connected = False
+
+    def _enabled_publish_uploader_keys(self, uploaders: list | None = None) -> list[str]:
+        try:
+            from ui.main_window import ArtsobservasjonerSettingsDialog
+
+            return ArtsobservasjonerSettingsDialog.enabled_upload_target_keys(uploaders)
+        except Exception:
+            if uploaders is None:
+                return []
+            return [str(getattr(uploader, "key", "")).strip().lower() for uploader in uploaders if getattr(uploader, "key", None)]
+
+    def _uploader_label(self, uploader_key: str) -> str:
+        key = str(uploader_key or "").strip().lower()
+        if not key:
+            return self.tr("selected service")
+        action = self._publish_actions.get(key)
+        if action is not None and action.text():
+            return action.text()
+        try:
+            from utils.artsobs_uploaders import get_uploader
+
+            uploader = get_uploader(key)
+            if uploader is not None:
+                return self.tr(uploader.label)
+        except Exception:
+            pass
+        return key
+
+    def _enabled_uploader_labels(self, enabled_keys: list[str]) -> list[str]:
+        labels: list[str] = []
+        for key in enabled_keys:
+            label = self._uploader_label(key)
+            if label not in labels:
+                labels.append(label)
+        return labels
+
+    def _active_reporting_target(self) -> str:
+        return normalize_publish_target(
+            SettingsDB.get_setting(SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
+            fallback=PUBLISH_TARGET_ARTSOBS_NO,
+        )
+
+    def _refresh_publish_targets_if_needed(self) -> None:
+        try:
+            from utils.artsobs_uploaders import list_uploaders
+
+            uploaders = list_uploaders()
+        except Exception:
+            uploaders = []
+        enabled_keys = tuple(self._enabled_publish_uploader_keys(uploaders))
+        current_keys = tuple(getattr(self, "_publish_enabled_keys", []) or [])
+        if enabled_keys != current_keys:
+            self._build_publish_menu()
 
     def _selected_observation_ids(self) -> list[int]:
         selection_model = self.table.selectionModel()
@@ -1460,28 +1714,71 @@ class ObservationsTab(QWidget):
         rows = sorted(selection_model.selectedRows(), key=lambda index: index.row())
         observation_ids: list[int] = []
         for index in rows:
-            item = self.table.item(index.row(), 0)
-            if not item:
+            obs_id = self._observation_id_for_row(index.row())
+            if obs_id is None:
                 continue
-            obs_id = item.data(Qt.UserRole)
-            try:
-                observation_ids.append(int(obs_id if obs_id is not None else item.text()))
-            except (TypeError, ValueError):
-                continue
+            observation_ids.append(obs_id)
         return observation_ids
+
+    @staticmethod
+    def _observation_id_from_item(item: QTableWidgetItem | None) -> int | None:
+        if item is None:
+            return None
+        value = item.data(Qt.UserRole)
+        try:
+            if value is not None:
+                return int(value)
+        except (TypeError, ValueError):
+            pass
+        text = str(item.text() or "").strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except (TypeError, ValueError):
+            return None
+
+    def _observation_id_for_row(self, row: int) -> int | None:
+        if row < 0 or not hasattr(self, "table"):
+            return None
+        return self._observation_id_from_item(self.table.item(row, 0))
+
+    def _observation_publish_target(self, obs: dict | None) -> str:
+        return resolve_observation_publish_target(obs, default_target=PUBLISH_TARGET_ARTSOBS_NO)
+
+    def _uploader_matches_publish_target(self, uploader_key: str, publish_target: str) -> bool:
+        key = (uploader_key or "").strip().lower()
+        target = normalize_publish_target(publish_target)
+        if key == "artportalen":
+            return target == PUBLISH_TARGET_ARTPORTALEN_SE
+        if key in {"mobile", "web"}:
+            return target == PUBLISH_TARGET_ARTSOBS_NO
+        return True
+
+    def _observation_has_existing_upload(self, obs: dict | None, uploader_key: str) -> bool:
+        observation = obs or {}
+        key = (uploader_key or "").strip().lower()
+        try:
+            if key == "artportalen":
+                return int(observation.get("artportalen_id") or 0) > 0
+            if key in {"mobile", "web"}:
+                obs_id = int(observation.get("id") or 0)
+                arts_id = int(observation.get("artsdata_id") or 0)
+                if arts_id <= 0:
+                    return False
+                if obs_id > 0 and self._artsobs_dead_by_observation_id.get(obs_id):
+                    return False
+                return True
+        except (TypeError, ValueError):
+            return False
+        return False
 
     def _selection_has_uploaded_artsobs(self) -> bool:
         selection_model = self.table.selectionModel()
         if not selection_model:
             return False
         for index in selection_model.selectedRows():
-            id_item = self.table.item(index.row(), 0)
-            observation_id = None
-            if id_item:
-                try:
-                    observation_id = int(id_item.data(Qt.UserRole) or id_item.text())
-                except (TypeError, ValueError):
-                    observation_id = None
+            observation_id = self._observation_id_for_row(index.row())
             arts_item = self.table.item(index.row(), 8)
             if not arts_item:
                 continue
@@ -1499,6 +1796,78 @@ class ObservationsTab(QWidget):
                 continue
         return False
 
+    def _target_for_uploader_key(self, uploader_key: str | None) -> str | None:
+        key = (uploader_key or "").strip().lower()
+        if key == "artportalen":
+            return PUBLISH_TARGET_ARTPORTALEN_SE
+        if key in {"mobile", "web"}:
+            return PUBLISH_TARGET_ARTSOBS_NO
+        return None
+
+    def _ensure_selection_publish_target(self, uploader_key: str, observation_ids: list[int]) -> bool:
+        target = self._target_for_uploader_key(uploader_key)
+        if target is None or not observation_ids:
+            return True
+
+        mismatched_ids: list[int] = []
+        for observation_id in observation_ids:
+            obs = ObservationDB.get_observation(observation_id)
+            if not obs:
+                continue
+            current_target = self._observation_publish_target(obs)
+            if normalize_publish_target(current_target) != normalize_publish_target(target):
+                mismatched_ids.append(observation_id)
+
+        if not mismatched_ids:
+            return True
+
+        target_label = self.tr(publish_target_label(target))
+        confirmed = ask_wrapped_yes_no(
+            self,
+            self.tr("Switch Reporting System"),
+            self.tr(
+                "Publishing to {target} will switch {count} selected observation(s) to that reporting system.\n\n"
+                "This will affect biotope/substrate choices when you edit them.\n\n"
+                "Continue?"
+            ).format(target=target_label, count=len(mismatched_ids)),
+            default_yes=False,
+        )
+        if not confirmed:
+            return False
+
+        for observation_id in mismatched_ids:
+            try:
+                ObservationDB.update_observation(
+                    observation_id,
+                    publish_target=target,
+                )
+            except Exception:
+                return False
+
+        return True
+
+    def _selection_matches_uploader_target(self, uploader_key: str) -> bool:
+        observation_ids = self._selected_observation_ids()
+        if not observation_ids:
+            return False
+        for observation_id in observation_ids:
+            obs = ObservationDB.get_observation(observation_id)
+            if not obs:
+                return False
+            if not self._uploader_matches_publish_target(uploader_key, self._observation_publish_target(obs)):
+                return False
+        return True
+
+    def _selection_has_existing_upload_for_uploader(self, uploader_key: str) -> bool:
+        observation_ids = self._selected_observation_ids()
+        if not observation_ids:
+            return False
+        for observation_id in observation_ids:
+            obs = ObservationDB.get_observation(observation_id)
+            if obs and self._observation_has_existing_upload(obs, uploader_key):
+                return True
+        return False
+
     def _publish_target_logged_in(self, uploader_key: str) -> bool:
         key = (uploader_key or "").strip().lower()
         if key in {"mobile", "web"}:
@@ -1511,6 +1880,17 @@ class ObservationsTab(QWidget):
             if not cookies:
                 return False
             return bool(str(cookies.get(".ASPXAUTHNO") or "").strip())
+
+        if key == "artportalen":
+            try:
+                from utils.artportalen_auth import ArtportalenAuth
+
+                cookies = ArtportalenAuth().load_cookies() or {}
+            except Exception:
+                return False
+            if not cookies:
+                return False
+            return bool(str(cookies.get(".ASPXAUTH") or "").strip())
 
         if key == "inat":
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
@@ -1526,12 +1906,10 @@ class ObservationsTab(QWidget):
             if not client_id or not client_secret:
                 return False
             try:
-                from platformdirs import user_data_dir
                 from utils.inat_oauth import INatOAuthClient
 
                 token_file = (
-                    Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
-                    / "inaturalist_oauth_tokens.json"
+                    app_data_dir() / "inaturalist_oauth_tokens.json"
                 )
                 oauth = INatOAuthClient(
                     client_id=client_id,
@@ -1561,6 +1939,8 @@ class ObservationsTab(QWidget):
     def _invalidate_publish_login_status_cache(self) -> None:
         self._publish_login_status_cache = None
         self._publish_login_status_cache_ts = 0.0
+        self._publish_saved_login_status_cache = None
+        self._publish_saved_login_status_cache_ts = 0.0
 
     def _publish_target_login_status(self, force_refresh: bool = False) -> dict[str, bool]:
         # Avoid disk reads (cookie JSON) and token checks on every row click.
@@ -1576,19 +1956,110 @@ class ObservationsTab(QWidget):
 
         status = {
             key: self._publish_target_logged_in(key)
-            for key in self._publish_actions.keys()
+            for key in (getattr(self, "_publish_enabled_keys", []) or self._publish_actions.keys())
         }
         self._publish_login_status_cache = dict(status)
         self._publish_login_status_cache_ts = now
         return status
 
+    def _publish_target_has_saved_login(self, uploader_key: str) -> bool:
+        key = (uploader_key or "").strip().lower()
+        if key in {"mobile", "web"}:
+            try:
+                from utils.artsobservasjoner_auto_login import has_saved_web_login
+
+                return bool(has_saved_web_login())
+            except Exception:
+                return False
+
+        if key == "artportalen":
+            try:
+                from utils.artportalen_auth import has_saved_login
+
+                return bool(has_saved_login())
+            except Exception:
+                return False
+
+        if key == "inat":
+            client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
+                os.getenv("INAT_CLIENT_ID", "") or ""
+            ).strip()
+            client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
+                os.getenv("INAT_CLIENT_SECRET", "") or ""
+            ).strip()
+            redirect_uri = (
+                SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
+                or "http://localhost:8000/callback"
+            )
+            if not client_id or not client_secret:
+                return False
+            try:
+                from utils.inat_oauth import INatOAuthClient
+
+                token_file = (
+                    app_data_dir() / "inaturalist_oauth_tokens.json"
+                )
+                oauth = INatOAuthClient(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    redirect_uri=redirect_uri,
+                    token_file=token_file,
+                )
+                return bool(oauth.is_logged_in())
+            except Exception:
+                return False
+
+        if key == "mo":
+            app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
+                os.getenv("MO_APP_API_KEY", "") or ""
+            ).strip() or (
+                os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or ""
+            ).strip()
+            user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip() or (
+                os.getenv("MO_USER_API_KEY", "") or ""
+            ).strip() or (
+                os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or ""
+            ).strip()
+            return bool(app_key and user_key)
+
+        return False
+
+    def _publish_target_saved_login_status(self, force_refresh: bool = False) -> dict[str, bool]:
+        now = time.perf_counter()
+        ttl_seconds = 10.0
+        cache_valid = (
+            not force_refresh
+            and isinstance(self._publish_saved_login_status_cache, dict)
+            and (now - float(self._publish_saved_login_status_cache_ts)) < ttl_seconds
+        )
+        if cache_valid:
+            return dict(self._publish_saved_login_status_cache or {})
+
+        status = {
+            key: self._publish_target_has_saved_login(key)
+            for key in (getattr(self, "_publish_enabled_keys", []) or self._publish_actions.keys())
+        }
+        self._publish_saved_login_status_cache = dict(status)
+        self._publish_saved_login_status_cache_ts = now
+        return status
+
+    def _open_online_publishing_settings(self) -> bool:
+        window = self.window()
+        if window is not None and hasattr(window, "open_artsobservasjoner_settings_dialog"):
+            try:
+                window.open_artsobservasjoner_settings_dialog()
+                return True
+            except Exception:
+                pass
+        return False
+
     def _update_publish_controls(self) -> None:
         if not hasattr(self, "publish_btn"):
             return
+        self._refresh_publish_targets_if_needed()
 
         observation_ids = self._selected_observation_ids()
         has_selection = bool(observation_ids)
-        has_existing_upload = self._selection_has_uploaded_artsobs() if has_selection else False
         if not has_selection:
             for action in self._publish_actions.values():
                 action.setEnabled(False)
@@ -1598,17 +2069,21 @@ class ObservationsTab(QWidget):
                 self.plate_btn.setEnabled(False)
             return
 
-        login_status = self._publish_target_login_status()
+        enabled_keys = list(getattr(self, "_publish_enabled_keys", []) or [])
         any_target_enabled = False
-        for key, action in self._publish_actions.items():
-            target_is_artsobs = key in {"mobile", "web"}
-            target_logged_in = login_status.get(key, True)
-            enabled = has_selection and target_logged_in and (not has_existing_upload or not target_is_artsobs)
-            action.setEnabled(enabled)
+        for key in enabled_keys:
+            has_existing_upload = self._selection_has_existing_upload_for_uploader(key)
+            enabled = has_selection and not has_existing_upload
+            action = self._publish_actions.get(key)
+            if action is not None:
+                action.setEnabled(enabled)
             if enabled:
                 any_target_enabled = True
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
+        if len(enabled_keys) > 1:
+            self._disconnect_publish_click_if_needed()
+            self.publish_btn.setMenu(self.publish_menu)
 
         # Plate button: enabled whenever exactly one observation is selected
         if hasattr(self, "plate_btn"):
@@ -1616,12 +2091,41 @@ class ObservationsTab(QWidget):
 
         if not has_selection:
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
-        elif not any_target_enabled and not has_existing_upload:
-            self.publish_btn.setProperty("_hint_text", self.tr("Not logged in — log in to publish"))
-        elif has_existing_upload:
-            self.publish_btn.setProperty("_hint_text", self.tr("Artsobservasjoner targets are disabled for already-published observations."))
+        elif any(self._selection_has_existing_upload_for_uploader(key) for key in enabled_keys):
+            enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
+            self.publish_btn.setProperty(
+                "_hint_text",
+                self.tr("Publishing to {targets} is disabled for observations that already have an ID in that service.").format(
+                    targets=enabled_labels or self.tr("the selected service")
+                ),
+            )
+        elif not any(self._selection_matches_uploader_target(key) for key in enabled_keys):
+            enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
+            self.publish_btn.setProperty(
+                "_hint_text",
+                self.tr("Publishing to {targets} will switch the selected observations to that reporting system.").format(
+                    targets=enabled_labels or self.tr("the selected service")
+                ),
+            )
+        elif len(enabled_keys) == 1:
+            target_key = enabled_keys[0]
+            target_label = self._uploader_label(target_key)
+            self.publish_btn.setProperty(
+                "_hint_text",
+                self.tr(
+                    "Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing."
+                ).format(target=target_label),
+            )
         else:
-            self.publish_btn.setProperty("_hint_text", self.tr("Choose a publish target."))
+            enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
+            self.publish_btn.setProperty(
+                "_hint_text",
+                self.tr(
+                    "Choose where to publish: {targets}. Saved logins will be used automatically when available."
+                ).format(
+                    targets=enabled_labels or self.tr("available services")
+                ),
+            )
 
     def _on_plate_clicked(self) -> None:
         obs_ids = self._selected_observation_ids()
@@ -1654,9 +2158,33 @@ class ObservationsTab(QWidget):
                 level="warning",
             )
             return
-        if uploader_key in {"mobile", "web"} and self._selection_has_uploaded_artsobs():
+        login_status = self._publish_target_login_status(force_refresh=True)
+        saved_login_status = self._publish_target_saved_login_status(force_refresh=True)
+        if not login_status.get(uploader_key, False) and not saved_login_status.get(uploader_key, False):
+            opened = self._open_online_publishing_settings()
+            if not opened:
+                self.set_status_message(
+                    self.tr("Open Online publishing and log in before publishing."),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+            self._invalidate_publish_login_status_cache()
+            self._update_publish_controls()
+            return
+        if not self._ensure_selection_publish_target(uploader_key, observation_ids):
+            self._update_publish_controls()
+            return
+        if not self._selection_matches_uploader_target(uploader_key):
             self.set_status_message(
-                self.tr("Publishing disabled: selection contains an observation already uploaded."),
+                self.tr("Publishing disabled: the selection does not match this reporting system."),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+            self._update_publish_controls()
+            return
+        if self._selection_has_existing_upload_for_uploader(uploader_key):
+            self.set_status_message(
+                self.tr("Publishing disabled: selection contains an observation already uploaded to this service."),
                 level="warning",
                 auto_clear_ms=12000,
             )
@@ -1721,6 +2249,13 @@ class ObservationsTab(QWidget):
 
     def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
+        observation_ids: list[int] = []
+        for obs in observations:
+            try:
+                observation_ids.append(int(obs.get("id")))
+            except (TypeError, ValueError):
+                continue
+        thumbnail_map = self._build_observation_thumbnail_map(observation_ids)
         rows: list[dict] = []
         for obs in observations:
             try:
@@ -1750,6 +2285,8 @@ class ObservationsTab(QWidget):
             lon = obs.get("gps_longitude")
             has_coords = lat is not None and lon is not None
             arts_id = obs.get("artsdata_id")
+            artportalen_id = obs.get("artportalen_id")
+            publish_target = self._observation_publish_target(obs)
             species_name = self._build_species_name(obs)
 
             search_parts = [str(v) for v in obs.values() if v is not None]
@@ -1762,6 +2299,7 @@ class ObservationsTab(QWidget):
             rows.append(
                 {
                     "id": obs_id,
+                    "thumbnail_path": thumbnail_map.get(obs_id),
                     "genus": genus_display,
                     "species": species_display,
                     "common_name": common_name_display,
@@ -1773,10 +2311,94 @@ class ObservationsTab(QWidget):
                     "has_coords": bool(has_coords),
                     "species_name": species_name,
                     "arts_id": arts_id,
+                    "artportalen_id": artportalen_id,
+                    "publish_target": publish_target,
                     "search_text": search_text,
                 }
             )
         return rows
+
+    def _build_observation_thumbnail_map(self, observation_ids: list[int]) -> dict[int, str]:
+        ids: list[int] = []
+        for observation_id in observation_ids or []:
+            try:
+                ids.append(int(observation_id))
+            except (TypeError, ValueError):
+                continue
+        if not ids:
+            return {}
+
+        conn = None
+        try:
+            conn = get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in ids)
+            cursor.execute(
+                f"""
+                SELECT observation_id, id, image_type
+                FROM images
+                WHERE image_type IN ('field', 'microscope')
+                  AND observation_id IN ({placeholders})
+                ORDER BY
+                    observation_id,
+                    CASE
+                        WHEN image_type = 'field' THEN 0
+                        WHEN image_type = 'microscope' THEN 1
+                        ELSE 2
+                    END,
+                    CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                    sort_order,
+                    created_at,
+                    id
+                """,
+                tuple(ids),
+            )
+            thumbnail_map: dict[int, str] = {}
+            for row in cursor.fetchall():
+                try:
+                    observation_id = int(row["observation_id"])
+                    image_id = int(row["id"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                if observation_id in thumbnail_map:
+                    continue
+                thumb_path = get_thumbnail_path(image_id, "224x224")
+                if thumb_path and Path(thumb_path).exists():
+                    thumbnail_map[observation_id] = str(thumb_path)
+            return thumbnail_map
+        except Exception:
+            return {}
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _observation_thumbnail_icon(self, thumbnail_path: str | None) -> QIcon | None:
+        if not thumbnail_path:
+            return None
+        path = str(thumbnail_path).strip()
+        if not path:
+            return None
+        cached = self._observation_thumb_icon_cache.get(path)
+        if cached is not None:
+            return cached
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            return None
+        size = self._observation_table_thumbnail_size()
+        pixmap = pixmap.scaled(
+            size,
+            size,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        if pixmap.width() != size or pixmap.height() != size:
+            x = max(0, (pixmap.width() - size) // 2)
+            y = max(0, (pixmap.height() - size) // 2)
+            pixmap = pixmap.copy(x, y, size, size)
+        icon = QIcon(pixmap)
+        self._observation_thumb_icon_cache[path] = icon
+        return icon
 
     def _render_observations_table(
         self,
@@ -1798,6 +2420,8 @@ class ObservationsTab(QWidget):
         sorting_enabled = bool(table.isSortingEnabled())
         sort_col = header.sortIndicatorSection() if header else -1
         sort_order = header.sortIndicatorOrder() if header else Qt.AscendingOrder
+        show_thumbnails = self._show_observation_table_thumbnails()
+        thumb_size = self._observation_table_thumbnail_size()
 
         restored_selection = False
         table.setUpdatesEnabled(False)
@@ -1806,12 +2430,21 @@ class ObservationsTab(QWidget):
             if sorting_enabled:
                 table.setSortingEnabled(False)
             table.setRowCount(len(visible_rows))
+            self._update_observations_table_geometry()
 
             for row_index, row_data in enumerate(visible_rows):
                 obs_id = int(row_data["id"])
 
-                id_item = SortableTableWidgetItem(str(obs_id))
+                id_item = SortableTableWidgetItem("" if show_thumbnails else str(obs_id))
                 id_item.setData(Qt.UserRole, obs_id)
+                id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)
+                if show_thumbnails:
+                    icon = self._observation_thumbnail_icon(row_data.get("thumbnail_path"))
+                    if icon is not None:
+                        id_item.setIcon(icon)
+                    id_item.setToolTip(self.tr("Observation {id}").format(id=obs_id))
+                    id_item.setTextAlignment(Qt.AlignCenter)
+                    id_item.setSizeHint(QSize(thumb_size + 20, thumb_size + 20))
                 table.setItem(row_index, 0, id_item)
 
                 table.setItem(row_index, 1, QTableWidgetItem(str(row_data.get("common_name") or "-")))
@@ -1845,7 +2478,13 @@ class ObservationsTab(QWidget):
                     map_label.setToolTip(_map_hint)
                     table.setCellWidget(row_index, 7, map_label)
 
-                self._render_artsobs_cell(row_index, obs_id, row_data.get("arts_id"))
+                self._render_publish_cell(
+                    row_index,
+                    obs_id,
+                    row_data.get("publish_target"),
+                    row_data.get("arts_id"),
+                    row_data.get("artportalen_id"),
+                )
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
@@ -1862,12 +2501,8 @@ class ObservationsTab(QWidget):
 
             if previous_id:
                 for row_index in range(table.rowCount()):
-                    id_item = table.item(row_index, 0)
-                    if not id_item:
-                        continue
-                    try:
-                        row_obs_id = int(id_item.data(Qt.UserRole) or id_item.text())
-                    except (TypeError, ValueError):
+                    row_obs_id = self._observation_id_for_row(row_index)
+                    if row_obs_id is None:
                         continue
                     if row_obs_id == previous_id:
                         table.selectRow(row_index)
@@ -1885,6 +2520,67 @@ class ObservationsTab(QWidget):
             self.set_status_message(status_message, level="success")
         elif show_status:
             self.set_status_message(self.tr("Refreshed db."), level="success")
+
+    def _observations_detail_default_height(self) -> int:
+        gallery = getattr(self, "gallery_widget", None)
+        detail_widget = getattr(self, "detail_widget", None)
+        if gallery is None:
+            return 190
+        gallery_height = max(gallery.minimumHeight(), 190)
+        if detail_widget is None or detail_widget.layout() is None:
+            return gallery_height
+        margins = detail_widget.layout().contentsMargins()
+        return gallery_height + margins.top() + margins.bottom()
+
+    def _observations_detail_max_height(self) -> int:
+        gallery = getattr(self, "gallery_widget", None)
+        detail_widget = getattr(self, "detail_widget", None)
+        if gallery is None:
+            return 220
+        gallery_max = max(gallery.minimumHeight(), gallery.maximum_useful_height())
+        if detail_widget is None or detail_widget.layout() is None:
+            return gallery_max
+        margins = detail_widget.layout().contentsMargins()
+        return gallery_max + margins.top() + margins.bottom()
+
+    def _apply_observations_splitter_height(self, detail_height: int | None = None) -> None:
+        splitter = getattr(self, "observations_splitter", None)
+        detail_widget = getattr(self, "detail_widget", None)
+        if splitter is None or detail_widget is None:
+            return
+        target = self._observations_detail_default_height() if detail_height is None else int(detail_height)
+        target = max(detail_widget.minimumHeight(), min(self._observations_detail_max_height(), target))
+        detail_widget.setMaximumHeight(self._observations_detail_max_height())
+        sizes = splitter.sizes()
+        total = sum(sizes) if sizes else 0
+        if total <= 0:
+            total = splitter.height()
+        if total <= 0:
+            total = max(self.height(), target + 400)
+        if self._observations_splitter_syncing:
+            return
+        self._observations_splitter_syncing = True
+        try:
+            splitter.setSizes([max(0, total - target), target])
+        finally:
+            self._observations_splitter_syncing = False
+
+    def _on_observations_splitter_moved(self, _pos: int, _index: int) -> None:
+        splitter = getattr(self, "observations_splitter", None)
+        if splitter is None or self._observations_splitter_syncing:
+            return
+        sizes = splitter.sizes()
+        detail_height = sizes[1] if len(sizes) >= 2 else None
+        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        splitter = getattr(self, "observations_splitter", None)
+        if splitter is None or self._observations_splitter_syncing:
+            return
+        sizes = splitter.sizes()
+        detail_height = sizes[1] if len(sizes) >= 2 else None
+        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
 
     def refresh_observations(
         self,
@@ -1948,6 +2644,18 @@ class ObservationsTab(QWidget):
         """Return cached AI suggestion state for the given observation id."""
         return self._ai_suggestions_cache.get(obs_id)
 
+    def _merge_observation_edit_draft(
+        self,
+        observation: dict | None,
+        draft: dict | None,
+    ) -> dict | None:
+        if not observation and not draft:
+            return None
+        merged = dict(observation or {})
+        if draft:
+            merged.update(draft)
+        return merged
+
     def _remap_ai_state_to_images(
         self,
         ai_state: dict | None,
@@ -1958,10 +2666,17 @@ class ObservationsTab(QWidget):
         predictions = ai_state.get("predictions") or {}
         selected = ai_state.get("selected") or {}
         prev_paths = ai_state.get("paths") or []
+        prev_image_ids = ai_state.get("image_ids") or []
         if not isinstance(predictions, dict) or not isinstance(selected, dict):
             return None
         new_paths = [item.filepath for item in image_results]
+        new_image_ids = [item.image_id for item in image_results]
         new_index_by_path = {path: idx for idx, path in enumerate(new_paths) if path}
+        new_index_by_image_id = {
+            int(image_id): idx
+            for idx, image_id in enumerate(new_image_ids)
+            if isinstance(image_id, int) and image_id > 0
+        }
         new_predictions: dict[int, list] = {}
         new_selected: dict[int, dict] = {}
         for old_idx, preds in predictions.items():
@@ -1969,8 +2684,15 @@ class ObservationsTab(QWidget):
                 old_index = int(old_idx)
             except (TypeError, ValueError):
                 continue
-            old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
-            new_index = new_index_by_path.get(old_path)
+            old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
+            new_index = (
+                new_index_by_image_id.get(int(old_image_id))
+                if isinstance(old_image_id, int) and old_image_id > 0
+                else None
+            )
+            if new_index is None:
+                old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
+                new_index = new_index_by_path.get(old_path)
             if new_index is not None:
                 new_predictions[new_index] = preds
         for old_idx, sel in selected.items():
@@ -1978,8 +2700,15 @@ class ObservationsTab(QWidget):
                 old_index = int(old_idx)
             except (TypeError, ValueError):
                 continue
-            old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
-            new_index = new_index_by_path.get(old_path)
+            old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
+            new_index = (
+                new_index_by_image_id.get(int(old_image_id))
+                if isinstance(old_image_id, int) and old_image_id > 0
+                else None
+            )
+            if new_index is None:
+                old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
+                new_index = new_index_by_path.get(old_path)
             if new_index is not None:
                 new_selected[new_index] = sel
         selected_index = ai_state.get("selected_index")
@@ -1989,15 +2718,51 @@ class ObservationsTab(QWidget):
                 old_index = int(selected_index)
             except (TypeError, ValueError):
                 old_index = None
-            if old_index is not None and 0 <= old_index < len(prev_paths):
-                old_path = prev_paths[old_index]
-                new_selected_index = new_index_by_path.get(old_path)
+            if old_index is not None:
+                old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
+                if isinstance(old_image_id, int) and old_image_id > 0:
+                    new_selected_index = new_index_by_image_id.get(int(old_image_id))
+                if new_selected_index is None and 0 <= old_index < len(prev_paths):
+                    old_path = prev_paths[old_index]
+                    new_selected_index = new_index_by_path.get(old_path)
+        if new_selected_index is None and new_predictions:
+            new_selected_index = sorted(new_predictions.keys())[0]
         return {
             "predictions": new_predictions,
             "selected": new_selected,
             "selected_index": new_selected_index,
             "paths": new_paths,
+            "image_ids": new_image_ids,
         }
+
+    def _serialize_ai_state(self, ai_state: dict | None) -> str | None:
+        if not ai_state:
+            return None
+        try:
+            return json.dumps(ai_state, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return None
+
+    def _deserialize_ai_state(self, raw_value: str | None) -> dict | None:
+        text = str(raw_value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _load_observation_ai_state(self, observation: dict | None) -> dict | None:
+        if not observation:
+            return None
+        obs_id = observation.get("id")
+        if obs_id is not None and obs_id in self._ai_suggestions_cache:
+            return self._ai_suggestions_cache.get(obs_id)
+        ai_state = self._deserialize_ai_state(observation.get("ai_state_json"))
+        if obs_id is not None and ai_state:
+            self._ai_suggestions_cache[obs_id] = ai_state
+        return ai_state
 
     def _lookup_common_name(self, obs: dict, name_map: dict[tuple[str, str], str | None]) -> str | None:
         """Look up common name from the pre-built cache."""
@@ -2015,6 +2780,245 @@ class ObservationsTab(QWidget):
         
         if not genus or not species:
             return None
+        return name_map.get((genus, species))
+
+    @staticmethod
+    def _normalize_duplicate_compare_text(value: str | None) -> str:
+        return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+    @staticmethod
+    def _observation_image_name_set(images: list[dict] | list[ImageImportResult]) -> set[str]:
+        names: set[str] = set()
+        for image in images or []:
+            for key in ("filepath", "original_filepath"):
+                value = None
+                if isinstance(image, dict):
+                    value = image.get(key)
+                else:
+                    value = getattr(image, key, None)
+                if not value:
+                    continue
+                name = Path(str(value)).name.strip()
+                if name:
+                    names.add(name.casefold())
+        return names
+
+    def _build_duplicate_candidate_thumbnails(self, observation_id: int, limit: int = 4) -> list[str]:
+        images = ImageDB.get_images_for_observation(observation_id)
+        paths: list[str] = []
+        fallback_paths: list[str] = []
+        for image in images:
+            image_id = image.get("id")
+            if not image_id:
+                continue
+            thumb_path = get_thumbnail_path(int(image_id), "224x224")
+            if not thumb_path or not Path(thumb_path).exists():
+                continue
+            image_type = str(image.get("image_type") or "").strip().lower()
+            if image_type == "field":
+                paths.append(str(thumb_path))
+            else:
+                fallback_paths.append(str(thumb_path))
+            if len(paths) >= limit:
+                break
+        if len(paths) < limit:
+            for thumb_path in fallback_paths:
+                if thumb_path in paths:
+                    continue
+                paths.append(thumb_path)
+                if len(paths) >= limit:
+                    break
+        return paths
+
+    def _find_duplicate_observation_candidates(
+        self,
+        obs_data: dict,
+        image_results: list[ImageImportResult],
+    ) -> list[dict]:
+        target_minute = _normalized_observation_datetime_minute(obs_data.get("date"))
+        target_taxon = (
+            self._normalize_duplicate_compare_text(obs_data.get("genus")),
+            self._normalize_duplicate_compare_text(obs_data.get("species")),
+        )
+        target_location = self._normalize_duplicate_compare_text(obs_data.get("location"))
+        target_names = self._observation_image_name_set(image_results)
+        candidates: list[dict] = []
+        for obs in ObservationDB.get_all_observations():
+            reasons: list[str] = []
+            score = 0
+            existing_minute = _normalized_observation_datetime_minute(obs.get("date"))
+            same_minute = bool(target_minute and existing_minute and target_minute == existing_minute)
+            existing_taxon = (
+                self._normalize_duplicate_compare_text(obs.get("genus")),
+                self._normalize_duplicate_compare_text(obs.get("species")),
+            )
+            same_taxon = bool(target_taxon[0] and target_taxon[1] and target_taxon == existing_taxon)
+            existing_location = self._normalize_duplicate_compare_text(obs.get("location"))
+            same_location = bool(target_location and existing_location and target_location == existing_location)
+
+            existing_images = ImageDB.get_images_for_observation(int(obs.get("id")))
+            shared_names = sorted(
+                target_names.intersection(self._observation_image_name_set(existing_images))
+            )
+
+            if same_minute:
+                reasons.append(self.tr("Same date/time"))
+                score += 3
+            if same_taxon:
+                reasons.append(self.tr("Same taxon"))
+                score += 3
+            if same_location:
+                reasons.append(self.tr("Same location"))
+                score += 2
+            if shared_names:
+                label = self.tr("Shared image filename") if len(shared_names) == 1 else self.tr("Shared image filenames")
+                reasons.append(f"{label}: {', '.join(shared_names[:3])}")
+                score += 4 + min(3, len(shared_names))
+
+            likely_duplicate = False
+            if shared_names and (same_minute or same_location or same_taxon):
+                likely_duplicate = True
+            elif same_minute and same_taxon:
+                likely_duplicate = True
+            elif same_minute and same_location and len(shared_names) >= 1:
+                likely_duplicate = True
+
+            if not likely_duplicate:
+                continue
+
+            candidates.append(
+                {
+                    "observation": obs,
+                    "reasons": reasons,
+                    "shared_names": shared_names,
+                    "score": score,
+                    "thumbnail_paths": self._build_duplicate_candidate_thumbnails(int(obs.get("id"))),
+                }
+            )
+
+        candidates.sort(
+            key=lambda item: (
+                -int(item.get("score", 0)),
+                str(item.get("observation", {}).get("date") or ""),
+            )
+        )
+        return candidates[:4]
+
+    def _confirm_duplicate_observation_creation(
+        self,
+        obs_data: dict,
+        image_results: list[ImageImportResult],
+    ) -> bool:
+        candidates = self._find_duplicate_observation_candidates(obs_data, image_results)
+        if not candidates:
+            return True
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.tr("Possible Duplicate Observation"))
+        dialog.setModal(True)
+        dialog.setMinimumWidth(760)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        title = QLabel(
+            self.tr("A similar observation already exists. Do you still want to create a new observation?")
+        )
+        title.setWordWrap(True)
+        title.setStyleSheet(f"font-size: {pt(12)}pt; font-weight: 600;")
+        layout.addWidget(title)
+
+        subtitle_parts: list[str] = []
+        if obs_data.get("date"):
+            subtitle_parts.append(self.tr("Date: {value}").format(value=obs_data.get("date")))
+        if obs_data.get("location"):
+            subtitle_parts.append(self.tr("Location: {value}").format(value=obs_data.get("location")))
+        genus = (obs_data.get("genus") or "").strip()
+        species = (obs_data.get("species") or "").strip()
+        if genus or species:
+            subtitle_parts.append(self.tr("Taxon: {value}").format(value=f"{genus} {species}".strip()))
+        if subtitle_parts:
+            summary = QLabel(" | ".join(subtitle_parts))
+            summary.setWordWrap(True)
+            summary.setStyleSheet("color: #5f6b7a;")
+            layout.addWidget(summary)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(10)
+
+        for candidate in candidates:
+            obs = candidate["observation"]
+            card = QFrame()
+            card.setStyleSheet(
+                "QFrame { border: 1px solid #d9dde3; border-radius: 10px; background: #fbfcfd; }"
+            )
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 12, 12, 12)
+            card_layout.setSpacing(8)
+
+            heading = QLabel(
+                self.tr("#{id}  {date}  {label}").format(
+                    id=obs.get("id"),
+                    date=obs.get("date") or self.tr("Unknown date"),
+                    label=((f"{obs.get('genus') or ''} {obs.get('species') or ''}").strip() or (obs.get("location") or self.tr("Unnamed observation"))),
+                )
+            )
+            heading.setStyleSheet("font-weight: 600;")
+            heading.setWordWrap(True)
+            card_layout.addWidget(heading)
+
+            meta_parts: list[str] = []
+            if obs.get("location"):
+                meta_parts.append(self.tr("Location: {value}").format(value=obs.get("location")))
+            image_count = len(ImageDB.get_images_for_observation(int(obs.get("id"))))
+            meta_parts.append(self.tr("Images: {count}").format(count=image_count))
+            if candidate.get("reasons"):
+                meta_parts.append(self.tr("Match: {value}").format(value="; ".join(candidate["reasons"])))
+            meta = QLabel(" | ".join(meta_parts))
+            meta.setWordWrap(True)
+            meta.setStyleSheet("color: #5f6b7a;")
+            card_layout.addWidget(meta)
+
+            thumbs = candidate.get("thumbnail_paths") or []
+            if thumbs:
+                thumb_row = QHBoxLayout()
+                thumb_row.setSpacing(8)
+                for thumb_path in thumbs:
+                    label = QLabel()
+                    pixmap = QPixmap(str(thumb_path))
+                    if pixmap and not pixmap.isNull():
+                        pixmap = pixmap.scaled(88, 88, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                        if pixmap.width() != 88 or pixmap.height() != 88:
+                            x = max(0, (pixmap.width() - 88) // 2)
+                            y = max(0, (pixmap.height() - 88) // 2)
+                            pixmap = pixmap.copy(x, y, 88, 88)
+                        label.setPixmap(pixmap)
+                    label.setFixedSize(88, 88)
+                    label.setStyleSheet("border: 1px solid #d9dde3; border-radius: 6px; background: white;")
+                    thumb_row.addWidget(label)
+                thumb_row.addStretch(1)
+                card_layout.addLayout(thumb_row)
+
+            container_layout.addWidget(card)
+
+        container_layout.addStretch(1)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox(dialog)
+        create_btn = buttons.addButton(self.tr("Create Anyway"), QDialogButtonBox.AcceptRole)
+        create_btn.setStyleSheet("font-weight: bold;")
+        buttons.addButton(self.tr("Go Back"), QDialogButtonBox.RejectRole)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        return dialog.exec() == QDialog.Accepted
         
         # Use the pre-built cache - no database access needed here!
         return name_map.get((genus, species))
@@ -2039,9 +3043,14 @@ class ObservationsTab(QWidget):
             return self.tr("Navn")
         return self.tr("Name")
 
+    def _observation_first_column_title(self) -> str:
+        if self._show_observation_table_thumbnails():
+            return self.tr("Photo")
+        return self.tr("ID")
+
     def _spore_stats_column_title(self) -> str:
         lang = (SettingsDB.get_setting("ui_language", "en") or "en").lower()
-        return "Sporer" if lang.startswith("nb") or lang.startswith("no") else "Spores"
+        return self.tr("Sporer") if lang.startswith("nb") or lang.startswith("no") else self.tr("Spores")
 
     def _publish_prefers_norwegian_labels(self) -> bool:
         ui_lang = str(SettingsDB.get_setting("ui_language", "en") or "en").lower()
@@ -2062,12 +3071,53 @@ class ObservationsTab(QWidget):
     def _update_table_headers(self) -> None:
         if not hasattr(self, "table"):
             return
+        id_item = self.table.horizontalHeaderItem(0)
+        if id_item:
+            id_item.setText(self._observation_first_column_title())
         item = self.table.horizontalHeaderItem(1)
         if item:
             item.setText(self._common_name_column_title())
         spore_item = self.table.horizontalHeaderItem(4)
         if spore_item:
             spore_item.setText(self._spore_stats_column_title())
+
+    def _show_observation_table_thumbnails(self) -> bool:
+        checkbox = getattr(self, "show_table_thumbnails_checkbox", None)
+        if checkbox is not None:
+            return bool(checkbox.isChecked())
+        return bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
+
+    def _observation_table_thumbnail_size(self) -> int:
+        return 96
+
+    def _update_observations_table_geometry(self) -> None:
+        if not hasattr(self, "table"):
+            return
+        if self._show_observation_table_thumbnails():
+            thumb_size = self._observation_table_thumbnail_size()
+            self.table.setIconSize(QSize(thumb_size, thumb_size))
+            self.table.setColumnWidth(0, thumb_size + 28)
+            self.table.verticalHeader().setDefaultSectionSize(
+                max(self._observations_table_default_row_height, thumb_size + 18)
+            )
+        else:
+            self.table.setIconSize(QSize(16, 16))
+            self.table.setColumnWidth(0, 56)
+            self.table.verticalHeader().setDefaultSectionSize(
+                self._observations_table_default_row_height
+            )
+
+    def _on_show_table_thumbnails_toggled(self, checked: bool) -> None:
+        SettingsDB.set_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, bool(checked))
+        self._update_table_headers()
+        self._update_observations_table_geometry()
+        self._render_observations_table(
+            self._observation_table_rows_cache,
+            query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
+            restore_selection=True,
+            show_status=False,
+            status_message=None,
+        )
 
     def _format_spore_stats_short(self, stats: str | None) -> str | None:
         if not stats:
@@ -2300,7 +3350,6 @@ class ObservationsTab(QWidget):
 
     def on_selection_changed(self):
         """Update detail view when selection changes."""
-        _t0 = time.perf_counter()
         # Reset action buttons first to avoid stale enabled state during edge-case transitions.
         self.rename_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
@@ -2311,7 +3360,6 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
-            _timing_log(f"on_selection_changed rows=0 took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
         if len(selected_rows) > 1:
             self.delete_btn.setEnabled(True)
@@ -2320,7 +3368,6 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
-            _timing_log(f"on_selection_changed rows={len(selected_rows)} multi_select took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
 
         row = selected_rows[0].row()
@@ -2329,10 +3376,15 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
-            _timing_log(f"on_selection_changed invalid_row row={row} took={(time.perf_counter()-_t0)*1000:.1f}ms")
             return
-        obs_id = int(id_item.text())
+        obs_id = self._observation_id_from_item(id_item)
+        if obs_id is None:
+            self.gallery_widget.clear()
+            self.selected_observation_id = None
+            self._update_publish_controls()
+            return
         self.selected_observation_id = obs_id
+        self.observation_highlighted.emit(obs_id)
 
         self.rename_btn.setEnabled(True)
         self.delete_btn.setEnabled(True)
@@ -2351,10 +3403,6 @@ class ObservationsTab(QWidget):
         if pending_notice:
             msg, level = pending_notice
             self.set_status_message(msg, level=level, auto_clear_ms=0)
-        _timing_log(
-            f"on_selection_changed obs={int(obs_id)} images={len(self.gallery_widget._items) if hasattr(self.gallery_widget, '_items') else -1} "
-            f"took={(time.perf_counter()-_t0)*1000:.1f}ms"
-        )
 
     def on_row_double_clicked(self, item):
         """Double-click to open edit dialog for the observation."""
@@ -2369,9 +3417,11 @@ class ObservationsTab(QWidget):
             return
 
         row = selected_rows[0].row()
-        obs_id = int(self.table.item(row, 0).text())
-        genus = self.table.item(row, 1).text()
-        species = self.table.item(row, 2).text()
+        obs_id = self._observation_id_for_row(row)
+        if obs_id is None:
+            return
+        genus = self.table.item(row, 2).text()
+        species = self.table.item(row, 3).text()
         date = self.table.item(row, 5).text()
         display_name = f"{genus} {species} {date}"
 
@@ -2384,9 +3434,11 @@ class ObservationsTab(QWidget):
         if not selected_rows:
             return None
         row = selected_rows[0].row()
-        obs_id = int(self.table.item(row, 0).text())
-        genus = self.table.item(row, 1).text()
-        species = self.table.item(row, 2).text()
+        obs_id = self._observation_id_for_row(row)
+        if obs_id is None:
+            return None
+        genus = self.table.item(row, 2).text()
+        species = self.table.item(row, 3).text()
         date = self.table.item(row, 5).text()
         display_name = f"{genus} {species} {date}"
         return obs_id, display_name
@@ -2944,20 +3996,141 @@ class ObservationsTab(QWidget):
         return text
 
     def _filter_publish_measurements(self, measurements: list[dict], category: str | None) -> list[dict]:
+        filtered = [
+            m
+            for m in (measurements or [])
+            if self._normalize_publish_measurement_category(m.get("measurement_type")) != "calibration"
+        ]
         normalized = (category or "all").strip().lower()
         if not normalized or normalized == "all":
-            return list(measurements or [])
+            return filtered
         if normalized in {"spore", "spores"}:
             return [
                 m
-                for m in (measurements or [])
+                for m in filtered
                 if self._normalize_publish_measurement_category(m.get("measurement_type")) == "spores"
             ]
         return [
             m
-            for m in (measurements or [])
+            for m in filtered
             if self._normalize_publish_measurement_category(m.get("measurement_type")) == normalized
         ]
+
+    @staticmethod
+    def _publish_measurement_has_overlay(measurement: dict | None) -> bool:
+        if not isinstance(measurement, dict):
+            return False
+        return all(
+            measurement.get(f"p{i}_{axis}") is not None
+            for i in range(1, 3)
+            for axis in ("x", "y")
+        )
+
+    @staticmethod
+    def _publish_measurement_has_plot_values(measurement: dict | None) -> bool:
+        if not isinstance(measurement, dict):
+            return False
+        try:
+            length = float(measurement.get("length_um"))
+            width = float(measurement.get("width_um"))
+        except (TypeError, ValueError):
+            return False
+        return length > 0 and width > 0
+
+    @staticmethod
+    def _publish_measurement_has_gallery_data(measurement: dict | None) -> bool:
+        if not isinstance(measurement, dict):
+            return False
+        if not all(
+            measurement.get(f"p{i}_{axis}") is not None
+            for i in range(1, 5)
+            for axis in ("x", "y")
+        ):
+            return False
+        image_path = str(measurement.get("image_filepath") or "").strip()
+        return bool(image_path) and Path(image_path).exists()
+
+    def _publish_measurement_availability(
+        self,
+        observation_id: int,
+        base_image_paths: list[str],
+    ) -> dict[str, object]:
+        all_measurements = self._filter_publish_measurements(
+            MeasurementDB.get_measurements_for_observation(observation_id),
+            "all",
+        )
+        settings = self._load_gallery_settings_for_observation(observation_id)
+        category = settings.get("measurement_type", "all")
+        category_measurements = self._filter_publish_measurements(all_measurements, category)
+
+        selected_image_ids: set[int] = set()
+        base_keys = {
+            self._publish_path_key(path)
+            for path in (base_image_paths or [])
+            if path
+        }
+        if base_keys:
+            for image_row in ImageDB.get_images_for_observation(observation_id):
+                image_id = image_row.get("id")
+                if image_id is None:
+                    continue
+                row_keys = {
+                    self._publish_path_key(image_row.get("filepath")),
+                    self._publish_path_key(image_row.get("original_filepath")),
+                }
+                row_keys.discard("")
+                if row_keys & base_keys:
+                    try:
+                        selected_image_ids.add(int(image_id))
+                    except Exception:
+                        pass
+
+        has_overlay_measurements = any(
+            self._publish_measurement_has_overlay(measurement)
+            and measurement.get("image_id") is not None
+            and str(measurement.get("image_id")).isdigit()
+            and int(measurement.get("image_id")) in selected_image_ids
+            for measurement in all_measurements
+        )
+        plot_measurements = [
+            measurement
+            for measurement in category_measurements
+            if self._publish_measurement_has_plot_values(measurement)
+        ]
+        has_gallery_measurements = any(
+            self._publish_measurement_has_gallery_data(measurement)
+            for measurement in category_measurements
+        )
+        spore_stats = MeasurementDB.get_statistics_for_observation(
+            observation_id,
+            measurement_category="spores",
+        )
+        return {
+            "has_any_measurements": bool(all_measurements),
+            "has_overlay_measurements": has_overlay_measurements,
+            "has_plot_measurements": bool(plot_measurements),
+            "has_gallery_measurements": has_gallery_measurements,
+            "spore_stats": spore_stats,
+        }
+
+    def _publish_spore_stats_text(self, observation_id: int, obs: dict, spore_stats: dict | None = None) -> str:
+        stats_text = self._localize_spore_stats_for_publish(obs.get("spore_statistics"))
+        if stats_text:
+            return stats_text
+        stats = spore_stats if isinstance(spore_stats, dict) else MeasurementDB.get_statistics_for_observation(
+            observation_id,
+            measurement_category="spores",
+        )
+        if not stats:
+            return ""
+        parent = self.window()
+        formatter = getattr(parent, "format_literature_string", None)
+        if callable(formatter):
+            try:
+                return self._localize_spore_stats_for_publish(formatter(stats))
+            except Exception:
+                pass
+        return ""
 
     @staticmethod
     def _load_gallery_settings_for_observation(observation_id: int) -> dict:
@@ -3340,7 +4513,7 @@ class ObservationsTab(QWidget):
 
         if cancel_cb:
             cancel_cb()
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"mycolog_publish_{observation_id}_"))
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"sporely_publish_{observation_id}_"))
         generated_any = False
         if include_copyright and not copyright_text:
             warnings.append(
@@ -3450,6 +4623,26 @@ class ObservationsTab(QWidget):
             if accepted_pair:
                 adb_taxon_id = ObservationDB.resolve_adb_taxon_id(*accepted_pair)
         return adb_taxon_id
+
+    def _resolve_artportalen_taxon_id(self, obs: dict) -> int | None:
+        taxon_pair = self._extract_artsobs_taxon_pair(obs)
+        if not taxon_pair:
+            return None
+        genus, species = taxon_pair
+        taxon_id = ObservationDB.resolve_external_taxon_id(genus, species, "artportalen")
+        if not taxon_id:
+            accepted_pair = self._resolve_accepted_taxon_pair(genus, species)
+            if accepted_pair:
+                taxon_id = ObservationDB.resolve_external_taxon_id(*accepted_pair, source_system="artportalen")
+        return taxon_id
+
+    def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
+        requested_key = (requested_uploader_key or "").strip().lower()
+        if requested_key in {"artportalen", "inat", "mo"}:
+            return requested_key
+        if requested_key in {"mobile", "web"}:
+            return "web"
+        return uploader_key_for_publish_target(self._observation_publish_target(obs))
 
     def _extract_artsobs_taxon_pair(self, obs: dict) -> tuple[str, str] | None:
         def _split_name(text: str | None) -> tuple[str, str] | None:
@@ -3566,6 +4759,7 @@ class ObservationsTab(QWidget):
         obs = ObservationDB.get_observation(observation_id)
         if not obs:
             return _fail(self.tr("Upload failed: observation not found."))
+        publish_target = self._observation_publish_target(obs)
 
         lat = obs.get("gps_latitude")
         lon = obs.get("gps_longitude")
@@ -3597,6 +4791,16 @@ class ObservationsTab(QWidget):
             self.SETTING_INCLUDE_COPYRIGHT,
             default=False,
         )
+        measurement_availability = self._publish_measurement_availability(
+            observation_id,
+            image_paths,
+        )
+        include_annotations = bool(include_annotations and measurement_availability["has_overlay_measurements"])
+        include_spore_stats = bool(include_spore_stats and measurement_availability["spore_stats"])
+        include_measure_plots = bool(include_measure_plots and measurement_availability["has_plot_measurements"])
+        include_thumbnail_gallery = bool(
+            include_thumbnail_gallery and measurement_availability["has_gallery_measurements"]
+        )
 
         observed_datetime = obs.get("date")
         if not observed_datetime:
@@ -3612,14 +4816,31 @@ class ObservationsTab(QWidget):
             else None
         )
 
-        target_key = (uploader_key or SettingsDB.get_setting("artsobs_upload_target") or "").strip().lower()
-        if target_key == "mobile":
-            target_key = "web"
+        target_key = self._preferred_publish_uploader_key(obs, uploader_key)
         uploader = get_uploader(target_key)
         if not uploader:
             return _fail(
                 self.tr("Upload failed: no uploader is configured for the selected target."),
                 level="error",
+            )
+        if not self._uploader_matches_publish_target(uploader.key, publish_target):
+            return _fail(
+                self.tr(
+                    "Upload failed: this observation is set to {target}, not {service}."
+                ).format(
+                    target=self.tr(publish_target_label(publish_target)),
+                    service=self.tr(uploader.label),
+                ),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        if self._observation_has_existing_upload(obs, uploader.key):
+            return _fail(
+                self.tr("Upload failed: this observation already has an ID in {service}.").format(
+                    service=self.tr(uploader.label)
+                ),
+                level="warning",
+                auto_clear_ms=12000,
             )
         if uploader.key in {"mobile", "web"}:
             base_image_count = len(image_paths)
@@ -3671,6 +4892,31 @@ class ObservationsTab(QWidget):
                     level="warning",
                     auto_clear_ms=12000,
                 )
+        elif uploader.key == "artportalen":
+            taxon_id = self._resolve_artportalen_taxon_id(obs)
+            if not taxon_id:
+                return _fail(
+                    self.tr(
+                        "Upload failed: could not resolve an Artportalen taxon id from genus/species."
+                    ),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+            try:
+                from utils.artportalen_auth import ArtportalenAuth
+            except Exception as exc:
+                return _fail(
+                    self.tr("Upload failed: could not load Artportalen login helper ({error}).").format(error=exc),
+                    level="error",
+                    auto_clear_ms=12000,
+                )
+            cookies = ArtportalenAuth().ensure_valid_cookies() or {}
+            if not cookies:
+                return _fail(
+                    self.tr("Not logged in to Artportalen. Log in via Settings -> Online publishing."),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
         elif uploader.key == "inat":
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
@@ -3691,12 +4937,10 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             try:
-                from platformdirs import user_data_dir
                 from utils.inat_oauth import INatOAuthClient
 
                 token_file = (
-                    Path(user_data_dir("MycoLog", appauthor=False, roaming=True))
-                    / "inaturalist_oauth_tokens.json"
+                    app_data_dir() / "inaturalist_oauth_tokens.json"
                 )
                 oauth = INatOAuthClient(
                     client_id=client_id,
@@ -3876,7 +5120,11 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
 
-            spore_stats = self._localize_spore_stats_for_publish(obs.get("spore_statistics"))
+            spore_stats = self._publish_spore_stats_text(
+                observation_id,
+                obs,
+                spore_stats=measurement_availability.get("spore_stats"),
+            )
             legacy_notes = (obs.get("notes") or "").strip()
             open_comment = (obs.get("open_comment") or "").strip()
             private_comment = (obs.get("private_comment") or "").strip()
@@ -3912,6 +5160,7 @@ class ObservationsTab(QWidget):
                 "species": (obs.get("species") or "").strip(),
                 "species_guess": (obs.get("species_guess") or "").strip(),
                 "inaturalist_taxon_id": obs.get("inaturalist_id"),
+                "publish_target": publish_target,
                 "habitat_nin2_path": obs.get("habitat_nin2_path"),
                 "habitat_substrate_path": obs.get("habitat_substrate_path"),
                 "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
@@ -4035,6 +5284,8 @@ class ObservationsTab(QWidget):
                 self._artsobs_dead_by_observation_id[observation_id] = False
                 # Newly sent observations are often still in review/preview on Artsobs.
                 self._artsobs_public_published_by_observation_id[observation_id] = False
+            elif uploader.key == "artportalen":
+                ObservationDB.set_artportalen_id(observation_id, int(obs_id))
             elif uploader.key == "inat":
                 ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
             elif uploader.key == "mo":
@@ -4045,7 +5296,23 @@ class ObservationsTab(QWidget):
             row = self._find_table_row_for_observation(observation_id)
             if row >= 0:
                 if uploader.key in {"mobile", "web"}:
-                    self._render_artsobs_cell(row, observation_id, int(obs_id))
+                    updated_obs = ObservationDB.get_observation(observation_id)
+                    self._render_publish_cell(
+                        row,
+                        observation_id,
+                        updated_obs.get("publish_target") if updated_obs else None,
+                        updated_obs.get("artsdata_id") if updated_obs else int(obs_id),
+                        updated_obs.get("artportalen_id") if updated_obs else None,
+                    )
+                elif uploader.key == "artportalen":
+                    updated_obs = ObservationDB.get_observation(observation_id)
+                    self._render_publish_cell(
+                        row,
+                        observation_id,
+                        updated_obs.get("publish_target") if updated_obs else None,
+                        updated_obs.get("artsdata_id") if updated_obs else None,
+                        updated_obs.get("artportalen_id") if updated_obs else int(obs_id),
+                    )
                 self._update_publish_controls()
         if show_status:
             if obs_id:
@@ -4090,7 +5357,9 @@ class ObservationsTab(QWidget):
             return
 
         row = selected_rows[0].row()
-        obs_id = int(self.table.item(row, 0).text())
+        obs_id = self._observation_id_for_row(row)
+        if obs_id is None:
+            return
         observation = ObservationDB.get_observation(obs_id)
         if not observation:
             return
@@ -4101,30 +5370,37 @@ class ObservationsTab(QWidget):
 
         existing_images = ImageDB.get_images_for_observation(obs_id)
         image_results = self._build_import_results_from_images(existing_images)
+        draft_observation = self._merge_observation_edit_draft(
+            observation,
+            self._observation_edit_draft_cache.get(obs_id),
+        )
 
         ai_taxon = None
         ai_state = self._remap_ai_state_to_images(
-            self._ai_suggestions_cache.get(obs_id),
+            self._load_observation_ai_state(observation),
             image_results,
         )
         while True:
             dialog = ObservationDetailsDialog(
                 self,
-                observation=observation,
+                observation=draft_observation,
                 image_results=image_results,
                 allow_edit_images=True,
                 suggested_taxon=ai_taxon,
                 ai_state=ai_state,
             )
             if dialog.exec():
+                image_results = list(dialog.image_results)
                 ai_state = dialog.get_ai_state()
                 self._ai_suggestions_cache[obs_id] = ai_state
                 data = dialog.get_data()
+                self._observation_edit_draft_cache.pop(obs_id, None)
                 ObservationDB.update_observation(
                     obs_id,
                     genus=data.get('genus'),
                     species=data.get('species'),
                     common_name=data.get('common_name'),
+                    publish_target=data.get('publish_target'),
                     species_guess=data.get('species_guess'),
                     uncertain=1 if data.get('uncertain') else 0,
                     unspontaneous=1 if data.get('unspontaneous') else 0,
@@ -4144,6 +5420,7 @@ class ObservationsTab(QWidget):
                     open_comment=data.get('open_comment'),
                     private_comment=data.get('private_comment'),
                     interesting_comment=1 if data.get('interesting_comment') else 0,
+                    ai_state_json=self._serialize_ai_state(ai_state),
                     gps_latitude=data.get('gps_latitude'),
                     gps_longitude=data.get('gps_longitude'),
                     allow_nulls=True
@@ -4168,8 +5445,19 @@ class ObservationsTab(QWidget):
                 return
 
             if dialog.request_edit_images:
+                data = dialog.get_data()
+                self._observation_edit_draft_cache[obs_id] = dict(data)
+                draft_observation = self._merge_observation_edit_draft(observation, data)
+                draft_dt = _parse_observation_datetime(data.get("date"))
+                if draft_dt and draft_dt.isValid():
+                    obs_dt = draft_dt
+                obs_lat = data.get("gps_latitude")
+                obs_lon = data.get("gps_longitude")
                 ai_state = dialog.get_ai_state()
                 self._ai_suggestions_cache[obs_id] = ai_state
+                _debug_import_flow(
+                    f"edit observation {obs_id}: opening Prepare Images with {len(image_results)} images"
+                )
                 image_dialog = ImageImportDialog(
                     self,
                     import_results=image_results,
@@ -4181,10 +5469,16 @@ class ObservationsTab(QWidget):
                 if dialog.request_edit_images_path:
                     image_dialog.select_image_by_path(dialog.request_edit_images_path)
                 if image_dialog.exec():
+                    _debug_import_flow(
+                        f"edit observation {obs_id}: Prepare Images accepted with {len(image_dialog.import_results)} images"
+                    )
                     image_results = image_dialog.import_results
                     ai_taxon = image_dialog.get_ai_selected_taxon()
                     ai_state = self._remap_ai_state_to_images(ai_state, image_results)
                     obs_lat, obs_lon = image_dialog.get_observation_gps()
+                    _debug_import_flow(
+                        f"edit observation {obs_id}: metadata from Prepare Images gps=({obs_lat}, {obs_lon})"
+                    )
                     ObservationDB.update_observation(
                         obs_id,
                         gps_latitude=obs_lat,
@@ -4194,9 +5488,16 @@ class ObservationsTab(QWidget):
                     if observation is not None:
                         observation["gps_latitude"] = obs_lat
                         observation["gps_longitude"] = obs_lon
+                    if draft_observation is not None:
+                        draft_observation["gps_latitude"] = obs_lat
+                        draft_observation["gps_longitude"] = obs_lon
+                    _debug_import_flow(
+                        f"edit observation {obs_id}: reopening observation dialog with {len(image_results)} images"
+                    )
                 continue
             ai_state = dialog.get_ai_state()
             self._ai_suggestions_cache[obs_id] = ai_state
+            self._observation_edit_draft_cache.pop(obs_id, None)
             return
 
     def open_edit_images_direct(self, selected_image_path: str | None = None):
@@ -4209,7 +5510,9 @@ class ObservationsTab(QWidget):
         if len(selected_rows) != 1:
             return
         row = selected_rows[0].row()
-        obs_id = int(self.table.item(row, 0).text())
+        obs_id = self._observation_id_for_row(row)
+        if obs_id is None:
+            return
         observation = ObservationDB.get_observation(obs_id)
         if not observation:
             return
@@ -4265,13 +5568,17 @@ class ObservationsTab(QWidget):
         target_path = (filepath or "").strip() or None
         self.open_edit_images_direct(selected_image_path=target_path)
 
-    def create_new_observation(self):
+    def create_new_observation(self, initial_image_paths: list[str] | None = None):
         """Show dialog to create new observation."""
         image_results: list[ImageImportResult] = []
         primary_index = None
+        draft_observation: dict | None = None
+        ai_state: dict | None = None
+        ai_taxon: dict | None = None
         while True:
             image_dialog = ImageImportDialog(
                 self,
+                image_paths=initial_image_paths if not image_results else None,
                 import_results=image_results or None,
                 continue_to_observation_details=True,
             )
@@ -4279,23 +5586,39 @@ class ObservationsTab(QWidget):
                 return
             image_results = image_dialog.import_results
             primary_index = image_dialog.primary_index
-
-            ai_taxon = image_dialog.get_ai_selected_taxon()
+            if ai_state:
+                ai_state = self._remap_ai_state_to_images(ai_state, image_results)
+            ai_taxon = image_dialog.get_ai_selected_taxon() or ai_taxon
             dialog = ObservationDetailsDialog(
                 self,
                 image_results=image_results,
                 primary_index=primary_index,
                 allow_edit_images=True,
                 suggested_taxon=ai_taxon,
+                ai_state=ai_state,
+                draft_data=draft_observation,
             )
             if dialog.exec():
                 obs_data = dialog.get_data()
+                image_results = list(dialog.image_results)
+                primary_index = dialog.primary_index
+                ai_state = dialog.get_ai_state()
+                draft_observation = dict(obs_data)
                 profile = SettingsDB.get_profile()
                 author = profile.get("name")
                 if author:
                     obs_data["author"] = author
 
+                if not self._confirm_duplicate_observation_creation(obs_data, image_results):
+                    continue
+
                 obs_id = ObservationDB.create_observation(**obs_data)
+                if ai_state:
+                    ObservationDB.update_observation(
+                        obs_id,
+                        ai_state_json=self._serialize_ai_state(ai_state),
+                        allow_nulls=True,
+                    )
                 progress = None
                 progress_cb = None
                 total_images = len(image_results)
@@ -4349,6 +5672,10 @@ class ObservationsTab(QWidget):
                 return
 
             if dialog.request_edit_images:
+                draft_observation = dict(dialog.get_data())
+                ai_state = dialog.get_ai_state()
+                image_results = list(dialog.image_results)
+                primary_index = dialog.primary_index
                 continue
             return
 
@@ -4421,7 +5748,7 @@ class ObservationsTab(QWidget):
 
         if len(selected_rows) == 1:
             row = selected_rows[0].row()
-            obs_id = int(self.table.item(row, 0).text())
+            obs_id = self._observation_id_for_row(row)
             species = self.table.item(row, 1).text()
             prompt = self.tr(
                 "Delete observation '{species}'?\n\n"
@@ -4443,9 +5770,10 @@ class ObservationsTab(QWidget):
             else:
                 rows = [row.row() for row in selected_rows]
                 obs_ids = [
-                    int(self.table.item(r, 0).text())
+                    obs_id
                     for r in rows
-                    if self.table.item(r, 0) is not None
+                    for obs_id in [self._observation_id_for_row(r)]
+                    if obs_id is not None
                 ]
                 for obs_id in obs_ids:
                     failures.extend(ObservationDB.delete_observation(obs_id))
@@ -4575,6 +5903,7 @@ class ObservationsTab(QWidget):
                     exif_has_gps=exif_has_gps,
                     ai_crop_box=ai_crop_box,
                     ai_crop_source_size=ai_crop_source_size,
+                    crop_mode=img.get("crop_mode"),
                     gps_source=gps_source,
                     resample_scale_factor=resample_factor,
                     original_filepath=img.get("original_filepath") or filepath,
@@ -4710,6 +6039,80 @@ class ObservationsTab(QWidget):
         )
         conn.commit()
         conn.close()
+
+    def _translate_measurement_points(self, image_id: int, offset_x: float, offset_y: float) -> None:
+        if not image_id:
+            return
+        if not offset_x and not offset_y:
+            return
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            UPDATE spore_measurements
+            SET p1_x = p1_x - ?, p1_y = p1_y - ?,
+                p2_x = p2_x - ?, p2_y = p2_y - ?,
+                p3_x = CASE WHEN p3_x IS NOT NULL THEN p3_x - ? ELSE NULL END,
+                p3_y = CASE WHEN p3_y IS NOT NULL THEN p3_y - ? ELSE NULL END,
+                p4_x = CASE WHEN p4_x IS NOT NULL THEN p4_x - ? ELSE NULL END,
+                p4_y = CASE WHEN p4_y IS NOT NULL THEN p4_y - ? ELSE NULL END
+            WHERE image_id = ?
+            ''',
+            [
+                offset_x, offset_y,
+                offset_x, offset_y,
+                offset_x, offset_y,
+                offset_x, offset_y,
+                image_id,
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+    def _replace_observation_image_file(
+        self,
+        source_path: str | None,
+        target_path: str | None,
+        output_dir: Path,
+    ) -> str | None:
+        if not source_path:
+            return target_path
+        try:
+            source = Path(source_path).resolve()
+        except Exception:
+            return target_path
+        if not source.exists():
+            return target_path
+        target = None
+        if target_path:
+            try:
+                target = Path(target_path).resolve()
+            except Exception:
+                target = None
+        if target and source == target:
+            return str(target)
+        if target is None:
+            target_dir = output_dir
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / source.name
+            counter = 1
+            while target.exists():
+                target = target_dir / f"{source.stem}_{counter}{source.suffix}"
+                counter += 1
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_target = target.with_name(f"{target.stem}_replacing{target.suffix}")
+        try:
+            shutil.copy2(source, tmp_target)
+            tmp_target.replace(target)
+            return str(target)
+        except Exception as exc:
+            print(f"Warning: Could not replace observation image {target}: {exc}")
+            try:
+                tmp_target.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return target_path
 
     def _get_calibration_measurement_length(self, image_id: int) -> float | None:
         if not image_id:
@@ -5037,6 +6440,7 @@ class ObservationsTab(QWidget):
             if result.image_id:
                 existing = existing_by_id.get(result.image_id)
                 existing_path = existing.get("filepath") if existing else result.filepath
+                working_path = result.filepath or existing_path
                 existing_scale = existing.get("scale_microns_per_pixel") if existing else None
                 existing_resample = existing.get("resample_scale_factor") if existing else None
                 already_resized = (
@@ -5054,16 +6458,36 @@ class ObservationsTab(QWidget):
                     image_type=image_type,
                     objective_name=objective_name,
                     scale=scale,
+                    sort_order=index - 1,
                     contrast=contrast,
                     mount_medium=mount_medium,
                     stain=stain,
                     sample_type=sample_type,
                     ai_crop_box=result.ai_crop_box,
                     ai_crop_source_size=result.ai_crop_source_size,
+                    crop_mode=result.crop_mode,
                     gps_source=result.gps_source,
                     calibration_id=calibration_id,
                     scale_bar_selection=getattr(result, "scale_bar_selection", None),
                 )
+                pending_edit = False
+                if working_path and existing_path:
+                    try:
+                        pending_edit = Path(working_path).resolve() != Path(existing_path).resolve()
+                    except Exception:
+                        pending_edit = str(working_path) != str(existing_path)
+                pending_crop_offset = getattr(result, "pending_image_crop_offset", None)
+                if (
+                    pending_crop_offset
+                    and len(pending_crop_offset) == 2
+                    and (pending_crop_offset[0] or pending_crop_offset[1])
+                ):
+                    self._translate_measurement_points(
+                        result.image_id,
+                        float(pending_crop_offset[0]),
+                        float(pending_crop_offset[1]),
+                    )
+                    result.pending_image_crop_offset = None
 
                 apply_resample = (
                     image_type == "microscope"
@@ -5071,6 +6495,104 @@ class ObservationsTab(QWidget):
                     and resample_factor < 0.999
                     and not already_resized
                 )
+                if pending_edit and working_path:
+                    source_for_update = working_path
+                    final_path = working_path
+                    if apply_resample:
+                        resample_dir = None
+                        try:
+                            resample_dir = Path(existing_path).parent if existing_path else None
+                        except Exception:
+                            resample_dir = None
+                        if resample_dir is None and obs_folder is not None:
+                            resample_dir = obs_folder
+                        if resample_dir is None:
+                            resample_dir = output_dir
+                        resample_dir.mkdir(parents=True, exist_ok=True)
+                        final_path = self._resample_import_image(
+                            source_for_update,
+                            resample_factor,
+                            resample_dir,
+                        ) or source_for_update
+                        if scale is not None and resample_factor > 0:
+                            scale = float(scale) / float(resample_factor)
+                            update_kwargs["scale"] = scale
+                        update_kwargs["resample_scale_factor"] = resample_factor
+
+                        crop_box = result.ai_crop_box
+                        if crop_box:
+                            update_kwargs["ai_crop_box"] = tuple(v * resample_factor for v in crop_box)
+                        source_size = result.ai_crop_source_size
+                        if source_size:
+                            update_kwargs["ai_crop_source_size"] = (
+                                int(round(source_size[0] * resample_factor)),
+                                int(round(source_size[1] * resample_factor)),
+                            )
+                        else:
+                            size = self._get_image_size(source_for_update)
+                            if size:
+                                update_kwargs["ai_crop_source_size"] = (
+                                    int(round(size[0] * resample_factor)),
+                                    int(round(size[1] * resample_factor)),
+                                )
+
+                        self._scale_measurement_points(result.image_id, resample_factor)
+                        if result.scale_bar_selection:
+                            scaled_sel = self._scale_scale_bar_selection(
+                                result.scale_bar_selection, resample_factor
+                            )
+                            result.scale_bar_selection = scaled_sel
+                            update_kwargs["scale_bar_selection"] = scaled_sel
+                    else:
+                        current_image = ImageDB.get_image(result.image_id)
+                        current_scale = (
+                            current_image.get("scale_microns_per_pixel")
+                            if current_image
+                            else existing_scale
+                        )
+                        self._rescale_measurement_lengths(
+                            result.image_id,
+                            current_scale,
+                            scale,
+                        )
+
+                    if storage_mode != "none":
+                        original_source = existing.get("original_filepath") if existing else None
+                        if not original_source:
+                            original_source = existing_path
+                        dest_original, _ = self._store_original_for_observation(
+                            obs_id,
+                            original_source,
+                            storage_mode,
+                            images_root,
+                            obs_folder,
+                        )
+                        update_kwargs["original_filepath"] = dest_original or original_source
+                    else:
+                        update_kwargs["original_filepath"] = (
+                            existing.get("original_filepath")
+                            if existing and existing.get("original_filepath")
+                            else existing_path
+                        )
+
+                    stored_path = self._replace_observation_image_file(
+                        final_path,
+                        existing_path,
+                        obs_folder or output_dir,
+                    )
+                    if stored_path:
+                        update_kwargs["filepath"] = stored_path
+                        try:
+                            generate_all_sizes(stored_path, result.image_id)
+                        except Exception as e:
+                            print(f"Warning: Could not regenerate thumbnails for {stored_path}: {e}")
+                        cleanup_import_temp_file(existing_path or source_for_update, source_for_update, stored_path, output_dir)
+                        if final_path and final_path != source_for_update:
+                            cleanup_import_temp_file(source_for_update, final_path, stored_path, output_dir)
+                        result.filepath = stored_path
+                        result.preview_path = stored_path
+                    ImageDB.update_image(result.image_id, **update_kwargs)
+                    continue
                 if apply_resample and existing_path:
                     resample_dir = None
                     try:
@@ -5201,9 +6723,11 @@ class ObservationsTab(QWidget):
                 mount_medium=mount_medium,
                 stain=stain,
                 sample_type=sample_type,
+                sort_order=index - 1,
                 calibration_id=calibration_id,
                 ai_crop_box=result.ai_crop_box,
                 ai_crop_source_size=result.ai_crop_source_size,
+                crop_mode=result.crop_mode,
                 gps_source=result.gps_source,
                 resample_scale_factor=resample_factor,
                 original_filepath=original_to_store,
@@ -5246,11 +6770,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     """Dialog for creating or editing an observation after image import."""
 
     _geometry_key = "ObservationDetailsDialog"
+    _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
 
     def __init__(
         self,
         parent=None,
         observation=None,
+        draft_data: dict | None = None,
         image_results: list[ImageImportResult] | None = None,
         primary_index: int | None = None,
         allow_edit_images: bool = False,
@@ -5259,6 +6785,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     ):
         super().__init__(parent)
         self.observation = observation
+        self.draft_data = dict(draft_data) if isinstance(draft_data, dict) else None
         self.edit_mode = observation is not None
         self.image_results = image_results or []
         self.primary_index = primary_index
@@ -5323,22 +6850,137 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._ai_thread = None
         self._artsobs_check_thread = None
         self._close_cleanup_done = False
+        self._dialog_temp_preview_paths: set[str] = set()
+        self._dialog_preview_path_cache: dict[str, str] = {}
         self._location_lookup_workers: set[QThread] = set()
         self._ai_selected_index: int | None = None
+        self._publish_target_manual_override = False
+        self._publish_target_sync_in_progress = False
+        self._location_lookup_name = ""
+        self._last_applied_location_lookup_name = ""
+        self._debug_dialog_created_at = time.perf_counter()
+        self._loading_form = True
+        self._initial_gallery_refresh_pending = True
+        self._deferred_location_lookup_pending = False
+        self._dialog_gallery_splitter_syncing = False
+        _debug_import_flow(
+            f"ObservationDetailsDialog init start; edit_mode={self.edit_mode}; images={len(self.image_results)}"
+        )
         self._apply_ai_state(ai_state)
         self.init_ui()
         if self.edit_mode:
             self._load_existing_observation()
+        elif self.draft_data:
+            self._load_observation_values(self.draft_data)
         else:
+            inferred_target = infer_publish_target_from_coords(
+                self.lat_input.value() if hasattr(self, "lat_input") else None,
+                self.lon_input.value() if hasattr(self, "lon_input") else None,
+            )
+            self._set_publish_target_combo(
+                inferred_target or self._active_reporting_target(),
+                manual_override=False,
+            )
             self._apply_primary_metadata()
+        self._loading_form = False
+        QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
         self._restore_geometry()
         self.finished.connect(self._save_geometry)
 
+    def _dialog_gallery_default_height(self) -> int:
+        gallery = getattr(self, "image_gallery", None)
+        if gallery is None:
+            return 160
+        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() - 8)
+
+    def _dialog_gallery_max_height(self) -> int:
+        gallery = getattr(self, "image_gallery", None)
+        if gallery is None:
+            return 300
+        return max(gallery.minimumHeight(), gallery.maximum_useful_height())
+
+    def _apply_dialog_gallery_splitter_height(self, gallery_height: int | None = None) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        gallery = getattr(self, "image_gallery", None)
+        if splitter is None or gallery is None:
+            return
+        target = self._dialog_gallery_default_height() if gallery_height is None else int(gallery_height)
+        target = max(gallery.minimumHeight(), min(self._dialog_gallery_max_height(), target))
+        gallery.setMaximumHeight(self._dialog_gallery_max_height())
+        sizes = splitter.sizes()
+        total = sum(sizes) if sizes else 0
+        if total <= 0:
+            total = splitter.height()
+        if total <= 0:
+            total = max(self.height(), target + 600)
+        if self._dialog_gallery_splitter_syncing:
+            return
+        self._dialog_gallery_splitter_syncing = True
+        try:
+            splitter.setSizes([max(0, total - target), target])
+        finally:
+            self._dialog_gallery_splitter_syncing = False
+
+    def _restore_dialog_gallery_splitter(self) -> None:
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        raw_value = settings.value(self._gallery_splitter_key)
+        gallery_height = None
+        if isinstance(raw_value, (list, tuple)):
+            parsed: list[int] = []
+            for value in raw_value[:2]:
+                try:
+                    parsed.append(max(0, int(value)))
+                except Exception:
+                    parsed.append(0)
+            if len(parsed) >= 2:
+                gallery_height = parsed[1]
+        else:
+            try:
+                gallery_height = max(0, int(raw_value))
+            except Exception:
+                gallery_height = None
+        self._apply_dialog_gallery_splitter_height(gallery_height)
+
+    def _save_dialog_gallery_splitter(self) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        gallery = getattr(self, "image_gallery", None)
+        if splitter is None or gallery is None:
+            return
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        height = max(gallery.minimumHeight(), int(gallery.height() or 0))
+        if height <= 0:
+            sizes = splitter.sizes()
+            if len(sizes) >= 2:
+                height = max(gallery.minimumHeight(), int(sizes[1]))
+        settings.setValue(self._gallery_splitter_key, height)
+
+    def _on_dialog_gallery_splitter_moved(self, _pos: int, _index: int) -> None:
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        if splitter is None or self._dialog_gallery_splitter_syncing:
+            return
+        sizes = splitter.sizes()
+        gallery_height = sizes[1] if len(sizes) >= 2 else None
+        QTimer.singleShot(0, lambda h=gallery_height: self._apply_dialog_gallery_splitter_height(h))
+        QTimer.singleShot(0, self._save_dialog_gallery_splitter)
+
+    def _restore_geometry(self) -> None:
+        super()._restore_geometry()
+        QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
+
+    def _save_geometry(self) -> None:
+        self._save_dialog_gallery_splitter()
+        super()._save_geometry()
+
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(10)
+
+        top_content = QWidget(self)
+        top_content_layout = QVBoxLayout(top_content)
+        top_content_layout.setContentsMargins(0, 0, 0, 0)
+        top_content_layout.setSpacing(10)
 
         # ===== OBSERVATION DETAILS SECTION =====
         details_group = QGroupBox(self.tr("Observation Details"))
@@ -5421,6 +7063,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Enable map button when coordinates are manually changed
         self.lat_input.valueChanged.connect(self._update_map_button)
         self.lon_input.valueChanged.connect(self._update_map_button)
+        self.lat_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
+        self.lon_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
 
         # Location lookup from coordinates (debounced)
         self._location_lookup_timer = QTimer(self)
@@ -5432,10 +7076,27 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.lon_input.valueChanged.connect(self._schedule_location_lookup)
 
         # Location (text)
+        location_container = QWidget()
+        location_layout = QHBoxLayout(location_container)
+        location_layout.setContentsMargins(0, 0, 0, 0)
+        location_layout.setSpacing(6)
         self.location_input = QLineEdit()
         self.location_input.setPlaceholderText(self.tr("e.g., Bymarka, Trondheim"))
+        self.location_input.textEdited.connect(self._on_location_name_edited)
+        location_layout.addWidget(self.location_input, 1)
+        self.location_lookup_apply_btn = QPushButton(self.tr("Get name"))
+        self.location_lookup_apply_btn.setMinimumWidth(self.maplink_open_btn.sizeHint().width())
+        self.location_lookup_apply_btn.setEnabled(False)
+        self.location_lookup_apply_btn.clicked.connect(self._apply_lookup_location_name)
+        location_layout.addWidget(self.location_lookup_apply_btn)
         left_layout.addWidget(QLabel(self.tr("Location:")), _details_row, 0)
-        left_layout.addWidget(self.location_input, _details_row, 1, 1, 2)
+        left_layout.addWidget(location_container, _details_row, 1, 1, 2)
+        _details_row += 1
+
+        self.country_summary_label = QLabel("")
+        self.country_summary_label.setStyleSheet("color: #2c3e50;")
+        self.country_summary_label.setVisible(False)
+        left_layout.addWidget(self.country_summary_label, _details_row, 1, 1, 2)
         _details_row += 1
 
         open_comment_container = QWidget()
@@ -5443,22 +7104,31 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         open_comment_layout.setContentsMargins(0, 0, 0, 0)
         open_comment_layout.setSpacing(6)
 
+        open_comment_label = QLabel(self.tr("Open comment:"))
+        open_comment_layout.addWidget(open_comment_label)
+
         self.open_comment_input = QTextEdit()
         self.open_comment_input.setPlaceholderText(self.tr("Open comment..."))
         comment_h = (self.open_comment_input.fontMetrics().lineSpacing() * 3) + 14
         self.open_comment_input.setFixedHeight(comment_h)
         self.open_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         open_comment_layout.addWidget(self.open_comment_input)
+        right_layout.addRow(open_comment_container)
 
-        self.interesting_comment_checkbox = QCheckBox(self.tr("Interesting comment"))
-        open_comment_layout.addWidget(self.interesting_comment_checkbox, 0, Qt.AlignLeft)
-        right_layout.addRow(self.tr("Open comment:"), open_comment_container)
+        private_comment_container = QWidget()
+        private_comment_layout = QVBoxLayout(private_comment_container)
+        private_comment_layout.setContentsMargins(0, 0, 0, 0)
+        private_comment_layout.setSpacing(6)
+
+        private_comment_label = QLabel(self.tr("Private comment:"))
+        private_comment_layout.addWidget(private_comment_label)
 
         self.private_comment_input = QTextEdit()
         self.private_comment_input.setPlaceholderText(self.tr("Private comment..."))
         self.private_comment_input.setFixedHeight(comment_h)
         self.private_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        right_layout.addRow(self.tr("Private comment:"), self.private_comment_input)
+        private_comment_layout.addWidget(self.private_comment_input)
+        right_layout.addRow(private_comment_container)
 
         # GPS info label (shows source of coordinates)
         self.gps_info_label = QLabel("")
@@ -5469,7 +7139,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Put location/date/GPS on the left, and comments on the right (about 40/60 split).
         details_layout.addWidget(left_panel, 4)
         details_layout.addWidget(right_panel, 6)
-        main_layout.addWidget(details_group)
+        top_content_layout.addWidget(details_group)
 
         # ===== TAXONOMY SECTION =====
         taxonomy_group = QGroupBox(self.tr("Taxonomy"))
@@ -5481,6 +7151,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         taxonomy_split.setChildrenCollapsible(False)
 
         left_container = QWidget()
+        left_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        left_container.setMinimumWidth(0)
         left_layout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
@@ -5488,6 +7160,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Taxonomy tab widget (Species + Biotope + Grows on)
         self.taxonomy_tabs = QTabWidget()
         self.taxonomy_tabs.setMinimumHeight(120)
+        self.taxonomy_tabs.setMinimumWidth(0)
         self.taxonomy_tabs.currentChanged.connect(self.on_taxonomy_tab_changed)
 
         # Tab 1: Identified (vernacular + genus/species)
@@ -5498,6 +7171,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         identified_layout.setSpacing(4)
         identified_layout.setAlignment(Qt.AlignTop)
         taxonomy_label_width = 96
+        taxonomy_field_width = 520
 
         vern_row = QHBoxLayout()
         vern_row.setContentsMargins(0, 0, 0, 0)
@@ -5506,10 +7180,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.vernacular_label.setMinimumWidth(taxonomy_label_width)
         self.vernacular_label.setMaximumWidth(taxonomy_label_width)
         vern_row.addWidget(self.vernacular_label)
+        vern_field_container = QWidget()
+        vern_field_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        vern_field_container.setMaximumWidth(taxonomy_field_width)
+        vern_field_layout = QHBoxLayout(vern_field_container)
+        vern_field_layout.setContentsMargins(0, 0, 0, 0)
+        vern_field_layout.setSpacing(4)
         self.vernacular_input = QLineEdit()
         self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
-        vern_row.addWidget(self.vernacular_input, 1)
+        vern_field_layout.addWidget(self.vernacular_input, 1)
         self.vernacular_language_btn = QToolButton()
         self.vernacular_language_btn.setText("🌐")
         self.vernacular_language_btn.setPopupMode(QToolButton.InstantPopup)
@@ -5518,7 +7198,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         input_height = max(18, int(self.vernacular_input.sizeHint().height()))
         self.vernacular_language_btn.setFixedSize(input_height, input_height)
         self._populate_vernacular_language_menu()
-        vern_row.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
+        vern_field_layout.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
+        vern_row.addWidget(vern_field_container, 1)
+        vern_row.addStretch(1)
         identified_layout.addLayout(vern_row)
 
         genus_row = QHBoxLayout()
@@ -5526,9 +7208,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus_label.setFixedWidth(taxonomy_label_width)
         genus_row.addWidget(genus_label)
         self.genus_input = QLineEdit()
+        self.genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.genus_input.setMaximumWidth(taxonomy_field_width)
         self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         genus_row.addWidget(self.genus_input, 1)
+        genus_row.addStretch(1)
         identified_layout.addLayout(genus_row)
 
         species_row = QHBoxLayout()
@@ -5536,9 +7221,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_label.setFixedWidth(taxonomy_label_width)
         species_row.addWidget(species_label)
         self.species_input = QLineEdit()
+        self.species_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.species_input.setMaximumWidth(taxonomy_field_width)
         self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
         self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         species_row.addWidget(self.species_input, 1)
+        species_row.addStretch(1)
         identified_layout.addLayout(species_row)
 
         determination_row = QHBoxLayout()
@@ -5546,6 +7234,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         determination_label.setFixedWidth(taxonomy_label_width)
         determination_row.addWidget(determination_label)
         self.determination_method_combo = QComboBox()
+        self.determination_method_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.determination_method_combo.setMaximumWidth(taxonomy_field_width)
         self.determination_method_combo.addItem("", None)
         self.determination_method_combo.addItem(self.tr("Microscopy"), 1)
         self.determination_method_combo.addItem(self.tr("Sequencing"), 2)
@@ -5554,7 +7244,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._style_dropdown_popup_readability(self.determination_method_combo.view(), self.determination_method_combo)
         self.determination_method_combo.currentIndexChanged.connect(self._update_taxonomy_tab_indicators)
         determination_row.addWidget(self.determination_method_combo, 1)
+        determination_row.addStretch(1)
         identified_layout.addLayout(determination_row)
+
+        self.publish_target_combo = QComboBox()
+        self.publish_target_combo.addItem(self.tr("Artsobservasjoner (Norway)"), PUBLISH_TARGET_ARTSOBS_NO)
+        self.publish_target_combo.addItem(self.tr("Artportalen (Sweden)"), PUBLISH_TARGET_ARTPORTALEN_SE)
+        self.publish_target_combo.currentIndexChanged.connect(self._on_publish_target_changed)
+
+        self.publish_target_hint = QLabel()
+        self.publish_target_hint.setWordWrap(True)
+        self.publish_target_hint.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.publish_target_hint.setVisible(False)
 
         uncertain_row = QHBoxLayout()
         uncertain_row.setContentsMargins(0, 0, 0, 0)
@@ -5579,7 +7280,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self.taxonomy_tabs.addTab(identified_tab, self.tr("Species"))
 
-        # Tab 2: NIN2 biotope metadata
+        # Tab 2: Biotope metadata
         self._habitat_tree_states: dict[str, dict] = {}
         nin2_nodes = self._load_habitat_tree("nin2_biotopes_tree.json")
         nin2_tab = QWidget()
@@ -5593,14 +7294,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("NIN2 biotope"),
             "nin2",
             nin2_nodes,
+            expand_fields=True,
         )
+        self.nin2_target_note = QLabel("")
+        self.nin2_target_note.setWordWrap(True)
+        self.nin2_target_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self._habitat_tree_states["nin2"]["note_label"] = self.nin2_target_note
+        nin2_layout.addWidget(self.nin2_target_note)
         self.nin2_note_input = self._make_note_input()
         self.nin2_note_input.setPlaceholderText(self.tr("Biotope note..."))
         self.nin2_note_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         nin2_layout.addWidget(QLabel(self.tr("Biotope note:")))
         nin2_layout.addWidget(self.nin2_note_input)
         nin2_layout.addStretch(1)
-        self.taxonomy_tabs.addTab(nin2_tab, self.tr("NIN2 biotope"))
+        self.taxonomy_tabs.addTab(nin2_tab, self.tr("Biotope"))
 
         # Tab 3: Substrate metadata
         substrate_nodes = self._load_habitat_tree("substrate_tree.json")
@@ -5616,6 +7323,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "substrate",
             substrate_nodes,
         )
+        self.substrate_target_note = QLabel("")
+        self.substrate_target_note.setWordWrap(True)
+        self.substrate_target_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self._habitat_tree_states["substrate"]["note_label"] = self.substrate_target_note
+        substrate_layout.addWidget(self.substrate_target_note)
         self.substrate_note_input = self._make_note_input()
         self.substrate_note_input.setPlaceholderText(self.tr("Substrate note..."))
         self.substrate_note_input.textChanged.connect(self._update_taxonomy_tab_indicators)
@@ -5634,13 +7346,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         grows_group = QGroupBox(self._grows_on_tab_title())
         grows_layout = QFormLayout(grows_group)
         grows_layout.setSpacing(6)
+        grows_layout.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         self.host_genus_input = QLineEdit()
+        self.host_genus_input.setMaximumWidth(taxonomy_field_width)
         self.host_genus_input.setPlaceholderText(self.tr("e.g., Betula"))
         self.host_genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_species_input = QLineEdit()
+        self.host_species_input.setMaximumWidth(taxonomy_field_width)
         self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
         self.host_species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_input = QLineEdit()
+        self.host_vernacular_input.setMaximumWidth(taxonomy_field_width)
         self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.host_vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_label = QLabel(self._vernacular_label())
@@ -5661,12 +7377,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self.ai_group = self._build_ai_suggestions_group()
         taxonomy_split.addWidget(self.ai_group)
-        taxonomy_split.setStretchFactor(0, 7)
-        taxonomy_split.setStretchFactor(1, 3)
-        taxonomy_split.setSizes([700, 300])
+        taxonomy_split.setStretchFactor(0, 1)
+        taxonomy_split.setStretchFactor(1, 1)
+        taxonomy_split.setSizes([500, 500])
 
         taxonomy_layout.addWidget(taxonomy_split)
-        main_layout.addWidget(taxonomy_group)
+        top_content_layout.addWidget(taxonomy_group)
 
         # ===== IMAGES SUMMARY (BOTTOM) =====
         self.image_gallery = ImageGalleryWidget(
@@ -5678,20 +7394,34 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             default_height=160,
             thumbnail_tooltip=self.tr("Double-click to edit"),
         )
+        self.image_gallery.set_compact_overlay(True)
+        self.image_gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.image_gallery.set_reorderable(True)
         self.image_gallery.set_multi_select(True)
+        self.image_gallery.setMaximumHeight(self._dialog_gallery_max_height())
         self._gps_source_index = self._resolve_gps_source_index()
-        self._refresh_image_gallery_summary()
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteRequested.connect(self._on_gallery_delete_requested)
         self.image_gallery.imageDoubleClicked.connect(self._on_image_double_clicked)
-        main_layout.addWidget(self.image_gallery)
+        self.image_gallery.itemsReordered.connect(self._on_gallery_items_reordered)
+
+        self.dialog_gallery_splitter = QSplitter(Qt.Vertical)
+        self.dialog_gallery_splitter.setChildrenCollapsible(False)
+        self.dialog_gallery_splitter.addWidget(top_content)
+        self.dialog_gallery_splitter.addWidget(self.image_gallery)
+        self.dialog_gallery_splitter.setStretchFactor(0, 1)
+        self.dialog_gallery_splitter.setStretchFactor(1, 0)
+        self.dialog_gallery_splitter.setSizes([760, self._dialog_gallery_default_height()])
+        self.dialog_gallery_splitter.splitterMoved.connect(self._on_dialog_gallery_splitter_moved)
+        main_layout.addWidget(self.dialog_gallery_splitter, 1)
 
         # ===== BOTTOM BUTTONS =====
         bottom_buttons = QHBoxLayout()
         self.hint_bar = HintBar(self)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         bottom_buttons.addWidget(self.hint_bar, 1)
+        bottom_buttons.addWidget(make_github_help_button(self, "observation-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
         _edit_key = "⌘E" if sys.platform == "darwin" else "Alt-E"
         self._edit_key_label = _edit_key
         if self.allow_edit_images:
@@ -5732,6 +7462,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._register_dialog_hints()
         self._init_submit_shortcuts()
         self._update_taxonomy_tab_indicators()
+        self._update_publish_target_specific_controls()
 
     def _init_submit_shortcuts(self) -> None:
         self._submit_shortcut_return = QShortcut(QKeySequence(Qt.Key_Return), self)
@@ -5855,6 +7586,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._register_hint_widget(self.maplink_input, maplink_hint)
         self._register_hint_widget(self.maplink_open_btn, maplink_hint)
         self._register_hint_widget(
+            self.location_input,
+            self.tr("Place name for the observation. Manual edits are kept until you explicitly fetch the API name."),
+        )
+        self._register_hint_widget(
+            self.location_lookup_apply_btn,
+            self.tr("Replace the current place name with the latest API lookup result."),
+            allow_when_disabled=True,
+            disabled_hint=self.tr("The current place name already matches the latest API lookup."),
+        )
+        self._register_hint_widget(
             self.map_btn,
             self.tr("Open location in Google Maps"),
             allow_when_disabled=True,
@@ -5942,7 +7683,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ai_group = QGroupBox(self.tr("AI suggestions"))
         ai_layout = QVBoxLayout(ai_group)
         ai_layout.setContentsMargins(6, 6, 6, 6)
-        ai_group.setFixedWidth(300)
+        ai_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        ai_group.setMinimumWidth(0)
 
         ai_controls = QHBoxLayout()
         self.ai_guess_btn = QPushButton(self.tr("Guess"))
@@ -6013,6 +7755,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "selected": dict(self._ai_selected_by_index),
             "selected_index": self._ai_selected_index,
             "paths": [item.filepath for item in self.image_results],
+            "image_ids": [item.image_id for item in self.image_results],
         }
 
     def _select_initial_ai_image(self) -> None:
@@ -6103,7 +7846,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.UserRole, pred)
             conf_item = QTableWidgetItem(f"{confidence:.1%}")
-            link_widget = self._build_adb_link_widget(self._ai_prediction_link(pred, taxon))
+            link_widget = self._build_taxon_link_widget(self._ai_prediction_links(pred, taxon))
             self.ai_table.insertRow(row)
             self.ai_table.setItem(row, 0, name_item)
             self.ai_table.setItem(row, 1, conf_item)
@@ -6127,6 +7870,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _format_ai_taxon_name(self, taxon: dict) -> str:
         scientific = taxon.get("scientificName") or taxon.get("scientific_name") or taxon.get("name") or ""
         vernacular = self._preferred_vernacular_from_taxon(taxon) or ""
+        if vernacular and scientific:
+            vernacular_norm = str(vernacular).strip()
+            scientific_norm = str(scientific).strip()
+            if vernacular_norm and scientific_norm and vernacular_norm.casefold() != scientific_norm.casefold():
+                return f"{vernacular_norm} ({scientific_norm})"
         return vernacular or scientific or self.tr("Unknown")
 
     def _ai_prediction_link(self, pred: dict, taxon: dict) -> str | None:
@@ -6155,10 +7903,30 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
         return "https://artsdatabanken.no"
 
-    def _build_adb_link_widget(self, url: str | None) -> QLabel | None:
-        if not url:
+    def _ai_prediction_links(self, pred: dict, taxon: dict) -> list[tuple[str, str]]:
+        links: list[tuple[str, str]] = []
+        adb_url = self._ai_prediction_link(pred, taxon)
+        if adb_url:
+            links.append(("AdB.no", adb_url))
+        genus, species = self._extract_genus_species_from_taxon(taxon)
+        artportalen_taxon_id = ObservationDB.resolve_external_taxon_id(genus, species, "artportalen")
+        if artportalen_taxon_id:
+            links.append(("AP.se", f"https://dyntaxa.se/taxon/info/{int(artportalen_taxon_id)}"))
+        return links
+
+    def _build_taxon_link_widget(self, links: list[tuple[str, str]]) -> QLabel | None:
+        valid_links = [
+            (str(label or "").strip(), str(url or "").strip())
+            for label, url in (links or [])
+            if str(label or "").strip() and str(url or "").strip()
+        ]
+        if not valid_links:
             return None
-        label = QLabel(f'<a href="{url}">AdB</a>')
+        link_html = " | ".join(
+            f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+            for label, url in valid_links
+        )
+        label = QLabel(link_html)
         label.setTextFormat(Qt.RichText)
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         label.setOpenExternalLinks(True)
@@ -6344,10 +8112,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 thread.setParent(app)
         except Exception:
             pass
-        parked = getattr(app, "_mycolog_parked_threads", None)
+        parked = getattr(app, "_sporely_parked_threads", None)
         if parked is None:
             parked = set()
-            setattr(app, "_mycolog_parked_threads", parked)
+            setattr(app, "_sporely_parked_threads", parked)
         try:
             parked.add(thread)
         except Exception:
@@ -6355,7 +8123,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         def _release_thread(t=thread, a=app):
             try:
-                parked_threads = getattr(a, "_mycolog_parked_threads", None)
+                parked_threads = getattr(a, "_sporely_parked_threads", None)
                 if parked_threads is not None:
                     parked_threads.discard(t)
             except Exception:
@@ -6375,6 +8143,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         self._close_cleanup_done = True
         self._cleanup_location_lookup()
+        for preview_path in list(self._dialog_temp_preview_paths):
+            try:
+                Path(preview_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        self._dialog_temp_preview_paths.clear()
+        self._dialog_preview_path_cache.clear()
         if self._artsobs_check_thread is not None:
             try:
                 self._artsobs_check_thread.requestInterruption()
@@ -6941,6 +8716,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _schedule_location_lookup(self):
         """Restart the debounce timer for location lookup."""
+        if getattr(self, "_loading_form", False):
+            self._deferred_location_lookup_pending = True
+            return
         self._location_lookup_timer.start()
 
     def _do_location_lookup(self):
@@ -6969,9 +8747,35 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         worker.start()
 
     def _on_location_lookup_result(self, name: str):
-        """Fill the location field with the place name from the API."""
-        self.location_input.setText(name)
+        """Store the place name from the API and apply it only when appropriate."""
+        resolved_name = str(name or "").strip()
+        self._location_lookup_name = resolved_name
+        current_name = (self.location_input.text() or "").strip() if hasattr(self, "location_input") else ""
+        should_apply = not current_name or current_name == (self._last_applied_location_lookup_name or "").strip()
+        if resolved_name and should_apply:
+            self.location_input.setText(resolved_name)
+            self._last_applied_location_lookup_name = resolved_name
+        self._update_location_lookup_button_state()
         self._location_lookup_worker = None
+
+    def _on_location_name_edited(self, _text: str) -> None:
+        self._update_location_lookup_button_state()
+
+    def _apply_lookup_location_name(self) -> None:
+        resolved_name = (self._location_lookup_name or "").strip()
+        if not resolved_name or not hasattr(self, "location_input"):
+            return
+        self.location_input.setText(resolved_name)
+        self._last_applied_location_lookup_name = resolved_name
+        self._update_location_lookup_button_state()
+
+    def _update_location_lookup_button_state(self) -> None:
+        button = getattr(self, "location_lookup_apply_btn", None)
+        if button is None or not hasattr(self, "location_input"):
+            return
+        current_name = (self.location_input.text() or "").strip()
+        resolved_name = (self._location_lookup_name or "").strip()
+        button.setEnabled(bool(resolved_name) and current_name != resolved_name)
 
     def _on_location_lookup_worker_finished(self) -> None:
         worker = self.sender()
@@ -7059,6 +8863,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self.lon_input.value() > self.lon_input.minimum():
             lon = self.lon_input.value()
 
+        publish_target = normalize_publish_target(self.publish_target_combo.currentData())
         nin2_path = self._selected_habitat_tree_path("nin2")
         substrate_path = self._selected_habitat_tree_path("substrate")
         nin2_labels = [str(node.get("name") or "").strip() for node in nin2_path if isinstance(node, dict)]
@@ -7071,9 +8876,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         host_scientific = f"{host_genus} {host_species}".strip()
         habitat_parts: list[str] = []
         if nin2_labels:
-            habitat_parts.append(f"NIN2: {' > '.join(nin2_labels)}")
+            habitat_parts.append(f"{self._nin2_tab_title()}: {' > '.join(nin2_labels)}")
         if substrate_labels:
-            habitat_parts.append(f"Substrate: {' > '.join(substrate_labels)}")
+            habitat_parts.append(f"{self._substrate_tab_title()}: {' > '.join(substrate_labels)}")
         if host_scientific or host_vernacular:
             if host_scientific and host_vernacular:
                 habitat_parts.append(f"Grows on: {host_vernacular} ({host_scientific})")
@@ -7084,6 +8889,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'genus': genus,
             'species': species,
             'common_name': common_name,
+            'publish_target': publish_target,
             'species_guess': working_title,
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
@@ -7098,7 +8904,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'habitat_host_common_name': host_vernacular or None,
             'open_comment': self.open_comment_input.toPlainText().strip() or None,
             'private_comment': self.private_comment_input.toPlainText().strip() or None,
-            'interesting_comment': self.interesting_comment_checkbox.isChecked(),
+            'interesting_comment': False,
             'habitat_nin2_note': (self.nin2_note_input.toPlainText().strip() if hasattr(self, "nin2_note_input") else "") or None,
             'habitat_substrate_note': (self.substrate_note_input.toPlainText().strip() if hasattr(self, "substrate_note_input") else "") or None,
             'habitat_grows_on_note': (self.grows_on_note_input.toPlainText().strip() if hasattr(self, "grows_on_note_input") else "") or None,
@@ -7114,9 +8920,185 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_taxonomy_tab_indicators()
         self._update_ai_controls_state()
 
+    def _set_publish_target_combo(self, publish_target: str, manual_override: bool = False) -> None:
+        if not hasattr(self, "publish_target_combo"):
+            return
+        self._publish_target_sync_in_progress = True
+        try:
+            normalized = normalize_publish_target(publish_target)
+            idx = self.publish_target_combo.findData(normalized)
+            if idx < 0:
+                idx = 0
+            self.publish_target_combo.setCurrentIndex(idx)
+            self._publish_target_manual_override = bool(manual_override)
+        finally:
+            self._publish_target_sync_in_progress = False
+        self._refresh_publish_target_hint()
+        self._update_publish_target_specific_controls()
+
+    def _active_reporting_target(self) -> str:
+        return normalize_publish_target(
+            SettingsDB.get_setting(SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
+            fallback=PUBLISH_TARGET_ARTSOBS_NO,
+        )
+
+    def _country_name_from_coords(self) -> str:
+        lat = self.lat_input.value() if hasattr(self, "lat_input") else None
+        lon = self.lon_input.value() if hasattr(self, "lon_input") else None
+        if lat is not None and hasattr(self, "lat_input") and lat <= self.lat_input.minimum():
+            lat = None
+        if lon is not None and hasattr(self, "lon_input") and lon <= self.lon_input.minimum():
+            lon = None
+        inferred = infer_publish_target_from_coords(lat, lon)
+        if inferred == PUBLISH_TARGET_ARTPORTALEN_SE:
+            return self.tr("Sweden")
+        if inferred == PUBLISH_TARGET_ARTSOBS_NO:
+            return self.tr("Norway")
+        if lat is not None and lon is not None:
+            return self._reporting_system_name()
+        return ""
+
+    def _reporting_system_name(self) -> str:
+        if not hasattr(self, "publish_target_combo"):
+            return ""
+        target = normalize_publish_target(self.publish_target_combo.currentData())
+        if target == PUBLISH_TARGET_ARTPORTALEN_SE:
+            return self.tr("Sweden")
+        return self.tr("Norway")
+
+    def _refresh_location_reporting_summary(self) -> None:
+        country_name = self._country_name_from_coords()
+        if hasattr(self, "country_summary_label"):
+            self.country_summary_label.setText(
+                self.tr("Country: {country}").format(country=country_name)
+                if country_name
+                else ""
+            )
+            self.country_summary_label.setVisible(bool(country_name))
+        if hasattr(self, "reporting_system_summary_label"):
+            system_name = self._reporting_system_name()
+            self.reporting_system_summary_label.setText(
+                self.tr("Reporting system: {target}").format(target=system_name)
+                if system_name
+                else ""
+            )
+            self.reporting_system_summary_label.setVisible(bool(system_name))
+
+    def _norwegian_habitat_tree_ids_enabled(self) -> bool:
+        if not hasattr(self, "publish_target_combo"):
+            return True
+        target = normalize_publish_target(self.publish_target_combo.currentData())
+        return target == PUBLISH_TARGET_ARTSOBS_NO
+
+    def _habitat_tree_filename(self, key: str, target: str | None = None) -> str:
+        normalized_target = normalize_publish_target(target or self.publish_target_combo.currentData())
+        if key == "nin2":
+            if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE:
+                return "artportalen_biotopes_tree.json"
+            return "nin2_biotopes_tree.json"
+        if key == "substrate":
+            if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE:
+                return "artportalen_substrate_tree.json"
+            return "substrate_tree.json"
+        return ""
+
+    def _habitat_group_title(self, key: str, target: str | None = None) -> str:
+        normalized_target = normalize_publish_target(target or self.publish_target_combo.currentData())
+        if key == "nin2":
+            return self.tr("Biotope") if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE else self.tr("NIN2 biotope")
+        if key == "substrate":
+            return self.tr("Substrate")
+        return ""
+
+    def _habitat_target_note_text(self, key: str, target: str | None = None) -> str:
+        return ""
+
+    def _apply_habitat_tree_source(self, key: str, preserve_ids: list[int] | None = None) -> None:
+        state = self._habitat_tree_states.get(key) or {}
+        combos: list[QComboBox] = state.get("combos") or []
+        if not combos:
+            return
+        filename = self._habitat_tree_filename(key)
+        roots = self._load_habitat_tree(filename)
+        state["roots"] = roots
+        state["index"] = self._build_habitat_tree_index(roots)
+        state["source_file"] = filename
+        group = state.get("group")
+        if group is not None:
+            group.setTitle(self._habitat_group_title(key))
+        note_label = state.get("note_label")
+        if note_label is not None:
+            note_text = self._habitat_target_note_text(key)
+            note_label.setText(note_text)
+            note_label.setVisible(bool(note_text))
+        ids = [int(v) for v in (preserve_ids or [])]
+        self._populate_habitat_tree_level(key, 0, roots, ids[0] if ids else None)
+        for level in range(1, len(combos)):
+            prev_node = combos[level - 1].currentData()
+            children = prev_node.get("children") if isinstance(prev_node, dict) else None
+            self._populate_habitat_tree_level(
+                key,
+                level,
+                children if isinstance(children, list) else [],
+                ids[level] if level < len(ids) else None,
+            )
+
+    def _refresh_publish_target_hint(self) -> None:
+        self._refresh_location_reporting_summary()
+        if not hasattr(self, "publish_target_hint"):
+            return
+        self.publish_target_hint.clear()
+        self.publish_target_hint.setVisible(False)
+
+    def _update_publish_target_specific_controls(self) -> None:
+        current_nin2_ids = [
+            int(node.get("id"))
+            for node in self._selected_habitat_tree_path("nin2")
+            if isinstance(node, dict) and node.get("id") is not None
+        ]
+        current_substrate_ids = [
+            int(node.get("id"))
+            for node in self._selected_habitat_tree_path("substrate")
+            if isinstance(node, dict) and node.get("id") is not None
+        ]
+        self._apply_habitat_tree_source("nin2", preserve_ids=current_nin2_ids)
+        self._apply_habitat_tree_source("substrate", preserve_ids=current_substrate_ids)
+        self._update_taxonomy_tab_indicators()
+
+    def _on_publish_target_changed(self, _index: int) -> None:
+        if not getattr(self, "_publish_target_sync_in_progress", False):
+            self._publish_target_manual_override = True
+        self._refresh_publish_target_hint()
+        self._update_publish_target_specific_controls()
+        self._update_taxonomy_tab_indicators()
+
+    def _maybe_autoselect_publish_target_from_coords(self, _value=None) -> None:
+        if getattr(self, "_publish_target_manual_override", False):
+            self._refresh_location_reporting_summary()
+            return
+        lat = self.lat_input.value() if hasattr(self, "lat_input") else None
+        lon = self.lon_input.value() if hasattr(self, "lon_input") else None
+        if lat is not None and hasattr(self, "lat_input") and lat <= self.lat_input.minimum():
+            lat = None
+        if lon is not None and hasattr(self, "lon_input") and lon <= self.lon_input.minimum():
+            lon = None
+        inferred = infer_publish_target_from_coords(lat, lon)
+        if inferred:
+            self._set_publish_target_combo(inferred, manual_override=False)
+            return
+        self._refresh_location_reporting_summary()
+
     def _tab_title_with_state(self, title: str, filled: bool) -> str:
         marker = "●" if filled else "○"
         return f"{marker} {title}"
+
+    def _nin2_tab_title(self) -> str:
+        if self._norwegian_habitat_tree_ids_enabled():
+            return self.tr("NIN2 biotope")
+        return self.tr("Biotope")
+
+    def _substrate_tab_title(self) -> str:
+        return self.tr("Substrate")
 
     def _tab_has_data(self, key: str) -> bool:
         if key == "species":
@@ -7164,12 +9146,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if nin2_index >= 0:
             self.taxonomy_tabs.setTabText(
                 nin2_index,
-                self._tab_title_with_state(self.tr("NIN2 biotope"), self._tab_has_data("nin2")),
+                self._tab_title_with_state(self._nin2_tab_title(), self._tab_has_data("nin2")),
             )
         if substrate_index >= 0:
             self.taxonomy_tabs.setTabText(
                 substrate_index,
-                self._tab_title_with_state(self.tr("Substrate"), self._tab_has_data("substrate")),
+                self._tab_title_with_state(self._substrate_tab_title(), self._tab_has_data("substrate")),
             )
         if grows_index >= 0:
             self.taxonomy_tabs.setTabText(
@@ -7180,11 +9162,46 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_datetime_width()
+        splitter = getattr(self, "dialog_gallery_splitter", None)
+        if splitter is not None and not self._dialog_gallery_splitter_syncing:
+            sizes = splitter.sizes()
+            gallery_height = sizes[1] if len(sizes) >= 2 else None
+            QTimer.singleShot(0, lambda h=gallery_height: self._apply_dialog_gallery_splitter_height(h))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if (
+            getattr(self, "_initial_gallery_refresh_pending", False)
+            or getattr(self, "_deferred_location_lookup_pending", False)
+        ):
+            QTimer.singleShot(0, self._complete_deferred_dialog_setup)
 
     def _update_datetime_width(self):
         """Keep Date & Time responsive with the details grid width."""
         if hasattr(self, "datetime_input"):
             self.datetime_input.setMinimumWidth(200)
+
+    def _complete_deferred_dialog_setup(self) -> None:
+        if getattr(self, "_initial_gallery_refresh_pending", False):
+            self._initial_gallery_refresh_pending = False
+            gallery_start = time.perf_counter()
+            self._refresh_image_gallery_summary()
+            QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
+            _debug_import_flow(
+                "deferred gallery refresh complete; "
+                f"images={len(self.image_results)}; "
+                f"elapsed={time.perf_counter() - gallery_start:.3f}s"
+            )
+        if getattr(self, "_deferred_location_lookup_pending", False):
+            self._deferred_location_lookup_pending = False
+            _debug_import_flow("starting deferred location lookup")
+            self._schedule_location_lookup()
+        created_at = getattr(self, "_debug_dialog_created_at", None)
+        if created_at is not None:
+            _debug_import_flow(
+                f"ObservationDetailsDialog ready after {time.perf_counter() - created_at:.3f}s"
+            )
+            self._debug_dialog_created_at = None
 
     def _resolve_gps_source_index(self) -> int | None:
         source_idx = None
@@ -7203,16 +9220,86 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 return idx
         return None
 
+    def _build_dialog_preview_path(self, source_path: str) -> str | None:
+        source = str(source_path or "").strip()
+        if not source:
+            return None
+        source_file = Path(source)
+        if not source_file.exists() or not source_file.is_file():
+            return None
+        cached = self._dialog_preview_path_cache.get(source)
+        if cached and Path(cached).exists():
+            return cached
+
+        reader = QImageReader(str(source_file))
+        reader.setAutoTransform(True)
+        target_dim = 224
+        size = reader.size()
+        if size.isValid():
+            if max(size.width(), size.height()) <= target_dim:
+                self._dialog_preview_path_cache[source] = str(source_file)
+                return str(source_file)
+            scaled_size = QSize(size)
+            scaled_size.scale(target_dim, target_dim, Qt.KeepAspectRatio)
+            if scaled_size.isValid() and scaled_size.width() > 0 and scaled_size.height() > 0:
+                reader.setScaledSize(scaled_size)
+
+        image = reader.read()
+        if image.isNull():
+            return None
+
+        preview_dir = Path(tempfile.gettempdir()) / "sporely_dialog_previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_name = f"{source_file.stem}_{abs(hash(source)) & 0xffffffff:08x}.jpg"
+        preview_path = preview_dir / preview_name
+        if not image.save(str(preview_path), "JPEG", 88):
+            return None
+
+        preview_text = str(preview_path)
+        self._dialog_temp_preview_paths.add(preview_text)
+        self._dialog_preview_path_cache[source] = preview_text
+        return preview_text
+
+    def _image_gallery_preview_path(self, item: ImageImportResult) -> str:
+        if item.image_id:
+            thumb_preview = get_thumbnail_path(item.image_id, "224x224")
+            if thumb_preview and Path(thumb_preview).exists():
+                return str(thumb_preview)
+        for candidate in (item.preview_path, item.filepath):
+            preview_path = self._build_dialog_preview_path(candidate or "")
+            if preview_path:
+                return preview_path
+        return item.filepath or ""
+
+    @staticmethod
+    def _image_result_key(item: ImageImportResult):
+        if item.image_id is not None:
+            return item.image_id
+        return str(item.filepath or "")
+
+    def _remap_index_dict_after_reorder(
+        self,
+        source: dict[int, object],
+        old_results: list[ImageImportResult],
+        new_index_by_key: dict[object, int],
+    ) -> dict[int, object]:
+        remapped: dict[int, object] = {}
+        for old_index, value in source.items():
+            if old_index < 0 or old_index >= len(old_results):
+                continue
+            key = self._image_result_key(old_results[old_index])
+            new_index = new_index_by_key.get(key)
+            if new_index is None:
+                continue
+            remapped[int(new_index)] = value
+        return remapped
+
     def _refresh_image_gallery_summary(self) -> None:
         if not hasattr(self, "image_gallery"):
             return
+        start_time = time.perf_counter()
         items = []
         for idx, item in enumerate(self.image_results):
-            thumb_preview = None
-            if item.image_id:
-                thumb_preview = get_thumbnail_path(item.image_id, "224x224")
-                if thumb_preview and not Path(thumb_preview).exists():
-                    thumb_preview = None
             gps_match = idx == self._gps_source_index and item.exif_has_gps
             needs_scale = bool(item.needs_scale)
             if not needs_scale:
@@ -7243,7 +9330,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 {
                     "id": item.image_id,
                     "filepath": item.filepath,
-                    "preview_path": thumb_preview or item.preview_path or item.filepath,
+                    "preview_path": self._image_gallery_preview_path(item),
                     "image_number": idx + 1,
                     "crop_box": item.ai_crop_box,
                     "crop_source_size": item.ai_crop_source_size,
@@ -7254,6 +9341,79 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 }
             )
         self.image_gallery.set_items(items)
+        _debug_import_flow(
+            f"_refresh_image_gallery_summary built {len(items)} items in {time.perf_counter() - start_time:.3f}s"
+        )
+
+    def _on_gallery_items_reordered(self, ordered_keys: list[object]) -> None:
+        old_results = list(self.image_results)
+        if len(old_results) < 2:
+            return
+
+        ordered_results: list[ImageImportResult] = []
+        seen: set[object] = set()
+        for key in ordered_keys or []:
+            for item in old_results:
+                item_key = self._image_result_key(item)
+                if item_key != key or item_key in seen:
+                    continue
+                ordered_results.append(item)
+                seen.add(item_key)
+                break
+        for item in old_results:
+            item_key = self._image_result_key(item)
+            if item_key in seen:
+                continue
+            ordered_results.append(item)
+            seen.add(item_key)
+        if ordered_results == old_results:
+            return
+
+        selected_keys = []
+        for path in self.image_gallery.selected_paths():
+            for item in old_results:
+                if item.filepath == path:
+                    selected_keys.append(self._image_result_key(item))
+                    break
+        primary_key = None
+        if self.primary_index is not None and 0 <= self.primary_index < len(old_results):
+            primary_key = self._image_result_key(old_results[self.primary_index])
+        ai_key = None
+        if self._ai_selected_index is not None and 0 <= self._ai_selected_index < len(old_results):
+            ai_key = self._image_result_key(old_results[self._ai_selected_index])
+
+        self.image_results[:] = ordered_results
+        new_index_by_key = {
+            self._image_result_key(item): idx
+            for idx, item in enumerate(self.image_results)
+        }
+        self._ai_predictions_by_index = self._remap_index_dict_after_reorder(
+            self._ai_predictions_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self._ai_selected_by_index = self._remap_index_dict_after_reorder(
+            self._ai_selected_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self.primary_index = new_index_by_key.get(primary_key)
+        self._ai_selected_index = new_index_by_key.get(ai_key)
+        self._gps_source_index = self._resolve_gps_source_index()
+        self._refresh_image_gallery_summary()
+
+        selected_paths = [
+            self.image_results[new_index_by_key[key]].filepath
+            for key in selected_keys
+            if key in new_index_by_key
+        ]
+        if selected_paths:
+            self.image_gallery.select_paths(selected_paths)
+        if len(selected_paths) <= 1:
+            self._select_initial_ai_image()
+        else:
+            self._update_ai_controls_state()
+            self._update_ai_table()
 
     def _remap_ai_indices(self, removed_indices: list[int]) -> None:
         def new_index(old_index: int) -> int:
@@ -7573,6 +9733,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if self._host_suppress_taxon_autofill:
             return
+        self._resolve_current_taxon_to_accepted(host=True)
         self._update_host_vernacular_suggestions_for_taxon()
         self._maybe_set_host_vernacular_from_taxon()
 
@@ -7603,6 +9764,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self._host_species_completer:
             self._host_species_completer.popup().hide()
         _ = species
+        self._resolve_current_taxon_to_accepted(host=True)
         self._update_host_vernacular_suggestions_for_taxon()
         self._maybe_set_host_vernacular_from_taxon()
 
@@ -7611,6 +9773,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if self._host_suppress_taxon_autofill:
             return
+        self._resolve_current_taxon_to_accepted(host=True)
         self._update_host_vernacular_suggestions_for_taxon()
         self._maybe_set_host_vernacular_from_taxon()
 
@@ -7625,14 +9788,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.host_genus_input.text().strip() or None
         species = self.host_species_input.text().strip() or None
-        suggestions = self.vernacular_db.suggest_vernacular(value, genus=genus, species=species)
-        text_lower = value.lower()
-        if any(s.lower() == text_lower for s in suggestions):
-            self._host_vernacular_model.setStringList([])
+        entries = self.vernacular_db.suggest_vernacular_entries(value, genus=genus, species=species)
+        text_label = self._format_vernacular_suggestion_label(
+            {"vernacular_name": value, "genus": genus, "species": species}
+        )
+        if any(self._format_vernacular_suggestion_label(entry).casefold() == text_label.casefold() for entry in entries):
+            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
             if self._host_vernacular_completer:
                 self._host_vernacular_completer.popup().hide()
         else:
-            self._host_vernacular_model.setStringList(suggestions[:20])
+            self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=20)
 
     def _on_host_vernacular_selected(self, text: str) -> None:
         self._set_host_taxon_from_vernacular(text)
@@ -7646,7 +9811,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         value = (name or "").strip()
         if not value:
             return
-        taxon = self.vernacular_db.taxon_from_vernacular(value)
+        entry = self._lookup_vernacular_entry(value, host=True)
+        if entry:
+            self._host_suppress_taxon_autofill = True
+            try:
+                self.host_vernacular_input.setText(str(entry.get("vernacular_name") or "").strip())
+            finally:
+                self._host_suppress_taxon_autofill = False
+            taxon = (entry.get("genus"), entry.get("species"), entry.get("family"))
+        else:
+            taxon = self.vernacular_db.taxon_from_vernacular(value)
         if not taxon:
             return
         genus, species, _family = taxon
@@ -7688,11 +9862,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus = self.host_genus_input.text().strip() or None
         species = self.host_species_input.text().strip() or None
         if not genus and not species:
-            self._host_vernacular_model.setStringList([])
+            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
             self._set_host_vernacular_placeholder_from_suggestions([])
             return
         suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        self._host_vernacular_model.setStringList(suggestions[:20])
+        entries = [{"vernacular_name": suggestion, "genus": genus, "species": species} for suggestion in suggestions]
+        self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=20)
         self._set_host_vernacular_placeholder_from_suggestions(suggestions)
 
     def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
@@ -7723,6 +9898,75 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "QAbstractItemView::item { padding: 2px 6px; }"
         )
 
+    @staticmethod
+    def _format_vernacular_suggestion_label(entry: dict) -> str:
+        vernacular_name = str(entry.get("vernacular_name") or "").strip()
+        genus = str(entry.get("genus") or "").strip()
+        species = str(entry.get("species") or "").strip()
+        scientific_name = " ".join(part for part in (genus, species) if part).strip()
+        if vernacular_name and scientific_name:
+            return f"{vernacular_name} ({scientific_name})"
+        return vernacular_name or scientific_name
+
+    def _set_vernacular_entries(
+        self,
+        model: QStringListModel | None,
+        entries: list[dict],
+        *,
+        host: bool = False,
+        limit: int = 30,
+    ) -> None:
+        if model is None:
+            return
+        labels: list[str] = []
+        entry_map: dict[str, dict] = {}
+        for entry in entries[:limit]:
+            label = self._format_vernacular_suggestion_label(entry)
+            if not label:
+                continue
+            labels.append(label)
+            entry_map[label.casefold()] = entry
+        model.setStringList(labels)
+        if host:
+            self._host_vernacular_entry_map = entry_map
+        else:
+            self._vernacular_entry_map = entry_map
+
+    def _lookup_vernacular_entry(self, text: str, *, host: bool = False) -> dict | None:
+        mapping = getattr(self, "_host_vernacular_entry_map", {}) if host else getattr(self, "_vernacular_entry_map", {})
+        return mapping.get(str(text or "").strip().casefold())
+
+    def _resolve_current_taxon_to_accepted(self, *, host: bool = False) -> bool:
+        if not self.vernacular_db:
+            return False
+        if host:
+            genus_widget = getattr(self, "host_genus_input", None)
+            species_widget = getattr(self, "host_species_input", None)
+            suppress_attr = "_host_suppress_taxon_autofill"
+        else:
+            genus_widget = getattr(self, "genus_input", None)
+            species_widget = getattr(self, "species_input", None)
+            suppress_attr = "_suppress_taxon_autofill"
+        if genus_widget is None or species_widget is None:
+            return False
+        genus = genus_widget.text().strip()
+        species = species_widget.text().strip()
+        if not genus or not species:
+            return False
+        resolved = self.vernacular_db.taxon_from_scientific(genus, species)
+        if not resolved:
+            return False
+        accepted_genus, accepted_species, _family = resolved
+        if accepted_genus.casefold() == genus.casefold() and accepted_species.casefold() == species.casefold():
+            return False
+        setattr(self, suppress_attr, True)
+        try:
+            genus_widget.setText(accepted_genus)
+            species_widget.setText(accepted_species)
+        finally:
+            setattr(self, suppress_attr, False)
+        return True
+
     def _on_vernacular_text_changed(self, text):
         if not self.vernacular_db:
             return
@@ -7733,16 +9977,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
-        suggestions = self.vernacular_db.suggest_vernacular(text, genus=genus, species=species)
-        
-        # If text exactly matches any suggestion, clear the model to prevent popup
-        text_lower = text.strip().lower()
-        if any(s.lower() == text_lower for s in suggestions):
-            self._vernacular_model.setStringList([])
+        entries = self.vernacular_db.suggest_vernacular_entries(text, genus=genus, species=species)
+        text_label = self._format_vernacular_suggestion_label(
+            {"vernacular_name": text.strip(), "genus": genus, "species": species}
+        )
+        if any(self._format_vernacular_suggestion_label(entry).casefold() == text_label.casefold() for entry in entries):
+            self._set_vernacular_entries(self._vernacular_model, [], host=False)
             if self._vernacular_completer:
                 self._vernacular_completer.popup().hide()
         else:
-            self._vernacular_model.setStringList(suggestions)
+            self._set_vernacular_entries(self._vernacular_model, entries, host=False, limit=30)
 
     def _update_vernacular_suggestions_for_taxon(self):
         if not self.vernacular_db:
@@ -7750,11 +9994,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
         if not genus and not species:
-            self._vernacular_model.setStringList([])
+            self._set_vernacular_entries(self._vernacular_model, [], host=False)
             self._set_vernacular_placeholder_from_suggestions([])
             return
         suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        self._vernacular_model.setStringList(suggestions)
+        entries = [{"vernacular_name": suggestion, "genus": genus, "species": species} for suggestion in suggestions]
+        self._set_vernacular_entries(self._vernacular_model, entries, host=False, limit=30)
         self._set_vernacular_placeholder_from_suggestions(suggestions)
 
     def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
@@ -7782,7 +10027,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         
         if not self.vernacular_db:
             return
-        taxon = self.vernacular_db.taxon_from_vernacular(name)
+        entry = self._lookup_vernacular_entry(name, host=False)
+        if entry:
+            self._suppress_taxon_autofill = True
+            try:
+                self.vernacular_input.setText(str(entry.get("vernacular_name") or "").strip())
+            finally:
+                self._suppress_taxon_autofill = False
+            taxon = (entry.get("genus"), entry.get("species"), entry.get("family"))
+        else:
+            taxon = self.vernacular_db.taxon_from_vernacular(name)
         if taxon:
             genus, species, _family = taxon
             current_genus = self.genus_input.text().strip()
@@ -7803,7 +10057,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         name = self.vernacular_input.text().strip()
         if not name:
             return
-        taxon = self.vernacular_db.taxon_from_vernacular(name)
+        entry = self._lookup_vernacular_entry(name, host=False)
+        if entry:
+            self._suppress_taxon_autofill = True
+            try:
+                self.vernacular_input.setText(str(entry.get("vernacular_name") or "").strip())
+            finally:
+                self._suppress_taxon_autofill = False
+            taxon = (entry.get("genus"), entry.get("species"), entry.get("family"))
+        else:
+            taxon = self.vernacular_db.taxon_from_vernacular(name)
         if taxon:
             genus, species, _family = taxon
             current_genus = self.genus_input.text().strip()
@@ -7860,6 +10123,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if not self.vernacular_db or self._suppress_taxon_autofill:
             return
+        self._resolve_current_taxon_to_accepted()
         self._handle_taxon_change()
         self._maybe_set_vernacular_from_taxon()
         genus = self.genus_input.text().strip()
@@ -7887,6 +10151,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         
         # Update vernacular name suggestions
         if self.vernacular_db:
+            self._resolve_current_taxon_to_accepted()
             self._maybe_set_vernacular_from_taxon()
 
     def _on_species_editing_finished(self):
@@ -7894,6 +10159,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if not self.vernacular_db or self._suppress_taxon_autofill:
             return
+        self._resolve_current_taxon_to_accepted()
         self._handle_taxon_change()
         self._maybe_set_vernacular_from_taxon()
 
@@ -8379,7 +10645,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         title: str,
         key: str,
         roots: list[dict],
+        *,
+        expand_fields: bool = False,
     ) -> None:
+        field_width = 360
         group = QGroupBox(title)
         group_layout = QFormLayout(group)
         group_layout.setSpacing(6)
@@ -8389,6 +10658,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.NoInsert)
+            if expand_fields:
+                combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            else:
+                combo.setFixedWidth(field_width)
+                combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             combo.addItem(self.tr("Select..."), None)
             combo.currentIndexChanged.connect(
                 lambda _idx, tree_key=key, tree_level=level: self._on_habitat_tree_level_changed(tree_key, tree_level)
@@ -8412,6 +10686,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
             )
             row_widget = QWidget()
+            row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(4)
@@ -8424,6 +10699,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "roots": roots,
             "combos": combos,
             "index": tree_index,
+            "group": group,
+            "note_label": getattr(self, f"{key}_target_note", None),
             "suppress_text_filter": False,
         }
         self._populate_habitat_tree_level(key, 0, roots)
@@ -8600,10 +10877,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return sorted(self.objectives.keys())[0]
         return None
 
-    def _load_existing_observation(self):
-        """Preload observation details and images for editing."""
-        obs = self.observation or {}
-
+    def _load_observation_values(self, obs: dict | None) -> None:
+        """Preload observation details from an existing observation or in-memory draft."""
+        obs = obs or {}
         date_str = obs.get("date")
         if date_str:
             dt = _parse_observation_datetime(date_str)
@@ -8631,13 +10907,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         legacy_notes = (obs.get("notes") or "").strip()
         self.open_comment_input.setPlainText((obs.get("open_comment") or legacy_notes).strip())
         self.private_comment_input.setPlainText((obs.get("private_comment") or "").strip())
-        self.interesting_comment_checkbox.setChecked(bool(obs.get("interesting_comment", 0)))
         if hasattr(self, "host_genus_input"):
             self.host_genus_input.setText((obs.get("habitat_host_genus") or "").strip())
         if hasattr(self, "host_species_input"):
             self.host_species_input.setText((obs.get("habitat_host_species") or "").strip())
         if hasattr(self, "host_vernacular_input"):
             self.host_vernacular_input.setText((obs.get("habitat_host_common_name") or "").strip())
+        lat = obs.get("gps_latitude")
+        lon = obs.get("gps_longitude")
+        if lat is not None:
+            self.lat_input.setValue(lat)
+        if lon is not None:
+            self.lon_input.setValue(lon)
+        saved_target = resolve_observation_publish_target(
+            obs,
+            default_target=self._active_reporting_target(),
+        )
+        self._set_publish_target_combo(saved_target, manual_override=True)
         self._apply_habitat_tree_path("nin2", obs.get("habitat_nin2_path"))
         self._apply_habitat_tree_path("substrate", obs.get("habitat_substrate_path"))
         if hasattr(self, "nin2_note_input"):
@@ -8646,16 +10932,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.substrate_note_input.setPlainText(obs.get("habitat_substrate_note") or "")
         if hasattr(self, "grows_on_note_input"):
             self.grows_on_note_input.setPlainText(obs.get("habitat_grows_on_note") or "")
-
-        lat = obs.get("gps_latitude")
-        lon = obs.get("gps_longitude")
-        if lat is not None:
-            self.lat_input.setValue(lat)
-        if lon is not None:
-            self.lon_input.setValue(lon)
         self._update_map_button()
         self._maybe_set_vernacular_from_taxon()
         self._update_taxonomy_tab_indicators()
+
+    def _load_existing_observation(self):
+        """Preload observation details and images for editing."""
+        self._load_observation_values(self.observation)
 
 
 class RenameObservationDialog(QDialog):
@@ -8771,9 +11054,20 @@ class VernacularDB:
         self.db_path = db_path
         self.language_code = normalize_vernacular_language(language_code) if language_code else None
         self._has_language_column = None
+        self._tables: set[str] | None = None
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
+
+    def _table_names(self) -> set[str]:
+        if self._tables is None:
+            with self._connect() as conn:
+                cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                self._tables = {str(row[0] or "") for row in cur.fetchall()}
+        return self._tables
+
+    def _has_scientific_name_table(self) -> bool:
+        return "scientific_name_min" in self._table_names()
 
     def _has_language(self) -> bool:
         if self._has_language_column is None:
@@ -8833,6 +11127,50 @@ class VernacularDB:
             )
             return [row[0] for row in cur.fetchall() if row and row[0]]
 
+    def suggest_vernacular_entries(
+        self,
+        prefix: str,
+        genus: str | None = None,
+        species: str | None = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        prefix = prefix.strip()
+        if not prefix:
+            return []
+        resolved = self.taxon_from_scientific(genus or "", species or "") if genus and species else None
+        if resolved:
+            genus, species, _family = resolved
+        lang_clause, lang_params = self._language_clause(None)
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT DISTINCT v.vernacular_name, t.genus, t.specific_epithet, t.family, v.is_preferred_name
+                FROM vernacular_min v
+                JOIN taxon_min t ON t.taxon_id = v.taxon_id
+                WHERE v.vernacular_name LIKE ? || '%'
+                  AND (? IS NULL OR t.genus = ? COLLATE NOCASE)
+                  AND (? IS NULL OR t.specific_epithet = ? COLLATE NOCASE)
+                """
+                + lang_clause
+                + """
+                ORDER BY v.is_preferred_name DESC, v.vernacular_name, t.genus, t.specific_epithet
+                LIMIT ?
+                """,
+                (prefix, genus, genus, species, species, *lang_params, int(limit)),
+            )
+            return [
+                {
+                    "vernacular_name": row[0],
+                    "genus": row[1],
+                    "species": row[2],
+                    "family": row[3],
+                    "is_preferred_name": bool(row[4]),
+                }
+                for row in cur.fetchall()
+                if row and row[0] and row[1] and row[2]
+            ]
+
     def suggest_vernacular_for_taxon(
         self, genus: str | None = None, species: str | None = None, limit: int = 200
     ) -> list[str]:
@@ -8840,6 +11178,9 @@ class VernacularDB:
         species = species.strip() if species else None
         if not genus and not species:
             return []
+        resolved = self.taxon_from_scientific(genus or "", species or "") if genus and species else None
+        if resolved:
+            genus, species, _family = resolved
         lang_clause, lang_params = self._language_clause(None)
         with self._connect() as conn:
             cur = conn.cursor()
@@ -8866,6 +11207,8 @@ class VernacularDB:
             return []
         with self._connect() as conn:
             cur = conn.cursor()
+            values: list[str] = []
+            seen: set[str] = set()
             cur.execute(
                 """
                 SELECT DISTINCT genus
@@ -8876,7 +11219,31 @@ class VernacularDB:
                 """,
                 (prefix,),
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            for row in cur.fetchall():
+                genus = str(row[0] or "").strip()
+                lowered = genus.casefold()
+                if genus and lowered not in seen:
+                    seen.add(lowered)
+                    values.append(genus)
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT DISTINCT scientific_name
+                    FROM scientific_name_min
+                    WHERE scientific_name LIKE ? || ' %'
+                    ORDER BY scientific_name
+                    LIMIT 400
+                    """,
+                    (prefix,),
+                )
+                for row in cur.fetchall():
+                    scientific_name = str(row[0] or "").strip()
+                    genus = scientific_name.split(" ", 1)[0].strip() if scientific_name else ""
+                    lowered = genus.casefold()
+                    if genus and lowered not in seen:
+                        seen.add(lowered)
+                        values.append(genus)
+            return values[:200]
 
     def suggest_species(self, genus: str, prefix: str) -> list[str]:
         genus = genus.strip()
@@ -8885,18 +11252,100 @@ class VernacularDB:
             return []
         with self._connect() as conn:
             cur = conn.cursor()
+            values: list[str] = []
+            seen: set[str] = set()
             cur.execute(
                 """
                 SELECT DISTINCT specific_epithet
                 FROM taxon_min
-                WHERE genus = ?
+                WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet LIKE ? || '%'
                 ORDER BY specific_epithet
                 LIMIT 200
                 """,
                 (genus, prefix),
             )
-            return [row[0] for row in cur.fetchall() if row and row[0]]
+            for row in cur.fetchall():
+                species = str(row[0] or "").strip()
+                lowered = species.casefold()
+                if species and lowered not in seen:
+                    seen.add(lowered)
+                    values.append(species)
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT DISTINCT scientific_name
+                    FROM scientific_name_min
+                    WHERE scientific_name LIKE ? || ' ' || ? || '%'
+                    ORDER BY scientific_name
+                    LIMIT 400
+                    """,
+                    (genus, prefix),
+                )
+                for row in cur.fetchall():
+                    scientific_name = str(row[0] or "").strip()
+                    parts = scientific_name.split()
+                    if len(parts) < 2 or parts[0].casefold() != genus.casefold():
+                        continue
+                    species = parts[1].strip()
+                    lowered = species.casefold()
+                    if species and lowered not in seen:
+                        seen.add(lowered)
+                        values.append(species)
+            return values[:200]
+
+    def taxon_from_scientific(self, genus: str, species: str) -> tuple[str, str, str | None] | None:
+        genus = (genus or "").strip()
+        species = (species or "").strip()
+        if not genus or not species:
+            return None
+        scientific_name = f"{genus} {species}".strip()
+        with self._connect() as conn:
+            cur = conn.cursor()
+            if self._has_scientific_name_table():
+                cur.execute(
+                    """
+                    SELECT t.genus, t.specific_epithet, t.family
+                    FROM taxon_min t
+                    LEFT JOIN scientific_name_min s ON s.taxon_id = t.taxon_id
+                    WHERE (
+                            t.genus = ? COLLATE NOCASE
+                        AND t.specific_epithet = ? COLLATE NOCASE
+                    )
+                       OR (
+                            t.canonical_scientific_name = ? COLLATE NOCASE
+                    )
+                       OR (
+                            s.scientific_name = ? COLLATE NOCASE
+                    )
+                    ORDER BY
+                        CASE
+                            WHEN t.genus = ? COLLATE NOCASE AND t.specific_epithet = ? COLLATE NOCASE THEN 0
+                            WHEN s.is_preferred_name = 1 THEN 1
+                            ELSE 2
+                        END,
+                        t.genus,
+                        t.specific_epithet
+                    LIMIT 1
+                    """,
+                    (genus, species, scientific_name, scientific_name, genus, species),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT genus, specific_epithet, family
+                    FROM taxon_min
+                    WHERE genus = ? COLLATE NOCASE
+                      AND specific_epithet = ? COLLATE NOCASE
+                    ORDER BY genus, specific_epithet
+                    LIMIT 1
+                    """,
+                    (genus, species),
+                )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row[0], row[1], row[2]
 
     def taxon_from_vernacular(self, name: str) -> tuple[str, str, str | None] | None:
         name = name.strip()
@@ -8927,6 +11376,9 @@ class VernacularDB:
     def vernacular_from_taxon(self, genus: str, species: str) -> str | None:
         if not genus or not species:
             return None
+        resolved = self.taxon_from_scientific(genus, species)
+        if resolved:
+            genus, species, _family = resolved
         lang_clause, lang_params = self._language_clause(None)
         with self._connect() as conn:
             cur = conn.cursor()

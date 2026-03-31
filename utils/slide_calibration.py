@@ -4,7 +4,7 @@ slide_calibration.py
 Automatic calibration from microscope calibration slide images.
 Zero dependencies beyond numpy + Pillow + matplotlib (all already required).
 
-API designed for UI integration in MycoLog.
+API designed for UI integration in Sporely.
 """
 
 from __future__ import annotations

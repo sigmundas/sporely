@@ -1,6 +1,28 @@
 # Changelog
 
-All notable changes to MycoLog are documented here.
+All notable changes to Sporely are documented here.
+
+## 2026-03-30
+
+### Added
+- Full app rename from **MycoLog** to **Sporely**, including renamed app assets, build outputs, installer metadata, and translation file names.
+- Legacy storage migration for app data, window/settings state, secure login entries, and saved path references so existing installs can move from `MycoLog` storage to `Sporely`.
+- Unified taxonomy lookup improvements with merged Norwegian and Swedish vernacular names, scientific-name aliases/synonyms, and mixed-name lookup in the observation editor.
+- Swedish Artportalen support in the observation workflow, including publish-target handling and `AP.se` links alongside `AdB.no` in AI suggestions.
+- Persistent AI lookup state for observations, so saved suggestions reopen with the observation instead of requiring a new lookup each time.
+
+### Changed
+- Measure overlays can now use configurable rectangle appearance styles in the Measure tab, with the same styling shared in Fine tune and the Analysis gallery.
+- Measure/Analysis galleries gained stronger keyboard and resize behavior, including `Tab` / `Shift+Tab` image navigation and splitter-based gallery resizing in observation dialogs.
+- Observation taxonomy entry now supports searching scientific and vernacular names together while still keeping the internal scientific/common-name fields needed for uploads.
+- Analysis defaults now favor `Spores` as the active category, while the old `All` view is now `All except spores`.
+- The Analysis sidebar now uses Qt accordion-style sections for plot/reference controls, with gallery settings kept separate at the bottom.
+
+### Fixed
+- Migrated legacy database path settings and stored absolute file paths so observations, thumbnails, calibration images, and image folders continue to resolve after the rename.
+- Corrected several measurement overlay issues, including text halo alignment, rectangle color matching for dark palette colors, and consistent thick/thin rectangle switching.
+- Resetting analysis filters now clears the selected scatter-point highlight as expected.
+- Manual location names in Edit Observation are no longer overwritten by reverse-geocode lookups; the API-provided name can be reapplied explicitly with `Get name`.
 
 ## 2026-02-08
 

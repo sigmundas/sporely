@@ -2,14 +2,14 @@
 """Generate platform icon files from the source PNG.
 
 Outputs:
-  assets/icons/mycolog.ico      - Windows (16/32/48/128/256 px)
-  assets/icons/mycolog_256.png  - Linux .deb icon (256 px)
-  assets/icons/mycolog.icns     - macOS app icon
+  assets/icons/sporely.ico      - Windows (16/32/48/128/256 px)
+  assets/icons/sporely_256.png  - Linux .deb icon (256 px)
+  assets/icons/sporely.icns     - macOS app icon
 """
 from pathlib import Path
 from PIL import Image
 
-src = Path(__file__).parent.parent / "assets" / "icons" / "mycolog icon.png"
+src = Path(__file__).parent.parent / "assets" / "icons" / "sporely icon.png"
 icons_dir = Path(__file__).parent.parent / "assets" / "icons"
 CONTENT_SCALE = 0.94  # Fraction of square side used by artwork (leave a small safety margin)
 
@@ -37,18 +37,18 @@ img = canvas
 # Windows .ico
 sizes = [16, 32, 48, 128, 256]
 icons = [img.resize((s, s), Image.LANCZOS) for s in sizes]
-dst_ico = icons_dir / "mycolog.ico"
+dst_ico = icons_dir / "sporely.ico"
 icons[0].save(dst_ico, format="ICO", sizes=[(s, s) for s in sizes], append_images=icons[1:])
 print(f"Written: {dst_ico}")
 
 # Linux PNG (256 px)
-dst_png = icons_dir / "mycolog_256.png"
+dst_png = icons_dir / "sporely_256.png"
 icons[-1].save(dst_png)
 print(f"Written: {dst_png}")
 
 # macOS .icns
 # Use Pillow directly so local iconutil quirks do not block icon generation.
-dst_icns = icons_dir / "mycolog.icns"
+dst_icns = icons_dir / "sporely.icns"
 icns_base = img.resize((1024, 1024), Image.LANCZOS)
 icns_base.save(
     dst_icns,

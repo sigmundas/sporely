@@ -32,6 +32,8 @@ VERNACULAR_LANGUAGE_ORDER = ["en", "de", "fr", "es", "da", "sv", "no", "fi", "pl
 # Candidate filenames for a multi-language DB.
 MULTILANG_DB_NAMES = [
     "vernacular_multilanguage.sqlite3",
+    "vernacular_multilanguage_unified.sqlite3",
+    "vernacular_multilanguage_unified_test.sqlite3",
     "vernacular_multi.sqlite3",
     "taxonomy_multilang.sqlite3",
     "taxonomy_multi.sqlite3",

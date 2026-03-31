@@ -1,6 +1,6 @@
 # Online Publishing
 
-Publish observations from MycoLog to Artsobservasjoner, iNaturalist, and Mushroom Observer via **Settings → Online publishing**.
+Publish observations from Sporely to Artsobservasjoner, iNaturalist, and Mushroom Observer via **Settings → Online publishing**.
 
 ## Logging in
 
@@ -17,11 +17,11 @@ You can set the image license you want to use for the images you upload. Tick of
 
 Logging in to either Artsobservasjoner target logs in to both (mobile and web) in one step. Enter your username and password when prompted. Tick **Save login info on this device** to avoid being asked again — credentials are stored securely via the OS keyring.
 
-If your session expires, MycoLog will silently re-authenticate in the background using saved credentials.
+If your session expires, Sporely will silently re-authenticate in the background using saved credentials.
 
 ### iNaturalist (awaiting approval)
 
-Click **Log in** and complete sign-in in your browser. MycoLog keeps you signed in afterwards.
+Click **Log in** and complete sign-in in your browser. Sporely keeps you signed in afterwards.
 
 ### Mushroom Observer
 

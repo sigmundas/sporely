@@ -1,7 +1,8 @@
 """Shared dialog helpers for consistent cross-platform sizing."""
 from __future__ import annotations
 
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QCoreApplication, Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -10,9 +11,34 @@ from PySide6.QtWidgets import (
     QLayout,
     QSizePolicy,
     QStyle,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+from app_identity import APP_DOCS_BASE_URL
+
+
+def github_doc_url(doc_filename: str) -> str:
+    """Return the GitHub URL for a help page stored under docs/."""
+    return f"{APP_DOCS_BASE_URL}/{str(doc_filename).lstrip('/')}"
+
+
+def open_github_doc(doc_filename: str) -> None:
+    """Open a docs page on GitHub in the system browser."""
+    QDesktopServices.openUrl(QUrl(github_doc_url(doc_filename)))
+
+
+def make_github_help_button(parent: QWidget | None, doc_filename: str) -> QToolButton:
+    """Create a compact '?' help button that opens a GitHub docs page."""
+    button = QToolButton(parent)
+    button.setText("?")
+    button.setCursor(Qt.PointingHandCursor)
+    button.setToolTip("Open help on GitHub")
+    button.setAutoRaise(False)
+    button.setFixedSize(28, 28)
+    button.clicked.connect(lambda: open_github_doc(doc_filename))
+    return button
 
 
 def ask_wrapped_yes_no(

@@ -40,7 +40,7 @@ jobs:
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           & $iscc /DMyAppVersion=$version installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          echo "name=MycoLog-$version-windows-setup.exe" >> $env:GITHUB_OUTPUT
+          echo "name=Sporely-$version-windows-setup.exe" >> $env:GITHUB_OUTPUT
 
       - name: Create Release and upload asset
         uses: softprops/action-gh-release@v2
@@ -76,37 +76,37 @@ jobs:
         run: |
           tag="${{ github.ref_name }}"
           version="${tag#v}"
-          pkg="mycolog_${version}_amd64"
+          pkg="sporely_${version}_amd64"
 
           mkdir -p "$pkg/DEBIAN"
-          mkdir -p "$pkg/opt/mycolog"
+          mkdir -p "$pkg/opt/sporely"
           mkdir -p "$pkg/usr/bin"
           mkdir -p "$pkg/usr/share/applications"
           mkdir -p "$pkg/usr/share/icons/hicolor/256x256/apps"
 
-          cp -r dist/MycoLog/. "$pkg/opt/mycolog/"
-          ln -s /opt/mycolog/MycoLog "$pkg/usr/bin/mycolog"
-          cp assets/icons/mycolog_256.png "$pkg/usr/share/icons/hicolor/256x256/apps/mycolog.png"
+          cp -r dist/Sporely/. "$pkg/opt/sporely/"
+          ln -s /opt/sporely/Sporely "$pkg/usr/bin/sporely"
+          cp assets/icons/sporely_256.png "$pkg/usr/share/icons/hicolor/256x256/apps/sporely.png"
 
-          cat > "$pkg/usr/share/applications/mycolog.desktop" << 'EOF'
+          cat > "$pkg/usr/share/applications/sporely.desktop" << 'EOF'
           [Desktop Entry]
-          Name=MycoLog
-          Comment=Mushroom spore analysis and logging
-          Exec=/opt/mycolog/MycoLog
-          Icon=mycolog
+          Name=Sporely
+          Comment=Field observations, microscopy calibration, and spore measurements
+          Exec=/opt/sporely/Sporely
+          Icon=sporely
           Terminal=false
           Type=Application
           Categories=Science;Education;
           EOF
 
           cat > "$pkg/DEBIAN/control" << EOF
-          Package: mycolog
+          Package: sporely
           Version: $version
           Architecture: amd64
           Maintainer: Sigmund Astrup <sigmundas@users.noreply.github.com>
-          Description: MycoLog - Mushroom spore analysis and logging
-           A desktop application for mushroom spore analysis,
-           field photography, and species logging.
+          Description: Sporely - field observations and spore measurements
+           A desktop application for field observations,
+           microscopy calibration, and spore measurements.
           EOF
 
           dpkg-deb --build "$pkg"
@@ -137,13 +137,13 @@ jobs:
           python tools/make_ico.py
 
           # Build .icns using iconutil (built into macOS)
-          ICONSET=assets/icons/MycoLog.iconset
+          ICONSET=assets/icons/Sporely.iconset
           mkdir -p "$ICONSET"
           python3 - << 'PYEOF'
           from PIL import Image
           from pathlib import Path
-          src = Path("assets/icons/mycolog icon.png")
-          iconset = Path("assets/icons/MycoLog.iconset")
+          src = Path("assets/icons/sporely icon.png")
+          iconset = Path("assets/icons/Sporely.iconset")
           img = Image.open(src).convert("RGBA")
           w, h = img.size; side = min(w, h)
           img = img.crop(((w-side)//2, (h-side)//2, (w+side)//2, (h+side)//2))
@@ -160,7 +160,7 @@ jobs:
           ]:
               img.resize((size, size), Image.LANCZOS).save(str(iconset / name))
           PYEOF
-          iconutil -c icns "$ICONSET" -o assets/icons/mycolog.icns
+          iconutil -c icns "$ICONSET" -o assets/icons/sporely.icns
           rm -rf "$ICONSET"
 
       - name: Build with PyInstaller
@@ -172,13 +172,13 @@ jobs:
         id: dmg
         run: |
           tag="${{ github.ref_name }}"
-          dmg_name="MycoLog-${tag}-macos.dmg"
+          dmg_name="Sporely-${tag}-macos.dmg"
           staging="dmg_staging"
           mkdir -p "$staging"
-          cp -R dist/MycoLog.app "$staging/"
+          cp -R dist/Sporely.app "$staging/"
           ln -s /Applications "$staging/Applications"
           hdiutil create \
-            -volname "MycoLog" \
+            -volname "Sporely" \
             -srcfolder "$staging" \
             -ov -format UDZO \
             "$dmg_name"

@@ -23,7 +23,11 @@ Drag the lines you want to adjust - the spore dimensions are updated instantly
 
 - Scatter plot shows length vs width.
 - Histograms (optional) show distributions.
-- Confidence ellipse can be shown for datasets with point measurements.
+- Three plot modes are available: **Ellipse**, **Kernel density**, and **Mean range**.
+
+### Ellipse
+
+This is the classic spore-cloud view. It shows the measured points in length-width space, with an optional confidence ellipse around the specimen or around reference point datasets.
 
 ### 95% Confidence Ellipse
 
@@ -100,6 +104,59 @@ with the ellipse rotated by the eigenvectors
 $$
 \mathbf{v}_{1}, \mathbf{v}_{2}.
 $$
+
+### Kernel density
+
+Kernel density shows the spore cloud as a smooth probability surface instead of a single outline.
+
+The app uses a Gaussian kernel density estimate (KDE). For measured spores
+\((x_i, y_i)\), the estimated density at a point \((x, y)\) is
+
+$$
+\hat{f}(x, y)
+=
+\frac{1}{n h_x h_y}
+\sum_{i=1}^{n}
+K\!\left(\frac{x-x_i}{h_x}, \frac{y-y_i}{h_y}\right)
+$$
+
+where \(K\) is a Gaussian kernel and \(h_x, h_y\) are bandwidth terms controlling smoothing.
+
+In practice:
+
+- **Bandwidth** controls how smooth or sharp the density becomes.
+- **Contours** controls how many filled density bands are drawn.
+- **Coverage** controls how much of the estimated density mass is included.
+
+This view is useful when the spore cloud is clearly non-elliptical or when you want to see multiple dense regions.
+
+### Mean range (Parmasto)
+
+Mean range is a Parmasto-style summary view. Instead of emphasizing the full spore cloud, it compares specimen means against expected species-level ranges.
+
+The specimen contributes:
+
+- mean length \(L_m\)
+- mean width \(W_m\)
+- mean quotient \(Q_m\)
+
+If Parmasto-style reference biometrics are available, the expected range is estimated from the reference mean and inter-specimen coefficient of variation:
+
+$$
+\text{expected range}
+=
+\bar{x} \pm 2 \left(\frac{CV}{100}\right)\bar{x}
+$$
+
+where \(\bar{x}\) is the species mean and \(CV\) is the Parmasto inter-specimen variation for that variable.
+
+In the plot, this means:
+
+- the specimen mean is shown as a point
+- the expected length and width range form the main comparison region
+- the expected mean `Q` range can be shown as guideline lines
+
+This mode is useful for comparing one specimen against stored species-level reference means, rather than comparing full point clouds.
 
 ## Reference Data
 

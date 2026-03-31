@@ -2,11 +2,11 @@
 
 ## Data Location
 
-MycoLog stores user data in the OS-specific application data folder:
+Sporely stores user data in the OS-specific application data folder:
 
-- Windows: `%APPDATA%\MycoLog`
-- macOS: `~/Library/Application Support/MycoLog`
-- Linux: `~/.local/share/MycoLog`
+- Windows: `%APPDATA%\Sporely`
+- macOS: `~/Library/Application Support/Sporely`
+- Linux: `~/.local/share/Sporely`
 
 ## Main Database (mushrooms.db)
 
@@ -37,7 +37,7 @@ Use those files for the most up-to-date table and column definitions.
 
 ## Export and Import (Backup / Sharing)
 
-MycoLog can bundle your data for backup or sharing with others:
+Sporely can bundle your data for backup or sharing with others:
 
 - **Export DB**: creates a zip file containing the main database, reference database, and image data.
 - **Import DB**: merges a shared bundle into your local data.
@@ -46,6 +46,7 @@ These are available in the **File** menu as **Export DB** and **Import DB**.
 
 ## See also
 
+- [Database Settings](./database-settings.md)
 - [Artsobservasjoner login and upload](./artsobservasjoner.md)
 - [Field photography](./field-photography.md)
 - [Microscopy workflow](./microscopy-workflow.md)

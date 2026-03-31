@@ -1,19 +1,19 @@
-# ![MycoLog](docs/images/mycolog-logo.png)
+![Sporely](docs/images/sporely-logo-dark.png)
 
-MycoLog is a desktop app for field observations, microscopy calibration, and spore measurements.
+Sporely is a desktop app for field observations, microscopy calibration, and spore measurements.
 
 ## Installation
 
 ### Prebuilt application
 
 Download the latest release from:
-https://github.com/sigmundas/mycolog/releases/latest
+https://github.com/sigmundas/sporely/releases/latest
 
 | Platform | File | How to install |
 |----------|------|----------------|
-| **Windows** | `MycoLog-x.x.x-windows-setup.exe` | Run the installer — creates Start Menu entry and uninstaller |
-| **macOS** | `MycoLog-vx.x.x-macos.dmg` | Open the disk image, drag **MycoLog** to **Applications** |
-| **Linux (Ubuntu/Debian)** | `mycolog_x.x.x_amd64.deb` | `sudo dpkg -i mycolog_x.x.x_amd64.deb` — adds app menu entry |
+| **Windows** | `Sporely-x.x.x-windows-setup.exe` | Run the installer — creates Start Menu entry and uninstaller |
+| **macOS** | `Sporely-vx.x.x-macos.dmg` | Open the disk image, drag **Sporely** to **Applications** |
+|  **Linux (Ubuntu/Debian)** | `sporely_x.x.x_amd64.deb` | `sudo dpkg -i sporely_x.x.x_amd64.deb` — adds app menu entry |
 
 ### Notes for Windows and macOS
 
@@ -21,11 +21,11 @@ Windows may show a Microsoft Defender SmartScreen warning like "This app isn't c
 
 If macOS shows a warning like "Apple could not verify ..." or blocks the app because it was downloaded from the Internet, either:
 
-1. In Finder, open `Applications`, right-click `MycoLog.app`, and choose `Open`.
+1. In Finder, open `Applications`, right-click `Sporely.app`, and choose `Open`.
 2. Or remove the quarantine attribute in Terminal:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MycoLog.app
+xattr -dr com.apple.quarantine /Applications/Sporely.app
 ```
 
 ### Run from source (Python)
@@ -38,7 +38,7 @@ Use `python -m pip` (not plain `pip`) so installs always target the same interpr
 Linux/macOS (first-time setup):
 
 ```bash
-cd ~/myapps/mycolog
+cd ~/myapps/sporely
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -49,7 +49,7 @@ python main.py
 Windows PowerShell (first-time setup):
 
 ```powershell
-cd path\to\mycolog
+cd path\to\sporely
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -57,7 +57,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Note for macOS development: when you launch the app from VS Code or with `python main.py`, the menu bar may show `Python` as the app name. The packaged app/installer shows `MycoLog`.
+Note for macOS development: when you launch the app from VS Code or with `python main.py`, the menu bar may show `Python` as the app name. The packaged app/installer shows `Sporely`.
 
 Each new terminal session:
 
@@ -93,7 +93,7 @@ Each new terminal session:
 
 - Saved layouts are written as `.mplate` files in the app data folder.
 - Current plate state is also remembered automatically per observation.
-- macOS: `~/Library/Application Support/MycoLog/plate_layouts`
+- macOS: `~/Library/Application Support/Sporely/plate_layouts`
 
 ## Screenshots
 

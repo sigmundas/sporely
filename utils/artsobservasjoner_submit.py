@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 import base64
+from app_identity import APP_NAME
 
 
 class ArtsObservasjonerClient:
@@ -131,7 +132,7 @@ class ArtsObservasjonerClient:
         if not resolved_site_id:
             site_label = (site_name or "").strip()
             if not site_label:
-                site_label = f"MycoLog {latitude:.5f}, {longitude:.5f}"
+                site_label = f"{APP_NAME} {latitude:.5f}, {longitude:.5f}"
             resolved_site_id = 0
             new_site_info = {
                 "siteName": site_label,
@@ -1023,7 +1024,7 @@ class ArtsObservasjonerWebClient:
 
         resolved_name = site_name.strip() if site_name else ""
         if not resolved_name:
-            resolved_name = f"MycoLog {latitude:.5f}, {longitude:.5f}"
+            resolved_name = f"{APP_NAME} {latitude:.5f}, {longitude:.5f}"
 
         accuracy = int(accuracy_meters) if accuracy_meters is not None else 25
         if accuracy < 0:

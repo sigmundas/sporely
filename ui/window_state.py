@@ -16,9 +16,15 @@ For QMainWindow, call _save_geometry() inside closeEvent instead.
 from __future__ import annotations
 
 from PySide6.QtCore import QSettings
+from app_identity import (
+    LEGACY_SETTINGS_APP,
+    LEGACY_SETTINGS_ORG,
+    SETTINGS_APP,
+    SETTINGS_ORG,
+)
 
-_ORG = "MycoLog"
-_APP = "MycoLog"
+_ORG = SETTINGS_ORG
+_APP = SETTINGS_APP
 
 
 class GeometryMixin:
@@ -35,6 +41,9 @@ class GeometryMixin:
             return
         settings = QSettings(_ORG, _APP)
         geom = settings.value(f"geometry/{self._geometry_key}")
+        if not geom:
+            legacy = QSettings(LEGACY_SETTINGS_ORG, LEGACY_SETTINGS_APP)
+            geom = legacy.value(f"geometry/{self._geometry_key}")
         if geom:
             self.restoreGeometry(geom)  # type: ignore[attr-defined]
 

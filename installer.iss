@@ -1,7 +1,7 @@
-#define MyAppName      "MycoLog"
+#define MyAppName      "Sporely"
 #define MyAppPublisher "Sigmund Astrup"
-#define MyAppURL       "https://github.com/sigmundas/mycolog"
-#define MyAppExeName   "MycoLog.exe"
+#define MyAppURL       "https://github.com/sigmundas/sporely"
+#define MyAppExeName   "Sporely.exe"
 
 [Setup]
 AppId={{4C7E9F2A-83B1-4D5C-AE06-1F2B3C4D5E6F}
@@ -15,8 +15,8 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=.
-OutputBaseFilename=MycoLog-{#MyAppVersion}-windows-setup
-SetupIconFile=assets\icons\mycolog.ico
+OutputBaseFilename=Sporely-{#MyAppVersion}-windows-setup
+SetupIconFile=assets\icons\sporely.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -34,7 +34,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\MycoLog\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\Sporely\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"

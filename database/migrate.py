@@ -21,6 +21,7 @@ _DEFAULT_CONTRAST_METHODS = [
     "BF",
     "DF",
     "DIC",
+    "Oblique",
     "Phase",
     "HMC",
 ]
@@ -130,6 +131,9 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
             "darkfield": "DF",
             "dic": "DIC",
             "differentialinterferencecontrast": "DIC",
+            "oblique": "Oblique",
+            "obliquelighting": "Oblique",
+            "obliqueillumination": "Oblique",
             "phase": "Phase",
             "phasecontrast": "Phase",
             "hmc": "HMC",
@@ -247,6 +251,37 @@ def _migrate_mount_and_stain_settings(cursor: sqlite3.Cursor) -> None:
     _save_value("stain_options", merged_stains)
 
 
+def _migrate_image_sort_order(cursor: sqlite3.Cursor) -> None:
+    cursor.execute("SELECT DISTINCT observation_id FROM images WHERE observation_id IS NOT NULL ORDER BY observation_id")
+    observation_ids = [row[0] for row in cursor.fetchall() if row and row[0] is not None]
+    for observation_id in observation_ids:
+        cursor.execute(
+            """
+            SELECT id, sort_order, image_type, micro_category, created_at
+            FROM images
+            WHERE observation_id = ?
+            ORDER BY
+                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                sort_order,
+                image_type,
+                micro_category,
+                created_at,
+                id
+            """,
+            (observation_id,),
+        )
+        rows = cursor.fetchall()
+        for index, row in enumerate(rows):
+            image_id = row[0]
+            current_sort_order = row[1]
+            if current_sort_order == index:
+                continue
+            cursor.execute(
+                "UPDATE images SET sort_order = ? WHERE id = ?",
+                (index, image_id),
+            )
+
+
 def migrate_database():
     """Migrate old database schema to new schema."""
     database_path = get_database_path()
@@ -289,6 +324,7 @@ def migrate_database():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     observation_id INTEGER,
                     filepath TEXT NOT NULL,
+                    sort_order INTEGER,
                     image_type TEXT CHECK(image_type IN ('field', 'microscope')),
                     objective_name TEXT,
                     scale_microns_per_pixel REAL,
@@ -377,6 +413,8 @@ def migrate_database():
         columns = {col[1] for col in cursor.fetchall()}
         if "stain" not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN stain TEXT")
+        if "sort_order" not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN sort_order INTEGER")
         if "artsobs_web_unpublished" not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN artsobs_web_unpublished INTEGER DEFAULT 0")
         if "scale_bar_x1" not in columns:
@@ -394,6 +432,7 @@ def migrate_database():
                     "UPDATE images SET stain = ?, mount_medium = NULL WHERE id = ?",
                     (canonical_stain, image_id),
                 )
+        _migrate_image_sort_order(cursor)
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
     if cursor.fetchone():
