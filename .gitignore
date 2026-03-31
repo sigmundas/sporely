@@ -34,6 +34,10 @@ sopp.jpg
 !database/parmasto_reference_merged.csv
 !database/reference_values.db
 
+# Local taxonomy DB variants not needed in git
+database/vernacular_multilanguage_unified.sqlite3
+database/vernacular_multilanguage_unified_test.sqlite3
+
 # App local data folders
 /images/
 image_cache/
