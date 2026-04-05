@@ -2,6 +2,22 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-04-02
+
+### Added
+- Automatic Sporely Cloud sync on startup and from **Refresh** in the Observations tab.
+- Shared publish-content support for cloud uploads, including checked gallery images, measure plot, thumbnail gallery, and species plate export.
+- Persistent cloud-import star marking on imported local observations until a later pull imports newer cloud observations.
+
+### Changed
+- Sporely Cloud sharing is now controlled from the global **Online publishing** settings instead of per observation.
+- Cloud pulls now import observation images into the local database and generate local thumbnails immediately.
+- The Observations table now shows cloud imports as normal local observations instead of temporary cloud-only rows.
+
+### Fixed
+- Prevented cloud observations from appearing briefly as one row and then reappearing elsewhere after startup sync.
+- Synced local observation deletion now also removes the linked cloud copy when possible.
+
 ## 2026-03-30
 
 ### Added

@@ -1847,6 +1847,11 @@ class SpeciesPlateDialog(QDialog):
         self.setWindowTitle(self.tr("Species Plate"))
         self._obs = observation
         self._obs_id = int(observation.get("id", 0))
+        self._excluded_image_ids = {
+            int(image_id)
+            for image_id in (excluded_image_ids or set())
+            if image_id is not None
+        }
 
         # ── Load settings early so defaults are correct ────────────────────
         self._ins_r = _INS_R_DEFAULT
@@ -1868,7 +1873,11 @@ class SpeciesPlateDialog(QDialog):
         self._load_settings()
 
         # ── Load ALL images (no exclusion) ─────────────────────────────────
-        all_imgs = ImageDB.get_images_for_observation(self._obs_id)
+        all_imgs = [
+            img
+            for img in ImageDB.get_images_for_observation(self._obs_id)
+            if int(img.get("id") or 0) not in self._excluded_image_ids
+        ]
         self._all_images: list[dict] = all_imgs
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
         micro = [i for i in all_imgs if i.get("image_type") == "microscope"]
@@ -3662,3 +3671,28 @@ class SpeciesPlateDialog(QDialog):
         self._hint_ctrl.set_status(
             self.tr("SVG saved — {filename}").format(filename=Path(path).name),
             6000, "success")
+
+
+def export_observation_plate_image(
+    observation: dict,
+    path: str | Path,
+    excluded_image_ids: set[int] | None = None,
+) -> bool:
+    """Render the current plate state for an observation to a raster image."""
+    dialog = SpeciesPlateDialog(observation, excluded_image_ids=excluded_image_ids)
+    try:
+        img = QImage(_W, _H, QImage.Format_RGB32)
+        img.fill(QColor("#1c1c1e"))
+        painter = QPainter(img)
+        dialog._paint_native(painter, as_paths=False, for_export=True)
+        painter.end()
+        out_path = str(path)
+        fmt = "PNG" if Path(out_path).suffix.lower() == ".png" else "JPEG"
+        quality = 95 if fmt == "JPEG" else -1
+        return bool(img.save(out_path, fmt, quality))
+    finally:
+        try:
+            dialog.close()
+        except Exception:
+            pass
+        dialog.deleteLater()

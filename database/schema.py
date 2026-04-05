@@ -982,6 +982,8 @@ def init_database():
             artsdata_id INTEGER,
             artportalen_id INTEGER,
             publish_target TEXT DEFAULT 'artsobs_no',
+            sharing_scope TEXT DEFAULT 'private',
+            location_public INTEGER DEFAULT 0,
             common_name TEXT,
             species_guess TEXT,
             uncertain INTEGER DEFAULT 0,
@@ -1009,7 +1011,8 @@ def init_database():
             private_comment TEXT,
             interesting_comment INTEGER DEFAULT 0,
             ai_state_json TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -1482,6 +1485,37 @@ def init_database():
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_species ON observations(genus, species)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_source ON observations(source_type)')
+
+    # Cloud sync columns
+    for stmt in (
+        "ALTER TABLE observations ADD COLUMN cloud_id TEXT",
+        "ALTER TABLE observations ADD COLUMN sync_status TEXT DEFAULT 'local'",
+        "ALTER TABLE observations ADD COLUMN synced_at TIMESTAMP",
+        "ALTER TABLE observations ADD COLUMN sharing_scope TEXT DEFAULT 'private'",
+        "ALTER TABLE observations ADD COLUMN location_public INTEGER DEFAULT 0",
+        "ALTER TABLE images ADD COLUMN cloud_id TEXT",
+        "ALTER TABLE images ADD COLUMN synced_at TIMESTAMP",
+    ):
+        try:
+            cursor.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    try:
+        # SQLite cannot reliably add a column with a non-constant default during ALTER TABLE,
+        # so add the column first and backfill it separately.
+        cursor.execute("ALTER TABLE observations ADD COLUMN updated_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_cloud_id ON observations(cloud_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_sync_status ON observations(sync_status)')
+    try:
+        cursor.execute(
+            "UPDATE observations SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"
+        )
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()

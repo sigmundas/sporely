@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../sporely-web"
+		},
+		{
+			"path": "../sporely-landing"
 		}
 	],
 	"settings": {}

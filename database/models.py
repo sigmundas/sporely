@@ -20,6 +20,60 @@ def _images_dir() -> Path:
     return get_images_dir()
 
 
+def _sqlite_now_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _observations_has_updated_at(cursor) -> bool:
+    try:
+        cursor.execute("PRAGMA table_info(observations)")
+        return any(str(row[1] or '') == 'updated_at' for row in cursor.fetchall())
+    except Exception:
+        return False
+
+
+def _touch_observation(cursor, observation_id: int | None, *, mark_dirty: bool = True) -> None:
+    try:
+        obs_id = int(observation_id or 0)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+    has_updated_at = _observations_has_updated_at(cursor)
+    if mark_dirty:
+        if has_updated_at:
+            cursor.execute(
+                """
+                UPDATE observations
+                SET updated_at = ?,
+                    sync_status = CASE
+                        WHEN cloud_id IS NOT NULL THEN 'dirty'
+                        ELSE sync_status
+                    END
+                WHERE id = ?
+                """,
+                (_sqlite_now_text(), obs_id),
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE observations
+                SET sync_status = CASE
+                    WHEN cloud_id IS NOT NULL THEN 'dirty'
+                    ELSE sync_status
+                END
+                WHERE id = ?
+                """,
+                (obs_id,),
+            )
+    else:
+        if has_updated_at:
+            cursor.execute(
+                "UPDATE observations SET updated_at = ? WHERE id = ?",
+                (_sqlite_now_text(), obs_id),
+            )
+
+
 def _normalize_taxon_key(genus: str | None, species: str | None) -> tuple[str, str] | None:
     if not genus or not species:
         return None
@@ -297,6 +351,7 @@ class ObservationDB:
                           common_name: str = None, location: str = None, habitat: str = None,
                           species_guess: str = None, notes: str = None,
                           open_comment: str = None, private_comment: str = None, interesting_comment: bool = False,
+                          sharing_scope: str | None = None, location_public: bool | None = None,
                           uncertain: bool = False, inaturalist_id: int = None,
                           artportalen_id: int | None = None,
                           gps_latitude: float = None, gps_longitude: float = None,
@@ -342,10 +397,19 @@ class ObservationDB:
                 or PUBLISH_TARGET_ARTSOBS_NO
             ),
         )
+        resolved_sharing_scope = str(sharing_scope or "private").strip().lower()
+        if resolved_sharing_scope not in {"private", "friends", "public"}:
+            resolved_sharing_scope = "private"
+        resolved_location_public = (
+            bool(location_public)
+            if location_public is not None
+            else resolved_sharing_scope != "private"
+        )
 
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
                                      artsdata_id, artportalen_id, publish_target, species_guess, notes, uncertain, unspontaneous,
+                                     sharing_scope, location_public,
                                      determination_method,
                                      folder_path, inaturalist_id, gps_latitude, gps_longitude,
                                      author, source_type, citation, data_provider,
@@ -353,9 +417,10 @@ class ObservationDB:
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
+              resolved_sharing_scope, 1 if resolved_location_public else 0,
               determination_method,
               folder_path,
               inaturalist_id, gps_latitude, gps_longitude, author, source_type,
@@ -375,6 +440,7 @@ class ObservationDB:
                            common_name: str | object = _UNSET, location: str | object = _UNSET, habitat: str | object = _UNSET,
                            notes: str | object = _UNSET, uncertain: bool | object = _UNSET,
                            open_comment: str | object = _UNSET, private_comment: str | object = _UNSET, interesting_comment: bool | object = _UNSET,
+                           sharing_scope: str | object = _UNSET, location_public: bool | object = _UNSET,
                            species_guess: str | object = _UNSET, date: str | object = _UNSET,
                            gps_latitude: float | object = _UNSET, gps_longitude: float | object = _UNSET,
                            allow_nulls: bool = False,
@@ -485,6 +551,15 @@ class ObservationDB:
             if publish_target is not _UNSET and (allow_nulls or publish_target is not None):
                 updates.append('publish_target = ?')
                 values.append(normalize_publish_target(str(publish_target) if publish_target is not None else None))
+            if sharing_scope is not _UNSET and (allow_nulls or sharing_scope is not None):
+                normalized_scope = str(sharing_scope or "private").strip().lower()
+                if normalized_scope not in {"private", "friends", "public"}:
+                    normalized_scope = "private"
+                updates.append('sharing_scope = ?')
+                values.append(normalized_scope)
+            if location_public is not _UNSET and (allow_nulls or location_public is not None):
+                updates.append('location_public = ?')
+                values.append(1 if location_public else 0)
             if uncertain is not _UNSET and (allow_nulls or uncertain is not None):
                 updates.append('uncertain = ?')
                 values.append(1 if uncertain else 0)
@@ -547,6 +622,11 @@ class ObservationDB:
                 values.append(' '.join(parts) if parts else 'Unknown')
 
             if updates:
+                if _observations_has_updated_at(cursor):
+                    updates.append('updated_at = ?')
+                    values.append(_sqlite_now_text())
+                if current.get('cloud_id'):
+                    updates.append("sync_status = 'dirty'")
                 values.append(observation_id)
                 cursor.execute(f'''
                     UPDATE observations SET {', '.join(updates)} WHERE id = ?
@@ -631,13 +711,29 @@ class ObservationDB:
     def update_spore_statistics(observation_id: int, spore_statistics: str = None):
         """Update stored spore statistics string for an observation."""
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        cursor.execute('SELECT spore_statistics FROM observations WHERE id = ?', (observation_id,))
+        row = cursor.fetchone()
+        current_value = None if not row else row['spore_statistics']
+        if (current_value or None) == (spore_statistics or None):
+            conn.close()
+            return
 
-        cursor.execute('''
-            UPDATE observations
-            SET spore_statistics = ?
-            WHERE id = ?
-        ''', (spore_statistics, observation_id))
+        if _observations_has_updated_at(cursor):
+            cursor.execute('''
+                UPDATE observations
+                SET spore_statistics = ?,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (spore_statistics, _sqlite_now_text(), observation_id))
+        else:
+            cursor.execute('''
+                UPDATE observations
+                SET spore_statistics = ?
+                WHERE id = ?
+            ''', (spore_statistics, observation_id))
+        _touch_observation(cursor, observation_id, mark_dirty=True)
 
         conn.commit()
         conn.close()
@@ -930,7 +1026,8 @@ class ImageDB:
                   gps_source: bool | None = None,
                   resample_scale_factor: float | None = None,
                   original_filepath: str | None = None,
-                  copy_to_folder: bool = True) -> int:
+                  copy_to_folder: bool = True,
+                  mark_observation_dirty: bool = True) -> int:
         """Add an image and return its ID.
 
         Args:
@@ -1062,6 +1159,8 @@ class ImageDB:
               final_original_filepath, sort_order, artsobs_web_unpublished))
 
         img_id = cursor.lastrowid
+        if mark_observation_dirty and observation_id:
+            _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
         return img_id
@@ -1234,6 +1333,12 @@ class ImageDB:
         """Update image metadata"""
         conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
+        image_row = cursor.fetchone()
+        try:
+            observation_id = int(image_row[0]) if image_row and image_row[0] is not None else None
+        except Exception:
+            observation_id = None
         cursor.execute("PRAGMA table_info(images)")
         image_columns = {row[1] for row in cursor.fetchall()}
 
@@ -1322,6 +1427,8 @@ class ImageDB:
             cursor.execute(f'''
                 UPDATE images SET {', '.join(updates)} WHERE id = ?
             ''', values)
+            if observation_id:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
 
         conn.commit()
         conn.close()
@@ -1375,6 +1482,7 @@ class ImageDB:
                 'UPDATE images SET sort_order = ? WHERE id = ? AND observation_id = ?',
                 (index, image_id, obs_id),
             )
+        _touch_observation(cursor, obs_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -1384,6 +1492,12 @@ class ImageDB:
         conn = get_connection()
         try:
             cursor = conn.cursor()
+            cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
+            image_row = cursor.fetchone()
+            try:
+                observation_id = int(image_row[0]) if image_row and image_row[0] is not None else None
+            except Exception:
+                observation_id = None
 
             # Delete dependent rows first to satisfy foreign keys.
             cursor.execute(
@@ -1423,6 +1537,8 @@ class ImageDB:
                 ''',
                 (image_id,),
             )
+            if observation_id:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
 
             conn.commit()
         except Exception:
@@ -1450,6 +1566,12 @@ class MeasurementDB:
         """
         conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
+        row = cursor.fetchone()
+        try:
+            observation_id = int(row[0]) if row and row[0] is not None else None
+        except Exception:
+            observation_id = None
 
         if points and len(points) == 4:
             cursor.execute('''
@@ -1478,6 +1600,8 @@ class MeasurementDB:
             ''', (image_id, length, width, measurement_type, notes))
 
         meas_id = cursor.lastrowid
+        if observation_id:
+            _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
         return meas_id
@@ -1702,6 +1826,21 @@ class MeasurementDB:
         try:
             cursor.execute("BEGIN")
             cursor.execute(
+                '''
+                SELECT i.observation_id
+                FROM spore_measurements m
+                JOIN images i ON i.id = m.image_id
+                WHERE m.id = ?
+                LIMIT 1
+                ''',
+                (measurement_id,),
+            )
+            row = cursor.fetchone()
+            try:
+                observation_id = int(row[0]) if row and row[0] is not None else None
+            except Exception:
+                observation_id = None
+            cursor.execute(
                 'DELETE FROM spore_annotations WHERE measurement_id = ?',
                 (measurement_id,)
             )
@@ -1709,6 +1848,8 @@ class MeasurementDB:
                 'DELETE FROM spore_measurements WHERE id = ?',
                 (measurement_id,)
             )
+            if observation_id:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
             conn.commit()
         except Exception:
             conn.rollback()

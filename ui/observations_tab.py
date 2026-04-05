@@ -80,6 +80,8 @@ from utils.publish_targets import (
     publish_target_label,
     uploader_key_for_publish_target,
 )
+from utils.cloud_sync import summarize_sync_issues, unlink_local_observation_from_cloud
+from .cloud_conflict_dialog import CloudConflictDialog
 from .image_gallery_widget import ImageGalleryWidget
 from .image_import_dialog import (
     ImageImportDialog,
@@ -96,6 +98,17 @@ from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
+SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
+SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
+SHARING_SCOPE_PRIVATE = "private"
+SHARING_SCOPE_FRIENDS = "friends"
+SHARING_SCOPE_PUBLIC = "public"
+_VALID_SHARING_SCOPES = {
+    SHARING_SCOPE_PRIVATE,
+    SHARING_SCOPE_FRIENDS,
+    SHARING_SCOPE_PUBLIC,
+}
+
 
 def _parse_observation_datetime(value: str | None) -> QDateTime | None:
     if not value:
@@ -106,6 +119,105 @@ def _parse_observation_datetime(value: str | None) -> QDateTime | None:
             return dt_value
     dt_value = QDateTime.fromString(value, Qt.ISODate)
     return dt_value if dt_value.isValid() else None
+
+
+def normalize_sharing_scope(value: str | None, fallback: str = SHARING_SCOPE_PRIVATE) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in _VALID_SHARING_SCOPES:
+        return raw
+    normalized_fallback = str(fallback or SHARING_SCOPE_PRIVATE).strip().lower()
+    return normalized_fallback if normalized_fallback in _VALID_SHARING_SCOPES else SHARING_SCOPE_PRIVATE
+
+
+def sharing_scope_location_public(value: str | None) -> bool:
+    return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
+
+
+class _CloudAutoSyncWorker(QThread):
+    progress = Signal(str, int, int)
+    finished = Signal(dict)
+    error = Signal(str)
+    prepare_requested = Signal(object)
+
+    def __init__(self, prepare_images_cb=None, parent=None):
+        super().__init__(parent)
+        self._prepare_images_cb = prepare_images_cb
+        self.prepare_requested.connect(self._handle_prepare_request)
+
+    def _prepare_images(self, observation: dict, progress_cb=None):
+        if not callable(self._prepare_images_cb):
+            return [], None, []
+        request = {
+            "observation": dict(observation or {}),
+            "progress_cb": progress_cb,
+            "event": threading.Event(),
+            "result": ([], None, []),
+            "error": None,
+        }
+        self.prepare_requested.emit(request)
+        request["event"].wait()
+        error = request.get("error")
+        if error is not None:
+            raise error
+        return request.get("result") or ([], None, [])
+
+    def _handle_prepare_request(self, request: object) -> None:
+        if not isinstance(request, dict):
+            return
+        event = request.get("event")
+        try:
+            request["result"] = self._prepare_images_cb(
+                request.get("observation") or {},
+                progress_cb=request.get("progress_cb"),
+            )
+        except Exception as exc:
+            request["error"] = exc
+        finally:
+            if event is not None:
+                try:
+                    event.set()
+                except Exception:
+                    pass
+
+    def run(self) -> None:
+        try:
+            from utils.cloud_sync import SporelyCloudClient, sync_all
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is None:
+                self.finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
+                return
+            result = sync_all(
+                client,
+                progress_cb=lambda msg, cur, tot: self.progress.emit(msg, cur, tot),
+                sync_images=True,
+                prepare_images_cb=self._prepare_images,
+            )
+            if "skipped" not in result:
+                result["skipped"] = False
+            self.finished.emit(result)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class _ThumbnailLoaderWorker(QThread):
+    """Loads thumbnail QImages from disk in a low-priority background thread."""
+    thumbnail_ready = Signal(str, object)  # path, QImage
+
+    def __init__(self, paths: list, parent=None):
+        super().__init__(parent)
+        self._paths = list(paths)
+
+    def run(self) -> None:
+        for path in self._paths:
+            if self.isInterruptionRequested():
+                break
+            try:
+                img = QImage(path)
+                if not img.isNull():
+                    self.thumbnail_ready.emit(path, img)
+            except Exception:
+                pass
 
 
 def _normalized_observation_datetime_minute(value: str | None) -> str | None:
@@ -266,14 +378,22 @@ class SortableTableWidgetItem(QTableWidgetItem):
     """Table item that prefers UserRole for sorting when available."""
 
     def __lt__(self, other):
+        if not isinstance(other, QTableWidgetItem):
+            return False
         self_data = self.data(Qt.UserRole)
         other_data = other.data(Qt.UserRole)
-        if self_data is None or other_data is None:
-            return super().__lt__(other)
+        if self_data is not None and other_data is not None:
+            try:
+                return self_data < other_data
+            except TypeError:
+                return str(self_data) < str(other_data)
+
+        self_text = str(self.text() or "").strip()
+        other_text = str(other.text() or "").strip()
         try:
-            return self_data < other_data
-        except TypeError:
-            return str(self_data) < str(other_data)
+            return float(self_text) < float(other_text)
+        except (TypeError, ValueError):
+            return self_text.casefold() < other_text.casefold()
 
 
 class MapServiceHelper:
@@ -641,11 +761,13 @@ class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
     SETTING_SHOW_TABLE_THUMBNAILS = "observations_table_show_thumbnails"
+    SETTING_SHOW_NEW_IMPORTS_ONLY = "observations_table_show_new_imports_only"
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
     SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
+    SETTING_INCLUDE_PLATE = "artsobs_publish_include_plate"
     SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
     SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
     SETTING_MO_APP_API_KEY = "mushroomobserver_app_api_key"
@@ -685,19 +807,27 @@ class ObservationsTab(QWidget):
         self._publish_saved_login_status_cache_ts: float = 0.0
         self._observation_table_rows_cache: list[dict] = []
         self._observation_thumb_icon_cache: dict[str, QIcon] = {}
+        self._cloud_inbox_rows_cache: list[dict] = []
+        self._cloud_sync_worker: _CloudAutoSyncWorker | None = None
+        self._cloud_sync_show_status = False
+        self._cloud_sync_run_refresh_flow = False
+        self._cloud_sync_startup_scheduled = False
+        self._thumb_loader: _ThumbnailLoaderWorker | None = None
+        self._thumb_pending_paths: set = set()
         self._search_refresh_timer = QTimer(self)
         self._search_refresh_timer.setSingleShot(True)
         self._search_refresh_timer.setInterval(180)
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
         self.setAcceptDrops(True)
         self.init_ui()
-        self.refresh_observations()
-        # Keyboard shortcut to open Prepare Images directly from the table.
+        QTimer.singleShot(0, self.refresh_observations)
+        # Keyboard shortcut to open the observation editor from the table.
         # Ctrl+E = Cmd+E on macOS; Alt+E works on all platforms.
         for _seq in ("Ctrl+E", "Alt+E"):
             sc = QShortcut(QKeySequence(_seq), self)
             sc.setContext(Qt.WidgetWithChildrenShortcut)
-            sc.activated.connect(self.open_edit_images_direct)
+            sc.activated.connect(self._on_direct_edit_shortcut)
+        self._schedule_startup_cloud_sync()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -705,7 +835,9 @@ class ObservationsTab(QWidget):
         layout.setSpacing(10)
 
         content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(10)
+        layout.addLayout(content_layout, 1)
 
         left_panel = QWidget()
         left_panel.setMaximumWidth(285)
@@ -734,6 +866,10 @@ class ObservationsTab(QWidget):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         left_panel_layout.addWidget(self.search_input)
 
+        table_filter_row = QHBoxLayout()
+        table_filter_row.setContentsMargins(0, 0, 0, 0)
+        table_filter_row.setSpacing(12)
+
         self.show_table_thumbnails_checkbox = QCheckBox(self.tr("Show thumbnail"))
         self.show_table_thumbnails_checkbox.setChecked(
             bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
@@ -741,7 +877,21 @@ class ObservationsTab(QWidget):
         self.show_table_thumbnails_checkbox.toggled.connect(
             self._on_show_table_thumbnails_toggled
         )
-        left_panel_layout.addWidget(self.show_table_thumbnails_checkbox)
+        table_filter_row.addWidget(self.show_table_thumbnails_checkbox)
+
+        self.show_new_imports_checkbox = QCheckBox(self.tr("Last cloud import"))
+        self.show_new_imports_checkbox.setToolTip(
+            self.tr("Only show starred observations from the last Sporely Cloud import")
+        )
+        self.show_new_imports_checkbox.setChecked(
+            bool(SettingsDB.get_setting(self.SETTING_SHOW_NEW_IMPORTS_ONLY, False))
+        )
+        self.show_new_imports_checkbox.toggled.connect(
+            self._on_show_new_imports_toggled
+        )
+        table_filter_row.addWidget(self.show_new_imports_checkbox)
+        table_filter_row.addStretch(1)
+        left_panel_layout.addLayout(table_filter_row)
 
         # ── Edit — frequent, single-selection ─────────────────────────────
         self.rename_btn = QPushButton(self.tr("Edit"))
@@ -935,7 +1085,6 @@ class ObservationsTab(QWidget):
         splitter.splitterMoved.connect(self._on_observations_splitter_moved)
 
         content_layout.addWidget(splitter, 1)
-        layout.addLayout(content_layout, 1)
 
         self.status_label = HintBar(self)
         layout.addWidget(self.status_label)
@@ -1049,6 +1198,11 @@ class ObservationsTab(QWidget):
             return
         self._on_refresh_clicked()
 
+    def _on_direct_edit_shortcut(self) -> None:
+        if self._shortcut_blocked_by_text_input():
+            return
+        self.edit_observation()
+
     def _on_new_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
             return
@@ -1127,6 +1281,273 @@ class ObservationsTab(QWidget):
             return
         self.refresh_observations(show_status=False, restore_selection=False)
 
+    def _build_cloud_observation_table_rows_cache(self, remote_rows: list[dict]) -> list[dict]:
+        rows: list[dict] = []
+        for obs in remote_rows or []:
+            genus_raw = (obs.get("genus") or "").strip()
+            species_raw = (obs.get("species") or "").strip()
+            species_guess = (obs.get("species_guess") or "").strip()
+            common_name = (obs.get("common_name") or "").strip()
+            if not common_name:
+                if genus_raw and species_raw:
+                    common_name = f"- ({genus_raw} {species_raw})"
+                elif species_guess:
+                    common_name = species_guess
+                else:
+                    common_name = "-"
+
+            species_display = species_raw or species_guess or "sp."
+            cloud_id = str(obs.get("id") or "").strip() or "-"
+            lat = obs.get("gps_latitude")
+            lon = obs.get("gps_longitude")
+            has_coords = lat is not None and lon is not None
+
+            row = {
+                "row_kind": "cloud",
+                "cloud_id": cloud_id,
+                "id_display": cloud_id,
+                "thumbnail_path": None,
+                "genus": genus_raw or "-",
+                "species": species_display,
+                "common_name": common_name,
+                "spore_short": "",
+                "date": obs.get("date") or obs.get("created_at") or "-",
+                "location": obs.get("location") or "-",
+                "lat": lat,
+                "lon": lon,
+                "has_coords": bool(has_coords),
+                "species_name": f"{genus_raw} {species_raw}".strip() or species_guess or None,
+                "arts_id": None,
+                "artportalen_id": None,
+                "publish_target": None,
+                "raw": obs,
+            }
+            search_parts = [str(v) for v in obs.values() if v is not None]
+            search_parts.extend([common_name, row["genus"], species_display, row["location"]])
+            row["search_text"] = " ".join(search_parts).lower()
+            rows.append(row)
+        return rows
+
+    def _load_cloud_observation_rows(
+        self,
+        show_status: bool = False,
+    ) -> tuple[list[dict], str | None]:
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is not None:
+                remote_rows = client.pull_web_observations(after_iso=None) or []
+            else:
+                remote_rows = []
+        except Exception as exc:
+            self._cloud_inbox_rows_cache = []
+            warning = self.tr("Could not refresh cloud observations: {error}").format(error=exc)
+            if show_status:
+                self.set_status_message(warning, level="warning", auto_clear_ms=12000)
+            return [], warning
+
+        rows = self._build_cloud_observation_table_rows_cache(remote_rows)
+        for row in rows:
+            images = self._download_cloud_observation_images(row, download_all=False)
+            if images:
+                thumb_path = images[0].get("_local_path")
+                if thumb_path and Path(str(thumb_path)).exists():
+                    row["thumbnail_path"] = str(thumb_path)
+        self._cloud_inbox_rows_cache = rows
+        return rows, None
+
+    @staticmethod
+    def _sanitize_cloud_filename(name: str, fallback: str) -> str:
+        text = Path(str(name or "").strip()).name
+        if not text:
+            text = fallback
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("._")
+        return cleaned or fallback
+
+    def _cloud_cache_dir(self) -> Path:
+        root = app_data_dir() / "cloud_cache" / "observations"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _cloud_observation_cache_dir(self, cloud_id: str) -> Path:
+        folder = self._cloud_cache_dir() / self._sanitize_cloud_filename(str(cloud_id or ""), "cloud_observation")
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def _download_cloud_observation_images(
+        self,
+        row_data: dict,
+        download_all: bool = True,
+    ) -> list[dict]:
+        if not isinstance(row_data, dict):
+            return []
+        cached = row_data.get("cloud_images")
+        if isinstance(cached, list) and cached:
+            if download_all or all(Path(str(img.get("_local_path") or "")).exists() for img in cached):
+                return cached
+        raw = row_data.get("raw") or {}
+        cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
+        if not cloud_id:
+            row_data["cloud_images"] = []
+            return []
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is None:
+                row_data["cloud_images"] = []
+                return []
+            remote_images = client.pull_image_metadata(cloud_id) or []
+        except Exception:
+            row_data["cloud_images"] = []
+            return []
+
+        def _sort_key(image_row: dict) -> tuple[int, int, str]:
+            sort_order = image_row.get("sort_order")
+            try:
+                sort_value = int(sort_order)
+            except (TypeError, ValueError):
+                sort_value = 10**9
+            image_id = image_row.get("id")
+            try:
+                image_id_value = int(image_id)
+            except (TypeError, ValueError):
+                image_id_value = 10**9
+            return sort_value, image_id_value, str(image_row.get("original_filename") or "")
+
+        downloaded: list[dict] = []
+        cache_dir = self._cloud_observation_cache_dir(cloud_id)
+        for idx, image_row in enumerate(sorted(remote_images, key=_sort_key)):
+            storage_path = str(image_row.get("storage_path") or "").strip()
+            image_id = str(image_row.get("id") or f"img_{idx + 1}").strip()
+            filename = self._sanitize_cloud_filename(
+                str(image_row.get("original_filename") or Path(storage_path).name or f"{image_id}.jpg"),
+                f"{image_id}.jpg",
+            )
+            local_path = cache_dir / f"{idx + 1:02d}_{image_id}_{filename}"
+            if storage_path and not local_path.exists():
+                try:
+                    client.download_image_file(storage_path, local_path)
+                except Exception:
+                    pass
+            local_text = str(local_path) if local_path.exists() else ""
+            merged = dict(image_row)
+            merged["_local_path"] = local_text
+            downloaded.append(merged)
+            if not download_all:
+                break
+        row_data["cloud_images"] = downloaded
+        return downloaded
+
+    def _cloud_gallery_items(self, row_data: dict) -> list[dict]:
+        items: list[dict] = []
+        for idx, image_row in enumerate(self._download_cloud_observation_images(row_data, download_all=True)):
+            filepath = str(image_row.get("_local_path") or "").strip()
+            if not filepath or not Path(filepath).exists():
+                continue
+            image_type = (image_row.get("image_type") or "field").strip().lower()
+            objective_name = image_row.get("objective_name")
+            contrast = image_row.get("contrast")
+            scale_value = image_row.get("scale_microns_per_pixel")
+            custom_scale = bool(scale_value) and (
+                not objective_name or str(objective_name).strip().lower() == "custom"
+            )
+            badges = ImageGalleryWidget.build_image_type_badges(
+                image_type=image_type,
+                objective_name=objective_name,
+                contrast=contrast,
+                scale_microns_per_pixel=scale_value,
+                custom_scale=custom_scale,
+                needs_scale=False,
+                resize_to_optimal=False,
+                translate=self.tr,
+            )
+            items.append(
+                {
+                    "id": None,
+                    "filepath": filepath,
+                    "preview_path": filepath,
+                    "has_measurements": False,
+                    "image_number": idx + 1,
+                    "badges": badges,
+                }
+            )
+        return items
+
+    def _cloud_observation_draft_data(self, row_data: dict) -> dict:
+        raw = dict(row_data.get("raw") or {})
+        return {
+            "date": raw.get("date") or raw.get("created_at") or "",
+            "genus": raw.get("genus"),
+            "species": raw.get("species"),
+            "common_name": raw.get("common_name"),
+            "species_guess": raw.get("species_guess"),
+            "publish_target": raw.get("publish_target"),
+            "sharing_scope": raw.get("sharing_scope"),
+            "location_public": raw.get("location_public"),
+            "uncertain": bool(raw.get("uncertain", False)),
+            "unspontaneous": bool(raw.get("unspontaneous", False)),
+            "determination_method": raw.get("determination_method"),
+            "location": raw.get("location"),
+            "habitat": raw.get("habitat"),
+            "habitat_nin2_path": raw.get("habitat_nin2_path"),
+            "habitat_substrate_path": raw.get("habitat_substrate_path"),
+            "habitat_host_genus": raw.get("habitat_host_genus"),
+            "habitat_host_species": raw.get("habitat_host_species"),
+            "habitat_host_common_name": raw.get("habitat_host_common_name"),
+            "habitat_nin2_note": raw.get("habitat_nin2_note"),
+            "habitat_substrate_note": raw.get("habitat_substrate_note"),
+            "habitat_grows_on_note": raw.get("habitat_grows_on_note"),
+            "open_comment": raw.get("open_comment") or raw.get("notes"),
+            "private_comment": raw.get("private_comment"),
+            "interesting_comment": bool(raw.get("interesting_comment", False)),
+            "gps_latitude": raw.get("gps_latitude"),
+            "gps_longitude": raw.get("gps_longitude"),
+        }
+
+    def _cloud_image_import_results(self, row_data: dict) -> list[ImageImportResult]:
+        results: list[ImageImportResult] = []
+        captured_at = _parse_observation_datetime(
+            (row_data.get("raw") or {}).get("date") or (row_data.get("raw") or {}).get("created_at")
+        )
+        for image_row in self._download_cloud_observation_images(row_data, download_all=True):
+            filepath = str(image_row.get("_local_path") or "").strip()
+            if not filepath or not Path(filepath).exists():
+                continue
+            objective_name = image_row.get("objective_name")
+            objective_value = resolve_objective_key(objective_name, load_objectives()) or objective_name
+            custom_scale = None
+            scale_value = image_row.get("scale_microns_per_pixel")
+            if scale_value is not None and (not objective_value or str(objective_value).strip().lower() == "custom"):
+                try:
+                    custom_scale = float(scale_value)
+                except (TypeError, ValueError):
+                    custom_scale = None
+            gps_lat = (row_data.get("raw") or {}).get("gps_latitude")
+            gps_lon = (row_data.get("raw") or {}).get("gps_longitude")
+            results.append(
+                ImageImportResult(
+                    filepath=filepath,
+                    preview_path=filepath,
+                    image_type=(image_row.get("image_type") or "field").strip().lower(),
+                    objective=objective_value,
+                    custom_scale=custom_scale,
+                    contrast=image_row.get("contrast"),
+                    mount_medium=image_row.get("mount_medium"),
+                    stain=image_row.get("stain"),
+                    sample_type=image_row.get("sample_type"),
+                    captured_at=captured_at,
+                    gps_latitude=gps_lat,
+                    gps_longitude=gps_lon,
+                    gps_source=bool(image_row.get("gps_source")),
+                    resample_scale_factor=image_row.get("resample_scale_factor"),
+                    original_filepath=filepath,
+                    store_original=False,
+                )
+            )
+        return results
+
     def set_status_message(
         self,
         message: str,
@@ -1165,6 +1586,10 @@ class ObservationsTab(QWidget):
                     current_i = 0 if current is None else max(0, min(int(current), total_i))
                     pct = int(round((current_i / total_i) * 100.0))
                     self.status_progress_bar.setRange(0, 100)
+                    try:
+                        pct = max(int(self.status_progress_bar.value()), pct)
+                    except Exception:
+                        pass
                     pct = max(0, min(100, pct))
                     self.status_progress_bar.setValue(pct)
                     if hasattr(self, "status_progress_pct"):
@@ -1180,6 +1605,14 @@ class ObservationsTab(QWidget):
                         self.status_progress_pct.setText(f"{pct}%")
                 except Exception:
                     pass
+
+    def _yield_background_sync_ui(self) -> None:
+        if not self._is_main_gui_thread():
+            return
+        try:
+            QApplication.processEvents()
+        except Exception:
+            pass
 
     def _call_main_window_db_action(self, method_name: str) -> None:
         main_window = self.window()
@@ -1199,15 +1632,231 @@ class ObservationsTab(QWidget):
     def _on_import_db_clicked(self) -> None:
         self._call_main_window_db_action("import_database_bundle")
 
-    def _on_refresh_clicked(self) -> None:
-        self._invalidate_publish_login_status_cache()
-        self.refresh_observations(show_status=False)
+    def _schedule_startup_cloud_sync(self) -> None:
+        if self._cloud_sync_startup_scheduled:
+            return
+        self._cloud_sync_startup_scheduled = True
+        QTimer.singleShot(900, self._run_startup_cloud_sync)
+
+    def _run_startup_cloud_sync(self) -> None:
+        self._cloud_sync_startup_scheduled = False
+        self._start_cloud_sync(show_status=True, run_refresh_flow=False)
+
+    def _start_cloud_sync(self, show_status: bool, run_refresh_flow: bool) -> bool:
+        if self._cloud_sync_worker is not None:
+            if show_status and not self._cloud_sync_show_status:
+                self._set_status_progress_visible(True)
+                self._set_status_progress(self.tr("Sporely Cloud sync already running..."), 0, 1)
+            self._cloud_sync_show_status = self._cloud_sync_show_status or bool(show_status)
+            self._cloud_sync_run_refresh_flow = self._cloud_sync_run_refresh_flow or bool(run_refresh_flow)
+            return True
+
+        self._cloud_sync_show_status = bool(show_status)
+        self._cloud_sync_run_refresh_flow = bool(run_refresh_flow)
+        self._cloud_sync_worker = _CloudAutoSyncWorker(
+            prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+            parent=self,
+        )
+        self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
+        self._cloud_sync_worker.finished.connect(self._on_cloud_sync_finished)
+        self._cloud_sync_worker.error.connect(self._on_cloud_sync_error)
+        self._cloud_sync_worker.finished.connect(self._on_cloud_sync_worker_done)
+        self._cloud_sync_worker.error.connect(self._on_cloud_sync_worker_done)
+        if show_status:
+            self._set_status_progress_visible(True)
+            self._set_status_progress(self.tr("Preparing Sporely Cloud sync..."), 0, 1)
+        self._cloud_sync_worker.start()
+        return True
+
+    def _on_cloud_sync_progress(self, message: str, current: int, total: int) -> None:
+        if self._cloud_sync_show_status and message:
+            display_current = current
+            display_total = total
+            try:
+                if int(total) > 0:
+                    display_total = int(total)
+                    display_current = int(current)
+                    if display_current >= display_total:
+                        display_current = max(0, display_total - 1)
+            except Exception:
+                display_current = current
+                display_total = total
+            self._set_status_progress(message, current=display_current, total=display_total)
+
+    def _finish_manual_refresh_flow(self) -> None:
         pending_status = self._upload_pending_artsobs_web_images()
-        # Public web link checks do not require Artsobs mobile login.
-        # Keep any pending-upload warning/success message unless there was nothing pending.
         if pending_status == "none":
             self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=0)
         self._start_artsobs_link_check()
+
+    def _show_cloud_conflict_dialog(self, conflicts: list[dict]) -> bool:
+        entries = [dict(row or {}) for row in (conflicts or []) if row]
+        if not entries:
+            return False
+        dialog = CloudConflictDialog(
+            self,
+            conflicts=entries,
+            prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+        )
+        dialog.exec()
+        if dialog.resolved_any:
+            self.refresh_observations(show_status=False)
+        return bool(dialog.resolved_any)
+
+    def _format_deleted_cloud_observation_label(self, entry: dict) -> str:
+        observation = dict(entry.get("observation") or {})
+        species = self._build_species_name(observation) or self.tr("Unknown species")
+        date_text = str(entry.get("date") or observation.get("date") or "—").strip() or "—"
+        location_text = str(entry.get("location") or observation.get("location") or "—").strip() or "—"
+        return self.tr("{species}\nDate: {date}\nLocation: {location}").format(
+            species=species,
+            date=date_text,
+            location=location_text,
+        )
+
+    def _prompt_for_deleted_cloud_observations(self, deleted_remote: list[dict]) -> bool:
+        entries = [dict(row or {}) for row in (deleted_remote or []) if row]
+        if not entries:
+            return False
+        changed = False
+        for entry in entries:
+            local_id = int(entry.get("local_id") or 0)
+            cloud_id = str(entry.get("cloud_id") or "").strip() or "?"
+            if local_id <= 0:
+                continue
+            prompt = self.tr(
+                "Cloud observation {cloud_id} was deleted.\n\n"
+                "{details}\n\n"
+                "Delete the desktop observation too?\n\n"
+                "Choose No to keep it locally only and remove the cloud link."
+            ).format(
+                cloud_id=cloud_id,
+                details=self._format_deleted_cloud_observation_label(entry),
+            )
+            delete_local = self._question_yes_no(
+                self.tr("Cloud Observation Deleted"),
+                prompt,
+                default_yes=False,
+            )
+            if delete_local:
+                ObservationDB.delete_observation(local_id)
+                self.observation_deleted.emit(local_id)
+                changed = True
+                continue
+            unlink_local_observation_from_cloud(local_id)
+            changed = True
+        if changed:
+            self.refresh_observations(show_status=False)
+        return changed
+
+    def _on_cloud_sync_finished(self, result: dict) -> None:
+        self.refresh_observations(show_status=False)
+        if self._cloud_sync_run_refresh_flow:
+            self._finish_manual_refresh_flow()
+        if not self._cloud_sync_show_status:
+            return
+        self._set_status_progress_visible(False)
+        self._set_status_progress("", 0, 1)
+        pushed = int(result.get("pushed", 0) or 0)
+        pulled = int(result.get("pulled", 0) or 0)
+        errors = list(result.get("errors", []) or [])
+        deleted_remote = [dict(row or {}) for row in (result.get("deleted_remote") or []) if row]
+        issue_summary = summarize_sync_issues(errors)
+        conflicts = list(issue_summary.get("conflicts", []) or [])
+        conflict_count = int(issue_summary.get("conflict_count", 0) or 0)
+        other_count = int(issue_summary.get("other_count", 0) or 0)
+        deleted_count = len(deleted_remote)
+        if errors:
+            for error in errors:
+                print(f"[cloud_sync] {error}")
+        if result.get("skipped"):
+            return
+        if pushed or pulled:
+            parts = []
+            if pushed:
+                parts.append(
+                    self.tr("{count} uploaded").format(count=pushed)
+                )
+            if pulled:
+                parts.append(
+                    self.tr("{count} imported").format(count=pulled)
+                )
+            message = self.tr("Sporely Cloud synced: {summary}.").format(summary=", ".join(parts))
+            level = "warning" if errors else "success"
+            if errors:
+                issue_parts = []
+                if conflict_count:
+                    issue_parts.append(
+                        self.tr("{count} to review").format(count=conflict_count)
+                    )
+                if other_count:
+                    issue_parts.append(
+                        self.tr("{count} other issue(s)").format(count=other_count)
+                    )
+                if issue_parts:
+                    message += " " + ", ".join(issue_parts) + "."
+            if deleted_count:
+                message += " " + self.tr("{count} cloud deletion(s) to review.").format(count=deleted_count)
+                level = "warning"
+            self.set_status_message(message, level=level, auto_clear_ms=12000)
+        elif errors:
+            self.set_status_message(
+                self.tr("Cloud sync finished with {count} issue(s).").format(
+                    count=int(issue_summary.get("display_count", 0) or 0)
+                ),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        elif deleted_count:
+            self.set_status_message(
+                self.tr("Cloud sync finished: {count} deleted cloud observation(s) need review.").format(
+                    count=deleted_count
+                ),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        else:
+            self.set_status_message(
+                self.tr("Sporely Cloud already up to date."),
+                level="success",
+                auto_clear_ms=5000,
+            )
+        if deleted_remote:
+            self._prompt_for_deleted_cloud_observations(deleted_remote)
+        if conflicts:
+            self._show_cloud_conflict_dialog(conflicts)
+
+    def _on_cloud_sync_error(self, message: str) -> None:
+        self.refresh_observations(show_status=False)
+        if self._cloud_sync_run_refresh_flow:
+            self._finish_manual_refresh_flow()
+        if self._cloud_sync_show_status:
+            self._set_status_progress_visible(False)
+            self._set_status_progress("", 0, 1)
+            short = message.split('\n')[0][:120]
+            self.set_status_message(
+                self.tr("Cloud sync failed: {error}").format(error=short),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+
+    def _on_cloud_sync_worker_done(self, *_args) -> None:
+        worker = self._cloud_sync_worker
+        self._cloud_sync_worker = None
+        self._cloud_sync_show_status = False
+        self._cloud_sync_run_refresh_flow = False
+        if worker is not None:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+
+    def _on_refresh_clicked(self) -> None:
+        self._invalidate_publish_login_status_cache()
+        if self._start_cloud_sync(show_status=True, run_refresh_flow=True):
+            return
+        self.refresh_observations(show_status=False)
+        self._finish_manual_refresh_flow()
 
     def _upload_pending_artsobs_web_images(self) -> str:
         try:
@@ -1743,6 +2392,16 @@ class ObservationsTab(QWidget):
             return None
         return self._observation_id_from_item(self.table.item(row, 0))
 
+    def _selection_includes_cloud_rows(self) -> bool:
+        selection_model = self.table.selectionModel()
+        if not selection_model:
+            return False
+        for index in selection_model.selectedRows():
+            row_data = self._observation_row_data_for_row(index.row())
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                return True
+        return False
+
     def _observation_publish_target(self, obs: dict | None) -> str:
         return resolve_observation_publish_target(obs, default_target=PUBLISH_TARGET_ARTSOBS_NO)
 
@@ -2249,6 +2908,7 @@ class ObservationsTab(QWidget):
 
     def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
+        recent_cloud_ids = self._recent_cloud_import_ids()
         observation_ids: list[int] = []
         for obs in observations:
             try:
@@ -2298,7 +2958,9 @@ class ObservationsTab(QWidget):
 
             rows.append(
                 {
-                    "id": obs_id,
+                    "row_kind": "local",
+                    "local_id": obs_id,
+                    "id_display": str(obs_id),
                     "thumbnail_path": thumbnail_map.get(obs_id),
                     "genus": genus_display,
                     "species": species_display,
@@ -2313,6 +2975,7 @@ class ObservationsTab(QWidget):
                     "arts_id": arts_id,
                     "artportalen_id": artportalen_id,
                     "publish_target": publish_target,
+                    "mark_star": obs_id in recent_cloud_ids,
                     "search_text": search_text,
                 }
             )
@@ -2373,13 +3036,18 @@ class ObservationsTab(QWidget):
             if conn is not None:
                 conn.close()
 
-    def _observation_thumbnail_icon(self, thumbnail_path: str | None) -> QIcon | None:
+    def _observation_thumbnail_icon(
+        self,
+        thumbnail_path: str | None,
+        mark_cloud: bool = False,
+    ) -> QIcon | None:
         if not thumbnail_path:
             return None
         path = str(thumbnail_path).strip()
         if not path:
             return None
-        cached = self._observation_thumb_icon_cache.get(path)
+        cache_key = f"{path}|cloud={int(bool(mark_cloud))}"
+        cached = self._observation_thumb_icon_cache.get(cache_key)
         if cached is not None:
             return cached
         pixmap = QPixmap(path)
@@ -2396,9 +3064,35 @@ class ObservationsTab(QWidget):
             x = max(0, (pixmap.width() - size) // 2)
             y = max(0, (pixmap.height() - size) // 2)
             pixmap = pixmap.copy(x, y, size, size)
+        if mark_cloud:
+            painter = QPainter(pixmap)
+            font = painter.font()
+            font.setPixelSize(max(18, size // 5))
+            painter.setFont(font)
+            painter.drawText(
+                6,
+                4,
+                max(24, size // 3),
+                max(24, size // 3),
+                Qt.AlignLeft | Qt.AlignTop,
+                "⭐",
+            )
+            painter.end()
         icon = QIcon(pixmap)
-        self._observation_thumb_icon_cache[path] = icon
+        self._observation_thumb_icon_cache[cache_key] = icon
         return icon
+
+    @staticmethod
+    def _observation_row_data_from_item(item: QTableWidgetItem | None) -> dict | None:
+        if item is None:
+            return None
+        data = item.data(Qt.UserRole + 1)
+        return data if isinstance(data, dict) else None
+
+    def _observation_row_data_for_row(self, row: int) -> dict | None:
+        if row < 0 or not hasattr(self, "table"):
+            return None
+        return self._observation_row_data_from_item(self.table.item(row, 0))
 
     def _render_observations_table(
         self,
@@ -2414,6 +3108,8 @@ class ObservationsTab(QWidget):
             visible_rows = [row for row in (row_cache or []) if query_text in (row.get("search_text") or "")]
         else:
             visible_rows = list(row_cache or [])
+        if self._show_new_imports_only():
+            visible_rows = [row for row in visible_rows if bool(row.get("mark_star"))]
 
         table = self.table
         header = table.horizontalHeader()
@@ -2424,6 +3120,7 @@ class ObservationsTab(QWidget):
         thumb_size = self._observation_table_thumbnail_size()
 
         restored_selection = False
+        _async_thumb_paths: list = []
         table.setUpdatesEnabled(False)
         table.blockSignals(True)
         try:
@@ -2433,16 +3130,39 @@ class ObservationsTab(QWidget):
             self._update_observations_table_geometry()
 
             for row_index, row_data in enumerate(visible_rows):
-                obs_id = int(row_data["id"])
-
-                id_item = SortableTableWidgetItem("" if show_thumbnails else str(obs_id))
-                id_item.setData(Qt.UserRole, obs_id)
+                is_cloud = str(row_data.get("row_kind") or "") == "cloud"
+                mark_star = bool(row_data.get("mark_star")) or is_cloud
+                local_obs_id = row_data.get("local_id") if not is_cloud else None
+                id_display = str(row_data.get("id_display") or "-")
+                id_text = "" if show_thumbnails else (
+                    f"{id_display} ⭐" if mark_star else id_display
+                )
+                id_item = SortableTableWidgetItem(id_text)
+                if isinstance(local_obs_id, int):
+                    id_item.setData(Qt.UserRole, local_obs_id)
+                id_item.setData(Qt.UserRole + 1, row_data)
                 id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)
                 if show_thumbnails:
-                    icon = self._observation_thumbnail_icon(row_data.get("thumbnail_path"))
+                    thumb_path = str(row_data.get("thumbnail_path") or "").strip()
+                    cache_key = f"{thumb_path}|cloud={int(mark_star)}" if thumb_path else ""
+                    icon = self._observation_thumb_icon_cache.get(cache_key) if cache_key else None
                     if icon is not None:
                         id_item.setIcon(icon)
-                    id_item.setToolTip(self.tr("Observation {id}").format(id=obs_id))
+                    elif thumb_path:
+                        _async_thumb_paths.append(thumb_path)
+                        if mark_star:
+                            id_item.setText("⭐")
+                    elif mark_star:
+                        id_item.setText("⭐")
+                    id_item.setToolTip(
+                        self.tr("Recent cloud import {id}").format(id=id_display)
+                        if mark_star and not is_cloud
+                        else (
+                            self.tr("Cloud observation {id}").format(id=id_display)
+                            if is_cloud
+                            else self.tr("Observation {id}").format(id=id_display)
+                        )
+                    )
                     id_item.setTextAlignment(Qt.AlignCenter)
                     id_item.setSizeHint(QSize(thumb_size + 20, thumb_size + 20))
                 table.setItem(row_index, 0, id_item)
@@ -2450,7 +3170,9 @@ class ObservationsTab(QWidget):
                 table.setItem(row_index, 1, QTableWidgetItem(str(row_data.get("common_name") or "-")))
                 table.setItem(row_index, 2, QTableWidgetItem(str(row_data.get("genus") or "-")))
                 table.setItem(row_index, 3, QTableWidgetItem(str(row_data.get("species") or "sp.")))
-                table.setItem(row_index, 4, QTableWidgetItem(str(row_data.get("spore_short") or "-")))
+                spore_value = row_data.get("spore_short")
+                spore_text = "-" if spore_value is None else str(spore_value)
+                table.setItem(row_index, 4, QTableWidgetItem(spore_text))
 
                 table.setItem(row_index, 5, QTableWidgetItem(str(row_data.get("date") or "-")))
                 table.setItem(row_index, 6, QTableWidgetItem(str(row_data.get("location") or "-")))
@@ -2478,13 +3200,19 @@ class ObservationsTab(QWidget):
                     map_label.setToolTip(_map_hint)
                     table.setCellWidget(row_index, 7, map_label)
 
-                self._render_publish_cell(
-                    row_index,
-                    obs_id,
-                    row_data.get("publish_target"),
-                    row_data.get("arts_id"),
-                    row_data.get("artportalen_id"),
-                )
+                table.removeCellWidget(row_index, 8)
+                if isinstance(local_obs_id, int):
+                    self._render_publish_cell(
+                        row_index,
+                        local_obs_id,
+                        row_data.get("publish_target"),
+                        row_data.get("arts_id"),
+                        row_data.get("artportalen_id"),
+                    )
+                else:
+                    publish_item = SortableTableWidgetItem("-")
+                    publish_item.setFlags(publish_item.flags() & ~Qt.ItemIsEditable)
+                    table.setItem(row_index, 8, publish_item)
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
@@ -2520,6 +3248,75 @@ class ObservationsTab(QWidget):
             self.set_status_message(status_message, level="success")
         elif show_status:
             self.set_status_message(self.tr("Refreshed db."), level="success")
+
+        if _async_thumb_paths and show_thumbnails:
+            # Deduplicate while preserving order, skip paths already being loaded
+            seen: set = set()
+            new_paths = []
+            for p in _async_thumb_paths:
+                if p not in seen and p not in self._thumb_pending_paths:
+                    seen.add(p)
+                    new_paths.append(p)
+            if new_paths:
+                self._start_thumbnail_loader(new_paths)
+
+    def _start_thumbnail_loader(self, paths: list) -> None:
+        if self._thumb_loader is not None and self._thumb_loader.isRunning():
+            self._thumb_loader.requestInterruption()
+            self._thumb_loader.wait(100)
+        for p in paths:
+            self._thumb_pending_paths.add(p)
+        self._thumb_loader = _ThumbnailLoaderWorker(paths, parent=self)
+        self._thumb_loader.thumbnail_ready.connect(self._on_thumbnail_ready)
+        self._thumb_loader.start(QThread.LowPriority)
+
+    def _on_thumbnail_ready(self, path: str, qimage: object) -> None:
+        if not isinstance(qimage, QImage) or qimage.isNull():
+            return
+        self._thumb_pending_paths.discard(path)
+        size = self._observation_table_thumbnail_size()
+        base_pixmap = QPixmap.fromImage(qimage)
+        base_pixmap = base_pixmap.scaled(
+            size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+        )
+        if base_pixmap.width() != size or base_pixmap.height() != size:
+            x = max(0, (base_pixmap.width() - size) // 2)
+            y = max(0, (base_pixmap.height() - size) // 2)
+            base_pixmap = base_pixmap.copy(x, y, size, size)
+        # Build and cache both cloud/non-cloud variants
+        for mark_cloud in (False, True):
+            pm = QPixmap(base_pixmap)
+            if mark_cloud:
+                painter = QPainter(pm)
+                font = painter.font()
+                font.setPixelSize(max(18, size // 5))
+                painter.setFont(font)
+                painter.drawText(
+                    6, 4, max(24, size // 3), max(24, size // 3),
+                    Qt.AlignLeft | Qt.AlignTop, "⭐",
+                )
+                painter.end()
+            cache_key = f"{path}|cloud={int(mark_cloud)}"
+            self._observation_thumb_icon_cache[cache_key] = QIcon(pm)
+        # Update any visible table cells that use this thumbnail path
+        if not self._show_observation_table_thumbnails():
+            return
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            row_data = self._observation_row_data_from_item(item)
+            if row_data is None:
+                continue
+            if str(row_data.get("thumbnail_path") or "").strip() != path:
+                continue
+            is_cloud = str(row_data.get("row_kind") or "") == "cloud"
+            mark_star = bool(row_data.get("mark_star")) or is_cloud
+            cache_key = f"{path}|cloud={int(mark_star)}"
+            icon = self._observation_thumb_icon_cache.get(cache_key)
+            if icon is not None:
+                item.setIcon(icon)
+                item.setText("")
 
     def _observations_detail_default_height(self) -> int:
         gallery = getattr(self, "gallery_widget", None)
@@ -2593,7 +3390,8 @@ class ObservationsTab(QWidget):
         self._vernacular_cache = {}
         self._table_vernacular_db = self._get_vernacular_db_for_active_language()
         self._update_table_headers()
-        self._observation_table_rows_cache = self._build_observation_table_rows_cache(observations)
+        local_rows = self._build_observation_table_rows_cache(observations)
+        self._observation_table_rows_cache = local_rows
         self._render_observations_table(
             self._observation_table_rows_cache,
             query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
@@ -2608,6 +3406,25 @@ class ObservationsTab(QWidget):
         if not db_path:
             return None
         return VernacularDB(db_path, language_code=lang)
+
+    @staticmethod
+    def _recent_cloud_import_ids() -> set[int]:
+        raw = get_app_settings().get("cloud_recent_import_local_ids")
+        if not raw:
+            return set()
+        try:
+            loaded = json.loads(raw)
+        except Exception:
+            return set()
+        if not isinstance(loaded, list):
+            return set()
+        ids: set[int] = set()
+        for value in loaded:
+            try:
+                ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+        return ids
 
     def _build_common_name_map(self, observations: list[dict]) -> dict[tuple[str, str], str | None]:
         """Pre-build a cache of all common names for the observations."""
@@ -3087,6 +3904,12 @@ class ObservationsTab(QWidget):
             return bool(checkbox.isChecked())
         return bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
 
+    def _show_new_imports_only(self) -> bool:
+        checkbox = getattr(self, "show_new_imports_checkbox", None)
+        if checkbox is not None:
+            return bool(checkbox.isChecked())
+        return bool(SettingsDB.get_setting(self.SETTING_SHOW_NEW_IMPORTS_ONLY, False))
+
     def _observation_table_thumbnail_size(self) -> int:
         return 96
 
@@ -3115,6 +3938,16 @@ class ObservationsTab(QWidget):
             self._observation_table_rows_cache,
             query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
             restore_selection=True,
+            show_status=False,
+            status_message=None,
+        )
+
+    def _on_show_new_imports_toggled(self, checked: bool) -> None:
+        SettingsDB.set_setting(self.SETTING_SHOW_NEW_IMPORTS_ONLY, bool(checked))
+        self._render_observations_table(
+            self._observation_table_rows_cache,
+            query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
+            restore_selection=False,
             show_status=False,
             status_message=None,
         )
@@ -3238,6 +4071,15 @@ class ObservationsTab(QWidget):
 
     def _confirm_delete_image(self, image_id):
         """Confirm and delete an image (and measurements if present)."""
+        try:
+            image_id = int(image_id)
+        except (TypeError, ValueError):
+            self.set_status_message(
+                self.tr("Cloud images cannot be deleted from the local gallery."),
+                level="warning",
+                auto_clear_ms=8000,
+            )
+            return
         measurements = self._get_measurements_for_image(image_id)
         if measurements:
             confirmed = ask_measurements_exist_delete(self, count=1)
@@ -3310,6 +4152,12 @@ class ObservationsTab(QWidget):
         excluded = all_ids - selected_set
         obs_id = int(self.selected_observation_id)
         self._set_publish_excluded_image_ids(obs_id, excluded)
+        try:
+            from utils.cloud_sync import mark_observation_dirty
+
+            mark_observation_dirty(obs_id)
+        except Exception:
+            pass
         host = self.window()
         if host is None:
             host = self.parent()
@@ -3353,6 +4201,10 @@ class ObservationsTab(QWidget):
         # Reset action buttons first to avoid stale enabled state during edge-case transitions.
         self.rename_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
+        if hasattr(self, "plate_btn"):
+            self.plate_btn.setEnabled(False)
+        if hasattr(self, "publish_btn"):
+            self.publish_btn.setEnabled(False)
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(False)
         selected_rows = self.table.selectionModel().selectedRows()
@@ -3362,8 +4214,10 @@ class ObservationsTab(QWidget):
             self._update_publish_controls()
             return
         if len(selected_rows) > 1:
-            self.delete_btn.setEnabled(True)
-            if hasattr(self, "export_btn"):
+            has_cloud = self._selection_includes_cloud_rows()
+            if not has_cloud:
+                self.delete_btn.setEnabled(True)
+            if hasattr(self, "export_btn") and not has_cloud:
                 self.export_btn.setEnabled(True)
             self.gallery_widget.clear()
             self.selected_observation_id = None
@@ -3379,7 +4233,12 @@ class ObservationsTab(QWidget):
             return
         obs_id = self._observation_id_from_item(id_item)
         if obs_id is None:
-            self.gallery_widget.clear()
+            row_data = self._observation_row_data_from_item(id_item)
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                self.rename_btn.setEnabled(True)
+                self.gallery_widget.set_items(self._cloud_gallery_items(row_data))
+            else:
+                self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
             return
@@ -3419,6 +4278,9 @@ class ObservationsTab(QWidget):
         row = selected_rows[0].row()
         obs_id = self._observation_id_for_row(row)
         if obs_id is None:
+            row_data = self._observation_row_data_for_row(row)
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                self._open_cloud_observation_editor(row_data)
             return
         genus = self.table.item(row, 2).text()
         species = self.table.item(row, 3).text()
@@ -3465,6 +4327,392 @@ class ObservationsTab(QWidget):
                 ordered.append(filepath)
         return ordered
 
+    def _collect_publish_selected_image_rows(self, observation_id: int) -> list[dict]:
+        images = ImageDB.get_images_for_observation(observation_id)
+        excluded_ids = self._publish_excluded_image_ids(observation_id)
+        ordered: list[dict] = []
+        seen_paths: set[str] = set()
+        for image in images:
+            image_id = image.get("id")
+            if image_id is not None:
+                try:
+                    if int(image_id) in excluded_ids:
+                        continue
+                except Exception:
+                    pass
+            image_type = (image.get("image_type") or "").strip().lower()
+            if image_type not in {"field", "microscope"}:
+                continue
+            filepath = image.get("filepath") or image.get("original_filepath")
+            if not filepath or not Path(filepath).exists():
+                continue
+            path_key = self._publish_path_key(filepath)
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+            ordered.append(image)
+        return ordered
+
+    @staticmethod
+    def _scale_pixmap_to_max_pixels(pixmap: QPixmap, max_pixels: int) -> QPixmap:
+        if not pixmap or pixmap.isNull():
+            return pixmap
+        try:
+            max_pixels_i = int(max_pixels)
+        except Exception:
+            max_pixels_i = 0
+        if max_pixels_i <= 0:
+            return pixmap
+        current_pixels = max(1, int(pixmap.width()) * int(pixmap.height()))
+        if current_pixels <= max_pixels_i:
+            return pixmap
+        scale = (float(max_pixels_i) / float(current_pixels)) ** 0.5
+        target_w = max(1, int(round(float(pixmap.width()) * scale)))
+        target_h = max(1, int(round(float(pixmap.height()) * scale)))
+        return pixmap.scaled(target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    @staticmethod
+    def _is_main_gui_thread() -> bool:
+        app = QCoreApplication.instance()
+        if app is None:
+            return True
+        return QThread.currentThread() is app.thread()
+
+    def _prepare_cloud_sync_image_uploads_threadsafe(
+        self,
+        observation: dict,
+        progress_cb=None,
+        max_pixels: int | None = None,
+    ) -> tuple[list[dict], object | None, list[str]]:
+        if max_pixels is None:
+            max_pixels = self._cloud_sync_image_max_pixels()
+        obs = observation or {}
+        observation_id = obs.get("id")
+        if not observation_id:
+            return [], None, []
+
+        selected_images = self._collect_publish_selected_image_rows(int(observation_id))
+        if not selected_images:
+            return [], None, []
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"sporely_cloud_{int(observation_id)}_"))
+        prepared: list[dict] = []
+        warnings: list[str] = []
+        total = len(selected_images)
+
+        if any((
+            self._publish_option_enabled(self.SETTING_INCLUDE_ANNOTATIONS, default=False),
+            self._publish_option_enabled(self.SETTING_SHOW_SCALE_BAR, default=False),
+            self._publish_option_enabled(self.SETTING_INCLUDE_COPYRIGHT, default=False),
+            self._publish_option_enabled(self.SETTING_INCLUDE_MEASURE_PLOTS, default=False),
+            self._publish_option_enabled(self.SETTING_INCLUDE_THUMBNAIL_GALLERY, default=False),
+            self._publish_option_enabled(self.SETTING_INCLUDE_PLATE, default=False),
+        )):
+            warnings.append(
+                self.tr(
+                    "Cloud sync is running in the background, so overlays, watermark, and generated media were skipped for this upload."
+                )
+            )
+
+        for idx, image_row in enumerate(selected_images, start=1):
+            if progress_cb:
+                progress_cb(
+                    self.tr("Preparing cloud image {current}/{total}...").format(
+                        current=idx,
+                        total=total,
+                    ),
+                    idx,
+                    max(1, total),
+                )
+            source_path = str(image_row.get("filepath") or image_row.get("original_filepath") or "").strip()
+            if not source_path or not Path(source_path).exists():
+                warnings.append(
+                    self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
+                )
+                continue
+            try:
+                with Image.open(source_path) as img:
+                    img = img.convert("RGB")
+                    current_pixels = max(1, int(img.width) * int(img.height))
+                    if max_pixels and current_pixels > int(max_pixels):
+                        scale = (float(max_pixels) / float(current_pixels)) ** 0.5
+                        target = (
+                            max(1, int(round(float(img.width) * scale))),
+                            max(1, int(round(float(img.height) * scale))),
+                        )
+                        img = img.resize(target, Image.Resampling.LANCZOS)
+                    image_id = int(image_row.get("id") or idx)
+                    out_path = temp_dir / f"cloud_{image_id:04d}.jpg"
+                    img.save(out_path, "JPEG", quality=90)
+            except Exception:
+                warnings.append(
+                    self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
+                )
+                continue
+
+            prepared.append(
+                {
+                    "image_row": image_row,
+                    "upload_path": str(out_path),
+                }
+            )
+
+        if not prepared:
+            self._cleanup_publish_temp_dir(temp_dir)
+            return [], None, warnings
+
+        return (
+            prepared,
+            lambda: self._cleanup_publish_temp_dir(temp_dir),
+            warnings,
+        )
+
+    def _render_cloud_sync_pixmap_for_image(
+        self,
+        image_row: dict,
+        obs: dict,
+        max_pixels: int | None = None,
+    ) -> QPixmap | None:
+        if max_pixels is None:
+            max_pixels = self._cloud_sync_image_max_pixels()
+        source_path = image_row.get("filepath") or image_row.get("original_filepath")
+        if not source_path:
+            return None
+        pixmap = QPixmap(str(source_path))
+        if pixmap.isNull():
+            return None
+
+        preferences = self._publish_render_preferences()
+        include_copyright = self._publish_option_enabled(
+            self.SETTING_INCLUDE_COPYRIGHT,
+            default=False,
+        )
+
+        lines, rectangles, labels = self._build_publish_overlays_for_image(image_row)
+        show_overlays = bool(preferences["show_overlays"]) and bool(lines or rectangles)
+        show_labels = show_overlays and bool(preferences["show_labels"]) and bool(labels)
+        exported = pixmap
+
+        has_scale_bar = False
+        if preferences["show_scale_bar"]:
+            try:
+                mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
+            except Exception:
+                mpp_value = 0.0
+            has_scale_bar = mpp_value > 0
+
+        if show_overlays or has_scale_bar:
+            widget = ZoomableImageLabel()
+            widget.set_image(pixmap)
+            orig_pixels = max(1, pixmap.width() * pixmap.height())
+            publish_measure_label_scale = max(
+                1.0,
+                min(4.0, ((orig_pixels / 2_000_000.0) ** 0.5) * 0.85),
+            )
+            widget.set_export_measure_label_scale_multiplier(publish_measure_label_scale)
+            measure_color = (image_row.get("measure_color") or "").strip()
+            if measure_color:
+                widget.set_measurement_color(QColor(measure_color))
+            widget.set_show_measure_overlays(show_overlays)
+            widget.set_show_measure_labels(show_labels)
+            widget.set_measurement_lines(lines if show_overlays else [])
+            widget.set_measurement_rectangles(rectangles if show_overlays else [])
+            widget.set_measurement_labels(labels if show_labels else [])
+            if has_scale_bar:
+                try:
+                    mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
+                except Exception:
+                    mpp_value = 0.0
+                if mpp_value > 0:
+                    scale_bar_um, unit = self._publish_scale_bar_for_image(
+                        image_row=image_row,
+                        pixmap=pixmap,
+                        parent=self.window(),
+                        fallback_um=float(preferences["scale_bar_um"]),
+                    )
+                    if scale_bar_um and scale_bar_um > 0:
+                        widget.set_microns_per_pixel(mpp_value)
+                        widget.set_scale_bar(True, float(scale_bar_um), unit=unit)
+            rendered = widget.export_annotated_pixmap()
+            if rendered and not rendered.isNull():
+                exported = rendered
+
+        if include_copyright:
+            copyright_text = self._publish_copyright_text(obs)
+            if copyright_text:
+                watermarked = QPixmap(exported)
+                if self._draw_publish_copyright(watermarked, copyright_text):
+                    exported = watermarked
+
+        return self._scale_pixmap_to_max_pixels(exported, max_pixels)
+
+    def prepare_cloud_sync_image_uploads(
+        self,
+        observation: dict,
+        progress_cb=None,
+        max_pixels: int | None = None,
+    ) -> tuple[list[dict], object | None, list[str]]:
+        if max_pixels is None:
+            max_pixels = self._cloud_sync_image_max_pixels()
+        if not self._is_main_gui_thread():
+            return self._prepare_cloud_sync_image_uploads_threadsafe(
+                observation,
+                progress_cb=progress_cb,
+                max_pixels=max_pixels,
+            )
+
+        obs = observation or {}
+        observation_id = obs.get("id")
+        if not observation_id:
+            return [], None, []
+
+        selected_images = self._collect_publish_selected_image_rows(int(observation_id))
+        include_measure_plots = self._publish_option_enabled(
+            self.SETTING_INCLUDE_MEASURE_PLOTS,
+            default=False,
+        )
+        include_thumbnail_gallery = self._publish_option_enabled(
+            self.SETTING_INCLUDE_THUMBNAIL_GALLERY,
+            default=False,
+        )
+        include_plate = self._publish_option_enabled(
+            self.SETTING_INCLUDE_PLATE,
+            default=False,
+        )
+        if not selected_images and not (include_measure_plots or include_thumbnail_gallery or include_plate):
+            return [], None, []
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"sporely_cloud_{int(observation_id)}_"))
+        prepared: list[dict] = []
+        warnings: list[str] = []
+        total = len(selected_images)
+        base_path_to_row: dict[str, dict] = {}
+
+        for idx, image_row in enumerate(selected_images, start=1):
+            self._yield_background_sync_ui()
+            if progress_cb:
+                progress_cb(
+                    self.tr("Preparing cloud image {current}/{total}...").format(
+                        current=idx,
+                        total=total,
+                    ),
+                    idx,
+                    max(1, total),
+                )
+            self._yield_background_sync_ui()
+            rendered = self._render_cloud_sync_pixmap_for_image(
+                image_row,
+                obs,
+                max_pixels=max_pixels,
+            )
+            if rendered is None or rendered.isNull():
+                warnings.append(
+                    self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
+                )
+                continue
+            source_path = str(image_row.get("filepath") or image_row.get("original_filepath") or "")
+            suffix = Path(source_path).suffix.lower()
+            image_format = "PNG" if suffix == ".png" else "JPEG"
+            out_suffix = ".png" if image_format == "PNG" else ".jpg"
+            image_id = int(image_row.get("id") or idx)
+            out_path = temp_dir / f"cloud_{image_id:04d}{out_suffix}"
+            saved = rendered.save(str(out_path), image_format, 90 if image_format == "JPEG" else -1)
+            if not saved:
+                warnings.append(
+                    self.tr("Could not save image {index} for cloud upload.").format(index=idx)
+                )
+                continue
+            saved_path = str(out_path)
+            base_path_to_row[self._publish_path_key(saved_path)] = dict(image_row)
+            prepared.append(
+                {
+                    "image_row": image_row,
+                    "upload_path": saved_path,
+                }
+            )
+            self._yield_background_sync_ui()
+
+        upload_paths = [str(item.get("upload_path") or "") for item in prepared if item.get("upload_path")]
+        extra_paths: list[str] = []
+        measurement_availability = self._publish_measurement_availability(
+            int(observation_id),
+            upload_paths,
+        )
+        include_measure_plots = bool(
+            include_measure_plots and measurement_availability.get("has_plot_measurements")
+        )
+        include_thumbnail_gallery = bool(
+            include_thumbnail_gallery and measurement_availability.get("has_gallery_measurements")
+        )
+        if include_measure_plots or include_thumbnail_gallery or include_plate:
+            try:
+                prepared_paths, _publish_temp_dir_unused, extra_warnings = self._prepare_publish_media_assets(
+                    observation_id=int(observation_id),
+                    base_image_paths=upload_paths,
+                    include_annotations=False,
+                    include_measure_plots=include_measure_plots,
+                    include_thumbnail_gallery=include_thumbnail_gallery,
+                    include_plate=include_plate,
+                    include_copyright=False,
+                    progress_cb=progress_cb,
+                    cancel_cb=None,
+                )
+                warnings.extend(extra_warnings)
+                extra_paths = [
+                    path
+                    for path in prepared_paths
+                    if self._publish_path_key(path) not in base_path_to_row
+                ]
+            except Exception as exc:
+                warnings.append(str(exc))
+
+        derived_order = total
+        for idx, path in enumerate(extra_paths, start=1):
+            self._yield_background_sync_ui()
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                warnings.append(
+                    self.tr("Could not prepare generated media {index} for cloud upload.").format(index=idx)
+                )
+                continue
+            scaled = self._scale_pixmap_to_max_pixels(pixmap, max_pixels)
+            jpeg_pixmap = QPixmap(scaled.size())
+            jpeg_pixmap.fill(QColor("white"))
+            painter = QPainter(jpeg_pixmap)
+            painter.drawPixmap(0, 0, scaled)
+            painter.end()
+            out_path = temp_dir / f"cloud_extra_{idx:02d}.jpg"
+            if not jpeg_pixmap.save(str(out_path), "JPEG", 92):
+                warnings.append(
+                    self.tr("Could not save generated media {index} for cloud upload.").format(index=idx)
+                )
+                continue
+            derived_order += 1
+            prepared.append(
+                {
+                    "image_row": {
+                        "id": -((int(observation_id) * 10) + idx),
+                        "observation_id": int(observation_id),
+                        "image_type": "field",
+                        "sort_order": derived_order,
+                        "filepath": str(out_path),
+                        "notes": self._cloud_generated_media_note(path),
+                    },
+                    "upload_path": str(out_path),
+                }
+            )
+            self._yield_background_sync_ui()
+
+        if not prepared and not extra_paths:
+            self._cleanup_publish_temp_dir(temp_dir)
+            return [], None, warnings
+
+        return (
+            prepared,
+            lambda: self._cleanup_publish_temp_dir(temp_dir),
+            warnings,
+        )
+
     @staticmethod
     def _publish_excluded_images_setting_key(observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -3504,6 +4752,11 @@ class ObservationsTab(QWidget):
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
+    def _cloud_sync_image_max_pixels() -> int:
+        mode = str(SettingsDB.get_setting(SETTING_CLOUD_IMAGE_SIZE_MODE, "reduced") or "reduced").strip().lower()
+        return 0 if mode == "full" else 2_000_000
+
+    @staticmethod
     def _publish_path_key(path: str | None) -> str:
         if not path:
             return ""
@@ -3520,6 +4773,17 @@ class ObservationsTab(QWidget):
             shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
+
+    @staticmethod
+    def _cloud_generated_media_note(path: str | None) -> str:
+        stem = Path(str(path or "")).stem.lower()
+        if "measure_plot" in stem:
+            return "Generated media: measure plot"
+        if "gallery" in stem or "mosaic" in stem:
+            return "Generated media: thumbnail gallery"
+        if "plate" in stem:
+            return "Generated media: plate"
+        return "Generated media"
 
     @staticmethod
     def _publish_observation_year(observation_date: str | None) -> int:
@@ -4188,10 +5452,12 @@ class ObservationsTab(QWidget):
         import numpy as np
         from matplotlib.figure import Figure
 
+        self._yield_background_sync_ui()
         if cancel_cb:
             cancel_cb()
         if progress_cb:
             progress_cb(self.tr("Preparing measure plot image..."), 1, 3)
+        self._yield_background_sync_ui()
 
         out_path = temp_dir / "measure_plot.png"
         parent = self.window()
@@ -4201,6 +5467,7 @@ class ObservationsTab(QWidget):
                 cancel_cb()
             if progress_cb:
                 progress_cb(self.tr("Rendering measure plot image..."), 3, 3)
+            self._yield_background_sync_ui()
             try:
                 if bool(export_plot(observation_id, out_path)):
                     self._quantize_png8(out_path)
@@ -4230,6 +5497,7 @@ class ObservationsTab(QWidget):
         if progress_cb:
             progress_cb(self.tr("Collecting measurement data..."), 2, 3)
         for measurement in measurements:
+            self._yield_background_sync_ui()
             if cancel_cb:
                 cancel_cb()
             length = measurement.get("length_um")
@@ -4333,6 +5601,7 @@ class ObservationsTab(QWidget):
             cancel_cb()
         if progress_cb:
             progress_cb(self.tr("Rendering measure plot image..."), 3, 3)
+        self._yield_background_sync_ui()
         fig.savefig(out_path, format="png", dpi=140)
         fig.clear()
         self._quantize_png8(out_path)
@@ -4350,10 +5619,12 @@ class ObservationsTab(QWidget):
         if not callable(create_thumbnail):
             return None
 
+        self._yield_background_sync_ui()
         if cancel_cb:
             cancel_cb()
         if progress_cb:
             progress_cb(self.tr("Preparing thumbnail gallery image..."), 1, 3)
+        self._yield_background_sync_ui()
 
         settings = self._load_gallery_settings_for_observation(observation_id)
         category = settings.get("measurement_type", "all")
@@ -4371,6 +5642,14 @@ class ObservationsTab(QWidget):
         if not valid_measurements:
             return None
 
+        normalized_category = self._normalize_publish_measurement_category(category)
+        if normalized_category == "all":
+            gallery_item_label = self.tr("measurement thumbnails")
+        elif normalized_category == "spores":
+            gallery_item_label = self.tr("spore thumbnails")
+        else:
+            gallery_item_label = self.tr("thumbnails")
+
         thumbnail_size = 220
         size_fn = getattr(parent, "_gallery_thumbnail_size", None)
         if callable(size_fn):
@@ -4381,6 +5660,12 @@ class ObservationsTab(QWidget):
 
         image_rows = {int(row["id"]): row for row in ImageDB.get_images_for_observation(observation_id)}
         default_color = getattr(parent, "default_measure_color", QColor(52, 152, 219))
+        rectangle_style_fn = getattr(parent, "_current_measure_rectangle_style", None)
+        rectangle_thickness_fn = getattr(parent, "_current_measure_rectangle_thickness", None)
+        rectangle_style = rectangle_style_fn() if callable(rectangle_style_fn) else None
+        rectangle_thickness = (
+            rectangle_thickness_fn() if callable(rectangle_thickness_fn) else None
+        )
 
         uniform_length_um = None
         if uniform_scale:
@@ -4397,14 +5682,16 @@ class ObservationsTab(QWidget):
         total_items = len(valid_measurements)
         if progress_cb:
             progress_cb(
-                self.tr("Rendering thumbnail gallery {current}/{total}...").format(
+                self.tr("Rendering thumbnail gallery {current}/{total} {item_label} for this observation...").format(
                     current=0,
                     total=total_items,
+                    item_label=gallery_item_label,
                 ),
                 2,
                 3,
             )
         for measurement in valid_measurements:
+            self._yield_background_sync_ui()
             if cancel_cb:
                 cancel_cb()
             image_path = measurement.get("image_filepath")
@@ -4445,42 +5732,72 @@ class ObservationsTab(QWidget):
                 extra_rotation=int(measurement.get("gallery_rotation") or 0),
                 uniform_length_px=uniform_length_px,
                 color=measure_color,
+                rectangle_style=rectangle_style,
+                rectangle_thickness=rectangle_thickness,
+                export_mode=True,
             )
             if thumb and not thumb.isNull():
                 thumbnails.append(thumb)
             if progress_cb:
                 progress_cb(
-                    self.tr("Rendering thumbnail gallery {current}/{total}...").format(
+                    self.tr("Rendering thumbnail gallery {current}/{total} {item_label} for this observation...").format(
                         current=len(thumbnails),
                         total=total_items,
+                        item_label=gallery_item_label,
                     ),
                     2,
                     3,
                 )
+            self._yield_background_sync_ui()
 
         if not thumbnails:
             return None
 
         import math
 
-        cols = max(1, int(math.ceil(math.sqrt(len(thumbnails)))))
-        rows = int(math.ceil(len(thumbnails) / cols))
-        spacing = 12
-        canvas_w = cols * thumbnail_size + (cols + 1) * spacing
-        canvas_h = rows * thumbnail_size + (rows + 1) * spacing
+        num_items = len(thumbnails)
+        average_tile_width = int(
+            round(sum(thumb.width() for thumb in thumbnails) / max(1, num_items))
+        )
+        tile_height = max(thumb.height() for thumb in thumbnails)
+        grid_shape_fn = getattr(parent, "_gallery_export_grid_shape", None)
+        if callable(grid_shape_fn):
+            try:
+                cols, rows = grid_shape_fn(num_items, average_tile_width, tile_height)
+            except Exception:
+                cols = max(1, int(math.ceil(math.sqrt(num_items))))
+                rows = int(math.ceil(num_items / cols))
+        else:
+            cols = max(1, int(math.ceil(math.sqrt(num_items))))
+            rows = int(math.ceil(num_items / cols))
+
+        spacing = 0
+        row_widths = []
+        for row in range(rows):
+            row_items = thumbnails[row * cols:(row + 1) * cols]
+            row_width = sum(thumb.width() for thumb in row_items)
+            if row_items:
+                row_width += max(0, len(row_items) - 1) * spacing
+            row_widths.append(row_width)
+        canvas_w = max(row_widths) if row_widths else 0
+        canvas_h = rows * tile_height + max(0, rows - 1) * spacing
 
         canvas = QPixmap(canvas_w, canvas_h)
         canvas.fill(QColor("white"))
         if progress_cb:
             progress_cb(self.tr("Composing thumbnail gallery image..."), 3, 3)
+        self._yield_background_sync_ui()
         painter = QPainter(canvas)
         for idx, thumb in enumerate(thumbnails):
+            self._yield_background_sync_ui()
             if cancel_cb:
                 cancel_cb()
             row = idx // cols
-            col = idx % cols
-            x = spacing + col * (thumbnail_size + spacing)
-            y = spacing + row * (thumbnail_size + spacing)
+            x = sum(
+                thumbnails[row * cols + col_index].width() + spacing
+                for col_index in range(idx % cols)
+            )
+            y = row * (tile_height + spacing)
             painter.drawPixmap(x, y, thumb)
         painter.end()
 
@@ -4489,6 +5806,47 @@ class ObservationsTab(QWidget):
             return None
         return str(out_path)
 
+    def _generate_publish_plate_image(
+        self,
+        observation_id: int,
+        temp_dir: Path,
+        progress_cb=None,
+        cancel_cb=None,
+    ) -> str | None:
+        self._yield_background_sync_ui()
+        obs = ObservationDB.get_observation(observation_id)
+        if not obs:
+            return None
+        if not obs.get("common_name"):
+            name_map = self._build_common_name_map([obs])
+            vernacular = self._lookup_common_name(obs, name_map)
+            if vernacular:
+                obs = dict(obs)
+                obs["common_name"] = vernacular
+        if progress_cb:
+            progress_cb(self.tr("Preparing plate image..."), 1, 2)
+        self._yield_background_sync_ui()
+        if cancel_cb:
+            cancel_cb()
+        try:
+            from ui.species_plate_dialog import export_observation_plate_image
+        except Exception:
+            return None
+        out_path = temp_dir / "species_plate.png"
+        excluded = self._publish_excluded_image_ids(observation_id)
+        if progress_cb:
+            progress_cb(self.tr("Rendering plate image..."), 2, 2)
+        self._yield_background_sync_ui()
+        if cancel_cb:
+            cancel_cb()
+        try:
+            if export_observation_plate_image(obs, out_path, excluded_image_ids=excluded):
+                self._quantize_png8(out_path)
+                return str(out_path)
+        except Exception:
+            return None
+        return None
+
     def _prepare_publish_media_assets(
         self,
         observation_id: int,
@@ -4496,6 +5854,7 @@ class ObservationsTab(QWidget):
         include_annotations: bool,
         include_measure_plots: bool,
         include_thumbnail_gallery: bool,
+        include_plate: bool = False,
         include_copyright: bool = False,
         copyright_text: str | None = None,
         progress_cb=None,
@@ -4507,6 +5866,7 @@ class ObservationsTab(QWidget):
             include_annotations
             or include_measure_plots
             or include_thumbnail_gallery
+            or include_plate
             or include_copyright
         ):
             return upload_paths, None, warnings
@@ -4603,6 +5963,26 @@ class ObservationsTab(QWidget):
                 generated_any = True
             else:
                 warnings.append(self.tr("Could not generate thumbnail gallery image."))
+
+        if include_plate:
+            try:
+                if progress_cb:
+                    progress_cb(self.tr("Preparing plate image..."), 3, 3)
+                plate_path = self._generate_publish_plate_image(
+                    observation_id,
+                    temp_dir,
+                    progress_cb=progress_cb,
+                    cancel_cb=cancel_cb,
+                )
+            except UploadCancelledError:
+                raise
+            except Exception:
+                plate_path = None
+            if plate_path:
+                upload_paths.append(plate_path)
+                generated_any = True
+            else:
+                warnings.append(self.tr("Could not generate plate image."))
 
         if not generated_any:
             self._cleanup_publish_temp_dir(temp_dir)
@@ -4787,6 +6167,10 @@ class ObservationsTab(QWidget):
             self.SETTING_INCLUDE_THUMBNAIL_GALLERY,
             default=False,
         )
+        include_plate = self._publish_option_enabled(
+            self.SETTING_INCLUDE_PLATE,
+            default=False,
+        )
         include_copyright = self._publish_option_enabled(
             self.SETTING_INCLUDE_COPYRIGHT,
             default=False,
@@ -4844,13 +6228,17 @@ class ObservationsTab(QWidget):
             )
         if uploader.key in {"mobile", "web"}:
             base_image_count = len(image_paths)
-            extra_image_count = int(bool(include_measure_plots)) + int(bool(include_thumbnail_gallery))
+            extra_image_count = (
+                int(bool(include_measure_plots))
+                + int(bool(include_thumbnail_gallery))
+                + int(bool(include_plate))
+            )
             total_image_count = base_image_count + extra_image_count
             if base_image_count > 10 or total_image_count > 10:
                 if extra_image_count > 0:
                     warning_text = self.tr(
                         "Artsobservasjoner allows up to 10 images per observation. "
-                        "You have {count} images, including plots and gallery images "
+                        "You have {count} images, including generated plot, gallery, or plate images "
                         "(Settings - Online publishing)."
                     ).format(count=total_image_count)
                 else:
@@ -4993,6 +6381,7 @@ class ObservationsTab(QWidget):
             include_annotations
             or include_measure_plots
             or include_thumbnail_gallery
+            or include_plate
             or include_copyright
         )
         prepare_phase_max = 35 if prepare_media_requested else 0
@@ -5108,6 +6497,7 @@ class ObservationsTab(QWidget):
                 include_annotations=include_annotations,
                 include_measure_plots=include_measure_plots,
                 include_thumbnail_gallery=include_thumbnail_gallery,
+                include_plate=include_plate,
                 include_copyright=include_copyright,
                 copyright_text=copyright_text,
                 progress_cb=prepare_progress_cb,
@@ -5154,6 +6544,7 @@ class ObservationsTab(QWidget):
                 "include_spore_stats_in_comment": include_spore_stats,
                 "include_measure_plots": include_measure_plots,
                 "include_thumbnail_gallery": include_thumbnail_gallery,
+                "include_plate": include_plate,
                 "include_copyright": include_copyright,
                 "image_license_code": image_license_code,
                 "genus": (obs.get("genus") or "").strip(),
@@ -5359,6 +6750,9 @@ class ObservationsTab(QWidget):
         row = selected_rows[0].row()
         obs_id = self._observation_id_for_row(row)
         if obs_id is None:
+            row_data = self._observation_row_data_for_row(row)
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                self._open_cloud_observation_editor(row_data)
             return
         observation = ObservationDB.get_observation(obs_id)
         if not observation:
@@ -5401,6 +6795,8 @@ class ObservationsTab(QWidget):
                     species=data.get('species'),
                     common_name=data.get('common_name'),
                     publish_target=data.get('publish_target'),
+                    sharing_scope=data.get('sharing_scope'),
+                    location_public=data.get('location_public'),
                     species_guess=data.get('species_guess'),
                     uncertain=1 if data.get('uncertain') else 0,
                     unspontaneous=1 if data.get('unspontaneous') else 0,
@@ -5512,6 +6908,9 @@ class ObservationsTab(QWidget):
         row = selected_rows[0].row()
         obs_id = self._observation_id_for_row(row)
         if obs_id is None:
+            row_data = self._observation_row_data_for_row(row)
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                self._open_cloud_observation_editor(row_data)
             return
         observation = ObservationDB.get_observation(obs_id)
         if not observation:
@@ -5567,6 +6966,180 @@ class ObservationsTab(QWidget):
         """Open Prepare Images from Observations-gallery double-click."""
         target_path = (filepath or "").strip() or None
         self.open_edit_images_direct(selected_image_path=target_path)
+
+    def _mark_cloud_observation_imported(
+        self,
+        client,
+        row_data: dict,
+        local_observation_id: int,
+    ) -> None:
+        raw = row_data.get("raw") or {}
+        cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
+        if not cloud_id:
+            return
+        synced_at = datetime.now().isoformat()
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
+                (cloud_id, synced_at, int(local_observation_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        cloud_images = self._download_cloud_observation_images(row_data, download_all=True)
+        local_images = ImageDB.get_images_for_observation(int(local_observation_id))
+        conn = get_connection()
+        try:
+            for local_image, cloud_image in zip(local_images, cloud_images):
+                cloud_image_id = str(cloud_image.get("id") or "").strip()
+                local_image_id = local_image.get("id")
+                if not cloud_image_id or not local_image_id:
+                    continue
+                conn.execute(
+                    "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?",
+                    (cloud_image_id, synced_at, int(local_image_id)),
+                )
+                try:
+                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
+                except Exception:
+                    pass
+            conn.commit()
+        finally:
+            conn.close()
+
+        try:
+            client.set_desktop_id(cloud_id, int(local_observation_id))
+        except Exception:
+            pass
+
+    def _open_cloud_observation_editor(self, row_data: dict) -> None:
+        if not isinstance(row_data, dict):
+            return
+        image_results = self._cloud_image_import_results(row_data)
+        draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
+        ai_state: dict | None = None
+        ai_taxon: dict | None = None
+        primary_index = 0 if image_results else None
+        while True:
+            dialog = ObservationDetailsDialog(
+                self,
+                image_results=image_results,
+                primary_index=primary_index,
+                allow_edit_images=True,
+                suggested_taxon=ai_taxon,
+                ai_state=ai_state,
+                draft_data=draft_observation,
+            )
+            if dialog.exec():
+                obs_data = dialog.get_data()
+                image_results = list(dialog.image_results)
+                primary_index = dialog.primary_index
+                ai_state = dialog.get_ai_state()
+                draft_observation = dict(obs_data)
+                profile = SettingsDB.get_profile()
+                author = profile.get("name")
+                if author:
+                    obs_data["author"] = author
+
+                if not self._confirm_duplicate_observation_creation(obs_data, image_results):
+                    continue
+
+                obs_id = ObservationDB.create_observation(**obs_data)
+                if ai_state:
+                    ObservationDB.update_observation(
+                        obs_id,
+                        ai_state_json=self._serialize_ai_state(ai_state),
+                        allow_nulls=True,
+                    )
+                progress = None
+                progress_cb = None
+                total_images = len(image_results)
+                if total_images:
+                    progress = QProgressDialog(
+                        self.tr("Processing images..."),
+                        None,
+                        0,
+                        total_images,
+                        self,
+                    )
+                    progress.setWindowTitle(self.tr("Processing Images"))
+                    progress.setWindowModality(Qt.WindowModal)
+                    progress.setAutoClose(True)
+                    progress.setAutoReset(True)
+                    progress.setCancelButton(None)
+                    progress.setMinimumDuration(300)
+
+                    def progress_cb(index, total, _result):
+                        if total <= 0:
+                            return
+                        progress.setMaximum(total)
+                        progress.setValue(index)
+                        progress.setLabelText(
+                            self.tr("Processing image {current}/{total}").format(
+                                current=index,
+                                total=total,
+                            )
+                        )
+                        QApplication.processEvents()
+
+                try:
+                    self._apply_import_results_to_observation(
+                        obs_id,
+                        image_results,
+                        progress_cb=progress_cb,
+                    )
+                finally:
+                    if progress is not None:
+                        progress.setValue(total_images)
+                        progress.close()
+
+                try:
+                    from utils.cloud_sync import SporelyCloudClient
+
+                    client = SporelyCloudClient.from_stored_credentials()
+                    if client is not None:
+                        self._mark_cloud_observation_imported(client, row_data, obs_id)
+                except Exception:
+                    pass
+
+                self.refresh_observations()
+                for row, obs in enumerate(ObservationDB.get_all_observations()):
+                    if obs["id"] == obs_id:
+                        self.table.selectRow(row)
+                        self.selected_observation_id = obs_id
+                        self.on_selection_changed()
+                        break
+                self.set_status_message(self.tr("Observation imported from cloud."), level="success")
+                return
+
+            if dialog.request_edit_images:
+                draft_observation = dict(dialog.get_data())
+                ai_state = dialog.get_ai_state()
+                image_results = list(dialog.image_results)
+                primary_index = dialog.primary_index
+                obs_dt = _parse_observation_datetime(draft_observation.get("date"))
+                image_dialog = ImageImportDialog(
+                    self,
+                    import_results=image_results,
+                    observation_datetime=obs_dt,
+                    observation_lat=draft_observation.get("gps_latitude"),
+                    observation_lon=draft_observation.get("gps_longitude"),
+                    continue_to_observation_details=False,
+                )
+                if dialog.request_edit_images_path:
+                    image_dialog.select_image_by_path(dialog.request_edit_images_path)
+                if image_dialog.exec():
+                    image_results = image_dialog.import_results
+                    ai_taxon = image_dialog.get_ai_selected_taxon() or ai_taxon
+                    if ai_state:
+                        ai_state = self._remap_ai_state_to_images(ai_state, image_results)
+                    obs_lat, obs_lon = image_dialog.get_observation_gps()
+                    draft_observation["gps_latitude"] = obs_lat
+                    draft_observation["gps_longitude"] = obs_lon
+                continue
+            return
 
     def create_new_observation(self, initial_image_paths: list[str] | None = None):
         """Show dialog to create new observation."""
@@ -5745,8 +7318,28 @@ class ObservationsTab(QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return
+        selected_row_data = [
+            self._observation_row_data_for_row(index.row())
+            for index in selected_rows
+        ]
+        cloud_rows = [
+            row_data for row_data in selected_row_data
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud"
+        ]
+        local_rows = [
+            row_data for row_data in selected_row_data
+            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") != "cloud"
+        ]
+        obs_id = None
 
-        if len(selected_rows) == 1:
+        if len(selected_rows) == 1 and cloud_rows:
+            row_data = cloud_rows[0]
+            species = self.table.item(selected_rows[0].row(), 1).text()
+            prompt = self.tr(
+                "Delete cloud observation '{species}'?\n\n"
+                "This will remove it from Sporely Cloud and delete its synced cloud images."
+            ).format(species=species)
+        elif len(selected_rows) == 1:
             row = selected_rows[0].row()
             obs_id = self._observation_id_for_row(row)
             species = self.table.item(row, 1).text()
@@ -5755,43 +7348,67 @@ class ObservationsTab(QWidget):
                 "This will also delete all associated images and measurements."
             ).format(species=species)
         else:
-            obs_id = None
-            prompt = self.tr(
-                "Delete {count} observations?\n\n"
-                "This will also delete all associated images and measurements."
-            ).format(count=len(selected_rows))
+            if cloud_rows and local_rows:
+                prompt = self.tr(
+                    "Delete {count} observations?\n\n"
+                    "Local observations will also delete their images and measurements.\n"
+                    "Cloud observations will be removed from Sporely Cloud."
+                ).format(count=len(selected_rows))
+            elif cloud_rows:
+                prompt = self.tr(
+                    "Delete {count} cloud observations?\n\n"
+                    "This will remove them from Sporely Cloud and delete their synced cloud images."
+                ).format(count=len(selected_rows))
+            else:
+                prompt = self.tr(
+                    "Delete {count} observations?\n\n"
+                    "This will also delete all associated images and measurements."
+                ).format(count=len(selected_rows))
 
         confirmed = self._question_yes_no(self.tr("Confirm Delete"), prompt, default_yes=False)
         if confirmed:
             failures: list[str] = []
-            if obs_id is not None:
+            deleted_local_count = 0
+            deleted_cloud_count = 0
+            if obs_id is not None and not cloud_rows:
+                failures.extend(self._delete_cloud_copy_for_local_observation(obs_id))
                 failures.extend(ObservationDB.delete_observation(obs_id))
                 self.observation_deleted.emit(obs_id)
+                deleted_local_count += 1
             else:
                 rows = [row.row() for row in selected_rows]
-                obs_ids = [
-                    obs_id
-                    for r in rows
-                    for obs_id in [self._observation_id_for_row(r)]
-                    if obs_id is not None
-                ]
-                for obs_id in obs_ids:
+                for r in rows:
+                    row_data = self._observation_row_data_for_row(r)
+                    if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                        cloud_failures = self._delete_cloud_observation_row(row_data)
+                        failures.extend(cloud_failures)
+                        if not cloud_failures:
+                            deleted_cloud_count += 1
+                        continue
+                    obs_id = self._observation_id_for_row(r)
+                    if obs_id is None:
+                        continue
+                    failures.extend(self._delete_cloud_copy_for_local_observation(obs_id))
                     failures.extend(ObservationDB.delete_observation(obs_id))
                     self.observation_deleted.emit(obs_id)
+                    deleted_local_count += 1
             failure_count = self._warn_delete_failures(failures)
             self.refresh_observations()
+            deleted_total = deleted_local_count + deleted_cloud_count
             if len(selected_rows) == 1 and failure_count:
                 self.set_status_message(
                     self.tr("Observation deleted with {count} cleanup issue(s).").format(count=failure_count),
                     level="warning",
                     auto_clear_ms=12000,
                 )
+            elif len(selected_rows) == 1 and deleted_cloud_count:
+                self.set_status_message(self.tr("Cloud observation deleted."), level="success")
             elif len(selected_rows) == 1:
                 self.set_status_message(self.tr("Observation deleted."), level="success")
             elif failure_count:
                 self.set_status_message(
                     self.tr("Deleted {count} observations with {issues} cleanup issue(s).").format(
-                        count=len(selected_rows),
+                        count=deleted_total or len(selected_rows),
                         issues=failure_count,
                     ),
                     level="warning",
@@ -5799,9 +7416,58 @@ class ObservationsTab(QWidget):
                 )
             else:
                 self.set_status_message(
-                    self.tr("Deleted {count} observations.").format(count=len(selected_rows)),
+                    self.tr("Deleted {count} observations.").format(count=deleted_total or len(selected_rows)),
                     level="success",
                 )
+
+    def _delete_cloud_copy_for_local_observation(self, observation_id: int) -> list[str]:
+        try:
+            obs = ObservationDB.get_observation(int(observation_id))
+        except Exception:
+            obs = None
+        if not obs:
+            return []
+        cloud_id = str(obs.get("cloud_id") or "").strip()
+        if not cloud_id:
+            return []
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is None:
+                return [self.tr("cloud {id}: not logged in to Sporely Cloud").format(id=cloud_id)]
+            client.delete_cloud_observation(cloud_id)
+        except Exception as exc:
+            return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
+        try:
+            cache_dir = self._cloud_observation_cache_dir(cloud_id)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return []
+
+    def _delete_cloud_observation_row(self, row_data: dict) -> list[str]:
+        if not isinstance(row_data, dict):
+            return [self.tr("cloud observation: invalid row data")]
+        raw = row_data.get("raw") or {}
+        cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
+        if not cloud_id:
+            return [self.tr("cloud observation: missing id")]
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is None:
+                return [self.tr("cloud {id}: not logged in to Sporely Cloud").format(id=cloud_id)]
+            client.delete_cloud_observation(cloud_id)
+        except Exception as exc:
+            return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
+        try:
+            cache_dir = self._cloud_observation_cache_dir(cloud_id)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return []
 
     def _build_import_results_from_images(self, images: list[dict]) -> list[ImageImportResult]:
         objectives = load_objectives()
@@ -6858,6 +8524,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._publish_target_sync_in_progress = False
         self._location_lookup_name = ""
         self._last_applied_location_lookup_name = ""
+        self._sharing_scope_value = self._default_sharing_scope()
         self._debug_dialog_created_at = time.perf_counter()
         self._loading_form = True
         self._initial_gallery_refresh_pending = True
@@ -6881,6 +8548,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 inferred_target or self._active_reporting_target(),
                 manual_override=False,
             )
+            self._set_sharing_scope(None)
             self._apply_primary_metadata()
         self._loading_form = False
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
@@ -6984,16 +8652,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # ===== OBSERVATION DETAILS SECTION =====
         details_group = QGroupBox(self.tr("Observation Details"))
+        details_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         details_layout = QHBoxLayout(details_group)
         details_layout.setSpacing(12)
+        details_layout.setAlignment(Qt.AlignTop)
 
         left_panel = QWidget()
+        left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         left_layout = QGridLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setHorizontalSpacing(8)
         left_layout.setVerticalSpacing(8)
 
         right_panel = QWidget()
+        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         right_layout = QFormLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
@@ -7276,6 +8948,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         unspontaneous_row.addWidget(self.unspontaneous_checkbox)
         unspontaneous_row.addStretch()
         identified_layout.addLayout(unspontaneous_row)
+
         identified_layout.addStretch(1)
 
         self.taxonomy_tabs.addTab(identified_tab, self.tr("Species"))
@@ -8854,6 +10527,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species = self.species_input.text().strip() or None
         common_name = self.vernacular_input.text().strip() or None
         working_title = None
+        sharing_scope = self._selected_sharing_scope()
 
         # Get GPS values (None if at minimum/special value)
         lat = None
@@ -8890,6 +10564,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'species': species,
             'common_name': common_name,
             'publish_target': publish_target,
+            'sharing_scope': sharing_scope,
+            'location_public': sharing_scope_location_public(sharing_scope),
             'species_guess': working_title,
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
@@ -10896,6 +12572,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.vernacular_input.setText(obs.get("common_name") or "")
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
+        self._set_sharing_scope(
+            obs.get("sharing_scope"),
+            location_public=obs.get("location_public"),
+        )
         method = obs.get("determination_method")
         idx = self.determination_method_combo.findData(method)
         if idx >= 0:
@@ -10935,6 +12615,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_map_button()
         self._maybe_set_vernacular_from_taxon()
         self._update_taxonomy_tab_indicators()
+
+    def _default_sharing_scope(self) -> str:
+        return normalize_sharing_scope(
+            SettingsDB.get_setting(
+                SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
+                SHARING_SCOPE_PRIVATE,
+            ),
+            fallback=SHARING_SCOPE_PRIVATE,
+        )
+
+    def _selected_sharing_scope(self) -> str:
+        return normalize_sharing_scope(
+            getattr(self, "_sharing_scope_value", None),
+            fallback=self._default_sharing_scope(),
+        )
+
+    def _set_sharing_scope(self, scope: str | None, location_public=None) -> None:
+        raw = str(scope or "").strip().lower()
+        normalized = raw if raw in _VALID_SHARING_SCOPES else ""
+        if not normalized:
+            normalized = (
+                SHARING_SCOPE_FRIENDS
+                if bool(location_public)
+                else self._default_sharing_scope()
+            )
+        self._sharing_scope_value = normalized
 
     def _load_existing_observation(self):
         """Preload observation details and images for editing."""

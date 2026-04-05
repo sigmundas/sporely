@@ -34,6 +34,7 @@ from PySide6.QtCore import (
     QRectF,
     QSize,
     QTimer,
+    QThread,
     Signal,
     QPoint,
     QEvent,
@@ -110,6 +111,7 @@ from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
+from .cloud_sync_dialog import CloudSyncDialog
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
@@ -150,6 +152,25 @@ def _draw_gallery_rectangle_overlay(
     for seg_start, seg_end in rectangle_corner_segments(polygon):
         painter.drawLine(seg_start, seg_end)
     painter.restore()
+
+
+class _CloudLoginWorker(QThread):
+    ok = Signal(object, str)
+    fail = Signal(str)
+
+    def __init__(self, email: str, password: str, parent=None) -> None:
+        super().__init__(parent)
+        self._email = str(email or "").strip()
+        self._password = password or ""
+
+    def run(self) -> None:
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.login(self._email, self._password)
+            self.ok.emit(client, self._email)
+        except Exception as exc:
+            self.fail.emit(str(exc))
 
 
 class AnalysisGalleryTile(QWidget):
@@ -851,9 +872,12 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
     SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
+    SETTING_INCLUDE_PLATE = "artsobs_publish_include_plate"
     SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
     SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
+    SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
+    SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
     SETTING_INAT_CLIENT_ID = "inat_client_id"
     SETTING_INAT_CLIENT_SECRET = "inat_client_secret"
     SETTING_INAT_REDIRECT_URI = "inat_redirect_uri"
@@ -914,10 +938,15 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._hint_controller: HintStatusController | None = None
         self._inat_session_client_id = ""
         self._inat_session_client_secret = ""
+        self._cloud_client = None
+        self._cloud_login_worker: _CloudLoginWorker | None = None
+        self._cloud_login_email = ""
+        self._cloud_login_password = ""
+        self._cloud_login_remember = False
         self.setWindowTitle(self.tr("Online publishing"))
         self.setModal(True)
-        self.setMinimumWidth(660)
-        self.resize(700, 660)
+        self.setMinimumSize(700, 760)
+        self.resize(760, 800)
         self._build_ui()
         self._load_settings()
         self._update_status()
@@ -1165,6 +1194,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.targets_table.setSelectionMode(QTableWidget.SingleSelection)
         self.targets_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.targets_table.setAlternatingRowColors(True)
+        self.targets_table.setMinimumHeight(220)
         self.targets_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.targets_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.targets_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
@@ -1201,6 +1231,80 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.addLayout(button_layout)
         layout.addWidget(websites_group, 1)
 
+        cloud_group = QGroupBox(self.tr("Sporely Cloud"), self)
+        cloud_layout = QVBoxLayout(cloud_group)
+        cloud_layout.setContentsMargins(10, 10, 10, 10)
+        cloud_layout.setSpacing(8)
+
+        cloud_note = QLabel(
+            self.tr(
+                "Cloud backup uses the same image selection and image overlay options as online publishing. "
+                "Choose whether synced images should keep full size or be reduced to 2 MP."
+            )
+        )
+        cloud_note.setWordWrap(True)
+        cloud_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        cloud_layout.addWidget(cloud_note)
+
+        cloud_preferences_row = QHBoxLayout()
+        cloud_preferences_row.setContentsMargins(0, 0, 0, 0)
+        cloud_preferences_row.setSpacing(20)
+
+        cloud_sharing_column = QVBoxLayout()
+        cloud_sharing_column.setContentsMargins(0, 0, 0, 0)
+        cloud_sharing_column.setSpacing(4)
+        cloud_sharing_column.addWidget(QLabel(self.tr("Default sharing:")))
+        self.cloud_sharing_group = QButtonGroup(self)
+        self.cloud_sharing_private_radio = QRadioButton(self.tr("Private"))
+        self.cloud_sharing_friends_radio = QRadioButton(self.tr("Friends"))
+        self.cloud_sharing_public_radio = QRadioButton(self.tr("Public"))
+        for radio, scope in (
+            (self.cloud_sharing_private_radio, "private"),
+            (self.cloud_sharing_friends_radio, "friends"),
+            (self.cloud_sharing_public_radio, "public"),
+        ):
+            self.cloud_sharing_group.addButton(radio)
+            radio.setProperty("sharing_scope", scope)
+            radio.toggled.connect(self._on_cloud_sharing_changed)
+            cloud_sharing_column.addWidget(radio)
+
+        cloud_image_size_column = QVBoxLayout()
+        cloud_image_size_column.setContentsMargins(0, 0, 0, 0)
+        cloud_image_size_column.setSpacing(4)
+        cloud_image_size_column.addWidget(QLabel(self.tr("Sync image size:")))
+        self.cloud_image_size_group = QButtonGroup(self)
+        self.cloud_image_size_reduced_radio = QRadioButton(self.tr("Reduced (2 MP)"))
+        self.cloud_image_size_full_radio = QRadioButton(self.tr("Full size"))
+        for radio, mode in (
+            (self.cloud_image_size_reduced_radio, "reduced"),
+            (self.cloud_image_size_full_radio, "full"),
+        ):
+            self.cloud_image_size_group.addButton(radio)
+            radio.setProperty("cloud_image_size_mode", mode)
+            radio.toggled.connect(self._on_cloud_image_size_changed)
+            cloud_image_size_column.addWidget(radio)
+
+        cloud_preferences_row.addLayout(cloud_sharing_column, 1)
+        cloud_preferences_row.addLayout(cloud_image_size_column, 1)
+        cloud_layout.addLayout(cloud_preferences_row)
+
+        self.cloud_status_label = QLabel(self.tr("Not logged in"))
+        self.cloud_status_label.setWordWrap(True)
+        cloud_layout.addWidget(self.cloud_status_label)
+
+        cloud_button_row = QHBoxLayout()
+        self.cloud_login_button = QPushButton(self.tr("Log in"))
+        self.cloud_login_button.clicked.connect(self._open_cloud_login)
+        cloud_button_row.addWidget(self.cloud_login_button)
+
+        self.cloud_logout_button = QPushButton(self.tr("Log out"))
+        self.cloud_logout_button.clicked.connect(self._logout_cloud)
+        cloud_button_row.addWidget(self.cloud_logout_button)
+        cloud_button_row.addStretch()
+        cloud_layout.addLayout(cloud_button_row)
+
+        layout.addWidget(cloud_group, 0)
+
         options_group = QGroupBox(self.tr("Publish content"), self)
         options_layout = QVBoxLayout(options_group)
         options_layout.setContentsMargins(10, 10, 10, 10)
@@ -1210,6 +1314,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.include_spore_stats_checkbox = QCheckBox(self)
         self.include_measure_plots_checkbox = QCheckBox(self)
         self.include_thumbnail_gallery_checkbox = QCheckBox(self)
+        self.include_plate_checkbox = QCheckBox(self)
         self.include_copyright_checkbox = QCheckBox(self)
         self.image_license_label = QLabel(self.tr("License"), self)
         self.image_license_combo = QComboBox(self)
@@ -1244,6 +1349,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self.include_thumbnail_gallery_checkbox,
                 self.tr("Include thumbnail gallery"),
                 self.tr("Adds a mosaic gallery image (Same as Export gallery in Analysis)."),
+            ),
+            (
+                self.include_plate_checkbox,
+                self.tr("Include plate"),
+                self.tr("Uploads the current species plate image."),
             ),
         )
         for checkbox, text, help_text in wrapped_options:
@@ -1369,6 +1479,58 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
         self._save_settings()
 
+    def _selected_cloud_sharing_scope(self) -> str:
+        for radio, scope in (
+            (getattr(self, "cloud_sharing_private_radio", None), "private"),
+            (getattr(self, "cloud_sharing_friends_radio", None), "friends"),
+            (getattr(self, "cloud_sharing_public_radio", None), "public"),
+        ):
+            if radio is not None and radio.isChecked():
+                return scope
+        return "private"
+
+    def _set_cloud_sharing_scope(self, scope: str | None) -> None:
+        normalized = str(scope or "").strip().lower()
+        if normalized not in {"private", "friends", "public"}:
+            normalized = "private"
+        radio_map = {
+            "private": getattr(self, "cloud_sharing_private_radio", None),
+            "friends": getattr(self, "cloud_sharing_friends_radio", None),
+            "public": getattr(self, "cloud_sharing_public_radio", None),
+        }
+        radio = radio_map.get(normalized) or getattr(self, "cloud_sharing_private_radio", None)
+        if radio is not None:
+            radio.setChecked(True)
+
+    def _on_cloud_sharing_changed(self, _checked: bool) -> None:
+        if not self._loading_settings:
+            self._save_settings()
+
+    def _selected_cloud_image_size_mode(self) -> str:
+        for radio, mode in (
+            (getattr(self, "cloud_image_size_reduced_radio", None), "reduced"),
+            (getattr(self, "cloud_image_size_full_radio", None), "full"),
+        ):
+            if radio is not None and radio.isChecked():
+                return mode
+        return "reduced"
+
+    def _set_cloud_image_size_mode(self, mode: str | None) -> None:
+        normalized = str(mode or "").strip().lower()
+        if normalized not in {"reduced", "full"}:
+            normalized = "reduced"
+        radio_map = {
+            "reduced": getattr(self, "cloud_image_size_reduced_radio", None),
+            "full": getattr(self, "cloud_image_size_full_radio", None),
+        }
+        radio = radio_map.get(normalized) or getattr(self, "cloud_image_size_reduced_radio", None)
+        if radio is not None:
+            radio.setChecked(True)
+
+    def _on_cloud_image_size_changed(self, _checked: bool) -> None:
+        if not self._loading_settings:
+            self._save_settings()
+
     @staticmethod
     def _setting_enabled(key: str, default: bool = False) -> bool:
         fallback = "1" if default else "0"
@@ -1459,12 +1621,24 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             "1" if self.include_thumbnail_gallery_checkbox.isChecked() else "0",
         )
         SettingsDB.set_setting(
+            self.SETTING_INCLUDE_PLATE,
+            "1" if self.include_plate_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
             self.SETTING_INCLUDE_COPYRIGHT,
             "1" if self.include_copyright_checkbox.isChecked() else "0",
         )
         SettingsDB.set_setting(
             self.SETTING_IMAGE_LICENSE,
             self._current_image_license_code(),
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
+            self._selected_cloud_sharing_scope(),
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_IMAGE_SIZE_MODE,
+            self._selected_cloud_image_size_mode(),
         )
 
     def _selected_uploader(self):
@@ -1622,12 +1796,204 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         else:
             self.set_hint(self.tr("Not logged in"), tone="warning")
 
+    def _refresh_cloud_status(self) -> None:
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            self._cloud_client = SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            self._cloud_client = None
+
+    def _update_cloud_controls(self) -> None:
+        self._refresh_cloud_status()
+        email = str(get_app_settings().get("cloud_user_email") or "").strip()
+        logged_in = bool(self._cloud_client)
+        if hasattr(self, "cloud_status_label"):
+            if logged_in:
+                shown = email or f"{self._cloud_client.user_id[:8]}..."
+                self.cloud_status_label.setText(
+                    self.tr("Signed in as: {account}").format(account=shown)
+                )
+            else:
+                self.cloud_status_label.setText(self.tr("Not logged in"))
+        if hasattr(self, "cloud_login_button"):
+            self.cloud_login_button.setEnabled(self._cloud_login_worker is None and not logged_in)
+            self.cloud_login_button.setText(
+                self.tr("Signing in...") if self._cloud_login_worker is not None else self.tr("Log in")
+            )
+        if hasattr(self, "cloud_logout_button"):
+            self.cloud_logout_button.setEnabled(self._cloud_login_worker is None and logged_in)
+
     def _update_controls(self):
         uploader = self._selected_uploader()
         selected_logged_in = self._is_logged_in(uploader.key if uploader else None)
         self.logout_button.setEnabled(bool(uploader) and selected_logged_in)
         self.login_button.setText(self.tr("Log in"))
         self._update_watermark_controls()
+        self._update_cloud_controls()
+
+    def _open_cloud_login(self) -> None:
+        if self._cloud_login_worker is not None:
+            return
+        from utils.cloud_sync import load_saved_cloud_password
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.tr("Sporely Cloud login"))
+        dialog.setModal(True)
+        dialog.setMinimumWidth(420)
+
+        saved_email, saved_password, can_store_password = load_saved_cloud_password()
+        has_saved_password = bool(saved_password)
+        password_edited = False
+        submitted_password = None
+        remember_login = False
+
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(
+            QLabel(
+                self.tr("Sign in with your Sporely Cloud account.")
+            )
+        )
+
+        form = QFormLayout()
+        email_edit = QLineEdit()
+        email_edit.setPlaceholderText(self.tr("Email"))
+        email_edit.setText(saved_email or str(get_app_settings().get("cloud_user_email") or "").strip())
+        password_edit = QLineEdit()
+        password_edit.setPlaceholderText(self.tr("Password"))
+        password_edit.setEchoMode(QLineEdit.Password)
+        if has_saved_password:
+            password_edit.setText("********")
+        form.addRow(self.tr("Email:"), email_edit)
+        form.addRow(self.tr("Password:"), password_edit)
+        layout.addLayout(form)
+
+        remember_checkbox = QCheckBox(self.tr("Save password on this device"))
+        remember_checkbox.setChecked(bool(saved_email or has_saved_password))
+        if not can_store_password:
+            remember_checkbox.setChecked(False)
+            remember_checkbox.setEnabled(False)
+            remember_checkbox.setToolTip(self.tr("Install keyring to enable encrypted password storage."))
+        layout.addWidget(remember_checkbox)
+        if has_saved_password:
+            layout.addWidget(QLabel(self.tr("Saved password loaded (shown masked).")))
+        if not can_store_password:
+            warning = QLabel(self.tr("Secure password storage unavailable: password will not be saved."))
+            warning.setWordWrap(True)
+            warning.setStyleSheet("color: #c05848;")
+            layout.addWidget(warning)
+
+        buttons = QDialogButtonBox(dialog)
+        ok_btn = buttons.addButton(self.tr("Log in"), QDialogButtonBox.AcceptRole)
+        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
+        layout.addWidget(buttons)
+
+        def _on_password_edited(_text: str) -> None:
+            nonlocal password_edited
+            password_edited = True
+
+        password_edit.textEdited.connect(_on_password_edited)
+
+        def _accept_if_valid() -> None:
+            nonlocal submitted_password, remember_login
+            if not email_edit.text().strip() or not password_edit.text():
+                QMessageBox.warning(
+                    dialog,
+                    self.tr("Missing Information"),
+                    self.tr("Please enter your email and password."),
+                )
+                return
+            if has_saved_password and not password_edited:
+                submitted_password = saved_password
+            else:
+                submitted_password = password_edit.text()
+            remember_login = bool(remember_checkbox.isChecked())
+            if remember_login and not can_store_password:
+                QMessageBox.warning(
+                    dialog,
+                    self.tr("Secure Storage Unavailable"),
+                    self.tr("Password saving requires secure keyring support on this system."),
+                )
+                return
+            dialog.accept()
+
+        ok_btn.clicked.connect(_accept_if_valid)
+        cancel_btn.clicked.connect(dialog.reject)
+        email_edit.returnPressed.connect(_accept_if_valid)
+        password_edit.returnPressed.connect(_accept_if_valid)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        self._cloud_login_email = email_edit.text().strip()
+        self._cloud_login_password = submitted_password or password_edit.text()
+        self._cloud_login_remember = bool(remember_login)
+        self._cloud_login_worker = _CloudLoginWorker(
+            self._cloud_login_email,
+            self._cloud_login_password,
+            parent=self,
+        )
+        self._cloud_login_worker.ok.connect(self._on_cloud_login_success)
+        self._cloud_login_worker.fail.connect(self._on_cloud_login_failure)
+        self._cloud_login_worker.finished.connect(self._on_cloud_login_finished)
+        self._update_cloud_controls()
+        self._cloud_login_worker.start()
+
+    def _on_cloud_login_success(self, client, email: str) -> None:
+        try:
+            client.save_credentials(
+                email=str(email or "").strip(),
+                password=getattr(self, "_cloud_login_password", None),
+                remember_password=bool(getattr(self, "_cloud_login_remember", False)),
+            )
+            update_app_settings({"cloud_user_email": str(email or "").strip()})
+            self._cloud_client = client
+            self.set_hint(self.tr("Logged in to Sporely Cloud"), tone="success")
+            main_window = self.parent()
+            if main_window is not None and hasattr(main_window, "observations_tab"):
+                try:
+                    main_window.observations_tab.refresh_observations(show_status=False)
+                    main_window.observations_tab._start_cloud_sync(show_status=True, run_refresh_flow=False)
+                except Exception:
+                    pass
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Login Failed"),
+                self.tr("Unable to save cloud login.\n\n{error}").format(error=exc),
+            )
+            self._cloud_client = None
+
+    def _on_cloud_login_failure(self, message: str) -> None:
+        QMessageBox.warning(
+            self,
+            self.tr("Login Failed"),
+            self.tr("Sporely Cloud login failed.\n\n{error}").format(error=message),
+        )
+
+    def _on_cloud_login_finished(self) -> None:
+        self._cloud_login_worker = None
+        self._cloud_login_email = ""
+        self._cloud_login_password = ""
+        self._cloud_login_remember = False
+        self._update_cloud_controls()
+
+    def _logout_cloud(self) -> None:
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            SporelyCloudClient.clear_credentials()
+            update_app_settings({"cloud_user_email": None})
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Logout Failed"),
+                self.tr("Unable to remove cloud login.\n\n{error}").format(error=exc),
+            )
+            return
+        self._cloud_client = None
+        self._update_cloud_controls()
+        self._update_status()
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
@@ -1886,6 +2252,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     False,
                 ),
                 (
+                    self.include_plate_checkbox,
+                    self.SETTING_INCLUDE_PLATE,
+                    False,
+                ),
+                (
                     self.include_copyright_checkbox,
                     self.SETTING_INCLUDE_COPYRIGHT,
                     False,
@@ -1910,6 +2281,18 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.image_license_combo.blockSignals(False)
             self._update_image_license_hint_text()
             self._update_watermark_controls()
+            self._set_cloud_sharing_scope(
+                SettingsDB.get_setting(
+                    self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
+                    "private",
+                )
+            )
+            self._set_cloud_image_size_mode(
+                SettingsDB.get_setting(
+                    self.SETTING_CLOUD_IMAGE_SIZE_MODE,
+                    "reduced",
+                )
+            )
 
             if self.targets_table.rowCount() > 0:
                 if not self.targets_table.selectionModel().hasSelection():
@@ -3412,6 +3795,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_scatter_axis = None
         self._gallery_hist_axes: set = set()
         self._gallery_hover_hint_key = ""
+        self._gallery_busy_hint = ""
+        self._gallery_pending_refresh_hint = ""
+        self._gallery_render_total_items = 0
         self.gallery_selected_measurement_id = None
         self._gallery_thumbnail_frames: dict[int, QFrame] = {}
         self._gallery_thumbnail_labels: dict[int, QWidget] = {}
@@ -4715,6 +5101,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         left_layout.addStretch(1)
         left_layout.addWidget(gallery_group)
 
+        analysis_button_height = max(35, QPushButton(self.tr("Plot")).sizeHint().height())
+
         self.gallery_plot_export_btn = QPushButton(self.tr("Export Plot"))
         self.gallery_plot_export_btn.setMinimumWidth(110)
         self.gallery_plot_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -4922,7 +5310,25 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self._gallery_hint_controller is not None:
             self._gallery_hint_controller.set_hint(text, tone=tone)
 
+    def _queue_gallery_refresh_hint(self, text: str | None) -> None:
+        self._gallery_pending_refresh_hint = (text or "").strip()
+
+    def _consume_gallery_refresh_hint(self, fallback: str) -> str:
+        text = (self._gallery_pending_refresh_hint or "").strip()
+        self._gallery_pending_refresh_hint = ""
+        return text or fallback
+
+    def _set_gallery_busy_hint(self, text: str | None, tone: str = "info") -> None:
+        self._gallery_busy_hint = (text or "").strip()
+        if self._gallery_busy_hint:
+            self._set_gallery_hint(self._gallery_busy_hint, tone=tone)
+            QApplication.processEvents()
+        elif not self._gallery_hover_hint_key:
+            self._set_gallery_hint("")
+
     def _on_gallery_plot_motion(self, event) -> None:
+        if self._gallery_busy_hint:
+            return
         hint_key = ""
         if event is not None:
             hovered_axis = getattr(event, "inaxes", None)
@@ -4969,6 +5375,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_gallery_hint("")
 
     def _on_gallery_plot_leave(self, _event) -> None:
+        if self._gallery_busy_hint:
+            return
         if self._gallery_hover_hint_key:
             self._gallery_hover_hint_key = ""
             self._set_gallery_hint("")
@@ -10279,6 +10687,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             if self.current_image_id:
                 image_labels[self.current_image_id] = "Image 1"
 
+        measurements = [
+            measurement
+            for measurement in (measurements or [])
+            if not self._is_calibration_measurement(measurement)
+        ]
+
         self.measurements_cache = measurements
         self.measurements_table.setRowCount(len(measurements))
 
@@ -10326,6 +10740,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             return "calibration"
         return value
 
+    def _is_calibration_measurement(self, measurement: dict | None) -> bool:
+        """Return whether a measurement row is the hidden scale-bar calibration helper."""
+        if not measurement:
+            return False
+        return self.normalize_measurement_category(measurement.get("measurement_type")) == "calibration"
+
     def format_measurement_category(self, category):
         """Format measurement categories for display."""
         if str(category or "").strip().lower() == "all_except_spores":
@@ -10355,6 +10775,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             normalized = []
             for entry in raw_types:
                 category = self.normalize_measurement_category(entry)
+                if category == "calibration":
+                    continue
                 if category not in normalized:
                     normalized.append(category)
 
@@ -10440,6 +10862,15 @@ class MainWindow(GeometryMixin, QMainWindow):
                         switch_tab=False,
                         suppress_gallery=True
                     )
+                else:
+                    self.active_observation_name = display_name
+                    self.refresh_observation_images(select_image_id=self.current_image_id)
+                    self.update_measurements_table()
+                    if (
+                        not self.current_image_id
+                        and getattr(self, "observation_images", None)
+                    ):
+                        self.goto_image_index(0)
         if index == 1 and hasattr(self, "_apply_measure_gallery_publish_selection"):
             self._apply_measure_gallery_publish_selection()
         if index == 1 and hasattr(self, "measure_button"):
@@ -10526,6 +10957,9 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._cancel_gallery_render()
         self._gallery_refresh_in_progress = True
+        self._set_gallery_busy_hint(
+            self._consume_gallery_refresh_hint(self.tr("Refreshing spore plot and gallery..."))
+        )
 
         category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
         if category != self._last_gallery_category:
@@ -10573,6 +11007,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         uniform_scale = hasattr(self, 'uniform_scale_checkbox') and self.uniform_scale_checkbox.isChecked()
         thumbnail_size = self._gallery_thumbnail_size()
         total = len(measurements)
+        self._gallery_render_total_items = total
         items_per_row = max(1, total)
 
         uniform_length_um = None
@@ -10626,11 +11061,21 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_render_timer = None
         self._gallery_render_queue = []
         self._gallery_render_state = None
+        self._gallery_render_total_items = 0
 
     def _render_gallery_batch(self):
         if not self._gallery_render_queue or not self._gallery_render_state:
             self._finish_gallery_render()
             return
+        remaining = len(self._gallery_render_queue)
+        total = max(remaining, int(self._gallery_render_total_items or 0))
+        rendered = max(0, total - remaining)
+        self._set_gallery_busy_hint(
+            self.tr("Rendering spore thumbnails {done}/{total}...").format(
+                done=rendered,
+                total=max(1, total),
+            )
+        )
         batch_size = 4
         for _ in range(min(batch_size, len(self._gallery_render_queue))):
             measurement = self._gallery_render_queue.pop(0)
@@ -10647,6 +11092,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._set_gallery_strip_height()
         self._gallery_last_refresh_time = time.perf_counter()
         self._gallery_refresh_in_progress = False
+        self._set_gallery_busy_hint("")
         if self._gallery_refresh_pending:
             self.schedule_gallery_refresh()
 
@@ -13812,6 +14258,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             SettingsDB.set_profile(name_input.text().strip(), email_input.text().strip())
             self._update_measure_copyright_overlay()
 
+    def open_cloud_sync_dialog(self):
+        """Open Sporely Cloud Sync dialog."""
+        dialog = CloudSyncDialog(
+            self,
+            prepare_images_cb=getattr(self, "prepare_cloud_sync_image_uploads", None),
+        )
+        dialog.exec()
+
+    def prepare_cloud_sync_image_uploads(self, observation: dict, progress_cb=None):
+        if not hasattr(self, "observations_tab") or self.observations_tab is None:
+            return [], None, []
+        try:
+            return self.observations_tab.prepare_cloud_sync_image_uploads(
+                observation,
+                progress_cb=progress_cb,
+            )
+        except Exception as exc:
+            return [], None, [str(exc)]
+
     def open_database_settings_dialog(self):
         """Open database settings dialog."""
         dialog = DatabaseSettingsDialog(self)
@@ -13827,6 +14292,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.observations_tab._build_publish_menu()
                 self.observations_tab._invalidate_publish_login_status_cache()
                 self.observations_tab._update_publish_controls()
+                self.observations_tab.refresh_observations(show_status=False)
             except Exception:
                 pass
 
@@ -13911,6 +14377,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             if default_category not in categories:
                 categories.append(default_category)
                 changed = True
+        filtered_categories = []
+        for category in categories:
+            normalized_category = self.normalize_measurement_category(category)
+            if normalized_category == "calibration":
+                changed = True
+                continue
+            filtered_categories.append(category)
+        categories = filtered_categories
         if changed:
             SettingsDB.set_list_setting(setting_key, categories)
         if not hasattr(self, "measure_category_combo"):
@@ -13936,11 +14410,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Persist gallery settings and refresh thumbnails."""
         if hasattr(self, "ref_source_input"):
             self._populate_reference_panel_sources()
+        sender = self.sender()
+        hint = self.tr("Refreshing spore plot and gallery...")
+        if sender is getattr(self, "gallery_sort_combo", None):
+            hint = self.tr("Resorting spore thumbnails...")
+        elif sender is getattr(self, "orient_checkbox", None):
+            hint = self.tr("Rotating spore thumbnails...")
+        elif sender is getattr(self, "uniform_scale_checkbox", None):
+            hint = self.tr("Rescaling spore thumbnails...")
+        elif sender is getattr(self, "gallery_filter_combo", None):
+            hint = self.tr("Filtering measurements and refreshing gallery...")
+        self._queue_gallery_refresh_hint(hint)
         self._save_gallery_settings()
         self.schedule_gallery_refresh()
 
     def on_gallery_plot_setting_changed(self):
         """Persist gallery settings and refresh plots only."""
+        self._queue_gallery_refresh_hint(self.tr("Updating spore plot..."))
         plot_style = self._gallery_plot_style_from_controls()
         self.gallery_plot_settings = self._apply_gallery_plot_style({
             "bins": int(self.gallery_bins_spin.value()) if hasattr(self, "gallery_bins_spin") else 8,
@@ -13974,6 +14460,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_reference_overlay_setting_changed(self):
         """Persist reference overlay visibility and refresh plots."""
+        self._queue_gallery_refresh_hint(self.tr("Updating reference overlays..."))
         settings = dict(getattr(self, "gallery_plot_settings", {}) or {})
         settings["reference_minmax"] = bool(self.ref_show_minmax_checkbox.isChecked()) if hasattr(self, "ref_show_minmax_checkbox") else True
         settings["reference_shape"] = (
@@ -14606,8 +15093,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Update analysis graphs without rebuilding thumbnails."""
         if not self.is_analysis_visible():
             return
-        all_measurements = self.get_gallery_measurements()
-        self.update_graph_plots(all_measurements)
+        self._set_gallery_busy_hint(
+            self._consume_gallery_refresh_hint(self.tr("Updating spore plot..."))
+        )
+        try:
+            all_measurements = self.get_gallery_measurements()
+            self.update_graph_plots(all_measurements)
+        finally:
+            self._set_gallery_busy_hint("")
 
     def _set_observations_status(self, message: str, level: str = "info", auto_clear_ms: int = 10000) -> None:
         if hasattr(self, "observations_tab") and hasattr(self.observations_tab, "set_status_message"):
@@ -15365,8 +15858,4 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _should_show_calibration_overlay(self) -> bool:
         if self.calibration_mode or self._show_calibration_overlay_for_scalebar:
             return True
-        if hasattr(self, "measure_category_combo"):
-            category = self.normalize_measurement_category(self.measure_category_combo.currentData())
-            if category == "calibration":
-                return True
         return False

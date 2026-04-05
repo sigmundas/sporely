@@ -113,6 +113,7 @@ Review plots and compare to references:
 ![Review analysis and references](docs/images/4-stats-reference.png)
 
 ## Documentation
+- [Online publishing](docs/artsobservasjoner.md)
 - [Field photography](docs/field-photography.md)
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
