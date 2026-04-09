@@ -9,6 +9,42 @@ os.environ.setdefault("QTWEBENGINE_DISABLE_GPU", "1")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-software-rasterizer")
+_PROFILE_ENV = "SPORELY_PROFILE"
+_APP_DATA_DIR_ENV = "SPORELY_APP_DATA_DIR"
+
+
+def _extract_runtime_profile_args(argv: list[str]) -> list[str]:
+    cleaned = [argv[0]] if argv else []
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--profile":
+            if i + 1 >= len(argv):
+                raise SystemExit("--profile requires a value")
+            os.environ[_PROFILE_ENV] = argv[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--profile="):
+            os.environ[_PROFILE_ENV] = arg.split("=", 1)[1]
+            i += 1
+            continue
+        if arg == "--data-dir":
+            if i + 1 >= len(argv):
+                raise SystemExit("--data-dir requires a value")
+            os.environ[_APP_DATA_DIR_ENV] = argv[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--data-dir="):
+            os.environ[_APP_DATA_DIR_ENV] = arg.split("=", 1)[1]
+            i += 1
+            continue
+        cleaned.append(arg)
+        i += 1
+    return cleaned
+
+
+sys.argv = _extract_runtime_profile_args(sys.argv)
+
 if sys.platform.startswith("linux"):
     # Avoid loading libproxy-based GIO module in mixed snap/system setups.
     os.environ["GIO_USE_PROXY_RESOLVER"] = "0"
@@ -19,7 +55,14 @@ if sys.platform.startswith("linux"):
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer
-from app_identity import APP_DISPLAY_NAME, APP_FULL_NAME, LEGACY_APP_NAME, migrate_legacy_storage
+from app_identity import (
+    APP_DISPLAY_NAME,
+    APP_FULL_NAME,
+    LEGACY_APP_NAME,
+    app_data_dir,
+    current_profile_name,
+    migrate_legacy_storage,
+)
 from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
 from ui.main_window import MainWindow
@@ -131,6 +174,15 @@ def main():
     app.setStyle("Fusion")
     cache_system_dark()   # snapshot native dark state before palette override
     migrate_legacy_storage()
+    print(
+        "Starting Sporely with "
+        f"data dir: {app_data_dir()}"
+        + (
+            f" (profile: {current_profile_name()})"
+            if current_profile_name()
+            else ""
+        )
+    )
     app_settings = get_app_settings()
     _apply_light_palette(app)
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets

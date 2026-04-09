@@ -80,7 +80,12 @@ from utils.publish_targets import (
     publish_target_label,
     uploader_key_for_publish_target,
 )
-from utils.cloud_sync import summarize_sync_issues, unlink_local_observation_from_cloud
+from utils.cloud_sync import (
+    should_pull_cloud_image_to_desktop,
+    should_push_local_image_to_cloud,
+    summarize_sync_issues,
+    unlink_local_observation_from_cloud,
+)
 from .cloud_conflict_dialog import CloudConflictDialog
 from .image_gallery_widget import ImageGalleryWidget
 from .image_import_dialog import (
@@ -950,8 +955,8 @@ class ObservationsTab(QWidget):
 
         self.export_btn = QPushButton(self.tr("Export"))
         self.export_btn.setObjectName("dataButton")
-        self.export_btn.setEnabled(False)
-        self.export_btn.setToolTip(self.tr("Export selected observations (Ctrl-A for all) to zip archive"))
+        self.export_btn.setEnabled(True)
+        self.export_btn.setToolTip(self.tr("Export database bundle to zip archive"))
         self.export_btn.clicked.connect(self._on_export_db_clicked)
         data_row.addWidget(self.export_btn)
 
@@ -1133,7 +1138,7 @@ class ObservationsTab(QWidget):
             (getattr(self, "rename_btn", None), self.tr("Edit selected observation"), self.tr("Select an observation to edit")),
             (getattr(self, "delete_btn", None), self.tr("Delete selected observation(s)"), self.tr("Select one or more observations to delete")),
             (getattr(self, "refresh_btn", None), self.tr("Refresh database"), None),
-            (getattr(self, "export_btn", None), self.tr("Export selected observations (Ctrl-A for all) to zip archive"), self.tr("Select observations to export (Ctrl-A selects all)")),
+            (getattr(self, "export_btn", None), self.tr("Export database bundle to zip archive"), None),
             (getattr(self, "import_btn", None), self.tr("Import observations from zip archive"), None),
         ):
             if widget is not None:
@@ -1384,8 +1389,14 @@ class ObservationsTab(QWidget):
             return []
         cached = row_data.get("cloud_images")
         if isinstance(cached, list) and cached:
-            if download_all or all(Path(str(img.get("_local_path") or "")).exists() for img in cached):
-                return cached
+            filtered_cached = [
+                dict(img or {})
+                for img in cached
+                if should_pull_cloud_image_to_desktop(img)
+            ]
+            row_data["cloud_images"] = filtered_cached
+            if download_all or all(Path(str(img.get("_local_path") or "")).exists() for img in filtered_cached):
+                return filtered_cached
         raw = row_data.get("raw") or {}
         cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
         if not cloud_id:
@@ -1398,7 +1409,11 @@ class ObservationsTab(QWidget):
             if client is None:
                 row_data["cloud_images"] = []
                 return []
-            remote_images = client.pull_image_metadata(cloud_id) or []
+            remote_images = [
+                dict(image_row or {})
+                for image_row in (client.pull_image_metadata(cloud_id) or [])
+                if should_pull_cloud_image_to_desktop(image_row)
+            ]
         except Exception:
             row_data["cloud_images"] = []
             return []
@@ -3026,7 +3041,7 @@ class ObservationsTab(QWidget):
                     continue
                 if observation_id in thumbnail_map:
                     continue
-                thumb_path = get_thumbnail_path(image_id, "224x224")
+                thumb_path = get_thumbnail_path(image_id, "small")
                 if thumb_path and Path(thumb_path).exists():
                     thumbnail_map[observation_id] = str(thumb_path)
             return thumbnail_map
@@ -3217,7 +3232,7 @@ class ObservationsTab(QWidget):
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
             if hasattr(self, "export_btn"):
-                self.export_btn.setEnabled(False)
+                self.export_btn.setEnabled(True)
             self._update_publish_controls()
             self.gallery_widget.clear()
             self.selected_observation_id = None
@@ -3628,7 +3643,7 @@ class ObservationsTab(QWidget):
             image_id = image.get("id")
             if not image_id:
                 continue
-            thumb_path = get_thumbnail_path(int(image_id), "224x224")
+            thumb_path = get_thumbnail_path(int(image_id), "small")
             if not thumb_path or not Path(thumb_path).exists():
                 continue
             image_type = str(image.get("image_type") or "").strip().lower()
@@ -4206,7 +4221,7 @@ class ObservationsTab(QWidget):
         if hasattr(self, "publish_btn"):
             self.publish_btn.setEnabled(False)
         if hasattr(self, "export_btn"):
-            self.export_btn.setEnabled(False)
+            self.export_btn.setEnabled(True)
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             self.gallery_widget.clear()
@@ -4391,7 +4406,11 @@ class ObservationsTab(QWidget):
         if not observation_id:
             return [], None, []
 
-        selected_images = self._collect_publish_selected_image_rows(int(observation_id))
+        selected_images = [
+            dict(image_row or {})
+            for image_row in self._collect_publish_selected_image_rows(int(observation_id))
+            if should_push_local_image_to_cloud(image_row)
+        ]
         if not selected_images:
             return [], None, []
 
@@ -4566,7 +4585,11 @@ class ObservationsTab(QWidget):
         if not observation_id:
             return [], None, []
 
-        selected_images = self._collect_publish_selected_image_rows(int(observation_id))
+        selected_images = [
+            dict(image_row or {})
+            for image_row in self._collect_publish_selected_image_rows(int(observation_id))
+            if should_push_local_image_to_cloud(image_row)
+        ]
         include_measure_plots = self._publish_option_enabled(
             self.SETTING_INCLUDE_MEASURE_PLOTS,
             default=False,
@@ -4586,7 +4609,13 @@ class ObservationsTab(QWidget):
         prepared: list[dict] = []
         warnings: list[str] = []
         total = len(selected_images)
-        base_path_to_row: dict[str, dict] = {}
+
+        if include_measure_plots or include_thumbnail_gallery or include_plate:
+            warnings.append(
+                self.tr(
+                    "Generated plot, gallery, and plate media stay local and were skipped for cloud sync."
+                )
+            )
 
         for idx, image_row in enumerate(selected_images, start=1):
             self._yield_background_sync_ui()
@@ -4623,7 +4652,6 @@ class ObservationsTab(QWidget):
                 )
                 continue
             saved_path = str(out_path)
-            base_path_to_row[self._publish_path_key(saved_path)] = dict(image_row)
             prepared.append(
                 {
                     "image_row": image_row,
@@ -4632,78 +4660,7 @@ class ObservationsTab(QWidget):
             )
             self._yield_background_sync_ui()
 
-        upload_paths = [str(item.get("upload_path") or "") for item in prepared if item.get("upload_path")]
-        extra_paths: list[str] = []
-        measurement_availability = self._publish_measurement_availability(
-            int(observation_id),
-            upload_paths,
-        )
-        include_measure_plots = bool(
-            include_measure_plots and measurement_availability.get("has_plot_measurements")
-        )
-        include_thumbnail_gallery = bool(
-            include_thumbnail_gallery and measurement_availability.get("has_gallery_measurements")
-        )
-        if include_measure_plots or include_thumbnail_gallery or include_plate:
-            try:
-                prepared_paths, _publish_temp_dir_unused, extra_warnings = self._prepare_publish_media_assets(
-                    observation_id=int(observation_id),
-                    base_image_paths=upload_paths,
-                    include_annotations=False,
-                    include_measure_plots=include_measure_plots,
-                    include_thumbnail_gallery=include_thumbnail_gallery,
-                    include_plate=include_plate,
-                    include_copyright=False,
-                    progress_cb=progress_cb,
-                    cancel_cb=None,
-                )
-                warnings.extend(extra_warnings)
-                extra_paths = [
-                    path
-                    for path in prepared_paths
-                    if self._publish_path_key(path) not in base_path_to_row
-                ]
-            except Exception as exc:
-                warnings.append(str(exc))
-
-        derived_order = total
-        for idx, path in enumerate(extra_paths, start=1):
-            self._yield_background_sync_ui()
-            pixmap = QPixmap(path)
-            if pixmap.isNull():
-                warnings.append(
-                    self.tr("Could not prepare generated media {index} for cloud upload.").format(index=idx)
-                )
-                continue
-            scaled = self._scale_pixmap_to_max_pixels(pixmap, max_pixels)
-            jpeg_pixmap = QPixmap(scaled.size())
-            jpeg_pixmap.fill(QColor("white"))
-            painter = QPainter(jpeg_pixmap)
-            painter.drawPixmap(0, 0, scaled)
-            painter.end()
-            out_path = temp_dir / f"cloud_extra_{idx:02d}.jpg"
-            if not jpeg_pixmap.save(str(out_path), "JPEG", 92):
-                warnings.append(
-                    self.tr("Could not save generated media {index} for cloud upload.").format(index=idx)
-                )
-                continue
-            derived_order += 1
-            prepared.append(
-                {
-                    "image_row": {
-                        "id": -((int(observation_id) * 10) + idx),
-                        "observation_id": int(observation_id),
-                        "image_type": "field",
-                        "sort_order": derived_order,
-                        "filepath": str(out_path),
-                        "notes": self._cloud_generated_media_note(path),
-                    },
-                    "upload_path": str(out_path),
-                }
-            )
-            self._yield_background_sync_ui()
-
-        if not prepared and not extra_paths:
+        if not prepared:
             self._cleanup_publish_temp_dir(temp_dir)
             return [], None, warnings
 
@@ -10909,7 +10866,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         reader = QImageReader(str(source_file))
         reader.setAutoTransform(True)
-        target_dim = 224
+        target_dim = 240
         size = reader.size()
         if size.isValid():
             if max(size.width(), size.height()) <= target_dim:
@@ -10938,7 +10895,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _image_gallery_preview_path(self, item: ImageImportResult) -> str:
         if item.image_id:
-            thumb_preview = get_thumbnail_path(item.image_id, "224x224")
+            thumb_preview = get_thumbnail_path(item.image_id, "small")
             if thumb_preview and Path(thumb_preview).exists():
                 return str(thumb_preview)
         for candidate in (item.preview_path, item.filepath):

@@ -1209,7 +1209,7 @@ class ImageGalleryWidget(QGroupBox):
         img_id = item.get("id")
         filepath = item.get("preview_path") or item.get("filepath")
         if img_id:
-            thumb_path = get_thumbnail_path(img_id, "224x224")
+            thumb_path = get_thumbnail_path(img_id, "small")
             if thumb_path and Path(thumb_path).exists():
                 thumb_path = str(thumb_path)
                 cached = _cache_get(thumb_path, "thumb")

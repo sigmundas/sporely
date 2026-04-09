@@ -112,6 +112,7 @@ from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_sync_dialog import CloudSyncDialog
+from .cloud_reference_dialog import CloudReferenceDialog
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
@@ -641,7 +642,7 @@ class DatabaseBundleOptionsDialog(QDialog):
             self.tr("Observations (field and taxonomy metadata)")
         )
         self.images_check = QCheckBox(
-            self.tr("Images of observations and calibration images")
+            self.tr("Images of observations")
         )
         self.measurements_check = QCheckBox(self.tr("Spore measurements"))
         self.calibrations_check = QCheckBox(self.tr("Calibrations"))
@@ -664,6 +665,13 @@ class DatabaseBundleOptionsDialog(QDialog):
         hint.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         layout.addWidget(hint)
 
+        calibration_hint = QLabel(
+            self.tr("Calibration bundles automatically include calibration images and objective profiles.")
+        )
+        calibration_hint.setWordWrap(True)
+        calibration_hint.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
+        layout.addWidget(calibration_hint)
+
         buttons = QDialogButtonBox(self)
         ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
@@ -671,15 +679,23 @@ class DatabaseBundleOptionsDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(buttons)
 
-        self.measurements_check.toggled.connect(self._sync_measurement_dependencies)
-        self._sync_measurement_dependencies(self.measurements_check.isChecked())
+        self.images_check.toggled.connect(self._sync_bundle_dependencies)
+        self.measurements_check.toggled.connect(self._sync_bundle_dependencies)
+        self._sync_bundle_dependencies()
 
-    def _sync_measurement_dependencies(self, checked: bool) -> None:
-        if checked:
+    def _sync_bundle_dependencies(self, _checked: bool | None = None) -> None:
+        measurements_checked = self.measurements_check.isChecked()
+        images_checked = self.images_check.isChecked()
+        if measurements_checked:
             self.observations_check.setChecked(True)
             self.images_check.setChecked(True)
             self.observations_check.setEnabled(False)
             self.images_check.setEnabled(False)
+            return
+        if images_checked:
+            self.observations_check.setChecked(True)
+            self.observations_check.setEnabled(False)
+            self.images_check.setEnabled(True)
         else:
             self.observations_check.setEnabled(True)
             self.images_check.setEnabled(True)
@@ -5096,6 +5112,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         top_sections_layout.setSpacing(8)
         top_sections_layout.addWidget(plot_section)
         top_sections_layout.addWidget(reference_section, 1)
+        top_sections_layout.addWidget(self._build_spore_sharing_panel())
 
         left_layout.addWidget(top_sections, 0)
         left_layout.addStretch(1)
@@ -5622,6 +5639,77 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self._save_gallery_settings()
 
+    def _build_spore_sharing_panel(self):
+        panel = QWidget()
+        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        self.spore_sharing_group = QButtonGroup(self)
+        self.spore_sharing_public_radio = QRadioButton(self.tr("Public (share with everyone)"))
+        self.spore_sharing_friends_radio = QRadioButton(self.tr("Friends only"))
+        self.spore_sharing_private_radio = QRadioButton(self.tr("Private (keep to myself)"))
+        self.spore_sharing_public_radio.setChecked(True)
+
+        self.spore_sharing_group.addButton(self.spore_sharing_public_radio)
+        self.spore_sharing_group.addButton(self.spore_sharing_friends_radio)
+        self.spore_sharing_group.addButton(self.spore_sharing_private_radio)
+
+        layout.addWidget(self.spore_sharing_public_radio)
+        layout.addWidget(self.spore_sharing_friends_radio)
+        layout.addWidget(self.spore_sharing_private_radio)
+
+        note = QLabel(self.tr("Controls who can find and use this observation's spore measurements in community search."))
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: #7f8c8d; font-size: {pt(8)}pt;")
+        layout.addWidget(note)
+
+        self.spore_sharing_group.buttonClicked.connect(self._on_spore_sharing_changed)
+
+        section = CollapsibleSection(self.tr("Spore data sharing"), panel, expanded=False)
+        section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        return section
+
+    def _update_spore_sharing_ui(self, observation_id: int | None) -> None:
+        if not hasattr(self, 'spore_sharing_group'):
+            return
+        enabled = observation_id is not None
+        for btn in self.spore_sharing_group.buttons():
+            btn.setEnabled(enabled)
+        if not enabled:
+            self.spore_sharing_public_radio.setChecked(True)
+            return
+        obs = ObservationDB.get_observation(observation_id)
+        vis = str(obs.get('spore_data_visibility') or 'public').strip().lower() if obs else 'public'
+        if vis not in {'private', 'friends', 'public'}:
+            vis = 'public'
+        blocked = [b for b in self.spore_sharing_group.buttons()]
+        for b in blocked:
+            b.blockSignals(True)
+        if vis == 'private':
+            self.spore_sharing_private_radio.setChecked(True)
+        elif vis == 'friends':
+            self.spore_sharing_friends_radio.setChecked(True)
+        else:
+            self.spore_sharing_public_radio.setChecked(True)
+        for b in blocked:
+            b.blockSignals(False)
+
+    def _on_spore_sharing_changed(self) -> None:
+        obs_id = getattr(self, 'active_observation_id', None)
+        if not obs_id:
+            return
+        if self.spore_sharing_private_radio.isChecked():
+            vis = 'private'
+        elif self.spore_sharing_friends_radio.isChecked():
+            vis = 'friends'
+        else:
+            vis = 'public'
+        ObservationDB.update_observation(obs_id, spore_data_visibility=vis)
+        from utils.cloud_sync import mark_observation_dirty
+        mark_observation_dirty(obs_id)
+
     def _build_reference_panel(self):
         panel = QWidget()
         panel.setMinimumWidth(0)
@@ -5654,11 +5742,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
         self.ref_source_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._style_dropdown_popup_readability(self.ref_source_input.view(), self.ref_source_input)
+        self.ref_cloud_btn = QPushButton(self.tr("Cloud..."))
+        self.ref_cloud_btn.clicked.connect(self._on_reference_panel_cloud_clicked)
+        self.ref_cloud_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.ref_cloud_btn.setFixedHeight(self.ref_source_input.sizeHint().height())
+
+        source_row = QWidget()
+        source_layout = QHBoxLayout(source_row)
+        source_layout.setContentsMargins(0, 0, 0, 0)
+        source_layout.setSpacing(8)
+        source_layout.addWidget(self.ref_source_input, 1)
+        source_layout.addWidget(self.ref_cloud_btn, 0)
 
         form.addRow(self.ref_vernacular_label, self.ref_vernacular_input)
         form.addRow(self.tr("Genus:"), self.ref_genus_input)
         form.addRow(self.tr("Species:"), self.ref_species_input)
-        form.addRow(self.tr("Source:"), self.ref_source_input)
+        form.addRow(self.tr("Source:"), source_row)
         layout.addLayout(form)
         _add_section_divider()
 
@@ -5881,6 +5980,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._register_gallery_hint_widget(
                 self.ref_edit_btn,
                 edit_hint,
+                allow_when_disabled=True,
+            )
+        if hasattr(self, "ref_cloud_btn"):
+            self.ref_cloud_btn.setEnabled(has_species)
+            cloud_hint = self.tr("Search community spore data")
+            if not has_species:
+                cloud_hint = self.tr("Enter a species first to search community spore data")
+            self._register_gallery_hint_widget(
+                self.ref_cloud_btn,
+                cloud_hint,
                 allow_when_disabled=True,
             )
         if hasattr(self, "ref_plot_btn"):
@@ -7343,6 +7452,44 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             return
         self._handle_reference_save(data)
+
+    def _on_reference_panel_cloud_clicked(self):
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
+        species = self._clean_ref_species_text(self.ref_species_input.text())
+        if not genus or not species:
+            return
+        vernacular = self.ref_vernacular_input.text().strip() if hasattr(self, "ref_vernacular_input") else ""
+        dialog = CloudReferenceDialog(
+            self,
+            genus=genus,
+            species=species,
+            vernacular=vernacular,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        action = dialog.accepted_action()
+        data = dialog.accepted_data()
+        if not action or not isinstance(data, dict) or not data:
+            return
+        if action == "import_summary":
+            ReferenceDB.set_reference(data)
+            self._refresh_reference_species_availability()
+            self._populate_reference_panel_sources()
+            source = (data.get("source") or "").strip()
+            if source:
+                idx = self.ref_source_input.findText(source)
+                if idx >= 0:
+                    self.ref_source_input.setCurrentIndex(idx)
+                else:
+                    self.ref_source_input.setCurrentText(source)
+            self.reference_values = data
+            self._apply_reference_panel_values(data)
+            self._add_reference_series_entry(data)
+            return
+        if action == "plot_points":
+            self.reference_values = data
+            self._apply_reference_panel_values(data)
+            self._add_reference_series_entry(data)
 
     def _on_reference_panel_clear_clicked(self):
         self.ref_vernacular_input.setText("")
@@ -15197,15 +15344,35 @@ class MainWindow(GeometryMixin, QMainWindow):
                 lines.append(f"Spore measurements: {summary.get('measurements', 0)}")
             if options["calibrations"]:
                 lines.append(f"Calibrations: {summary.get('calibrations', 0)}")
+                objective_count = int(summary.get("objectives", 0) or 0)
+                if objective_count:
+                    lines.append(f"Objective profiles: {objective_count}")
             if options["reference_values"]:
                 lines.append(f"Reference values: {summary.get('reference_values', 0)}")
             status_message = self.tr("Updated DB.")
             if lines:
                 status_message += " " + "; ".join(lines)
+            warning_messages = [str(item or "").strip() for item in (summary.get("warnings") or []) if str(item or "").strip()]
+            if warning_messages:
+                preview = "; ".join(warning_messages[:2])
+                if len(warning_messages) > 2:
+                    preview += self.tr("; and {count} more").format(count=len(warning_messages) - 2)
+                status_message += " " + self.tr("Warnings: {text}").format(text=preview)
             if hasattr(self, "observations_tab"):
-                self.observations_tab.refresh_observations(status_message=status_message)
+                self.observations_tab.refresh_observations(
+                    status_message=None if warning_messages else status_message
+                )
+                if warning_messages:
+                    self.observations_tab.set_status_message(
+                        status_message,
+                        level="warning",
+                        auto_clear_ms=12000,
+                    )
             else:
-                self._set_observations_status(status_message, level="success")
+                self._set_observations_status(
+                    status_message,
+                    level="warning" if warning_messages else "success",
+                )
         except Exception as exc:
             self._set_observations_status(
                 self.tr("Import failed: {error}").format(error=exc),
@@ -15560,6 +15727,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.active_observation_id = None
         self.active_observation_name = None
+        self._update_spore_sharing_ui(None)
         if hasattr(self, "image_info_label"):
             self.image_info_label.setText("")
         self.update_observation_header(None)
@@ -15582,6 +15750,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_observation_header(observation_id)
         observation = ObservationDB.get_observation(observation_id)
         self.auto_threshold = observation.get("auto_threshold") if observation else None
+        self._update_spore_sharing_ui(observation_id)
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()

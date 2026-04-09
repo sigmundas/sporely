@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
+import re
 import sqlite3
 import shutil
 from pathlib import Path
@@ -24,10 +27,58 @@ SETTINGS_ORG = APP_NAME
 SETTINGS_APP = APP_NAME
 LEGACY_SETTINGS_ORG = LEGACY_APP_NAME
 LEGACY_SETTINGS_APP = LEGACY_APP_NAME
+APP_DATA_DIR_ENV = "SPORELY_APP_DATA_DIR"
+PROFILE_ENV = "SPORELY_PROFILE"
+
+
+def _sanitize_profile_name(value: str | None) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip())
+    text = text.strip(".-_")
+    return text
+
+
+def current_profile_name() -> str | None:
+    profile = _sanitize_profile_name(os.environ.get(PROFILE_ENV))
+    return profile or None
+
+
+def runtime_profile_scope() -> str | None:
+    profile = current_profile_name()
+    if profile:
+        return profile
+    override = str(os.environ.get(APP_DATA_DIR_ENV) or "").strip()
+    if not override:
+        return None
+    resolved = str(Path(override).expanduser().resolve())
+    base = _sanitize_profile_name(Path(resolved).name) or "custom"
+    digest = hashlib.sha1(resolved.encode("utf-8")).hexdigest()[:8]
+    return f"{base}-{digest}"
+
+
+def using_isolated_profile() -> bool:
+    return bool(runtime_profile_scope())
+
+
+def settings_namespace() -> tuple[str, str]:
+    scope = runtime_profile_scope()
+    if not scope:
+        return APP_NAME, APP_NAME
+    suffix = f".{scope}"
+    return f"{APP_NAME}{suffix}", f"{APP_NAME}{suffix}"
+
+
+SETTINGS_ORG, SETTINGS_APP = settings_namespace()
 
 
 def app_data_dir() -> Path:
-    return Path(user_data_dir(APP_NAME, appauthor=False, roaming=True))
+    override = str(os.environ.get(APP_DATA_DIR_ENV) or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    base_dir = Path(user_data_dir(APP_NAME, appauthor=False, roaming=True))
+    profile = current_profile_name()
+    if not profile:
+        return base_dir
+    return base_dir / "profiles" / profile
 
 
 def legacy_app_data_dir() -> Path:
@@ -51,6 +102,9 @@ def _merge_directory_missing_only(source: Path, destination: Path) -> None:
 def migrate_app_data_dir() -> Path:
     """Move or merge legacy MycoLog app data into the Sporely folder."""
     new_dir = app_data_dir()
+    if using_isolated_profile():
+        new_dir.mkdir(parents=True, exist_ok=True)
+        return new_dir
     old_dir = legacy_app_data_dir()
     if not old_dir.exists():
         new_dir.mkdir(parents=True, exist_ok=True)
@@ -80,6 +134,8 @@ def _copy_qsettings_missing_only(
 
 def migrate_qsettings() -> None:
     """Copy legacy QSettings namespaces into the new Sporely namespaces."""
+    if using_isolated_profile():
+        return
     _copy_qsettings_missing_only(
         LEGACY_SETTINGS_ORG,
         LEGACY_SETTINGS_APP,
@@ -115,6 +171,8 @@ def _rewrite_legacy_path_value(value: object, old_dir: Path, new_dir: Path) -> o
 
 def migrate_app_settings_file() -> None:
     """Rewrite legacy MycoLog storage paths inside Sporely app_settings.json."""
+    if using_isolated_profile():
+        return
     new_dir = app_data_dir()
     old_dir = legacy_app_data_dir()
     settings_path = new_dir / "app_settings.json"
@@ -140,6 +198,8 @@ def migrate_app_settings_file() -> None:
 
 def migrate_database_paths() -> None:
     """Rewrite legacy MycoLog absolute paths stored inside the main database."""
+    if using_isolated_profile():
+        return
     new_dir = app_data_dir()
     old_dir = legacy_app_data_dir()
     db_path = new_dir / "mushrooms.db"

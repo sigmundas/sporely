@@ -86,6 +86,19 @@ def _normalize_taxon_key(genus: str | None, species: str | None) -> tuple[str, s
     return genus, species
 
 
+def _normalize_reference_metadata(value) -> dict:
+    if isinstance(value, dict):
+        return dict(value)
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        data = json.loads(text)
+    except Exception:
+        return {}
+    return dict(data) if isinstance(data, dict) else {}
+
+
 def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
     try:
         from utils.vernacular_utils import resolve_vernacular_db_path
@@ -352,6 +365,7 @@ class ObservationDB:
                           species_guess: str = None, notes: str = None,
                           open_comment: str = None, private_comment: str = None, interesting_comment: bool = False,
                           sharing_scope: str | None = None, location_public: bool | None = None,
+                          spore_data_visibility: str | None = None,
                           uncertain: bool = False, inaturalist_id: int = None,
                           artportalen_id: int | None = None,
                           gps_latitude: float = None, gps_longitude: float = None,
@@ -405,11 +419,14 @@ class ObservationDB:
             if location_public is not None
             else resolved_sharing_scope != "private"
         )
+        resolved_spore_visibility = str(spore_data_visibility or "public").strip().lower()
+        if resolved_spore_visibility not in {"private", "friends", "public"}:
+            resolved_spore_visibility = "public"
 
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
                                      artsdata_id, artportalen_id, publish_target, species_guess, notes, uncertain, unspontaneous,
-                                     sharing_scope, location_public,
+                                     sharing_scope, location_public, spore_data_visibility,
                                      determination_method,
                                      folder_path, inaturalist_id, gps_latitude, gps_longitude,
                                      author, source_type, citation, data_provider,
@@ -417,10 +434,10 @@ class ObservationDB:
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
-              resolved_sharing_scope, 1 if resolved_location_public else 0,
+              resolved_sharing_scope, 1 if resolved_location_public else 0, resolved_spore_visibility,
               determination_method,
               folder_path,
               inaturalist_id, gps_latitude, gps_longitude, author, source_type,
@@ -441,6 +458,7 @@ class ObservationDB:
                            notes: str | object = _UNSET, uncertain: bool | object = _UNSET,
                            open_comment: str | object = _UNSET, private_comment: str | object = _UNSET, interesting_comment: bool | object = _UNSET,
                            sharing_scope: str | object = _UNSET, location_public: bool | object = _UNSET,
+                           spore_data_visibility: str | object = _UNSET,
                            species_guess: str | object = _UNSET, date: str | object = _UNSET,
                            gps_latitude: float | object = _UNSET, gps_longitude: float | object = _UNSET,
                            allow_nulls: bool = False,
@@ -560,6 +578,12 @@ class ObservationDB:
             if location_public is not _UNSET and (allow_nulls or location_public is not None):
                 updates.append('location_public = ?')
                 values.append(1 if location_public else 0)
+            if spore_data_visibility is not _UNSET and (allow_nulls or spore_data_visibility is not None):
+                normalized_vis = str(spore_data_visibility or "public").strip().lower()
+                if normalized_vis not in {"private", "friends", "public"}:
+                    normalized_vis = "public"
+                updates.append('spore_data_visibility = ?')
+                values.append(normalized_vis)
             if uncertain is not _UNSET and (allow_nulls or uncertain is not None):
                 updates.append('uncertain = ?')
                 values.append(1 if uncertain else 0)
@@ -751,6 +775,7 @@ class ObservationDB:
             ''',
             (observation_id,),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -767,6 +792,7 @@ class ObservationDB:
             ''',
             (observation_id,),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -783,6 +809,7 @@ class ObservationDB:
             ''',
             (artportalen_id, observation_id),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -799,6 +826,7 @@ class ObservationDB:
             ''',
             (normalize_publish_target(publish_target), observation_id),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -815,6 +843,7 @@ class ObservationDB:
             ''',
             (inaturalist_id, observation_id),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -831,6 +860,7 @@ class ObservationDB:
             ''',
             (mushroomobserver_id, observation_id),
         )
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -846,6 +876,7 @@ class ObservationDB:
             WHERE id = ?
         ''', (auto_threshold, observation_id))
 
+        _touch_observation(cursor, observation_id, mark_dirty=True)
         conn.commit()
         conn.close()
 
@@ -1909,12 +1940,23 @@ class ReferenceDB:
             ''', (genus, species))
         row = cursor.fetchone()
         conn.close()
-        return dict(row) if row else None
+        if not row:
+            return None
+        data = dict(row)
+        if "metadata_json" in data:
+            data["metadata_json"] = _normalize_reference_metadata(data.get("metadata_json"))
+        return data
 
     @staticmethod
     def set_reference(values: dict):
         conn = get_reference_connection()
         cursor = conn.cursor()
+        metadata = _normalize_reference_metadata(values.get("metadata_json"))
+        if values.get("source_type") and "source_type" not in metadata:
+            metadata["source_type"] = values.get("source_type")
+        if metadata and "imported_at" not in metadata:
+            metadata["imported_at"] = datetime.now().isoformat(timespec="seconds")
+        metadata_json = json.dumps(metadata, ensure_ascii=False, sort_keys=True) if metadata else None
 
         cursor.execute('''
             DELETE FROM reference_values
@@ -1942,8 +1984,9 @@ class ReferenceDB:
                 parmasto_v_ind_length, parmasto_v_ind_width, parmasto_v_ind_q,
                 length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                 width_min, width_p05, width_p50, width_p95, width_max, width_avg,
-                q_min, q_p50, q_max, q_avg
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                q_min, q_p50, q_max, q_avg,
+                metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             values.get("genus"),
             values.get("species"),
@@ -1975,7 +2018,8 @@ class ReferenceDB:
             values.get("q_min"),
             values.get("q_p50"),
             values.get("q_max"),
-            values.get("q_avg")
+            values.get("q_avg"),
+            metadata_json,
         ))
 
         conn.commit()
@@ -2326,11 +2370,20 @@ class SettingsDB:
     def get_setting(key: str, default: str = None) -> str:
         conn = get_connection()
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
-        row = cursor.fetchone()
-        conn.close()
-        return row['value'] if row else default
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+            except sqlite3.OperationalError as exc:
+                # Fresh isolated profiles may read settings before init_database()
+                # has created the settings table.
+                if "no such table" in str(exc).lower():
+                    return default
+                raise
+            row = cursor.fetchone()
+            return row['value'] if row else default
+        finally:
+            conn.close()
 
     @staticmethod
     def set_setting(key: str, value: str) -> None:

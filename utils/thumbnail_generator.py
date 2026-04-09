@@ -77,7 +77,7 @@ def generate_thumbnail(image_path: str, size: tuple, output_path: Path) -> bool:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save as JPEG with high quality
-            img_cropped.save(output_path, 'JPEG', quality=95)
+            img_cropped.save(output_path, 'JPEG', quality=82)
             return True
 
     except Exception as e:

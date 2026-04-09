@@ -11,6 +11,7 @@ One-time Supabase SQL to run in the SQL editor for optimal upsert performance:
 """
 from __future__ import annotations
 
+import io
 import json
 import hashlib
 import mimetypes
@@ -23,7 +24,9 @@ from typing import Callable
 from urllib.parse import quote
 
 import requests
+from PIL import Image
 
+from app_identity import runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, update_app_settings
 from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB
 from utils.thumbnail_generator import generate_all_sizes
@@ -32,7 +35,8 @@ SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
 _CLOUD_KEYRING_SERVICE = 'Sporely.Cloud'
 _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
-_CLOUD_KEYRING_ACCOUNT = 'password'
+_profile_suffix = runtime_profile_scope()
+_CLOUD_KEYRING_ACCOUNT = f'password:{_profile_suffix}' if _profile_suffix else 'password'
 
 # Observation columns we push to cloud (excludes local-only fields)
 _OBS_PUSH_COLS = [
@@ -48,6 +52,7 @@ _OBS_PUSH_COLS = [
     'inaturalist_id', 'mushroomobserver_id',
     'spore_statistics', 'auto_threshold',
     'source_type', 'citation', 'data_provider', 'author',
+    'spore_data_visibility',
 ]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 
@@ -73,6 +78,13 @@ _IMG_PUSH_COLS = [
     'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain', 'sample_type', 'contrast', 'notes',
     'gps_source', 'storage_path',
+]
+
+_MEAS_PUSH_COLS = [
+    'length_um', 'width_um', 'measurement_type',
+    'p1_x', 'p1_y', 'p2_x', 'p2_y',
+    'p3_x', 'p3_y', 'p4_x', 'p4_y',
+    'measured_at',
 ]
 
 _SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
@@ -104,6 +116,7 @@ _SNAPSHOT_OBS_FIELDS = [
     'spore_statistics', 'auto_threshold',
     'source_type', 'citation', 'data_provider', 'author',
     'visibility', 'sharing_scope',
+    'spore_data_visibility',
 ]
 
 _SNAPSHOT_IMG_FIELDS = [
@@ -237,7 +250,7 @@ def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
         data['images'] = [
             dict(row or {})
             for row in images
-            if not _is_generated_cloud_image(row)
+            if should_pull_cloud_image_to_desktop(row)
         ]
     return data
 
@@ -660,6 +673,20 @@ def _is_generated_cloud_image(image_row: dict | None) -> bool:
     return False
 
 
+def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
+    return not _is_generated_cloud_image(image_row)
+
+
+def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if _is_generated_cloud_image(row):
+        return False
+    image_type = str(row.get('image_type') or '').strip().lower()
+    if image_type == 'microscope':
+        return False
+    return True
+
+
 def _cloud_observation_snapshot(remote: dict, remote_images: list[dict]) -> str:
     obs_part = {
         field: _normalize_snapshot_value((remote or {}).get(field))
@@ -669,7 +696,7 @@ def _cloud_observation_snapshot(remote: dict, remote_images: list[dict]) -> str:
     filtered_images = [
         dict(row or {})
         for row in (remote_images or [])
-        if not _is_generated_cloud_image(row)
+        if should_pull_cloud_image_to_desktop(row)
     ]
     for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
         images_part.append(
@@ -1134,6 +1161,9 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
             fallback='friends' if location_public else 'private',
         ),
         'location_public': location_public,
+        'spore_data_visibility': (lambda v: v if v in {'private', 'friends', 'public'} else 'public')(
+            str(remote.get('spore_data_visibility') or 'public').strip().lower()
+        ),
         'uncertain': bool(remote.get('uncertain', False)),
         'unspontaneous': bool(remote.get('unspontaneous', False)),
         'gps_latitude': remote.get('gps_latitude'),
@@ -1278,12 +1308,13 @@ def _apply_remote_images_to_local(
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
         for img in local_images
+        if should_pull_cloud_image_to_desktop(img)
         if str(img.get('cloud_id') or '').strip()
     }
     remote_map = {
         str(img.get('id') or '').strip(): img
         for img in (remote_images or [])
-        if not _is_generated_cloud_image(img)
+        if should_pull_cloud_image_to_desktop(img)
         if str(img.get('id') or '').strip()
     }
 
@@ -1393,7 +1424,7 @@ def get_conflict_detail(
     remote_images = [
         dict(row or {})
         for row in (client.pull_image_metadata(resolved_cloud_id) or [])
-        if not _is_generated_cloud_image(row)
+        if should_pull_cloud_image_to_desktop(row)
     ]
 
     snapshot_raw = _load_cloud_observation_snapshot(resolved_cloud_id)
@@ -1422,7 +1453,11 @@ def get_conflict_detail(
             }
         )
 
-    local_images = [_local_image_snapshot_payload(img) for img in ImageDB.get_images_for_observation(int(local_id))]
+    local_images = [
+        _local_image_snapshot_payload(img)
+        for img in ImageDB.get_images_for_observation(int(local_id))
+        if should_pull_cloud_image_to_desktop(img)
+    ]
     remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
     local_image_changes = _summarize_image_changes(local_images, baseline_images)
     remote_image_changes = _summarize_image_changes(remote_image_payloads, baseline_images)
@@ -1518,7 +1553,7 @@ def resolve_conflict_keep_cloud(
     remote_images = [
         dict(row or {})
         for row in (client.pull_image_metadata(resolved_cloud_id) or [])
-        if not _is_generated_cloud_image(row)
+        if should_pull_cloud_image_to_desktop(row)
     ]
 
     _apply_remote_observation_fields(int(local_id), remote_obs)
@@ -1549,7 +1584,7 @@ def load_saved_cloud_password() -> tuple[str, str | None, bool]:
         return email, None, False
     try:
         password = keyring.get_password(_CLOUD_KEYRING_SERVICE, _CLOUD_KEYRING_ACCOUNT)
-        if password is None:
+        if password is None and not using_isolated_profile():
             password = keyring.get_password(_CLOUD_LEGACY_KEYRING_SERVICE, _CLOUD_KEYRING_ACCOUNT)
     except Exception:
         return email, None, False
@@ -1716,6 +1751,21 @@ class SporelyCloudClient:
             raise CloudSyncError(f'POST {path}: {resp.text}')
         return resp.json()
 
+    def _rpc(self, function_name: str, payload: dict | None = None):
+        rpc_name = str(function_name or '').strip()
+        if not rpc_name:
+            raise CloudSyncError('Missing RPC function name')
+        resp = self._s.post(
+            f'{SUPABASE_URL}/rest/v1/rpc/{rpc_name}',
+            json=dict(payload or {}),
+            timeout=20,
+        )
+        if not resp.ok:
+            raise CloudSyncError(f'RPC {rpc_name}: {resp.text}')
+        if not resp.content:
+            return None
+        return resp.json()
+
     def _patch(self, path: str, payload: dict) -> None:
         resp = self._s.patch(
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -1736,7 +1786,22 @@ class SporelyCloudClient:
             raise CloudSyncError(f'DELETE {path}: {resp.text}')
 
     def _storage_remove(self, storage_paths: list[str]) -> None:
-        cleaned = [str(path or '').strip().lstrip('/') for path in (storage_paths or []) if str(path or '').strip()]
+        cleaned = []
+        for path in (storage_paths or []):
+            path_str = str(path or '').strip().lstrip('/')
+            if not path_str:
+                continue
+            cleaned.append(path_str)
+            
+            parts = path_str.split('/')
+            file_name = parts[-1]
+            dir_path = '/'.join(parts[:-1])
+            for variant in ('small', 'medium'):
+                if dir_path:
+                    cleaned.append(f"{dir_path}/thumb_{variant}_{file_name}")
+                else:
+                    cleaned.append(f"thumb_{variant}_{file_name}")
+            
         if not cleaned:
             return
         resp = self._s.delete(
@@ -1775,6 +1840,8 @@ class SporelyCloudClient:
         payload['user_id']    = self.user_id
         payload['desktop_id'] = obs['id']
         payload['visibility'] = _normalize_sharing_scope(obs.get('sharing_scope'), fallback='private')
+        raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
+        payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
 
         # Normalise SQLite 0/1 integers to proper JSON booleans
         for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public'):
@@ -1851,6 +1918,57 @@ class SporelyCloudClient:
         if not resp.ok:
             raise CloudSyncError(f'Storage upload failed: {resp.text}')
 
+        # Generate and upload thumbnail variants to match web app behavior
+        variants = [
+            ('small', 240, 74),
+            ('medium', 720, 82),
+        ]
+        try:
+            with Image.open(path) as img:
+                if img.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[3])
+                    else:
+                        background.paste(img, mask=img.split()[1])
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                    
+                orig_w, orig_h = img.size
+                
+                parts = storage_path.split('/')
+                file_name = parts[-1]
+                dir_path = '/'.join(parts[:-1])
+
+                for variant, max_edge, quality in variants:
+                    scale = min(1.0, max_edge / max(orig_w, orig_h))
+                    target_w = max(1, int(orig_w * scale))
+                    target_h = max(1, int(orig_h * scale))
+                    
+                    variant_path = f"{dir_path}/thumb_{variant}_{file_name}" if dir_path else f"thumb_{variant}_{file_name}"
+                    
+                    img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    buffer = io.BytesIO()
+                    img_resized.save(buffer, format='JPEG', quality=quality)
+                    buffer.seek(0)
+                    
+                    v_resp = requests.post(
+                        f'{SUPABASE_URL}/storage/v1/object/observation-images/{variant_path}',
+                        data=buffer,
+                        headers={
+                            'apikey': SUPABASE_KEY,
+                            'Authorization': f'Bearer {self.access_token}',
+                            'Content-Type': 'image/jpeg',
+                            'x-upsert': 'true',
+                        },
+                        timeout=60,
+                    )
+                    if not v_resp.ok:
+                        print(f"[cloud_sync] Warning: Thumbnail variant {variant} upload failed: {v_resp.text}")
+        except Exception as e:
+            print(f"[cloud_sync] Warning: Could not generate/upload thumbnail variants for {storage_path}: {e}")
+
         return storage_path
 
     # ── Pull new web observations ─────────────────────────────────────────
@@ -1871,9 +1989,79 @@ class SporelyCloudClient:
             f'observation_images?observation_id=eq.{obs_cloud_id}&select=*'
         )
 
+    def search_community_spore_datasets(
+        self,
+        genus: str,
+        species: str,
+        limit: int = 50,
+    ) -> list[dict]:
+        payload = {
+            'p_genus': str(genus or '').strip(),
+            'p_species': str(species or '').strip(),
+            'p_limit': int(limit or 50),
+        }
+        rows = self._rpc('search_community_spore_datasets', payload)
+        return rows if isinstance(rows, list) else []
+
+    def get_community_spore_dataset(self, observation_id: int) -> dict | None:
+        rows = self._rpc(
+            'get_community_spore_dataset',
+            {'p_observation_id': int(observation_id)},
+        )
+        if isinstance(rows, list):
+            return rows[0] if rows else None
+        return rows if isinstance(rows, dict) else None
+
+    def community_spore_taxon_summary(self, genus: str, species: str) -> dict | None:
+        rows = self._rpc(
+            'community_spore_taxon_summary',
+            {
+                'p_genus': str(genus or '').strip(),
+                'p_species': str(species or '').strip(),
+            },
+        )
+        if isinstance(rows, list):
+            return rows[0] if rows else None
+        return rows if isinstance(rows, dict) else None
+
+    def search_public_reference_values(
+        self,
+        genus: str,
+        species: str,
+        limit: int = 50,
+    ) -> list[dict]:
+        payload = {
+            'p_genus': str(genus or '').strip(),
+            'p_species': str(species or '').strip(),
+            'p_limit': int(limit or 50),
+        }
+        rows = self._rpc('search_public_reference_values', payload)
+        return rows if isinstance(rows, list) else []
+
     def set_image_desktop_id(self, cloud_image_id: str, desktop_id: int) -> None:
         """Write the local SQLite image ID back to the cloud image row."""
         self._patch(f'observation_images?id=eq.{cloud_image_id}', {'desktop_id': desktop_id})
+
+    def push_measurement(self, meas: dict, cloud_image_id: str) -> str:
+        """Upsert one spore measurement row. Returns cloud UUID."""
+        payload = {col: meas.get(col) for col in _MEAS_PUSH_COLS}
+        payload['image_id'] = cloud_image_id
+        payload['user_id'] = self.user_id
+        payload['desktop_id'] = int(meas['id'])
+        rows = self._get(
+            f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select=id'
+        )
+        if rows:
+            existing_id = rows[0]['id']
+            self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
+            return existing_id
+        else:
+            rows = self._post('spore_measurements', payload)
+            return rows[0]['id']
+
+    def delete_cloud_measurements_for_image(self, cloud_image_id: str) -> None:
+        """Delete all cloud spore_measurements rows for one image."""
+        self._delete(f'spore_measurements?image_id=eq.{cloud_image_id}&user_id=eq.{self.user_id}')
 
     def delete_cloud_observation(self, obs_cloud_id: str) -> None:
         """Delete one cloud observation and its associated cloud image rows/files."""
@@ -2032,6 +2220,12 @@ def push_all(
                         f"Skipping unchanged cloud media for observation {i + 1}/{max(1, total)}: {name}",
                         progress_state,
                     )
+                    # Images unchanged but measurements may have been added/updated
+                    if local_obs_id > 0:
+                        try:
+                            _push_measurements_for_observation(client, local_obs_id)
+                        except Exception as e:
+                            print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 else:
                     images_synced = _push_images_for_observation(
                         client,
@@ -2043,6 +2237,11 @@ def push_all(
                         observation_index=i + 1,
                         observation_total=total,
                     )
+                    if images_synced and local_obs_id > 0:
+                        try:
+                            _push_measurements_for_observation(client, local_obs_id)
+                        except Exception as e:
+                            print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 if local_obs_id > 0:
                     if images_synced:
                         if not current_local_media_signature:
@@ -2149,6 +2348,10 @@ def _push_images_for_observation(
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
             if not img:
+                processed_items += 1
+                _advance_progress(progress_state, 1)
+                continue
+            if not should_push_local_image_to_cloud(img):
                 processed_items += 1
                 _advance_progress(progress_state, 1)
                 continue
@@ -2283,6 +2486,62 @@ def _push_images_for_observation(
                 pass
 
 
+def _push_measurements_for_observation(
+    client: SporelyCloudClient,
+    obs_local_id: int,
+) -> None:
+    """Push all spore measurements for an observation's microscope images to the cloud.
+
+    Only images that have a cloud_id (i.e. have been synced) are included.
+    Measurements are upserted by desktop_id; stale cloud rows for images that
+    still exist locally are cleaned up.
+    """
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
+                   m.measured_at, m.cloud_id,
+                   i.cloud_id AS image_cloud_id
+            FROM spore_measurements m
+            JOIN images i ON i.id = m.image_id
+            WHERE i.observation_id = ?
+              AND i.image_type = 'microscope'
+              AND i.cloud_id IS NOT NULL
+            ORDER BY m.id
+            ''',
+            (obs_local_id,),
+        )
+        measurements = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    pushed_cloud_ids: set[str] = set()
+    for meas in measurements:
+        cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
+        if not cloud_image_id:
+            continue
+        try:
+            cloud_meas_id = client.push_measurement(meas, cloud_image_id)
+            pushed_cloud_ids.add(cloud_meas_id)
+            if str(meas.get('cloud_id') or '').strip() != cloud_meas_id:
+                conn = get_connection()
+                try:
+                    conn.execute(
+                        'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
+                        (cloud_meas_id, int(meas['id'])),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
+
+
 def pull_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
@@ -2312,7 +2571,7 @@ def pull_all(
             remote_images = [
                 dict(row or {})
                 for row in (client.pull_image_metadata(cloud_id) if cloud_id else [])
-                if not _is_generated_cloud_image(row)
+                if should_pull_cloud_image_to_desktop(row)
             ]
             remote_snapshot = _cloud_observation_snapshot(remote, remote_images)
             stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
@@ -2328,7 +2587,13 @@ def pull_all(
                 )
                 if cloud_id:
                     client.set_desktop_id(cloud_id, local_id)
-                    _store_cloud_observation_snapshot(cloud_id, remote_snapshot)
+                    # Re-fetch images after set_image_desktop_id calls inside
+                    # _create_local_from_remote so the snapshot captures the
+                    # updated desktop_id values.  Storing the pre-pull snapshot
+                    # would cause a spurious conflict on the very next sync
+                    # because image keys would shift from cloud:<id> to
+                    # desktop:<id> between the stored baseline and the live data.
+                    _store_remote_snapshot(client, cloud_id)
                 _refresh_local_cloud_media_signature(local_id)
                 pulled += 1
                 imported_local_ids.append(int(local_id))
@@ -2462,7 +2727,9 @@ def pull_all(
                             _refresh_local_cloud_media_signature(local_id)
                         pulled += 1
                 if cloud_id and should_store_snapshot:
-                    _store_cloud_observation_snapshot(cloud_id, remote_snapshot)
+                    # Re-fetch images so the snapshot reflects any desktop_id
+                    # values that were written back to the cloud during this pull.
+                    _store_remote_snapshot(client, cloud_id)
         except Exception as e:
             errors.append(f"cloud {remote.get('id')}: {e}")
         finally:
@@ -2500,6 +2767,8 @@ def _create_local_from_remote(
         remote.get('visibility') or remote.get('sharing_scope'),
         fallback='friends' if location_public else 'private',
     )
+    raw_spore_vis = str(remote.get('spore_data_visibility') or 'public').strip().lower()
+    spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
 
     # Map cloud columns to create_observation kwargs
     kwargs = dict(
@@ -2514,6 +2783,7 @@ def _create_local_from_remote(
         open_comment=remote.get('open_comment'),
         sharing_scope=sharing_scope,
         location_public=location_public,
+        spore_data_visibility=spore_data_visibility,
         uncertain=bool(remote.get('uncertain', False)),
         unspontaneous=bool(remote.get('unspontaneous', False)),
         gps_latitude=remote.get('gps_latitude'),
@@ -2572,7 +2842,7 @@ def _import_remote_images(
     if client is None:
         return
     remote_images = list(remote_images or client.pull_image_metadata(cloud_id) or [])
-    remote_images = [dict(row or {}) for row in remote_images if not _is_generated_cloud_image(row)]
+    remote_images = [dict(row or {}) for row in remote_images if should_pull_cloud_image_to_desktop(row)]
     if not remote_images:
         return
     _extend_progress_total(progress_state, len(remote_images))

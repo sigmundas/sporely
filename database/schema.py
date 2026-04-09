@@ -499,6 +499,7 @@ def init_reference_database(
             q_p50 REAL,
             q_max REAL,
             q_avg REAL,
+            metadata_json TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -539,6 +540,7 @@ def _ensure_reference_columns(ref_path: Path | None = None):
         "width_p50": "REAL",
         "width_p95": "REAL",
         "q_p50": "REAL",
+        "metadata_json": "TEXT",
     }
     for col, col_type in to_add.items():
         if col not in existing:
@@ -1387,6 +1389,12 @@ def init_database():
     except sqlite3.OperationalError:
         pass
 
+    # Add cloud_id for Supabase sync tracking
+    try:
+        cursor.execute('ALTER TABLE spore_measurements ADD COLUMN cloud_id TEXT')
+    except sqlite3.OperationalError:
+        pass
+
     # Thumbnails for efficient loading and ML training
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS thumbnails (
@@ -1493,6 +1501,7 @@ def init_database():
         "ALTER TABLE observations ADD COLUMN synced_at TIMESTAMP",
         "ALTER TABLE observations ADD COLUMN sharing_scope TEXT DEFAULT 'private'",
         "ALTER TABLE observations ADD COLUMN location_public INTEGER DEFAULT 0",
+        "ALTER TABLE observations ADD COLUMN spore_data_visibility TEXT DEFAULT 'public'",
         "ALTER TABLE images ADD COLUMN cloud_id TEXT",
         "ALTER TABLE images ADD COLUMN synced_at TIMESTAMP",
     ):
