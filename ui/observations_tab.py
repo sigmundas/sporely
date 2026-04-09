@@ -834,6 +834,14 @@ class ObservationsTab(QWidget):
             sc.activated.connect(self._on_direct_edit_shortcut)
         self._schedule_startup_cloud_sync()
 
+    def _load_tag_options(self, category: str) -> list[str]:
+        from database.models import SettingsDB
+        from database.database_tags import DatabaseTerms
+        setting_key = DatabaseTerms.setting_key(category)
+        defaults = DatabaseTerms.default_values(category)
+        options = SettingsDB.get_list_setting(setting_key, defaults)
+        return DatabaseTerms.canonicalize_list(category, options)
+
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -877,7 +885,7 @@ class ObservationsTab(QWidget):
 
         self.show_table_thumbnails_checkbox = QCheckBox(self.tr("Show thumbnail"))
         self.show_table_thumbnails_checkbox.setChecked(
-            bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
+            self._observation_setting_enabled(self.SETTING_SHOW_TABLE_THUMBNAILS, default=False)
         )
         self.show_table_thumbnails_checkbox.toggled.connect(
             self._on_show_table_thumbnails_toggled
@@ -889,7 +897,7 @@ class ObservationsTab(QWidget):
             self.tr("Only show starred observations from the last Sporely Cloud import")
         )
         self.show_new_imports_checkbox.setChecked(
-            bool(SettingsDB.get_setting(self.SETTING_SHOW_NEW_IMPORTS_ONLY, False))
+            self._observation_setting_enabled(self.SETTING_SHOW_NEW_IMPORTS_ONLY, default=False)
         )
         self.show_new_imports_checkbox.toggled.connect(
             self._on_show_new_imports_toggled
@@ -1552,6 +1560,7 @@ class ObservationsTab(QWidget):
                     mount_medium=image_row.get("mount_medium"),
                     stain=image_row.get("stain"),
                     sample_type=image_row.get("sample_type"),
+                    notes=image_row.get("notes"),
                     captured_at=captured_at,
                     gps_latitude=gps_lat,
                     gps_longitude=gps_lon,
@@ -1657,6 +1666,15 @@ class ObservationsTab(QWidget):
         self._cloud_sync_startup_scheduled = False
         self._start_cloud_sync(show_status=True, run_refresh_flow=False)
 
+    def _is_cloud_sync_running(self) -> bool:
+        worker = getattr(self, "_cloud_sync_worker", None)
+        if worker is None:
+            return False
+        try:
+            return bool(worker.isRunning())
+        except Exception:
+            return True
+
     def _start_cloud_sync(self, show_status: bool, run_refresh_flow: bool) -> bool:
         if self._cloud_sync_worker is not None:
             if show_status and not self._cloud_sync_show_status:
@@ -1680,6 +1698,8 @@ class ObservationsTab(QWidget):
         if show_status:
             self._set_status_progress_visible(True)
             self._set_status_progress(self.tr("Preparing Sporely Cloud sync..."), 0, 1)
+        if hasattr(self, "delete_btn"):
+            self.delete_btn.setEnabled(False)
         self._cloud_sync_worker.start()
         return True
 
@@ -1863,6 +1883,11 @@ class ObservationsTab(QWidget):
         if worker is not None:
             try:
                 worker.deleteLater()
+            except Exception:
+                pass
+        if hasattr(self, "table"):
+            try:
+                self.on_selection_changed()
             except Exception:
                 pass
 
@@ -3917,13 +3942,28 @@ class ObservationsTab(QWidget):
         checkbox = getattr(self, "show_table_thumbnails_checkbox", None)
         if checkbox is not None:
             return bool(checkbox.isChecked())
-        return bool(SettingsDB.get_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, False))
+        return self._observation_setting_enabled(self.SETTING_SHOW_TABLE_THUMBNAILS, default=False)
 
     def _show_new_imports_only(self) -> bool:
         checkbox = getattr(self, "show_new_imports_checkbox", None)
         if checkbox is not None:
             return bool(checkbox.isChecked())
-        return bool(SettingsDB.get_setting(self.SETTING_SHOW_NEW_IMPORTS_ONLY, False))
+        return self._observation_setting_enabled(self.SETTING_SHOW_NEW_IMPORTS_ONLY, default=False)
+
+    @staticmethod
+    def _observation_setting_enabled(key: str, default: bool = False) -> bool:
+        fallback = "1" if default else "0"
+        raw = SettingsDB.get_setting(key, fallback)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        text = str(raw or "").strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        return bool(default)
 
     def _observation_table_thumbnail_size(self) -> int:
         return 96
@@ -4230,7 +4270,7 @@ class ObservationsTab(QWidget):
             return
         if len(selected_rows) > 1:
             has_cloud = self._selection_includes_cloud_rows()
-            if not has_cloud:
+            if not has_cloud and not self._is_cloud_sync_running():
                 self.delete_btn.setEnabled(True)
             if hasattr(self, "export_btn") and not has_cloud:
                 self.export_btn.setEnabled(True)
@@ -4261,10 +4301,9 @@ class ObservationsTab(QWidget):
         self.observation_highlighted.emit(obs_id)
 
         self.rename_btn.setEnabled(True)
-        self.delete_btn.setEnabled(True)
+        self.delete_btn.setEnabled(not self._is_cloud_sync_running())
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(True)
-
         # Populate image browser for the selected row only (no extra full-table DB fetch).
         self.gallery_widget.set_observation_id(obs_id)
         self._apply_gallery_publish_selection_for_observation(obs_id)
@@ -7272,6 +7311,13 @@ class ObservationsTab(QWidget):
 
     def delete_selected_observation(self):
         """Delete the selected observation after confirmation."""
+        if self._is_cloud_sync_running():
+            self.set_status_message(
+                self.tr("Wait for Sporely Cloud sync to finish before deleting observations."),
+                level="warning",
+                auto_clear_ms=10000,
+            )
+            return
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             return
@@ -7522,6 +7568,7 @@ class ObservationsTab(QWidget):
                     mount_medium=img.get("mount_medium"),
                     stain=img.get("stain"),
                     sample_type=img.get("sample_type"),
+                    notes=img.get("notes"),
                     captured_at=captured_at,
                     exif_has_gps=exif_has_gps,
                     ai_crop_box=ai_crop_box,
@@ -8086,6 +8133,7 @@ class ObservationsTab(QWidget):
                     mount_medium=mount_medium,
                     stain=stain,
                     sample_type=sample_type,
+                    notes=result.notes,
                     ai_crop_box=result.ai_crop_box,
                     ai_crop_source_size=result.ai_crop_source_size,
                     crop_mode=result.crop_mode,
@@ -8346,6 +8394,7 @@ class ObservationsTab(QWidget):
                 mount_medium=mount_medium,
                 stain=stain,
                 sample_type=sample_type,
+                notes=result.notes,
                 sort_order=index - 1,
                 calibration_id=calibration_id,
                 ai_crop_box=result.ai_crop_box,
@@ -11975,6 +12024,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "mount_medium": item.mount_medium,
                 "stain": item.stain,
                 "sample_type": item.sample_type,
+                "notes": item.notes,
             })
         return settings
 
@@ -11990,7 +12040,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "contrast": item.contrast,
                 "mount_medium": item.mount_medium,
                 "stain": item.stain,
-                "sample_type": item.sample_type
+                "sample_type": item.sample_type,
+                "notes": item.notes,
             })
         return entries
 

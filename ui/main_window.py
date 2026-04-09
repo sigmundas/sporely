@@ -97,6 +97,7 @@ from utils.publish_targets import (
 from .image_gallery_widget import ImageGalleryWidget
 from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
 from .calibration_dialog import CalibrationDialog
+from .ingestion_hub_tab import IngestionHubTab
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
     DEFAULT_RECTANGLE_THICKNESS,
@@ -110,6 +111,7 @@ from .measurement_overlay_style import (
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
+from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_sync_dialog import CloudSyncDialog
 from .cloud_reference_dialog import CloudReferenceDialog
@@ -3767,6 +3769,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._scale_bar_micro_manual_by_objective: dict[str, float] = {}
         self._scale_bar_micro_basis_objective: str | None = None
         self._measure_session_view_states: dict[int, dict] = {}
+        self._loading_measure_image_note = False
+        self._measure_image_note_save_timer = QTimer(self)
+        self._measure_image_note_save_timer.setSingleShot(True)
+        self._measure_image_note_save_timer.setInterval(350)
+        self._measure_image_note_save_timer.timeout.connect(self._commit_measure_image_note)
 
         # Active observation tracking
         self.active_observation_id = None
@@ -3864,6 +3871,11 @@ class MainWindow(GeometryMixin, QMainWindow):
     def closeEvent(self, event):
         self._save_current_image_measure_view_settings()
         self._save_geometry()
+        if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
+            try:
+                self.live_lab_tab.shutdown()
+            except Exception:
+                pass
         super().closeEvent(event)
 
     def eventFilter(self, obj, event):
@@ -3951,6 +3963,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.tab_widget.addTab(gallery_tab, self.tr("Analysis ({alt}A)").format(alt=_ALT_LABEL))
         self.refresh_gallery_filter_options()
 
+        self.live_lab_tab = LiveLabTab(self)
+        self.tab_widget.addTab(self.live_lab_tab, self.tr("Live Lab ({alt}L)").format(alt=_ALT_LABEL))
+
+        self.ingestion_hub_tab = IngestionHubTab(self)
+        self.tab_widget.addTab(self.ingestion_hub_tab, self.tr("Ingestion ({alt}I)").format(alt=_ALT_LABEL))
+
         main_layout.addWidget(self.tab_widget, 1)
 
         # Tab navigation shortcuts: Alt/Option on all platforms.
@@ -3961,10 +3979,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         _tab_shortcuts = [
             (self.observations_tab, Qt.Key_M, lambda: self._switch_tab_from_observations(1)),
             (self.observations_tab, Qt.Key_A, lambda: self._switch_tab_from_observations(2)),
+            (self.observations_tab, Qt.Key_L, lambda: self._switch_tab_from_observations(3)),
+            (self.observations_tab, Qt.Key_I, lambda: self._switch_tab_from_observations(4)),
             (self.measure_tab,      Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.measure_tab,      Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
+            (self.measure_tab,      Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
+            (self.measure_tab,      Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
             (self.analysis_tab,     Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.analysis_tab,     Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
+            (self.analysis_tab,     Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
+            (self.analysis_tab,     Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
+            (self.live_lab_tab,     Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
+            (self.live_lab_tab,     Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
+            (self.live_lab_tab,     Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
+            (self.live_lab_tab,     Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
+            (self.ingestion_hub_tab, Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
+            (self.ingestion_hub_tab, Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
+            (self.ingestion_hub_tab, Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
+            (self.ingestion_hub_tab, Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
         ]
         self._tab_nav_shortcuts = []
         for widget, key, slot in _tab_shortcuts:
@@ -4411,6 +4443,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.exif_info_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self.exif_info_label.setOpenExternalLinks(True)
         info_layout.addWidget(self.exif_info_label)
+        self.measure_image_note_input = QPlainTextEdit()
+        self.measure_image_note_input.setPlaceholderText(self.tr("Per-image note..."))
+        self.measure_image_note_input.setMaximumHeight(78)
+        self.measure_image_note_input.setEnabled(False)
+        self.measure_image_note_input.textChanged.connect(self._queue_measure_image_note_save)
+        info_layout.addWidget(self.measure_image_note_input)
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
@@ -8405,6 +8443,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def load_image_record(self, image_data, display_name=None, refresh_table=True):
         """Load an image record into the viewer."""
+        self._flush_measure_image_note()
         incoming_image_id = int(image_data.get("id") or 0)
         current_image_id = int(self.current_image_id or 0)
         if current_image_id > 0 and incoming_image_id > 0 and current_image_id != incoming_image_id:
@@ -8430,6 +8469,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.current_image_path = image_data['filepath']
         self.current_image_id = image_data['id']
         self.current_image_type = image_data.get("image_type")
+        self._set_measure_image_note_text(image_data.get("notes"), enabled=True)
         self._reset_calibration_interaction_state()
         self.auto_gray_cache = None
         self.auto_gray_cache_id = None
@@ -8816,6 +8856,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def clear_current_image_display(self):
         """Clear the current image and overlays."""
+        self._flush_measure_image_note()
         self._save_current_image_measure_session_view()
         self._save_current_image_measure_view_settings()
         self.current_image_id = None
@@ -8833,6 +8874,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.image_label.clear_preview_line()
         self.image_label.clear_preview_rectangle()
         self._update_measure_copyright_overlay()
+        self._set_measure_image_note_text(None, enabled=False)
         self.spore_preview.clear()
         self.update_display_lines()
         self._update_scale_mismatch_warning()
@@ -9826,6 +9868,50 @@ class MainWindow(GeometryMixin, QMainWindow):
             f'Folder: <a href="{folder_uri}">Folder location</a>'
         )
         self.exif_info_label.setText("<br>".join(html_lines))
+
+    def _set_measure_image_note_text(self, text: str | None, *, enabled: bool) -> None:
+        if not hasattr(self, "measure_image_note_input"):
+            return
+        self._loading_measure_image_note = True
+        try:
+            self.measure_image_note_input.blockSignals(True)
+            self.measure_image_note_input.setPlainText(str(text or ""))
+            self.measure_image_note_input.setEnabled(bool(enabled))
+        finally:
+            self.measure_image_note_input.blockSignals(False)
+            self._loading_measure_image_note = False
+
+    def _queue_measure_image_note_save(self) -> None:
+        if self._loading_measure_image_note:
+            return
+        if not self.current_image_id:
+            return
+        if hasattr(self, "_measure_image_note_save_timer"):
+            self._measure_image_note_save_timer.start()
+
+    def _commit_measure_image_note(self) -> None:
+        if self._loading_measure_image_note:
+            return
+        image_id = int(self.current_image_id or 0)
+        if image_id <= 0 or not hasattr(self, "measure_image_note_input"):
+            return
+        note_text = str(self.measure_image_note_input.toPlainText() or "").strip() or None
+        try:
+            current_image = ImageDB.get_image(image_id) or {}
+            existing_note = str(current_image.get("notes") or "").strip() or None
+        except Exception:
+            existing_note = None
+        if existing_note == note_text:
+            return
+        ImageDB.update_image(image_id, notes=note_text)
+
+    def _flush_measure_image_note(self) -> None:
+        if not hasattr(self, "_measure_image_note_save_timer"):
+            return
+        if not self._measure_image_note_save_timer.isActive():
+            return
+        self._measure_image_note_save_timer.stop()
+        self._commit_measure_image_note()
 
     def _get_gray_image(self):
         """Return a cached grayscale numpy array of the current image."""
@@ -10998,7 +11084,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         _t0 = time.perf_counter()
         if index == 0 and hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id)
-        if index in (1, 2) and hasattr(self, "observations_tab"):
+        if index in (1, 2, 3, 4) and hasattr(self, "observations_tab"):
             selected = self.observations_tab.get_selected_observation()
             if selected:
                 obs_id, display_name = selected
@@ -11018,6 +11104,16 @@ class MainWindow(GeometryMixin, QMainWindow):
                         and getattr(self, "observation_images", None)
                     ):
                         self.goto_image_index(0)
+        if index == 3 and hasattr(self, "live_lab_tab"):
+            self.live_lab_tab.sync_from_active_observation()
+        if index == 4 and hasattr(self, "ingestion_hub_tab"):
+            try:
+                self.ingestion_hub_tab.refresh_observation_queue(
+                    select_observation_id=int(self.active_observation_id or 0) or None
+                )
+            except Exception:
+                pass
+            self.ingestion_hub_tab.sync_from_active_observation()
         if index == 1 and hasattr(self, "_apply_measure_gallery_publish_selection"):
             self._apply_measure_gallery_publish_selection()
         if index == 1 and hasattr(self, "measure_button"):
@@ -15727,6 +15823,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.active_observation_id = None
         self.active_observation_name = None
+        if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
+            try:
+                self.live_lab_tab.set_target_observation(None)
+            except Exception:
+                pass
+        if hasattr(self, "ingestion_hub_tab") and self.ingestion_hub_tab is not None:
+            try:
+                self.ingestion_hub_tab.refresh_observation_queue()
+            except Exception:
+                pass
         self._update_spore_sharing_ui(None)
         if hasattr(self, "image_info_label"):
             self.image_info_label.setText("")
@@ -15741,6 +15847,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Internal handler for observation selection."""
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
+        if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
+            try:
+                self.live_lab_tab.set_target_observation(observation_id, display_name=display_name)
+            except Exception:
+                pass
+        if hasattr(self, "ingestion_hub_tab") and self.ingestion_hub_tab is not None:
+            try:
+                self.ingestion_hub_tab.sync_from_active_observation()
+            except Exception:
+                pass
         self._update_measure_copyright_overlay()
 
         # Update the image info label to show active observation

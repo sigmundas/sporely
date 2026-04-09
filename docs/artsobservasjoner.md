@@ -29,6 +29,8 @@ Logging in to either Artsobservasjoner target logs in to both (mobile and web) i
 
 If your session expires, Sporely will silently re-authenticate in the background using saved credentials.
 
+TODO: support uploading per-image captions/notes from `images.notes` when the Artsobservasjoner upload path supports it.
+
 ### iNaturalist (awaiting approval)
 
 Click **Log in** and complete sign-in in your browser. Sporely keeps you signed in afterwards.

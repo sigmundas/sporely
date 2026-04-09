@@ -8,3 +8,4 @@ pyproj>=3.6.0
 matplotlib>=3.8.0
 platformdirs>=4.0.0
 keyring>=25.0.0
+watchdog>=4.0.0

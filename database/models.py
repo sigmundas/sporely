@@ -99,6 +99,46 @@ def _normalize_reference_metadata(value) -> dict:
     return dict(data) if isinstance(data, dict) else {}
 
 
+def _normalize_json_object(value) -> dict:
+    if isinstance(value, dict):
+        return dict(value)
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        data = json.loads(text)
+    except Exception:
+        return {}
+    return dict(data) if isinstance(data, dict) else {}
+
+
+def _serialize_json_object(value) -> str | None:
+    data = _normalize_json_object(value)
+    return json.dumps(data, ensure_ascii=False, sort_keys=True) if data else None
+
+
+def _normalize_lab_metadata(value) -> dict:
+    return _normalize_json_object(value)
+
+
+def _hydrate_image_row(row) -> dict | None:
+    if not row:
+        return None
+    data = dict(row)
+    if "lab_metadata" in data:
+        data["lab_metadata"] = _normalize_lab_metadata(data.get("lab_metadata"))
+    return data
+
+
+def _hydrate_session_log_row(row) -> dict | None:
+    if not row:
+        return None
+    data = dict(row)
+    if "metadata_json" in data:
+        data["metadata_json"] = _normalize_json_object(data.get("metadata_json"))
+    return data
+
+
 def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
     try:
         from utils.vernacular_utils import resolve_vernacular_db_path
@@ -1057,6 +1097,7 @@ class ImageDB:
                   gps_source: bool | None = None,
                   resample_scale_factor: float | None = None,
                   original_filepath: str | None = None,
+                  lab_metadata: dict | str | None = None,
                   copy_to_folder: bool = True,
                   mark_observation_dirty: bool = True) -> int:
         """Add an image and return its ID.
@@ -1175,18 +1216,19 @@ class ImageDB:
         if ai_crop_source_size and len(ai_crop_source_size) == 2:
             crop_w, crop_h = ai_crop_source_size
         gps_source_value = None if gps_source is None else (1 if gps_source else 0)
+        lab_metadata_json = _serialize_json_object(lab_metadata)
 
         cursor.execute('''
             INSERT INTO images (observation_id, filepath, image_type, micro_category,
                               objective_name, scale_microns_per_pixel, resample_scale_factor,
-                              mount_medium, stain, sample_type, contrast, measure_color, notes, calibration_id,
+                              mount_medium, stain, sample_type, contrast, measure_color, notes, lab_metadata, calibration_id,
                               ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
                               ai_crop_source_w, ai_crop_source_h, crop_mode, gps_source, original_filepath, sort_order,
                               artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (observation_id, final_filepath, image_type, micro_category,
               objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
-              calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
+              lab_metadata_json, calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
               final_original_filepath, sort_order, artsobs_web_unpublished))
 
         img_id = cursor.lastrowid
@@ -1207,7 +1249,7 @@ class ImageDB:
         row = cursor.fetchone()
         conn.close()
 
-        return dict(row) if row else None
+        return _hydrate_image_row(row)
 
     @staticmethod
     def get_images_for_observation(observation_id: int) -> List[dict]:
@@ -1230,7 +1272,7 @@ class ImageDB:
 
         rows = cursor.fetchall()
         conn.close()
-        return [dict(row) for row in rows]
+        return [_hydrate_image_row(row) for row in rows]
 
     @staticmethod
     def get_images_by_type(observation_id: int, image_type: str) -> List[dict]:
@@ -1252,7 +1294,7 @@ class ImageDB:
 
         rows = cursor.fetchall()
         conn.close()
-        return [dict(row) for row in rows]
+        return [_hydrate_image_row(row) for row in rows]
 
     @staticmethod
     def get_pending_artsobs_web_uploads() -> List[dict]:
@@ -1348,7 +1390,7 @@ class ImageDB:
 
     @staticmethod
     def update_image(image_id: int, micro_category: str = None,
-                     scale: float = None, notes: str = None,
+                     scale: float = None, notes: str | None | object = _UNSET,
                      objective_name: str = None, filepath: str = None,
                      measure_color: str = None, image_type: str = None,
                      sort_order: int | None = None,
@@ -1360,6 +1402,7 @@ class ImageDB:
                      gps_source: bool | None | object = _UNSET,
                      resample_scale_factor: float | None | object = _UNSET,
                      original_filepath: str | None | object = _UNSET,
+                     lab_metadata: dict | str | None | object = _UNSET,
                      scale_bar_selection: object = _UNSET):
         """Update image metadata"""
         conn = get_connection()
@@ -1412,9 +1455,12 @@ class ImageDB:
         if original_filepath is not _UNSET:
             updates.append('original_filepath = ?')
             values.append(original_filepath)
-        if notes is not None:
+        if notes is not _UNSET:
             updates.append('notes = ?')
             values.append(notes)
+        if lab_metadata is not _UNSET and 'lab_metadata' in image_columns:
+            updates.append('lab_metadata = ?')
+            values.append(_serialize_json_object(lab_metadata))
         if measure_color is not None:
             updates.append('measure_color = ?')
             values.append(measure_color)
@@ -1577,6 +1623,123 @@ class ImageDB:
             raise
         finally:
             conn.close()
+
+
+class SessionLogDB:
+    """Persist timestamped Live Lab / retrospective-session events."""
+
+    @staticmethod
+    def add_event(
+        observation_id: int,
+        session_id: str,
+        event_type: str,
+        *,
+        session_kind: str = "live",
+        attribute_name: str | None = None,
+        value: str | None = None,
+        metadata_json: dict | str | None = None,
+        recorded_at: str | None = None,
+    ) -> int:
+        try:
+            obs_id = int(observation_id)
+        except (TypeError, ValueError):
+            return 0
+        session_key = str(session_id or "").strip()
+        event_name = str(event_type or "").strip()
+        if obs_id <= 0 or not session_key or not event_name:
+            return 0
+
+        kind = str(session_kind or "live").strip().lower()
+        if kind not in {"live", "offline"}:
+            kind = "live"
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO session_logs (
+                observation_id,
+                session_id,
+                session_kind,
+                event_type,
+                attribute_name,
+                value,
+                metadata_json,
+                recorded_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                obs_id,
+                session_key,
+                kind,
+                event_name,
+                str(attribute_name or "").strip() or None,
+                str(value or "").strip() or None,
+                _serialize_json_object(metadata_json),
+                str(recorded_at or "").strip() or _sqlite_now_text(),
+            ),
+        )
+        row_id = int(cursor.lastrowid or 0)
+        conn.commit()
+        conn.close()
+        return row_id
+
+    @staticmethod
+    def get_events(
+        *,
+        observation_id: int | None = None,
+        session_id: str | None = None,
+        session_kind: str | None = None,
+        limit: int | None = None,
+    ) -> List[dict]:
+        clauses: list[str] = []
+        values: list[object] = []
+        if observation_id is not None:
+            try:
+                clauses.append("observation_id = ?")
+                values.append(int(observation_id))
+            except (TypeError, ValueError):
+                return []
+        session_key = str(session_id or "").strip()
+        if session_key:
+            clauses.append("session_id = ?")
+            values.append(session_key)
+        kind = str(session_kind or "").strip().lower()
+        if kind:
+            clauses.append("session_kind = ?")
+            values.append(kind)
+
+        sql = "SELECT * FROM session_logs"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY recorded_at ASC, id ASC"
+        if limit is not None:
+            try:
+                sql += f" LIMIT {max(1, int(limit))}"
+            except (TypeError, ValueError):
+                pass
+
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(sql, values)
+        rows = cursor.fetchall()
+        conn.close()
+        return [_hydrate_session_log_row(row) for row in rows]
+
+    @staticmethod
+    def get_latest_state(session_id: str) -> dict:
+        state: dict[str, str] = {}
+        for row in SessionLogDB.get_events(session_id=session_id):
+            if str(row.get("event_type") or "").strip().lower() != "dropdown_change":
+                continue
+            attribute_name = str(row.get("attribute_name") or "").strip()
+            if not attribute_name:
+                continue
+            state[attribute_name] = str(row.get("value") or "").strip()
+        return state
+
 
 class MeasurementDB:
     """Handle spore measurement database operations"""

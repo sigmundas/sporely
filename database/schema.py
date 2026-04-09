@@ -1214,6 +1214,7 @@ def init_database():
             contrast TEXT,
             measure_color TEXT,
             notes TEXT,
+            lab_metadata TEXT,
             ai_crop_x1 REAL,
             ai_crop_y1 REAL,
             ai_crop_x2 REAL,
@@ -1282,6 +1283,12 @@ def init_database():
     # Add measure_color column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN measure_color TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add structured lab metadata snapshot if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN lab_metadata TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -1359,6 +1366,65 @@ def init_database():
         cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_y2 REAL')
     except sqlite3.OperationalError:
         pass
+
+    # Session logs for Live Lab / retrospective ingestion workflows
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observation_id INTEGER NOT NULL,
+            session_id TEXT NOT NULL,
+            session_kind TEXT NOT NULL DEFAULT 'live',
+            event_type TEXT NOT NULL,
+            attribute_name TEXT,
+            value TEXT,
+            metadata_json TEXT,
+            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (observation_id) REFERENCES observations(id)
+        )
+    ''')
+
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN session_id TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE session_logs ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'live'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN event_type TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN attribute_name TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN value TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN metadata_json TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE session_logs ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+    except sqlite3.OperationalError:
+        pass
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_logs_observation_recorded "
+        "ON session_logs (observation_id, recorded_at DESC, id DESC)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_logs_session_recorded "
+        "ON session_logs (session_id, recorded_at DESC, id DESC)"
+    )
 
     # Spore measurements table
     cursor.execute('''

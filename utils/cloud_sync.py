@@ -305,6 +305,32 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
     return payload
 
 
+def _baseline_observation_compare_payload(record: dict | None) -> dict:
+    """Normalize a stored snapshot observation for fair comparison with live rows."""
+    row = dict(record or {})
+    payload: dict = {}
+    for field in _SNAPSHOT_OBS_FIELDS:
+        if field in {'id', 'desktop_id'}:
+            payload[field] = _normalize_observation_field_value(field, row.get(field))
+        elif field in {'visibility', 'sharing_scope'}:
+            payload[field] = _normalize_observation_field_value(
+                field,
+                _normalize_sharing_scope(
+                    row.get('visibility') or row.get('sharing_scope'),
+                    fallback='private',
+                ),
+            )
+        else:
+            payload[field] = _normalize_observation_field_value(field, row.get(field))
+    genus = str(payload.get('genus') or '').strip()
+    species = str(payload.get('species') or '').strip()
+    species_guess = str(payload.get('species_guess') or '').strip()
+    derived_guess = f'{genus} {species}'.strip() if genus and species else ''
+    if species_guess and derived_guess and species_guess == derived_guess:
+        payload['species_guess'] = None
+    return payload
+
+
 def _local_image_snapshot_payload(image_row: dict | None) -> dict:
     row = dict(image_row or {})
     payload = {
@@ -416,7 +442,7 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
 def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict | None, baseline_obs: dict | None) -> dict:
     local_payload = _observation_compare_payload(local_obs, local=True)
     remote_payload = _observation_compare_payload(remote_obs, local=False)
-    baseline_payload = dict(baseline_obs or {})
+    baseline_payload = _baseline_observation_compare_payload(baseline_obs)
     remote_only_fields: list[str] = []
     local_only_fields: list[str] = []
     conflict_fields: list[str] = []
@@ -505,11 +531,13 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     if not cloud_value:
         return True
     snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(cloud_value))
-    baseline_obs = dict(snapshot.get('observation') or {})
+    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     if not baseline_obs:
         return True
     local_payload = _observation_compare_payload(local_obs, local=True)
     for field in _SNAPSHOT_OBS_FIELDS:
+        if field in {'id', 'desktop_id'}:
+            continue
         if local_payload.get(field) != baseline_obs.get(field):
             return True
 
@@ -1077,23 +1105,22 @@ def _mark_cloud_observations_dirty_for_media_changes() -> None:
     previous_signature = str(SettingsDB.get_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, '') or '').strip()
     if previous_signature == current_signature:
         return
+    # Background cloud sync currently uploads source images/metadata, not the
+    # optional rendered overlays/gallery/plate outputs tied to these settings.
+    # Persist the new signature so future comparisons are stable, but don't mark
+    # every linked observation dirty just because a global render preference changed.
+    SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
 
+
+def _has_pending_local_push_work() -> bool:
     conn = get_connection()
     try:
-        conn.execute(
-            """
-            UPDATE observations
-            SET sync_status = 'dirty',
-                updated_at = ?
-            WHERE cloud_id IS NOT NULL
-            """,
-            (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),),
-        )
-        conn.commit()
+        row = conn.execute(
+            "SELECT 1 FROM observations WHERE cloud_id IS NULL OR sync_status = 'dirty' LIMIT 1"
+        ).fetchone()
+        return bool(row)
     finally:
         conn.close()
-
-    SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
 
 
 def _find_local_observation_for_remote(remote: dict) -> dict | None:
@@ -1429,7 +1456,7 @@ def get_conflict_detail(
 
     snapshot_raw = _load_cloud_observation_snapshot(resolved_cloud_id)
     snapshot = _parse_cloud_observation_snapshot(snapshot_raw)
-    baseline_obs = dict(snapshot.get('observation') or {})
+    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
 
     local_payload = _observation_compare_payload(local_obs, local=True)
@@ -1440,6 +1467,8 @@ def get_conflict_detail(
         local_value = local_payload.get(field)
         remote_value = remote_payload.get(field)
         if local_value == baseline_value and remote_value == baseline_value:
+            continue
+        if local_value == remote_value:
             continue
         field_rows.append(
             {
@@ -1872,8 +1901,10 @@ class SporelyCloudClient:
         return rows[0]['id'] if rows else None
 
     def _build_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
+        import urllib.parse
         path = Path(local_path)
-        return f'{self.user_id}/{obs_cloud_id}/{img_cloud_id}_{path.name}'
+        safe_name = urllib.parse.quote(path.name)
+        return f'{self.user_id}/{obs_cloud_id}/{img_cloud_id}_{safe_name}'
 
     def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
@@ -1988,6 +2019,17 @@ class SporelyCloudClient:
         return self._get(
             f'observation_images?observation_id=eq.{obs_cloud_id}&select=*'
         )
+
+    def pull_bulk_image_metadata(self, obs_cloud_ids: list[str]) -> list[dict]:
+        if not obs_cloud_ids:
+            return []
+        all_images = []
+        for i in range(0, len(obs_cloud_ids), 50):
+            chunk = obs_cloud_ids[i:i+50]
+            ids_str = ','.join(chunk)
+            rows = self._get(f'observation_images?observation_id=in.({ids_str})&select=*')
+            all_images.extend(rows)
+        return all_images
 
     def search_community_spore_datasets(
         self,
@@ -2557,6 +2599,14 @@ def pull_all(
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     _extend_progress_total(progress_state, total)
 
+    all_cloud_ids = [str(r.get('id') or '').strip() for r in remote_obs if str(r.get('id') or '').strip()]
+    bulk_images = client.pull_bulk_image_metadata(all_cloud_ids)
+    remote_images_by_obs = {}
+    for img in bulk_images:
+        obs_id = str(img.get('observation_id') or '').strip()
+        if obs_id:
+            remote_images_by_obs.setdefault(obs_id, []).append(img)
+
     for i, remote in enumerate(remote_obs):
         name = _observation_display_name(remote)
         cloud_id = str(remote.get('id') or '').strip()
@@ -2568,11 +2618,10 @@ def pull_all(
 
         try:
             local_obs = _find_local_observation_for_remote(remote)
-            remote_images = [
-                dict(row or {})
-                for row in (client.pull_image_metadata(cloud_id) if cloud_id else [])
-                if should_pull_cloud_image_to_desktop(row)
-            ]
+            # DO NOT filter by should_pull_cloud_image_to_desktop here, otherwise the 
+            # conflict logic falsely thinks microscope images were deleted by the cloud!
+            remote_images = [dict(row or {}) for row in remote_images_by_obs.get(cloud_id, [])]
+
             remote_snapshot = _cloud_observation_snapshot(remote, remote_images)
             stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
 
@@ -2639,7 +2688,9 @@ def pull_all(
                         pulled += 1
                 elif remote_changed:
                     snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
-                    baseline_obs = dict(snapshot_data.get('observation') or {})
+                    baseline_obs = _baseline_observation_compare_payload(
+                        snapshot_data.get('observation') or {}
+                    )
                     baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
                     field_changes = _analyze_observation_field_changes(local_obs, remote, baseline_obs)
                     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
@@ -2859,7 +2910,8 @@ def _import_remote_images(
     created_image_ids: list[int] = []
     observation_name = _observation_display_name(remote)
     try:
-        for idx, image_row in enumerate(sorted(remote_images, key=_sort_key), start=1):
+        images_to_pull = [img for img in remote_images if should_pull_cloud_image_to_desktop(img)]
+        for idx, image_row in enumerate(sorted(images_to_pull, key=_sort_key), start=1):
             try:
                 if remote_index and remote_total:
                     _emit_progress(
@@ -2996,20 +3048,23 @@ def sync_all(
             f"Details:\n{exc}"
         ) from exc
 
-    try:
-        final_push_result = push_all(
-            client,
-            progress_cb=progress_cb,
-            sync_images=sync_images,
-            prepare_images_cb=prepare_images_cb,
-            progress_state=progress_state,
-            remote_obs=remote_obs_after_pull,
-        )
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Final push phase failed while uploading remaining local observations to Sporely Cloud.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
+    if _has_pending_local_push_work():
+        try:
+            final_push_result = push_all(
+                client,
+                progress_cb=progress_cb,
+                sync_images=sync_images,
+                prepare_images_cb=prepare_images_cb,
+                progress_state=progress_state,
+                remote_obs=remote_obs_after_pull,
+            )
+        except CloudSyncError as exc:
+            raise CloudSyncError(
+                "Final push phase failed while uploading remaining local observations to Sporely Cloud.\n\n"
+                f"Details:\n{exc}"
+            ) from exc
+    else:
+        final_push_result = {'pushed': 0, 'errors': []}
 
     return {
         'pushed': push_result['pushed'] + final_push_result['pushed'],

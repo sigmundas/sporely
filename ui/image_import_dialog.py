@@ -152,6 +152,7 @@ class ImageImportResult:
     mount_medium: Optional[str] = None
     stain: Optional[str] = None
     sample_type: Optional[str] = None
+    notes: Optional[str] = None
     captured_at: Optional[QDateTime] = None
     gps_latitude: Optional[float] = None
     gps_longitude: Optional[float] = None
@@ -1048,6 +1049,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
         micro_form.addRow(self.tr("Sample type:"), self.sample_combo)
 
         layout.addWidget(self.micro_settings_group)
+
+        notes_group = QGroupBox(self.tr("Image note"))
+        notes_layout = QVBoxLayout(notes_group)
+        notes_layout.setContentsMargins(8, 8, 8, 8)
+        notes_layout.setSpacing(6)
+        self.image_note_input = QPlainTextEdit()
+        self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
+        self.image_note_input.setMaximumHeight(78)
+        self.image_note_input.textChanged.connect(self._on_settings_changed)
+        self._register_hint_widget(
+            self.image_note_input,
+            self.tr("Store a per-image note alongside the selected image."),
+        )
+        notes_layout.addWidget(self.image_note_input)
+        layout.addWidget(notes_group)
 
         # Keep group references for backwards-compat with _update_micro_settings_state
         self.contrast_group = self.micro_settings_group
@@ -2889,6 +2905,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "mount": (self.tr("Mount changed"), "for"),
             "stain": (self.tr("Stain changed"), "for"),
             "sample": (self.tr("Sample type changed"), "for"),
+            "notes": (self.tr("Image note changed"), "for"),
             "image_type": (self.tr("Image type changed"), "for"),
             "resize": (self.tr("Resize setting changed"), "for"),
         }
@@ -3047,6 +3064,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 result.original_filepath = result.filepath
             if not hasattr(result, "pending_image_crop_offset"):
                 result.pending_image_crop_offset = None
+            if not hasattr(result, "notes"):
+                result.notes = None
             if not hasattr(result, "resize_to_optimal"):
                 result.resize_to_optimal = self.resize_to_optimal_default
             if not hasattr(result, "store_original"):
@@ -3550,6 +3569,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "sample",
             result.sample_type or (self.sample_default if is_micro else self._field_tag_value("sample")),
         )
+        if hasattr(self, "image_note_input"):
+            self.image_note_input.blockSignals(True)
+            self.image_note_input.setPlainText(str(result.notes or ""))
+            self.image_note_input.blockSignals(False)
         if result.scale_bar_length_um:
             display_len = (
                 float(result.scale_bar_length_um) / 1000.0
@@ -3589,6 +3612,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "stain"
         elif sender is self.sample_combo:
             action = "sample"
+        elif sender is self.image_note_input:
+            action = "notes"
         elif sender in (self.field_radio, self.micro_radio, self.image_type_group):
             action = "image_type"
             self._sync_scale_bar_length_unit_for_image_type()
@@ -3608,6 +3633,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._setting_from_image_source = False
         indices = self.selected_indices or [self.selected_index]
         self._apply_metadata_to_indices(indices)
+
+    def _current_image_note_text(self) -> str | None:
+        if not hasattr(self, "image_note_input"):
+            return None
+        text = str(self.image_note_input.toPlainText() or "").strip()
+        return text or None
 
     def _apply_settings_to_index(
         self,
@@ -3661,6 +3692,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
         result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
         result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
+        result.notes = self._current_image_note_text()
         if result.image_type != "microscope":
             result.contrast = self._field_tag_value("contrast")
             result.mount_medium = self._field_tag_value("mount")

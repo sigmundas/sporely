@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -35,7 +34,6 @@ from utils.cloud_sync import (
     resolve_conflict_keep_cloud,
     resolve_conflict_keep_local,
 )
-from .dialog_helpers import ask_wrapped_yes_no
 
 
 def _format_timestamp(value) -> str:
@@ -514,19 +512,6 @@ class CloudConflictDialog(QDialog):
         if not conflict:
             return
         local_id = int(conflict.get('local_id') or 0)
-        cloud_id = str(conflict.get('cloud_id') or '').strip()
-        if not ask_wrapped_yes_no(
-            self,
-            'Keep desktop version?',
-            (
-                f'Desktop observation {local_id} will overwrite cloud observation {cloud_id or "?"}.\n\n'
-                'Use this when the desktop version is the one you want to keep.'
-            ),
-            default_yes=False,
-            yes_text='Keep desktop',
-            no_text='Cancel',
-        ):
-            return
         self._set_busy(True, 'Uploading desktop version to Sporely Cloud…')
         try:
             client = self._fresh_client(force=True)
@@ -555,18 +540,6 @@ class CloudConflictDialog(QDialog):
             return
         local_id = int(conflict.get('local_id') or 0)
         cloud_id = str(conflict.get('cloud_id') or '').strip()
-        if not ask_wrapped_yes_no(
-            self,
-            'Keep cloud version?',
-            (
-                f'Cloud observation {cloud_id or "?"} will replace the local contents of desktop observation {local_id}.\n\n'
-                'Use this when the web/cloud version is the one you want to keep.'
-            ),
-            default_yes=False,
-            yes_text='Keep cloud',
-            no_text='Cancel',
-        ):
-            return
         self._set_busy(True, 'Pulling cloud version down to desktop…')
         try:
             client = self._fresh_client(force=True)
@@ -597,14 +570,10 @@ class CloudConflictDialog(QDialog):
         self.resolved_any = True
         warnings = list(result.get('warnings') or [])
         self._remove_current_conflict()
-        if warnings:
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Warning)
-            box.setWindowTitle('Sporely Cloud conflict resolved')
-            box.setText('Cloud version kept, but some local image cleanup warnings were reported.')
-            box.setDetailedText('\n'.join(str(w) for w in warnings))
-            box.exec()
-        self._show_status(
-            f"Cloud version kept for observation {result.get('local_id')} (cloud {result.get('cloud_id')}).",
-            tone='success',
+        status = (
+            f"Cloud version kept for observation {result.get('local_id')} "
+            f"(cloud {result.get('cloud_id')})."
         )
+        if warnings:
+            status += f" {len(warnings)} cleanup warning{'s' if len(warnings) != 1 else ''} reported."
+        self._show_status(status, tone='success')

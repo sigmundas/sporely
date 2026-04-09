@@ -14,6 +14,11 @@ SIZE_PRESETS = {
     '224x224': (224, 224),
 }
 
+SIZE_PRESET_ALIASES = {
+    'small': ('small', '224x224'),
+    '224x224': ('224x224', 'small'),
+}
+
 
 def ensure_thumbnail_dir():
     """Ensure the thumbnail directory exists."""
@@ -144,12 +149,16 @@ def get_thumbnail_path(image_id: int, size_preset: str) -> str | None:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT filepath FROM thumbnails
-        WHERE image_id = ? AND size_preset = ?
-    ''', (image_id, size_preset))
-
-    row = cursor.fetchone()
+    preset_names = SIZE_PRESET_ALIASES.get(str(size_preset or '').strip(), (size_preset,))
+    row = None
+    for preset_name in preset_names:
+        cursor.execute('''
+            SELECT filepath FROM thumbnails
+            WHERE image_id = ? AND size_preset = ?
+        ''', (image_id, preset_name))
+        row = cursor.fetchone()
+        if row:
+            break
     conn.close()
 
     if row:
