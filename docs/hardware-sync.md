@@ -38,28 +38,32 @@ They can now be edited in:
 
 ### Sync Shot
 
-The current Sync Shot flow is implemented as a manual clock-calibration helper:
+The current Sync Shot flow is implemented as a QR-based clock-calibration helper:
 
 1. Open the Sync Shot modal in the Ingestion Hub.
-2. Sporely freezes a precise local and UTC timestamp.
-3. Photograph that screen with the camera used for the batch.
-4. After scanning the batch folder, choose that photographed Sync Shot image.
-5. Sporely compares the chosen image EXIF capture time to the frozen Sync Shot time and applies the resulting batch offset.
+2. Sporely shows a live QR code that encodes the current UTC time with 1-second precision plus a Sync Shot session id.
+3. The QR refreshes every 2 seconds, with a 0.1 second blank frame between codes.
+4. Photograph that screen with the camera used for the batch.
+5. After scanning the batch folder, Sporely first auto-checks the first and last image from each folder for that QR.
+6. If auto-detect misses, use `Use image...` to choose the photographed Sync Shot image manually.
+7. Sporely decodes the QR from the image, compares the decoded time to the chosen image EXIF capture time, and applies the resulting batch offset.
 
-This is currently a manual selection flow. Automatic QR generation/decoding is not implemented yet.
+The timestamp read itself is automatic. Only the fallback image choice is manual.
 
 ### Ingestion Hub
 
-The Ingestion Hub tab now supports the retrospective microscope workflow:
+The Ingestion Hub tab now supports mixed field and microscope imports:
 
-- scan a folder of offline microscope images
-- load retrospective session logs from `session_logs`
+- scan a folder of field and microscope images
+- store EXIF capture time in local `images.captured_at` rows for new imports, and lazily backfill older local rows when needed
 - apply a manual or Sync Shot-derived time offset
-- match images to logged sessions via `TemporalMatcher`
+- auto-match field images to nearby observation time windows
+- auto-match microscope images to retrospective session logs from `session_logs`
+- tune field and microscope tolerances directly in the Ingestion Hub
 - review the matched images per observation
 - commit selected matches into the target observation
 
-Committed retrospective images write their microscope metadata into the normal image fields and attach the matched note text to `images.notes`.
+Committed microscope images write their microscope metadata into the normal image fields and attach the matched note text to `images.notes`. Committed field images are imported as normal `image_type='field'` images.
 
 ## Where Microscope Metadata Is Stored
 
@@ -73,6 +77,7 @@ The canonical per-image microscope metadata is stored in the existing image colu
 | `images` | `stain` | Stain |
 | `images` | `sample_type` | Sample type |
 | `images` | `notes` | Per-image note text |
+| `images` | `captured_at` | Stored local capture time used for time-window matching and avoiding repeated EXIF re-reads |
 
 Session history is stored locally in `session_logs`:
 
@@ -95,12 +100,11 @@ No Supabase schema changes are required for the current hardware-sync implementa
 The current system is local-only:
 
 - `session_logs` live in the local desktop database
-- retrospective matching is done locally against EXIF timestamps
+- retrospective matching is done locally against stored capture times plus EXIF-derived backfill when needed
 - per-image notes use the existing local `images.notes` field
 
 ## Remaining Work
 
-- automatic QR generation/decoding for Sync Shot
 - field-device temporal anchor for DSLR/phone batches
 - richer Ingestion Hub review tools for unmatched images and manual reassignment
 - Artsobservasjoner support for per-image note upload

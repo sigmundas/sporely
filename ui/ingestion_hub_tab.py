@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QImageReader, QPixmap
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QDoubleSpinBox,
     QFrame,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -30,6 +32,7 @@ from database.models import CalibrationDB, ImageDB, ObservationDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
 from utils.heic_converter import maybe_convert_heic
 from utils.image_utils import cleanup_import_temp_file
+from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
 from utils.temporal_matcher import TemporalMatcher
 from utils.thumbnail_generator import generate_all_sizes
 
@@ -40,9 +43,11 @@ from .zoomable_image_widget import ZoomableImageLabel
 
 
 class IngestionHubTab(QWidget):
-    """Match offline microscope captures to retrospective session logs."""
+    """Match mixed field and microscope imports to existing observations."""
 
     SETTING_SCAN_DIR = "ingestion_hub_scan_dir"
+    SETTING_FIELD_MATCH_TOLERANCE_SECONDS = "ingestion_hub_field_match_tolerance_seconds"
+    SETTING_MICROSCOPE_MATCH_TOLERANCE_SECONDS = "ingestion_hub_microscope_match_tolerance_seconds"
     VIEWER_PREVIEW_MAX_DIM = 2400
 
     def __init__(self, main_window, parent=None) -> None:
@@ -66,8 +71,9 @@ class IngestionHubTab(QWidget):
         self._update_action_state()
         self._set_hint(
             self.tr(
-                "Scan a folder of retrospective microscope images, calibrate the camera clock if needed, "
-                "then match and commit the images to the logged observation."
+                "Scan a folder with field and microscope images, optionally create a Sync Shot QR, "
+                "then let Sporely auto-check the first and last image from each folder before matching "
+                "field photos to nearby observation times and microscope photos to retrospective sessions."
             )
         )
 
@@ -85,7 +91,7 @@ class IngestionHubTab(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        queue_group = QGroupBox(self.tr("Pending observations"))
+        queue_group = QGroupBox(self.tr("Matched observations"))
         queue_layout = QVBoxLayout(queue_group)
         queue_layout.setContentsMargins(10, 12, 10, 10)
         queue_layout.setSpacing(8)
@@ -103,7 +109,7 @@ class IngestionHubTab(QWidget):
         folder_layout.setContentsMargins(10, 12, 10, 10)
         folder_layout.setSpacing(8)
         self.scan_dir_input = QLineEdit()
-        self.scan_dir_input.setPlaceholderText(self.tr("Choose a folder of retrospective images"))
+        self.scan_dir_input.setPlaceholderText(self.tr("Choose a folder of field and microscope images"))
         self.scan_dir_input.textChanged.connect(self._on_scan_dir_changed)
         folder_layout.addWidget(self.scan_dir_input)
         folder_button_row = QHBoxLayout()
@@ -151,6 +157,43 @@ class IngestionHubTab(QWidget):
         sync_button_row.addWidget(self.clear_sync_shot_btn)
         sync_layout.addLayout(sync_button_row)
         left_layout.addWidget(sync_group)
+
+        match_group = QGroupBox(self.tr("Matching"))
+        match_layout = QVBoxLayout(match_group)
+        match_layout.setContentsMargins(10, 12, 10, 10)
+        match_layout.setSpacing(8)
+        match_hint = QLabel(
+            self.tr(
+                "Field images match nearby observation times. Microscope images match retrospective "
+                "session logs and use the Sync Shot offset when present."
+            )
+        )
+        match_hint.setWordWrap(True)
+        match_hint.setStyleSheet("color: #4b5563;")
+        match_layout.addWidget(match_hint)
+        field_tol_row = QHBoxLayout()
+        field_tol_row.setContentsMargins(0, 0, 0, 0)
+        field_tol_row.setSpacing(8)
+        field_tol_row.addWidget(QLabel(self.tr("Field tolerance (s):")))
+        self.field_tolerance_spin = QSpinBox()
+        self.field_tolerance_spin.setRange(0, 3600)
+        self.field_tolerance_spin.setSingleStep(10)
+        self.field_tolerance_spin.setValue(int(round(self._field_match_tolerance_seconds())))
+        self.field_tolerance_spin.valueChanged.connect(self._on_match_tolerance_changed)
+        field_tol_row.addWidget(self.field_tolerance_spin, 1)
+        match_layout.addLayout(field_tol_row)
+        microscope_tol_row = QHBoxLayout()
+        microscope_tol_row.setContentsMargins(0, 0, 0, 0)
+        microscope_tol_row.setSpacing(8)
+        microscope_tol_row.addWidget(QLabel(self.tr("Microscope tolerance (s):")))
+        self.microscope_tolerance_spin = QSpinBox()
+        self.microscope_tolerance_spin.setRange(0, 300)
+        self.microscope_tolerance_spin.setSingleStep(1)
+        self.microscope_tolerance_spin.setValue(int(round(self._microscope_match_tolerance_seconds())))
+        self.microscope_tolerance_spin.valueChanged.connect(self._on_match_tolerance_changed)
+        microscope_tol_row.addWidget(self.microscope_tolerance_spin, 1)
+        match_layout.addLayout(microscope_tol_row)
+        left_layout.addWidget(match_group)
 
         actions_group = QGroupBox(self.tr("Actions"))
         actions_layout = QVBoxLayout(actions_group)
@@ -275,6 +318,50 @@ class IngestionHubTab(QWidget):
         SettingsDB.set_setting(self.SETTING_SCAN_DIR, str(text or "").strip())
         self._update_action_state()
 
+    def _field_match_tolerance_seconds(self) -> float:
+        widget = getattr(self, "field_tolerance_spin", None)
+        if widget is not None:
+            try:
+                return max(0.0, float(widget.value()))
+            except Exception:
+                pass
+        raw = SettingsDB.get_setting(self.SETTING_FIELD_MATCH_TOLERANCE_SECONDS, 60)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 60.0
+
+    def _microscope_match_tolerance_seconds(self) -> float:
+        widget = getattr(self, "microscope_tolerance_spin", None)
+        if widget is not None:
+            try:
+                return max(0.0, float(widget.value()))
+            except Exception:
+                pass
+        raw = SettingsDB.get_setting(self.SETTING_MICROSCOPE_MATCH_TOLERANCE_SECONDS, 5)
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 5.0
+
+    @staticmethod
+    def _parse_observation_datetime(value) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return None
+
     def sync_from_active_observation(self) -> None:
         obs_id = int(getattr(self._main_window, "active_observation_id", 0) or 0)
         if obs_id > 0:
@@ -285,7 +372,6 @@ class IngestionHubTab(QWidget):
         current_obs_id = select_observation_id if select_observation_id is not None else self._selected_observation_id()
         current_match_counts = dict(self._match_result.get("observation_counts") or {})
 
-        observation_ids: list[int] = []
         grouped: dict[int, dict] = {}
         for session in self._sessions:
             summary = grouped.setdefault(
@@ -299,6 +385,19 @@ class IngestionHubTab(QWidget):
             latest = session.last_recorded_at or session.ended_at or session.started_at
             if latest and (summary["latest"] is None or latest > summary["latest"]):
                 summary["latest"] = latest
+        for obs_id in current_match_counts:
+            summary = grouped.setdefault(
+                int(obs_id),
+                {
+                    "session_count": 0,
+                    "latest": None,
+                },
+            )
+            if summary.get("latest") is None:
+                observation = ObservationDB.get_observation(int(obs_id))
+                observation_dt = self._parse_observation_datetime((observation or {}).get("date"))
+                if observation_dt is not None:
+                    summary["latest"] = observation_dt
         observation_ids = list(grouped.keys())
         observation_ids.sort(
             key=lambda obs_id: (
@@ -338,14 +437,14 @@ class IngestionHubTab(QWidget):
 
         if self.observation_queue.count() == 0:
             self.queue_summary_label.setText(
-                self.tr("No retrospective Live Lab sessions have been logged yet.")
+                self.tr("No matching observations or retrospective microscope sessions were found yet.")
             )
             self._refresh_gallery()
             self._update_action_state()
             return
 
         self.queue_summary_label.setText(
-            self.tr("{count} observation(s) with retrospective session logs.").format(
+            self.tr("{count} observation(s) with matched imports or retrospective sessions.").format(
                 count=self.observation_queue.count()
             )
         )
@@ -423,17 +522,34 @@ class IngestionHubTab(QWidget):
         if self._sync_shot_image_path and self._sync_shot_image_path not in self._excluded_paths:
             self._sync_shot_image_path = None
         self._recompute_matches()
+        auto_applied = self._attempt_auto_apply_sync_shot()
+        status_text = self.tr("Scanned {count} image(s) from the import folder.").format(
+            count=len(self._batch_images)
+        )
+        if auto_applied:
+            status_text = self.tr(
+                "Scanned {count} image(s) from the import folder and auto-detected the Sync Shot."
+            ).format(count=len(self._batch_images))
         self._show_status(
-            self.tr("Scanned {count} image(s) from the import folder.").format(
-                count=len(self._batch_images)
-            ),
+            status_text,
             tone="success" if self._batch_images else "info",
-            timeout_ms=4000,
+            timeout_ms=5000,
         )
 
     def _on_offset_changed(self, _value: float) -> None:
         self._recompute_matches()
         self._update_sync_shot_summary()
+
+    def _on_match_tolerance_changed(self, _value: int) -> None:
+        SettingsDB.set_setting(
+            self.SETTING_FIELD_MATCH_TOLERANCE_SECONDS,
+            int(self.field_tolerance_spin.value()),
+        )
+        SettingsDB.set_setting(
+            self.SETTING_MICROSCOPE_MATCH_TOLERANCE_SECONDS,
+            int(self.microscope_tolerance_spin.value()),
+        )
+        self._recompute_matches()
 
     def _recompute_matches(self) -> None:
         if not self._batch_images:
@@ -446,6 +562,8 @@ class IngestionHubTab(QWidget):
         self._match_result = self._matcher.match_images(
             self._batch_images,
             offset_seconds=float(self.offset_spin.value()),
+            observation_tolerance_seconds=self._field_match_tolerance_seconds(),
+            session_grace_seconds=self._microscope_match_tolerance_seconds(),
             exclude_paths=self._excluded_paths,
         )
         self._matches_by_observation = {}
@@ -484,6 +602,7 @@ class IngestionHubTab(QWidget):
         items = []
         objectives = load_objectives()
         for index, row in enumerate(matches, start=1):
+            image_type = str(row.get("image_type") or "field").strip().lower() or "field"
             state = dict(row.get("state") or {})
             objective_key = str(state.get("objective_name") or "").strip() or None
             objective_label = None
@@ -491,11 +610,11 @@ class IngestionHubTab(QWidget):
                 objective = objectives.get(objective_key)
                 objective_label = objective_display_name(objective, objective_key) if objective else objective_key
             badges = ImageGalleryWidget.build_image_type_badges(
-                image_type="microscope",
+                image_type=image_type,
                 objective_name=objective_label,
                 contrast=state.get("contrast"),
                 scale_microns_per_pixel=self._matched_scale_microns_per_pixel(state),
-                needs_scale=not bool(objective_key),
+                needs_scale=image_type == "microscope" and not bool(objective_key),
                 translate=self.tr,
             )
             items.append(
@@ -518,18 +637,25 @@ class IngestionHubTab(QWidget):
             self._selected_match_path = None
             self._clear_viewer(
                 title=self.tr("No matched images"),
-                meta=self.tr("Scan a folder and choose an observation with retrospective session logs."),
+                meta=self.tr("Scan a folder and choose an observation with matched field or microscope imports."),
             )
         total_scanned = len(self._batch_images)
         matched_total = len(self._match_result.get("matches", []))
         unmatched_total = len(self._match_result.get("unmatched", []))
         excluded_total = len(self._excluded_paths)
+        microscope_total = sum(
+            1 for row in (self._match_result.get("matches", []) or [])
+            if str((row or {}).get("image_type") or "").strip().lower() == "microscope"
+        )
+        field_total = matched_total - microscope_total
         self.batch_summary_label.setText(
             self.tr(
-                "Scanned: {scanned} • Matched: {matched} • Unmatched: {unmatched} • Excluded: {excluded}"
+                "Scanned: {scanned} • Matched: {matched} • Field: {field} • Microscope: {microscope} • Unmatched: {unmatched} • Excluded: {excluded}"
             ).format(
                 scanned=total_scanned,
                 matched=matched_total,
+                field=field_total,
+                microscope=microscope_total,
                 unmatched=unmatched_total,
                 excluded=excluded_total,
             )
@@ -658,12 +784,31 @@ class IngestionHubTab(QWidget):
 
     def _viewer_meta_text(self, match_row: dict) -> str:
         parts: list[str] = []
+        match_kind = str(match_row.get("match_kind") or "").strip().lower()
+        if match_kind == "session":
+            parts.append(self.tr("Microscope session match"))
+        elif match_kind == "observation_window":
+            parts.append(self.tr("Observation time match"))
         captured_at = match_row.get("captured_at")
         adjusted_at = match_row.get("adjusted_at")
         if isinstance(captured_at, datetime):
             parts.append(self.tr("Capture: {value}").format(value=captured_at.strftime("%Y-%m-%d %H:%M:%S")))
         if isinstance(adjusted_at, datetime):
             parts.append(self.tr("Matched: {value}").format(value=adjusted_at.strftime("%Y-%m-%d %H:%M:%S")))
+        window_start_at = match_row.get("window_start_at")
+        window_end_at = match_row.get("window_end_at")
+        if isinstance(window_start_at, datetime) and isinstance(window_end_at, datetime):
+            if window_start_at == window_end_at:
+                parts.append(
+                    self.tr("Observation: {value}").format(value=window_start_at.strftime("%Y-%m-%d %H:%M:%S"))
+                )
+            else:
+                parts.append(
+                    self.tr("Observation span: {start} - {end}").format(
+                        start=window_start_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        end=window_end_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                )
         state = dict(match_row.get("state") or {})
         objective_key = str(state.get("objective_name") or "").strip()
         if objective_key:
@@ -689,17 +834,126 @@ class IngestionHubTab(QWidget):
 
     def _create_sync_shot(self) -> None:
         dialog = SyncShotDialog(self)
-        if dialog.exec() != dialog.Accepted or not dialog.shot_record:
+        if dialog.exec() != QDialog.Accepted or not dialog.shot_record:
             return
         self._sync_shot_record = dict(dialog.shot_record)
         self._sync_shot_image_path = None
         self._update_sync_shot_summary()
+        auto_applied = self._attempt_auto_apply_sync_shot()
+        if auto_applied:
+            self._update_action_state()
+            return
         self._show_status(
-            self.tr("Sync Shot created. Photograph it, then choose that image from this batch."),
+            self.tr(
+                "Sync Shot created. Photograph it, close the dialog, then scan the import folder. "
+                "Sporely will auto-check the first and last image from each folder."
+            ),
             tone="success",
             timeout_ms=5000,
         )
         self._update_action_state()
+
+    def _sync_shot_candidate_rows(self) -> list[dict]:
+        grouped: dict[str, list[dict]] = {}
+        for row in self._batch_images:
+            filepath = str(row.get("filepath") or "").strip()
+            if not filepath:
+                continue
+            folder_key = str(Path(filepath).parent)
+            grouped.setdefault(folder_key, []).append(row)
+        candidates: list[dict] = []
+        seen_paths: set[str] = set()
+        for folder_key in sorted(grouped.keys(), key=str.casefold):
+            rows = sorted(
+                grouped.get(folder_key) or [],
+                key=lambda row: str(row.get("filepath") or "").casefold(),
+            )
+            for candidate in (rows[0], rows[-1]):
+                filepath = str(candidate.get("filepath") or "").strip()
+                if not filepath or filepath in seen_paths:
+                    continue
+                seen_paths.add(filepath)
+                candidates.append(candidate)
+        return candidates
+
+    def _attempt_auto_apply_sync_shot(self) -> bool:
+        if not self._sync_shot_record or not self._batch_images or self._sync_shot_image_path:
+            return False
+        for row in self._sync_shot_candidate_rows():
+            if self._apply_sync_shot_row(row, show_status=False):
+                return True
+        return False
+
+    def _apply_sync_shot_row(self, row: dict, *, show_status: bool = True) -> bool:
+        if not self._sync_shot_record:
+            return False
+        if not row:
+            return False
+        captured_at = row.get("captured_at")
+        if not isinstance(captured_at, datetime):
+            return False
+        filepath = str(row.get("filepath") or "").strip()
+        if not filepath:
+            return False
+        try:
+            decode_result = decode_sync_shot_qr(filepath)
+        except ImportError:
+            if show_status:
+                self._show_status(
+                    self.tr("QR decoding dependencies are not installed yet."),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+            return False
+        except Exception:
+            if show_status:
+                self._show_status(
+                    self.tr("Sporely could not decode a Sync Shot QR code from that image."),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+            return False
+        matches = list(decode_result.get("matches") or [])
+        if not matches or decode_result.get("multiple"):
+            if show_status and decode_result.get("multiple"):
+                self._show_status(
+                    self.tr("Multiple Sync Shot QR timestamps were detected. Choose a clearer image."),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+            return False
+        parsed = matches[0]
+        session_id = str(parsed.get("session_id") or "").strip()
+        expected_session_id = str(self._sync_shot_record.get("session_id") or "").strip()
+        if expected_session_id and session_id != expected_session_id:
+            return False
+        qr_utc_dt = parsed.get("utc_dt")
+        if not isinstance(qr_utc_dt, datetime):
+            return False
+        offset_info = choose_sync_shot_offset(captured_at, qr_utc_dt)
+        chosen_offset = float(offset_info.get("offset_seconds") or 0.0)
+        basis = self.tr("local clock") if str(offset_info.get("basis") or "") == "local" else self.tr("UTC clock")
+        self._sync_shot_record["applied_utc_text"] = str(parsed.get("utc_text") or "")
+        self.offset_spin.blockSignals(True)
+        self.offset_spin.setValue(chosen_offset)
+        self.offset_spin.blockSignals(False)
+        if self._sync_shot_image_path:
+            self._excluded_paths.discard(self._sync_shot_image_path)
+        self._sync_shot_image_path = filepath
+        self._excluded_paths.add(filepath)
+        self._recompute_matches()
+        self._update_sync_shot_summary()
+        if show_status:
+            self._show_status(
+                self.tr("Applied Sync Shot offset from {name} using QR time {time} and the {basis}.").format(
+                    name=str(row.get("filename") or Path(filepath).name),
+                    time=str(parsed.get("utc_text") or ""),
+                    basis=basis,
+                ),
+                tone="success",
+                timeout_ms=5000,
+            )
+        return True
 
     def _apply_sync_shot_from_batch_image(self) -> None:
         if not self._sync_shot_record:
@@ -750,41 +1004,18 @@ class IngestionHubTab(QWidget):
         row = choice_map.get(str(selected_label))
         if not row:
             return
-        captured_at = row.get("captured_at")
-        if not isinstance(captured_at, datetime):
+        if self._apply_sync_shot_row(row, show_status=True):
+            return
+        if not isinstance(row.get("captured_at"), datetime):
             self._show_status(
                 self.tr("The chosen image does not have a capture timestamp in EXIF."),
                 tone="warning",
                 timeout_ms=5000,
             )
             return
-        local_dt = self._sync_shot_record.get("local_dt")
-        utc_dt = self._sync_shot_record.get("utc_dt")
-        if not isinstance(local_dt, datetime) or not isinstance(utc_dt, datetime):
-            self._show_status(
-                self.tr("The Sync Shot timestamp is unavailable."),
-                tone="warning",
-                timeout_ms=4000,
-            )
-            return
-        local_offset = (local_dt - captured_at).total_seconds()
-        utc_offset = (utc_dt - captured_at).total_seconds()
-        chosen_offset = local_offset if abs(local_offset) <= abs(utc_offset) else utc_offset
-        basis = self.tr("local clock") if chosen_offset == local_offset else self.tr("UTC clock")
-        self.offset_spin.blockSignals(True)
-        self.offset_spin.setValue(float(chosen_offset))
-        self.offset_spin.blockSignals(False)
-        self._sync_shot_image_path = str(row.get("filepath") or "").strip() or None
-        if self._sync_shot_image_path:
-            self._excluded_paths.add(self._sync_shot_image_path)
-        self._recompute_matches()
-        self._update_sync_shot_summary()
         self._show_status(
-            self.tr("Applied Sync Shot offset from {name} using the {basis}.").format(
-                name=str(row.get("filename") or Path(str(row.get("filepath") or "")).name),
-                basis=basis,
-            ),
-            tone="success",
+            self.tr("No Sync Shot QR code was found in the chosen image."),
+            tone="warning",
             timeout_ms=5000,
         )
 
@@ -810,8 +1041,13 @@ class IngestionHubTab(QWidget):
                 self.tr("No Sync Shot created for this batch yet.")
             )
             return
+        session_text = str(
+            self._sync_shot_record.get("applied_utc_text")
+            or self._sync_shot_record.get("created_utc_text")
+            or ""
+        ).strip()
         parts = [
-            self.tr("Shot: {value}").format(value=str(self._sync_shot_record.get("utc_text") or "")),
+            self.tr("QR session: {value}").format(value=session_text),
             self.tr("Offset: {value:+.1f}s").format(value=float(self.offset_spin.value())),
         ]
         if self._sync_shot_image_path:
@@ -889,6 +1125,7 @@ class IngestionHubTab(QWidget):
             return 0
 
         state = dict(match_row.get("state") or {})
+        matched_image_type = str(match_row.get("image_type") or "field").strip().lower() or "field"
         objectives = load_objectives()
         objective_key = str(state.get("objective_name") or "").strip() or None
         resolved_objective_key = (
@@ -909,15 +1146,32 @@ class IngestionHubTab(QWidget):
         image_id = ImageDB.add_image(
             observation_id=observation_id,
             filepath=converted_path,
-            image_type="microscope",
-            scale=scale if scale > 0 else None,
-            objective_name=resolved_objective_key,
-            contrast=DatabaseTerms.canonicalize("contrast", state.get("contrast")),
-            mount_medium=DatabaseTerms.canonicalize("mount", state.get("mount_medium")),
-            stain=DatabaseTerms.canonicalize("stain", state.get("stain")),
-            sample_type=DatabaseTerms.canonicalize("sample", state.get("sample_type")),
+            image_type="microscope" if matched_image_type == "microscope" else "field",
+            scale=scale if matched_image_type == "microscope" and scale > 0 else None,
+            objective_name=resolved_objective_key if matched_image_type == "microscope" else None,
+            contrast=(
+                DatabaseTerms.canonicalize("contrast", state.get("contrast"))
+                if matched_image_type == "microscope"
+                else None
+            ),
+            mount_medium=(
+                DatabaseTerms.canonicalize("mount", state.get("mount_medium"))
+                if matched_image_type == "microscope"
+                else None
+            ),
+            stain=(
+                DatabaseTerms.canonicalize("stain", state.get("stain"))
+                if matched_image_type == "microscope"
+                else None
+            ),
+            sample_type=(
+                DatabaseTerms.canonicalize("sample", state.get("sample_type"))
+                if matched_image_type == "microscope"
+                else None
+            ),
             notes=str(match_row.get("notes") or "").strip() or None,
-            calibration_id=calibration_id,
+            captured_at=match_row.get("captured_at"),
+            calibration_id=calibration_id if matched_image_type == "microscope" else None,
             resample_scale_factor=1.0,
         )
         image_data = ImageDB.get_image(image_id)

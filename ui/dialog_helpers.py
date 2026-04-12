@@ -4,6 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QCoreApplication, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -126,6 +127,98 @@ def ask_wrapped_yes_no(
     dialog.resize(max(620, min(760, hint.width() + 12)), max(190, hint.height() + 8))
     dialog.exec()
     return bool(accepted["value"])
+
+
+def ask_wrapped_yes_no_with_checkbox(
+    parent: QWidget | None,
+    title: str,
+    text: str,
+    *,
+    checkbox_text: str,
+    default_yes: bool = False,
+    yes_text: str | None = None,
+    no_text: str | None = None,
+) -> tuple[bool, bool]:
+    """Show a compact wrapped Yes/No dialog with an optional action checkbox."""
+    def _helper_tr(value: str) -> str:
+        return QCoreApplication.translate("DialogHelpers", value)
+
+    host = parent
+    tr = getattr(parent, "tr", None)
+    if not callable(tr):
+        tr = _helper_tr
+
+    dialog = QDialog(host)
+    dialog.setWindowTitle(str(title))
+    dialog.setModal(True)
+    dialog.setWindowFlags(
+        Qt.Dialog
+        | Qt.CustomizeWindowHint
+        | Qt.WindowTitleHint
+        | Qt.WindowCloseButtonHint
+    )
+    dialog.setStyleSheet(
+        "QDialogButtonBox QPushButton { min-width: 90px; max-width: 200px; padding: 6px 10px; }"
+    )
+
+    outer = QVBoxLayout(dialog)
+    outer.setContentsMargins(16, 14, 16, 12)
+    outer.setSpacing(12)
+    outer.setSizeConstraint(QLayout.SetMinimumSize)
+
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(12)
+
+    icon_label = QLabel(dialog)
+    icon = dialog.style().standardIcon(QStyle.SP_MessageBoxQuestion)
+    icon_label.setPixmap(icon.pixmap(48, 48))
+    icon_label.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+    icon_label.setFixedWidth(56)
+    row.addWidget(icon_label, 0, Qt.AlignTop)
+
+    text_label = QLabel(str(text), dialog)
+    text_label.setWordWrap(True)
+    text_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+    text_label.setMinimumWidth(440)
+    text_label.setMaximumWidth(640)
+    text_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+    row.addWidget(text_label, 1)
+    outer.addLayout(row)
+
+    checkbox = QCheckBox(str(checkbox_text), dialog)
+    checkbox.setChecked(False)
+    outer.addWidget(checkbox)
+
+    buttons = QDialogButtonBox(dialog)
+    no_btn = buttons.addButton(no_text or _helper_tr("No"), QDialogButtonBox.RejectRole)
+    yes_btn = buttons.addButton(yes_text or _helper_tr("Yes"), QDialogButtonBox.AcceptRole)
+    if default_yes:
+        yes_btn.setDefault(True)
+        yes_btn.setAutoDefault(True)
+    else:
+        no_btn.setDefault(True)
+        no_btn.setAutoDefault(True)
+    outer.addWidget(buttons)
+
+    accepted = {"value": False}
+
+    def _accept() -> None:
+        accepted["value"] = True
+        dialog.accept()
+
+    yes_btn.clicked.connect(_accept)
+    no_btn.clicked.connect(dialog.reject)
+    buttons.rejected.connect(dialog.reject)
+
+    dialog.setMinimumWidth(620)
+    dialog.setMaximumWidth(760)
+    dialog.setMinimumHeight(210)
+    dialog.adjustSize()
+    hint = dialog.sizeHint()
+    dialog.resize(max(620, min(760, hint.width() + 12)), max(210, hint.height() + 8))
+    dialog.exec()
+    return bool(accepted["value"]), bool(checkbox.isChecked())
 
 
 def ask_measurements_exist_delete(parent: QWidget | None, count: int = 1) -> bool:

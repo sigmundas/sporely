@@ -1202,6 +1202,7 @@ def init_database():
             observation_id INTEGER,
             filepath TEXT NOT NULL,
             original_filepath TEXT,
+            captured_at TIMESTAMP,
             sort_order INTEGER,
             image_type TEXT CHECK(image_type IN ('field', 'microscope')),
             micro_category TEXT,
@@ -1248,6 +1249,11 @@ def init_database():
     # Add original_filepath column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN original_filepath TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN captured_at TIMESTAMP')
     except sqlite3.OperationalError:
         pass  # Column already exists
 

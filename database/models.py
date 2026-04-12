@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime
 from .schema import get_connection, get_reference_connection, get_images_dir, get_calibrations_dir
+from utils.exif_reader import get_image_datetime
 from utils.publish_targets import (
     PUBLISH_TARGET_ARTSOBS_NO,
     normalize_publish_target,
@@ -115,6 +116,33 @@ def _normalize_json_object(value) -> dict:
 def _serialize_json_object(value) -> str | None:
     data = _normalize_json_object(value)
     return json.dumps(data, ensure_ascii=False, sort_keys=True) if data else None
+
+
+def _normalize_timestamp_text(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    to_python = getattr(value, "toPython", None)
+    if callable(to_python):
+        try:
+            converted = to_python()
+        except Exception:
+            converted = None
+        if isinstance(converted, datetime):
+            return converted.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
 
 
 def _normalize_lab_metadata(value) -> dict:
@@ -921,7 +949,7 @@ class ObservationDB:
         conn.close()
 
     @staticmethod
-    def delete_observation(observation_id: int) -> list[str]:
+    def delete_observation(observation_id: int, progress_cb=None) -> list[str]:
         """Delete an observation and all associated images/measurements.
 
         Returns a list of file or folder paths that could not be deleted.
@@ -993,7 +1021,7 @@ class ObservationDB:
                     ).fetchone()
                     shared_folder_ref = bool(shared_image_row)
 
-            # Delete dependent rows first (annotations -> measurements -> thumbnails -> images)
+            # Delete dependent rows first (annotations -> measurements -> thumbnails -> images -> session logs)
             cursor.execute('''
                 DELETE FROM spore_annotations
                 WHERE image_id IN (SELECT id FROM images WHERE observation_id = ?)
@@ -1017,6 +1045,9 @@ class ObservationDB:
             # Delete all images for this observation
             cursor.execute('DELETE FROM images WHERE observation_id = ?', (observation_id,))
 
+            # Remove retrospective/live session history tied to this observation.
+            cursor.execute('DELETE FROM session_logs WHERE observation_id = ?', (observation_id,))
+
             # Delete the observation itself
             cursor.execute('DELETE FROM observations WHERE id = ?', (observation_id,))
 
@@ -1029,7 +1060,8 @@ class ObservationDB:
 
         # Remove thumbnails and image files from disk
         images_root = _images_dir()
-        for image_id, filepath, original_filepath in image_rows:
+        total_images = len(image_rows)
+        for index, (image_id, filepath, original_filepath) in enumerate(image_rows, start=1):
             try:
                 from utils.thumbnail_generator import delete_thumbnails
                 delete_thumbnails(image_id)
@@ -1049,6 +1081,11 @@ class ObservationDB:
                 except Exception as e:
                     print(f"Warning: Could not delete image file {candidate}: {e}")
                     failed_paths.append(str(candidate))
+            if callable(progress_cb):
+                try:
+                    progress_cb(index, total_images, int(image_id or 0))
+                except Exception:
+                    pass
 
         # Remove observation folder if it lives under images root
         if folder_path:
@@ -1090,6 +1127,7 @@ class ImageDB:
                   stain: str = None,
                   sample_type: str = None, contrast: str = None,
                   sort_order: int | None = None,
+                  captured_at: object = None,
                   calibration_id: int = None,
                   ai_crop_box: tuple[float, float, float, float] | None = None,
                   ai_crop_source_size: tuple[int, int] | None = None,
@@ -1209,6 +1247,20 @@ class ImageDB:
                     except Exception as e:
                         print(f"Warning: Could not copy original image: {e}")
 
+        captured_at_text = _normalize_timestamp_text(captured_at)
+        if not captured_at_text:
+            for candidate_path in (original_filepath, filepath, final_original_filepath, final_filepath):
+                candidate = str(candidate_path or "").strip()
+                if not candidate:
+                    continue
+                try:
+                    detected = get_image_datetime(candidate)
+                except Exception:
+                    detected = None
+                captured_at_text = _normalize_timestamp_text(detected)
+                if captured_at_text:
+                    break
+
         crop_x1 = crop_y1 = crop_x2 = crop_y2 = None
         if ai_crop_box and len(ai_crop_box) == 4:
             crop_x1, crop_y1, crop_x2, crop_y2 = ai_crop_box
@@ -1222,13 +1274,14 @@ class ImageDB:
             INSERT INTO images (observation_id, filepath, image_type, micro_category,
                               objective_name, scale_microns_per_pixel, resample_scale_factor,
                               mount_medium, stain, sample_type, contrast, measure_color, notes, lab_metadata, calibration_id,
+                              captured_at,
                               ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
                               ai_crop_source_w, ai_crop_source_h, crop_mode, gps_source, original_filepath, sort_order,
                               artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (observation_id, final_filepath, image_type, micro_category,
               objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
-              lab_metadata_json, calibration_id, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
+              lab_metadata_json, calibration_id, captured_at_text, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
               final_original_filepath, sort_order, artsobs_web_unpublished))
 
         img_id = cursor.lastrowid
@@ -1507,6 +1560,29 @@ class ImageDB:
             if observation_id:
                 _touch_observation(cursor, observation_id, mark_dirty=True)
 
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def set_image_captured_at(image_id: int, captured_at: object) -> None:
+        captured_at_text = _normalize_timestamp_text(captured_at)
+        if not captured_at_text:
+            return
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(images)")
+        image_columns = {row[1] for row in cursor.fetchall()}
+        if "captured_at" not in image_columns:
+            conn.close()
+            return
+        cursor.execute(
+            '''
+            UPDATE images
+            SET captured_at = COALESCE(captured_at, ?)
+            WHERE id = ?
+            ''',
+            (captured_at_text, int(image_id)),
+        )
         conn.commit()
         conn.close()
 

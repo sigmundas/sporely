@@ -29,6 +29,7 @@ from PIL import Image
 from app_identity import runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, update_app_settings
 from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB
+from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
@@ -73,11 +74,18 @@ def _encode_postgrest_filter_value(value: str | None) -> str:
     """
     return quote(str(value or '').strip(), safe='')
 
+
+def _normalize_cloud_media_key(value: str | None) -> str:
+    """Normalize cloud media references to the stored relative key form."""
+    return normalize_media_key(value)
+
 _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain', 'sample_type', 'contrast', 'notes',
     'gps_source', 'storage_path',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h',
 ]
 
 _MEAS_PUSH_COLS = [
@@ -102,6 +110,15 @@ _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
 _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
+_REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
+_LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
+    'ai_crop_x1',
+    'ai_crop_y1',
+    'ai_crop_x2',
+    'ai_crop_y2',
+    'ai_crop_source_w',
+    'ai_crop_source_h',
+)
 
 _SNAPSHOT_OBS_FIELDS = [
     'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
@@ -124,6 +141,8 @@ _SNAPSHOT_IMG_FIELDS = [
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain', 'sample_type', 'contrast', 'notes',
     'gps_source', 'storage_path', 'original_filename',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h',
 ]
 
 _CONFLICT_COMPARE_FIELDS = [
@@ -268,6 +287,20 @@ def _normalize_observation_field_value(field: str, value):
     return _normalize_snapshot_value(value)
 
 
+def _parse_sync_timestamp(value) -> datetime | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+    normalized = text.replace('Z', '+00:00')
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
     row = dict(record or {})
     payload: dict = {}
@@ -354,6 +387,12 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'original_filename': _normalize_snapshot_value(
             Path(str(row.get('filepath') or '')).name or None
         ),
+        'ai_crop_x1': _normalize_snapshot_value(row.get('ai_crop_x1')),
+        'ai_crop_y1': _normalize_snapshot_value(row.get('ai_crop_y1')),
+        'ai_crop_x2': _normalize_snapshot_value(row.get('ai_crop_x2')),
+        'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
+        'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
+        'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
     }
     return payload
 
@@ -415,10 +454,6 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
         if _image_metadata_payload(current_map[key]) != _image_metadata_payload(baseline_map[key]):
             metadata_changed += 1
 
-    current_shared_order = [key for key in current_keys if key in baseline_map]
-    baseline_shared_order = [key for key in baseline_keys if key in current_map]
-    order_changed = current_shared_order != baseline_shared_order
-
     lines: list[str] = []
     if added:
         labels = ", ".join(_image_label(row) for row in added[:3])
@@ -432,8 +467,6 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
         lines.append(f'Removed {len(removed)} image(s) since last sync: {labels}')
     if metadata_changed:
         lines.append(f'Changed metadata on {metadata_changed} image(s) since last sync')
-    if order_changed:
-        lines.append('Image order changed since last sync')
     if not lines and len(current) != len(baseline):
         lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
     return lines
@@ -494,18 +527,14 @@ def _analyze_image_changes(current_images: list[dict], baseline_images: list[dic
         if _image_metadata_payload(current_map[key]) != _image_metadata_payload(baseline_map[key])
     ]
 
-    current_shared_order = [key for key in current_keys if key in baseline_map]
-    baseline_shared_order = [key for key in baseline_keys if key in current_map]
-    order_changed = current_shared_order != baseline_shared_order
-
     return {
         'added_keys': added_keys,
         'removed_keys': removed_keys,
         'metadata_changed_keys': metadata_changed_keys,
-        'order_changed': order_changed,
+        'order_changed': False,
         'added': [current_map[key] for key in added_keys],
         'removed': [baseline_map[key] for key in removed_keys],
-        'changed': bool(added_keys or removed_keys or metadata_changed_keys or order_changed),
+        'changed': bool(added_keys or removed_keys or metadata_changed_keys),
     }
 
 
@@ -548,7 +577,12 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     if not stored_media_sig:
         return True
     current_media_sig = _local_cloud_media_signature(local_id)
-    return bool(current_media_sig and current_media_sig != stored_media_sig)
+    if not current_media_sig:
+        return False
+    if _local_media_signatures_match(stored_media_sig, current_media_sig):
+        _store_local_media_signature_if_equivalent(local_id, stored_media_sig, current_media_sig)
+        return False
+    return True
 
 
 def _clear_observation_dirty_if_no_real_changes(local_id: int, cloud_id: str) -> bool:
@@ -790,6 +824,77 @@ def _store_local_cloud_media_signature(observation_id: int | str, signature: str
     )
 
 
+def _parsed_local_media_signature(signature: str | None) -> dict:
+    text = str(signature or '').strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalized_local_media_signature_payload(payload: dict | None) -> dict:
+    normalized = dict(payload or {})
+    # Gallery layout state only affects desktop-local generated views.
+    normalized['gallery_settings_raw'] = ''
+    images = []
+    for row in list(normalized.get('images') or []):
+        if not isinstance(row, dict):
+            continue
+        image_payload = dict(row)
+        image_payload.pop('sort_order', None)
+        for key in _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS:
+            image_payload.setdefault(key, None)
+        for path_key in ('filepath', 'original_filepath'):
+            path_payload = image_payload.get(path_key)
+            if isinstance(path_payload, dict):
+                normalized_path = dict(path_payload)
+                normalized_path.pop('mtime_ns', None)
+                image_payload[path_key] = normalized_path
+        images.append(image_payload)
+    normalized['images'] = sorted(
+        images,
+        key=lambda row: (
+            str(row.get('desktop_id') or ''),
+            str(row.get('id') or ''),
+            str(row.get('original_filename') or ''),
+            str(row.get('image_type') or ''),
+        ),
+    )
+    return normalized
+
+
+def _local_media_signatures_match(stored_signature: str | None, current_signature: str | None) -> bool:
+    stored_text = str(stored_signature or '').strip()
+    current_text = str(current_signature or '').strip()
+    if not stored_text or not current_text:
+        return stored_text == current_text
+    if stored_text == current_text:
+        return True
+    stored_payload = _parsed_local_media_signature(stored_text)
+    current_payload = _parsed_local_media_signature(current_text)
+    if not stored_payload or not current_payload:
+        return False
+    return _normalized_local_media_signature_payload(stored_payload) == _normalized_local_media_signature_payload(current_payload)
+
+
+def _store_local_media_signature_if_equivalent(
+    observation_id: int | str,
+    stored_signature: str | None,
+    current_signature: str | None,
+) -> None:
+    current_text = str(current_signature or '').strip()
+    if not current_text:
+        return
+    stored_text = str(stored_signature or '').strip()
+    if stored_text == current_text:
+        return
+    if _local_media_signatures_match(stored_text, current_text):
+        _store_local_cloud_media_signature(observation_id, current_text)
+
+
 def _clear_cloud_observation_snapshot(cloud_id: str) -> None:
     if not str(cloud_id or '').strip():
         return
@@ -915,6 +1020,32 @@ def _file_content_signature(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _remote_ai_crop_box(image_row: dict | None) -> tuple[float, float, float, float] | None:
+    row = dict(image_row or {})
+    values = []
+    for key in ('ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2'):
+        value = row.get(key)
+        if value is None:
+            return None
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            return None
+    return tuple(values) if len(values) == 4 else None
+
+
+def _remote_ai_crop_source_size(image_row: dict | None) -> tuple[int, int] | None:
+    row = dict(image_row or {})
+    width = row.get('ai_crop_source_w')
+    height = row.get('ai_crop_source_h')
+    if width is None or height is None:
+        return None
+    try:
+        return int(width), int(height)
+    except (TypeError, ValueError):
+        return None
+
+
 def _path_stat_signature(path_value: str | None) -> dict:
     path_text = str(path_value or '').strip()
     if not path_text:
@@ -957,7 +1088,13 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
                 sample_type,
                 contrast,
                 notes,
-                gps_source
+                gps_source,
+                ai_crop_x1,
+                ai_crop_y1,
+                ai_crop_x2,
+                ai_crop_y2,
+                ai_crop_source_w,
+                ai_crop_source_h
             FROM images
             WHERE observation_id = ?
             ORDER BY
@@ -1025,6 +1162,12 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
                 'contrast': _normalize_snapshot_value(row.get('contrast')),
                 'notes': _normalize_snapshot_value(row.get('notes')),
                 'gps_source': _normalize_snapshot_value(row.get('gps_source')),
+                'ai_crop_x1': _normalize_snapshot_value(row.get('ai_crop_x1')),
+                'ai_crop_y1': _normalize_snapshot_value(row.get('ai_crop_y1')),
+                'ai_crop_x2': _normalize_snapshot_value(row.get('ai_crop_x2')),
+                'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
+                'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
+                'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
             }
             for row in image_rows
         ],
@@ -1056,7 +1199,10 @@ def _prepared_item_remote_payload(
     image_row: dict,
     upload_path: str,
     storage_path: str,
+    *,
+    include_ai_crop: bool = True,
 ) -> dict:
+    normalized_key = _normalize_cloud_media_key(storage_path)
     payload = {
         'desktop_id': _safe_int(image_row.get('id')),
         'sort_order': _normalize_snapshot_value(image_row.get('sort_order')),
@@ -1073,15 +1219,24 @@ def _prepared_item_remote_payload(
         'gps_source': _normalize_snapshot_value(
             None if image_row.get('gps_source') is None else bool(image_row.get('gps_source'))
         ),
-        'storage_path': _normalize_snapshot_value(str(storage_path or '').strip() or None),
+        'storage_path': _normalize_snapshot_value(normalized_key or None),
         'original_filename': _normalize_snapshot_value(Path(str(upload_path or '').strip()).name or None),
     }
+    if include_ai_crop:
+        payload.update({
+            'ai_crop_x1': _normalize_snapshot_value(image_row.get('ai_crop_x1')),
+            'ai_crop_y1': _normalize_snapshot_value(image_row.get('ai_crop_y1')),
+            'ai_crop_x2': _normalize_snapshot_value(image_row.get('ai_crop_x2')),
+            'ai_crop_y2': _normalize_snapshot_value(image_row.get('ai_crop_y2')),
+            'ai_crop_source_w': _normalize_snapshot_value(image_row.get('ai_crop_source_w')),
+            'ai_crop_source_h': _normalize_snapshot_value(image_row.get('ai_crop_source_h')),
+        })
     return payload
 
 
-def _remote_image_payload(remote_image: dict | None) -> dict:
+def _remote_image_payload(remote_image: dict | None, *, include_ai_crop: bool = True) -> dict:
     image = remote_image or {}
-    return {
+    payload = {
         'desktop_id': _safe_int(image.get('desktop_id')),
         'sort_order': _normalize_snapshot_value(image.get('sort_order')),
         'image_type': _normalize_snapshot_value(image.get('image_type')),
@@ -1095,9 +1250,19 @@ def _remote_image_payload(remote_image: dict | None) -> dict:
         'contrast': _normalize_snapshot_value(image.get('contrast')),
         'notes': _normalize_snapshot_value(image.get('notes')),
         'gps_source': _normalize_snapshot_value(image.get('gps_source')),
-        'storage_path': _normalize_snapshot_value(image.get('storage_path')),
+        'storage_path': _normalize_snapshot_value(_normalize_cloud_media_key(image.get('storage_path')) or None),
         'original_filename': _normalize_snapshot_value(image.get('original_filename')),
     }
+    if include_ai_crop:
+        payload.update({
+            'ai_crop_x1': _normalize_snapshot_value(image.get('ai_crop_x1')),
+            'ai_crop_y1': _normalize_snapshot_value(image.get('ai_crop_y1')),
+            'ai_crop_x2': _normalize_snapshot_value(image.get('ai_crop_x2')),
+            'ai_crop_y2': _normalize_snapshot_value(image.get('ai_crop_y2')),
+            'ai_crop_source_w': _normalize_snapshot_value(image.get('ai_crop_source_w')),
+            'ai_crop_source_h': _normalize_snapshot_value(image.get('ai_crop_source_h')),
+        })
+    return payload
 
 
 def _mark_cloud_observations_dirty_for_media_changes() -> None:
@@ -1147,6 +1312,78 @@ def _find_local_observation_for_remote(remote: dict) -> dict | None:
         return None
     finally:
         conn.close()
+
+
+def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT * FROM observations')
+        rows = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+    by_cloud_id: dict[str, dict] = {}
+    by_local_id: dict[int, dict] = {}
+    for row in rows:
+        local_id = _safe_int(row.get('id'))
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if local_id > 0:
+            by_local_id[local_id] = row
+        if cloud_id:
+            by_cloud_id[cloud_id] = row
+    return by_cloud_id, by_local_id
+
+
+def _find_local_observation_for_remote_cached(
+    remote: dict,
+    by_cloud_id: dict[str, dict],
+    by_local_id: dict[int, dict],
+) -> dict | None:
+    cloud_id = str((remote or {}).get('id') or '').strip()
+    if cloud_id and cloud_id in by_cloud_id:
+        return dict(by_cloud_id[cloud_id])
+    local_id = _safe_int((remote or {}).get('desktop_id'))
+    if local_id > 0 and local_id in by_local_id:
+        return dict(by_local_id[local_id])
+    return None
+
+
+def _remote_observation_changed_since_last_sync(local_obs: dict | None, remote: dict | None) -> bool:
+    if not local_obs:
+        return True
+    synced_at = _parse_sync_timestamp((local_obs or {}).get('synced_at'))
+    remote_changed_at = _parse_sync_timestamp((remote or {}).get('updated_at') or (remote or {}).get('created_at'))
+    if synced_at is None or remote_changed_at is None:
+        return True
+    return (remote_changed_at - synced_at).total_seconds() > _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS
+
+
+def _remote_snapshot_has_meaningful_changes(
+    remote: dict | None,
+    remote_images: list[dict] | None,
+    stored_snapshot: str | None,
+) -> bool:
+    snapshot = _parse_cloud_observation_snapshot(stored_snapshot)
+    if not snapshot:
+        return True
+    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
+    if not baseline_obs:
+        return True
+    remote_payload = _observation_compare_payload(remote, local=False)
+    for field in _SNAPSHOT_OBS_FIELDS:
+        if field in {'id', 'desktop_id'}:
+            continue
+        if remote_payload.get(field) != baseline_obs.get(field):
+            return True
+    baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
+    remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
+    remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
+    return bool(
+        remote_image_changes.get('added_keys')
+        or remote_image_changes.get('removed_keys')
+        or remote_image_changes.get('metadata_changed_keys')
+    )
 
 
 def _stamp_observation_synced(local_id: int, cloud_id: str) -> None:
@@ -1305,6 +1542,8 @@ def _sync_existing_remote_image_to_local(
             sort_order=remote_image.get('sort_order'),
             gps_source=remote_image.get('gps_source'),
             resample_scale_factor=remote_image.get('resample_scale_factor'),
+            ai_crop_box=_remote_ai_crop_box(remote_image),
+            ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
         )
         conn = get_connection()
         try:
@@ -1355,7 +1594,7 @@ def _apply_remote_images_to_local(
                 pass
             continue
 
-        storage_path = str(remote_image.get('storage_path') or '').strip()
+        storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
         if not storage_path:
             continue
         temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
@@ -1378,6 +1617,8 @@ def _apply_remote_images_to_local(
                 sort_order=remote_image.get('sort_order'),
                 gps_source=remote_image.get('gps_source'),
                 resample_scale_factor=remote_image.get('resample_scale_factor'),
+                ai_crop_box=_remote_ai_crop_box(remote_image),
+                ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
                 copy_to_folder=True,
                 mark_observation_dirty=False,
             )
@@ -1496,12 +1737,21 @@ def get_conflict_detail(
     local_media_changed = bool(
         stored_local_media_signature
         and current_local_media_signature
-        and stored_local_media_signature != current_local_media_signature
+        and not _local_media_signatures_match(
+            stored_local_media_signature,
+            current_local_media_signature,
+        )
     )
+    if not local_media_changed:
+        _store_local_media_signature_if_equivalent(
+            local_id,
+            stored_local_media_signature,
+            current_local_media_signature,
+        )
     local_measurement_count = len(MeasurementDB.get_measurements_for_observation(int(local_id)))
     if local_media_changed:
         local_image_changes.append(
-            f'Desktop media details changed since last sync ({local_measurement_count} measurement(s), publish settings, or gallery layout)'
+            f'Desktop media details changed since last sync ({local_measurement_count} measurement(s) or publish-image settings)'
         )
 
     return {
@@ -1544,7 +1794,43 @@ def resolve_conflict_keep_local(
     finally:
         conn.close()
 
-    if prepare_images_cb is not None:
+    should_push_images = prepare_images_cb is not None
+    stored_local_media_signature = _load_local_cloud_media_signature(int(local_id))
+    current_local_media_signature = _local_cloud_media_signature(int(local_id))
+    local_media_changed = bool(
+        stored_local_media_signature
+        and current_local_media_signature
+        and not _local_media_signatures_match(
+            stored_local_media_signature,
+            current_local_media_signature,
+        )
+    )
+    if not local_media_changed:
+        _store_local_media_signature_if_equivalent(
+            int(local_id),
+            stored_local_media_signature,
+            current_local_media_signature,
+        )
+
+    if should_push_images and cloud_id:
+        stored_snapshot = _load_cloud_observation_snapshot(cloud_id)
+        if stored_snapshot:
+            baseline_images = [dict(row or {}) for row in (_parse_cloud_observation_snapshot(stored_snapshot).get('images') or [])]
+            remote_images = [
+                dict(row or {})
+                for row in (client.pull_image_metadata(cloud_id) or [])
+                if should_pull_cloud_image_to_desktop(row)
+            ]
+            remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
+            remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
+            should_push_images = bool(
+                local_media_changed
+                or remote_image_changes.get('added_keys')
+                or remote_image_changes.get('removed_keys')
+                or remote_image_changes.get('metadata_changed_keys')
+            )
+
+    if should_push_images:
         images_ok = _push_images_for_observation(
             client,
             local_obs,
@@ -1655,11 +1941,78 @@ class SporelyCloudClient:
         self.user_id = user_id
         self.refresh_token = str(refresh_token or '').strip() or None
         self._s = requests.Session()
+        self._r2: CloudflareR2Client | None = None
+        self._column_support_cache: dict[tuple[str, str], bool] = {}
+        self._cloud_image_storage_key_cache: dict[str, str] = {}
         self._s.headers.update({
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
         })
+
+    def _get_r2(self) -> CloudflareR2Client:
+        if self._r2 is None:
+            self._r2 = CloudflareR2Client.from_env()
+        return self._r2
+
+    def _has_column(self, table_name: str, column_name: str) -> bool:
+        cache_key = (str(table_name or '').strip(), str(column_name or '').strip())
+        if not all(cache_key):
+            return False
+        if cache_key in self._column_support_cache:
+            return self._column_support_cache[cache_key]
+        try:
+            self._get(f'{cache_key[0]}?select={cache_key[1]}&limit=1')
+            supported = True
+        except CloudSyncError as exc:
+            text = str(exc or '').lower()
+            if (
+                ('column' in text and cache_key[1].lower() in text and 'does not exist' in text)
+                or 'could not find the' in text
+            ):
+                supported = False
+            else:
+                raise
+        self._column_support_cache[cache_key] = supported
+        return supported
+
+    def _observation_supports_media_keys(self) -> bool:
+        return self._has_column('observations', 'image_key') or self._has_column('observations', 'thumb_key')
+
+    def _observation_images_support_ai_crop(self) -> bool:
+        return self._has_column('observation_images', 'ai_crop_x1') or self._has_column('observation_images', 'ai_crop_source_w')
+
+    def _measurement_supports_media_keys(self) -> bool:
+        return self._has_column('spore_measurements', 'image_key') or self._has_column('spore_measurements', 'thumb_key')
+
+    def _set_observation_media_keys(self, obs_cloud_id: str, storage_key: str, sort_order) -> None:
+        if not obs_cloud_id:
+            return
+        if sort_order not in (None, 0, '0'):
+            return
+        if not self._observation_supports_media_keys():
+            return
+        normalized_key = _normalize_cloud_media_key(storage_key)
+        if not normalized_key:
+            return
+        payload: dict[str, str] = {}
+        if self._has_column('observations', 'image_key'):
+            payload['image_key'] = normalized_key
+        if self._has_column('observations', 'thumb_key'):
+            payload['thumb_key'] = media_variant_key(normalized_key, 'small')
+        if payload:
+            self._patch(f'observations?id=eq.{obs_cloud_id}', payload)
+
+    def _cloud_image_storage_key(self, cloud_image_id: str) -> str:
+        normalized_id = str(cloud_image_id or '').strip()
+        if not normalized_id:
+            return ''
+        if normalized_id in self._cloud_image_storage_key_cache:
+            return self._cloud_image_storage_key_cache[normalized_id]
+        rows = self._get(f'observation_images?id=eq.{normalized_id}&select=storage_path&limit=1')
+        storage_key = _normalize_cloud_media_key((rows[0] or {}).get('storage_path') if rows else '')
+        self._cloud_image_storage_key_cache[normalized_id] = storage_key
+        return storage_key
 
     # ── Auth ────────────────────────────────────────────────────────────
 
@@ -1817,29 +2170,20 @@ class SporelyCloudClient:
     def _storage_remove(self, storage_paths: list[str]) -> None:
         cleaned = []
         for path in (storage_paths or []):
-            path_str = str(path or '').strip().lstrip('/')
+            path_str = _normalize_cloud_media_key(path)
             if not path_str:
                 continue
             cleaned.append(path_str)
-            
-            parts = path_str.split('/')
-            file_name = parts[-1]
-            dir_path = '/'.join(parts[:-1])
+
             for variant in ('small', 'medium'):
-                if dir_path:
-                    cleaned.append(f"{dir_path}/thumb_{variant}_{file_name}")
-                else:
-                    cleaned.append(f"thumb_{variant}_{file_name}")
-            
+                cleaned.append(media_variant_key(path_str, variant))
+
         if not cleaned:
             return
-        resp = self._s.delete(
-            f'{SUPABASE_URL}/storage/v1/object/observation-images',
-            json={'prefixes': cleaned},
-            timeout=60,
-        )
-        if not resp.ok:
-            raise CloudSyncError(f'Storage delete failed: {resp.text}')
+        try:
+            self._get_r2().delete_objects(cleaned)
+        except Exception as exc:
+            raise CloudSyncError(f'R2 delete failed: {exc}') from exc
 
     # ── Observation push ─────────────────────────────────────────────────
 
@@ -1913,41 +2257,44 @@ class SporelyCloudClient:
         payload['user_id']           = self.user_id
         payload['desktop_id']        = img['id']
         payload['original_filename'] = Path(img.get('filepath') or '').name or None
-        payload['storage_path']      = str(storage_path or '').strip()
+        payload['storage_path']      = _normalize_cloud_media_key(storage_path)
         if payload.get('gps_source') is not None:
             payload['gps_source'] = bool(payload['gps_source'])
+        if not self._observation_images_support_ai_crop():
+            for key in (
+                'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+                'ai_crop_source_w', 'ai_crop_source_h',
+            ):
+                payload.pop(key, None)
 
         existing_id = self._find_cloud_image(img['id'])
         if existing_id:
             self._patch(f'observation_images?id=eq.{existing_id}', payload)
-            return existing_id
+            cloud_id = existing_id
         else:
             rows = self._post('observation_images', payload)
-            return rows[0]['id']
+            cloud_id = rows[0]['id']
+        normalized_key = _normalize_cloud_media_key(payload.get('storage_path'))
+        if cloud_id and normalized_key:
+            self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
+            self._set_observation_media_keys(obs_cloud_id, normalized_key, img.get('sort_order'))
+        return cloud_id
 
     def upload_image_file(self, local_path: str, obs_cloud_id: str, img_cloud_id: str) -> str | None:
-        """Upload file to Supabase Storage. Returns storage path or None if file missing."""
+        """Upload file to Cloudflare R2. Returns the relative media key or None if missing."""
         path = Path(local_path)
         if not path.exists():
             return None
 
-        storage_path = self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
+        storage_path = _normalize_cloud_media_key(self._build_storage_path(obs_cloud_id, img_cloud_id, local_path))
         mime = mimetypes.guess_type(path.name)[0] or 'image/jpeg'
+        cache_control = 'public, max-age=31536000, immutable'
+        r2 = self._get_r2()
 
-        with open(path, 'rb') as f:
-            resp = requests.post(
-                f'{SUPABASE_URL}/storage/v1/object/observation-images/{storage_path}',
-                data=f,
-                headers={
-                    'apikey': SUPABASE_KEY,
-                    'Authorization': f'Bearer {self.access_token}',
-                    'Content-Type': mime,
-                    'x-upsert': 'true',
-                },
-                timeout=120,
-            )
-        if not resp.ok:
-            raise CloudSyncError(f'Storage upload failed: {resp.text}')
+        try:
+            r2.put_file(path, storage_path, content_type=mime, cache_control=cache_control, timeout=120)
+        except Exception as exc:
+            raise CloudSyncError(f'R2 upload failed: {exc}') from exc
 
         # Generate and upload thumbnail variants to match web app behavior
         variants = [
@@ -1967,36 +2314,23 @@ class SporelyCloudClient:
                     img = img.convert('RGB')
                     
                 orig_w, orig_h = img.size
-                
-                parts = storage_path.split('/')
-                file_name = parts[-1]
-                dir_path = '/'.join(parts[:-1])
 
                 for variant, max_edge, quality in variants:
                     scale = min(1.0, max_edge / max(orig_w, orig_h))
                     target_w = max(1, int(orig_w * scale))
                     target_h = max(1, int(orig_h * scale))
-                    
-                    variant_path = f"{dir_path}/thumb_{variant}_{file_name}" if dir_path else f"thumb_{variant}_{file_name}"
-                    
+
+                    variant_path = media_variant_key(storage_path, variant)
                     img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                     buffer = io.BytesIO()
                     img_resized.save(buffer, format='JPEG', quality=quality)
-                    buffer.seek(0)
-                    
-                    v_resp = requests.post(
-                        f'{SUPABASE_URL}/storage/v1/object/observation-images/{variant_path}',
-                        data=buffer,
-                        headers={
-                            'apikey': SUPABASE_KEY,
-                            'Authorization': f'Bearer {self.access_token}',
-                            'Content-Type': 'image/jpeg',
-                            'x-upsert': 'true',
-                        },
+                    r2.put_bytes(
+                        buffer.getvalue(),
+                        variant_path,
+                        content_type='image/jpeg',
+                        cache_control=cache_control,
                         timeout=60,
                     )
-                    if not v_resp.ok:
-                        print(f"[cloud_sync] Warning: Thumbnail variant {variant} upload failed: {v_resp.text}")
         except Exception as e:
             print(f"[cloud_sync] Warning: Could not generate/upload thumbnail variants for {storage_path}: {e}")
 
@@ -2090,6 +2424,13 @@ class SporelyCloudClient:
         payload['image_id'] = cloud_image_id
         payload['user_id'] = self.user_id
         payload['desktop_id'] = int(meas['id'])
+        if self._measurement_supports_media_keys():
+            storage_key = self._cloud_image_storage_key(cloud_image_id)
+            if storage_key:
+                if self._has_column('spore_measurements', 'image_key'):
+                    payload['image_key'] = storage_key
+                if self._has_column('spore_measurements', 'thumb_key'):
+                    payload['thumb_key'] = media_variant_key(storage_key, 'small')
         rows = self._get(
             f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select=id'
         )
@@ -2112,9 +2453,9 @@ class SporelyCloudClient:
             raise CloudSyncError('Missing cloud observation id')
         image_rows = self.pull_image_metadata(cloud_id) or []
         storage_paths = [
-            str(row.get('storage_path') or '').strip()
+            _normalize_cloud_media_key(row.get('storage_path'))
             for row in image_rows
-            if str(row.get('storage_path') or '').strip()
+            if _normalize_cloud_media_key(row.get('storage_path'))
         ]
         if storage_paths:
             try:
@@ -2125,23 +2466,14 @@ class SporelyCloudClient:
         self._delete(f'observations?id=eq.{cloud_id}')
 
     def download_image_file(self, storage_path: str, dest_path: str | Path) -> Path:
-        """Download one cloud image from Supabase Storage into a local path."""
-        storage_key = str(storage_path or '').strip().lstrip('/')
+        """Download one cloud image from Cloudflare R2 into a local path."""
+        storage_key = _normalize_cloud_media_key(storage_path)
         if not storage_key:
             raise CloudSyncError('Missing storage path')
-        destination = Path(dest_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        encoded_key = requests.utils.quote(storage_key, safe="/")
-        resp = self._s.get(
-            f'{SUPABASE_URL}/storage/v1/object/authenticated/observation-images/{encoded_key}',
-            timeout=120,
-            stream=True,
-        )
-        if not resp.ok:
-            raise CloudSyncError(f'Download failed: {resp.text}')
-        with open(destination, 'wb') as handle:
-            shutil.copyfileobj(resp.raw, handle)
-        return destination
+        try:
+            return self._get_r2().download_to_file(storage_key, dest_path, timeout=120)
+        except Exception as exc:
+            raise CloudSyncError(f'Download failed: {exc}') from exc
 
 
 # ── High-level sync entry points ──────────────────────────────────────────────
@@ -2255,8 +2587,16 @@ def push_all(
                     had_existing_cloud
                     and local_obs_id > 0
                     and stored_local_media_signature
-                    and current_local_media_signature == stored_local_media_signature
+                    and _local_media_signatures_match(
+                        stored_local_media_signature,
+                        current_local_media_signature,
+                    )
                 ):
+                    _store_local_media_signature_if_equivalent(
+                        local_obs_id,
+                        stored_local_media_signature,
+                        current_local_media_signature,
+                    )
                     _emit_progress(
                         progress_cb,
                         f"Skipping unchanged cloud media for observation {i + 1}/{max(1, total)}: {name}",
@@ -2387,6 +2727,7 @@ def _push_images_for_observation(
         total_items = len(prepared_items)
         kept_cloud_ids: set[str] = set()
         had_failures = False
+        include_ai_crop = client._observation_images_support_ai_crop()
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
             if not img:
@@ -2424,14 +2765,19 @@ def _push_images_for_observation(
                     remote_cloud_id or str(local_image_id or img.get('id') or ''),
                     upload_path,
                 )
-                expected_payload = _prepared_item_remote_payload(img, upload_path, storage_path)
-                remote_payload = _remote_image_payload(remote_row)
+                expected_payload = _prepared_item_remote_payload(
+                    img,
+                    upload_path,
+                    storage_path,
+                    include_ai_crop=include_ai_crop,
+                )
+                remote_payload = _remote_image_payload(remote_row, include_ai_crop=include_ai_crop)
                 metadata_matches = bool(remote_row) and remote_payload == expected_payload
 
                 current_file_sig = _file_content_signature(upload_path)
                 stored_file_sig = _load_cloud_image_file_signature(obs.get('id'), local_image_id)
                 file_matches = False
-                if remote_row and str(remote_row.get('storage_path') or '').strip() == str(storage_path or '').strip():
+                if remote_row and _normalize_cloud_media_key(remote_row.get('storage_path')) == _normalize_cloud_media_key(storage_path):
                     if stored_file_sig and stored_file_sig == current_file_sig:
                         file_matches = True
                     elif (
@@ -2447,12 +2793,17 @@ def _push_images_for_observation(
                 if not img_cloud_id or not metadata_matches:
                     img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path)
                     if storage_path != client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path):
-                        storage_path = client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path)
+                        storage_path = _normalize_cloud_media_key(client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path))
                         client._patch(
                             f'observation_images?id=eq.{img_cloud_id}',
                             {'storage_path': storage_path},
                         )
-                    remote_payload = _prepared_item_remote_payload(img, upload_path, storage_path)
+                    remote_payload = _prepared_item_remote_payload(
+                        img,
+                        upload_path,
+                        storage_path,
+                        include_ai_crop=include_ai_crop,
+                    )
                     metadata_matches = True
                 if not file_matches:
                     client.upload_image_file(upload_path, obs_cloud_id, img_cloud_id)
@@ -2493,7 +2844,7 @@ def _push_images_for_observation(
         ]
         for stale_row in stale_rows:
             stale_cloud_id = str(stale_row.get('id') or '').strip()
-            stale_storage_path = str(stale_row.get('storage_path') or '').strip()
+            stale_storage_path = _normalize_cloud_media_key(stale_row.get('storage_path'))
             if stale_storage_path:
                 try:
                     client._storage_remove([stale_storage_path])
@@ -2592,22 +2943,43 @@ def pull_all(
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows."""
     remote_obs = list(remote_obs or client.list_remote_observations())
-    total = len(remote_obs)
     pulled = 0
     errors = []
     imported_local_ids: list[int] = []
     progress_state = progress_state if isinstance(progress_state, dict) else {}
-    _extend_progress_total(progress_state, total)
+    local_by_cloud_id, local_by_id = _load_local_observation_lookup()
+    candidates: list[tuple[dict, dict | None, str]] = []
+    candidate_cloud_ids: list[str] = []
+    for remote in remote_obs:
+        cloud_id = str(remote.get('id') or '').strip()
+        local_obs = _find_local_observation_for_remote_cached(remote, local_by_cloud_id, local_by_id)
+        stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
+        local_id = _safe_int((local_obs or {}).get('id'))
+        remote_desktop_id = _safe_int(remote.get('desktop_id'))
+        should_check = False
+        if local_obs is None:
+            should_check = True
+        elif cloud_id and remote_desktop_id not in (0, local_id):
+            should_check = True
+        elif not stored_snapshot:
+            should_check = True
+        elif _remote_observation_changed_since_last_sync(local_obs, remote):
+            should_check = True
+        if should_check:
+            candidates.append((remote, local_obs, stored_snapshot))
+            if cloud_id:
+                candidate_cloud_ids.append(cloud_id)
 
-    all_cloud_ids = [str(r.get('id') or '').strip() for r in remote_obs if str(r.get('id') or '').strip()]
-    bulk_images = client.pull_bulk_image_metadata(all_cloud_ids)
+    total = len(candidates)
+    _extend_progress_total(progress_state, total)
+    bulk_images = client.pull_bulk_image_metadata(candidate_cloud_ids)
     remote_images_by_obs = {}
     for img in bulk_images:
         obs_id = str(img.get('observation_id') or '').strip()
         if obs_id:
             remote_images_by_obs.setdefault(obs_id, []).append(img)
 
-    for i, remote in enumerate(remote_obs):
+    for i, (remote, local_obs, stored_snapshot) in enumerate(candidates):
         name = _observation_display_name(remote)
         cloud_id = str(remote.get('id') or '').strip()
         _emit_progress(
@@ -2617,13 +2989,9 @@ def pull_all(
         )
 
         try:
-            local_obs = _find_local_observation_for_remote(remote)
             # DO NOT filter by should_pull_cloud_image_to_desktop here, otherwise the 
             # conflict logic falsely thinks microscope images were deleted by the cloud!
             remote_images = [dict(row or {}) for row in remote_images_by_obs.get(cloud_id, [])]
-
-            remote_snapshot = _cloud_observation_snapshot(remote, remote_images)
-            stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
 
             if local_obs is None:
                 local_id = _create_local_from_remote(
@@ -2657,7 +3025,11 @@ def pull_all(
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs
                     local_dirty = False
-                remote_changed = (not stored_snapshot) or (remote_snapshot != stored_snapshot)
+                remote_changed = (not stored_snapshot) or _remote_snapshot_has_meaningful_changes(
+                    remote,
+                    remote_images,
+                    stored_snapshot,
+                )
                 should_store_snapshot = True
                 if remote_changed and not stored_snapshot:
                     if local_dirty:
@@ -2701,13 +3073,19 @@ def pull_all(
                     local_media_changed = bool(
                         stored_local_media_signature
                         and current_local_media_signature
-                        and stored_local_media_signature != current_local_media_signature
+                        and not _local_media_signatures_match(
+                            stored_local_media_signature,
+                            current_local_media_signature,
+                        )
                     )
+                    if not local_media_changed:
+                        _store_local_media_signature_if_equivalent(
+                            local_id,
+                            stored_local_media_signature,
+                            current_local_media_signature,
+                        )
                     media_conflict = bool(remote_image_changes.get('removed_keys'))
-                    if local_media_changed and (
-                        remote_image_changes.get('metadata_changed_keys')
-                        or remote_image_changes.get('order_changed')
-                    ):
+                    if local_media_changed and remote_image_changes.get('metadata_changed_keys'):
                         media_conflict = True
 
                     applied_remote_fields = False
@@ -2755,10 +3133,7 @@ def pull_all(
                         review_reasons.append('both desktop and cloud changed the same observation fields')
                     if remote_image_changes.get('removed_keys'):
                         review_reasons.append('cloud removed local image files')
-                    if local_media_changed and (
-                        remote_image_changes.get('metadata_changed_keys')
-                        or remote_image_changes.get('order_changed')
-                    ):
+                    if local_media_changed and remote_image_changes.get('metadata_changed_keys'):
                         review_reasons.append('both desktop and cloud changed image or media details')
 
                     if review_reasons:
@@ -2922,7 +3297,7 @@ def _import_remote_images(
                         ),
                         progress_state,
                     )
-                storage_path = str(image_row.get('storage_path') or '').strip()
+                storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
                 if not storage_path:
                     continue
                 cloud_image_id = str(image_row.get('id') or '').strip()
@@ -2945,6 +3320,8 @@ def _import_remote_images(
                     sort_order=image_row.get('sort_order'),
                     gps_source=image_row.get('gps_source'),
                     resample_scale_factor=image_row.get('resample_scale_factor'),
+                    ai_crop_box=_remote_ai_crop_box(image_row),
+                    ai_crop_source_size=_remote_ai_crop_source_size(image_row),
                     copy_to_folder=True,
                     mark_observation_dirty=False,
                 )

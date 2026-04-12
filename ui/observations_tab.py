@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
                                 QGridLayout)
-from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings
+from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings, QModelIndex, QItemSelectionModel
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -97,7 +97,12 @@ from .image_import_dialog import (
 from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintStatusController, style_progress_widgets
 from .zoomable_image_widget import ZoomableImageLabel
-from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
+from .dialog_helpers import (
+    ask_measurements_exist_delete,
+    ask_wrapped_yes_no,
+    ask_wrapped_yes_no_with_checkbox,
+    make_github_help_button,
+)
 from .styles import pt
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
@@ -817,6 +822,7 @@ class ObservationsTab(QWidget):
         self._cloud_sync_show_status = False
         self._cloud_sync_run_refresh_flow = False
         self._cloud_sync_startup_scheduled = False
+        self._delete_in_progress = False
         self._thumb_loader: _ThumbnailLoaderWorker | None = None
         self._thumb_pending_paths: set = set()
         self._search_refresh_timer = QTimer(self)
@@ -1595,6 +1601,18 @@ class ObservationsTab(QWidget):
         if hasattr(self, "status_progress_widget"):
             self.status_progress_widget.setVisible(visible)
 
+    def _reset_status_progress(self) -> None:
+        if hasattr(self, "status_progress_bar"):
+            try:
+                self.status_progress_bar.setRange(0, 100)
+                self.status_progress_bar.setValue(0)
+            except Exception:
+                pass
+        if hasattr(self, "status_progress_pct"):
+            self.status_progress_pct.setText("0%")
+        if hasattr(self, "status_progress_text"):
+            self.status_progress_text.setText("")
+
     def _set_status_progress(
         self,
         status_text: str | None,
@@ -1675,6 +1693,30 @@ class ObservationsTab(QWidget):
         except Exception:
             return True
 
+    def _set_delete_busy(self, busy: bool) -> None:
+        busy = bool(busy)
+        self._delete_in_progress = busy
+        for name in (
+            "new_btn",
+            "rename_btn",
+            "delete_btn",
+            "refresh_btn",
+            "export_btn",
+            "import_btn",
+            "plate_btn",
+            "publish_btn",
+            "search_input",
+        ):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setEnabled(not busy)
+        table = getattr(self, "table", None)
+        if table is not None:
+            table.setEnabled(not busy)
+        gallery = getattr(self, "gallery_widget", None)
+        if gallery is not None:
+            gallery.setEnabled(not busy)
+
     def _start_cloud_sync(self, show_status: bool, run_refresh_flow: bool) -> bool:
         if self._cloud_sync_worker is not None:
             if show_status and not self._cloud_sync_show_status:
@@ -1754,11 +1796,26 @@ class ObservationsTab(QWidget):
         if not entries:
             return False
         changed = False
-        for entry in entries:
+
+        def _delete_local_copy(entry: dict) -> bool:
+            local_id = int(entry.get("local_id") or 0)
+            if local_id <= 0:
+                return False
+            ObservationDB.delete_observation(local_id)
+            self.observation_deleted.emit(local_id)
+            return True
+
+        delete_all_remaining = False
+        total = len(entries)
+        for index, entry in enumerate(entries):
             local_id = int(entry.get("local_id") or 0)
             cloud_id = str(entry.get("cloud_id") or "").strip() or "?"
             if local_id <= 0:
                 continue
+            if delete_all_remaining:
+                changed = _delete_local_copy(entry) or changed
+                continue
+            remaining = total - index
             prompt = self.tr(
                 "Cloud observation {cloud_id} was deleted.\n\n"
                 "{details}\n\n"
@@ -1768,15 +1825,28 @@ class ObservationsTab(QWidget):
                 cloud_id=cloud_id,
                 details=self._format_deleted_cloud_observation_label(entry),
             )
-            delete_local = self._question_yes_no(
-                self.tr("Cloud Observation Deleted"),
-                prompt,
-                default_yes=False,
-            )
+            if remaining > 1:
+                prompt += "\n\n" + self.tr("{count} observations remain in this review.").format(
+                    count=remaining,
+                )
+                delete_local, delete_all_checked = ask_wrapped_yes_no_with_checkbox(
+                    self,
+                    self.tr("Cloud Observation Deleted"),
+                    prompt,
+                    checkbox_text=self.tr("Delete all"),
+                    default_yes=False,
+                )
+            else:
+                delete_local = self._question_yes_no(
+                    self.tr("Cloud Observation Deleted"),
+                    prompt,
+                    default_yes=False,
+                )
+                delete_all_checked = False
             if delete_local:
-                ObservationDB.delete_observation(local_id)
-                self.observation_deleted.emit(local_id)
-                changed = True
+                changed = _delete_local_copy(entry) or changed
+                if delete_all_checked:
+                    delete_all_remaining = True
                 continue
             unlink_local_observation_from_cloud(local_id)
             changed = True
@@ -2754,6 +2824,13 @@ class ObservationsTab(QWidget):
 
     def _update_publish_controls(self) -> None:
         if not hasattr(self, "publish_btn"):
+            return
+        if self._delete_in_progress:
+            for action in self._publish_actions.values():
+                action.setEnabled(False)
+            self.publish_btn.setEnabled(False)
+            if hasattr(self, "plate_btn"):
+                self.plate_btn.setEnabled(False)
             return
         self._refresh_publish_targets_if_needed()
 
@@ -7311,6 +7388,8 @@ class ObservationsTab(QWidget):
 
     def delete_selected_observation(self):
         """Delete the selected observation after confirmation."""
+        if self._delete_in_progress:
+            return
         if self._is_cloud_sync_running():
             self.set_status_message(
                 self.tr("Wait for Sporely Cloud sync to finish before deleting observations."),
@@ -7370,58 +7449,170 @@ class ObservationsTab(QWidget):
 
         confirmed = self._question_yes_no(self.tr("Confirm Delete"), prompt, default_yes=False)
         if confirmed:
-            failures: list[str] = []
-            deleted_local_count = 0
-            deleted_cloud_count = 0
+            delete_targets: list[dict] = []
             if obs_id is not None and not cloud_rows:
-                failures.extend(self._delete_cloud_copy_for_local_observation(obs_id))
-                failures.extend(ObservationDB.delete_observation(obs_id))
-                self.observation_deleted.emit(obs_id)
-                deleted_local_count += 1
+                delete_targets.append({"row_kind": "local", "observation_id": int(obs_id)})
             else:
                 rows = [row.row() for row in selected_rows]
                 for r in rows:
                     row_data = self._observation_row_data_for_row(r)
                     if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
-                        cloud_failures = self._delete_cloud_observation_row(row_data)
-                        failures.extend(cloud_failures)
-                        if not cloud_failures:
-                            deleted_cloud_count += 1
+                        delete_targets.append({"row_kind": "cloud", "row_data": dict(row_data)})
                         continue
-                    obs_id = self._observation_id_for_row(r)
-                    if obs_id is None:
+                    target_obs_id = self._observation_id_for_row(r)
+                    if target_obs_id is None:
                         continue
-                    failures.extend(self._delete_cloud_copy_for_local_observation(obs_id))
-                    failures.extend(ObservationDB.delete_observation(obs_id))
-                    self.observation_deleted.emit(obs_id)
-                    deleted_local_count += 1
-            failure_count = self._warn_delete_failures(failures)
-            self.refresh_observations()
-            deleted_total = deleted_local_count + deleted_cloud_count
-            if len(selected_rows) == 1 and failure_count:
-                self.set_status_message(
-                    self.tr("Observation deleted with {count} cleanup issue(s).").format(count=failure_count),
-                    level="warning",
-                    auto_clear_ms=12000,
-                )
-            elif len(selected_rows) == 1 and deleted_cloud_count:
-                self.set_status_message(self.tr("Cloud observation deleted."), level="success")
-            elif len(selected_rows) == 1:
-                self.set_status_message(self.tr("Observation deleted."), level="success")
-            elif failure_count:
-                self.set_status_message(
-                    self.tr("Deleted {count} observations with {issues} cleanup issue(s).").format(
-                        count=deleted_total or len(selected_rows),
-                        issues=failure_count,
+                    delete_targets.append({"row_kind": "local", "observation_id": int(target_obs_id)})
+            self.delete_btn.setEnabled(False)
+            QTimer.singleShot(0, lambda targets=delete_targets: self._perform_observation_delete(targets))
+
+    def _delete_progress_units_for_target(self, target: dict) -> int:
+        if str((target or {}).get("row_kind") or "") == "cloud":
+            return 1
+        try:
+            obs_id = int((target or {}).get("observation_id") or 0)
+        except (TypeError, ValueError):
+            return 1
+        if obs_id <= 0:
+            return 1
+        units = max(1, len(ImageDB.get_images_for_observation(obs_id)))
+        try:
+            obs = ObservationDB.get_observation(obs_id)
+        except Exception:
+            obs = None
+        if str((obs or {}).get("cloud_id") or "").strip():
+            units += 1
+        return units
+
+    def _perform_observation_delete(self, delete_targets: list[dict]) -> None:
+        targets = [dict(target or {}) for target in (delete_targets or []) if target]
+        if not targets:
+            return
+        self._set_delete_busy(True)
+        total_units = sum(self._delete_progress_units_for_target(target) for target in targets)
+        total_units = max(1, total_units)
+        self._reset_status_progress()
+        self._set_status_progress_visible(True)
+        self._set_status_progress(self.tr("Deleting observations..."), current=0, total=total_units)
+        self._yield_background_sync_ui()
+
+        failures: list[str] = []
+        deleted_local_count = 0
+        deleted_cloud_count = 0
+        progress_value = 0
+
+        def advance_progress(label: str | None = None) -> None:
+            nonlocal progress_value
+            progress_value = min(total_units, progress_value + 1)
+            self._set_status_progress(label or self.tr("Deleting observations..."), current=progress_value, total=total_units)
+            self._yield_background_sync_ui()
+
+        try:
+            for index, target in enumerate(targets, start=1):
+                row_kind = str(target.get("row_kind") or "").strip().lower()
+                if row_kind == "cloud":
+                    row_data = dict(target.get("row_data") or {})
+                    species = self._build_species_name(row_data.get("raw") or {}) or self.tr("cloud observation")
+                    self._set_status_progress(
+                        self.tr("Deleting cloud observation {current}/{total}: {name}").format(
+                            current=index,
+                            total=len(targets),
+                            name=species,
+                        ),
+                        current=progress_value,
+                        total=total_units,
+                    )
+                    self._yield_background_sync_ui()
+                    cloud_failures = self._delete_cloud_observation_row(row_data)
+                    failures.extend(cloud_failures)
+                    if not cloud_failures:
+                        deleted_cloud_count += 1
+                    advance_progress()
+                    continue
+
+                obs_id = int(target.get("observation_id") or 0)
+                if obs_id <= 0:
+                    advance_progress()
+                    continue
+                observation = ObservationDB.get_observation(obs_id)
+                species = self._build_species_name(observation or {}) or self.tr("observation")
+
+                self._set_status_progress(
+                    self.tr("Deleting observation {current}/{total}: {name}").format(
+                        current=index,
+                        total=len(targets),
+                        name=species,
                     ),
-                    level="warning",
-                    auto_clear_ms=12000,
+                    current=progress_value,
+                    total=total_units,
                 )
-            else:
-                self.set_status_message(
-                    self.tr("Deleted {count} observations.").format(count=deleted_total or len(selected_rows)),
-                    level="success",
+                self._yield_background_sync_ui()
+
+                cloud_failures = self._delete_cloud_copy_for_local_observation(obs_id)
+                failures.extend(cloud_failures)
+                if observation and str(observation.get("cloud_id") or "").strip():
+                    advance_progress()
+
+                actual_image_count = len(ImageDB.get_images_for_observation(obs_id))
+
+                def _local_progress(current: int, total: int, _image_id: int) -> None:
+                    label = self.tr(
+                        "Deleting local images for {name}: {current}/{total}"
+                    ).format(
+                        name=species,
+                        current=max(1, int(current)),
+                        total=max(1, int(total)),
+                    )
+                    advance_progress(label)
+
+                delete_failures = ObservationDB.delete_observation(
+                    obs_id,
+                    progress_cb=_local_progress if actual_image_count > 0 else None,
                 )
+                if actual_image_count <= 0:
+                    advance_progress()
+                failures.extend(delete_failures)
+                self.observation_deleted.emit(obs_id)
+                deleted_local_count += 1
+        finally:
+            self._set_status_progress(self.tr("Finishing delete..."), current=total_units, total=total_units)
+            self._set_status_progress_visible(False)
+            self._reset_status_progress()
+            self._set_delete_busy(False)
+
+        failure_count = self._warn_delete_failures(failures)
+        self.selected_observation_id = None
+        selection_model = self.table.selectionModel()
+        if selection_model is not None:
+            selection_model.clearSelection()
+            selection_model.setCurrentIndex(QModelIndex(), QItemSelectionModel.NoUpdate)
+        self.table.clearSelection()
+        self.refresh_observations(restore_selection=False)
+        deleted_total = deleted_local_count + deleted_cloud_count
+        if len(targets) == 1 and failure_count:
+            self.set_status_message(
+                self.tr("Observation deleted with {count} cleanup issue(s).").format(count=failure_count),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        elif len(targets) == 1 and deleted_cloud_count:
+            self.set_status_message(self.tr("Cloud observation deleted."), level="success")
+        elif len(targets) == 1:
+            self.set_status_message(self.tr("Observation deleted."), level="success")
+        elif failure_count:
+            self.set_status_message(
+                self.tr("Deleted {count} observations with {issues} cleanup issue(s).").format(
+                    count=deleted_total or len(targets),
+                    issues=failure_count,
+                ),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        else:
+            self.set_status_message(
+                self.tr("Deleted {count} observations.").format(count=deleted_total or len(targets)),
+                level="success",
+            )
 
     def _delete_cloud_copy_for_local_observation(self, observation_id: int) -> list[str]:
         try:
@@ -8396,6 +8587,7 @@ class ObservationsTab(QWidget):
                 sample_type=sample_type,
                 notes=result.notes,
                 sort_order=index - 1,
+                captured_at=getattr(result, "captured_at", None),
                 calibration_id=calibration_id,
                 ai_crop_box=result.ai_crop_box,
                 ai_crop_source_size=result.ai_crop_source_size,
