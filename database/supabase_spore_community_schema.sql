@@ -193,6 +193,11 @@ AS $$
       m.id AS measurement_id,
       m.length_um,
       m.width_um,
+      coalesce(m.image_key, i.storage_path) AS image_key,
+      coalesce(
+        m.thumb_key,
+        regexp_replace(i.storage_path, '(^|/)([^/]+)$', E'\\1thumb_small_\\2')
+      ) AS thumb_key,
       m.p1_x,
       m.p1_y,
       m.p2_x,
@@ -398,6 +403,8 @@ AS $$
       jsonb_build_object(
         'measurement_id', f.measurement_id,
         'image_id', f.image_id,
+        'image_key', f.image_key,
+        'thumb_key', f.thumb_key,
         'length_um', f.length_um,
         'width_um', f.width_um,
         'p1_x', f.p1_x,
