@@ -87,6 +87,14 @@ _IMG_PUSH_COLS = [
     'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
     'ai_crop_source_w', 'ai_crop_source_h',
 ]
+_IMG_UPLOAD_META_COLS = [
+    'upload_mode',
+    'source_width',
+    'source_height',
+    'stored_width',
+    'stored_height',
+    'stored_bytes',
+]
 
 _MEAS_PUSH_COLS = [
     'length_um', 'width_um', 'measurement_type',
@@ -143,6 +151,8 @@ _SNAPSHOT_IMG_FIELDS = [
     'gps_source', 'storage_path', 'original_filename',
     'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
     'ai_crop_source_w', 'ai_crop_source_h',
+    'upload_mode', 'source_width', 'source_height',
+    'stored_width', 'stored_height', 'stored_bytes',
 ]
 
 _CONFLICT_COMPARE_FIELDS = [
@@ -1201,6 +1211,7 @@ def _prepared_item_remote_payload(
     storage_path: str,
     *,
     include_ai_crop: bool = True,
+    include_upload_meta: bool = True,
 ) -> dict:
     normalized_key = _normalize_cloud_media_key(storage_path)
     payload = {
@@ -1231,10 +1242,24 @@ def _prepared_item_remote_payload(
             'ai_crop_source_w': _normalize_snapshot_value(image_row.get('ai_crop_source_w')),
             'ai_crop_source_h': _normalize_snapshot_value(image_row.get('ai_crop_source_h')),
         })
+    if include_upload_meta:
+        payload.update({
+            'upload_mode': _normalize_snapshot_value(image_row.get('upload_mode')),
+            'source_width': _normalize_snapshot_value(image_row.get('source_width')),
+            'source_height': _normalize_snapshot_value(image_row.get('source_height')),
+            'stored_width': _normalize_snapshot_value(image_row.get('stored_width')),
+            'stored_height': _normalize_snapshot_value(image_row.get('stored_height')),
+            'stored_bytes': _normalize_snapshot_value(image_row.get('stored_bytes')),
+        })
     return payload
 
 
-def _remote_image_payload(remote_image: dict | None, *, include_ai_crop: bool = True) -> dict:
+def _remote_image_payload(
+    remote_image: dict | None,
+    *,
+    include_ai_crop: bool = True,
+    include_upload_meta: bool = True,
+) -> dict:
     image = remote_image or {}
     payload = {
         'desktop_id': _safe_int(image.get('desktop_id')),
@@ -1261,6 +1286,15 @@ def _remote_image_payload(remote_image: dict | None, *, include_ai_crop: bool = 
             'ai_crop_y2': _normalize_snapshot_value(image.get('ai_crop_y2')),
             'ai_crop_source_w': _normalize_snapshot_value(image.get('ai_crop_source_w')),
             'ai_crop_source_h': _normalize_snapshot_value(image.get('ai_crop_source_h')),
+        })
+    if include_upload_meta:
+        payload.update({
+            'upload_mode': _normalize_snapshot_value(image.get('upload_mode')),
+            'source_width': _normalize_snapshot_value(image.get('source_width')),
+            'source_height': _normalize_snapshot_value(image.get('source_height')),
+            'stored_width': _normalize_snapshot_value(image.get('stored_width')),
+            'stored_height': _normalize_snapshot_value(image.get('stored_height')),
+            'stored_bytes': _normalize_snapshot_value(image.get('stored_bytes')),
         })
     return payload
 
@@ -1982,6 +2016,9 @@ class SporelyCloudClient:
     def _observation_images_support_ai_crop(self) -> bool:
         return self._has_column('observation_images', 'ai_crop_x1') or self._has_column('observation_images', 'ai_crop_source_w')
 
+    def _observation_images_support_upload_metadata(self) -> bool:
+        return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
+
     def _measurement_supports_media_keys(self) -> bool:
         return self._has_column('spore_measurements', 'image_key') or self._has_column('spore_measurements', 'thumb_key')
 
@@ -2266,6 +2303,9 @@ class SporelyCloudClient:
                 'ai_crop_source_w', 'ai_crop_source_h',
             ):
                 payload.pop(key, None)
+        if self._observation_images_support_upload_metadata():
+            for key in _IMG_UPLOAD_META_COLS:
+                payload[key] = img.get(key)
 
         existing_id = self._find_cloud_image(img['id'])
         if existing_id:
@@ -2728,8 +2768,10 @@ def _push_images_for_observation(
         kept_cloud_ids: set[str] = set()
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
+        include_upload_meta = client._observation_images_support_upload_metadata()
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
+            img.update(dict(item.get('cloud_upload_meta') or {}))
             if not img:
                 processed_items += 1
                 _advance_progress(progress_state, 1)
@@ -2770,8 +2812,13 @@ def _push_images_for_observation(
                     upload_path,
                     storage_path,
                     include_ai_crop=include_ai_crop,
+                    include_upload_meta=include_upload_meta,
                 )
-                remote_payload = _remote_image_payload(remote_row, include_ai_crop=include_ai_crop)
+                remote_payload = _remote_image_payload(
+                    remote_row,
+                    include_ai_crop=include_ai_crop,
+                    include_upload_meta=include_upload_meta,
+                )
                 metadata_matches = bool(remote_row) and remote_payload == expected_payload
 
                 current_file_sig = _file_content_signature(upload_path)
@@ -2803,6 +2850,7 @@ def _push_images_for_observation(
                         upload_path,
                         storage_path,
                         include_ai_crop=include_ai_crop,
+                        include_upload_meta=include_upload_meta,
                     )
                     metadata_matches = True
                 if not file_matches:
