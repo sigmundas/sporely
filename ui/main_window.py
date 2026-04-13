@@ -896,6 +896,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
     SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
+    SETTING_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_debug_cloud_plan_override"
+    SETTING_SHOW_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_show_debug_cloud_plan_override"
     SETTING_INAT_CLIENT_ID = "inat_client_id"
     SETTING_INAT_CLIENT_SECRET = "inat_client_secret"
     SETTING_INAT_REDIRECT_URI = "inat_redirect_uri"
@@ -961,6 +963,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._cloud_login_email = ""
         self._cloud_login_password = ""
         self._cloud_login_remember = False
+        self._cloud_debug_tap_count = 0
+        self._cloud_debug_tap_timer = QTimer(self)
+        self._cloud_debug_tap_timer.setSingleShot(True)
+        self._cloud_debug_tap_timer.timeout.connect(self._reset_cloud_debug_taps)
         self.setWindowTitle(self.tr("Online publishing"))
         self.setModal(True)
         self.setMinimumSize(700, 760)
@@ -1257,7 +1263,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         cloud_note = QLabel(
             self.tr(
                 "Cloud backup uses the same image selection and image overlay options as online publishing. "
-                "Choose whether synced images should keep full size or be reduced to 2 MP."
+                "Choose whether synced images should keep full size or be reduced to 2 MP. "
+                "Reduced is the planned low-cost default for future free cloud hosting, while full size keeps the door open for a later Pro backup tier."
             )
         )
         cloud_note.setWordWrap(True)
@@ -1308,7 +1315,39 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
         self.cloud_status_label = QLabel(self.tr("Not logged in"))
         self.cloud_status_label.setWordWrap(True)
+        self.cloud_status_label.setCursor(Qt.PointingHandCursor)
+        self.cloud_status_label.mousePressEvent = self._on_cloud_status_label_clicked
         cloud_layout.addWidget(self.cloud_status_label)
+
+        self.cloud_debug_override_container = QWidget(self)
+        cloud_debug_layout = QVBoxLayout(self.cloud_debug_override_container)
+        cloud_debug_layout.setContentsMargins(0, 0, 0, 0)
+        cloud_debug_layout.setSpacing(4)
+        cloud_debug_layout.addWidget(QLabel(self.tr("Testing override:")))
+        self.cloud_debug_plan_group = QButtonGroup(self)
+        debug_row = QHBoxLayout()
+        debug_row.setContentsMargins(0, 0, 0, 0)
+        debug_row.setSpacing(12)
+        self.cloud_debug_plan_server_radio = QRadioButton(self.tr("Server"))
+        self.cloud_debug_plan_free_radio = QRadioButton(self.tr("Free"))
+        self.cloud_debug_plan_pro_radio = QRadioButton(self.tr("Pro"))
+        for radio, mode in (
+            (self.cloud_debug_plan_server_radio, "server"),
+            (self.cloud_debug_plan_free_radio, "free"),
+            (self.cloud_debug_plan_pro_radio, "pro"),
+        ):
+            self.cloud_debug_plan_group.addButton(radio)
+            radio.setProperty("cloud_debug_plan_override", mode)
+            radio.toggled.connect(self._on_debug_cloud_plan_override_changed)
+            debug_row.addWidget(radio)
+        debug_row.addStretch(1)
+        cloud_debug_layout.addLayout(debug_row)
+        self.cloud_debug_note_label = QLabel(self.tr("Local testing only. Server uses your normal cloud settings."))
+        self.cloud_debug_note_label.setWordWrap(True)
+        self.cloud_debug_note_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        cloud_debug_layout.addWidget(self.cloud_debug_note_label)
+        self.cloud_debug_override_container.setVisible(False)
+        cloud_layout.addWidget(self.cloud_debug_override_container)
 
         cloud_button_row = QHBoxLayout()
         self.cloud_login_button = QPushButton(self.tr("Log in"))
@@ -1550,6 +1589,91 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._save_settings()
 
     @staticmethod
+    def _normalize_debug_cloud_plan_override(value: str | None) -> str:
+        raw = str(value or "").strip().lower()
+        return raw if raw in {"server", "free", "pro"} else "server"
+
+    def _debug_cloud_plan_controls_visible(self) -> bool:
+        env_enabled = str(os.getenv("SPORELY_ENABLE_DEBUG_CLOUD_PLAN", "") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if env_enabled:
+            return True
+        raw = SettingsDB.get_setting(self.SETTING_SHOW_DEBUG_CLOUD_PLAN_OVERRIDE, "0")
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _set_debug_cloud_plan_controls_visible(self, visible: bool) -> None:
+        SettingsDB.set_setting(
+            self.SETTING_SHOW_DEBUG_CLOUD_PLAN_OVERRIDE,
+            "1" if visible else "0",
+        )
+
+    def _selected_debug_cloud_plan_override(self) -> str:
+        for radio, mode in (
+            (getattr(self, "cloud_debug_plan_server_radio", None), "server"),
+            (getattr(self, "cloud_debug_plan_free_radio", None), "free"),
+            (getattr(self, "cloud_debug_plan_pro_radio", None), "pro"),
+        ):
+            if radio is not None and radio.isChecked():
+                return mode
+        return "server"
+
+    def _set_debug_cloud_plan_override(self, mode: str | None) -> None:
+        normalized = self._normalize_debug_cloud_plan_override(mode)
+        radio_map = {
+            "server": getattr(self, "cloud_debug_plan_server_radio", None),
+            "free": getattr(self, "cloud_debug_plan_free_radio", None),
+            "pro": getattr(self, "cloud_debug_plan_pro_radio", None),
+        }
+        radio = radio_map.get(normalized) or getattr(self, "cloud_debug_plan_server_radio", None)
+        if radio is not None:
+            radio.setChecked(True)
+
+    def _reset_cloud_debug_taps(self) -> None:
+        self._cloud_debug_tap_count = 0
+
+    def _on_cloud_status_label_clicked(self, _event) -> None:
+        self._cloud_debug_tap_count += 1
+        self._cloud_debug_tap_timer.start(1500)
+        if self._cloud_debug_tap_count < 5:
+            return
+        self._cloud_debug_tap_count = 0
+        if str(os.getenv("SPORELY_ENABLE_DEBUG_CLOUD_PLAN", "") or "").strip().lower() in {"1", "true", "yes", "on"}:
+            return
+        next_visible = not self._debug_cloud_plan_controls_visible()
+        if not next_visible:
+            self._set_debug_cloud_plan_override("server")
+        self._set_debug_cloud_plan_controls_visible(next_visible)
+        self._update_cloud_debug_controls()
+        self._save_settings()
+        self.set_hint(
+            self.tr("Testing override shown") if next_visible else self.tr("Testing override hidden"),
+            tone="success" if next_visible else "info",
+        )
+
+    def _update_cloud_debug_controls(self) -> None:
+        visible = self._debug_cloud_plan_controls_visible()
+        override_mode = self._selected_debug_cloud_plan_override()
+        if hasattr(self, "cloud_debug_override_container"):
+            self.cloud_debug_override_container.setVisible(visible)
+        manual_size_enabled = override_mode == "server"
+        for radio in (
+            getattr(self, "cloud_image_size_reduced_radio", None),
+            getattr(self, "cloud_image_size_full_radio", None),
+        ):
+            if radio is not None:
+                radio.setEnabled(manual_size_enabled)
+        if hasattr(self, "cloud_debug_note_label"):
+            self.cloud_debug_note_label.setText(
+                self.tr("Local testing only. Server uses your normal cloud settings.")
+                if override_mode == "server"
+                else self.tr("Local testing only. This override currently replaces the normal cloud image-size policy.")
+            )
+
+    def _on_debug_cloud_plan_override_changed(self, _checked: bool) -> None:
+        self._update_cloud_debug_controls()
+        if not self._loading_settings:
+            self._save_settings()
+
+    @staticmethod
     def _setting_enabled(key: str, default: bool = False) -> bool:
         fallback = "1" if default else "0"
         raw = SettingsDB.get_setting(key, fallback)
@@ -1657,6 +1781,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_CLOUD_IMAGE_SIZE_MODE,
             self._selected_cloud_image_size_mode(),
+        )
+        SettingsDB.set_setting(
+            self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,
+            self._selected_debug_cloud_plan_override(),
         )
 
     def _selected_uploader(self):
@@ -1826,14 +1954,16 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._refresh_cloud_status()
         email = str(get_app_settings().get("cloud_user_email") or "").strip()
         logged_in = bool(self._cloud_client)
+        debug_override = self._selected_debug_cloud_plan_override()
         if hasattr(self, "cloud_status_label"):
             if logged_in:
                 shown = email or f"{self._cloud_client.user_id[:8]}..."
-                self.cloud_status_label.setText(
-                    self.tr("Signed in as: {account}").format(account=shown)
-                )
+                text = self.tr("Signed in as: {account}").format(account=shown)
             else:
-                self.cloud_status_label.setText(self.tr("Not logged in"))
+                text = self.tr("Not logged in")
+            if debug_override in {"free", "pro"}:
+                text = f"{text}\n{self.tr('Testing override: {mode}').format(mode=self.tr('Free') if debug_override == 'free' else self.tr('Pro'))}"
+            self.cloud_status_label.setText(text)
         if hasattr(self, "cloud_login_button"):
             self.cloud_login_button.setEnabled(self._cloud_login_worker is None and not logged_in)
             self.cloud_login_button.setText(
@@ -1841,6 +1971,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             )
         if hasattr(self, "cloud_logout_button"):
             self.cloud_logout_button.setEnabled(self._cloud_login_worker is None and logged_in)
+        self._update_cloud_debug_controls()
 
     def _update_controls(self):
         uploader = self._selected_uploader()
@@ -2311,6 +2442,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     "reduced",
                 )
             )
+            self._set_debug_cloud_plan_override(
+                SettingsDB.get_setting(
+                    self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,
+                    "server",
+                )
+            )
+            self._update_cloud_debug_controls()
 
             if self.targets_table.rowCount() > 0:
                 if not self.targets_table.selectionModel().hasSelection():
@@ -3949,6 +4087,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.observations_tab = ObservationsTab()
         self.observations_tab.observation_selected.connect(self.on_observation_selected)
         self.observations_tab.observation_highlighted.connect(self.update_observation_header)
+        self.observations_tab.selection_count_changed.connect(self._on_multi_observation_selected)
         self.observations_tab.image_selected.connect(self.on_image_selected)
         self.observations_tab.observation_deleted.connect(self.on_observation_deleted)
         self.tab_widget.addTab(self.observations_tab, self.tr("Observations ({alt}O)").format(alt=_ALT_LABEL))
@@ -8853,6 +8992,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             display_name = f"? {display_name}"
         date = observation.get('date') or "Unknown date"
         self.observation_header_label.setText(f"{display_name} - {date}")
+
+    def _on_multi_observation_selected(self, count: int):
+        """Update the observation header label when multiple rows are selected."""
+        self.observation_header_label.setText(self.tr("{n} observations selected").format(n=count))
 
     def clear_current_image_display(self):
         """Clear the current image and overlays."""

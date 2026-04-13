@@ -110,6 +110,7 @@ from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
 SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
 SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
+SETTING_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_debug_cloud_plan_override"
 SHARING_SCOPE_PRIVATE = "private"
 SHARING_SCOPE_FRIENDS = "friends"
 SHARING_SCOPE_PUBLIC = "public"
@@ -793,6 +794,8 @@ class ObservationsTab(QWidget):
     observation_selected = Signal(int, str, bool)
     # Signal emitted when a single row is highlighted (id only) — for lightweight header refresh
     observation_highlighted = Signal(int)
+    # Signal emitted when multiple rows are selected (count)
+    selection_count_changed = Signal(int)
     # Signal emitted when an observation is deleted
     observation_deleted = Signal(int)
     # Signal emitted when an image is selected to open in Measure tab
@@ -4354,6 +4357,7 @@ class ObservationsTab(QWidget):
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
+            self.selection_count_changed.emit(len(selected_rows))
             return
 
         row = selected_rows[0].row()
@@ -4517,6 +4521,7 @@ class ObservationsTab(QWidget):
     ) -> tuple[list[dict], object | None, list[str]]:
         if max_pixels is None:
             max_pixels = self._cloud_sync_image_max_pixels()
+        upload_mode = self._cloud_sync_image_mode()
         obs = observation or {}
         observation_id = obs.get("id")
         if not observation_id:
@@ -4567,6 +4572,8 @@ class ObservationsTab(QWidget):
                 continue
             try:
                 with Image.open(source_path) as img:
+                    source_width = int(img.width or 0)
+                    source_height = int(img.height or 0)
                     img = img.convert("RGB")
                     current_pixels = max(1, int(img.width) * int(img.height))
                     if max_pixels and current_pixels > int(max_pixels):
@@ -4579,6 +4586,8 @@ class ObservationsTab(QWidget):
                     image_id = int(image_row.get("id") or idx)
                     out_path = temp_dir / f"cloud_{image_id:04d}.jpg"
                     img.save(out_path, "JPEG", quality=90)
+                    stored_width = int(img.width or 0)
+                    stored_height = int(img.height or 0)
             except Exception:
                 warnings.append(
                     self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
@@ -4589,6 +4598,14 @@ class ObservationsTab(QWidget):
                 {
                     "image_row": image_row,
                     "upload_path": str(out_path),
+                    "cloud_upload_meta": {
+                        "upload_mode": upload_mode,
+                        "source_width": source_width or None,
+                        "source_height": source_height or None,
+                        "stored_width": stored_width or None,
+                        "stored_height": stored_height or None,
+                        "stored_bytes": int(out_path.stat().st_size) if out_path.exists() else None,
+                    },
                 }
             )
 
@@ -4689,6 +4706,7 @@ class ObservationsTab(QWidget):
     ) -> tuple[list[dict], object | None, list[str]]:
         if max_pixels is None:
             max_pixels = self._cloud_sync_image_max_pixels()
+        upload_mode = self._cloud_sync_image_mode()
         if not self._is_main_gui_thread():
             return self._prepare_cloud_sync_image_uploads_threadsafe(
                 observation,
@@ -4756,6 +4774,16 @@ class ObservationsTab(QWidget):
                 )
                 continue
             source_path = str(image_row.get("filepath") or image_row.get("original_filepath") or "")
+            source_width = int(rendered.width() or 0)
+            source_height = int(rendered.height() or 0)
+            if source_path:
+                try:
+                    source_pixmap = QPixmap(source_path)
+                    if not source_pixmap.isNull():
+                        source_width = int(source_pixmap.width() or source_width or 0)
+                        source_height = int(source_pixmap.height() or source_height or 0)
+                except Exception:
+                    pass
             suffix = Path(source_path).suffix.lower()
             image_format = "PNG" if suffix == ".png" else "JPEG"
             out_suffix = ".png" if image_format == "PNG" else ".jpg"
@@ -4772,6 +4800,14 @@ class ObservationsTab(QWidget):
                 {
                     "image_row": image_row,
                     "upload_path": saved_path,
+                    "cloud_upload_meta": {
+                        "upload_mode": upload_mode,
+                        "source_width": source_width or None,
+                        "source_height": source_height or None,
+                        "stored_width": int(rendered.width() or 0) or None,
+                        "stored_height": int(rendered.height() or 0) or None,
+                        "stored_bytes": int(out_path.stat().st_size) if out_path.exists() else None,
+                    },
                 }
             )
             self._yield_background_sync_ui()
@@ -4825,9 +4861,23 @@ class ObservationsTab(QWidget):
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
-    def _cloud_sync_image_max_pixels() -> int:
+    def _cloud_sync_debug_plan_override() -> str:
+        raw = str(SettingsDB.get_setting(SETTING_DEBUG_CLOUD_PLAN_OVERRIDE, "server") or "server").strip().lower()
+        return raw if raw in {"server", "free", "pro"} else "server"
+
+    @staticmethod
+    def _cloud_sync_image_mode() -> str:
+        debug_override = ObservationsTab._cloud_sync_debug_plan_override()
+        if debug_override == "free":
+            return "reduced"
+        if debug_override == "pro":
+            return "full"
         mode = str(SettingsDB.get_setting(SETTING_CLOUD_IMAGE_SIZE_MODE, "reduced") or "reduced").strip().lower()
-        return 0 if mode == "full" else 2_000_000
+        return "full" if mode == "full" else "reduced"
+
+    @staticmethod
+    def _cloud_sync_image_max_pixels() -> int:
+        return 0 if ObservationsTab._cloud_sync_image_mode() == "full" else 2_000_000
 
     @staticmethod
     def _publish_path_key(path: str | None) -> str:
