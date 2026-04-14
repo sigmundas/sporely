@@ -46,7 +46,7 @@ class SpeciesItemDelegate(QStyledItemDelegate):
             if has_data:
                 app = QApplication.instance()
                 dark = app.palette().window().color().lightness() < 128 if app else False
-                highlight = QColor(28, 53, 90) if dark else QColor(219, 234, 254)
+                highlight = QColor(28, 53, 90) if dark else QColor(199, 236, 199)  # primary_container
                 painter.save()
                 painter.fillRect(option.rect, highlight)
                 painter.restore()

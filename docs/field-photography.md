@@ -13,6 +13,8 @@ Field photos are also used for AI species recognition, using [Artsorakelet](http
 3. If the image has EXIF date/GPS, use **Set from current image** to populate observation metadata.
 4. To get more precise AI identification, use the crop tool to select a tight crop of the mushroom.
 
+> **Note on cloud-synced images:** Images uploaded from the web app (app.sporely.no) on free accounts may not carry EXIF because the 2 MP conversion strips metadata. The desktop restores GPS and date from the observation record automatically on sync, so "Set from current image" should work as long as the observation has GPS or date stored. If the button is still disabled, run a cloud sync to trigger the backfill.
+
 ## Field photos for AI identification
 
 1. Select one or multiple (ctrl + click) field photos in the **Edit Observation** dialog

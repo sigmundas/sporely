@@ -193,6 +193,17 @@ def main():
         app_font.setPointSize(10)
         app.setFont(app_font)
 
+    # Load bundled fonts (Inter for body/data, Manrope for headlines).
+    # Falls back gracefully to system sans-serif if files are absent.
+    from PySide6.QtGui import QFontDatabase
+    _fonts_dir = Path(__file__).parent / "assets" / "fonts"
+    if _fonts_dir.is_dir():
+        for _font_file in _fonts_dir.glob("*.ttf"):
+            _fid = QFontDatabase.addApplicationFont(str(_font_file))
+            if _fid >= 0:
+                _families = QFontDatabase.applicationFontFamilies(_fid)
+                print(f"Loaded font: {_font_file.name} → families: {_families}")
+
     splash_theme = str(app_settings.get("ui_theme", "") or "").strip().lower()
     if splash_theme not in {"auto", "light", "dark"}:
         splash_theme = str(SettingsDB.get_setting("ui_theme", "auto") or "auto").strip().lower()

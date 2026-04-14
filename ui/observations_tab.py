@@ -853,19 +853,20 @@ class ObservationsTab(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 10)
+        layout.setSpacing(12)
 
         content_layout = QHBoxLayout()
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(12)
         layout.addLayout(content_layout, 1)
 
         left_panel = QWidget()
+        left_panel.setObjectName("sidePanel")
         left_panel.setMaximumWidth(285)
         left_panel.setMinimumWidth(285)
         left_panel_layout = QVBoxLayout(left_panel)
-        left_panel_layout.setContentsMargins(0, 0, 0, 0)
+        left_panel_layout.setContentsMargins(12, 12, 12, 12)
         left_panel_layout.setSpacing(8)
 
         _icons = Path(__file__).parent.parent / "assets" / "icons"
@@ -1031,19 +1032,11 @@ class ObservationsTab(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
         self.table.verticalHeader().setVisible(False)
-        # Light selection highlight keeps all text readable.
-        self.table.setStyleSheet("""
-            QTableWidget::item:selected {
-                background-color: #d9e9f8;
-                color: #1f2d3d;
-            }
-            QTableWidget::item:selected:!active {
-                background-color: #eaf3ff;
-                color: #1f2d3d;
-            }
-        """)
+        # Selection colours are driven by QSS in styles.py (sel_bg / sel_fg).
+        # Clear any inline override so the global stylesheet applies cleanly.
+        self.table.setStyleSheet("")
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
         self.table.setSortingEnabled(True)
@@ -8928,6 +8921,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.datetime_input.setDateTime(QDateTime.currentDateTime())
         self.datetime_input.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.datetime_input.setCalendarPopup(True)
+        _cal = self.datetime_input.calendarWidget()
+        _cal.setHorizontalHeaderFormat(_cal.HorizontalHeaderFormat.SingleLetterDayNames)
+        _cal.setMinimumSize(300, 240)
         self.datetime_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         datetime_layout.addWidget(self.datetime_input, 1)
         _details_row = 0

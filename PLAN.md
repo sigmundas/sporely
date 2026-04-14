@@ -166,6 +166,35 @@
 
 ---
 
+## Design System Migration — "Slate Lab / Clinical Nocturne"
+*Goal: Replace the generic blue-accent Material-adjacent UI with an editorial, scientific design system using organic slate-green tones, editorial typography (Inter + Manrope), tonal surface hierarchy, and no hard borders.*
+
+### Completed
+- [x] **Phase 1 — Color tokens** — `ui/styles.py` `get_style()` updated to Slate Lab (light) and Clinical Nocturne (dark) palettes. `apply_palette()` updated with matching `QPalette` values. `ui/hint_status.py` progress bar and state colors updated.
+- [x] **Phase 2 — Typography** — Manrope (headlines/section headers) and Inter (body/data) loaded via `QFontDatabase` in `main.py`. Font families registered as `'Manrope'` and `'Inter 18pt'`. All QSS font references updated.
+- [x] **Phase 3 — Surfaces/borders** — `QGroupBox` border removed, rounded 8px. Inputs use Soft Box style (tonal bg, no border, focus underline). Tab navigation seamless (selected tab merges with pane background). `QSplitter` handle hidden. No 1px separator lines.
+- [x] **Phase 4 — Core components** — Buttons 8px border-radius with gradient. `QPushButton:disabled` uses `dis_bg`/`dis_fg` tokens. SpinBox arrows hidden. `QDateEdit`/`QDateTimeEdit` Soft Box style with calendar popup. `QGroupBox#dialogSection` for dialog shell sections. Category toggle buttons segmented. `QPushButton[sourceActive]` property for EXIF source highlight.
+- [x] **Phase 5 — Observations tab** — Table grid lines removed, alternating rows off, selection uses `sel_bg` (mint). Side panel `#sidePanel` tonal bg. Calendar popup: single-letter day headers (`setHorizontalHeaderFormat(SingleLetterDayNames)`), minimum size 300×240. Table item padding override prevents calendar cell clipping.
+- [x] **Prepare Images dialog** — Outer "Image settings" and "Import details" `QGroupBox` wrappers replaced with `QLabel#sectionHeader` plain headers. Inner groups retained. Inline stylesheets removed from "Set from current image" button.
+- [x] **`ui/delegates.py`** — `SpeciesItemDelegate` highlight color updated from blue to `primary_container` green.
+
+### Remaining
+- [ ] **Phase 6 — Remaining tabs and dialogs** — Apply surface/typography/component patterns to `ui/live_lab_tab.py`, `ui/ingestion_hub_tab.py`, `ui/calibration_dialog.py`, and all other dialogs. Consolidate remaining inline `setStyleSheet()` calls into `styles.py`.
+
+---
+
+## Cloud Sync — EXIF & File Integrity Fixes
+*Completed 2026-04-14*
+
+- [x] **EXIF stripping by web 2MP conversion** — Web app (free tier) strips all EXIF when converting images to 2MP before uploading to R2. The "Set from current image" button in the Prepare Images dialog was always disabled for cloud-synced images because `_current_exif_datetime`, `_current_exif_lat`, and `_current_exif_lon` were all `None`.
+  - **Fix (desktop side):** `_inject_obs_exif_into_field_image()` in `cloud_sync.py` writes observation GPS/date back into downloaded JPEG EXIF.
+  - `_backfill_missing_exif_on_cloud_images()` retroactively patches existing cloud images on next sync.
+  - **Fix still needed (web side):** Extract GPS/datetime from native EXIF *before* the Canvas 2MP resize, store in the database row, and/or re-inject into the saved JPEG. See `sporely-web PLAN.md` Phase 4 Metadata Preservation task.
+- [x] **Local full-res overwrite** — `_sync_existing_remote_image_to_local()` was unconditionally replacing local full-res desktop-imported images with smaller cloud 2MP versions on every sync.
+  - **Fix:** File size comparison — if local file is larger than downloaded cloud copy, keep local and only update DB metadata. The local full-resolution original is preserved.
+
+---
+
 ## Long-Term Goals (Phase 3)
 - [ ] **In-Browser Measurement** — Replicate manual spore clicking and calibration using HTML5 Canvas.
 - [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
