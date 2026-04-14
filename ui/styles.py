@@ -84,49 +84,51 @@ def apply_palette(theme: str = "auto") -> None:
     palette = QPalette()
 
     if dark:
-        palette.setColor(QPalette.Window,          QColor("#1c1c1e"))
+        # Clinical Nocturne
+        palette.setColor(QPalette.Window,          QColor("#131313"))
         palette.setColor(QPalette.WindowText,      QColor("#e8e8e8"))
-        palette.setColor(QPalette.Base,            QColor("#2b2b2d"))
-        palette.setColor(QPalette.AlternateBase,   QColor("#333335"))
-        palette.setColor(QPalette.ToolTipBase,     QColor("#2b2b2d"))
+        palette.setColor(QPalette.Base,            QColor("#1c1b1b"))
+        palette.setColor(QPalette.AlternateBase,   QColor("#252423"))
+        palette.setColor(QPalette.ToolTipBase,     QColor("#1c1b1b"))
         palette.setColor(QPalette.ToolTipText,     QColor("#e8e8e8"))
         palette.setColor(QPalette.Text,            QColor("#e8e8e8"))
-        palette.setColor(QPalette.Button,          QColor("#3a3a3c"))
+        palette.setColor(QPalette.Button,          QColor("#1c1b1b"))
         palette.setColor(QPalette.ButtonText,      QColor("#e8e8e8"))
         palette.setColor(QPalette.BrightText,      QColor("#ffffff"))
-        palette.setColor(QPalette.Mid,             QColor("#4a4a4c"))
-        palette.setColor(QPalette.Dark,            QColor("#555557"))
-        palette.setColor(QPalette.Light,           QColor("#3a3a3c"))
-        palette.setColor(QPalette.Highlight,       QColor("#1c3a5e"))
-        palette.setColor(QPalette.HighlightedText, QColor("#c0deff"))
-        palette.setColor(QPalette.PlaceholderText, QColor("#8e8e93"))
-        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#636366"))
-        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#636366"))
-        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#636366"))
-        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#333335"))
-        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#333335"))
+        palette.setColor(QPalette.Mid,             QColor("#353534"))
+        palette.setColor(QPalette.Dark,            QColor("#252423"))
+        palette.setColor(QPalette.Light,           QColor("#252423"))
+        palette.setColor(QPalette.Highlight,       QColor("#3d5a52"))
+        palette.setColor(QPalette.HighlightedText, QColor("#e8e8e8"))
+        palette.setColor(QPalette.PlaceholderText, QColor("#c1c8c4"))
+        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#6b7270"))
+        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#6b7270"))
+        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#6b7270"))
+        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#353534"))
+        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#353534"))
     else:
-        palette.setColor(QPalette.Window,          QColor("#f5f5f5"))
-        palette.setColor(QPalette.WindowText,      QColor("#2c3e50"))
+        # Slate Lab
+        palette.setColor(QPalette.Window,          QColor("#f8f9fa"))
+        palette.setColor(QPalette.WindowText,      QColor("#2b3437"))
         palette.setColor(QPalette.Base,            QColor("#ffffff"))
-        palette.setColor(QPalette.AlternateBase,   QColor("#f5f5f5"))
+        palette.setColor(QPalette.AlternateBase,   QColor("#f0f1f2"))
         palette.setColor(QPalette.ToolTipBase,     QColor("#ffffff"))
-        palette.setColor(QPalette.ToolTipText,     QColor("#2c3e50"))
-        palette.setColor(QPalette.Text,            QColor("#2c3e50"))
-        palette.setColor(QPalette.Button,          QColor("#f5f5f5"))
-        palette.setColor(QPalette.ButtonText,      QColor("#2c3e50"))
+        palette.setColor(QPalette.ToolTipText,     QColor("#2b3437"))
+        palette.setColor(QPalette.Text,            QColor("#2b3437"))
+        palette.setColor(QPalette.Button,          QColor("#f0f1f2"))
+        palette.setColor(QPalette.ButtonText,      QColor("#2b3437"))
         palette.setColor(QPalette.BrightText,      QColor("white"))
-        palette.setColor(QPalette.Mid,             QColor("#d0d7de"))
-        palette.setColor(QPalette.Dark,            QColor("#b0bec5"))
+        palette.setColor(QPalette.Mid,             QColor("#e0e2e3"))
+        palette.setColor(QPalette.Dark,            QColor("#e0e0e0"))
         palette.setColor(QPalette.Light,           QColor("#ffffff"))
-        palette.setColor(QPalette.Highlight,       QColor("#3498db"))
-        palette.setColor(QPalette.HighlightedText, QColor("white"))
-        palette.setColor(QPalette.PlaceholderText, QColor("#7f8c8d"))
-        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#95a5a6"))
-        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#95a5a6"))
-        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#95a5a6"))
-        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#eceff1"))
-        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#eceff1"))
+        palette.setColor(QPalette.Highlight,       QColor("#defff4"))
+        palette.setColor(QPalette.HighlightedText, QColor("#2b3437"))
+        palette.setColor(QPalette.PlaceholderText, QColor("#8a9490"))
+        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#8a9490"))
+        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#8a9490"))
+        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#8a9490"))
+        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#e8edeb"))
+        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#e8edeb"))
 
     app.setPalette(palette)
 
@@ -162,59 +164,61 @@ def get_style(theme: str = "auto") -> str:
     dark = _is_dark(theme)
 
     if dark:
-        bg         = "#1c1c1e"
-        surface    = "#2b2b2d"
-        border     = "#3a3a3c"
-        brd_focus  = "#4a90d9"
-        text       = "#e8e8e8"
-        text_dim   = "#8e8e93"
-        accent     = "#4a90d9"
-        accent_h   = "#3a7bc8"
-        accent_p   = "#2a5fa0"
-        dis_bg     = "#3a3a3c"
-        dis_fg     = "#636366"
-        menubar_bg = "#1c1c1e"
-        menubar_h  = "#2c2c2e"
-        img_bg     = "#2b2b2d"
-        img_brd    = "#3a3a3c"
-        sel_bg     = "#1c3a5e"
-        sel_fg     = "#c0deff"
-        sel_inact  = "#172a42"
-        dlg_border = "#3a3a3c"
-        inline_brd = "#4a90d9"
-        indicator_border = "#8e8e93"
-        indicator_bg = "#232325"
-        indicator_disabled = "#555557"
-        outline_btn_bg = "rgba(74,144,217,0.13)"  # subtle blue tint, matches light mode approach
-        data_brd   = "#585860"   # more visible than border in dark
-        data_fg    = "#a8a8b0"   # slightly brighter than text_dim
+        # Clinical Nocturne — atmospheric, high-contrast, lab-optimised
+        bg           = "#131313"         # deep charcoal background
+        surface      = "#1c1b1b"         # slightly lighter charcoal for cards
+        surface_low   = "#1c1b1b"         # tab bar, header row, side panel
+        surface_hover = "#252423"         # hover on surface_low elements
+        input_bg      = "#252423"         # input fields (just visible lift)
+        brd_focus    = "#aecdc3"         # soft mint focus ring
+        text         = "#e8e8e8"         # off-white primary text
+        text_dim     = "#c1c8c4"         # muted sage-grey secondary text
+        accent       = "#2e5c35"         # mid forest green — button background
+        accent_h     = "#3a7042"         # slightly lighter hover
+        accent_p     = "#3d5a52"         # deep teal pressed
+        dis_bg       = "#353534"         # dark grey disabled bg
+        dis_fg       = "#6b7270"         # muted disabled text
+        menubar_bg   = "#131313"
+        menubar_h    = "#1c1b1b"
+        img_bg       = "#1c1b1b"
+        sel_bg       = "#3d5a52"         # deep forest green selection
+        sel_fg       = "#e8e8e8"
+        sel_inact    = "#2a3c38"
+        inline_brd   = "#aecdc3"
+        indicator_border   = "#aecdc3"   # mint indicator/checkbox border
+        indicator_checked  = "#aecdc3"   # mint fill for checked state
+        indicator_bg       = "#1c1b1b"
+        indicator_disabled = "#353534"
+        data_brd     = "#353534"
+        data_fg      = "#c1c8c4"
     else:
-        bg         = "#f5f5f5"
-        surface    = "white"
-        border     = "#e0e0e0"
-        brd_focus  = "#3498db"
-        text       = "#2c3e50"
-        text_dim   = "#7f8c8d"
-        accent     = "#3498db"
-        accent_h   = "#2980b9"
-        accent_p   = "#21618c"
-        dis_bg     = "#bdc3c7"
-        dis_fg     = "#7f8c8d"
-        menubar_bg = "#34495e"
-        menubar_h  = "#2c3e50"
-        img_bg     = "#ecf0f1"
-        img_brd    = "#bdc3c7"
-        sel_bg     = "#d9e9f8"
-        sel_fg     = "#1f2d3d"
-        sel_inact  = "#eaf3ff"
-        dlg_border = "#c7d0da"
-        inline_brd = "#6aa9e9"
-        indicator_border = "#7f8c8d"
-        indicator_bg = "#ffffff"
-        indicator_disabled = "#bdc3c7"
-        outline_btn_bg = "rgba(52,152,219,0.10)"  # subtle tint so white icons stay visible
-        data_brd   = border
-        data_fg    = text_dim
+        # Slate Lab — technical, clinical, cool off-white
+        bg           = "#f8f9fa"         # cool off-white canvas
+        surface      = "#ffffff"         # pure white for cards/inputs
+        surface_low   = "#f0f1f2"         # light grey tonal shift (tab bar, headers, side panel)
+        surface_hover = "#e0e2e3"         # hover on surface_low elements
+        input_bg      = "#e8edeb"         # soft input background
+        brd_focus    = "#47645c"         # desaturated slate green
+        text         = "#2b3437"         # dark slate grey primary text
+        text_dim     = "#586064"         # medium grey secondary text
+        accent       = "#47645c"         # desaturated slate green
+        accent_h     = "#3a5450"         # hover: slightly darker
+        accent_p     = "#2e4440"         # pressed: deepest
+        dis_bg       = "#cdd5d2"         # muted disabled background
+        dis_fg       = "#8a9490"         # muted disabled text
+        menubar_bg   = "#47645c"
+        menubar_h    = "#3a5450"
+        img_bg       = "#f0f1f2"         # matches surface_low
+        sel_bg       = "#defff4"         # very light mint selection
+        sel_fg       = "#2b3437"
+        sel_inact    = "#e8f8f4"         # lighter inactive selection
+        inline_brd   = "#47645c"
+        indicator_border   = "#586064"
+        indicator_checked  = "#47645c"   # slate green fill for checked state
+        indicator_bg       = "#ffffff"
+        indicator_disabled = "#cdd5d2"
+        data_brd     = "#e0e0e0"         # neutral grey divider
+        data_fg      = "#586064"
 
     chk_url = _CHK_URL
 
@@ -224,34 +228,80 @@ QMainWindow {{
 }}
 
 QWidget {{
+    font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
     font-size: {base_pt}pt;
+}}
+
+/* ── Seamless tab navigation ──────────────────────────────────────── */
+/* pane background must match the selected tab background so the border
+   between them disappears. margin-top: -1px hides the default separator. */
+QTabWidget::pane {{
+    border: none;
+    background-color: {bg};
+    margin-top: -1px;
+}}
+
+QTabWidget::tab-bar {{
+    alignment: left;
+}}
+
+QTabBar {{
+    background-color: {surface_low};
+}}
+
+QTabBar::tab {{
+    background-color: {surface_low};
+    color: {text_dim};
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px 20px;
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-weight: 700;
+    font-size: {base_pt}pt;
+    min-width: 80px;
+}}
+
+QTabBar::tab:selected {{
+    background-color: {bg};
+    color: {text};
+    border-bottom: 3px solid {accent};
+}}
+
+QTabBar::tab:hover:!selected {{
+    background-color: {surface_hover};
+    color: {text};
 }}
 
 QGroupBox {{
     background-color: {surface};
-    border: 1px solid {border};
+    border: none;
     border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 12px;
-    font-weight: bold;
+    margin-top: 16px;
+    padding-top: 16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 16px;
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-weight: 700;
     color: {text};
 }}
 
 QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 8px;
+    left: 12px;
     padding: 4px 8px;
     background-color: {surface};
     border-radius: 4px;
 }}
 
 QPushButton {{
-    background-color: {accent};
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {accent}, stop:1 {accent_h});
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 6px 10px;
+    border-radius: 8px;
+    padding: 6px 16px;
     font-weight: bold;
     font-size: {base_pt}pt;
 }}
@@ -262,6 +312,7 @@ QPushButton:hover {{
 
 QPushButton:pressed {{
     background-color: {accent_p};
+    padding: 7px 15px 5px 17px;
 }}
 
 QPushButton:disabled {{
@@ -270,17 +321,17 @@ QPushButton:disabled {{
 }}
 
 QPushButton#outlineButton {{
-    background-color: {outline_btn_bg};
+    background-color: transparent;
     color: {accent};
-    border: 2px solid {accent};
-    border-radius: 6px;
-    padding: 5px 10px;
+    border: 1.5px solid {accent};
+    border-radius: 8px;
+    padding: 5px 16px;
     font-weight: bold;
 }}
 
 QPushButton#outlineButton:hover {{
-    background-color: {accent};
-    color: white;
+    background-color: {sel_bg};
+    color: {accent};
 }}
 
 QPushButton#outlineButton:pressed {{
@@ -292,19 +343,20 @@ QPushButton#outlineButton:pressed {{
 QPushButton#outlineButton:disabled {{
     background-color: transparent;
     color: {dis_fg};
-    border: 2px solid {dis_fg};
+    border: 1.5px solid {dis_fg};
 }}
 
 QPushButton#dataButton {{
     background-color: transparent;
     color: {data_fg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
-    padding: 4px 8px;
+    border-radius: 8px;
+    padding: 4px 12px;
     font-weight: normal;
 }}
 
 QPushButton#dataButton:hover {{
+    background-color: {input_bg};
     color: {text};
     border-color: {text_dim};
 }}
@@ -320,21 +372,21 @@ QPushButton#dataButton:disabled {{
 
 QPushButton#destructiveButton {{
     background-color: transparent;
-    color: #c0392b;
-    border: 1px solid #c0392b;
-    border-radius: 6px;
-    padding: 4px 8px;
+    color: #a73b21;
+    border: 1px solid #a73b21;
+    border-radius: 8px;
+    padding: 4px 12px;
     font-weight: normal;
 }}
 
 QPushButton#destructiveButton:hover {{
-    background-color: #c0392b;
+    background-color: #a73b21;
     color: white;
 }}
 
 QPushButton#destructiveButton:pressed {{
-    background-color: #a93226;
-    border-color: #a93226;
+    background-color: #8a2f18;
+    border-color: #8a2f18;
     color: white;
 }}
 
@@ -344,49 +396,68 @@ QPushButton#destructiveButton:disabled {{
 }}
 
 QPushButton#measureButton {{
-    background-color: #27ae60;
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {accent}, stop:1 {accent_h});
 }}
 
 QPushButton#measureButton:hover {{
-    background-color: #229954;
+    background-color: {accent_h};
 }}
 
 QPushButton#loadButton {{
-    background-color: #9b59b6;
+    background-color: #4f7080;
 }}
 
 QPushButton#loadButton:hover {{
-    background-color: #8e44ad;
+    background-color: #3d5a68;
+}}
+
+QPushButton[sourceActive="true"] {{
+    background-color: {sel_bg};
+    color: {text};
+    font-weight: bold;
+}}
+
+QLabel#sectionHeader {{
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-weight: 700;
+    font-size: {base_pt}pt;
+    color: {text_dim};
+    padding: 4px 0px 2px 0px;
+    letter-spacing: 0.04em;
 }}
 
 QLineEdit {{
-    background-color: {surface};
-    border: 2px solid {border};
-    border-radius: 6px;
-    padding: 5px 6px;
+    background-color: {input_bg};
+    border: none;
+    border-radius: 8px;
+    border-bottom: 2px solid transparent;
+    padding: 5px 8px;
     font-size: {base_pt}pt;
     color: {text};
 }}
 
 QLineEdit:focus {{
-    border: 2px solid {brd_focus};
+    background-color: {sel_inact};
+    border-bottom: 2px solid {brd_focus};
 }}
 
 /* Inline editors in item views need tighter padding to avoid clipped text. */
 QAbstractItemView QLineEdit {{
     margin: 0px;
     padding: 1px 4px;
-    border: 1px solid {inline_brd};
+    border: none;
+    border-bottom: 1px solid {inline_brd};
     border-radius: 3px;
     background-color: {surface};
     color: {text};
 }}
 
 QTextEdit {{
-    background-color: {surface};
-    border: 2px solid {border};
-    border-radius: 6px;
-    padding: 5px 6px;
+    background-color: {input_bg};
+    border: none;
+    border-radius: 8px;
+    padding: 5px 8px;
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: {small_pt}pt;
     color: {text};
@@ -419,8 +490,8 @@ QCheckBox::indicator:hover {{
 }}
 
 QCheckBox::indicator:checked {{
-    background-color: {accent};
-    border: 2px solid {accent};
+    background-color: {indicator_checked};
+    border: 2px solid {indicator_checked};
     border-radius: 4px;
     image: {chk_url};
 }}
@@ -463,7 +534,7 @@ QRadioButton::indicator:hover {{
 }}
 
 QRadioButton::indicator:checked {{
-    background-color: {accent};
+    background-color: {indicator_checked};
     border: 4px solid {indicator_bg};
     border-radius: 8px;
 }}
@@ -487,6 +558,10 @@ QListView,
 QListWidget {{
     selection-background-color: {sel_bg};
     selection-color: {sel_fg};
+    border: none;
+    gridline-color: transparent;
+    background-color: {surface};
+    alternate-background-color: {surface};
 }}
 
 QTableView::item:selected,
@@ -508,13 +583,15 @@ QListWidget::item:selected:!active {{
 }}
 
 QHeaderView::section {{
-    background-color: {surface};
-    color: {text};
+    background-color: {surface_low};
+    color: {text_dim};
     border: none;
-    border-bottom: 1px solid {border};
-    border-right: 1px solid {border};
-    padding: 4px 8px;
-    font-weight: bold;
+    padding: 8px 12px;
+    font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-size: {small_pt}pt;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }}
 
 QHeaderView::section:last {{
@@ -524,7 +601,31 @@ QHeaderView::section:last {{
 QTableView::item,
 QTableWidget::item {{
     color: {text};
+    padding: 16px 12px;
+}}
+
+/* Remove the focus rectangle Qt draws around the active cell. */
+QTableView::item:focus,
+QTableWidget::item:focus {{
+    outline: none;
+    border: none;
+}}
+
+/* Reset calendar cell padding — the calendar uses QTableView internally
+   and must not inherit the 16px item padding from the rule above. */
+QCalendarWidget QTableView::item {{
     padding: 2px 4px;
+}}
+
+QCalendarWidget QHeaderView,
+QCalendarWidget QHeaderView::section {{
+    background-color: transparent;
+    color: {text};
+    border: none;
+    padding: 1px 2px;
+    font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-size: {base_pt}pt;
+    font-weight: normal;
 }}
 
 QTableView::item:alternate,
@@ -534,25 +635,37 @@ QTableWidget::item:alternate {{
 
 QLabel#imageLabel {{
     background-color: {img_bg};
-    border: 2px solid {img_brd};
-    border-radius: 8px;
+    border: none;
+    border-radius: 6px;
 }}
 
 QLabel#headerLabel {{
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
     font-size: {header_pt}pt;
-    font-weight: bold;
+    font-weight: 700;
     color: {text};
 }}
 
 QLabel#observationHeaderLabel {{
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
     font-size: {header_pt + 1}pt;
-    font-weight: bold;
+    font-weight: 700;
     color: {text};
     padding: 2px 0px 4px 0px;
 }}
 
+/* Metadata label: all-caps small Inter for technical fields (genus, latitude, etc.) */
+QLabel#metaLabel {{
+    font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-size: {small_pt}pt;
+    font-weight: 600;
+    color: {text_dim};
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}}
+
 QLabel#objectiveTag {{
-    background-color: rgba(52, 152, 219, 200);
+    background-color: rgba(71, 103, 74, 200);
     color: white;
     font-weight: bold;
     font-size: {obj_tag_pt}pt;
@@ -579,8 +692,8 @@ QMenuBar::item:selected {{
 
 QMenu {{
     background-color: {surface};
-    border: 1px solid {border};
-    border-radius: 4px;
+    border: none;
+    border-radius: 8px;
     color: {text};
 }}
 
@@ -596,21 +709,22 @@ QMenu::item:selected {{
 
 QDialog {{
     background-color: {bg};
-    border: 2px solid {dlg_border};
-    border-radius: 10px;
+    border: none;
+    border-radius: 12px;
 }}
 
 QMessageBox {{
     background-color: {bg};
-    border: 2px solid {dlg_border};
-    border-radius: 10px;
+    border: none;
+    border-radius: 12px;
 }}
 
 QComboBox {{
-    background-color: {surface};
-    border: 2px solid {border};
-    border-radius: 6px;
-    padding: 5px 6px;
+    background-color: {input_bg};
+    border: none;
+    border-radius: 8px;
+    border-bottom: 2px solid transparent;
+    padding: 5px 8px;
     font-size: {base_pt}pt;
     color: {text};
 }}
@@ -636,7 +750,8 @@ QComboBox QAbstractItemView::item:hover {{
 
 QComboBoxPrivateContainer {{
     background-color: {surface};
-    border: 1px solid {border};
+    border: none;
+    border-radius: 8px;
 }}
 
 QComboBoxPrivateContainer QListView {{
@@ -659,7 +774,8 @@ QComboBoxPrivateContainer QListView::item:hover {{
 }}
 
 QComboBox:focus {{
-    border: 2px solid {brd_focus};
+    background-color: {sel_inact};
+    border-bottom: 2px solid {brd_focus};
 }}
 
 QComboBox::drop-down {{
@@ -673,6 +789,89 @@ QComboBox::down-arrow {{
     border-right: 5px solid transparent;
     border-top: 6px solid {text_dim};
     margin-right: 8px;
+}}
+
+/* ── SpinBox — hide up/down arrows, render as plain text inputs ─── */
+QSpinBox,
+QDoubleSpinBox {{
+    background-color: {input_bg};
+    border: none;
+    border-radius: 8px;
+    border-bottom: 2px solid transparent;
+    padding: 5px 8px;
+    padding-right: 2px;
+    font-size: {base_pt}pt;
+    color: {text};
+}}
+
+QSpinBox:focus,
+QDoubleSpinBox:focus {{
+    background-color: {sel_inact};
+    border-bottom: 2px solid {brd_focus};
+}}
+
+QSpinBox::up-button,   QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    width: 0px;
+    height: 0px;
+    border: none;
+}}
+
+/* ── DateEdit / DateTimeEdit — Soft Box style ───────────────────── */
+QDateEdit,
+QDateTimeEdit {{
+    background-color: {input_bg};
+    border: none;
+    border-radius: 8px;
+    border-bottom: 2px solid transparent;
+    padding: 5px 8px;
+    font-size: {base_pt}pt;
+    color: {text};
+}}
+
+QDateEdit:focus,
+QDateTimeEdit:focus {{
+    background-color: {sel_inact};
+    border-bottom: 2px solid {brd_focus};
+}}
+
+QDateEdit::drop-down,
+QDateTimeEdit::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 28px;
+    border: none;
+    background: transparent;
+}}
+
+QDateEdit::down-arrow,
+QDateTimeEdit::down-arrow {{
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid {text_dim};
+    margin-right: 8px;
+}}
+
+QDateEdit::down-arrow:hover,
+QDateTimeEdit::down-arrow:hover {{
+    border-top-color: {accent};
+}}
+
+
+/* ── Dialog shell — consistent dialog backgrounds ───────────────── */
+QGroupBox#dialogSection {{
+    background-color: {surface};
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    margin-top: 20px;
+    padding-top: 16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 16px;
+    font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-weight: 700;
+    color: {text};
 }}
 
 /* Dialog and message-box buttons: same height as regular buttons,
@@ -704,13 +903,92 @@ QToolButton#collapsibleToggle {{
 }}
 
 QToolButton#collapsibleToggle:hover {{
-    background-color: {border};
+    background-color: {surface_hover};
     border-radius: 4px;
 }}
 
 QToolButton#collapsibleToggle:checked {{
     background-color: {surface};
     color: {text};
+}}
+
+/* ------------------------------------------------------------------ */
+/* Segmented category toggles (e.g. Spores / Cystidia / Basidia)      */
+/* Set objectName="categoryButton" and property "position" left/middle/right */
+/* ------------------------------------------------------------------ */
+QPushButton#categoryButton {{
+    background-color: {surface_low};
+    color: {accent};
+    border: 1px solid {data_brd};
+    padding: 6px 16px;
+    font-weight: bold;
+    border-radius: 0px;
+}}
+
+QPushButton#categoryButton:checked {{
+    background-color: {accent};
+    color: white;
+    border-color: {accent};
+}}
+
+QPushButton#categoryButton:hover:!checked {{
+    background-color: {sel_bg};
+}}
+
+QPushButton#categoryButton[position="left"] {{
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}}
+
+QPushButton#categoryButton[position="right"] {{
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-left: none;
+}}
+
+QPushButton#categoryButton[position="middle"] {{
+    border-left: none;
+}}
+
+/* Side panel container */
+#sidePanel {{
+    background-color: {surface_low};
+    border-radius: 12px;
+}}
+
+/* Primary action button — full gradient, same as default but explicit */
+QPushButton#primaryButton {{
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {accent}, stop:1 {accent_h});
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-weight: bold;
+    font-size: {base_pt}pt;
+}}
+
+QPushButton#primaryButton:hover {{
+    background-color: {accent_h};
+}}
+
+QPushButton#primaryButton:pressed {{
+    background-color: {accent_p};
+}}
+
+/* Inline map link — looks like a text hyperlink */
+QPushButton#mapLink {{
+    background-color: transparent;
+    color: {accent};
+    border: none;
+    border-radius: 0px;
+    padding: 2px 0px;
+    font-weight: normal;
+    text-decoration: underline;
+}}
+
+QPushButton#mapLink:hover {{
+    color: {accent_h};
 }}
 """
 

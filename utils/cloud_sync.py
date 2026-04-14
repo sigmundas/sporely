@@ -1545,6 +1545,104 @@ def _apply_remote_observation_fields(
         conn.close()
 
 
+def _inject_obs_exif_into_field_image(
+    image_path: Path,
+    obs_lat: float | None,
+    obs_lon: float | None,
+    obs_date_str: str | None,
+) -> None:
+    """Write observation GPS/datetime into a JPEG that has no EXIF.
+
+    Called on cloud-synced field images whose EXIF was stripped by the web
+    app's 2 MP conversion.  Only modifies the file when the image has no
+    existing DateTimeOriginal AND the observation has GPS or datetime data.
+    Does nothing for non-JPEG files or on any error.
+    """
+    if not image_path.exists():
+        return
+    suffix = image_path.suffix.lower()
+    if suffix not in {'.jpg', '.jpeg'}:
+        return
+    has_coords = obs_lat is not None and obs_lon is not None
+    has_date = bool(obs_date_str)
+    if not has_coords and not has_date:
+        return
+    try:
+        from PIL import Image as _PilImage, ExifTags as _ExifTags
+        with _PilImage.open(image_path) as img:
+            existing_exif = img.getexif()
+            existing_tags = {
+                _ExifTags.TAGS.get(k, k): v for k, v in existing_exif.items()
+            } if existing_exif else {}
+            already_has_dt = any(
+                t in existing_tags
+                for t in ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime')
+            )
+            already_has_gps = 'GPSInfo' in existing_tags
+            if already_has_dt and already_has_gps:
+                return  # nothing to do
+
+            exif = existing_exif if existing_exif is not None else img.getexif()
+
+            if not already_has_dt and has_date:
+                try:
+                    # obs date may be "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+                    date_part = obs_date_str.strip().split('T')[0].split(' ')[0]
+                    dt_exif = date_part.replace('-', ':') + ' 00:00:00'
+                    # Tag 306 = DateTime, 36867 = DateTimeOriginal
+                    exif[306] = dt_exif
+                    exif[36867] = dt_exif
+                except Exception:
+                    pass
+
+            if not already_has_gps and has_coords:
+                try:
+                    def _deg_to_rational(deg_float):
+                        d = int(abs(deg_float))
+                        m_float = (abs(deg_float) - d) * 60
+                        m = int(m_float)
+                        s_float = (m_float - m) * 60
+                        s_num = int(round(s_float * 1000))
+                        return ((d, 1), (m, 1), (s_num, 1000))
+
+                    gps_ifd = {
+                        1: 'N' if obs_lat >= 0 else 'S',    # GPSLatitudeRef
+                        2: _deg_to_rational(obs_lat),        # GPSLatitude
+                        3: 'E' if obs_lon >= 0 else 'W',    # GPSLongitudeRef
+                        4: _deg_to_rational(obs_lon),        # GPSLongitude
+                    }
+                    exif[34853] = gps_ifd  # GPSInfo
+                except Exception:
+                    pass
+
+            mode = img.mode
+            if mode not in {'RGB', 'L'}:
+                img = img.convert('RGB')
+            try:
+                exif_bytes = exif.tobytes()
+                img.save(image_path, format='JPEG', quality=92, exif=exif_bytes)
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f'[cloud_sync] Could not inject EXIF into {image_path.name}: {exc}')
+
+
+def _load_obs_gps_date(observation_id: int) -> tuple[float | None, float | None, str | None]:
+    """Return (lat, lon, date_str) from the local observations table."""
+    try:
+        obs = ObservationDB.get_observation(observation_id)
+        if not obs:
+            return None, None, None
+        lat = obs.get('gps_latitude')
+        lon = obs.get('gps_longitude')
+        date_str = str(obs.get('date') or '').strip() or None
+        return (float(lat) if lat is not None else None,
+                float(lon) if lon is not None else None,
+                date_str)
+    except Exception:
+        return None, None, None
+
+
 def _sync_existing_remote_image_to_local(
     client: "SporelyCloudClient",
     local_image: dict,
@@ -1557,10 +1655,33 @@ def _sync_existing_remote_image_to_local(
         filename = Path(str(remote_image.get('original_filename') or '')).name or f'cloud_{image_id}.jpg'
         temp_path = temp_dir / filename
         client.download_image_file(str(remote_image.get('storage_path') or ''), temp_path)
+        image_type = str(remote_image.get('image_type') or 'field').strip().lower()
         target_path = Path(existing_path) if existing_path else temp_path
-        if existing_path:
+
+        # Never overwrite a locally-held higher-resolution file with the cloud
+        # 2 MP copy.  A locally-imported image is larger than the cloud version;
+        # keep the local file and only update DB metadata.
+        local_file_exists = existing_path and Path(existing_path).exists()
+        local_is_larger = False
+        if local_file_exists and image_type == 'field':
+            try:
+                local_size = Path(existing_path).stat().st_size
+                cloud_size = temp_path.stat().st_size
+                local_is_larger = local_size > cloud_size
+            except Exception:
+                pass
+
+        if image_type == 'field' and not local_is_larger:
+            obs_id = int(local_image.get('observation_id') or 0)
+            if obs_id > 0:
+                lat, lon, date_str = _load_obs_gps_date(obs_id)
+                _inject_obs_exif_into_field_image(temp_path, lat, lon, date_str)
+
+        if existing_path and not local_is_larger:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(temp_path, target_path)
+        # If local is larger it is the full-res desktop-imported original — keep it as-is.
+
         ImageDB.update_image(
             image_id,
             filepath=str(target_path),
@@ -1636,6 +1757,10 @@ def _apply_remote_images_to_local(
             filename = Path(str(remote_image.get('original_filename') or '')).name or f'{cloud_image_id}.jpg'
             download_path = temp_dir / filename
             client.download_image_file(storage_path, download_path)
+            new_image_type = str(remote_image.get('image_type') or 'field').strip().lower()
+            if new_image_type == 'field':
+                lat, lon, date_str = _load_obs_gps_date(int(local_id))
+                _inject_obs_exif_into_field_image(download_path, lat, lon, date_str)
             local_image_id = ImageDB.add_image(
                 observation_id=int(local_id),
                 filepath=str(download_path),
@@ -2983,6 +3108,55 @@ def _push_measurements_for_observation(
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
 
 
+def _backfill_missing_exif_on_cloud_images() -> None:
+    """One-shot backfill: inject observation GPS/datetime into any field images
+    that have a cloud_id but no EXIF datetime (stripped by the web app's 2 MP
+    conversion).  Runs at the start of each pull; safe to call repeatedly since
+    it skips files that already have EXIF.
+    """
+    try:
+        from PIL import Image as _PilImg, ExifTags as _ET
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                '''
+                SELECT i.id, i.filepath, i.observation_id, i.image_type
+                FROM images i
+                WHERE i.cloud_id IS NOT NULL
+                  AND i.image_type != 'microscope'
+                  AND i.filepath IS NOT NULL
+                '''
+            ).fetchall()
+        finally:
+            conn.close()
+        for row in rows:
+            filepath = str(row[1] or '').strip()
+            if not filepath:
+                continue
+            p = Path(filepath)
+            if not p.exists() or p.suffix.lower() not in {'.jpg', '.jpeg'}:
+                continue
+            try:
+                with _PilImg.open(p) as img:
+                    exif = img.getexif()
+                    tags = {_ET.TAGS.get(k, k): v for k, v in exif.items()} if exif else {}
+                    already_has_dt = any(
+                        t in tags for t in ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime')
+                    )
+                    already_has_gps = 'GPSInfo' in tags
+                    if already_has_dt and already_has_gps:
+                        continue
+            except Exception:
+                continue
+            obs_id = int(row[2] or 0)
+            if obs_id <= 0:
+                continue
+            lat, lon, date_str = _load_obs_gps_date(obs_id)
+            _inject_obs_exif_into_field_image(p, lat, lon, date_str)
+    except Exception as exc:
+        print(f'[cloud_sync] EXIF backfill skipped: {exc}')
+
+
 def pull_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
@@ -2990,6 +3164,7 @@ def pull_all(
     remote_obs: list[dict] | None = None,
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows."""
+    _backfill_missing_exif_on_cloud_images()
     remote_obs = list(remote_obs or client.list_remote_observations())
     pulled = 0
     errors = []

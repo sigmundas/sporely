@@ -956,8 +956,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         add_btn.clicked.connect(self._on_add_images_clicked)
         outer.addWidget(add_btn)
 
-        panel = QGroupBox(self.tr("Image settings"))
+        settings_header = QLabel(self.tr("Image settings"))
+        settings_header.setObjectName("sectionHeader")
+        outer.addWidget(settings_header)
+
+        panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         type_group = QGroupBox(self.tr("Image type"))
@@ -1076,11 +1081,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         layout.addStretch()
 
-        inner_bg = "#3a3a3c" if _is_dark("auto") else "#f0f0f0"
-        panel.setStyleSheet(
-            f"QGroupBox QGroupBox {{ background-color: {inner_bg}; }}"
-            f"QGroupBox QGroupBox::title {{ background-color: {inner_bg}; }}"
-        )
         outer.addWidget(panel, 1)
         return container
 
@@ -1125,10 +1125,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         return panel
 
     def _build_right_panel(self) -> QWidget:
-        panel = QGroupBox(self.tr("Import details"))
+        panel = QWidget()
         panel.setMinimumWidth(340)
         panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 4, 0, 0)
+
+        details_header = QLabel(self.tr("Import details"))
+        details_header.setObjectName("sectionHeader")
+        layout.addWidget(details_header)
 
         current_group = QGroupBox(self.tr("Current image"))
         current_layout = QFormLayout(current_group)
@@ -1165,6 +1170,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.datetime_input.setMinimumDateTime(self._unset_datetime)
         self.datetime_input.setSpecialValueText("--")
         self.datetime_input.setCalendarPopup(True)
+        _cal = self.datetime_input.calendarWidget()
+        _cal.setHorizontalHeaderFormat(_cal.HorizontalHeaderFormat.SingleLetterDayNames)
+        _cal.setMinimumSize(300, 240)
         self.datetime_input.setDisplayFormat("yyyy-MM-dd HH:mm")
         self.datetime_input.dateTimeChanged.connect(self._on_metadata_changed)
         self.datetime_input.setDateTime(self._unset_datetime)
@@ -1295,11 +1303,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.addWidget(ai_crop_group)
         layout.addStretch(1)
 
-        inner_bg = "#3a3a3c" if _is_dark("auto") else "#f0f0f0"
-        panel.setStyleSheet(
-            f"QGroupBox QGroupBox {{ background-color: {inner_bg}; }}"
-            f"QGroupBox QGroupBox::title {{ background-color: {inner_bg}; }}"
-        )
         return panel
 
     def _populate_objectives(self, selected_key: str | None = None) -> None:
@@ -1654,22 +1657,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
         indices = self._current_selection_indices()
         if len(indices) != 1:
             self.set_from_image_btn.setEnabled(False)
-            self.set_from_image_btn.setStyleSheet(
-                "background-color: #bdc3c7; color: #7f8c8d;"
-            )
+            self.set_from_image_btn.setProperty("sourceActive", False)
+            self.set_from_image_btn.style().unpolish(self.set_from_image_btn)
+            self.set_from_image_btn.style().polish(self.set_from_image_btn)
             return
         idx = indices[0]
         if idx < 0 or idx >= len(self.import_results):
             self.set_from_image_btn.setEnabled(False)
-            self.set_from_image_btn.setStyleSheet(
-                "background-color: #bdc3c7; color: #7f8c8d;"
-            )
+            self.set_from_image_btn.setProperty("sourceActive", False)
+            self.set_from_image_btn.style().unpolish(self.set_from_image_btn)
+            self.set_from_image_btn.style().polish(self.set_from_image_btn)
             return
         if self.import_results[idx].image_type == "microscope":
             self.set_from_image_btn.setEnabled(False)
-            self.set_from_image_btn.setStyleSheet(
-                "background-color: #bdc3c7; color: #7f8c8d;"
-            )
+            self.set_from_image_btn.setProperty("sourceActive", False)
+            self.set_from_image_btn.style().unpolish(self.set_from_image_btn)
+            self.set_from_image_btn.style().polish(self.set_from_image_btn)
             return
         has_exif_data = (
             self._current_exif_datetime is not None
@@ -1678,18 +1681,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
         enable = bool(has_exif_data)
         self.set_from_image_btn.setEnabled(enable)
-        if not enable:
-            self.set_from_image_btn.setStyleSheet(
-                "background-color: #bdc3c7; color: #7f8c8d;"
-            )
-            return
-        is_source = self._observation_source_index == idx
-        if is_source:
-            self.set_from_image_btn.setStyleSheet(
-                "background-color: #27ae60; color: white; font-weight: bold;"
-            )
-        else:
-            self.set_from_image_btn.setStyleSheet("")
+        is_source = enable and self._observation_source_index == idx
+        self.set_from_image_btn.setProperty("sourceActive", is_source)
+        self.set_from_image_btn.style().unpolish(self.set_from_image_btn)
+        self.set_from_image_btn.style().polish(self.set_from_image_btn)
 
     def _current_single_index(self) -> int | None:
         indices = self._current_selection_indices()

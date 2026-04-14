@@ -34,11 +34,11 @@ def style_progress_widgets(
         text = "#eef5ff"
         status = "#7fc0ff"
     else:
-        bar_bg = "#edf3f8"
-        bar_border = "#aac3da"
-        chunk = "#2f87d1"
-        text = "#1f2d3d"
-        status = "#1e6fb8"
+        bar_bg = "#edf5f2"    # surface_container_low
+        bar_border = "#a8b5b1"  # outline_variant
+        chunk = "#47674a"     # primary
+        text = "#293532"      # on_surface
+        status = "#3b5a3e"    # primary_dim
 
     if progress_bar is not None:
         progress_bar.setStyleSheet(
@@ -90,10 +90,10 @@ class HintBar(QFrame):
 
     # (background, left accent bar colour) — light mode defaults
     _STATE_COLORS: dict[str, tuple[str, str]] = {
-        "idle":    ("#e8e8e8", "#b8b8b8"),
-        "tip":     ("#f0f7ff", "#0066cc"),
-        "info":    ("#f0f7ff", "#0066cc"),   # alias → tip
-        "success": ("#eefaf3", "#27ae60"),
+        "idle":    ("#d8e5e1", "#a8b5b1"),   # surface_container_highest / outline_variant
+        "tip":     ("#edf5f2", "#47674a"),   # surface_container_low / primary
+        "info":    ("#edf5f2", "#47674a"),   # alias → tip
+        "success": ("#c7ecc7", "#3b5a3e"),   # primary_container / primary_dim
         "warning": ("#fdecec", "#e74c3c"),
         "error":   ("#fdecec", "#e74c3c"),   # alias → warning
     }
@@ -270,8 +270,8 @@ class HintStatusController(QObject):
             self._hint_bar._apply_style("idle")
         else:
             dark = self._palette_is_dark()
-            bg, border = ("#2a2a2c", "#555557") if dark else ("#e8e8e8", "#b8b8b8")
-            text = "#e8e8e8" if dark else "#222222"
+            bg, border = ("#2a2a2c", "#555557") if dark else ("#d8e5e1", "#a8b5b1")
+            text = "#e8e8e8" if dark else "#293532"
             self._hint_label.setStyleSheet(
                 f"QLabel {{ background: {bg}; border-left: 4px solid {border}; "
                 f"padding-left: 6px; color: {text}; }}"
@@ -291,8 +291,8 @@ class HintStatusController(QObject):
                 }
             else:
                 colors = {
-                    "tip":     ("#f0f7ff", "#0066cc"),
-                    "success": ("#eefaf3", "#27ae60"),
+                    "tip":     ("#edf5f2", "#47674a"),   # surface_container_low / primary
+                    "success": ("#c7ecc7", "#3b5a3e"),   # primary_container / primary_dim
                     "warning": ("#fdecec", "#e74c3c"),
                 }
             bg, border = colors.get(state, colors["tip"])
