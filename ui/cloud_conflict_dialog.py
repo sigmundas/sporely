@@ -34,6 +34,64 @@ from utils.cloud_sync import (
     resolve_conflict_keep_cloud,
     resolve_conflict_keep_local,
 )
+from PySide6.QtCore import QThread, Signal
+
+
+class ConflictResolutionWorker(QThread):
+    progress = Signal(str, int, int)
+    finished = Signal(bool)
+    error = Signal(str)
+
+    def __init__(self, decisions, prepare_images_cb=None):
+        super().__init__()
+        self.decisions = decisions
+        self.prepare_images_cb = prepare_images_cb
+
+    def run(self):
+        try:
+            client = SporelyCloudClient.from_stored_credentials()
+            if not client:
+                raise CloudSyncError('Not logged in to Sporely Cloud')
+            total = len(self.decisions)
+            resolved_any = False
+            for i, dec in enumerate(self.decisions):
+                local_id = dec['local_id']
+                cloud_id = dec['cloud_id']
+                action = dec['action']
+                self.progress.emit(f"Resolving conflict {i+1} of {total}...", i, total)
+                
+                if action == 'keep_local':
+                    resolve_conflict_keep_local(client, local_id, prepare_images_cb=self.prepare_images_cb)
+                elif action == 'keep_cloud':
+                    def _retryable_cloud_error(exc: Exception) -> bool:
+                        message = str(exc or '').lower()
+                        return any(
+                            token in message
+                            for token in (
+                                'connection aborted',
+                                'connection reset',
+                                'remote disconnected',
+                                'connection broken',
+                                'timed out',
+                                'read timed out',
+                                'broken pipe',
+                            )
+                        )
+                    try:
+                        resolve_conflict_keep_cloud(client, local_id, cloud_id=cloud_id or None)
+                    except Exception as exc:
+                        if not _retryable_cloud_error(exc):
+                            raise
+                        client_retry = SporelyCloudClient.from_stored_credentials()
+                        if client_retry is None:
+                            raise CloudSyncError('Not logged in to Sporely Cloud')
+                        resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None)
+                resolved_any = True
+            
+            self.progress.emit("Conflict resolution finished.", total, total)
+            self.finished.emit(resolved_any)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 def _format_timestamp(value) -> str:
@@ -162,6 +220,7 @@ class CloudConflictDialog(QDialog):
         self._conflicts = [dict(row or {}) for row in (conflicts or [])]
         self._detail_cache: dict[str, dict] = {}
         self.resolved_any = False
+        self.decisions = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -259,11 +318,10 @@ class CloudConflictDialog(QDialog):
         self._keep_remote_btn.clicked.connect(self._resolve_keep_cloud)
         action_row.addWidget(self._keep_remote_btn)
 
-        close_box = QDialogButtonBox(QDialogButtonBox.Close, parent=self)
-        close_box.rejected.connect(self.reject)
-        close_box.accepted.connect(self.accept)
-        close_box.button(QDialogButtonBox.Close).clicked.connect(self.accept)
-        action_row.addWidget(close_box)
+        self._cancel_btn = QPushButton('Cancel')
+        self._cancel_btn.clicked.connect(self.reject)
+        action_row.addWidget(self._cancel_btn)
+
         root.addLayout(action_row)
 
         self._reload_list()
@@ -505,34 +563,20 @@ class CloudConflictDialog(QDialog):
             self._list.setCurrentRow(min(row, len(self._conflicts) - 1))
         else:
             self._clear_detail()
-            self._show_status('All listed Sporely Cloud conflicts have been resolved.', tone='success')
+            self.accept()
 
     def _resolve_keep_local(self) -> None:
         conflict = self._current_conflict()
         if not conflict:
             return
         local_id = int(conflict.get('local_id') or 0)
-        self._set_busy(True, 'Uploading desktop version to Sporely Cloud…')
-        try:
-            client = self._fresh_client(force=True)
-            if client is None:
-                raise CloudSyncError('Not logged in to Sporely Cloud')
-            result = resolve_conflict_keep_local(
-                client,
-                local_id,
-                prepare_images_cb=self._prepare_images_cb,
-            )
-        except Exception as exc:
-            self._show_status(f'Could not keep desktop version: {exc}', tone='error')
-            return
-        finally:
-            self._set_busy(False)
-        self.resolved_any = True
+        cloud_id = str(conflict.get('cloud_id') or '').strip()
+        self.decisions.append({
+            'local_id': local_id,
+            'cloud_id': cloud_id,
+            'action': 'keep_local'
+        })
         self._remove_current_conflict()
-        self._show_status(
-            f"Desktop version kept for observation {result.get('local_id')} (cloud {result.get('cloud_id')}).",
-            tone='success',
-        )
 
     def _resolve_keep_cloud(self) -> None:
         conflict = self._current_conflict()
@@ -540,40 +584,9 @@ class CloudConflictDialog(QDialog):
             return
         local_id = int(conflict.get('local_id') or 0)
         cloud_id = str(conflict.get('cloud_id') or '').strip()
-        self._set_busy(True, 'Pulling cloud version down to desktop…')
-        try:
-            client = self._fresh_client(force=True)
-            if client is None:
-                raise CloudSyncError('Not logged in to Sporely Cloud')
-            try:
-                result = resolve_conflict_keep_cloud(
-                    client,
-                    local_id,
-                    cloud_id=cloud_id or None,
-                )
-            except Exception as exc:
-                if not self._retryable_cloud_error(exc):
-                    raise
-                client = self._fresh_client(force=True)
-                if client is None:
-                    raise CloudSyncError('Not logged in to Sporely Cloud')
-                result = resolve_conflict_keep_cloud(
-                    client,
-                    local_id,
-                    cloud_id=cloud_id or None,
-                )
-        except Exception as exc:
-            self._show_status(f'Could not keep cloud version: {exc}', tone='error')
-            return
-        finally:
-            self._set_busy(False)
-        self.resolved_any = True
-        warnings = list(result.get('warnings') or [])
+        self.decisions.append({
+            'local_id': local_id,
+            'cloud_id': cloud_id,
+            'action': 'keep_cloud'
+        })
         self._remove_current_conflict()
-        status = (
-            f"Cloud version kept for observation {result.get('local_id')} "
-            f"(cloud {result.get('cloud_id')})."
-        )
-        if warnings:
-            status += f" {len(warnings)} cleanup warning{'s' if len(warnings) != 1 else ''} reported."
-        self._show_status(status, tone='success')

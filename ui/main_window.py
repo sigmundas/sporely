@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QDialogButtonBox, QSpinBox, QSizePolicy, QToolButton,
                                  QStyle, QLineEdit, QApplication, QProgressDialog,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
-                                 QPlainTextEdit, QSlider, QGraphicsOpacityEffect)
+                                 QPlainTextEdit, QSlider, QGraphicsOpacityEffect,
+                                 QListWidget, QListWidgetItem, QStackedWidget)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -47,6 +48,51 @@ from PySide6.QtCore import (
 )
 
 _ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
+
+# ── Corner icon SVGs ───────────────────────────────────────────────────────────
+_SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="3"/>
+  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+    a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+    A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06
+    A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+    A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
+    A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+    a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06
+    A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+    a1.65 1.65 0 0 0-1.51 1z"/>
+</svg>"""
+
+# Stage micrometer: tick-marked ruler bar inside a circle
+_SVG_CALIBRATION = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9"/>
+  <line x1="5.5" y1="12" x2="18.5" y2="12"/>
+  <line x1="7"   y1="12" x2="7"   y2="9.5"/>
+  <line x1="9.5" y1="12" x2="9.5" y2="10.5"/>
+  <line x1="12"  y1="12" x2="12"  y2="9.5"/>
+  <line x1="14.5" y1="12" x2="14.5" y2="10.5"/>
+  <line x1="17"  y1="12" x2="17"  y2="9.5"/>
+</svg>"""
+
+
+def _make_svg_icon(svg_bytes: bytes, color: str = "#c1c8c4") -> QIcon:
+    """Render an SVG bytes payload into a QIcon at 64×64 px.
+
+    QSvgRenderer does not resolve CSS 'currentColor', so we substitute the
+    stroke colour directly into the SVG before rendering.
+    """
+    from PySide6.QtSvg import QSvgRenderer
+    from PySide6.QtGui import QPainter
+    svg = svg_bytes.replace(b"currentColor", color.encode())
+    renderer = QSvgRenderer(svg)
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import json
 import html
@@ -880,6 +926,301 @@ class AppearanceDialog(QDialog):
         self.accept()
 
 
+class SettingsHubDialog(QDialog):
+    """Single settings hub with left-nav pane and stacked content pages.
+
+    Consolidates: User profile, Database, Online publishing, Language, Appearance.
+    Calibration is intentionally excluded (it's a workflow, not a preference).
+    """
+
+    PAGE_PROFILE    = 0
+    PAGE_DATABASE   = 1
+    PAGE_PUBLISHING = 2
+    PAGE_CLOUD      = 3
+    PAGE_LANGUAGE   = 4
+    PAGE_APPEARANCE = 5
+
+    def __init__(self, parent=None, start_page: int = 0):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Preferences"))
+        self.setModal(True)
+        self.setMinimumSize(860, 580)
+        self.resize(960, 680)
+
+        # State that pages need to report back to the caller
+        self._profile_changed     = False
+        self._language_ui_changed  = False
+        self._language_vern_changed = False
+        self._publishing_changed   = False
+        self._database_changed     = False
+
+        self._build_ui()
+        self._nav.setCurrentRow(start_page)
+        self._stack.setCurrentIndex(start_page)
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Create the artsobs dialog once; cloud/content pages borrow its section widgets
+        self._artsobs_dialog = ArtsobservasjonerSettingsDialog(self)
+        self._artsobs_dialog.setWindowFlags(Qt.Widget)
+
+        # Left nav
+        self._nav = QListWidget()
+        self._nav.setObjectName("settingsNav")
+        self._nav.setFixedWidth(180)
+        self._nav.setFocusPolicy(Qt.NoFocus)
+        for label in (
+            self.tr("User profile"),
+            self.tr("Database"),
+            self.tr("Online publishing"),
+            self.tr("Sporely Cloud"),
+            self.tr("Language"),
+            self.tr("Appearance"),
+        ):
+            item = QListWidgetItem(label)
+            item.setSizeHint(QSize(180, 36))
+            self._nav.addItem(item)
+        # Stacked pages
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_profile_page())
+        self._stack.addWidget(self._build_database_page())
+        self._stack.addWidget(self._build_publishing_page())
+        self._stack.addWidget(self._build_cloud_page())
+        self._stack.addWidget(self._build_language_page())
+        self._stack.addWidget(self._build_appearance_page())
+
+        # Wire nav after stack exists
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+
+        root.addWidget(self._nav)
+
+        right = QVBoxLayout()
+        right.setContentsMargins(20, 16, 20, 12)
+        right.setSpacing(12)
+        right.addWidget(self._stack)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton(self.tr("Close"))
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        right.addLayout(btn_row)
+
+        right_widget = QWidget()
+        right_widget.setLayout(right)
+        root.addWidget(right_widget, 1)
+
+    # ── Pages ─────────────────────────────────────────────────────────────────
+
+    def _build_profile_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        profile = SettingsDB.get_profile()
+
+        info = QLabel(self.tr(
+            "Name is used for the copyright watermark on images.\n"
+            "Name and email (optional) are added to observations in the database, "
+            "useful if you share your observations with others."
+        ))
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        form = QFormLayout()
+        self._profile_name  = QLineEdit(profile.get("name", ""))
+        self._profile_email = QLineEdit(profile.get("email", ""))
+        form.addRow(self.tr("Name"), self._profile_name)
+        form.addRow(self.tr("Email"), self._profile_email)
+        layout.addLayout(form)
+
+        save_btn = QPushButton(self.tr("Save"))
+        save_btn.clicked.connect(self._save_profile)
+        layout.addWidget(save_btn)
+
+        copyright = self._artsobs_dialog._copyright_section
+        copyright.setParent(page)
+        copyright.show()
+        layout.addWidget(copyright)
+        layout.addStretch()
+        return page
+
+    def _build_database_page(self) -> QWidget:
+        """Embed the DatabaseSettingsDialog's central widget."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # DatabaseSettingsDialog is large — instantiate it hidden and reparent its
+        # central widget so we avoid duplicating its UI code.
+        self._db_dialog = DatabaseSettingsDialog(self)
+        self._db_dialog.setWindowFlags(Qt.Widget)  # embed as widget, not window
+        layout.addWidget(self._db_dialog)
+        return page
+
+    def _build_publishing_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        # Cloud and copyright sections live on their own pages; content checklist stays here
+        self._artsobs_dialog._cloud_section.hide()
+        self._artsobs_dialog._cloud_content_section.hide()
+        self._artsobs_dialog._copyright_section.hide()
+        layout.addWidget(self._artsobs_dialog)
+        return page
+
+    def _build_cloud_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        cloud = self._artsobs_dialog._cloud_section
+        cloud.setParent(page)
+        cloud.show()
+        layout.addWidget(cloud)
+        cloud_content = self._artsobs_dialog._cloud_content_section
+        cloud_content.setParent(page)
+        cloud_content.show()
+        layout.addWidget(cloud_content)
+        layout.addStretch()
+        return page
+
+    def _build_language_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        restart_notice = QLabel(self.tr(
+            "Language change will apply after restart. "
+            "Incomplete translations fall back to English."
+        ))
+        restart_notice.setWordWrap(True)
+        layout.addWidget(restart_notice)
+
+        form = QFormLayout()
+        self._lang_ui_combo = QComboBox()
+        for label, code in (
+            (self.tr("English"),   "en"),
+            (self.tr("Norwegian"), "nb_NO"),
+            (self.tr("Swedish"),   "sv_SE"),
+            (self.tr("German"),    "de_DE"),
+        ):
+            self._lang_ui_combo.addItem(label, code)
+
+        self._lang_vern_combo = QComboBox()
+        for code in list_available_vernacular_languages():
+            lbl = vernacular_language_label(code) or code
+            self._lang_vern_combo.addItem(self.tr(lbl), code)
+
+        form.addRow(self.tr("UI language:"), self._lang_ui_combo)
+        form.addRow(self.tr("Vernacular names:"), self._lang_vern_combo)
+        layout.addLayout(form)
+
+        save_btn = QPushButton(self.tr("Save"))
+        save_btn.clicked.connect(self._save_language)
+        layout.addWidget(save_btn)
+        layout.addStretch()
+
+        self._load_language_settings()
+        return page
+
+    def _build_appearance_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        layout.addWidget(QLabel(self.tr("Color theme:")))
+
+        self._theme_auto  = QRadioButton(self.tr("Auto (follow system)"))
+        self._theme_light = QRadioButton(self.tr("Light"))
+        self._theme_dark  = QRadioButton(self.tr("Dark"))
+        for btn in (self._theme_auto, self._theme_light, self._theme_dark):
+            layout.addWidget(btn)
+            btn.clicked.connect(self._save_appearance)
+
+        layout.addStretch()
+        self._load_appearance_settings()
+        return page
+
+    # ── Save helpers ──────────────────────────────────────────────────────────
+
+    def _save_profile(self):
+        SettingsDB.set_profile(
+            self._profile_name.text().strip(),
+            self._profile_email.text().strip(),
+        )
+        self._profile_changed = True
+        parent = self.parent()
+        if parent and hasattr(parent, "_update_measure_copyright_overlay"):
+            parent._update_measure_copyright_overlay()
+
+    def _load_language_settings(self):
+        current_ui = str(SettingsDB.get_setting("ui_language", "en") or "en").replace("-", "_")
+        prefix = current_ui.split("_", 1)[0].lower()
+        if prefix == "de":       current_ui = "de_DE"
+        elif prefix in {"nb","nn","no"}: current_ui = "nb_NO"
+        elif prefix == "sv":     current_ui = "sv_SE"
+        else:                    current_ui = "en"
+        idx = self._lang_ui_combo.findData(current_ui)
+        if idx >= 0: self._lang_ui_combo.setCurrentIndex(idx)
+
+        current_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        idx = self._lang_vern_combo.findData(current_vern)
+        if idx >= 0: self._lang_vern_combo.setCurrentIndex(idx)
+
+    def _save_language(self):
+        old_ui   = SettingsDB.get_setting("ui_language", "en")
+        old_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        new_ui   = self._lang_ui_combo.currentData()
+        new_vern = normalize_vernacular_language(self._lang_vern_combo.currentData())
+        if new_ui and new_ui != old_ui:
+            SettingsDB.set_setting("ui_language", new_ui)
+            update_app_settings({"ui_language": new_ui})
+            self._language_ui_changed = True
+        if new_vern and new_vern != old_vern:
+            SettingsDB.set_setting("vernacular_language", new_vern)
+            update_app_settings({"vernacular_language": new_vern})
+            self._language_vern_changed = True
+        if self._language_vern_changed:
+            parent = self.parent()
+            if parent and hasattr(parent, "apply_vernacular_language_change"):
+                parent.apply_vernacular_language_change()
+
+    def _load_appearance_settings(self):
+        theme = SettingsDB.get_setting("ui_theme", "auto")
+        if theme == "dark":      self._theme_dark.setChecked(True)
+        elif theme == "light":   self._theme_light.setChecked(True)
+        else:                    self._theme_auto.setChecked(True)
+
+    def _save_appearance(self):
+        if self._theme_dark.isChecked():    theme = "dark"
+        elif self._theme_light.isChecked(): theme = "light"
+        else:                               theme = "auto"
+        SettingsDB.set_setting("ui_theme", theme)
+        parent = self.parent()
+        if parent and hasattr(parent, "_apply_theme"):
+            parent._apply_theme()
+
+    # ── Public helpers ────────────────────────────────────────────────────────
+
+    @property
+    def publishing_changed(self) -> bool:
+        return self._publishing_changed
+
+    @property
+    def database_changed(self) -> bool:
+        return self._database_changed
+
+
 class ArtsobservasjonerSettingsDialog(QDialog):
     """Dialog for Artsobservasjoner login and upload preferences."""
 
@@ -896,6 +1237,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
     SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
+    SETTING_CLOUD_INCLUDE_ANNOTATIONS = "sporely_cloud_include_annotations"
+    SETTING_CLOUD_SHOW_SCALE_BAR = "sporely_cloud_show_scale_bar"
+    SETTING_CLOUD_INCLUDE_MEASURE_PLOTS = "sporely_cloud_include_measure_plots"
+    SETTING_CLOUD_INCLUDE_PLATE = "sporely_cloud_include_plate"
+    SETTING_CLOUD_INCLUDE_COPYRIGHT = "sporely_cloud_include_copyright"
     SETTING_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_debug_cloud_plan_override"
     SETTING_SHOW_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_show_debug_cloud_plan_override"
     SETTING_INAT_CLIENT_ID = "inat_client_id"
@@ -994,6 +1340,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         )
         if not client_id:
             client_id = (os.getenv("INAT_CLIENT_ID", "") or "").strip()
+        if not client_id:
+            client_id = "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
         if not client_secret:
             client_secret = (os.getenv("INAT_CLIENT_SECRET", "") or "").strip()
         return client_id, client_secret, redirect_uri
@@ -1002,7 +1350,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         from utils.inat_oauth import INatOAuthClient
 
         client_id, client_secret, redirect_uri = self._inat_credentials()
-        if require_credentials and (not client_id or not client_secret):
+        if require_credentials and not client_id:
             return None
         return INatOAuthClient(
             client_id=client_id,
@@ -1104,79 +1452,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
         return True
 
-    def _prompt_inat_credentials(self) -> bool:
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("iNaturalist credentials"))
-        dialog.setModal(True)
-        dialog.setMinimumWidth(460)
-
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(
-            QLabel(
-                self.tr(
-                    "Enter your iNaturalist Client ID and Client Secret.\n"
-                    "These are from your registered iNaturalist application."
-                )
-            )
-        )
-
-        form = QFormLayout()
-        saved_client_id = (SettingsDB.get_setting(self.SETTING_INAT_CLIENT_ID, "") or "").strip()
-        saved_client_secret = (SettingsDB.get_setting(self.SETTING_INAT_CLIENT_SECRET, "") or "").strip()
-        client_id_edit = QLineEdit()
-        client_id_edit.setPlaceholderText(self.tr("Client ID"))
-        client_id_edit.setText(saved_client_id or (self._inat_session_client_id or ""))
-        client_secret_edit = QLineEdit()
-        client_secret_edit.setPlaceholderText(self.tr("Client Secret"))
-        client_secret_edit.setEchoMode(QLineEdit.Password)
-        client_secret_edit.setText(saved_client_secret or (self._inat_session_client_secret or ""))
-        form.addRow(self.tr("Client ID:"), client_id_edit)
-        form.addRow(self.tr("Client secret:"), client_secret_edit)
-        layout.addLayout(form)
-
-        remember_checkbox = QCheckBox(self.tr("Save credentials on this device"))
-        remember_checkbox.setChecked(bool(saved_client_id and saved_client_secret))
-        layout.addWidget(remember_checkbox)
-
-        buttons = QDialogButtonBox(dialog)
-        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        layout.addWidget(buttons)
-
-        def _accept_if_valid() -> None:
-            if not client_id_edit.text().strip() or not client_secret_edit.text().strip():
-                QMessageBox.warning(
-                    dialog,
-                    self.tr("Missing Information"),
-                    self.tr("Please enter both Client ID and Client Secret."),
-                )
-                return
-            dialog.accept()
-
-        ok_btn.clicked.connect(_accept_if_valid)
-        cancel_btn.clicked.connect(dialog.reject)
-        client_id_edit.returnPressed.connect(_accept_if_valid)
-        client_secret_edit.returnPressed.connect(_accept_if_valid)
-        client_id_edit.setFocus()
-
-        if dialog.exec() != QDialog.Accepted:
-            return False
-
-        client_id = client_id_edit.text().strip()
-        client_secret = client_secret_edit.text().strip()
-        remember = bool(remember_checkbox.isChecked())
-        if remember:
-            SettingsDB.set_setting(self.SETTING_INAT_CLIENT_ID, client_id)
-            SettingsDB.set_setting(self.SETTING_INAT_CLIENT_SECRET, client_secret)
-            self._inat_session_client_id = ""
-            self._inat_session_client_secret = ""
-        else:
-            SettingsDB.set_setting(self.SETTING_INAT_CLIENT_ID, "")
-            SettingsDB.set_setting(self.SETTING_INAT_CLIENT_SECRET, "")
-            self._inat_session_client_id = client_id
-            self._inat_session_client_secret = client_secret
-        return True
-
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
@@ -1185,10 +1460,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.setContentsMargins(10, 10, 10, 10)
         websites_layout.setSpacing(8)
 
-        reporting_group = QGroupBox(self.tr("Reporting system"), self)
-        reporting_layout = QHBoxLayout(reporting_group)
-        reporting_layout.setContentsMargins(10, 10, 10, 10)
-        reporting_layout.setSpacing(12)
+        reporting_row = QHBoxLayout()
+        reporting_row.setContentsMargins(0, 0, 0, 0)
+        reporting_row.setSpacing(12)
+        reporting_row.addWidget(QLabel(self.tr("Reporting system:")))
         self.reporting_target_group = QButtonGroup(self)
         self.reporting_target_group.setExclusive(True)
         self.reporting_target_no_radio = QRadioButton(self.tr("Norway"))
@@ -1197,10 +1472,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.reporting_target_group.addButton(self.reporting_target_se_radio)
         self.reporting_target_no_radio.toggled.connect(self._on_reporting_target_changed)
         self.reporting_target_se_radio.toggled.connect(self._on_reporting_target_changed)
-        reporting_layout.addWidget(self.reporting_target_no_radio)
-        reporting_layout.addWidget(self.reporting_target_se_radio)
-        reporting_layout.addStretch(1)
-        websites_layout.addWidget(reporting_group)
+        reporting_row.addWidget(self.reporting_target_no_radio)
+        reporting_row.addWidget(self.reporting_target_se_radio)
+        reporting_row.addStretch(1)
+        websites_layout.addLayout(reporting_row)
 
         reporting_note = QLabel(
             self.tr("This controls the biotope/substrate choices in the observation editor and which Nordic publish target appears on the Publish button.")
@@ -1218,7 +1493,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.targets_table.setSelectionMode(QTableWidget.SingleSelection)
         self.targets_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.targets_table.setAlternatingRowColors(True)
-        self.targets_table.setMinimumHeight(220)
+        self.targets_table.setMinimumHeight(160)
         self.targets_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.targets_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.targets_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
@@ -1253,7 +1528,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         button_layout.addWidget(self.logout_button)
         button_layout.addStretch()
         websites_layout.addLayout(button_layout)
-        layout.addWidget(websites_group, 1)
+        layout.addWidget(websites_group)
 
         cloud_group = QGroupBox(self.tr("Sporely Cloud"), self)
         cloud_layout = QVBoxLayout(cloud_group)
@@ -1360,6 +1635,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         cloud_button_row.addStretch()
         cloud_layout.addLayout(cloud_button_row)
 
+        self._cloud_section = cloud_group
         layout.addWidget(cloud_group, 0)
 
         options_group = QGroupBox(self.tr("Publish content"), self)
@@ -1456,14 +1732,51 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.tr("Include watermark"),
             watermark_help,
         )
-        copyright_layout.addStretch(1)
+        self._copyright_section = copyright_group
 
-        lower_row = QHBoxLayout()
-        lower_row.setContentsMargins(0, 0, 0, 0)
-        lower_row.setSpacing(10)
-        lower_row.addWidget(options_group, 1)
-        lower_row.addWidget(copyright_group, 1)
-        layout.addLayout(lower_row)
+        layout.addWidget(options_group, 1)
+
+        # ── Cloud publish content (subset — no spore stats, no thumbnail gallery) ──
+        cloud_content_group = QGroupBox(self.tr("Sync content"), self)
+        cloud_content_layout = QVBoxLayout(cloud_content_group)
+        cloud_content_layout.setContentsMargins(10, 10, 10, 10)
+        cloud_content_layout.setSpacing(6)
+        self.cloud_include_annotations_checkbox = QCheckBox(self)
+        self.cloud_show_scale_bar_checkbox = QCheckBox(self)
+        self.cloud_include_measure_plots_checkbox = QCheckBox(self)
+        self.cloud_include_plate_checkbox = QCheckBox(self)
+        self.cloud_include_copyright_checkbox = QCheckBox(self)
+        cloud_content_options = (
+            (
+                self.cloud_include_annotations_checkbox,
+                self.tr("Show measures on images"),
+                self.tr("Include measures on synced images"),
+            ),
+            (
+                self.cloud_show_scale_bar_checkbox,
+                self.tr("Show scale bar on images"),
+                self.tr("Shows a scale bar on synced images"),
+            ),
+            (
+                self.cloud_include_measure_plots_checkbox,
+                self.tr("Include measure plots"),
+                self.tr("Uploads an image of the plot in the Analysis module."),
+            ),
+            (
+                self.cloud_include_plate_checkbox,
+                self.tr("Include plate"),
+                self.tr("Uploads the current species plate image."),
+            ),
+            (
+                self.cloud_include_copyright_checkbox,
+                self.tr("Include watermark"),
+                self.tr("Adds a visible watermark on synced images."),
+            ),
+        )
+        for checkbox, text, help_text in cloud_content_options:
+            checkbox.toggled.connect(self._save_settings)
+            self._add_wrapped_checkbox_row(cloud_content_layout, checkbox, text, help_text)
+        self._cloud_content_section = cloud_content_group
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -1474,7 +1787,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             0,
             Qt.AlignRight | Qt.AlignVCenter,
         )
-
         buttons = QDialogButtonBox(self)
         close_button = buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
         close_button.clicked.connect(self.reject)
@@ -1781,6 +2093,26 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_CLOUD_IMAGE_SIZE_MODE,
             self._selected_cloud_image_size_mode(),
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_INCLUDE_ANNOTATIONS,
+            "1" if self.cloud_include_annotations_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_SHOW_SCALE_BAR,
+            "1" if self.cloud_show_scale_bar_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_INCLUDE_MEASURE_PLOTS,
+            "1" if self.cloud_include_measure_plots_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_INCLUDE_PLATE,
+            "1" if self.cloud_include_plate_checkbox.isChecked() else "0",
+        )
+        SettingsDB.set_setting(
+            self.SETTING_CLOUD_INCLUDE_COPYRIGHT,
+            "1" if self.cloud_include_copyright_checkbox.isChecked() else "0",
         )
         SettingsDB.set_setting(
             self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,
@@ -2157,16 +2489,12 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if selected_uploader.key == "inat":
             oauth = self._inat_oauth_client(require_credentials=True)
             if oauth is None:
-                if not self._prompt_inat_credentials():
-                    return
-                oauth = self._inat_oauth_client(require_credentials=True)
-                if oauth is None:
-                    QMessageBox.warning(
-                        self,
-                        self.tr("Login Unavailable"),
-                        self.tr("Missing iNaturalist CLIENT_ID/CLIENT_SECRET."),
-                    )
-                    return
+                QMessageBox.warning(
+                    self,
+                    self.tr("Login Unavailable"),
+                    self.tr("Missing iNaturalist Client ID."),
+                )
+                return
             try:
                 oauth.authorize(open_browser=True, timeout=300)
                 token = oauth.get_valid_access_token()
@@ -2408,6 +2736,31 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 (
                     self.include_copyright_checkbox,
                     self.SETTING_INCLUDE_COPYRIGHT,
+                    False,
+                ),
+                (
+                    self.cloud_include_annotations_checkbox,
+                    self.SETTING_CLOUD_INCLUDE_ANNOTATIONS,
+                    False,
+                ),
+                (
+                    self.cloud_show_scale_bar_checkbox,
+                    self.SETTING_CLOUD_SHOW_SCALE_BAR,
+                    False,
+                ),
+                (
+                    self.cloud_include_measure_plots_checkbox,
+                    self.SETTING_CLOUD_INCLUDE_MEASURE_PLOTS,
+                    False,
+                ),
+                (
+                    self.cloud_include_plate_checkbox,
+                    self.SETTING_CLOUD_INCLUDE_PLATE,
+                    False,
+                ),
+                (
+                    self.cloud_include_copyright_checkbox,
+                    self.SETTING_CLOUD_INCLUDE_COPYRIGHT,
                     False,
                 ),
             )
@@ -4110,6 +4463,30 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         main_layout.addWidget(self.tab_widget, 1)
 
+        # Corner buttons: settings cog + calibration icon
+        corner = QWidget()
+        corner_layout = QHBoxLayout(corner)
+        corner_layout.setContentsMargins(0, 0, 4, 0)
+        corner_layout.setSpacing(2)
+
+        self._calib_corner_btn = QToolButton()
+        self._calib_corner_btn.setObjectName("cornerIconBtn")
+        self._calib_corner_btn.setToolTip(self.tr("Calibration (Ctrl+K)"))
+        self._calib_corner_btn.setIcon(_make_svg_icon(_SVG_CALIBRATION))
+        self._calib_corner_btn.setIconSize(QSize(20, 20))
+        self._calib_corner_btn.clicked.connect(self.open_calibration_dialog)
+        corner_layout.addWidget(self._calib_corner_btn)
+
+        self._settings_corner_btn = QToolButton()
+        self._settings_corner_btn.setObjectName("cornerIconBtn")
+        self._settings_corner_btn.setToolTip(self.tr("Settings (Ctrl+,)"))
+        self._settings_corner_btn.setIcon(_make_svg_icon(_SVG_SETTINGS))
+        self._settings_corner_btn.setIconSize(QSize(20, 20))
+        self._settings_corner_btn.clicked.connect(self.open_settings_hub)
+        corner_layout.addWidget(self._settings_corner_btn)
+
+        self.tab_widget.setCornerWidget(corner, Qt.TopRightCorner)
+
         # Tab navigation shortcuts: Alt/Option on all platforms.
         # Cmd (Meta) deliberately excluded — Cmd+A/M/O conflict with system shortcuts on macOS.
         # From Observations → Measure (Alt+M), Analysis (Alt+A)
@@ -4170,41 +4547,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         file_menu.addAction(exit_action)
 
         settings_menu = menubar.addMenu(self.tr("Settings"))
-        profile_action = QAction(self.tr("User profile"), self)
-        profile_action.triggered.connect(self.open_profile_dialog)
-        settings_menu.addAction(profile_action)
-        database_action = QAction(self.tr("Database"), self)
-        database_action.triggered.connect(self.open_database_settings_dialog)
-        settings_menu.addAction(database_action)
+        settings_action = QAction(self.tr("Preferences"), self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(self.open_settings_hub)
+        settings_menu.addAction(settings_action)
+
+        settings_menu.addSeparator()
+
         calib_action = QAction(self.tr("Calibration"), self)
         calib_action.setShortcut("Ctrl+K")
         calib_action.triggered.connect(self.open_calibration_dialog)
         settings_menu.addAction(calib_action)
-
-        artsobs_action = QAction(self.tr("Online publishing"), self)
-        artsobs_action.triggered.connect(self.open_artsobservasjoner_settings_dialog)
-        settings_menu.addAction(artsobs_action)
-
-        language_action = QAction(self.tr("Language"), self)
-        language_action.triggered.connect(self.open_language_settings_dialog)
-        settings_menu.addAction(language_action)
-
-        appearance_menu = settings_menu.addMenu(self.tr("Appearance"))
-        self._appearance_action_group = QActionGroup(self)
-        self._appearance_action_group.setExclusive(True)
-        self._appearance_actions: dict[str, QAction] = {}
-        for theme_key, label in (
-            ("auto", self.tr("Auto (follow system)")),
-            ("light", self.tr("Light")),
-            ("dark", self.tr("Dark")),
-        ):
-            action = QAction(label, self)
-            action.setCheckable(True)
-            action.triggered.connect(lambda checked=False, theme=theme_key: self._set_ui_theme(theme))
-            self._appearance_action_group.addAction(action)
-            appearance_menu.addAction(action)
-            self._appearance_actions[theme_key] = action
-        self._sync_appearance_menu()
 
         help_menu = menubar.addMenu(self.tr("Help"))
         version_text = self.tr("Version: {version}").format(
@@ -4385,21 +4738,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         calib_group.setLayout(calib_layout)
         layout.addWidget(calib_group)
 
-        # Measurement category group
-        category_group = QGroupBox(self.tr("Measure Category"))
-        category_layout = QVBoxLayout()
+        # Measurement group (category dropdown lives at the top)
+        measure_group = QGroupBox(self.tr("Measure"))
+        measure_layout = QVBoxLayout()
 
         self.measure_category_combo = QComboBox()
         self._populate_measure_categories()
         self.measure_category_combo.currentIndexChanged.connect(self.on_measure_category_changed)
-        category_layout.addWidget(self.measure_category_combo)
-
-        category_group.setLayout(category_layout)
-        layout.addWidget(category_group)
-
-        # Measurement group
-        measure_group = QGroupBox(self.tr("Measure"))
-        measure_layout = QVBoxLayout()
+        measure_layout.addWidget(self.measure_category_combo)
 
         self.measure_button = QPushButton(self.tr("Start measuring (M)"))
         self.measure_button.setCheckable(True)
@@ -14611,6 +14957,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             "Export Unavailable",
             "The observations tab is not ready yet."
         )
+
+    def open_settings_hub(self, page: int = 0):
+        """Open the unified Settings hub dialog."""
+        dialog = SettingsHubDialog(self, start_page=page)
+        dialog.exec()
+        # Propagate side-effects from embedded sub-dialogs
+        if dialog.database_changed:
+            self._populate_measure_categories()
+        if dialog.publishing_changed:
+            if hasattr(self, "observations_tab"):
+                try:
+                    self.observations_tab._build_publish_menu()
+                    self.observations_tab._invalidate_publish_login_status_cache()
+                    self.observations_tab._update_publish_controls()
+                    self.observations_tab.refresh_observations(show_status=False)
+                except Exception:
+                    pass
 
     def open_profile_dialog(self):
         """Open profile settings dialog."""

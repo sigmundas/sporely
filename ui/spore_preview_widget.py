@@ -966,13 +966,14 @@ class PreviewImageLabel(QLabel):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        # Fill background
-        painter.fillRect(self.rect(), QColor(236, 240, 241))
+        # Fill background using themed window color so dark mode stays dark
+        painter.fillRect(self.rect(), self.palette().color(self.backgroundRole()))
 
         expected_points = 2 if self.line_mode else 4
         if not self.original_pixmap or len(self.points) != expected_points:
             # Draw placeholder text
-            painter.setPen(QColor(127, 140, 141))
+            from PySide6.QtGui import QPalette
+            painter.setPen(self.palette().color(QPalette.Disabled, QPalette.Text))
             painter.drawText(self.rect(), Qt.AlignCenter, "Click a measurement\nto preview")
             painter.end()
             return

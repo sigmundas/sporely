@@ -841,6 +841,12 @@ class ObservationsTab(QWidget):
             sc = QShortcut(QKeySequence(_seq), self)
             sc.setContext(Qt.WidgetWithChildrenShortcut)
             sc.activated.connect(self._on_direct_edit_shortcut)
+            
+        self._auto_sync_timer = QTimer(self)
+        self._auto_sync_timer.setInterval(300 * 1000)  # 5 minutes
+        self._auto_sync_timer.timeout.connect(self._on_auto_sync_timeout)
+        self._auto_sync_timer.start()
+
         self._schedule_startup_cloud_sync()
 
     def _load_tag_options(self, category: str) -> list[str]:
@@ -946,45 +952,45 @@ class ObservationsTab(QWidget):
 
         left_panel_layout.addLayout(share_row)
 
-        # ── Quiet row: Delete + data management ───────────────────────────
+        # ── Refresh — full-width, above the separator ─────────────────────
+        self.refresh_btn = QPushButton(self.tr("Refresh"))
+        self.refresh_btn.setObjectName("dataButton")
+        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
+        left_panel_layout.addWidget(self.refresh_btn)
+
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setFrameShadow(QFrame.Plain)
         sep.setFixedHeight(1)
         left_panel_layout.addWidget(sep)
 
-        data_row = QHBoxLayout()
-        data_row.setSpacing(5)
-
+        # ── Delete — full-width destructive ───────────────────────────────
         self.delete_btn = QPushButton(self.tr("Delete"))
         self.delete_btn.setObjectName("destructiveButton")
         self.delete_btn.setEnabled(False)
         self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
         self.delete_btn.clicked.connect(self.delete_selected_observation)
-        data_row.addWidget(self.delete_btn)
+        left_panel_layout.addWidget(self.delete_btn)
 
-        data_row.addStretch()
+        # ── Import | Export ───────────────────────────────────────────────
+        io_row = QHBoxLayout()
+        io_row.setSpacing(5)
 
         self.import_btn = QPushButton(self.tr("Import"))
         self.import_btn.setObjectName("dataButton")
         self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
         self.import_btn.clicked.connect(self._on_import_db_clicked)
-        data_row.addWidget(self.import_btn)
+        io_row.addWidget(self.import_btn)
 
         self.export_btn = QPushButton(self.tr("Export"))
         self.export_btn.setObjectName("dataButton")
         self.export_btn.setEnabled(True)
         self.export_btn.setToolTip(self.tr("Export database bundle to zip archive"))
         self.export_btn.clicked.connect(self._on_export_db_clicked)
-        data_row.addWidget(self.export_btn)
+        io_row.addWidget(self.export_btn)
 
-        self.refresh_btn = QPushButton(self.tr("Refresh"))
-        self.refresh_btn.setObjectName("dataButton")
-        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
-        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
-        data_row.addWidget(self.refresh_btn)
-
-        left_panel_layout.addLayout(data_row)
+        left_panel_layout.addLayout(io_row)
 
         content_layout.addWidget(left_panel)
 
@@ -1027,7 +1033,7 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(5, 132)  # Date
         self.table.setColumnWidth(6, 170)  # Location
         self.table.setColumnWidth(7, 56)   # Map
-        self.table.setColumnWidth(8, 90)   # Publish
+        self.table.setColumnWidth(8, 140)  # Publish
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -1680,6 +1686,17 @@ class ObservationsTab(QWidget):
         self._cloud_sync_startup_scheduled = False
         self._start_cloud_sync(show_status=True, run_refresh_flow=False)
 
+    def _on_auto_sync_timeout(self) -> None:
+        """Triggered periodically to run a silent background sync."""
+        if self._is_cloud_sync_running():
+            return
+        if QApplication.activeModalWidget() is not None:
+            return
+        try:
+            self._start_cloud_sync(show_status=False, run_refresh_flow=False)
+        except Exception as e:
+            print(f"Background auto-sync failed: {e}")
+
     def _is_cloud_sync_running(self) -> bool:
         worker = getattr(self, "_cloud_sync_worker", None)
         if worker is None:
@@ -1772,9 +1789,31 @@ class ObservationsTab(QWidget):
             prepare_images_cb=self.prepare_cloud_sync_image_uploads,
         )
         dialog.exec()
-        if dialog.resolved_any:
-            self.refresh_observations(show_status=False)
-        return bool(dialog.resolved_any)
+        
+        if dialog.decisions:
+            from .cloud_conflict_dialog import ConflictResolutionWorker
+            self._cloud_conflict_resolution_worker = ConflictResolutionWorker(
+                dialog.decisions,
+                prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+            )
+            self._cloud_conflict_resolution_worker.progress.connect(self._set_status_progress)
+            
+            def _on_finished(resolved_any):
+                self._set_status_progress("", 0, 0)
+                self._cloud_conflict_resolution_worker = None
+                if resolved_any:
+                    self.refresh_observations(show_status=False)
+                    
+            def _on_error(err):
+                self._cloud_conflict_resolution_worker = None
+                self.set_status_message(self.tr("Conflict resolution error: {err}").format(err=err), level="error")
+                
+            self._cloud_conflict_resolution_worker.finished.connect(_on_finished)
+            self._cloud_conflict_resolution_worker.error.connect(_on_error)
+            self._cloud_conflict_resolution_worker.start()
+            return True
+            
+        return False
 
     def _format_deleted_cloud_observation_label(self, entry: dict) -> str:
         observation = dict(entry.get("observation") or {})
@@ -2134,54 +2173,54 @@ class ObservationsTab(QWidget):
         publish_target: str | None,
         arts_id: int | None,
         artportalen_id: int | None,
+        inaturalist_id: int | None = None,
     ) -> None:
         self.table.removeCellWidget(row, 8)
-        normalized_target = normalize_publish_target(publish_target)
-        service_id = artportalen_id if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE else arts_id
-        has_id = bool(service_id)
-        arts_item = SortableTableWidgetItem("" if has_id else "-")
-        arts_item.setData(Qt.UserRole, int(service_id or 0))
+        has_any_id = bool(arts_id or artportalen_id or inaturalist_id)
+        has_dead_artsobs = bool(self._artsobs_dead_by_observation_id.get(observation_id))
+        arts_item = SortableTableWidgetItem("" if has_any_id else "-")
+        arts_item.setData(Qt.UserRole, int(arts_id or 0))
         arts_item.setFlags(arts_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row, 8, arts_item)
-        if not has_id:
+        if not has_any_id and not has_dead_artsobs:
             return
 
-        if normalized_target == PUBLISH_TARGET_ARTPORTALEN_SE:
-            artportalen_url = f"https://www.artportalen.se/Sighting/{int(service_id)}"
-            label_html = f'<a href="{artportalen_url}">AP</a>'
-            link_tooltip = self.tr("AP: Artportalen web")
-            arts_label = QLabel(label_html)
-            arts_label.setTextFormat(Qt.RichText)
-            arts_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-            arts_label.setOpenExternalLinks(False)
-            arts_label.setAlignment(Qt.AlignCenter)
-            arts_label.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
-            self._status_hint_controller.register_widget(arts_label, link_tooltip)
-            arts_label.setToolTip(link_tooltip)
-            self.table.setCellWidget(row, 8, arts_label)
+        link_parts: list[str] = []
+        tooltip_parts: list[str] = []
+
+        if has_dead_artsobs:
+            link_parts.append('<span style="color:#c0392b;font-weight:700;">&#9650;</span>')
+            tooltip_parts.append(self.tr("▲: Artsobservasjoner link is no longer available"))
+
+        if arts_id:
+            mao_url = f"https://mobil.artsobservasjoner.no/sighting/{int(arts_id)}"
+            wao_url = f"https://www.artsobservasjoner.no/Sighting/{int(arts_id)}"
+            is_publicly_published = self._artsobs_public_published_by_observation_id.get(observation_id)
+            link_parts.append(f'<a href="{mao_url}">MAo</a>')
+            tooltip_parts.append(self.tr("MAo: Artsobservasjoner mobile app"))
+            if is_publicly_published is True:
+                link_parts.append(f'<a href="{wao_url}">Ao</a>')
+                tooltip_parts.append(self.tr("Ao: Artsobservasjoner web"))
+            elif is_publicly_published is False:
+                tooltip_parts.append(self.tr("Ao link shown only after the observation is publicly published."))
+            else:
+                tooltip_parts.append(self.tr("Ao link appears after link check."))
+
+        if artportalen_id:
+            artportalen_url = f"https://www.artportalen.se/Sighting/{int(artportalen_id)}"
+            link_parts.append(f'<a href="{artportalen_url}">AP</a>')
+            tooltip_parts.append(self.tr("AP: Artportalen web"))
+
+        if inaturalist_id:
+            inat_url = f"https://www.inaturalist.org/observations/{int(inaturalist_id)}"
+            link_parts.append(f'<a href="{inat_url}">iNat</a>')
+            tooltip_parts.append(self.tr("iNat: iNaturalist observation"))
+
+        if not link_parts:
             return
 
-        if self._artsobs_dead_by_observation_id.get(observation_id):
-            warn_label = QLabel("\u25B2")
-            warn_label.setAlignment(Qt.AlignCenter)
-            warn_label.setStyleSheet("color: #c0392b; font-weight: bold;")
-            warn_label.setToolTip(self.tr("Can't find this observation"))
-            self.table.setCellWidget(row, 8, warn_label)
-            return
-
-        mao_url = f"https://mobil.artsobservasjoner.no/sighting/{int(service_id)}"
-        wao_url = f"https://www.artsobservasjoner.no/Sighting/{int(service_id)}"
-        is_publicly_published = self._artsobs_public_published_by_observation_id.get(observation_id)
-        if is_publicly_published is True:
-            label_html = f'<a href="{mao_url}">MAo</a> | <a href="{wao_url}">Ao</a>'
-            link_tooltip = self.tr("MAo: Artsobservasjoner mobile app · Ao: Artsobservasjoner web")
-        else:
-            label_html = f'<a href="{mao_url}">MAo</a>'
-            link_tooltip = (
-                self.tr("Ao link shown only after the observation is publicly published.")
-                if is_publicly_published is False
-                else self.tr("MAo: Artsobservasjoner mobile app. Ao link appears after link check.")
-            )
+        label_html = " | ".join(link_parts)
+        link_tooltip = " · ".join(part for part in tooltip_parts if part)
         arts_label = QLabel(label_html)
         arts_label.setTextFormat(Qt.RichText)
         arts_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
@@ -2260,6 +2299,7 @@ class ObservationsTab(QWidget):
             obs.get("publish_target") if obs else None,
             obs.get("artsdata_id") if obs else arts_id,
             obs.get("artportalen_id") if obs else None,
+            obs.get("inaturalist_id") if obs else None,
         )
         self._update_publish_controls()
 
@@ -2526,6 +2566,8 @@ class ObservationsTab(QWidget):
         try:
             if key == "artportalen":
                 return int(observation.get("artportalen_id") or 0) > 0
+            if key == "inat":
+                return int(observation.get("inaturalist_id") or 0) > 0
             if key in {"mobile", "web"}:
                 obs_id = int(observation.get("id") or 0)
                 arts_id = int(observation.get("artsdata_id") or 0)
@@ -2660,16 +2702,16 @@ class ObservationsTab(QWidget):
         if key == "inat":
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip()
+            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            if not client_id:
+                return False
             client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_SECRET", "") or ""
-            ).strip()
+            ).strip() or None
             redirect_uri = (
                 SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
                 or "http://localhost:8000/callback"
             )
-            if not client_id or not client_secret:
-                return False
             try:
                 from utils.inat_oauth import INatOAuthClient
 
@@ -2748,16 +2790,16 @@ class ObservationsTab(QWidget):
         if key == "inat":
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip()
+            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            if not client_id:
+                return False
             client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_SECRET", "") or ""
-            ).strip()
+            ).strip() or None
             redirect_uri = (
                 SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
                 or "http://localhost:8000/callback"
             )
-            if not client_id or not client_secret:
-                return False
             try:
                 from utils.inat_oauth import INatOAuthClient
 
@@ -3059,6 +3101,7 @@ class ObservationsTab(QWidget):
             has_coords = lat is not None and lon is not None
             arts_id = obs.get("artsdata_id")
             artportalen_id = obs.get("artportalen_id")
+            inaturalist_id = obs.get("inaturalist_id")
             publish_target = self._observation_publish_target(obs)
             species_name = self._build_species_name(obs)
 
@@ -3087,6 +3130,7 @@ class ObservationsTab(QWidget):
                     "species_name": species_name,
                     "arts_id": arts_id,
                     "artportalen_id": artportalen_id,
+                    "inaturalist_id": inaturalist_id,
                     "publish_target": publish_target,
                     "mark_star": obs_id in recent_cloud_ids,
                     "search_text": search_text,
@@ -3321,6 +3365,7 @@ class ObservationsTab(QWidget):
                         row_data.get("publish_target"),
                         row_data.get("arts_id"),
                         row_data.get("artportalen_id"),
+                        row_data.get("inaturalist_id"),
                     )
                 else:
                     publish_item = SortableTableWidgetItem("-")
@@ -6132,6 +6177,21 @@ class ObservationsTab(QWidget):
                 taxon_id = ObservationDB.resolve_external_taxon_id(*accepted_pair, source_system="artportalen")
         return taxon_id
 
+    def _resolve_inaturalist_taxon_id(self, obs: dict) -> int | None:
+        taxon_pair = self._extract_artsobs_taxon_pair(obs)
+        if not taxon_pair:
+            return None
+        genus, species = taxon_pair
+        taxon_id = ObservationDB.resolve_external_taxon_id(genus, species, "inaturalist")
+        if not taxon_id:
+            accepted_pair = self._resolve_accepted_taxon_pair(genus, species)
+            if accepted_pair:
+                taxon_id = ObservationDB.resolve_external_taxon_id(
+                    *accepted_pair,
+                    source_system="inaturalist",
+                )
+        return taxon_id
+
     def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
         requested_key = (requested_uploader_key or "").strip().lower()
         if requested_key in {"artportalen", "inat", "mo"}:
@@ -6422,24 +6482,21 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
         elif uploader.key == "inat":
+            taxon_id = self._resolve_inaturalist_taxon_id(obs)
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip()
-            client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
-                os.getenv("INAT_CLIENT_SECRET", "") or ""
-            ).strip()
+            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or None
+            if not client_id:
+                return _fail(
+                    self.tr("Upload failed: missing iNaturalist Client ID."),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
             redirect_uri = (
                 SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
                 or "http://localhost:8000/callback"
             )
-            if not client_id or not client_secret:
-                return _fail(
-                    self.tr(
-                        "Upload failed: missing iNaturalist CLIENT_ID/CLIENT_SECRET."
-                    ),
-                    level="warning",
-                    auto_clear_ms=12000,
-                )
             try:
                 from utils.inat_oauth import INatOAuthClient
 
@@ -6666,7 +6723,7 @@ class ObservationsTab(QWidget):
                 "genus": (obs.get("genus") or "").strip(),
                 "species": (obs.get("species") or "").strip(),
                 "species_guess": (obs.get("species_guess") or "").strip(),
-                "inaturalist_taxon_id": obs.get("inaturalist_id"),
+                "inaturalist_taxon_id": taxon_id,
                 "publish_target": publish_target,
                 "habitat_nin2_path": obs.get("habitat_nin2_path"),
                 "habitat_substrate_path": obs.get("habitat_substrate_path"),
@@ -6810,6 +6867,7 @@ class ObservationsTab(QWidget):
                         updated_obs.get("publish_target") if updated_obs else None,
                         updated_obs.get("artsdata_id") if updated_obs else int(obs_id),
                         updated_obs.get("artportalen_id") if updated_obs else None,
+                        updated_obs.get("inaturalist_id") if updated_obs else None,
                     )
                 elif uploader.key == "artportalen":
                     updated_obs = ObservationDB.get_observation(observation_id)
@@ -6819,6 +6877,17 @@ class ObservationsTab(QWidget):
                         updated_obs.get("publish_target") if updated_obs else None,
                         updated_obs.get("artsdata_id") if updated_obs else None,
                         updated_obs.get("artportalen_id") if updated_obs else int(obs_id),
+                        updated_obs.get("inaturalist_id") if updated_obs else None,
+                    )
+                elif uploader.key == "inat":
+                    updated_obs = ObservationDB.get_observation(observation_id)
+                    self._render_publish_cell(
+                        row,
+                        observation_id,
+                        updated_obs.get("publish_target") if updated_obs else None,
+                        updated_obs.get("artsdata_id") if updated_obs else None,
+                        updated_obs.get("artportalen_id") if updated_obs else None,
+                        updated_obs.get("inaturalist_id") if updated_obs else int(obs_id),
                     )
                 self._update_publish_controls()
         if show_status:
@@ -8706,7 +8775,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("Edit Observation") if self.edit_mode else self.tr("New Observation")
         )
         self.setModal(True)
-        self.setMinimumSize(900, 820)
+        self.setMinimumSize(980, 900)
+        self.resize(1480, 980)
         self._observation_datetime = _parse_observation_datetime(
             observation.get("date") if observation else None
         )
@@ -9294,9 +9364,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self.ai_group = self._build_ai_suggestions_group()
         taxonomy_split.addWidget(self.ai_group)
-        taxonomy_split.setStretchFactor(0, 1)
-        taxonomy_split.setStretchFactor(1, 1)
-        taxonomy_split.setSizes([500, 500])
+        taxonomy_split.setStretchFactor(0, 3)
+        taxonomy_split.setStretchFactor(1, 2)
+        taxonomy_split.setSizes([720, 480])
 
         taxonomy_layout.addWidget(taxonomy_split)
         top_content_layout.addWidget(taxonomy_group)
