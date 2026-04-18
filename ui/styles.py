@@ -185,8 +185,8 @@ def get_style(theme: str = "auto") -> str:
         sel_fg       = "#e8e8e8"
         sel_inact    = "#2a3c38"
         inline_brd   = "#aecdc3"
-        indicator_border   = "#aecdc3"   # mint indicator/checkbox border
-        indicator_checked  = "#aecdc3"   # mint fill for checked state
+        indicator_border   = "#3a7042"   # green indicator border
+        indicator_checked  = "#2e5c35"   # forest green fill for checked state (matches buttons)
         indicator_bg       = "#1c1b1b"
         indicator_disabled = "#353534"
         data_brd     = "#353534"
@@ -564,6 +564,26 @@ QListWidget {{
     alternate-background-color: {surface};
 }}
 
+QListWidget#settingsNav {{
+    background-color: {surface_low};
+    border-right: 1px solid {data_brd};
+    padding: 8px 0;
+    font-size: {base_pt}pt;
+}}
+
+QListWidget#settingsNav::item {{
+    padding: 8px 16px;
+    border-radius: 0;
+    color: {text_dim};
+}}
+
+QListWidget#settingsNav::item:selected {{
+    background-color: {sel_bg};
+    color: {text};
+    border-left: 3px solid {accent};
+    padding-left: 13px;
+}}
+
 QTableView::item:selected,
 QTableWidget::item:selected,
 QTreeView::item:selected,
@@ -893,6 +913,21 @@ QMessageBox QLabel#qt_msgboxex_icon_label {{
 }}
 
 /* CollapsibleSection toggle button — theme-aware */
+QToolButton#cornerIconBtn {{
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+}}
+
+QToolButton#cornerIconBtn:hover {{
+    background-color: {surface_hover};
+}}
+
+QToolButton#cornerIconBtn:pressed {{
+    background-color: {input_bg};
+}}
+
 QToolButton#collapsibleToggle {{
     font-weight: bold;
     padding: 6px 8px;

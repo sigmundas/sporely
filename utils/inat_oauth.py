@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import base64
 import os
 import secrets
 import threading
@@ -97,14 +99,14 @@ class INatOAuthClient:
     def __init__(
         self,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None = None,
         redirect_uri: str = "http://localhost:8000/callback",
         token_file: Path | str = "inaturalist_tokens.json",
         scope: str = "write",
         timeout_seconds: int = 20,
     ) -> None:
         self.client_id = (client_id or "").strip()
-        self.client_secret = (client_secret or "").strip()
+        self.client_secret = (client_secret or "").strip() or None
         self.redirect_uri = redirect_uri.strip()
         self.token_file = Path(token_file)
         self.scope = (scope or "write").strip()
@@ -140,17 +142,21 @@ class INatOAuthClient:
         except Exception:
             pass
 
-    def _auth_query(self, state: str) -> dict[str, str]:
-        return {
+    def _auth_query(self, state: str, code_challenge: str | None = None) -> dict[str, str]:
+        query = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
             "scope": self.scope,
             "state": state,
         }
+        if code_challenge:
+            query["code_challenge"] = code_challenge
+            query["code_challenge_method"] = "S256"
+        return query
 
-    def build_authorization_url(self, state: str) -> str:
-        return f"{self.AUTH_URL}?{urlencode(self._auth_query(state))}"
+    def build_authorization_url(self, state: str, code_challenge: str | None = None) -> str:
+        return f"{self.AUTH_URL}?{urlencode(self._auth_query(state, code_challenge))}"
 
     def _store_token_payload(self, token_payload: dict) -> None:
         if not isinstance(token_payload, dict):
@@ -183,14 +189,20 @@ class INatOAuthClient:
         }
         self._save_tokens()
 
-    def exchange_code_for_tokens(self, code: str) -> dict:
+    def exchange_code_for_tokens(self, code: str, code_verifier: str | None = None) -> dict:
         data = {
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
             "redirect_uri": self.redirect_uri,
             "grant_type": "authorization_code",
             "code": code,
         }
+        if code_verifier:
+            data["code_verifier"] = code_verifier
+        elif self.client_secret:
+            data["client_secret"] = self.client_secret
+        else:
+            raise RuntimeError("A client_secret or code_verifier is required for token exchange.")
+
         response = requests.post(self.TOKEN_URL, data=data, timeout=self.timeout_seconds)
         if response.status_code >= 400:
             raise RuntimeError(f"Token exchange failed ({response.status_code}): {response.text}")
@@ -204,11 +216,12 @@ class INatOAuthClient:
             raise RuntimeError("No refresh_token available.")
         data = {
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
             "redirect_uri": self.redirect_uri,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         }
+        if self.client_secret:
+            data["client_secret"] = self.client_secret
         response = requests.post(self.TOKEN_URL, data=data, timeout=self.timeout_seconds)
         if response.status_code >= 400:
             raise RuntimeError(f"Token refresh failed ({response.status_code}): {response.text}")
@@ -217,10 +230,18 @@ class INatOAuthClient:
         return payload
 
     def authorize(self, open_browser: bool = True, timeout: int = 180) -> dict:
-        if not self.client_id or not self.client_secret:
-            raise RuntimeError("Missing client_id/client_secret.")
+        if not self.client_id:
+            raise RuntimeError("Missing client_id.")
         state = secrets.token_urlsafe(24)
-        url = self.build_authorization_url(state)
+        code_challenge = None
+        self._code_verifier = None
+
+        if not self.client_secret:
+            self._code_verifier = secrets.token_urlsafe(32)
+            hashed = hashlib.sha256(self._code_verifier.encode("utf-8")).digest()
+            code_challenge = base64.urlsafe_b64encode(hashed).rstrip(b'=').decode("utf-8")
+
+        url = self.build_authorization_url(state, code_challenge)
         callback_server = LocalCallbackServer(self.redirect_uri)
         if open_browser:
             webbrowser.open(url, new=2)
@@ -232,7 +253,7 @@ class INatOAuthClient:
             raise RuntimeError("Authorization callback did not include a code.")
         if callback.state != state:
             raise RuntimeError("OAuth state mismatch.")
-        return self.exchange_code_for_tokens(callback.code)
+        return self.exchange_code_for_tokens(callback.code, self._code_verifier)
 
     def _is_expired(self, leeway_seconds: int = 60) -> bool:
         expires_at = self._tokens.get("expires_at")
@@ -263,12 +284,12 @@ class INatOAuthClient:
 
 def example_login_and_print_access_token() -> None:
     client_id = os.getenv("INAT_CLIENT_ID", "").strip()
-    client_secret = os.getenv("INAT_CLIENT_SECRET", "").strip()
-    if not client_id or not client_secret:
-        raise RuntimeError("Set INAT_CLIENT_ID and INAT_CLIENT_SECRET first.")
+    client_secret = os.getenv("INAT_CLIENT_SECRET", "").strip() or None
+    if not client_id:
+        raise RuntimeError("Set INAT_CLIENT_ID first.")
     client = INatOAuthClient(
         client_id=client_id,
-        client_secret=client_secret,
+        client_secret=client_secret,  # Pass None for public clients
         redirect_uri="http://localhost:8000/callback",
         token_file=Path("inaturalist_tokens.json"),
     )

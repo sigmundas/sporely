@@ -188,6 +188,28 @@ class INaturalistUploader:
 
     API_BASE_URL = "https://api.inaturalist.org/v1"
 
+    @staticmethod
+    def _response_error_text(response: requests.Response) -> str:
+        try:
+            payload = response.json()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            errors = payload.get("errors")
+            if isinstance(errors, list) and errors:
+                return "; ".join(str(item) for item in errors if str(item).strip())
+            for key in ("error", "message"):
+                value = payload.get(key)
+                if str(value or "").strip():
+                    return str(value).strip()
+        text = str(response.text or "").strip()
+        if "<pre>" in text and "</pre>" in text:
+            try:
+                return text.split("<pre>", 1)[1].split("</pre>", 1)[0].strip()
+            except Exception:
+                pass
+        return text
+
     def upload(
         self,
         observation: dict,
@@ -211,30 +233,39 @@ class INaturalistUploader:
             or "Fungi sp."
         )
         description = (observation.get("comment") or "").strip()
-        create_data = {
-            "observation[species_guess]": species_guess,
-            "observation[description]": description,
-            "observation[observed_on_string]": observation.get("observed_datetime") or "",
-            "observation[latitude]": str(observation.get("latitude")),
-            "observation[longitude]": str(observation.get("longitude")),
-            "observation[positional_accuracy]": str(observation.get("accuracy_meters") or 25),
+        create_observation = {
+            "species_guess": species_guess,
+            "description": description,
+            "observed_on_string": observation.get("observed_datetime") or "",
+            "latitude": observation.get("latitude"),
+            "longitude": observation.get("longitude"),
+            "positional_accuracy": observation.get("accuracy_meters") or 25,
         }
+        place_guess = (observation.get("site_name") or "").strip()
+        if place_guess:
+            create_observation["place_guess"] = place_guess
         taxon_id = observation.get("inaturalist_taxon_id")
         if taxon_id:
-            create_data["observation[taxon_id]"] = str(taxon_id)
+            create_observation["taxon_id"] = int(taxon_id)
+        create_observation = {
+            key: value
+            for key, value in create_observation.items()
+            if value not in (None, "")
+        }
 
         if progress_cb:
             progress_cb("Creating observation...", 1, max(2, len(image_paths) + 1))
 
         create_response = requests.post(
             f"{self.API_BASE_URL}/observations",
-            headers=headers,
-            data=create_data,
+            headers={**headers, "Accept": "application/json"},
+            json={"observation": create_observation},
             timeout=30,
         )
         if create_response.status_code >= 400:
+            error_text = self._response_error_text(create_response) or "Bad Request"
             raise RuntimeError(
-                f"iNaturalist create observation failed ({create_response.status_code}): {create_response.text}"
+                f"iNaturalist create observation failed ({create_response.status_code}): {error_text}"
             )
         create_payload = create_response.json()
         obs_id = None
@@ -255,14 +286,15 @@ class INaturalistUploader:
             with open(path, "rb") as handle:
                 image_response = requests.post(
                     f"{self.API_BASE_URL}/observation_photos",
-                    headers=headers,
+                    headers={**headers, "Accept": "application/json"},
                     data={"observation_photo[observation_id]": str(obs_id)},
                     files={"file": handle},
                     timeout=60,
                 )
             if image_response.status_code >= 400:
+                error_text = self._response_error_text(image_response) or "Bad Request"
                 raise RuntimeError(
-                    f"iNaturalist image upload failed ({image_response.status_code}): {image_response.text}"
+                    f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
                 )
 
         if progress_cb:

@@ -1643,6 +1643,25 @@ def _load_obs_gps_date(observation_id: int) -> tuple[float | None, float | None,
         return None, None, None
 
 
+def _is_missing_cloud_image_error(exc: Exception | str | None) -> bool:
+    text = str(exc or '').strip().lower()
+    if not text:
+        return False
+    return (
+        'cloud image file is missing from storage' in text
+        or 'nosuchkey' in text
+    )
+
+
+def _cloud_missing_image_warning(local_id: int, remote_image: dict) -> str:
+    cloud_image_id = str(remote_image.get('id') or '').strip() or '?'
+    filename = Path(str(remote_image.get('original_filename') or '')).name or f'cloud image {cloud_image_id}'
+    return (
+        f'obs {int(local_id)}: skipped missing cloud image {cloud_image_id}'
+        f' ({filename})'
+    )
+
+
 def _sync_existing_remote_image_to_local(
     client: "SporelyCloudClient",
     local_image: dict,
@@ -1742,7 +1761,13 @@ def _apply_remote_images_to_local(
     for cloud_image_id, remote_image in remote_map.items():
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image:
-            _sync_existing_remote_image_to_local(client, local_image, remote_image)
+            try:
+                _sync_existing_remote_image_to_local(client, local_image, remote_image)
+            except CloudSyncError as exc:
+                if _is_missing_cloud_image_error(exc):
+                    print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
+                    continue
+                raise
             try:
                 client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
             except Exception:
@@ -1756,7 +1781,13 @@ def _apply_remote_images_to_local(
         try:
             filename = Path(str(remote_image.get('original_filename') or '')).name or f'{cloud_image_id}.jpg'
             download_path = temp_dir / filename
-            client.download_image_file(storage_path, download_path)
+            try:
+                client.download_image_file(storage_path, download_path)
+            except CloudSyncError as exc:
+                if _is_missing_cloud_image_error(exc):
+                    print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
+                    continue
+                raise
             new_image_type = str(remote_image.get('image_type') or 'field').strip().lower()
             if new_image_type == 'field':
                 lat, lon, date_str = _load_obs_gps_date(int(local_id))
@@ -2638,6 +2669,11 @@ class SporelyCloudClient:
         try:
             return self._get_r2().download_to_file(storage_key, dest_path, timeout=120)
         except Exception as exc:
+            detail = str(exc or '').strip()
+            if 'nosuchkey' in detail.lower():
+                raise CloudSyncError(
+                    f'Cloud image file is missing from storage ({storage_key})'
+                ) from exc
             raise CloudSyncError(f'Download failed: {exc}') from exc
 
 
@@ -3526,7 +3562,13 @@ def _import_remote_images(
                 cloud_image_id = str(image_row.get('id') or '').strip()
                 filename = Path(str(image_row.get('original_filename') or '')).name or f'cloud_{idx}.jpg'
                 download_path = temp_dir / f'{idx:02d}_{filename}'
-                client.download_image_file(storage_path, download_path)
+                try:
+                    client.download_image_file(storage_path, download_path)
+                except CloudSyncError as exc:
+                    if _is_missing_cloud_image_error(exc):
+                        print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, image_row)}')
+                        continue
+                    raise
 
                 local_image_id = ImageDB.add_image(
                     observation_id=int(local_id),

@@ -396,6 +396,36 @@ class CloudSyncDialog(QDialog):
                 prepare_images_cb=self._prepare_images_cb,
             )
             dialog.exec()
+            
+            if dialog.decisions:
+                from .cloud_conflict_dialog import ConflictResolutionWorker
+                self._resolution_worker = ConflictResolutionWorker(dialog.decisions, prepare_images_cb=self._prepare_images_cb)
+                
+                def _on_progress(msg, current, total):
+                    self._progress.show()
+                    self._progress.setMaximum(total)
+                    self._progress.setValue(current)
+                    self._status_label.setText(msg)
+                    
+                self._resolution_worker.progress.connect(_on_progress)
+                
+                def _on_finished(resolved_any):
+                    self._progress.hide()
+                    self._status_label.setText("Conflict resolution finished.")
+                    if deleted_remote:
+                        self._prompt_for_deleted_cloud_observations(deleted_remote)
+                        
+                def _on_error(err):
+                    self._progress.hide()
+                    self._status_label.setText(f"Conflict resolution error: {err}")
+                    if deleted_remote:
+                        self._prompt_for_deleted_cloud_observations(deleted_remote)
+                        
+                self._resolution_worker.finished.connect(_on_finished)
+                self._resolution_worker.error.connect(_on_error)
+                self._resolution_worker.start()
+                return # Deleted remote handled in callback
+                
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
 

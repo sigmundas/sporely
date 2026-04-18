@@ -5,6 +5,11 @@
 
 ---
 
+## Online Publishing & Integrations
+*Status: Active*
+
+- [x] **iNaturalist PKCE OAuth Flow** — Implemented secure browser-based login for public desktop clients (without needing a client secret) using Proof Key for Code Exchange (PKCE). Bypasses manual credential entry, uses the official Sporely open-source Client ID natively, and securely captures the callback via a local HTTP server on port `8000`.
+
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
 
@@ -198,3 +203,18 @@
 ## Long-Term Goals (Phase 3)
 - [ ] **In-Browser Measurement** — Replicate manual spore clicking and calibration using HTML5 Canvas.
 - [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
+
+---
+
+## Developer Experience & Localization Workflow
+*Goal: Streamline adding new languages and strings via LLM agents.*
+
+### AI-Driven Translation Tool (`agent_translate.py`)
+Because LLMs struggle to correctly format and replace massive XML structures like Qt Linguist `.ts` files, a new safe workflow has been introduced.
+
+**Agent Instructions:**
+When asking an agent to translate or fix missing strings, tell it to use the translation script:
+1. `python3 tools/agent_translate.py extract` — Parses the XML `.ts` files and dumps any missing/unfinished strings into a flat `missing_translations.json` file.
+2. **Translate** — The agent edits the `missing_translations.json` file, filling in the blank values (this is much safer than editing XML).
+3. `python3 tools/agent_translate.py apply` — The script safely injects the translated JSON strings back into the correct XML nodes in the `.ts` files, removing the `type="unfinished"` tags, without breaking the XML DOCTYPE or structure.
+4. `./tools/update_translations.sh` — Finally, run the existing script to compile the `.ts` files into binary `.qm` files for Qt.
