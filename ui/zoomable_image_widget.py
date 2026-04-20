@@ -24,6 +24,7 @@ class ZoomableImageLabel(QLabel):
     SVG_EXPORT_FONT_FAMILY = "Arial"
 
     clicked = Signal(QPointF)  # Emits click position in original image coordinates
+    rightClicked = Signal(QPointF)  # Emits right click position in original image coords
     cropChanged = Signal(object)  # Emits (x1, y1, x2, y2) in image coords or None
     cropPreviewChanged = Signal(object)  # Emits live crop preview box in image coords or None
     scaleBarChanged = Signal(list)  # Emits [x1, y1, x2, y2] when scale bar endpoint is dragged
@@ -1297,6 +1298,12 @@ class ZoomableImageLabel(QLabel):
                     if orig_pos:
                         self.current_mouse_pos = QPointF(orig_pos)
                         self.clicked.emit(orig_pos)
+        elif event.button() == Qt.RightButton:
+            if self.original_pixmap:
+                orig_pos = self.screen_to_image(event.position())
+                if orig_pos:
+                    self.current_mouse_pos = QPointF(orig_pos)
+                    self.rightClicked.emit(orig_pos)
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for panning and preview line."""
@@ -1602,12 +1609,21 @@ class ZoomableImageLabel(QLabel):
         hovered = -1
         best_dist = threshold
         for idx, line in enumerate(self.measurement_lines):
-            p1 = QPointF(line[0], line[1])
-            p2 = QPointF(line[2], line[3])
-            dist = self._distance_point_to_segment(image_pos, p1, p2)
-            if dist <= best_dist:
-                best_dist = dist
-                hovered = idx
+            if isinstance(line[0], list):
+                for seg in line:
+                    p1 = QPointF(seg[0], seg[1])
+                    p2 = QPointF(seg[2], seg[3])
+                    dist = self._distance_point_to_segment(image_pos, p1, p2)
+                    if dist <= best_dist:
+                        best_dist = dist
+                        hovered = idx
+            else:
+                p1 = QPointF(line[0], line[1])
+                p2 = QPointF(line[2], line[3])
+                dist = self._distance_point_to_segment(image_pos, p1, p2)
+                if dist <= best_dist:
+                    best_dist = dist
+                    hovered = idx
 
         if hovered != self.hover_line_index:
             self.hover_line_index = hovered
@@ -1912,39 +1928,77 @@ class ZoomableImageLabel(QLabel):
         # Draw measurement lines
         if self.show_measure_overlays and self.measurement_lines:
             for line in self.measurement_lines:
-                p1, p2 = _shift_line(line)
-                self._draw_dual_stroke_line(
-                    painter,
-                    p1,
-                    p2,
-                    color=self.measure_color,
-                    thin_width=thin_width,
-                    wide_width=wide_width,
-                )
-
-                dx = p2.x() - p1.x()
-                dy = p2.y() - p1.y()
-                length = math.sqrt(dx**2 + dy**2)
-                if length > 0:
-                    perp_x = -dy / length
-                    perp_y = dx / length
-                    mark_len = 5 * scale_factor * geometry_scale
+                if isinstance(line[0], list):
+                    for seg in line:
+                        p1, p2 = _shift_line(seg)
+                        self._draw_dual_stroke_line(
+                            painter, p1, p2, color=self.measure_color, thin_width=thin_width, wide_width=wide_width
+                        )
+                    if self.show_line_endcaps:
+                        first_seg = line[0]
+                        p1, p2 = _shift_line(first_seg)
+                        dx = p2.x() - p1.x()
+                        dy = p2.y() - p1.y()
+                        length = math.sqrt(dx**2 + dy**2)
+                        if length > 0:
+                            perp_x = -dy / length
+                            perp_y = dx / length
+                            mark_len = 5 * scale_factor * geometry_scale
+                            self._draw_dual_stroke_line(
+                                painter,
+                                QPointF(p1.x() - perp_x * mark_len, p1.y() - perp_y * mark_len),
+                                QPointF(p1.x() + perp_x * mark_len, p1.y() + perp_y * mark_len),
+                                color=self.measure_color, thin_width=thin_width, wide_width=wide_width
+                            )
+                        last_seg = line[-1]
+                        p1, p2 = _shift_line(last_seg)
+                        dx = p2.x() - p1.x()
+                        dy = p2.y() - p1.y()
+                        length = math.sqrt(dx**2 + dy**2)
+                        if length > 0:
+                            perp_x = -dy / length
+                            perp_y = dx / length
+                            mark_len = 5 * scale_factor * geometry_scale
+                            self._draw_dual_stroke_line(
+                                painter,
+                                QPointF(p2.x() - perp_x * mark_len, p2.y() - perp_y * mark_len),
+                                QPointF(p2.x() + perp_x * mark_len, p2.y() + perp_y * mark_len),
+                                color=self.measure_color, thin_width=thin_width, wide_width=wide_width
+                            )
+                else:
+                    p1, p2 = _shift_line(line)
                     self._draw_dual_stroke_line(
                         painter,
-                        QPointF(p1.x() - perp_x * mark_len, p1.y() - perp_y * mark_len),
-                        QPointF(p1.x() + perp_x * mark_len, p1.y() + perp_y * mark_len),
+                        p1,
+                        p2,
                         color=self.measure_color,
                         thin_width=thin_width,
                         wide_width=wide_width,
                     )
-                    self._draw_dual_stroke_line(
-                        painter,
-                        QPointF(p2.x() - perp_x * mark_len, p2.y() - perp_y * mark_len),
-                        QPointF(p2.x() + perp_x * mark_len, p2.y() + perp_y * mark_len),
-                        color=self.measure_color,
-                        thin_width=thin_width,
-                        wide_width=wide_width,
-                    )
+    
+                    dx = p2.x() - p1.x()
+                    dy = p2.y() - p1.y()
+                    length = math.sqrt(dx**2 + dy**2)
+                    if length > 0:
+                        perp_x = -dy / length
+                        perp_y = dx / length
+                        mark_len = 5 * scale_factor * geometry_scale
+                        self._draw_dual_stroke_line(
+                            painter,
+                            QPointF(p1.x() - perp_x * mark_len, p1.y() - perp_y * mark_len),
+                            QPointF(p1.x() + perp_x * mark_len, p1.y() + perp_y * mark_len),
+                            color=self.measure_color,
+                            thin_width=thin_width,
+                            wide_width=wide_width,
+                        )
+                        self._draw_dual_stroke_line(
+                            painter,
+                            QPointF(p2.x() - perp_x * mark_len, p2.y() - perp_y * mark_len),
+                            QPointF(p2.x() + perp_x * mark_len, p2.y() + perp_y * mark_len),
+                            color=self.measure_color,
+                            thin_width=thin_width,
+                            wide_width=wide_width,
+                        )
 
         # Draw debug line layers (used by calibration auto overlays)
         if self.show_measure_overlays and self.debug_line_layers:
@@ -2050,6 +2104,22 @@ class ZoomableImageLabel(QLabel):
                             p2,
                             self._format_measure_label_value(value, unit),
                             padding_px=max(3.0, 3.0 * label_scale_factor * export_label_ui_scale * geometry_scale),
+                        )
+                    continue
+                if label.get("kind") == "multiline":
+                    center = label.get("center")
+                    unit = label.get("unit") or "\u03bcm"
+                    value = label.get("length_value")
+                    if value is None:
+                        value = label.get("length_um")
+                    if center and value is not None:
+                        c_shifted = _shift_point(center)
+                        self._draw_measure_text_with_outline(
+                            painter,
+                            int(c_shifted.x() + 10 * scale_factor * geometry_scale),
+                            int(c_shifted.y() + 10 * scale_factor * geometry_scale),
+                            self._format_measure_label_value(value, unit),
+                            color=self.measure_color,
                         )
                     continue
                 line1 = label.get("line1")
@@ -2314,57 +2384,116 @@ class ZoomableImageLabel(QLabel):
             sb_highlight_color = QColor(0, 120, 255)
 
             for idx, line in enumerate(self.measurement_lines):
-                # Convert original image coordinates to screen coordinates
-                p1_x = display_rect.x() + line[0] * self.zoom_level
-                p1_y = display_rect.y() + line[1] * self.zoom_level
-                p2_x = display_rect.x() + line[2] * self.zoom_level
-                p2_y = display_rect.y() + line[3] * self.zoom_level
-
-                # Draw main line (wide + thin)
-                p1_screen = QPointF(p1_x, p1_y)
-                p2_screen = QPointF(p2_x, p2_y)
-                self._draw_dual_stroke_line(
-                    painter, p1_screen, p2_screen, color=self.measure_color, thin_width=1.0, wide_width=3.0
-                )
-
                 is_scale_bar = self._scale_bar_draggable and idx == 0
-                if self.show_line_endcaps or is_scale_bar:
-                    # Calculate perpendicular direction
-                    dx = p2_x - p1_x
-                    dy = p2_y - p1_y
-                    length = math.sqrt(dx**2 + dy**2)
-                    if length > 0:
-                        # Normalized perpendicular vector
-                        perp_x = -dy / length
-                        perp_y = dx / length
+                if isinstance(line[0], list):
+                    is_hovered_or_selected = (not is_scale_bar) and (
+                        idx == self.hover_line_index or (not self.measurement_active and idx in self.selected_line_indices)
+                    )
+                    for seg in line:
+                        p1_x = display_rect.x() + seg[0] * self.zoom_level
+                        p1_y = display_rect.y() + seg[1] * self.zoom_level
+                        p2_x = display_rect.x() + seg[2] * self.zoom_level
+                        p2_y = display_rect.y() + seg[3] * self.zoom_level
 
-                        # Scale bar T-marks are larger and can be highlighted
-                        mark_len = 9 if is_scale_bar else 5
-
-                        for ep_idx, (ex, ey) in enumerate([(p1_x, p1_y), (p2_x, p2_y)]):
-                            is_ep_active = is_scale_bar and (
-                                self._scale_bar_ep_hover == ep_idx or self._scale_bar_ep_drag == ep_idx
+                        p1_screen = QPointF(p1_x, p1_y)
+                        p2_screen = QPointF(p2_x, p2_y)
+                        self._draw_dual_stroke_line(
+                            painter, p1_screen, p2_screen, color=self.measure_color, thin_width=1.0, wide_width=3.0
+                        )
+                        if is_hovered_or_selected:
+                            self._draw_dual_stroke_line(
+                                painter, p1_screen, p2_screen, color=hover_color, thin_width=2.0, wide_width=6.0
                             )
-                            t_color = sb_highlight_color if is_ep_active else self.measure_color
-                            t_wide = 5.0 if is_ep_active else 3.0
+                    
+                    if self.show_line_endcaps:
+                        first_seg = line[0]
+                        p1_x = display_rect.x() + first_seg[0] * self.zoom_level
+                        p1_y = display_rect.y() + first_seg[1] * self.zoom_level
+                        p2_x = display_rect.x() + first_seg[2] * self.zoom_level
+                        p2_y = display_rect.y() + first_seg[3] * self.zoom_level
+                        dx = p2_x - p1_x
+                        dy = p2_y - p1_y
+                        length = math.sqrt(dx**2 + dy**2)
+                        if length > 0:
+                            perp_x = -dy / length
+                            perp_y = dx / length
+                            mark_len = 5
                             self._draw_dual_stroke_line(
                                 painter,
-                                QPointF(ex - perp_x * mark_len, ey - perp_y * mark_len),
-                                QPointF(ex + perp_x * mark_len, ey + perp_y * mark_len),
-                                color=t_color,
-                                thin_width=1.0,
-                                wide_width=t_wide,
+                                QPointF(p1_x - perp_x * mark_len, p1_y - perp_y * mark_len),
+                                QPointF(p1_x + perp_x * mark_len, p1_y + perp_y * mark_len),
+                                color=self.measure_color, thin_width=1.0, wide_width=3.0
                             )
-
-                # For non-scale-bar lines: highlight whole line on hover/select
-                if not is_scale_bar and (
-                    idx == self.hover_line_index or (
-                        not self.measurement_active and idx in self.selected_line_indices
-                    )
-                ):
+                        
+                        last_seg = line[-1]
+                        p1_x = display_rect.x() + last_seg[0] * self.zoom_level
+                        p1_y = display_rect.y() + last_seg[1] * self.zoom_level
+                        p2_x = display_rect.x() + last_seg[2] * self.zoom_level
+                        p2_y = display_rect.y() + last_seg[3] * self.zoom_level
+                        dx = p2_x - p1_x
+                        dy = p2_y - p1_y
+                        length = math.sqrt(dx**2 + dy**2)
+                        if length > 0:
+                            perp_x = -dy / length
+                            perp_y = dx / length
+                            mark_len = 5
+                            self._draw_dual_stroke_line(
+                                painter,
+                                QPointF(p2_x - perp_x * mark_len, p2_y - perp_y * mark_len),
+                                QPointF(p2_x + perp_x * mark_len, p2_y + perp_y * mark_len),
+                                color=self.measure_color, thin_width=1.0, wide_width=3.0
+                            )
+                else:
+                    # Convert original image coordinates to screen coordinates
+                    p1_x = display_rect.x() + line[0] * self.zoom_level
+                    p1_y = display_rect.y() + line[1] * self.zoom_level
+                    p2_x = display_rect.x() + line[2] * self.zoom_level
+                    p2_y = display_rect.y() + line[3] * self.zoom_level
+    
+                    # Draw main line (wide + thin)
+                    p1_screen = QPointF(p1_x, p1_y)
+                    p2_screen = QPointF(p2_x, p2_y)
                     self._draw_dual_stroke_line(
-                        painter, p1_screen, p2_screen, color=hover_color, thin_width=2.0, wide_width=6.0
+                        painter, p1_screen, p2_screen, color=self.measure_color, thin_width=1.0, wide_width=3.0
                     )
+    
+                    if self.show_line_endcaps or is_scale_bar:
+                        # Calculate perpendicular direction
+                        dx = p2_x - p1_x
+                        dy = p2_y - p1_y
+                        length = math.sqrt(dx**2 + dy**2)
+                        if length > 0:
+                            # Normalized perpendicular vector
+                            perp_x = -dy / length
+                            perp_y = dx / length
+    
+                            # Scale bar T-marks are larger and can be highlighted
+                            mark_len = 9 if is_scale_bar else 5
+    
+                            for ep_idx, (ex, ey) in enumerate([(p1_x, p1_y), (p2_x, p2_y)]):
+                                is_ep_active = is_scale_bar and (
+                                    self._scale_bar_ep_hover == ep_idx or self._scale_bar_ep_drag == ep_idx
+                                )
+                                t_color = sb_highlight_color if is_ep_active else self.measure_color
+                                t_wide = 5.0 if is_ep_active else 3.0
+                                self._draw_dual_stroke_line(
+                                    painter,
+                                    QPointF(ex - perp_x * mark_len, ey - perp_y * mark_len),
+                                    QPointF(ex + perp_x * mark_len, ey + perp_y * mark_len),
+                                    color=t_color,
+                                    thin_width=1.0,
+                                    wide_width=t_wide,
+                                )
+    
+                    # For non-scale-bar lines: highlight whole line on hover/select
+                    if not is_scale_bar and (
+                        idx == self.hover_line_index or (
+                            not self.measurement_active and idx in self.selected_line_indices
+                        )
+                    ):
+                        self._draw_dual_stroke_line(
+                            painter, p1_screen, p2_screen, color=hover_color, thin_width=2.0, wide_width=6.0
+                        )
 
         # Draw debug line layers (no hover/selection)
         if self.show_measure_overlays and self.debug_line_layers:
@@ -2644,6 +2773,23 @@ class ZoomableImageLabel(QLabel):
                             p2,
                             self._format_measure_label_value(value, unit),
                             padding_px=4.0,
+                        )
+                    continue
+                if label.get("kind") == "multiline":
+                    center = label.get("center")
+                    unit = label.get("unit") or "\u03bcm"
+                    value = label.get("length_value")
+                    if value is None:
+                        value = label.get("length_um")
+                    if center and value is not None:
+                        screen_pos = QPointF(display_rect.x() + center.x() * self.zoom_level,
+                                             display_rect.y() + center.y() * self.zoom_level)
+                        self._draw_measure_text_with_outline(
+                            painter,
+                            int(screen_pos.x() + 10),
+                            int(screen_pos.y() + 10),
+                            self._format_measure_label_value(value, unit),
+                            color=self.measure_color,
                         )
                     continue
                 line1 = label.get("line1")
