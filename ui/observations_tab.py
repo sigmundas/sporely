@@ -752,7 +752,7 @@ class MapServiceHelper:
 
         add_link("Google Maps", tr("Open location in Google Maps"), open_google_maps)
         add_link("Kilden (NIBIO)", tr("Agricultural & land-use maps"), open_kilden)
-        add_link("Artskart", tr("Species occurrence map (Artsdatabanken)"), open_artskart)
+        add_link("Adb", tr("Species occurrence map (Artsdatabanken)"), open_artskart)
         add_link("Norge i Bilder", tr("Aerial imagery of Norway"), open_norge_i_bilder)
         add_link("iNaturalist — nearby observations", tr("Observations near this location"), open_inat_local)
         if species_complete:
@@ -8871,14 +8871,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _dialog_gallery_default_height(self) -> int:
         gallery = getattr(self, "image_gallery", None)
         if gallery is None:
-            return 160
-        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() - 8)
-
-    def _dialog_gallery_max_height(self) -> int:
-        gallery = getattr(self, "image_gallery", None)
-        if gallery is None:
-            return 300
-        return max(gallery.minimumHeight(), gallery.maximum_useful_height())
+            return 170
+        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() + 28, 170)
 
     def _apply_dialog_gallery_splitter_height(self, gallery_height: int | None = None) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
@@ -8886,8 +8880,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if splitter is None or gallery is None:
             return
         target = self._dialog_gallery_default_height() if gallery_height is None else int(gallery_height)
-        target = max(gallery.minimumHeight(), min(self._dialog_gallery_max_height(), target))
-        gallery.setMaximumHeight(self._dialog_gallery_max_height())
+        target = max(gallery.minimumHeight(), target)
         sizes = splitter.sizes()
         total = sum(sizes) if sizes else 0
         if total <= 0:
@@ -8905,43 +8898,38 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _restore_dialog_gallery_splitter(self) -> None:
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         raw_value = settings.value(self._gallery_splitter_key)
-        gallery_height = None
+        parsed: list[int] = []
         if isinstance(raw_value, (list, tuple)):
-            parsed: list[int] = []
             for value in raw_value[:2]:
                 try:
                     parsed.append(max(0, int(value)))
                 except Exception:
                     parsed.append(0)
-            if len(parsed) >= 2:
-                gallery_height = parsed[1]
+            if len(parsed) >= 2 and sum(parsed[:2]) > 0:
+                splitter = getattr(self, "dialog_gallery_splitter", None)
+                if splitter is not None:
+                    splitter.setSizes(parsed[:2])
+                return
         else:
             try:
                 gallery_height = max(0, int(raw_value))
             except Exception:
                 gallery_height = None
-        self._apply_dialog_gallery_splitter_height(gallery_height)
+            self._apply_dialog_gallery_splitter_height(gallery_height)
+            return
+        self._apply_dialog_gallery_splitter_height(None)
 
     def _save_dialog_gallery_splitter(self) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
-        gallery = getattr(self, "image_gallery", None)
-        if splitter is None or gallery is None:
+        if splitter is None:
             return
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
-        height = max(gallery.minimumHeight(), int(gallery.height() or 0))
-        if height <= 0:
-            sizes = splitter.sizes()
-            if len(sizes) >= 2:
-                height = max(gallery.minimumHeight(), int(sizes[1]))
-        settings.setValue(self._gallery_splitter_key, height)
+        settings.setValue(self._gallery_splitter_key, splitter.sizes())
 
     def _on_dialog_gallery_splitter_moved(self, _pos: int, _index: int) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
         if splitter is None or self._dialog_gallery_splitter_syncing:
             return
-        sizes = splitter.sizes()
-        gallery_height = sizes[1] if len(sizes) >= 2 else None
-        QTimer.singleShot(0, lambda h=gallery_height: self._apply_dialog_gallery_splitter_height(h))
         QTimer.singleShot(0, self._save_dialog_gallery_splitter)
 
     def _restore_geometry(self) -> None:
@@ -9129,12 +9117,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # ===== TAXONOMY SECTION =====
         taxonomy_group = QGroupBox(self.tr("Taxonomy"))
-        taxonomy_layout = QHBoxLayout(taxonomy_group)
+        taxonomy_layout = QVBoxLayout(taxonomy_group)
         taxonomy_layout.setContentsMargins(8, 8, 8, 8)
         taxonomy_layout.setSpacing(8)
-
-        taxonomy_split = QSplitter(Qt.Horizontal)
-        taxonomy_split.setChildrenCollapsible(False)
 
         left_container = QWidget()
         left_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -9156,8 +9141,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         identified_layout.setContentsMargins(8, 8, 8, 8)
         identified_layout.setSpacing(4)
         identified_layout.setAlignment(Qt.AlignTop)
-        taxonomy_label_width = 96
-        taxonomy_field_width = 520
+        self._taxonomy_label_width = 96
+        self._taxonomy_field_width = 560
+        taxonomy_label_width = self._taxonomy_label_width
+        taxonomy_field_width = self._taxonomy_field_width
 
         vern_row = QHBoxLayout()
         vern_row.setContentsMargins(0, 0, 0, 0)
@@ -9331,25 +9318,40 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         grows_tab_layout.setSpacing(8)
         grows_tab_layout.setAlignment(Qt.AlignTop)
         grows_group = QGroupBox(self._grows_on_tab_title())
-        grows_layout = QFormLayout(grows_group)
+        grows_layout = QVBoxLayout(grows_group)
+        grows_layout.setContentsMargins(8, 8, 8, 8)
         grows_layout.setSpacing(6)
-        grows_layout.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         self.host_genus_input = QLineEdit()
+        self.host_genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.host_genus_input.setMaximumWidth(taxonomy_field_width)
         self.host_genus_input.setPlaceholderText(self.tr("e.g., Betula"))
         self.host_genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_species_input = QLineEdit()
+        self.host_species_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.host_species_input.setMaximumWidth(taxonomy_field_width)
         self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
         self.host_species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_input = QLineEdit()
+        self.host_vernacular_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.host_vernacular_input.setMaximumWidth(taxonomy_field_width)
         self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.host_vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_label = QLabel(self._vernacular_label())
-        grows_layout.addRow(self.tr("Genus:"), self.host_genus_input)
-        grows_layout.addRow(self.tr("Species:"), self.host_species_input)
-        grows_layout.addRow(self.host_vernacular_label, self.host_vernacular_input)
+
+        def _add_grows_row(label_text: str, widget: QWidget) -> None:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(4)
+            label = QLabel(label_text)
+            label.setFixedWidth(taxonomy_label_width)
+            row.addWidget(label)
+            row.addWidget(widget, 1)
+            row.addStretch(1)
+            grows_layout.addLayout(row)
+
+        _add_grows_row(self.tr("Genus:"), self.host_genus_input)
+        _add_grows_row(self.tr("Species:"), self.host_species_input)
+        _add_grows_row(self.host_vernacular_label.text(), self.host_vernacular_input)
         grows_tab_layout.addWidget(grows_group)
         self.grows_on_note_input = self._make_note_input()
         self.grows_on_note_input.setPlaceholderText(self.tr("Grows-on note..."))
@@ -9360,16 +9362,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.taxonomy_tabs.addTab(grows_tab, self._grows_on_tab_title())
 
         left_layout.addWidget(self.taxonomy_tabs)
-        taxonomy_split.addWidget(left_container)
+        taxonomy_layout.addWidget(left_container)
 
         self.ai_group = self._build_ai_suggestions_group()
-        taxonomy_split.addWidget(self.ai_group)
-        taxonomy_split.setStretchFactor(0, 3)
-        taxonomy_split.setStretchFactor(1, 2)
-        taxonomy_split.setSizes([720, 480])
-
-        taxonomy_layout.addWidget(taxonomy_split)
-        top_content_layout.addWidget(taxonomy_group)
+        taxonomy_row_split = QSplitter(Qt.Horizontal)
+        taxonomy_row_split.setChildrenCollapsible(False)
+        taxonomy_row_split.addWidget(taxonomy_group)
+        taxonomy_row_split.addWidget(self.ai_group)
+        taxonomy_row_split.setStretchFactor(0, 3)
+        taxonomy_row_split.setStretchFactor(1, 2)
+        taxonomy_row_split.setSizes([840, 620])
+        top_content_layout.addWidget(taxonomy_row_split)
 
         # ===== IMAGES SUMMARY (BOTTOM) =====
         self.image_gallery = ImageGalleryWidget(
@@ -9378,14 +9381,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             show_delete=True,
             show_badges=True,
             min_height=60,
-            default_height=160,
+            default_height=170,
             thumbnail_tooltip=self.tr("Double-click to edit"),
         )
         self.image_gallery.set_compact_overlay(True)
         self.image_gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.image_gallery.set_reorderable(True)
         self.image_gallery.set_multi_select(True)
-        self.image_gallery.setMaximumHeight(self._dialog_gallery_max_height())
         self._gps_source_index = self._resolve_gps_source_index()
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
@@ -9671,7 +9673,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ai_layout = QVBoxLayout(ai_group)
         ai_layout.setContentsMargins(6, 6, 6, 6)
         ai_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        ai_group.setMinimumWidth(0)
+        ai_group.setMinimumWidth(460)
 
         ai_controls = QHBoxLayout()
         self.ai_guess_btn = QPushButton(self.tr("Guess"))
@@ -9697,6 +9699,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.ai_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.ai_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.ai_table.setMinimumHeight(140)
+        self.ai_table.setMinimumWidth(420)
         self.ai_table.setStyleSheet(
             "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
             "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
@@ -9839,6 +9842,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.ai_table.setItem(row, 1, conf_item)
             if link_widget:
                 self.ai_table.setCellWidget(row, 2, link_widget)
+            self.ai_table.setRowHeight(row, max(self.ai_table.verticalHeader().defaultSectionSize(), 28))
         if predictions:
             selected = self._ai_selected_by_index.get(index)
             if selected:
@@ -9894,11 +9898,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         links: list[tuple[str, str]] = []
         adb_url = self._ai_prediction_link(pred, taxon)
         if adb_url:
-            links.append(("AdB.no", adb_url))
-        genus, species = self._extract_genus_species_from_taxon(taxon)
-        artportalen_taxon_id = ObservationDB.resolve_external_taxon_id(genus, species, "artportalen")
-        if artportalen_taxon_id:
-            links.append(("AP.se", f"https://dyntaxa.se/taxon/info/{int(artportalen_taxon_id)}"))
+            links.append(("Adb", adb_url))
         return links
 
     def _build_taxon_link_widget(self, links: list[tuple[str, str]]) -> QLabel | None:
@@ -9910,7 +9910,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not valid_links:
             return None
         link_html = " | ".join(
-            f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+            (
+                f'<a href="{html.escape(url, quote=True)}" '
+                'style="color:#2b6cb0; text-decoration:underline;">'
+                f"{html.escape(label)}</a>"
+            )
             for label, url in valid_links
         )
         label = QLabel(link_html)
@@ -9918,7 +9922,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         label.setOpenExternalLinks(True)
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("QLabel { padding: 2px 6px; }")
+        label.setMinimumWidth(44)
+        label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        label.setStyleSheet("QLabel { padding: 2px 6px; color: #2b6cb0; }")
         return label
 
     def _on_ai_selection_changed(self) -> None:
@@ -11152,11 +11158,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_datetime_width()
-        splitter = getattr(self, "dialog_gallery_splitter", None)
-        if splitter is not None and not self._dialog_gallery_splitter_syncing:
-            sizes = splitter.sizes()
-            gallery_height = sizes[1] if len(sizes) >= 2 else None
-            QTimer.singleShot(0, lambda h=gallery_height: self._apply_dialog_gallery_splitter_height(h))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -12640,21 +12641,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         *,
         expand_fields: bool = False,
     ) -> None:
-        field_width = 360
+        field_width = int(getattr(self, "_taxonomy_field_width", 560) or 560)
+        label_width = int(getattr(self, "_taxonomy_label_width", 96) or 96)
         group = QGroupBox(title)
         group_layout = QFormLayout(group)
         group_layout.setSpacing(6)
+        group_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        group_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        group_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         level_count = max(1, min(6, self._tree_depth(roots)))
         combos: list[QComboBox] = []
         for level in range(level_count):
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.NoInsert)
-            if expand_fields:
-                combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            else:
-                combo.setFixedWidth(field_width)
-                combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            combo.setMaximumWidth(field_width)
+            combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             combo.addItem(self.tr("Select..."), None)
             combo.currentIndexChanged.connect(
                 lambda _idx, tree_key=key, tree_level=level: self._on_habitat_tree_level_changed(tree_key, tree_level)
@@ -12678,13 +12680,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
             )
             row_widget = QWidget()
-            row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            row_widget.setMaximumWidth(field_width + 28)
+            row_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(4)
             row_layout.addWidget(combo, 1)
             row_layout.addWidget(clear_btn, 0)
-            group_layout.addRow(self.tr("Level {n}:").format(n=level + 1), row_widget)
+            level_label = QLabel(self.tr("Level {n}:").format(n=level + 1))
+            level_label.setFixedWidth(label_width)
+            group_layout.addRow(level_label, row_widget)
             combos.append(combo)
         tree_index = self._build_habitat_tree_index(roots)
         self._habitat_tree_states[key] = {

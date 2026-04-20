@@ -4232,6 +4232,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.current_pixmap = None
         self.points = []  # Will store 4 points for two measurements
         self.measurement_lines = {}  # Dict mapping measurement_id -> [line1, line2]
+        self.multiline_measurements = {}
         self.temp_lines = []  # Temporary lines for current measurement in progress
         self.measure_mode = "rectangle"
         self.measurements_cache = []
@@ -4747,6 +4748,26 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_category_combo.currentIndexChanged.connect(self.on_measure_category_changed)
         measure_layout.addWidget(self.measure_category_combo)
 
+        mode_row = QHBoxLayout()
+        self.mode_group = QButtonGroup(self)
+        self.mode_lines = QRadioButton(self.tr("Line"))
+        self.mode_rect = QRadioButton(self.tr("Rectangle"))
+        self.mode_multiline = QRadioButton(self.tr("Multi-line"))
+        self.mode_rect.setChecked(True)
+        self.mode_group.addButton(self.mode_lines)
+        self.mode_group.addButton(self.mode_rect)
+        self.mode_group.addButton(self.mode_multiline)
+        self.mode_lines.toggled.connect(self.on_measure_mode_changed)
+        self.mode_rect.toggled.connect(self.on_measure_mode_changed)
+        self.mode_multiline.toggled.connect(self.on_measure_mode_changed)
+        mode_row.addWidget(self.mode_lines)
+        mode_row.addSpacing(16)
+        mode_row.addWidget(self.mode_rect)
+        mode_row.addSpacing(16)
+        mode_row.addWidget(self.mode_multiline)
+        mode_row.addStretch()
+        measure_layout.addLayout(mode_row)
+
         self.measure_button = QPushButton(self.tr("Start measuring (M)"))
         self.measure_button.setCheckable(True)
         self.measure_button.setMinimumHeight(35)
@@ -4754,21 +4775,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_button.setStyleSheet("font-weight: bold; padding: 6px 10px;")
         self.measure_button.clicked.connect(self._on_measure_button_clicked)
         measure_layout.addWidget(self.measure_button)
-
-        mode_row = QHBoxLayout()
-        self.mode_group = QButtonGroup(self)
-        self.mode_lines = QRadioButton(self.tr("Line"))
-        self.mode_rect = QRadioButton(self.tr("Rectangle"))
-        self.mode_rect.setChecked(True)
-        self.mode_group.addButton(self.mode_lines)
-        self.mode_group.addButton(self.mode_rect)
-        self.mode_lines.toggled.connect(self.on_measure_mode_changed)
-        self.mode_rect.toggled.connect(self.on_measure_mode_changed)
-        mode_row.addWidget(self.mode_lines)
-        mode_row.addSpacing(16)
-        mode_row.addWidget(self.mode_rect)
-        mode_row.addStretch()
-        measure_layout.addLayout(mode_row)
 
         self.measure_status_label = QLabel("")
         self.measure_status_label.setWordWrap(True)
@@ -5212,8 +5218,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         # Left panel - controls (fixed width)
         left_panel = self.create_control_panel()
-        left_panel.setMaximumWidth(285)
-        left_panel.setMinimumWidth(285)
+        left_panel.setMaximumWidth(400)
+        left_panel.setMinimumWidth(400)
         layout.addWidget(left_panel)
 
         # Center - image panel
@@ -5268,6 +5274,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.image_label.setObjectName("imageLabel")
         self.image_label.setMinimumSize(800, 400)
         self.image_label.clicked.connect(self.image_clicked)
+        self.image_label.rightClicked.connect(self.image_right_clicked)
         self.image_label.set_measurement_color(self.measure_color)
         self.image_label.set_measurement_active(self.measurement_active)
         self.image_label.set_pan_without_shift(not self.measurement_active)
@@ -8060,14 +8067,11 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.measurements_table = QTableWidget()
         self.measurements_table.setColumnCount(5)
-        self.measurements_table.setHorizontalHeaderLabels(["Image", "Category", "L", "W", "Q"])
+        self.measurements_table.setHorizontalHeaderLabels(["Img", "Cat", "L", "W", "Q"])
 
         # Set column widths
         header = self.measurements_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
         self.measurements_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -8638,6 +8642,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.mode_lines.setEnabled(True)
         if hasattr(self, "mode_rect"):
             self.mode_rect.setEnabled(True)
+        if hasattr(self, "mode_multiline"):
+            self.mode_multiline.setEnabled(True)
         if hasattr(self, "measure_category_combo"):
             if not self.measurements_table.selectedIndexes() and not self.measurement_active:
                 target = "field" if is_field else "spores"
@@ -9356,6 +9362,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.auto_gray_cache_id = None
         self.points = []
         self.measurement_lines = {}
+        self.multiline_measurements = {}
         self.temp_lines = []
         self.image_label.set_image(None)
         self.image_label.set_objective_text("")
@@ -9740,6 +9747,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self.measure_mode == "rectangle":
             self.measure_status_label.setText(self.tr("Rectangle: Click point 1"))
             self.measure_status_label.setStyleSheet(f"color: #3498db; font-weight: bold; font-size: {pt(9)}pt;")
+        elif self.measure_mode == "multiline":
+            self.measure_status_label.setText(self.tr("Multi-line: Click start point"))
+            self.measure_status_label.setStyleSheet(f"color: #9b59b6; font-weight: bold; font-size: {pt(9)}pt;")
         else:
             self.measure_status_label.setText(self.tr("Line: Click start point"))
             self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
@@ -9755,9 +9765,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._reset_measure_prompt()
 
     def on_measure_mode_changed(self):
-        """Switch between line and rectangle measurement modes."""
+        """Switch between line, rectangle, and multi-line measurement modes."""
         if self.mode_lines.isChecked():
             self.measure_mode = "lines"
+        elif hasattr(self, "mode_multiline") and self.mode_multiline.isChecked():
+            self.measure_mode = "multiline"
         else:
             self.measure_mode = "rectangle"
         self.abort_measurement(show_status=False)
@@ -9781,6 +9793,19 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         if self.measure_mode == "rectangle":
             self.handle_rectangle_measurement(pos)
+            return
+
+        if self.measure_mode == "multiline":
+            self.points.append(pos)
+            if len(self.points) == 1:
+                self.image_label.set_preview_line(pos)
+                self.measure_status_label.setText(self.tr("Multi-line: Click next point, Right-click to finish"))
+                self.measure_status_label.setStyleSheet(f"color: #9b59b6; font-weight: bold; font-size: {pt(9)}pt;")
+            else:
+                line = [self.points[-2].x(), self.points[-2].y(), pos.x(), pos.y()]
+                self.temp_lines.append(line)
+                self.update_display_lines()
+                self.image_label.set_preview_line(pos)
             return
 
         # Auto-start measurement if we have an image but no active measurement
@@ -9809,6 +9834,70 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.temp_lines.append(line1)
             self.update_display_lines()
             self.complete_measurement()
+
+    def image_right_clicked(self, pos):
+        """Handle right clicks on the image (e.g., to finish multi-line)."""
+        if not self.measurement_active or self.measure_mode != "multiline":
+            return
+        if len(self.points) >= 2:
+            self.complete_multiline_measurement()
+        else:
+            self.abort_measurement()
+
+    def complete_multiline_measurement(self):
+        """Complete a multi-line measurement and store it."""
+        if len(self.points) < 2:
+            self.abort_measurement()
+            return
+            
+        total_length_pixels = 0
+        for i in range(len(self.points) - 1):
+            dx = self.points[i+1].x() - self.points[i].x()
+            dy = self.points[i+1].y() - self.points[i].y()
+            total_length_pixels += math.sqrt(dx**2 + dy**2)
+            
+        length_microns = total_length_pixels * self.microns_per_pixel
+        width_microns = None
+        
+        measurement_category = self.measure_category_combo.currentData()
+        notes_json = json.dumps({"multiline": [[p.x(), p.y()] for p in self.points]})
+        measurement_id = MeasurementDB.add_measurement(
+            self.current_image_id,
+            length=length_microns,
+            width=width_microns,
+            measurement_type=measurement_category,
+            notes=notes_json,
+            points=self.points[:2]  # Fallback for DB schema
+        )
+        
+        ImageDB.update_image(
+            self.current_image_id,
+            scale=self.microns_per_pixel,
+            objective_name=self.current_objective_name
+        )
+        
+        saved_lines = self.temp_lines.copy()
+        self.multiline_measurements[measurement_id] = saved_lines
+        
+        self.measurement_labels.append(
+            self._build_multiline_measurement_label(
+                measurement_id,
+                length_microns,
+                QPointF(self.points[-1].x(), self.points[-1].y()),
+                measurement_category,
+            )
+        )
+        
+        self.temp_lines = []
+        self.update_display_lines()
+        self.points = []
+        self.image_label.clear_preview_line()
+        
+        self.measure_status_label.setText(self.tr("Click to measure next"))
+        self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
+        
+        self.update_measurements_table()
+        self.update_statistics()
 
     def complete_measurement(self):
         """Complete a measurement and store it."""
@@ -10057,7 +10146,22 @@ class MainWindow(GeometryMixin, QMainWindow):
                 idx = len(all_lines)
                 all_lines.append(line)
                 self._line_index_map.setdefault(measurement_id, []).append(idx)
-        all_lines.extend(self.temp_lines)
+            
+            for measurement_id, lines_list in getattr(self, "multiline_measurements", {}).items():
+                measurement_type = self.normalize_measurement_category(
+                    self._measurement_type_by_id.get(measurement_id, "")
+                )
+                if measurement_type == "calibration" and not show_calibration:
+                    continue
+                if lines_list:
+                    idx = len(all_lines)
+                    all_lines.append(lines_list)
+                    self._line_index_map.setdefault(measurement_id, []).append(idx)
+                    
+        if self.measure_mode == "multiline" and self.temp_lines:
+            all_lines.append(self.temp_lines)
+        else:
+            all_lines.extend(self.temp_lines)
         visible_labels = self.measurement_labels
         if show_saved and not show_calibration:
             visible_labels = [
@@ -10193,6 +10297,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             if dist <= best_dist:
                 best_dist = dist
                 best_id = measurement_id
+                
+        if hasattr(self, "multiline_measurements"):
+            for measurement_id, lines_list in self.multiline_measurements.items():
+                for line in lines_list:
+                    p1 = QPointF(line[0], line[1])
+                    p2 = QPointF(line[2], line[3])
+                    dist = self._distance_point_to_segment(pos, p1, p2)
+                    if dist <= best_dist:
+                        best_dist = dist
+                        best_id = measurement_id
 
         return best_id
 
@@ -11046,6 +11160,19 @@ class MainWindow(GeometryMixin, QMainWindow):
             "line": line1,
         }
 
+    def _build_multiline_measurement_label(self, measurement_id, length_um, last_point, measurement_type=None):
+        """Build a label entry for multiline measurements."""
+        unit, divisor = self._measurement_unit_for_display(measurement_type)
+        length_value = (length_um / divisor) if length_um is not None else None
+        return {
+            "id": measurement_id,
+            "kind": "multiline",
+            "center": last_point,
+            "length_um": length_um,
+            "length_value": length_value,
+            "unit": unit,
+        }
+
     def load_measurement_lines(self):
         """Load measurement lines from database for current image.
 
@@ -11055,6 +11182,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         in database.
         """
         self.measurement_lines = {}
+        self.multiline_measurements = {}
         self.temp_lines = []
         self.measurement_labels = []
         self._measurement_type_by_id = {}
@@ -11067,6 +11195,37 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         measurements = MeasurementDB.get_measurements_for_image(self.current_image_id)
         for measurement in measurements:
+            notes = measurement.get("notes") or ""
+            is_multiline = False
+            if '{"multiline"' in notes:
+                try:
+                    data = json.loads(notes)
+                    pts = data.get("multiline")
+                    if pts and len(pts) >= 2:
+                        lines = []
+                        for i in range(len(pts) - 1):
+                            lines.append([pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]])
+                        self.multiline_measurements[measurement['id']] = lines
+                        self._measurement_type_by_id[int(measurement['id'])] = self.normalize_measurement_category(
+                            measurement.get("measurement_type")
+                        )
+                        length_um = measurement.get('length_um')
+                        if length_um is not None:
+                            last_point = QPointF(pts[-1][0], pts[-1][1])
+                            self.measurement_labels.append(
+                                self._build_multiline_measurement_label(
+                                    measurement['id'],
+                                    length_um,
+                                    last_point,
+                                    measurement.get("measurement_type"),
+                                )
+                            )
+                        is_multiline = True
+                except Exception:
+                    pass
+            if is_multiline:
+                continue
+
             if not all(measurement.get(f'p{i}_{axis}') is not None
                        for i in range(1, 3) for axis in ['x', 'y']):
                 continue
@@ -11305,6 +11464,11 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def show_measurement_preview(self, measurement):
         """Show preview for a specific measurement."""
+        notes = measurement.get("notes") or ""
+        if '{"multiline"' in notes:
+            self.spore_preview.clear()
+            return
+
         has_line = (
             measurement.get('p1_x') is not None and
             measurement.get('p1_y') is not None and
@@ -11434,12 +11598,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measurements_table.setItem(row, 2, QTableWidgetItem(f"{length:.1f}"))
 
             # Width
-            width = measurement['width_um'] or 0
-            self.measurements_table.setItem(row, 3, QTableWidgetItem(f"{width:.1f}"))
-
-            # Q
-            q = length / width if width > 0 else 0
-            self.measurements_table.setItem(row, 4, QTableWidgetItem(f"{q:.1f}"))
+            width = measurement.get('width_um')
+            if width is not None and width > 0:
+                self.measurements_table.setItem(row, 3, QTableWidgetItem(f"{width:.1f}"))
+                q = length / width if width > 0 else 0
+                self.measurements_table.setItem(row, 4, QTableWidgetItem(f"{q:.1f}"))
+            else:
+                self.measurements_table.setItem(row, 3, QTableWidgetItem("-"))
+                self.measurements_table.setItem(row, 4, QTableWidgetItem("-"))
 
         # Update gallery view only when visible
         if self.is_analysis_visible() and not self._suppress_gallery_update:
@@ -12337,6 +12503,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         show_q_extreme_minmax = bool(plot_settings.get("q_extreme_minmax", False))
         axis_equal = bool(plot_settings.get("axis_equal", False))
 
+        all_lengths = []
+        all_image_ids = []
         lengths = []
         widths = []
         measurement_ids = []
@@ -12344,26 +12512,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         for m in measurements or []:
             length = m.get("length_um")
             width = m.get("width_um")
-            if length is None or width is None or width <= 0:
+            if length is None:
                 continue
-            lengths.append(float(length))
-            widths.append(float(width))
-            measurement_ids.append(m.get("id"))
-            measurement_image_ids.append(m.get("image_id"))
+            all_lengths.append(float(length))
+            all_image_ids.append(m.get("image_id"))
+            if width is not None and float(width) > 0:
+                lengths.append(float(length))
+                widths.append(float(width))
+                measurement_ids.append(m.get("id"))
+                measurement_image_ids.append(m.get("image_id"))
 
         histogram_count_max = None
-        if lengths:
+        if all_lengths:
             try:
-                length_counts, _ = np.histogram(lengths, bins=bins)
-                width_counts, _ = np.histogram(widths, bins=bins)
+                length_counts, _ = np.histogram(all_lengths, bins=bins)
                 count_max = max(
                     int(length_counts.max()) if len(length_counts) else 0,
-                    int(width_counts.max()) if len(width_counts) else 0,
                 )
-                q_values = [length / width for length, width in zip(lengths, widths) if width > 0]
-                if q_values:
-                    q_counts, _ = np.histogram(q_values, bins=bins)
-                    count_max = max(count_max, int(q_counts.max()) if len(q_counts) else 0)
+                if widths:
+                    width_counts, _ = np.histogram(widths, bins=bins)
+                    count_max = max(count_max, int(width_counts.max()) if len(width_counts) else 0)
+                    q_values = [l / w for l, w in zip(lengths, widths) if w > 0]
+                    if q_values:
+                        q_counts, _ = np.histogram(q_values, bins=bins)
+                        count_max = max(count_max, int(q_counts.max()) if len(q_counts) else 0)
                 histogram_count_max = count_max
             except Exception:
                 histogram_count_max = None
@@ -12388,7 +12560,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_hist_axes = {axis for axis in (ax_len, ax_wid, ax_q) if axis is not None}
         self._gallery_hover_hint_key = ""
 
-        stats = self._stats_from_measurements(lengths, widths)
+        stats = self._stats_from_measurements(all_lengths, lengths, widths)
 
         dark = self._is_dark_theme()
         hist_color_dark = "#4a90d9"   # brighter blue for dark bg
@@ -12396,10 +12568,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         q_line_width = 1.5 if dark else 1.35
         q_line_alpha = 0.95
 
+        L_all = np.asarray(all_lengths, dtype=float)
         L = np.asarray(lengths, dtype=float)
         W = np.asarray(widths, dtype=float)
 
-        if L.size == 0:
+        if L_all.size == 0:
             self.gallery_scatter_id_map = {}
             self.gallery_hist_patches = {}
             all_axes = [ax_scatter, ax_len if show_hist else None,
@@ -12736,10 +12909,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                     zorder=7,
                 )
 
-        max_len = float(np.max(L))
-        min_len = float(np.min(L))
-        min_w = float(np.min(W))
-        max_w = float(np.max(W))
+        max_len = float(np.max(L)) if L.size > 0 else float(np.max(L_all))
+        min_len = float(np.min(L)) if L.size > 0 else float(np.min(L_all))
+        min_w = float(np.min(W)) if W.size > 0 else 0.0
+        max_w = float(np.max(W)) if W.size > 0 else 0.0
         own_l_p05 = float(stats.get("length_p5")) if stats and stats.get("length_p5") is not None else min_len
         own_l_p95 = float(stats.get("length_p95")) if stats and stats.get("length_p95") is not None else max_len
         own_w_p05 = float(stats.get("width_p5")) if stats and stats.get("width_p5") is not None else min_w
@@ -13335,13 +13508,17 @@ class MainWindow(GeometryMixin, QMainWindow):
                 for length, width, measurement_id, image_id in zip(
                     L, W, measurement_ids, measurement_image_ids
                 ):
-                    grouped.setdefault(image_id, {"L": [], "W": [], "Q": []})
+                    grouped.setdefault(image_id, {"L": [], "W": [], "Q": [], "L_all": []})
                     grouped[image_id]["L"].append(length)
                     grouped[image_id]["W"].append(width)
                 if show_q:
                     for length, width, image_id in zip(L, W, measurement_image_ids):
-                        grouped.setdefault(image_id, {"L": [], "W": [], "Q": []})
+                        grouped.setdefault(image_id, {"L": [], "W": [], "Q": [], "L_all": []})
                         grouped[image_id]["Q"].append(length / width)
+                
+                for length, image_id in zip(L_all, all_image_ids):
+                    grouped.setdefault(image_id, {"L": [], "W": [], "Q": [], "L_all": []})
+                    grouped[image_id]["L_all"].append(length)
 
                 for image_id in image_labels.keys():
                     if image_id not in grouped:
@@ -13349,22 +13526,23 @@ class MainWindow(GeometryMixin, QMainWindow):
                     color = image_color_map.get(image_id) or ax_scatter._get_lines.get_next_color()
                     image_color_map[image_id] = color
                     data = grouped[image_id]
-                    _, l_bins, l_patches = ax_len.hist(data["L"], bins=l_bins, color=color, alpha=0.35)
-                    _, w_bins, w_patches = ax_wid.hist(data["W"], bins=w_bins, color=color, alpha=0.35)
+                    if data["L_all"]:
+                        _, l_bins, l_patches = ax_len.hist(data["L_all"], bins=l_bins, color=color, alpha=0.35)
+                        for i, patch in enumerate(l_patches):
+                            patch.set_picker(True)
+                            self.gallery_hist_patches[patch] = ("L", l_bins[i], l_bins[i + 1])
+                    if data["W"]:
+                        _, w_bins, w_patches = ax_wid.hist(data["W"], bins=w_bins, color=color, alpha=0.35)
+                        for i, patch in enumerate(w_patches):
+                            patch.set_picker(True)
+                            self.gallery_hist_patches[patch] = ("W", w_bins[i], w_bins[i + 1])
                     if show_q:
                         _, q_bins, q_patches = ax_q.hist(data["Q"], bins=q_bins, color=color, alpha=0.35)
-                    for i, patch in enumerate(l_patches):
-                        patch.set_picker(True)
-                        self.gallery_hist_patches[patch] = ("L", l_bins[i], l_bins[i + 1])
-                    for i, patch in enumerate(w_patches):
-                        patch.set_picker(True)
-                        self.gallery_hist_patches[patch] = ("W", w_bins[i], w_bins[i + 1])
-                    if show_q:
                         for i, patch in enumerate(q_patches):
                             patch.set_picker(True)
                             self.gallery_hist_patches[patch] = ("Q", q_bins[i], q_bins[i + 1])
             else:
-                _, l_bins, l_patches = ax_len.hist(L, bins=l_bins, color=hist_color)
+                _, l_bins, l_patches = ax_len.hist(L_all, bins=l_bins, color=hist_color)
                 ax_len.set_ylabel("Count")
                 for i, patch in enumerate(l_patches):
                     patch.set_picker(True)
@@ -13693,23 +13871,30 @@ class MainWindow(GeometryMixin, QMainWindow):
             if normalized and measurement_category != normalized:
                 continue
             length = measurement.get("length_um")
-            width = measurement.get("width_um")
-            if length is None or width is None or width <= 0:
+            if length is None:
                 continue
             records.append(measurement)
         return records
 
     def _stats_from_measurement_records(self, measurements: list[dict]) -> tuple[dict | None, list[float], list[float]]:
-        lengths = [float(m.get("length_um")) for m in measurements if m.get("length_um") is not None]
-        widths = [float(m.get("width_um")) for m in measurements if m.get("width_um") is not None and float(m.get("width_um")) > 0]
-        stats = self._stats_from_measurements(lengths, widths) if lengths and widths else None
-        return stats, lengths, widths
+        all_lengths = []
+        paired_lengths = []
+        paired_widths = []
+        for m in measurements:
+            l = m.get("length_um")
+            w = m.get("width_um")
+            if l is not None:
+                all_lengths.append(float(l))
+                if w is not None and float(w) > 0:
+                    paired_lengths.append(float(l))
+                    paired_widths.append(float(w))
+        stats = self._stats_from_measurements(all_lengths, paired_lengths, paired_widths) if all_lengths else None
+        return stats, paired_lengths, paired_widths
 
     def _format_measurement_stats_string(self, stats: dict | None, category: str | None = "spores") -> str:
         label = self.format_measurement_category(category or "spores") if category and category != "spores" else self.tr("Spores")
         if not stats:
             return f"{label}: -"
-
         stats_text = (
             f"{label}: ({stats['length_min']:.1f}-){stats['length_p5']:.1f}-"
             f"{stats['length_p95']:.1f}(-{stats['length_max']:.1f}) um"
@@ -13739,9 +13924,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             rows[0] += "\tImage\tContrast\tMount\tStain\tSample\tObjective"
         for measurement in measurements:
             length = float(measurement.get("length_um"))
-            width = float(measurement.get("width_um"))
-            q = length / width if width > 0 else 0
-            row = f"{width:.2f}\t{length:.2f}\t{q:.2f}"
+            width_val = measurement.get("width_um")
+            if width_val is not None and float(width_val) > 0:
+                width = float(width_val)
+                q = length / width
+                row = f"{width:.2f}\t{length:.2f}\t{q:.2f}"
+            else:
+                row = f"-\t{length:.2f}\t-"
             if include_details:
                 image_id = measurement.get("image_id")
                 image_data = {}
@@ -13948,6 +14137,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._clear_measurement_highlight()
             return
         lines_list = self.measurement_lines.get(measurement_id, [])
+        if measurement_id in getattr(self, "multiline_measurements", {}):
+            indices = getattr(self, "_line_index_map", {}).get(measurement_id, [])
+            self.image_label.set_selected_line_indices(indices)
+            self.image_label.set_selected_rect_index(-1)
+            return
         if len(lines_list) == 1:
             indices = getattr(self, "_line_index_map", {}).get(measurement_id, [])
             self.image_label.set_selected_line_indices(indices)
@@ -14111,32 +14305,33 @@ class MainWindow(GeometryMixin, QMainWindow):
         label_map = {float(level): threshold_labels.get(float(level), "") for level in contour_levels}
         return contour_levels, label_map
 
-    def _stats_from_measurements(self, lengths, widths):
+    def _stats_from_measurements(self, all_lengths, paired_lengths, paired_widths):
         """Compute stats dictionary from length/width lists."""
-        if lengths is None:
+        if all_lengths is None:
             return None
-        lengths = np.asarray(lengths, dtype=float)
-        if lengths.size == 0:
+        all_lengths = np.asarray(all_lengths, dtype=float)
+        if all_lengths.size == 0:
             return None
-        widths = np.asarray(widths, dtype=float) if widths is not None else np.asarray([], dtype=float)
+        paired_lengths = np.asarray(paired_lengths, dtype=float) if paired_lengths is not None else np.asarray([], dtype=float)
+        paired_widths = np.asarray(paired_widths, dtype=float) if paired_widths is not None else np.asarray([], dtype=float)
         stats = {
-            "count": int(len(lengths)),
-            "length_mean": float(np.mean(lengths)),
-            "length_std": float(np.std(lengths)),
-            "length_min": float(np.min(lengths)),
-            "length_max": float(np.max(lengths)),
-            "length_p5": float(np.percentile(lengths, 5)),
-            "length_p95": float(np.percentile(lengths, 95)),
+            "count": int(len(all_lengths)),
+            "length_mean": float(np.mean(all_lengths)),
+            "length_std": float(np.std(all_lengths)),
+            "length_min": float(np.min(all_lengths)),
+            "length_max": float(np.max(all_lengths)),
+            "length_p5": float(np.percentile(all_lengths, 5)),
+            "length_p95": float(np.percentile(all_lengths, 95)),
         }
-        if widths.size:
-            ratios = lengths[:len(widths)] / widths
+        if paired_widths.size > 0 and paired_lengths.size == paired_widths.size:
+            ratios = paired_lengths / paired_widths
             stats.update({
-                "width_mean": float(np.mean(widths)),
-                "width_std": float(np.std(widths)),
-                "width_min": float(np.min(widths)),
-                "width_max": float(np.max(widths)),
-                "width_p5": float(np.percentile(widths, 5)),
-                "width_p95": float(np.percentile(widths, 95)),
+                "width_mean": float(np.mean(paired_widths)),
+                "width_std": float(np.std(paired_widths)),
+                "width_min": float(np.min(paired_widths)),
+                "width_max": float(np.max(paired_widths)),
+                "width_p5": float(np.percentile(paired_widths, 5)),
+                "width_p95": float(np.percentile(paired_widths, 95)),
                 "ratio_mean": float(np.mean(ratios)),
                 "ratio_min": float(np.min(ratios)),
                 "ratio_max": float(np.max(ratios)),
@@ -15998,6 +16193,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Remove only the lines for this measurement
         if measurement_id in self.measurement_lines:
             del self.measurement_lines[measurement_id]
+        if hasattr(self, "multiline_measurements") and measurement_id in self.multiline_measurements:
+            del self.multiline_measurements[measurement_id]
         self.measurement_labels = [
             label for label in self.measurement_labels
             if label.get("id") != measurement_id

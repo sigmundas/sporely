@@ -68,7 +68,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.4"
+APP_VERSION = "0.7.5"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
