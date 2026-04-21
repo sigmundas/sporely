@@ -75,7 +75,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM public.profiles WHERE id = owner_id AND is_banned = true) THEN false
     WHEN auth.uid() = owner_id THEN true
+    WHEN EXISTS (
+        SELECT 1 FROM public.user_blocks 
+        WHERE (blocker_id = auth.uid() AND blocked_id = owner_id)
+           OR (blocker_id = owner_id AND blocked_id = auth.uid())
+    ) THEN false
     WHEN coalesce(spore_visibility, 'public') = 'public' THEN true
     WHEN coalesce(spore_visibility, 'public') = 'friends'
       THEN public.are_friends(auth.uid(), owner_id)

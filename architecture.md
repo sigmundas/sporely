@@ -17,6 +17,14 @@ A Python-based desktop application for field observations, microscopy calibratio
 
 ---
 
+## Testing & Auditing
+| Component | Choice |
+|---|---|
+| **Static Analysis** | Ruff (linting/formatting), mypy (type-checking) (planned) |
+| **Testing Framework**| pytest (planned) for testing sync logic, EXIF injection, and database models |
+
+---
+
 ## Directory Structure
 - **`ui/`**: PySide6 user interface code. Driven by `main_window.py` containing tabbed widgets (`observations_tab.py`, `measure_tab`, `analysis_tab`, `live_lab_tab.py`).
 - **`database/`**: SQLite schemas and access models (`schema.py`, `models.py`). Handles local CRUD operations for observations, images, measurements, and calibrations.
