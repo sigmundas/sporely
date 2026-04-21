@@ -1,79 +1,113 @@
 # Sporely Development Plan (Merged Desktop & Web)
 
+## Code Review & Refactoring
+*Review this code with a strict refactor/audit mindset. Do not praise. Look for concrete problems only.*
+
+For each issue you find, return:
+- severity: low / medium / high
+- category
+- file(s)
+- exact problem
+- why it is a problem
+- minimal fix
+- whether fix is safe or risky
+
+Check specifically for these categories:
+
+1. Duplicate logic
+- Same calculation, formatting, parsing, filtering, or validation implemented in multiple places
+- Similar helper functions with slightly different behavior
+- Repeated UI text mapping / label mapping / enum mapping
+- Repeated SQL fragments or repeated DB row-to-object conversion
+- Repeated code paths for create vs update that should share one function
+
+2. Conflicting source of truth
+- Same concept stored in multiple variables/fields with possible drift
+- UI state duplicated in local widget state and global/app state
+- Derived values stored instead of computed
+- Flags with overlapping meaning (example: uncertain vs needs_id style drift)
+- Cached values that are not invalidated reliably
+
+3. Database consistency
+- Field names inconsistent with app terminology
+- Same field interpreted differently in different files
+- Reads/writes missing defaults or null handling
+- Manual SQL repeated across files instead of centralized helpers
+- Migration risk: assumptions about columns existing without checks
+- Boolean/integer/string inconsistencies for flags
+- Unused columns, legacy columns, or dead migration paths
+
+4. State flow problems
+- State mutated from too many places
+- Hidden side effects in setter/update functions
+- UI refresh depends on call order
+- State changed without emitting update/refresh signals
+- Async operations that can race or overwrite newer state
+- Screen-level state that should be owned centrally, or central state that should stay local
+
+5. UI consistency problems
+- Same concept displayed with different labels in different screens
+- Different rules for formatting names, dates, units, uncertain markers, etc.
+- Button behavior differs between screens without reason
+- Same filter/sort option implemented differently in different views
+- Translation keys duplicated, stale, or inconsistent
+- UI conditions duplicated instead of shared helper formatting
+
+6. Dead code / stale code
+- Unused functions, classes, imports, constants, styles, translation keys
+- Old code paths kept after refactor
+- Commented-out code that should be deleted
+- Feature flags or branches that are no longer reachable
+- Files that appear obsolete or superseded
+
+7. Overgrown files / bad boundaries
+- Files doing too many unrelated things
+- UI files containing DB logic or business rules
+- State files containing presentation formatting
+- Large functions that mix query, transformation, and rendering
+- Helpers that know too much about callers
+
+8. Naming problems
+- Names that hide real meaning
+- Same thing called different names in different files
+- Old legacy names still used after concept changed
+- Booleans with misleading names
+- Function names that sound pure but mutate state
+
+9. Error handling / edge cases
+- Missing guard clauses
+- None/null/undefined handling inconsistencies
+- Empty list / empty selection / missing record edge cases
+- Silent failure paths
+- User-visible state not reset after failure
+- Potential crash when DB field or UI element is absent
+
+10. Refactor opportunities worth doing now
+- Extract shared helper
+- Centralize formatting rules
+- Centralize DB access for one entity
+- Replace copy-paste conditionals with enum/config mapping
+- Split giant file into modules
+- Remove legacy aliasing and adopt one canonical term
+
+Important:
+- Prefer specific findings over style opinions
+- Ignore superficial formatting unless it hides a real problem
+- Do not suggest huge rewrites unless necessary
+- Flag places where behavior may drift across desktop/web/mobile versions
+- Distinguish “must fix” from “cleanup”
+
+### Existing Refactor & Audit Tasks
+- [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
+- [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
+
 ## 🚨 Immediate Priority: Cloudflare R2 Storage Migration
 *Goal: Move all image hosting from Supabase Storage to Cloudflare R2 to secure a 10GB free tier and zero egress fees before scaling to more users.*
 
 ---
 
-## Online Publishing & Integrations
-*Status: Active*
-
-- [x] **iNaturalist PKCE OAuth Flow** — Implemented secure browser-based login for public desktop clients (without needing a client secret) using Proof Key for Code Exchange (PKCE). Bypasses manual credential entry, uses the official Sporely open-source Client ID natively, and securely captures the callback via a local HTTP server on port `8000`.
-
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
-
-### Existing desktop foundation
-- [x] **Desktop already stores AI crop data locally** — `sporely-py` `images` rows already have `ai_crop_x1`, `ai_crop_y1`, `ai_crop_x2`, `ai_crop_y2`, `ai_crop_source_w`, `ai_crop_source_h`.
-- [x] **Desktop already has an AI crop UI** — `ui/image_import_dialog.py` supports drawing and editing an `AI crop` region for Artsorakelet.
-- [x] **Desktop already uses normalized coordinates** — crop rectangles are stored image-relative rather than in screen pixels.
-- [x] **Desktop already passes crop geometry into AI preparation** — `AIGuessWorker` crops before sending to Artsdatabanken AI when a crop exists.
-
-### Product decision
-- [x] **Use an editable AI crop rectangle, not "capture only visible area"** — original images remain intact; crop metadata is stored separately.
-- [x] **Default live framing overlay on web capture** — show a centered default crop rectangle on the browser camera preview, but do not destructively crop the saved asset.
-- [x] **Same crop workflow for imported images** — imported device photos need the same AI crop editing flow as live captures.
-- [x] **One crop model everywhere** — web and cloud now align to the desktop field names and semantics.
-
-### Canonical data model
-- [x] **Per-image crop fields**
-  `ai_crop_x1`, `ai_crop_y1`, `ai_crop_x2`, `ai_crop_y2`
-- [x] **Per-image source dimensions**
-  `ai_crop_source_w`, `ai_crop_source_h`
-- [x] **Semantics**
-  normalized `0..1` coordinates relative to the original image orientation currently stored for that row
-- [x] **Null behavior**
-  null means no explicit AI crop has been set
-
-### Supabase schema plan
-- [x] **Add AI crop columns to `public.observation_images`** — match the desktop local schema exactly.
-- [x] **Author a dedicated migration SQL file** — place it under `sporely-py/database/` with the other shared Supabase migrations.
-- [x] **Backfill strategy**
-  leave existing rows null; no destructive inference of crop rectangles for old images
-- [x] **Update docs**
-  add these fields to `sporely-web/SUPABASE_DB.md` and `sporely-web/ARCHITECTURE.md`
-
-### Web app implementation plan
-- [x] **Create a reusable crop editor module**
-  base it on the existing avatar crop gesture handling in `sporely-web/src/screens/profile.js`
-- [x] **Store crop metadata per image in client state**
-  captures and imported files need per-image AI crop state, not just per-observation state
-- [x] **Import review first**
-  add a full-screen image review/editor with crop rectangle support to `src/screens/import_review.js`
-- [x] **Normal review second**
-  add the same editor to `src/screens/review.js`
-- [x] **Capture overlay guidance**
-  add a default crop rectangle to `src/screens/capture.js` and pre-seed new captures with that normalized crop
-- [x] **Crop before AI requests**
-  update `src/artsorakel.js` so the browser sends a cropped blob to Artsorakel when crop metadata exists
-- [x] **Do not store a separate cropped file**
-  crop is a transient AI input, not a replacement for the original upload
-
-### Desktop cloud sync plan
-- [x] **Push local AI crop metadata to Supabase**
-  when desktop images are uploaded/synced, include the AI crop fields in `observation_images`
-- [x] **Pull cloud AI crop metadata into local desktop SQLite**
-  when pulling field observations from the cloud, hydrate local `images.ai_crop_*` columns
-- [x] **Preserve crop metadata during desktop image transforms**
-  rotations/crops already adjust local AI crop data; synced values must reflect the post-transform geometry
-- [x] **Ensure conflict behavior is sane**
-  decide whether last-write-wins is acceptable for AI crop metadata or whether cloud/local conflicts need explicit resolution
-- [x] **Reduce false-positive media conflicts**
-  order-only image changes, mtime-only file churn, local gallery layout, and older pre-AI-crop media signatures no longer force cloud conflicts
-- [x] **Reduce startup re-check churn**
-  desktop sync now prefilters cloud observations using local lookup caches plus a small `updated_at` vs `synced_at` grace window so same-sync timestamp skew does not re-trigger every observation on restart
-- [x] **Speed up Keep desktop**
-  resolving a conflict skips image re-upload work when there are no meaningful media changes left to push
 
 ### Recommended rollout order
 1. **Supabase migration**
@@ -100,13 +134,6 @@
 - [ ] **Do not rely on browser camera preview geometry as the only crop source**
 
 ### R2 Migration Status
-- [x] **Configure R2 Bucket** — `sporely-media` exists in Cloudflare.
-- [x] **Desktop Sync Engine Rewritten** — `sporely-py` now uploads, downloads, and deletes media in R2 while keeping relative keys in Supabase metadata.
-- [x] **Local Thumbnail Logic** — Desktop sync still generates local `small` and `medium` thumbnails before upload.
-- [x] **Local-to-R2 Initial Sync Script Added** — `tools/migrate_images_to_r2.py` can bulk-upload the local library using the cloud sync key layout.
-- [x] **Database Migration Authored** — `database/supabase_r2_media_migration.sql` adds `image_key` and `thumb_key` columns and normalizes old storage paths.
-- [x] **Community RPC Payloads Updated** — Community dataset SQL now exposes `image_key` and `thumb_key` for web QC and plotting work.
-- [x] **Domain Roles Clarified** — `media.sporely.no` serves public media reads from R2, while authenticated uploads belong on the Worker endpoint. The deployed `workers.dev` URL can be used before a custom `upload.sporely.no` route exists.
 - [ ] **Deploy Upload Worker** — Cloudflare Worker code is in the repo, but still needs deployment, route setup, and R2 binding.
 - [ ] **Run R2 SQL Migration in Supabase** — Apply `database/supabase_r2_media_migration.sql` against the live project.
 - [ ] **Run Initial Local Media Migration** — Execute the one-time bulk uploader against the full local image library.
@@ -116,17 +143,21 @@
 
 ## Active Tasks (TODO) - Web & Infrastructure
 - [ ] **Deploy Worker Secrets and Route** — Configure `SUPABASE_URL`, optional JWT issuer/audience overrides, `MEDIA_PUBLIC_BASE_URL`, and bind `sporely-media` as the Worker bucket.
-- [x] **Supabase Heartbeat** — Set up a GitHub Action to ping the database every 4 days to prevent the 1-week auto-pause on the Free Tier.
 - [ ] **Offline Queue** — Wrap R2-bound upload failures in IndexedDB so photos aren't lost when in the field.
 - [ ] **Unique Constraints** — Run `database/supabase_unique_constraints.sql` to support high-performance upserts during desktop-to-cloud sync.
 - [ ] **Optional cloud summary RPC/view** — Add a Supabase-side per-observation change summary for `observations` + `observation_images` so desktop sync can skip most client-side deep comparison work entirely.
 
 
+## Active Tasks (TODO) - Automated Testing & Auditing
+*Goal: Build an automated safety net to replace the manual 10-point audit checklist and prevent sync regressions.*
+- [ ] **Static Analysis** — Introduce `Ruff` and `mypy` for automated linting, formatting, and type-checking. Configure them to fail on dead code, missing variables, and unused imports.
+- [ ] **Unit Testing Framework** — Introduce `pytest` for the desktop application.
+- [ ] **Core Logic Tests** — Write tests for `cloud_sync.py` (conflict resolution, local media signatures), `image_crop` math, and `utils/r2_storage.py`.
+- [ ] **Database Tests** — Create automated tests for local SQLite migrations and CRUD operations in `database/models.py`.
+
 ## Active Tasks (TODO) - UI
 - [ ] **Implement fine-tue for multi-line segments** — Currently, multi-line does not appear in the preview window. Implement feature to drag each segment node. Show nodes as small dots that highlight with mouse over.
 - [ ] **Add hint bar at the bottom of the Measure tab** — Current messages that appear below the Start measuring button should go in the hint bar, same as other tabs. Hint bar should span the whole width of the window.
-- [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
-- [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
 
 ## Active Tasks (TODO) - image handling
 - [ ] **Image rotation** — Fix image import of jpg from the android app: thumbnails in sporely-py shows up rotated 90 deg. counter-clockwise when photo is in portrait mode. Image is rotated correctly when viewed in Prepare images dialog. Rotated 90 dg. cc in Measure tab.
@@ -169,12 +200,6 @@
 ## Desktop Ingestion Hub
 *Status: Active*
 
-- [x] **QR-based Sync Shot** — desktop ingestion now uses a live QR timestamp with 1-second precision, 2-second cadence, and a 0.1 second blank frame between codes.
-- [x] **Sync Shot auto-detect** — folder scans now auto-check the first and last image from each folder for the active Sync Shot QR, while keeping `Use image...` as a manual fallback.
-- [x] **Mixed field + microscope matching** — one scanned folder can now match field images by nearby observation times and microscope images by retrospective Live Lab session logs.
-- [x] **Per-image local capture time** — desktop now stores `images.captured_at` locally and lazily backfills older rows when time-window matching needs them.
-- [x] **Visible same-tab tolerances** — field and microscope match tolerances are now adjustable directly inside the Ingestion Hub instead of being buried in global settings.
-- [x] **Lighter scan pass** — batch scan now reads image datetime first instead of full metadata, reducing unnecessary import latency.
 - [ ] **Remaining:** Persist original capture time through more cloud import/export paths if we later want exact cross-device time-window matching without local file reads.
 - [ ] **Remaining:** Add richer manual reassignment tools for unmatched images across multiple candidate observations.
 
@@ -183,47 +208,13 @@
 ## Design System Migration — "Slate Lab / Clinical Nocturne"
 *Goal: Replace the generic blue-accent Material-adjacent UI with an editorial, scientific design system using organic slate-green tones, editorial typography (Inter + Manrope), tonal surface hierarchy, and no hard borders.*
 
-### Completed
-- [x] **Phase 1 — Color tokens** — `ui/styles.py` `get_style()` updated to Slate Lab (light) and Clinical Nocturne (dark) palettes. `apply_palette()` updated with matching `QPalette` values. `ui/hint_status.py` progress bar and state colors updated.
-- [x] **Phase 2 — Typography** — Manrope (headlines/section headers) and Inter (body/data) loaded via `QFontDatabase` in `main.py`. Font families registered as `'Manrope'` and `'Inter 18pt'`. All QSS font references updated.
-- [x] **Phase 3 — Surfaces/borders** — `QGroupBox` border removed, rounded 8px. Inputs use Soft Box style (tonal bg, no border, focus underline). Tab navigation seamless (selected tab merges with pane background). `QSplitter` handle hidden. No 1px separator lines.
-- [x] **Phase 4 — Core components** — Buttons 8px border-radius with gradient. `QPushButton:disabled` uses `dis_bg`/`dis_fg` tokens. SpinBox arrows hidden. `QDateEdit`/`QDateTimeEdit` Soft Box style with calendar popup. `QGroupBox#dialogSection` for dialog shell sections. Category toggle buttons segmented. `QPushButton[sourceActive]` property for EXIF source highlight.
-- [x] **Phase 5 — Observations tab** — Table grid lines removed, alternating rows off, selection uses `sel_bg` (mint). Side panel `#sidePanel` tonal bg. Calendar popup: single-letter day headers (`setHorizontalHeaderFormat(SingleLetterDayNames)`), minimum size 300×240. Table item padding override prevents calendar cell clipping.
-- [x] **Prepare Images dialog** — Outer "Image settings" and "Import details" `QGroupBox` wrappers replaced with `QLabel#sectionHeader` plain headers. Inner groups retained. Inline stylesheets removed from "Set from current image" button.
-- [x] **`ui/delegates.py`** — `SpeciesItemDelegate` highlight color updated from blue to `primary_container` green.
-
 ### Remaining
 - [ ] **Phase 6 — Remaining tabs and dialogs** — Apply surface/typography/component patterns to `ui/live_lab_tab.py`, `ui/ingestion_hub_tab.py`, `ui/calibration_dialog.py`, and all other dialogs. Consolidate remaining inline `setStyleSheet()` calls into `styles.py`.
 
 ---
-
-## Cloud Sync — EXIF & File Integrity Fixes
-*Completed 2026-04-14*
-
-- [x] **EXIF stripping by web 2MP conversion** — Web app (free tier) strips all EXIF when converting images to 2MP before uploading to R2. The "Set from current image" button in the Prepare Images dialog was always disabled for cloud-synced images because `_current_exif_datetime`, `_current_exif_lat`, and `_current_exif_lon` were all `None`.
-  - **Fix (desktop side):** `_inject_obs_exif_into_field_image()` in `cloud_sync.py` writes observation GPS/date back into downloaded JPEG EXIF.
-  - `_backfill_missing_exif_on_cloud_images()` retroactively patches existing cloud images on next sync.
-  - **Fix still needed (web side):** Extract GPS/datetime from native EXIF *before* the Canvas 2MP resize, store in the database row, and/or re-inject into the saved JPEG. See `sporely-web PLAN.md` Phase 4 Metadata Preservation task.
-- [x] **Local full-res overwrite** — `_sync_existing_remote_image_to_local()` was unconditionally replacing local full-res desktop-imported images with smaller cloud 2MP versions on every sync.
-  - **Fix:** File size comparison — if local file is larger than downloaded cloud copy, keep local and only update DB metadata. The local full-resolution original is preserved.
 
 ---
 
 ## Long-Term Goals (Phase 3)
 - [ ] **In-Browser Measurement** — Replicate manual spore clicking and calibration using HTML5 Canvas.
 - [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
-
----
-
-## Developer Experience & Localization Workflow
-*Goal: Streamline adding new languages and strings via LLM agents.*
-
-### AI-Driven Translation Tool (`agent_translate.py`)
-Because LLMs struggle to correctly format and replace massive XML structures like Qt Linguist `.ts` files, a new safe workflow has been introduced.
-
-**Agent Instructions:**
-When asking an agent to translate or fix missing strings, tell it to use the translation script:
-1. `python3 tools/agent_translate.py extract` — Parses the XML `.ts` files and dumps any missing/unfinished strings into a flat `missing_translations.json` file.
-2. **Translate** — The agent edits the `missing_translations.json` file, filling in the blank values (this is much safer than editing XML).
-3. `python3 tools/agent_translate.py apply` — The script safely injects the translated JSON strings back into the correct XML nodes in the `.ts` files, removing the `type="unfinished"` tags, without breaking the XML DOCTYPE or structure.
-4. `./tools/update_translations.sh` — Finally, run the existing script to compile the `.ts` files into binary `.qm` files for Qt.
