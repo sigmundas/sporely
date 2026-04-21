@@ -37,21 +37,6 @@ def scale_image(pixmap: QPixmap, max_width: int, max_height: int) -> QPixmap:
     from PySide6.QtCore import Qt
     return pixmap.scaled(max_width, max_height, Qt.KeepAspectRatio)
 
-
-def is_raw_format(image_path: str) -> bool:
-    """
-    Check if the image is a RAW format.
-
-    Args:
-        image_path: Path to the image file
-
-    Returns:
-        True if the file is a RAW format
-    """
-    from config import RAW_FORMATS
-    return Path(image_path).suffix.lower() in RAW_FORMATS
-
-
 def cleanup_import_temp_file(
     source_path: str,
     converted_path: str,

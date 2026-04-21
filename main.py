@@ -68,7 +68,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.5"
+APP_VERSION = "0.7.6"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
@@ -188,10 +188,6 @@ def main():
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets
     # accept the decimal separator the user's OS is configured for.
     QLocale.setDefault(QLocale.system())
-    app_font = app.font()
-    if app_font.pointSize() <= 0:
-        app_font.setPointSize(10)
-        app.setFont(app_font)
 
     # Load bundled fonts (Inter for body/data, Manrope for headlines).
     # Falls back gracefully to system sans-serif if files are absent.
@@ -203,6 +199,10 @@ def main():
             if _fid >= 0:
                 _families = QFontDatabase.applicationFontFamilies(_fid)
                 print(f"Loaded font: {_font_file.name} → families: {_families}")
+                    
+    # Set the global application font to Inter
+    global_font = QFont("Inter 18pt", 10)
+    app.setFont(global_font)
 
     splash_theme = str(app_settings.get("ui_theme", "") or "").strip().lower()
     if splash_theme not in {"auto", "light", "dark"}:

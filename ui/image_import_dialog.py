@@ -1070,12 +1070,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         notes_layout.addWidget(self.image_note_input)
         layout.addWidget(notes_group)
 
-        # Keep group references for backwards-compat with _update_micro_settings_state
-        self.contrast_group = self.micro_settings_group
-        self.mount_group = self.micro_settings_group
-        self.stain_group = self.micro_settings_group
-        self.sample_group = self.micro_settings_group
-
         self._set_field_tag_defaults_in_form()
         self._sync_field_tag_display(True)
 
@@ -1266,7 +1260,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         resize_info.addRow(self.current_resolution_title, self.current_resolution_label)
         resize_info.addRow(self.target_resolution_title, self.target_resolution_label)
         resize_layout.addLayout(resize_info)
-        self._sync_resize_controls()
 
         layout.addWidget(resize_group)
 
@@ -1582,12 +1575,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if 0 <= idx < len(self.import_results)
         )
         self.resize_group.setEnabled(not any_resized)
-        self._sync_resize_controls()
-
-    def _sync_resize_controls(self) -> None:
-        if not hasattr(self, "resize_optimal_checkbox"):
-            return
-        return
 
     def _has_pending_resize_operations(self) -> bool:
         for result in self.import_results:
@@ -4328,7 +4315,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if getattr(self, "_loading_form", False):
             return
         resize_enabled = bool(self.resize_optimal_checkbox.isChecked())
-        self._sync_resize_controls()
         SettingsDB.set_setting("resize_to_optimal_sampling", resize_enabled)
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if not indices:
