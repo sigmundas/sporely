@@ -2,6 +2,12 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-04-21 (v0.7.6)
+
+### Removed
+- **Legacy Mobile Uploads**: Removed the dead `ArtsobsMobileUploader` and `ArtsObservasjonerClient` classes. Sporely now exclusively uses the web-based form submission strategy for Artsobservasjoner.
+- **Dead Code**: Cleaned up unused EXIF helpers (`get_camera_settings`), unused image format checks (`is_raw_format`), and empty UI stubs left over from the `v0.7.5` refactoring pass.
+
 ## 2026-04-06
 
 ### Added

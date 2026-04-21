@@ -5,13 +5,6 @@ from typing import Optional, Tuple, Dict, Any
 from PIL import Image
 from PIL import ExifTags
 
-"""EXIF metadata reader for extracting date/time and GPS from images."""
-from pathlib import Path
-from datetime import datetime
-from typing import Optional, Tuple, Dict, Any
-from PIL import Image
-from PIL import ExifTags
-
 
 def get_exif_data(image_path: str) -> Dict[str, Any]:
     """
@@ -118,56 +111,6 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error reading EXIF from {image_path}: {e}")
         return {}
-
-
-def get_camera_settings(image_path: str) -> Dict[str, Any]:
-    """
-    Extract camera settings (ISO, shutter speed, f-stop) from an image.
-
-    Args:
-        image_path: Path to the image file
-
-    Returns:
-        Dictionary with 'iso', 'shutter_speed', 'f_number', 'focal_length'
-    """
-    exif = get_exif_data(image_path)
-    
-    # ISO - try multiple tag names
-    iso = (exif.get('ISOSpeedRatings') or 
-           exif.get('PhotographicSensitivity') or 
-           exif.get('ISO'))
-    
-    # Shutter speed - prefer ExposureTime over ShutterSpeedValue
-    shutter = exif.get('ExposureTime')
-    if shutter is None:
-        # ShutterSpeedValue is in APEX format, need to convert
-        shutter_apex = exif.get('ShutterSpeedValue')
-        if shutter_apex is not None:
-            try:
-                shutter = 1 / (2 ** float(shutter_apex))
-            except (ValueError, TypeError, ZeroDivisionError):
-                shutter = None
-    
-    # F-number (aperture)
-    f_number = exif.get('FNumber')
-    if f_number is None:
-        # ApertureValue is in APEX format, need to convert
-        aperture_apex = exif.get('ApertureValue')
-        if aperture_apex is not None:
-            try:
-                f_number = 2 ** (float(aperture_apex) / 2)
-            except (ValueError, TypeError):
-                f_number = None
-    
-    # Focal length
-    focal_length = exif.get('FocalLength')
-    
-    return {
-        'iso': iso,
-        'shutter_speed': shutter,
-        'f_number': f_number,
-        'focal_length': focal_length
-    }
 
 
 def _clean_exif_text(value: Any) -> str:

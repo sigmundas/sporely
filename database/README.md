@@ -75,3 +75,12 @@ Observation records carry an explicit `publish_target`, currently:
 - `artportalen_se`
 
 Target-specific upload IDs are stored separately from the local taxonomy DB.
+
+## Supabase Cloud Migrations
+
+This folder also contains `.sql` migration files for the Sporely Cloud (Supabase) PostgreSQL database. These are meant to be executed manually in the Supabase SQL Editor to keep the cloud schema in sync with the desktop application:
+
+- `supabase_r2_media_migration.sql` — Adds `image_key` and `thumb_key` columns to support Cloudflare R2 media hosting, and normalizes legacy storage paths.
+- `supabase_observation_images_ai_crop.sql` — Adds AI crop geometry columns (`ai_crop_x1`, etc.) to the `observation_images` table so crops sync across platforms.
+- `supabase_spore_measurements_sync.sql` — Prepares the `spore_measurements` table to receive synced measurements from the desktop.
+- `supabase_unique_constraints.sql` — Adds `UNIQUE (desktop_id, user_id)` constraints to ensure high-performance upserts during desktop-to-cloud sync.
