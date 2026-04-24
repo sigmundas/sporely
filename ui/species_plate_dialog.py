@@ -3219,6 +3219,7 @@ class SpeciesPlateDialog(QDialog):
         vernacular = (self._obs.get("vernacular_name") or
                       self._obs.get("common_name") or "").strip()
         sci_name = f"{genus} {species}".strip() if (genus or species) else ""
+        subtitle = self._plate_subtitle_text()
         if vernacular:
             vernacular = vernacular[0].upper() + vernacular[1:]
 
@@ -3233,6 +3234,12 @@ class SpeciesPlateDialog(QDialog):
                          QColor(200, 200, 200, 220), as_paths, soft=True)
             # (copyright is now drawn on the left edge by _draw_copyright)
             y -= (int(self._ts_title(22) * 4 / 3) + line_gap)
+
+        if subtitle:
+            f = _make_font(["Helvetica Neue", "Helvetica", "Arial"], self._ts_title(26))
+            _shadow_text(painter, subtitle, W / 2, y, f,
+                         QColor(235, 235, 235, 230), as_paths, soft=True)
+            y -= (int(self._ts_title(26) * 4 / 3) + line_gap)
 
         if sci_name:
             f = _make_font(["Georgia", "Times New Roman"], self._ts_title(44), italic=True)
@@ -3278,6 +3285,38 @@ class SpeciesPlateDialog(QDialog):
         painter.restore()
 
     # ── Data helpers ──────────────────────────────────────────────────────────
+
+    def _plate_subtitle_text(self) -> str:
+        location = (
+            str(self._obs.get("location") or "").strip()
+            or str(self._obs.get("site_name") or "").strip()
+        )
+        date_text = self._format_plate_date(
+            self._obs.get("date") or self._obs.get("observed_datetime")
+        )
+        parts = [part for part in (location, date_text) if part]
+        return " • ".join(parts)
+
+    @staticmethod
+    def _format_plate_date(value: object) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ):
+            try:
+                return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(text).strftime("%Y-%m-%d")
+        except Exception:
+            return text[:10] if len(text) >= 10 else text
 
     def _build_spore_stats(self) -> str:
         import numpy as np

@@ -68,7 +68,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.6"
+APP_VERSION = "0.7.7"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
@@ -189,19 +189,31 @@ def main():
     # accept the decimal separator the user's OS is configured for.
     QLocale.setDefault(QLocale.system())
 
+    # Preserve the OS-chosen UI size. On macOS this is typically larger than
+    # 10pt, and hard-coding 10pt shrinks the entire app noticeably.
+    system_font = QFont(app.font())
+    if system_font.pointSize() <= 0:
+        system_font.setPointSize(10)
+
     # Load bundled fonts (Inter for body/data, Manrope for headlines).
-    # Falls back gracefully to system sans-serif if files are absent.
+    # Falls back gracefully to the system UI font if files are absent or Qt
+    # cannot register them on the current platform.
     from PySide6.QtGui import QFontDatabase
     _fonts_dir = Path(__file__).parent / "assets" / "fonts"
+    preferred_body_family: str | None = None
     if _fonts_dir.is_dir():
         for _font_file in _fonts_dir.glob("*.ttf"):
             _fid = QFontDatabase.addApplicationFont(str(_font_file))
             if _fid >= 0:
                 _families = QFontDatabase.applicationFontFamilies(_fid)
                 print(f"Loaded font: {_font_file.name} → families: {_families}")
-                    
-    # Set the global application font to Inter
-    global_font = QFont("Inter 18pt", 10)
+                if preferred_body_family is None and "Regular" in _font_file.stem and _families:
+                    preferred_body_family = _families[0]
+
+    # Keep the system point size and only switch family when Inter loaded.
+    global_font = QFont(system_font)
+    if preferred_body_family:
+        global_font.setFamily(preferred_body_family)
     app.setFont(global_font)
 
     splash_theme = str(app_settings.get("ui_theme", "") or "").strip().lower()

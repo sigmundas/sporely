@@ -16,13 +16,14 @@ if [[ ! -f "$main_py" ]]; then
     exit 1
 fi
 
+# Added 'with open' and explicit utf-8 encoding for safety
 version=$(python3 - "$main_py" << 'PYEOF'
 import re, sys
-text = open(sys.argv[1]).read()
-m = re.search(r"APP_VERSION\s*=\s*[\"']([\w.]+)", text)
-if not m:
-    sys.exit("APP_VERSION not found in main.py")
-print(m.group(1))
+with open(sys.argv[1], encoding="utf-8") as f:
+    m = re.search(r"APP_VERSION\s*=\s*[\"']([\w.]+)[\"']", f.read())
+    if not m:
+        sys.exit("APP_VERSION not found in main.py")
+    print(m.group(1))
 PYEOF
 )
 
@@ -38,10 +39,9 @@ if git -C "$root" tag -l "$tag" | grep -q "^${tag}$"; then
     exit 1
 fi
 
-git -C "$root" tag -a "$tag" -m "$tag"
+git -C "$root" tag -a "$tag" -m "Release $tag"
 echo "Created tag $tag"
 
-echo "Pushing commits..."
-git -C "$root" push
-echo "Pushing tag $tag..."
-git -C "$root" push origin "$tag"
+echo "Pushing commits and tag $tag..."
+# Push the current HEAD and the new tag in a single command
+git -C "$root" push origin HEAD "$tag"
