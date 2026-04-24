@@ -171,6 +171,10 @@ jobs:
       - name: Package .dmg
         id: dmg
         run: |
+          # FIX: Give macOS Spotlight time to finish indexing the newly built .app 
+          # before hdiutil attempts to lock and package it.
+          sleep 10
+          
           tag="${{ github.ref_name }}"
           dmg_name="Sporely-${tag}-macos.dmg"
           staging="dmg_staging"
