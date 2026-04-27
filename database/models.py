@@ -1816,6 +1816,39 @@ class SessionLogDB:
             state[attribute_name] = str(row.get("value") or "").strip()
         return state
 
+    @staticmethod
+    def delete_sessions_for_observation(
+        observation_id: int,
+        *,
+        session_kind: str | None = None,
+    ) -> int:
+        try:
+            obs_id = int(observation_id or 0)
+        except (TypeError, ValueError):
+            return 0
+        if obs_id <= 0:
+            return 0
+
+        clauses = ["observation_id = ?"]
+        values: list[object] = [obs_id]
+        kind = str(session_kind or "").strip().lower()
+        if kind:
+            clauses.append("session_kind = ?")
+            values.append(kind)
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"DELETE FROM session_logs WHERE {' AND '.join(clauses)}",
+            values,
+        )
+        deleted = int(cursor.rowcount or 0)
+        if deleted:
+            _touch_observation(cursor, obs_id, mark_dirty=True)
+        conn.commit()
+        conn.close()
+        return deleted
+
 
 class MeasurementDB:
     """Handle spore measurement database operations"""

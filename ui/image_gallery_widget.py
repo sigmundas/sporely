@@ -274,6 +274,7 @@ class ImageGalleryWidget(QGroupBox):
                     "has_measurements": item.get("has_measurements", False),
                     "image_number": item.get("image_number", idx + 1),
                     "badges": item.get("badges", []),
+                    "center_badge": item.get("center_badge"),
                     "gps_tag_text": item.get("gps_tag_text"),
                     "gps_tag_highlight": item.get("gps_tag_highlight", False),
                     "publish_selected": publish_selected,
@@ -739,6 +740,16 @@ class ImageGalleryWidget(QGroupBox):
                 gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
             gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(gps_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
+
+        center_badge = str(item.get("center_badge") or "").strip()
+        if center_badge:
+            center_badge_label = QLabel(center_badge)
+            center_badge_label.setStyleSheet(
+                "color: #ffffff; background-color: rgba(231, 76, 60, 205);"
+                f"font-size: {pt(8)}pt; font-weight: bold; padding: 3px 8px; border-radius: 4px; border: none;"
+            )
+            center_badge_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            image_layout.addWidget(center_badge_label, 0, 0, alignment=Qt.AlignCenter)
 
         badges = item.get("badges") or []
         if badges:

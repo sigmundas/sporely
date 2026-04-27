@@ -83,4 +83,5 @@ This folder also contains `.sql` migration files for the Sporely Cloud (Supabase
 - `supabase_r2_media_migration.sql` — Adds `image_key` and `thumb_key` columns to support Cloudflare R2 media hosting, and normalizes legacy storage paths.
 - `supabase_observation_images_ai_crop.sql` — Adds AI crop geometry columns (`ai_crop_x1`, etc.) to the `observation_images` table so crops sync across platforms.
 - `supabase_spore_measurements_sync.sql` — Prepares the `spore_measurements` table to receive synced measurements from the desktop.
+- `supabase_people_directory.sql` — Adds the `search_people_directory` RPC used by the web People screen for privacy-aware public contributor stats.
 - `supabase_unique_constraints.sql` — Adds `UNIQUE (desktop_id, user_id)` constraints to ensure high-performance upserts during desktop-to-cloud sync.

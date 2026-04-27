@@ -3428,6 +3428,50 @@ class ObservationsTab(QWidget):
         self._thumb_loader.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._thumb_loader.start(QThread.LowPriority)
 
+    def shutdown(self) -> None:
+        """Stop background workers owned by the observations tab before app exit."""
+        try:
+            self._search_refresh_timer.stop()
+        except Exception:
+            pass
+        thumb_loader = getattr(self, "_thumb_loader", None)
+        self._thumb_loader = None
+        if thumb_loader is not None:
+            try:
+                thumb_loader.thumbnail_ready.disconnect(self._on_thumbnail_ready)
+            except Exception:
+                pass
+            try:
+                thumb_loader.requestInterruption()
+            except Exception:
+                pass
+            try:
+                if thumb_loader.isRunning():
+                    thumb_loader.wait(3000)
+            except Exception:
+                pass
+        try:
+            self._cleanup_dialog_threads()
+        except Exception:
+            pass
+        cloud_worker = getattr(self, "_cloud_sync_worker", None)
+        self._cloud_sync_worker = None
+        if cloud_worker is not None:
+            try:
+                cloud_worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                if cloud_worker.isRunning():
+                    cloud_worker.wait(5000)
+            except Exception:
+                pass
+            try:
+                if cloud_worker.isRunning():
+                    self._park_thread_until_finished(cloud_worker)
+            except Exception:
+                pass
+
     def _on_thumbnail_ready(self, path: str, qimage: object) -> None:
         if not isinstance(qimage, QImage) or qimage.isNull():
             return
@@ -10165,7 +10209,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         super().done(result)
 
     def closeEvent(self, event):
-        self._cleanup_dialog_threads()
+        self.shutdown()
         super().closeEvent(event)
 
     def _on_ai_guess_finished(
