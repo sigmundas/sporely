@@ -68,7 +68,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.7"
+APP_VERSION = "0.7.8"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
@@ -281,6 +281,15 @@ def main():
 
     exit_code = app.exec()
     signal_pump.stop()
+    parked_threads = list(getattr(app, "_sporely_parked_threads", set()) or [])
+    for thread in parked_threads:
+        try:
+            if thread is not None and thread.isRunning():
+                thread.requestInterruption()
+                thread.quit()
+                thread.wait(5000)
+        except Exception:
+            pass
     sys.exit(exit_code)
 
 

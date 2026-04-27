@@ -4363,6 +4363,11 @@ class MainWindow(GeometryMixin, QMainWindow):
     def closeEvent(self, event):
         self._save_current_image_measure_view_settings()
         self._save_geometry()
+        if hasattr(self, "observations_tab") and self.observations_tab is not None:
+            try:
+                self.observations_tab.shutdown()
+            except Exception:
+                pass
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.shutdown()
