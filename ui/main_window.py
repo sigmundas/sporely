@@ -105,7 +105,15 @@ import warnings
 from pathlib import Path
 import re
 from PIL import Image, ExifTags
-from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
+from database.models import (
+    ObservationDB,
+    ImageDB,
+    MeasurementDB,
+    SettingsDB,
+    ReferenceDB,
+    CalibrationDB,
+    reset_cloud_sync_state,
+)
 from database.models import SpeciesDataAvailability
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -1089,8 +1097,92 @@ class SettingsHubDialog(QDialog):
         cloud_content.setParent(page)
         cloud_content.show()
         layout.addWidget(cloud_content)
+        reset_group = QGroupBox(self.tr("Cloud account link"), page)
+        reset_layout = QVBoxLayout(reset_group)
+        reset_layout.setContentsMargins(10, 10, 10, 10)
+        reset_layout.setSpacing(8)
+        reset_note = QLabel(
+            self.tr(
+                "Reset only the local cloud link after you have deleted the old cloud account. "
+                "Local observations and images remain in this database."
+            )
+        )
+        reset_note.setWordWrap(True)
+        reset_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        reset_layout.addWidget(reset_note)
+        reset_row = QHBoxLayout()
+        self._reset_cloud_link_btn = QPushButton(self.tr("Reset Cloud Link..."))
+        self._reset_cloud_link_btn.clicked.connect(self._reset_cloud_link)
+        reset_row.addWidget(self._reset_cloud_link_btn)
+        reset_row.addStretch()
+        reset_layout.addLayout(reset_row)
+        layout.addWidget(reset_group)
         layout.addStretch()
         return page
+
+    def _reset_cloud_link(self) -> None:
+        main_window = self.parent()
+        observations_tab = getattr(main_window, "observations_tab", None)
+        is_sync_running = getattr(observations_tab, "_is_cloud_sync_running", None)
+        if callable(is_sync_running) and is_sync_running():
+            QMessageBox.warning(
+                self,
+                self.tr("Sporely Cloud Sync"),
+                self.tr("Wait for the current cloud sync to finish before resetting the cloud link."),
+            )
+            return
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Critical)
+        box.setWindowTitle(self.tr("CRITICAL: Reset Cloud Link"))
+        box.setText(
+            self.tr(
+                "Resetting the cloud link will sever the connection to your current Sporely Cloud account. "
+                "Your local data will remain safe, but the next time you sync, ALL local images and observations "
+                "will be uploaded as brand new files.\n\n"
+                "IMPORTANT: This action DOES NOT delete your old cloud data. To prevent duplicate storage, you MUST "
+                "do the following first:\n"
+                "1. Open the Sporely Web App.\n"
+                "2. Log into your CURRENT account.\n"
+                "3. Go to Profile -> Delete Account to erase your old data."
+            )
+        )
+        cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
+        proceed_btn = box.addButton(
+            self.tr("I have already deleted my old account, proceed with reset"),
+            QMessageBox.DestructiveRole,
+        )
+        box.setDefaultButton(cancel_btn)
+        box.exec()
+        if box.clickedButton() is not proceed_btn:
+            return
+
+        try:
+            reset_cloud_sync_state()
+            from utils.cloud_sync import SporelyCloudClient
+
+            SporelyCloudClient.clear_credentials()
+            update_app_settings({"cloud_user_email": None})
+            self._artsobs_dialog._cloud_client = None
+            self._artsobs_dialog._update_cloud_controls()
+            if observations_tab is not None and hasattr(observations_tab, "refresh_observations"):
+                observations_tab.refresh_observations(show_status=False)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                self.tr("Reset Cloud Link Failed"),
+                self.tr("Unable to reset cloud sync state.\n\n{error}").format(error=exc),
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            self.tr("Cloud Link Reset"),
+            self.tr(
+                "Cloud sync state was reset. You have been logged out of Sporely Cloud.\n\n"
+                "Log in with the new account when you are ready to sync this local database again."
+            ),
+        )
 
     def _build_language_page(self) -> QWidget:
         page = QWidget()

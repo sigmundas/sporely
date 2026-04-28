@@ -101,10 +101,101 @@ Important:
 - [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
 - [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
 
-## 🚨 Immediate Priority: Cloudflare R2 Storage Migration
-*Goal: Move all image hosting from Supabase Storage to Cloudflare R2 to secure a 10GB free tier and zero egress fees before scaling to more users.*
+## Cloud vs local db
 
----
+### Phase 1
+I need to implement a "Database Lock" feature in my Sporely desktop app (`sporely-py`) to prevent users from accidentally syncing a single local SQLite database to multiple Supabase accounts.
+
+Currently, `app_settings.json` stores `cloud_last_pull_at`. I want to expand this to also store a `linked_cloud_user_id`.
+
+Please write the Python code for `sporely/utils/cloud_sync.py` (and any related settings managers) to do the following:
+1. **Fetch Current User:** Before starting the push/pull sync loop, decode the current session's JWT or make a quick API call to Supabase to get the active user's `user_id`.
+2. **Check Lock:** Compare this `user_id` against `linked_cloud_user_id` in `app_settings.json`.
+3. **Bind on First Sync:** If `linked_cloud_user_id` is null/empty, save the current `user_id` to the settings file and proceed with the sync.
+4. **Abort on Mismatch:** If the `user_id` does not match the stored `linked_cloud_user_id`, immediately abort the sync and raise a custom exception (e.g., `AccountMismatchError`).
+5. Provide the PySide6 UI code snippet to catch this `AccountMismatchError` and show a `QMessageBox.critical` stating: "This local database is permanently linked to another Sporely Cloud account. Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' tool in Settings to migrate your data to a new account."
+
+### Phase 2
+I need to add a "Reset Cloud Sync State" feature to the settings tab of my Sporely desktop app (`sporely-py`). Because I am on a free hosting tier, I need to be very careful about users abandoning old accounts and eating up my Supabase/R2 quotas with duplicate uploads.
+
+Please write the SQLite database queries, Python logic, and PySide6 UI code to handle this reset.
+
+**1. Database Reset Logic (`sporely/database/models.py` or similar):**
+Write a function that strictly wipes all cloud references from the local SQLite database so it treats all local data as unpublished/new. It needs to:
+* Set `cloud_id` to NULL and `sync_status` to 'dirty' for all observations.
+* Nullify any cloud-specific media paths (e.g., stored R2 keys) in the local image records, forcing the next sync to re-upload them.
+* Clear `cloud_last_pull_at` and the new `linked_cloud_user_id` from `app_settings.json`.
+
+**2. PySide6 UI Implementation:**
+Create a "Reset Cloud Link..." button in the Settings UI. When clicked, it must show a high-friction `QMessageBox.critical` to ensure the user understands the old cloud data will NOT be automatically deleted. Use the following workflow:
+
+* **Title:** CRITICAL: Reset Cloud Link
+* **Text:** "Resetting the cloud link will sever the connection to your current Sporely Cloud account. Your local data will remain safe, but the next time you sync, ALL local images and observations will be uploaded as brand new files.\n\nIMPORTANT: This action DOES NOT delete your old cloud data. To prevent duplicate storage, you MUST do the following first:\n1. Open the Sporely Web App.\n2. Log into your CURRENT account.\n3. Go to Profile -> Delete Account to erase your old data."
+* **Buttons:** * "Cancel" (Default, safe option)
+  * "I have already deleted my old account, proceed with reset" (Executes the SQLite wipe)
+
+**3. Execution:**
+If the user confirms, execute the database reset logic, log the user out of their current desktop session, and show a success message prompting them to log in with their new account.
+
+### Manual test plan: cloud account lock and reset
+
+#### Phase 0: Export and backup coverage check
+- [ ] **Do not use the app database export as the golden backup for this test.** `utils/db_share.py` exports a share/import bundle: selected observation/image/measurement/calibration tables, copied image files, objective profiles, and reference values. It does not currently export `app_settings.json`, the full SQLite `settings` table, keyring credentials, thumbnail caches, or every user preference.
+- [ ] **Use a raw profile backup instead.** Locate the active Sporely app data directory and copy the full set needed to recreate the local state: `mushrooms.db`, `mushrooms.db-wal`, `mushrooms.db-shm` if present, `reference_values.db` if needed, `app_settings.json`, `objectives.json`, and the complete local images directory.
+- [ ] **Confirm image path coverage.** Before backing up, open the SQLite `images` table and verify the files referenced by `images.filepath` and `images.original_filepath` live under the configured local images directory, or add those external files to the backup manually.
+- [ ] **Use the app export only for its intended workflow.** It is suitable for moving selected observations/images/measurements/calibrations/reference values into another existing profile, but not for restoring an exact cloud-lock test state.
+
+#### Phase 1: Preparation and golden backup
+- [ ] **Create test accounts:** Register two disposable Sporely Cloud users, for example `testA+sporely@example.com` and `testB+sporely@example.com`. Use real inboxes or plus aliases that can receive confirmation email unless email confirmation is disabled in the test environment.
+- [ ] **Stage local data:** Open the desktop app. Create 2-3 local observations and attach a mix of field and microscope images. Add at least one measurement so measurement cloud IDs are covered. Do not sync yet.
+- [ ] **Record local paths:** Note the active database path, images directory, and `app_settings.json` path from the app settings or `database/schema.py` resolution.
+- [ ] **Create the golden backup:** Close the app. Copy the raw profile files listed in Phase 0 into a ZIP or separate folder. Restore from this backup whenever a test run needs to start over.
+- [ ] **Preflight cloud state:** Confirm both test accounts have no existing observations/media, or delete them through the web Profile deletion flow before starting.
+
+#### Phase 2: Database lock happy path
+- [ ] **Log in as Test A:** Open the desktop app and log into the Test A account.
+- [ ] **First sync:** Start Sporely Cloud sync and let it finish.
+- [ ] **Verify settings lock:** Open `app_settings.json`. Confirm `linked_cloud_user_id` is populated with Test A's Supabase `auth.users.id` UUID, not an email address.
+- [ ] **Verify local DB:** Open `mushrooms.db`. Confirm staged observations now have non-empty `observations.cloud_id`, `sync_status = 'synced'`, and `synced_at` populated. Confirm synced local images have `images.cloud_id` and `images.synced_at` populated.
+- [ ] **Verify cloud rows:** In Supabase, confirm Test A owns the uploaded `observations`, `observation_images`, and any synced `spore_measurements`.
+- [ ] **Verify R2 media:** Confirm uploaded media exists under an R2 key prefixed by Test A's user UUID.
+
+#### Phase 3: Mismatch guardrail
+- [ ] **Switch accounts:** Log out of Test A in the desktop app. Log into Test B.
+- [ ] **Attempt sync:** Start Sporely Cloud sync.
+- [ ] **Verify rejection UI:** Sync should halt before push/pull work and show the critical message: "This local database is permanently linked to another Sporely Cloud account..."
+- [ ] **Verify no local relink:** Confirm `app_settings.json` still contains Test A's `linked_cloud_user_id`.
+- [ ] **Verify cloud integrity:** Check Supabase and R2 for Test B. There must be no new observations, images, measurements, or media objects from this local database.
+
+#### Phase 4: Reset Cloud Link tool
+- [ ] **Trigger reset:** Go to Settings -> Sporely Cloud and click **Reset Cloud Link...**.
+- [ ] **Verify warning UI:** Confirm the high-friction critical dialog appears, warns that old cloud data is not deleted automatically, and instructs the user to delete the old account through the web Profile page first.
+- [ ] **Cancel path:** Click **Cancel** once. Confirm no DB/settings changes occurred and Test A's `linked_cloud_user_id` remains.
+- [ ] **Execute reset:** Open the reset dialog again and click **I have already deleted my old account, proceed with reset**.
+- [ ] **Verify logout:** Confirm the desktop is no longer logged into Sporely Cloud.
+- [ ] **Verify settings wipe:** Open `app_settings.json`. Confirm `linked_cloud_user_id`, `cloud_last_pull_at`, and `cloud_recent_import_local_ids` are absent or null.
+- [ ] **Verify DB wipe:** Open `mushrooms.db`. Confirm all `observations.cloud_id`, `images.cloud_id`, and `spore_measurements.cloud_id` values are `NULL`; confirm observations have `sync_status = 'dirty'` and `synced_at` cleared. In the current desktop schema, local image rows do not store R2 `storage_path`, `image_key`, or `thumb_key`; if such local columns are added later, include them in this verification and reset logic.
+- [ ] **Verify sync baselines cleared:** Confirm cloud snapshot/media-signature keys such as `sporely_cloud_snapshot_obs_%`, `sporely_cloud_image_file_sig_%`, and `sporely_cloud_local_media_sig_obs_%` are removed from the local SQLite `settings` table.
+
+#### Phase 5: Migration to the new account
+- [ ] **Log in as Test B:** If reset did not already leave the desktop logged out, explicitly log out and log into Test B.
+- [ ] **Migration sync:** Start Sporely Cloud sync and let it finish.
+- [ ] **Verify new settings lock:** Check `app_settings.json`. `linked_cloud_user_id` should now equal Test B's Supabase UUID.
+- [ ] **Verify local DB:** Confirm observations/images/measurements have fresh cloud IDs and `sync_status = 'synced'`.
+- [ ] **Verify Test B cloud data:** Check Supabase and R2. Test B should now have a fresh copy of all staged database rows and media.
+- [ ] **Verify R2 paths:** Confirm new media keys are under Test B's user UUID path, not Test A's.
+- [ ] **Verify Test A unchanged:** Unless already deleted, Test A's cloud rows/media should be unchanged by Test B migration.
+
+#### Phase 6: Restore and cleanup
+- [ ] **Restore golden backup:** Close the desktop app. Replace the current raw profile files with the golden backup from Phase 1. Reopen the app and verify the original unsynced local state is back.
+- [ ] **Test web account deletion:** Log into Test A in the web app and use Profile -> Delete Account. Confirm the Supabase Edge Function deletes the auth user, owned DB rows, and R2 storage if R2 deletion is part of that function. Repeat for Test B.
+- [ ] **Post-cleanup audit:** In Supabase and R2, search both user UUIDs. Confirm no test rows or media objects remain unless intentionally retained for debugging.
+
+#### Phase 7: Automated regression coverage
+- [x] **Unit test account lock:** `tests/test_cloud_account_lock.py` covers first-bind, same-account sync, and mismatch rejection without network access.
+- [x] **Unit test reset wipe:** `tests/test_cloud_sync_reset.py` covers local cloud reference clearing, app-setting clearing, and preservation of unrelated settings.
+- [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
+
 
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
