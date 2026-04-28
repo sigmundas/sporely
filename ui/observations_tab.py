@@ -81,9 +81,13 @@ from utils.publish_targets import (
     uploader_key_for_publish_target,
 )
 from utils.cloud_sync import (
+    ACCOUNT_MISMATCH_MESSAGE,
+    AccountMismatchError,
+    SporelyCloudClient,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
     summarize_sync_issues,
+    sync_all,
     unlink_local_observation_from_cloud,
 )
 from .cloud_conflict_dialog import CloudConflictDialog
@@ -192,8 +196,6 @@ class _CloudAutoSyncWorker(QThread):
 
     def run(self) -> None:
         try:
-            from utils.cloud_sync import SporelyCloudClient, sync_all
-
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
                 self.finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
@@ -207,6 +209,8 @@ class _CloudAutoSyncWorker(QThread):
             if "skipped" not in result:
                 result["skipped"] = False
             self.finished.emit(result)
+        except AccountMismatchError:
+            self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -1970,6 +1974,21 @@ class ObservationsTab(QWidget):
         self.refresh_observations(show_status=False)
         if self._cloud_sync_run_refresh_flow:
             self._finish_manual_refresh_flow()
+        if str(message or "").strip() == ACCOUNT_MISMATCH_MESSAGE:
+            if self._cloud_sync_show_status:
+                self._set_status_progress_visible(False)
+                self._set_status_progress("", 0, 1)
+            QMessageBox.critical(
+                self,
+                self.tr("Sporely Cloud Sync"),
+                ACCOUNT_MISMATCH_MESSAGE,
+            )
+            self.set_status_message(
+                self.tr("Cloud sync blocked: this database is linked to another account."),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+            return
         if self._cloud_sync_show_status:
             self._set_status_progress_visible(False)
             self._set_status_progress("", 0, 1)

@@ -11,9 +11,10 @@ One-time Supabase SQL to run in the SQL editor for optimal upsert performance:
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
-import hashlib
 import mimetypes
 import re
 import shutil
@@ -117,6 +118,7 @@ _SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
 _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
 _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
+_SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
 _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
@@ -207,6 +209,59 @@ _REVIEW_CONFLICT_RE = re.compile(
 
 class CloudSyncError(Exception):
     pass
+
+
+class AccountMismatchError(CloudSyncError):
+    pass
+
+
+ACCOUNT_MISMATCH_MESSAGE = (
+    "This local database is permanently linked to another Sporely Cloud account. "
+    "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
+    "tool in Settings to migrate your data to a new account."
+)
+
+
+def _normalize_cloud_user_id(value: str | None) -> str:
+    return str(value or '').strip()
+
+
+def _decode_jwt_subject(access_token: str | None) -> str:
+    token = str(access_token or '').strip()
+    parts = token.split('.')
+    if len(parts) < 2:
+        return ''
+    payload = parts[1]
+    padding = '=' * (-len(payload) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode((payload + padding).encode('ascii')).decode('utf-8'))
+    except Exception:
+        return ''
+    return _normalize_cloud_user_id(data.get('sub') if isinstance(data, dict) else None)
+
+
+def _load_linked_cloud_user_id() -> str:
+    return _normalize_cloud_user_id(get_app_settings().get(_SETTING_LINKED_CLOUD_USER_ID))
+
+
+def _save_linked_cloud_user_id(user_id: str) -> None:
+    normalized = _normalize_cloud_user_id(user_id)
+    if normalized:
+        update_app_settings({_SETTING_LINKED_CLOUD_USER_ID: normalized})
+
+
+def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
+    """Bind this local DB to the active cloud account, or reject a mismatch."""
+    current_user_id = _normalize_cloud_user_id(client.fetch_current_user_id())
+    if not current_user_id:
+        raise CloudSyncError("Could not verify the active Sporely Cloud account before syncing.")
+    linked_user_id = _load_linked_cloud_user_id()
+    if not linked_user_id:
+        _save_linked_cloud_user_id(current_user_id)
+        return current_user_id
+    if linked_user_id != current_user_id:
+        raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
+    return current_user_id
 
 
 def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
@@ -2276,6 +2331,26 @@ class SporelyCloudClient:
                 return None
         return None
 
+    def fetch_current_user_id(self) -> str:
+        """Return the authenticated Supabase user id for the current session."""
+        resp = self._s.get(f'{SUPABASE_URL}/auth/v1/user', timeout=15)
+        if resp.ok:
+            try:
+                data = resp.json()
+            except Exception:
+                data = {}
+            user_id = _normalize_cloud_user_id(data.get('id') if isinstance(data, dict) else None)
+            if user_id:
+                if user_id != self.user_id:
+                    self.user_id = user_id
+                return user_id
+        token_user_id = _decode_jwt_subject(self.access_token)
+        if token_user_id:
+            if token_user_id != self.user_id:
+                self.user_id = token_user_id
+            return token_user_id
+        raise CloudSyncError(f'Could not fetch current cloud user: {resp.text if resp is not None else ""}')
+
     def save_credentials(
         self,
         email: str | None = None,
@@ -3638,6 +3713,7 @@ def sync_all(
     prepare_images_cb: PreparedImagesCallback | None = None,
 ) -> dict:
     """Run push then pull. Returns combined summary."""
+    ensure_database_linked_to_cloud_user(client)
     progress_state = {'done': 0, 'total': 0}
     try:
         remote_obs_before_push = client.list_remote_observations()

@@ -11,6 +11,8 @@ from database.models import ObservationDB
 from database.schema import get_app_settings
 from utils.cloud_sync import (
     SporelyCloudClient,
+    ACCOUNT_MISMATCH_MESSAGE,
+    AccountMismatchError,
     CloudSyncError,
     sync_all,
     load_saved_cloud_password,
@@ -45,6 +47,8 @@ class _SyncWorker(QThread):
                 prepare_images_cb=self._prepare_images_cb,
             )
             self.finished.emit(result)
+        except AccountMismatchError:
+            self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except CloudSyncError as e:
             self.error.emit(str(e))
         except Exception as e:
@@ -436,15 +440,21 @@ class CloudSyncDialog(QDialog):
         self._sync_btn.setEnabled(True)
         self._signout_btn.setEnabled(True)
         box = QMessageBox(self)
+        is_account_mismatch = str(msg or '').strip() == ACCOUNT_MISMATCH_MESSAGE
         box.setIcon(QMessageBox.Critical)
         box.setWindowTitle('Sporely Cloud Sync')
-        box.setText(summary)
-        box.setInformativeText('Open Details to copy the raw server/message text.')
-        box.setDetailedText(str(msg))
+        if is_account_mismatch:
+            box.setText(ACCOUNT_MISMATCH_MESSAGE)
+        else:
+            box.setText(summary)
+            box.setInformativeText('Open Details to copy the raw server/message text.')
+            box.setDetailedText(str(msg))
         box.exec()
 
     def _summarize_sync_error(self, msg: str) -> str:
         text = str(msg or '').strip()
+        if text == ACCOUNT_MISMATCH_MESSAGE:
+            return 'Cloud sync blocked: this database is linked to another account.'
         if text.startswith('Push phase failed'):
             return 'Cloud sync failed while pushing local observations to Sporely Cloud.'
         if text.startswith('Pull phase failed'):

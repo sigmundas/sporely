@@ -6,7 +6,14 @@ import json
 from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime
-from .schema import get_connection, get_reference_connection, get_images_dir, get_calibrations_dir
+from .schema import (
+    get_app_settings,
+    get_connection,
+    get_reference_connection,
+    get_images_dir,
+    get_calibrations_dir,
+    save_app_settings,
+)
 from utils.exif_reader import get_image_datetime
 from utils.publish_targets import (
     PUBLISH_TARGET_ARTSOBS_NO,
@@ -15,6 +22,19 @@ from utils.publish_targets import (
 )
 
 _UNSET = object()
+_CLOUD_APP_SETTING_KEYS = {
+    "cloud_last_pull_at",
+    "cloud_recent_import_local_ids",
+    "linked_cloud_user_id",
+}
+_CLOUD_SQLITE_SETTING_PREFIXES = (
+    "sporely_cloud_snapshot_obs_",
+    "sporely_cloud_image_file_sig_",
+    "sporely_cloud_local_media_sig_obs_",
+)
+_CLOUD_SQLITE_SETTING_KEYS = {
+    "sporely_cloud_media_signature_v1",
+}
 
 # Images directory
 def _images_dir() -> Path:
@@ -31,6 +51,80 @@ def _observations_has_updated_at(cursor) -> bool:
         return any(str(row[1] or '') == 'updated_at' for row in cursor.fetchall())
     except Exception:
         return False
+
+
+def _table_columns(cursor, table_name: str) -> set[str]:
+    try:
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return {str(row[1] or "") for row in cursor.fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
+def reset_cloud_sync_state() -> dict[str, int]:
+    """Remove all local cloud links so the DB can bind to a new account."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        observations_cols = _table_columns(cursor, "observations")
+        images_cols = _table_columns(cursor, "images")
+        measurements_cols = _table_columns(cursor, "spore_measurements")
+        settings_cols = _table_columns(cursor, "settings")
+
+        observation_count = 0
+        image_count = 0
+        measurement_count = 0
+        settings_count = 0
+
+        if {"cloud_id", "sync_status"}.issubset(observations_cols):
+            set_parts = ["cloud_id = NULL", "sync_status = 'dirty'"]
+            if "synced_at" in observations_cols:
+                set_parts.append("synced_at = NULL")
+            cursor.execute(f"UPDATE observations SET {', '.join(set_parts)}")
+            observation_count = cursor.rowcount if cursor.rowcount is not None else 0
+
+        if "cloud_id" in images_cols:
+            set_parts = ["cloud_id = NULL"]
+            if "synced_at" in images_cols:
+                set_parts.append("synced_at = NULL")
+            cursor.execute(f"UPDATE images SET {', '.join(set_parts)}")
+            image_count = cursor.rowcount if cursor.rowcount is not None else 0
+
+        if "cloud_id" in measurements_cols:
+            cursor.execute("UPDATE spore_measurements SET cloud_id = NULL")
+            measurement_count = cursor.rowcount if cursor.rowcount is not None else 0
+
+        if {"key", "value"}.issubset(settings_cols):
+            for key in sorted(_CLOUD_SQLITE_SETTING_KEYS):
+                cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+                settings_count += max(0, cursor.rowcount or 0)
+            for prefix in _CLOUD_SQLITE_SETTING_PREFIXES:
+                cursor.execute("DELETE FROM settings WHERE key LIKE ?", (f"{prefix}%",))
+                settings_count += max(0, cursor.rowcount or 0)
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    app_settings = get_app_settings()
+    removed_app_settings = 0
+    for key in sorted(_CLOUD_APP_SETTING_KEYS):
+        if key in app_settings:
+            removed_app_settings += 1
+            app_settings.pop(key, None)
+    if removed_app_settings:
+        save_app_settings(app_settings)
+
+    return {
+        "observations": observation_count,
+        "images": image_count,
+        "measurements": measurement_count,
+        "settings": settings_count,
+        "app_settings": removed_app_settings,
+    }
 
 
 def _touch_observation(cursor, observation_id: int | None, *, mark_dirty: bool = True) -> None:
