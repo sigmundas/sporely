@@ -2433,8 +2433,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             main_window = self.parent()
             if main_window is not None and hasattr(main_window, "observations_tab"):
                 try:
-                    main_window.observations_tab.refresh_observations(show_status=False)
-                    main_window.observations_tab._start_cloud_sync(show_status=True, run_refresh_flow=False)
+                    main_window.observations_tab._start_cloud_sync(show_status=True, run_refresh_flow=True)
                 except Exception:
                     pass
         except Exception as exc:
