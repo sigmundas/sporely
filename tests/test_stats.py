@@ -1,4 +1,5 @@
 from utils.stats import calculate_statistics, calculate_confidence_interval
+import scipy.stats as stats
 
 def test_calculate_statistics_basic():
     result = calculate_statistics([1.8, 2.0, 2.2])
