@@ -191,6 +191,7 @@ def get_style(theme: str = "auto") -> str:
         indicator_disabled = "#353534"
         data_brd     = "#353534"
         data_fg      = "#c1c8c4"
+        dialog_brd   = "transparent"
     else:
         # Slate Lab — technical, clinical, cool off-white
         bg           = "#f8f9fa"         # cool off-white canvas
@@ -219,6 +220,7 @@ def get_style(theme: str = "auto") -> str:
         indicator_disabled = "#cdd5d2"
         data_brd     = "#e0e0e0"         # neutral grey divider
         data_fg      = "#586064"
+        dialog_brd   = "#586064"
 
     chk_url = _CHK_URL
 
@@ -738,13 +740,13 @@ QMenu::item:selected {{
 
 QDialog {{
     background-color: {bg};
-    border: none;
+    border: 1px solid {dialog_brd};
     border-radius: 12px;
 }}
 
 QMessageBox {{
     background-color: {bg};
-    border: none;
+    border: 1px solid {dialog_brd};
     border-radius: 12px;
 }}
 

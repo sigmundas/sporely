@@ -974,8 +974,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         # Ensure modal dialog instances are destroyed after closing; otherwise hidden
         # child dialogs can survive and prompt again during app shutdown.
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setMinimumSize(1300, 900)
-        self.resize(1400, 960)
+        self.setMinimumSize(1300, 960)
+        self.resize(1400, 1000)
 
         self.objectives = load_objectives()
         self.target_sampling_pct = float(
@@ -1316,6 +1316,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         self.image_mode_tabs = QTabWidget()
+        self.image_mode_tabs.setMinimumHeight(500)
         self.image_mode_tabs.currentChanged.connect(self._on_image_mode_tab_changed)
 
         # Automatic tab
@@ -1375,6 +1376,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         # Results group
         results_group = QGroupBox(self.tr("Results"))
+        results_group.setMinimumHeight(160)
+        results_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         results_layout = QFormLayout(results_group)
 
         self.result_average_label = QLabel("--")
@@ -1477,6 +1480,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         layout.addWidget(input_group)
 
         results_group = QGroupBox(self.tr("Results"))
+        results_group.setMinimumHeight(275)
+        results_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         results_layout = QFormLayout(results_group)
 
         self.auto_scale_title = QLabel(self.tr("Scale (this image):"))
