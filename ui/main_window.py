@@ -51,7 +51,7 @@ _ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
 
 # ── Corner icon SVGs ───────────────────────────────────────────────────────────
 _SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="12" cy="12" r="3"/>
   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
     a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
@@ -65,16 +65,20 @@ _SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" 
 </svg>"""
 
 # Stage micrometer: tick-marked ruler bar inside a circle
-_SVG_CALIBRATION = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="12" cy="12" r="9"/>
-  <line x1="5.5" y1="12" x2="18.5" y2="12"/>
-  <line x1="7"   y1="12" x2="7"   y2="9.5"/>
-  <line x1="9.5" y1="12" x2="9.5" y2="10.5"/>
-  <line x1="12"  y1="12" x2="12"  y2="9.5"/>
-  <line x1="14.5" y1="12" x2="14.5" y2="10.5"/>
-  <line x1="17"  y1="12" x2="17"  y2="9.5"/>
-</svg>"""
+try:
+    from pathlib import Path
+    _SVG_CALIBRATION = (Path(__file__).parent.parent / "assets" / "icons" / "calibration.svg").read_bytes()
+except Exception:
+    _SVG_CALIBRATION = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/>
+    <line x1="5.5" y1="12" x2="18.5" y2="12"/>
+    <line x1="7"   y1="12" x2="7"   y2="9.5"/>
+    <line x1="9.5" y1="12" x2="9.5" y2="10.5"/>
+    <line x1="12"  y1="12" x2="12"  y2="9.5"/>
+    <line x1="14.5" y1="12" x2="14.5" y2="10.5"/>
+    <line x1="17"  y1="12" x2="17"  y2="9.5"/>
+    </svg>"""
 
 
 def _make_svg_icon(svg_bytes: bytes, color: str = "#c1c8c4") -> QIcon:
@@ -105,15 +109,7 @@ import warnings
 from pathlib import Path
 import re
 from PIL import Image, ExifTags
-from database.models import (
-    ObservationDB,
-    ImageDB,
-    MeasurementDB,
-    SettingsDB,
-    ReferenceDB,
-    CalibrationDB,
-    reset_cloud_sync_state,
-)
+from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
 from database.models import SpeciesDataAvailability
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -1097,92 +1093,8 @@ class SettingsHubDialog(QDialog):
         cloud_content.setParent(page)
         cloud_content.show()
         layout.addWidget(cloud_content)
-        reset_group = QGroupBox(self.tr("Cloud account link"), page)
-        reset_layout = QVBoxLayout(reset_group)
-        reset_layout.setContentsMargins(10, 10, 10, 10)
-        reset_layout.setSpacing(8)
-        reset_note = QLabel(
-            self.tr(
-                "Reset only the local cloud link after you have deleted the old cloud account. "
-                "Local observations and images remain in this database."
-            )
-        )
-        reset_note.setWordWrap(True)
-        reset_note.setStyleSheet("color: #6b7280; font-size: 11px;")
-        reset_layout.addWidget(reset_note)
-        reset_row = QHBoxLayout()
-        self._reset_cloud_link_btn = QPushButton(self.tr("Reset Cloud Link..."))
-        self._reset_cloud_link_btn.clicked.connect(self._reset_cloud_link)
-        reset_row.addWidget(self._reset_cloud_link_btn)
-        reset_row.addStretch()
-        reset_layout.addLayout(reset_row)
-        layout.addWidget(reset_group)
         layout.addStretch()
         return page
-
-    def _reset_cloud_link(self) -> None:
-        main_window = self.parent()
-        observations_tab = getattr(main_window, "observations_tab", None)
-        is_sync_running = getattr(observations_tab, "_is_cloud_sync_running", None)
-        if callable(is_sync_running) and is_sync_running():
-            QMessageBox.warning(
-                self,
-                self.tr("Sporely Cloud Sync"),
-                self.tr("Wait for the current cloud sync to finish before resetting the cloud link."),
-            )
-            return
-
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Critical)
-        box.setWindowTitle(self.tr("CRITICAL: Reset Cloud Link"))
-        box.setText(
-            self.tr(
-                "Resetting the cloud link will sever the connection to your current Sporely Cloud account. "
-                "Your local data will remain safe, but the next time you sync, ALL local images and observations "
-                "will be uploaded as brand new files.\n\n"
-                "IMPORTANT: This action DOES NOT delete your old cloud data. To prevent duplicate storage, you MUST "
-                "do the following first:\n"
-                "1. Open the Sporely Web App.\n"
-                "2. Log into your CURRENT account.\n"
-                "3. Go to Profile -> Delete Account to erase your old data."
-            )
-        )
-        cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
-        proceed_btn = box.addButton(
-            self.tr("I have already deleted my old account, proceed with reset"),
-            QMessageBox.DestructiveRole,
-        )
-        box.setDefaultButton(cancel_btn)
-        box.exec()
-        if box.clickedButton() is not proceed_btn:
-            return
-
-        try:
-            reset_cloud_sync_state()
-            from utils.cloud_sync import SporelyCloudClient
-
-            SporelyCloudClient.clear_credentials()
-            update_app_settings({"cloud_user_email": None})
-            self._artsobs_dialog._cloud_client = None
-            self._artsobs_dialog._update_cloud_controls()
-            if observations_tab is not None and hasattr(observations_tab, "refresh_observations"):
-                observations_tab.refresh_observations(show_status=False)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                self.tr("Reset Cloud Link Failed"),
-                self.tr("Unable to reset cloud sync state.\n\n{error}").format(error=exc),
-            )
-            return
-
-        QMessageBox.information(
-            self,
-            self.tr("Cloud Link Reset"),
-            self.tr(
-                "Cloud sync state was reset. You have been logged out of Sporely Cloud.\n\n"
-                "Log in with the new account when you are ready to sync this local database again."
-            ),
-        )
 
     def _build_language_page(self) -> QWidget:
         page = QWidget()
@@ -2294,36 +2206,32 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             for uploader in self._uploaders:
                 if uploader.key == "inat":
                     try:
-                        inat = self._inat_oauth_client(require_credentials=False)
-                        status[uploader.key] = bool(inat and inat.get_valid_access_token())
+                        status[uploader.key] = bool(self._inat_token_file().exists())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import ArtportalenAuth
-
-                        status[uploader.key] = bool(ArtportalenAuth().get_valid_cookies())
+                        from utils.artportalen_auth import has_saved_login
+                        status[uploader.key] = bool(has_saved_login())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
                     app_key, user_key = self._mushroomobserver_credentials()
                     status[uploader.key] = bool(app_key and user_key)
                 else:
-                    status[uploader.key] = bool(auth.get_valid_cookies(target=uploader.key))
+                    status[uploader.key] = bool(auth.load_cookies(target=uploader.key))
         except Exception:
             # Keep conservative status when auth helper fails.
             for uploader in self._uploaders:
                 if uploader.key == "inat":
                     try:
-                        inat = self._inat_oauth_client(require_credentials=False)
-                        status[uploader.key] = bool(inat and inat.get_valid_access_token())
+                        status[uploader.key] = bool(self._inat_token_file().exists())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import ArtportalenAuth
-
-                        status[uploader.key] = bool(ArtportalenAuth().get_valid_cookies())
+                        from utils.artportalen_auth import has_saved_login
+                        status[uploader.key] = bool(has_saved_login())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -4560,28 +4468,37 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         main_layout.addWidget(self.tab_widget, 1)
 
-        # Corner buttons: settings cog + calibration icon
+        # Corner buttons: settings cog + calibration icon + profile
         corner = QWidget()
         corner_layout = QHBoxLayout(corner)
-        corner_layout.setContentsMargins(0, 0, 4, 0)
-        corner_layout.setSpacing(2)
+        corner_layout.setContentsMargins(0, 0, 8, 0)
+        corner_layout.setSpacing(4)
+
+        self._avatar_corner_btn = QToolButton()
+        self._avatar_corner_btn.setObjectName("cornerAvatarBtn")
+        self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
+        self._avatar_corner_btn.setCursor(Qt.PointingHandCursor)
+        self._avatar_corner_btn.clicked.connect(lambda: self.open_settings_hub(page=3))
+        self._avatar_corner_btn.setStyleSheet("QToolButton { border: none; padding: 2px; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 14px; }")
+        corner_layout.addWidget(self._avatar_corner_btn)
 
         self._calib_corner_btn = QToolButton()
         self._calib_corner_btn.setObjectName("cornerIconBtn")
         self._calib_corner_btn.setToolTip(self.tr("Calibration (Ctrl+K)"))
-        self._calib_corner_btn.setIcon(_make_svg_icon(_SVG_CALIBRATION))
-        self._calib_corner_btn.setIconSize(QSize(20, 20))
+        self._calib_corner_btn.setCursor(Qt.PointingHandCursor)
         self._calib_corner_btn.clicked.connect(self.open_calibration_dialog)
+        self._calib_corner_btn.setStyleSheet("QToolButton { border: none; padding: 2px; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 4px; }")
         corner_layout.addWidget(self._calib_corner_btn)
 
         self._settings_corner_btn = QToolButton()
         self._settings_corner_btn.setObjectName("cornerIconBtn")
         self._settings_corner_btn.setToolTip(self.tr("Settings (Ctrl+,)"))
-        self._settings_corner_btn.setIcon(_make_svg_icon(_SVG_SETTINGS))
-        self._settings_corner_btn.setIconSize(QSize(20, 20))
+        self._settings_corner_btn.setCursor(Qt.PointingHandCursor)
         self._settings_corner_btn.clicked.connect(self.open_settings_hub)
+        self._settings_corner_btn.setStyleSheet("QToolButton { border: none; padding: 2px; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 4px; }")
         corner_layout.addWidget(self._settings_corner_btn)
 
+        self._update_corner_ui()
         self.tab_widget.setCornerWidget(corner, Qt.TopRightCorner)
 
         # Tab navigation shortcuts: Alt/Option on all platforms.
@@ -4671,6 +4588,133 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         )
         help_menu.addAction(release_action)
+
+    def _update_corner_ui(self):
+        if not hasattr(self, "_calib_corner_btn"):
+            return
+        dark = self._is_dark_theme()
+        # Darker and more pronounced color in light mode
+        icon_color = "#f0f0f0" if dark else "#333333"
+        
+        self._calib_corner_btn.setIcon(_make_svg_icon(_SVG_CALIBRATION, icon_color))
+        self._calib_corner_btn.setIconSize(QSize(22, 22))
+        
+        self._settings_corner_btn.setIcon(_make_svg_icon(_SVG_SETTINGS, icon_color))
+        self._settings_corner_btn.setIconSize(QSize(22, 22))
+        
+        cloud_email = str(get_app_settings().get("cloud_user_email") or "").strip()
+        if cloud_email:
+            self._avatar_corner_btn.setVisible(True)
+            profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
+            name = str(profile.get("name") or "").strip()
+            display_str = name if name else cloud_email
+            initial = display_str[0].upper() if display_str else "?"
+            
+            pixmap = QPixmap(26, 26)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            colors = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6"]
+            color_idx = sum(ord(c) for c in cloud_email) % len(colors)
+            painter.setBrush(QColor(colors[color_idx]))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(1, 1, 24, 24)
+            painter.setPen(QColor("white"))
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSize(10)
+            painter.setFont(font)
+            painter.drawText(QRectF(1, 1, 24, 24), Qt.AlignCenter, initial)
+            painter.end()
+            
+            self._avatar_corner_btn.setIcon(QIcon(pixmap))
+            self._avatar_corner_btn.setIconSize(QSize(26, 26))
+
+            try:
+                # Ensure uid is correctly linked during cloud login
+                uid = get_app_settings().get("linked_cloud_user_id")
+                if uid:
+                    self._fetch_and_set_cloud_avatar(uid)
+            except Exception:
+                pass
+        else:
+            self._avatar_corner_btn.setVisible(False)
+
+    def _fetch_and_set_cloud_avatar(self, user_id: str):
+        if hasattr(self, "_avatar_pixmap_cached"):
+            self._apply_cloud_avatar(self._avatar_pixmap_cached)
+            return
+
+        if not hasattr(self, "_avatar_network"):
+            from PySide6.QtNetwork import QNetworkAccessManager
+            self._avatar_network = QNetworkAccessManager(self)
+
+        from PySide6.QtNetwork import QNetworkRequest
+        from PySide6.QtCore import QUrl
+        import time
+
+        token = ""
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+            client = SporelyCloudClient.from_stored_credentials()
+            if client and hasattr(client, "access_token"):
+                token = client.access_token
+        except Exception:
+            pass
+
+        # Use authenticated endpoint if we have a token, to bypass 400 errors on misconfigured public buckets
+        if token:
+            url = f"https://zkpjklzfwzefhjluvhfw.supabase.co/storage/v1/object/authenticated/avatars/{user_id}/avatar.jpg?t={int(time.time() / 3600)}"
+        else:
+            url = f"https://zkpjklzfwzefhjluvhfw.supabase.co/storage/v1/object/public/avatars/{user_id}/avatar.jpg?t={int(time.time() / 3600)}"
+
+        req = QNetworkRequest(QUrl(url))
+        req.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
+        req.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
+        if token:
+            req.setRawHeader(b"Authorization", f"Bearer {token}".encode())
+
+        reply = self._avatar_network.get(req)
+        reply.finished.connect(lambda: self._handle_avatar_reply(reply))
+
+    def _handle_avatar_reply(self, reply):
+        try:
+            from PySide6.QtNetwork import QNetworkReply
+            if reply.error() == QNetworkReply.NoError:
+                data = reply.readAll()
+                pixmap = QPixmap()
+                if pixmap.loadFromData(data):
+                    self._avatar_pixmap_cached = pixmap
+                    self._apply_cloud_avatar(pixmap)
+        except Exception:
+            pass
+        finally:
+            reply.deleteLater()
+
+    def _apply_cloud_avatar(self, pixmap):
+        from PySide6.QtGui import QBrush, QPen
+        
+        target_size = 26
+        circular = QPixmap(target_size, target_size)
+        circular.fill(Qt.transparent)
+
+        painter = QPainter(circular)
+        painter.setRenderHint(QPainter.Antialiasing)
+        scaled_pixmap = pixmap.scaled(
+            target_size, target_size, 
+            Qt.KeepAspectRatioByExpanding, 
+            Qt.SmoothTransformation
+        )
+        painter.setBrush(QBrush(scaled_pixmap))
+
+        pen_color = QColor("#7ec87a") if self._is_dark_theme() else QColor("#2D4B32") # Accent color from stylesheet
+        pen = QPen(pen_color, 1.5)
+        painter.setPen(pen)
+        painter.drawEllipse(1, 1, 23, 23)
+        painter.end()
+
+        if hasattr(self, "_avatar_corner_btn"):
+            self._avatar_corner_btn.setIcon(QIcon(circular))
 
     def start_update_check(self):
         """Check GitHub for newer releases without blocking the UI."""
@@ -15265,6 +15309,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.observations_tab.refresh_observations(show_status=False)
                 except Exception:
                     pass
+        self._update_corner_ui()
 
     def open_profile_dialog(self):
         """Open profile settings dialog."""
@@ -15367,6 +15412,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._sync_appearance_menu()
         if hasattr(self, "gallery_plot_figure") and hasattr(self, "gallery_plot_canvas"):
             self.update_graph_plots_only()
+        if hasattr(self, "_calib_corner_btn"):
+            self._update_corner_ui()
 
     def _on_system_color_scheme_changed(self):
         if SettingsDB.get_setting("ui_theme", "auto") == "auto":

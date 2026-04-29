@@ -1604,7 +1604,8 @@ def _inject_obs_exif_into_field_image(
     image_path: Path,
     obs_lat: float | None,
     obs_lon: float | None,
-    obs_date_str: str | None,
+    obs_altitude: float | None,
+    obs_datetime_str: str | None,
 ) -> None:
     """Write observation GPS/datetime into a JPEG that has no EXIF.
 
@@ -1619,8 +1620,8 @@ def _inject_obs_exif_into_field_image(
     if suffix not in {'.jpg', '.jpeg'}:
         return
     has_coords = obs_lat is not None and obs_lon is not None
-    has_date = bool(obs_date_str)
-    if not has_coords and not has_date:
+    has_datetime = bool(obs_datetime_str)
+    if not has_coords and not has_datetime:
         return
     try:
         from PIL import Image as _PilImage, ExifTags as _ExifTags
@@ -1639,14 +1640,14 @@ def _inject_obs_exif_into_field_image(
 
             exif = existing_exif if existing_exif is not None else img.getexif()
 
-            if not already_has_dt and has_date:
+            if not already_has_dt and has_datetime:
                 try:
-                    # obs date may be "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
-                    date_part = obs_date_str.strip().split('T')[0].split(' ')[0]
-                    dt_exif = date_part.replace('-', ':') + ' 00:00:00'
+                    dt_exif = _exif_datetime_from_text(obs_datetime_str)
                     # Tag 306 = DateTime, 36867 = DateTimeOriginal
-                    exif[306] = dt_exif
-                    exif[36867] = dt_exif
+                    if dt_exif:
+                        exif[306] = dt_exif
+                        exif[36867] = dt_exif
+                        exif[36868] = dt_exif
                 except Exception:
                     pass
 
@@ -1666,6 +1667,10 @@ def _inject_obs_exif_into_field_image(
                         3: 'E' if obs_lon >= 0 else 'W',    # GPSLongitudeRef
                         4: _deg_to_rational(obs_lon),        # GPSLongitude
                     }
+                    if obs_altitude is not None:
+                        altitude = float(obs_altitude)
+                        gps_ifd[5] = 1 if altitude < 0 else 0  # GPSAltitudeRef
+                        gps_ifd[6] = (int(round(abs(altitude) * 100)), 100)
                     exif[34853] = gps_ifd  # GPSInfo
                 except Exception:
                     pass
@@ -1682,20 +1687,54 @@ def _inject_obs_exif_into_field_image(
         print(f'[cloud_sync] Could not inject EXIF into {image_path.name}: {exc}')
 
 
-def _load_obs_gps_date(observation_id: int) -> tuple[float | None, float | None, str | None]:
-    """Return (lat, lon, date_str) from the local observations table."""
+def _exif_datetime_from_text(value: str | None) -> str | None:
+    """Return EXIF datetime text (YYYY:MM:DD HH:MM:SS) from ISO/date text."""
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        normalized = text.replace('Z', '+00:00')
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.strftime('%Y:%m:%d %H:%M:%S')
+    except Exception:
+        pass
+    try:
+        if 'T' in text:
+            date_part, time_part = text.split('T', 1)
+        elif ' ' in text:
+            date_part, time_part = text.split(' ', 1)
+        else:
+            date_part, time_part = text, '00:00:00'
+        time_part = time_part.split('+', 1)[0].split('-', 1)[0].split('.', 1)[0]
+        bits = [part for part in time_part.split(':') if part]
+        while len(bits) < 3:
+            bits.append('00')
+        return f"{date_part.replace('-', ':')} {':'.join(bits[:3])}"
+    except Exception:
+        return None
+
+
+def _load_obs_exif_fallback(observation_id: int, fallback_datetime: str | None = None) -> tuple[float | None, float | None, float | None, str | None]:
+    """Return (lat, lon, altitude, datetime_str) from local observation data."""
     try:
         obs = ObservationDB.get_observation(observation_id)
         if not obs:
-            return None, None, None
+            return None, None, None, fallback_datetime
         lat = obs.get('gps_latitude')
         lon = obs.get('gps_longitude')
-        date_str = str(obs.get('date') or '').strip() or None
+        altitude = obs.get('gps_altitude')
+        datetime_str = str(
+            fallback_datetime
+            or obs.get('captured_at')
+            or obs.get('date')
+            or ''
+        ).strip() or None
         return (float(lat) if lat is not None else None,
                 float(lon) if lon is not None else None,
-                date_str)
+                float(altitude) if altitude is not None else None,
+                datetime_str)
     except Exception:
-        return None, None, None
+        return None, None, None, fallback_datetime
 
 
 def _is_missing_cloud_image_error(exc: Exception | str | None) -> bool:
@@ -1748,8 +1787,11 @@ def _sync_existing_remote_image_to_local(
         if image_type == 'field' and not local_is_larger:
             obs_id = int(local_image.get('observation_id') or 0)
             if obs_id > 0:
-                lat, lon, date_str = _load_obs_gps_date(obs_id)
-                _inject_obs_exif_into_field_image(temp_path, lat, lon, date_str)
+                lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
+                    obs_id,
+                    fallback_datetime=remote_image.get('captured_at') or remote_image.get('created_at'),
+                )
+                _inject_obs_exif_into_field_image(temp_path, lat, lon, altitude, datetime_str)
 
         if existing_path and not local_is_larger:
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1845,8 +1887,11 @@ def _apply_remote_images_to_local(
                 raise
             new_image_type = str(remote_image.get('image_type') or 'field').strip().lower()
             if new_image_type == 'field':
-                lat, lon, date_str = _load_obs_gps_date(int(local_id))
-                _inject_obs_exif_into_field_image(download_path, lat, lon, date_str)
+                lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
+                    int(local_id),
+                    fallback_datetime=remote_image.get('captured_at') or remote_image.get('created_at'),
+                )
+                _inject_obs_exif_into_field_image(download_path, lat, lon, altitude, datetime_str)
             local_image_id = ImageDB.add_image(
                 observation_id=int(local_id),
                 filepath=str(download_path),
@@ -1864,6 +1909,7 @@ def _apply_remote_images_to_local(
                 resample_scale_factor=remote_image.get('resample_scale_factor'),
                 ai_crop_box=_remote_ai_crop_box(remote_image),
                 ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
+                captured_at=remote_image.get('captured_at') or remote_image.get('created_at'),
                 copy_to_folder=True,
                 mark_observation_dirty=False,
             )

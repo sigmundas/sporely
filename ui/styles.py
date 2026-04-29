@@ -229,6 +229,7 @@ QMainWindow {{
 
 QWidget {{
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {base_pt}pt;
 }}
 
@@ -256,6 +257,7 @@ QTabBar::tab {{
     border-bottom: 3px solid transparent;
     padding: 10px 20px;
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-weight: 700;
     font-size: {base_pt}pt;
     min-width: 80px;
@@ -282,6 +284,7 @@ QGroupBox {{
     padding-right: 16px;
     padding-bottom: 16px;
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-weight: 700;
     color: {text};
 }}
@@ -420,6 +423,7 @@ QPushButton[sourceActive="true"] {{
 
 QLabel#sectionHeader {{
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-weight: 700;
     font-size: {base_pt}pt;
     color: {text_dim};
@@ -608,6 +612,7 @@ QHeaderView::section {{
     border: none;
     padding: 8px 12px;
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {small_pt}pt;
     font-weight: 600;
     letter-spacing: 0.05em;
@@ -644,6 +649,7 @@ QCalendarWidget QHeaderView::section {{
     border: none;
     padding: 1px 2px;
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {base_pt}pt;
     font-weight: normal;
 }}
@@ -661,6 +667,7 @@ QLabel#imageLabel {{
 
 QLabel#headerLabel {{
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-size: {header_pt}pt;
     font-weight: 700;
     color: {text};
@@ -668,6 +675,7 @@ QLabel#headerLabel {{
 
 QLabel#observationHeaderLabel {{
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-size: {header_pt + 1}pt;
     font-weight: 700;
     color: {text};
@@ -677,6 +685,7 @@ QLabel#observationHeaderLabel {{
 /* Metadata label: all-caps small Inter for technical fields (genus, latitude, etc.) */
 QLabel#metaLabel {{
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+    font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {small_pt}pt;
     font-weight: 600;
     color: {text_dim};
@@ -890,6 +899,7 @@ QGroupBox#dialogSection {{
     padding-right: 16px;
     padding-bottom: 16px;
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-weight: 700;
     color: {text};
 }}

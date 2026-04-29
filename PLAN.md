@@ -100,7 +100,6 @@ Important:
 ### Existing Refactor & Audit Tasks
 - [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
 - [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
-
 ## Cloud vs local db
 
 ### Phase 1
@@ -197,6 +196,7 @@ If the user confirms, execute the database reset logic, log the user out of thei
 - [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
 
 
+
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
 
@@ -249,6 +249,7 @@ If the user confirms, execute the database reset logic, log the user out of thei
 ## Active Tasks (TODO) - UI
 - [ ] **Implement fine-tue for multi-line segments** — Currently, multi-line does not appear in the preview window. Implement feature to drag each segment node. Show nodes as small dots that highlight with mouse over.
 - [ ] **Add hint bar at the bottom of the Measure tab** — Current messages that appear below the Start measuring button should go in the hint bar, same as other tabs. Hint bar should span the whole width of the window.
+- [ ] **Height of thumbnail image galleries** — These change sometimes when code changes, and I don't know why. They should all be user adjustable, and the thumbnails should reduce in size down to a reasonable small view, say 100px. Currently, the Prepare Images dialog has a gallery that is too small verticaly, and the thumbnails are cropped so 60% is hidden. User cannot resize.
 
 ## Active Tasks (TODO) - image handling
 - [ ] **Image rotation** — Fix image import of jpg from the android app: thumbnails in sporely-py shows up rotated 90 deg. counter-clockwise when photo is in portrait mode. Image is rotated correctly when viewed in Prepare images dialog. Rotated 90 dg. cc in Measure tab.

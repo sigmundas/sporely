@@ -68,7 +68,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.8"
+APP_VERSION = "0.7.9"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
@@ -184,7 +184,7 @@ def main():
         )
     )
     app_settings = get_app_settings()
-    _apply_light_palette(app)
+    # _apply_light_palette(app) # Removed: MainWindow's _apply_theme handles palette
     # Use the system locale so QDoubleSpinBox and other locale-aware widgets
     # accept the decimal separator the user's OS is configured for.
     QLocale.setDefault(QLocale.system())
