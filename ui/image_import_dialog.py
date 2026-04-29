@@ -556,14 +556,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _dialog_gallery_default_height(self) -> int:
         gallery = getattr(self, "gallery", None)
         if gallery is None:
-            return 180
-        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() + 20)
+            return 175
+        return max(gallery.minimumHeight(), min(220, gallery.preferred_single_row_height() + 20))
 
     def _dialog_gallery_max_height(self) -> int:
-        gallery = getattr(self, "gallery", None)
-        if gallery is None:
-            return 320
-        return max(gallery.minimumHeight(), gallery.maximum_useful_height())
+        return 360
 
     def _apply_dialog_gallery_splitter_height(self, gallery_height: int | None = None) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
@@ -586,6 +583,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
             splitter.setSizes([max(0, total - target), target])
         finally:
             self._dialog_gallery_splitter_syncing = False
+        if os.environ.get("SPORELY_DEBUG_GALLERY_HEIGHT"):
+            print(
+                "Prepare Images gallery height applied:",
+                {
+                    "requested": gallery_height,
+                    "target": target,
+                    "splitter_sizes": splitter.sizes(),
+                    "min": gallery.minimumHeight(),
+                    "max": gallery.maximumHeight(),
+                },
+            )
 
     def _restore_dialog_gallery_splitter(self) -> None:
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
@@ -598,6 +606,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 except Exception:
                     parsed.append(0)
         gallery_height = parsed[1] if len(parsed) >= 2 else None
+        if gallery_height is None:
+            try:
+                gallery_height = int(raw_sizes)
+            except Exception:
+                gallery_height = None
         self._apply_dialog_gallery_splitter_height(gallery_height)
 
     def _save_dialog_gallery_splitter(self) -> None:
@@ -611,9 +624,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         splitter = getattr(self, "dialog_gallery_splitter", None)
         if splitter is None or self._dialog_gallery_splitter_syncing:
             return
-        sizes = splitter.sizes()
-        gallery_height = sizes[1] if len(sizes) >= 2 else None
-        self._apply_dialog_gallery_splitter_height(gallery_height)
+        if os.environ.get("SPORELY_DEBUG_GALLERY_HEIGHT"):
+            print("Prepare Images gallery splitter moved:", {"sizes": splitter.sizes()})
         self._save_dialog_gallery_splitter()
 
     def _restore_geometry(self) -> None:
@@ -628,30 +640,25 @@ class ImageImportDialog(GeometryMixin, QDialog):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(8)
 
-        content_widget = QWidget(self)
-        content_row = QHBoxLayout(content_widget)
-        content_row.setContentsMargins(0, 0, 0, 0)
-        content_row.setSpacing(10)
-
         self.left_panel = self._build_left_panel()
-        self.left_panel.setFixedWidth(280)
+        self.left_panel.setMinimumWidth(320)
+        self.left_panel.setMaximumWidth(460)
         self.left_panel.setStyleSheet(
             "QPushButton { padding: 4px 8px; }"
             "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
         )
-        self.left_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        content_row.addWidget(self.left_panel, 0)
+        self.left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
         self.gallery = ImageGalleryWidget(
             self.tr("Images"),
             self,
             show_delete=True,
             show_badges=True,
-            min_height=60,
-            default_height=180,
-            thumbnail_size=140,
+            min_height=125,
+            default_height=175,
+            thumbnail_size=110,
         )
-        self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.gallery.set_reorderable(True)
         self.gallery.set_multi_select(True)
         self.gallery.setMaximumHeight(self._dialog_gallery_max_height())
@@ -696,25 +703,40 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.previous_image_arrow_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.previous_image_arrow_shortcut.activated.connect(self._on_previous_image_shortcut)
         self.center_panel = self._build_center_panel()
-        self.details_panel = self._build_right_panel()
-        self.details_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.main_splitter = QSplitter(Qt.Horizontal)
-        self.main_splitter.setChildrenCollapsible(False)
-        self.main_splitter.addWidget(self.center_panel)
-        self.main_splitter.addWidget(self.details_panel)
-        self.main_splitter.setStretchFactor(0, 1)
-        self.main_splitter.setStretchFactor(1, 0)
-        self.main_splitter.setSizes([980, 400])
-        content_row.addWidget(self.main_splitter, 1)
+
         self.dialog_gallery_splitter = QSplitter(Qt.Vertical)
         self.dialog_gallery_splitter.setChildrenCollapsible(False)
-        self.dialog_gallery_splitter.addWidget(content_widget)
+        self.dialog_gallery_splitter.setHandleWidth(10)
+        self.dialog_gallery_splitter.setStyleSheet(
+            "QSplitter::handle:vertical {"
+            " background: rgba(88, 96, 100, 0.35);"
+            " margin: 3px 0px;"
+            " border-radius: 2px;"
+            "}"
+            "QSplitter::handle:vertical:hover { background: rgba(71, 100, 92, 0.8); }"
+        )
+        self.dialog_gallery_splitter.addWidget(self.center_panel)
         self.dialog_gallery_splitter.addWidget(self.gallery)
         self.dialog_gallery_splitter.setStretchFactor(0, 1)
         self.dialog_gallery_splitter.setStretchFactor(1, 0)
         self.dialog_gallery_splitter.setSizes([760, self._dialog_gallery_default_height()])
         self.dialog_gallery_splitter.splitterMoved.connect(self._on_dialog_gallery_splitter_moved)
-        main_layout.addWidget(self.dialog_gallery_splitter, 1)
+
+        self.details_panel = self._build_right_panel()
+        self.details_panel.setMinimumWidth(340)
+        self.details_panel.setMaximumWidth(520)
+        self.details_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(self.left_panel)
+        self.main_splitter.addWidget(self.dialog_gallery_splitter)
+        self.main_splitter.addWidget(self.details_panel)
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setStretchFactor(2, 0)
+        self.main_splitter.setSizes([360, 980, 420])
+        main_layout.addWidget(self.main_splitter, 1)
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -1085,7 +1107,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview_stack = QStackedLayout()
 
         self.preview = ZoomableImageLabel()
-        self.preview.setMinimumHeight(420)
+        self.preview.setMinimumHeight(260)
+        self.preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.set_pan_without_shift(True)
         self.preview.clicked.connect(self._on_preview_clicked)

@@ -8810,6 +8810,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     _geometry_key = "ObservationDetailsDialog"
     _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
+    _taxonomy_splitter_key = "splitter/ObservationDetailsDialogTaxonomy"
 
     def __init__(
         self,
@@ -8838,8 +8839,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("Edit Observation") if self.edit_mode else self.tr("New Observation")
         )
         self.setModal(True)
-        self.setMinimumSize(980, 900)
-        self.resize(1480, 980)
+        self.setMinimumSize(1280, 900)
+        self.resize(1680, 1000)
         self._observation_datetime = _parse_observation_datetime(
             observation.get("date") if observation else None
         )
@@ -8934,8 +8935,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _dialog_gallery_default_height(self) -> int:
         gallery = getattr(self, "image_gallery", None)
         if gallery is None:
-            return 170
-        return max(gallery.minimumHeight(), gallery.preferred_single_row_height() + 28, 170)
+            return 120
+        return max(gallery.minimumHeight(), 120)
+
+    def _dialog_gallery_max_height(self) -> int:
+        gallery = getattr(self, "image_gallery", None)
+        if gallery is None:
+            return 240
+        return max(self._dialog_gallery_default_height(), gallery.maximum_useful_height() + 24)
 
     def _apply_dialog_gallery_splitter_height(self, gallery_height: int | None = None) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
@@ -8943,7 +8950,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if splitter is None or gallery is None:
             return
         target = self._dialog_gallery_default_height() if gallery_height is None else int(gallery_height)
-        target = max(gallery.minimumHeight(), target)
+        target = max(gallery.minimumHeight(), min(self._dialog_gallery_max_height(), target))
         sizes = splitter.sizes()
         total = sum(sizes) if sizes else 0
         if total <= 0:
@@ -8969,9 +8976,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 except Exception:
                     parsed.append(0)
             if len(parsed) >= 2 and sum(parsed[:2]) > 0:
-                splitter = getattr(self, "dialog_gallery_splitter", None)
-                if splitter is not None:
-                    splitter.setSizes(parsed[:2])
+                self._apply_dialog_gallery_splitter_height(parsed[1])
                 return
         else:
             try:
@@ -8989,18 +8994,84 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue(self._gallery_splitter_key, splitter.sizes())
 
+    def _restore_taxonomy_splitter(self) -> None:
+        splitter = getattr(self, "taxonomy_row_splitter", None)
+        if splitter is None:
+            return
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        raw_value = settings.value(self._taxonomy_splitter_key)
+        if not isinstance(raw_value, (list, tuple)):
+            self._apply_taxonomy_splitter_sizes()
+            return
+        parsed: list[int] = []
+        for value in raw_value[:2]:
+            try:
+                parsed.append(max(0, int(value)))
+            except Exception:
+                parsed.append(0)
+        if len(parsed) >= 2 and sum(parsed[:2]) > 0:
+            self._apply_taxonomy_splitter_sizes(parsed[0], parsed[1])
+        else:
+            self._apply_taxonomy_splitter_sizes()
+
+    def _apply_taxonomy_splitter_sizes(
+        self,
+        taxonomy_width: int | None = None,
+        ai_width: int | None = None,
+    ) -> None:
+        splitter = getattr(self, "taxonomy_row_splitter", None)
+        if splitter is None:
+            return
+        sizes = splitter.sizes()
+        total = sum(sizes) if sizes else 0
+        if total <= 0:
+            total = splitter.width()
+        if total <= 0:
+            total = max(900, self.width() - 80)
+
+        taxonomy_min = 360
+        ai_min = 300
+        if total <= taxonomy_min + ai_min:
+            splitter.setSizes([max(1, int(total * 0.6)), max(1, int(total * 0.4))])
+            return
+
+        if taxonomy_width is None or ai_width is None or taxonomy_width + ai_width <= 0:
+            taxonomy_width = int(total * 0.62)
+            ai_width = total - taxonomy_width
+
+        requested_total = taxonomy_width + ai_width
+        if requested_total > 0 and requested_total != total:
+            taxonomy_width = int(total * (taxonomy_width / requested_total))
+            ai_width = total - taxonomy_width
+
+        ai_width = max(ai_min, min(total - taxonomy_min, int(ai_width)))
+        taxonomy_width = total - ai_width
+        splitter.setSizes([taxonomy_width, ai_width])
+
+    def _save_taxonomy_splitter(self) -> None:
+        splitter = getattr(self, "taxonomy_row_splitter", None)
+        if splitter is None:
+            return
+        settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        settings.setValue(self._taxonomy_splitter_key, splitter.sizes())
+
     def _on_dialog_gallery_splitter_moved(self, _pos: int, _index: int) -> None:
         splitter = getattr(self, "dialog_gallery_splitter", None)
         if splitter is None or self._dialog_gallery_splitter_syncing:
             return
         QTimer.singleShot(0, self._save_dialog_gallery_splitter)
 
+    def _on_taxonomy_splitter_moved(self, _pos: int, _index: int) -> None:
+        QTimer.singleShot(0, self._save_taxonomy_splitter)
+
     def _restore_geometry(self) -> None:
         super()._restore_geometry()
         QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
+        QTimer.singleShot(0, self._restore_taxonomy_splitter)
 
     def _save_geometry(self) -> None:
         self._save_dialog_gallery_splitter()
+        self._save_taxonomy_splitter()
         super()._save_geometry()
 
     def init_ui(self):
@@ -9180,6 +9251,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # ===== TAXONOMY SECTION =====
         taxonomy_group = QGroupBox(self.tr("Taxonomy"))
+        taxonomy_group.setMinimumWidth(360)
+        taxonomy_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         taxonomy_layout = QVBoxLayout(taxonomy_group)
         taxonomy_layout.setContentsMargins(8, 8, 8, 8)
         taxonomy_layout.setSpacing(8)
@@ -9205,9 +9278,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         identified_layout.setSpacing(4)
         identified_layout.setAlignment(Qt.AlignTop)
         self._taxonomy_label_width = 96
-        self._taxonomy_field_width = 560
         taxonomy_label_width = self._taxonomy_label_width
-        taxonomy_field_width = self._taxonomy_field_width
 
         vern_row = QHBoxLayout()
         vern_row.setContentsMargins(0, 0, 0, 0)
@@ -9218,7 +9289,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         vern_row.addWidget(self.vernacular_label)
         vern_field_container = QWidget()
         vern_field_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        vern_field_container.setMaximumWidth(taxonomy_field_width)
         vern_field_layout = QHBoxLayout(vern_field_container)
         vern_field_layout.setContentsMargins(0, 0, 0, 0)
         vern_field_layout.setSpacing(4)
@@ -9236,7 +9306,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._populate_vernacular_language_menu()
         vern_field_layout.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
         vern_row.addWidget(vern_field_container, 1)
-        vern_row.addStretch(1)
         identified_layout.addLayout(vern_row)
 
         genus_row = QHBoxLayout()
@@ -9245,11 +9314,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus_row.addWidget(genus_label)
         self.genus_input = QLineEdit()
         self.genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.genus_input.setMaximumWidth(taxonomy_field_width)
         self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         genus_row.addWidget(self.genus_input, 1)
-        genus_row.addStretch(1)
         identified_layout.addLayout(genus_row)
 
         species_row = QHBoxLayout()
@@ -9258,11 +9325,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_row.addWidget(species_label)
         self.species_input = QLineEdit()
         self.species_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.species_input.setMaximumWidth(taxonomy_field_width)
         self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
         self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         species_row.addWidget(self.species_input, 1)
-        species_row.addStretch(1)
         identified_layout.addLayout(species_row)
 
         determination_row = QHBoxLayout()
@@ -9271,7 +9336,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         determination_row.addWidget(determination_label)
         self.determination_method_combo = QComboBox()
         self.determination_method_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.determination_method_combo.setMaximumWidth(taxonomy_field_width)
         self.determination_method_combo.addItem("", None)
         self.determination_method_combo.addItem(self.tr("Microscopy"), 1)
         self.determination_method_combo.addItem(self.tr("Sequencing"), 2)
@@ -9280,7 +9344,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._style_dropdown_popup_readability(self.determination_method_combo.view(), self.determination_method_combo)
         self.determination_method_combo.currentIndexChanged.connect(self._update_taxonomy_tab_indicators)
         determination_row.addWidget(self.determination_method_combo, 1)
-        determination_row.addStretch(1)
         identified_layout.addLayout(determination_row)
 
         self.publish_target_combo = QComboBox()
@@ -9386,17 +9449,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         grows_layout.setSpacing(6)
         self.host_genus_input = QLineEdit()
         self.host_genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.host_genus_input.setMaximumWidth(taxonomy_field_width)
         self.host_genus_input.setPlaceholderText(self.tr("e.g., Betula"))
         self.host_genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_species_input = QLineEdit()
         self.host_species_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.host_species_input.setMaximumWidth(taxonomy_field_width)
         self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
         self.host_species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_input = QLineEdit()
         self.host_vernacular_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.host_vernacular_input.setMaximumWidth(taxonomy_field_width)
         self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.host_vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.host_vernacular_label = QLabel(self._vernacular_label())
@@ -9409,7 +9469,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             label.setFixedWidth(taxonomy_label_width)
             row.addWidget(label)
             row.addWidget(widget, 1)
-            row.addStretch(1)
             grows_layout.addLayout(row)
 
         _add_grows_row(self.tr("Genus:"), self.host_genus_input)
@@ -9428,14 +9487,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         taxonomy_layout.addWidget(left_container)
 
         self.ai_group = self._build_ai_suggestions_group()
-        taxonomy_row_split = QSplitter(Qt.Horizontal)
-        taxonomy_row_split.setChildrenCollapsible(False)
-        taxonomy_row_split.addWidget(taxonomy_group)
-        taxonomy_row_split.addWidget(self.ai_group)
-        taxonomy_row_split.setStretchFactor(0, 3)
-        taxonomy_row_split.setStretchFactor(1, 2)
-        taxonomy_row_split.setSizes([840, 620])
-        top_content_layout.addWidget(taxonomy_row_split)
+        self.taxonomy_row_splitter = QSplitter(Qt.Horizontal)
+        self.taxonomy_row_splitter.setChildrenCollapsible(False)
+        self.taxonomy_row_splitter.setHandleWidth(8)
+        self.taxonomy_row_splitter.addWidget(taxonomy_group)
+        self.taxonomy_row_splitter.addWidget(self.ai_group)
+        self.taxonomy_row_splitter.setStretchFactor(0, 3)
+        self.taxonomy_row_splitter.setStretchFactor(1, 2)
+        self._apply_taxonomy_splitter_sizes()
+        self.taxonomy_row_splitter.splitterMoved.connect(self._on_taxonomy_splitter_moved)
+        top_content_layout.addWidget(self.taxonomy_row_splitter)
 
         # ===== IMAGES SUMMARY (BOTTOM) =====
         self.image_gallery = ImageGalleryWidget(
@@ -9443,8 +9504,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self,
             show_delete=True,
             show_badges=True,
-            min_height=60,
-            default_height=170,
+            thumbnail_size=140,
+            min_height=90,
+            default_height=120,
             thumbnail_tooltip=self.tr("Double-click to edit"),
         )
         self.image_gallery.set_compact_overlay(True)
@@ -9735,8 +9797,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ai_group = QGroupBox(self.tr("AI suggestions"))
         ai_layout = QVBoxLayout(ai_group)
         ai_layout.setContentsMargins(6, 6, 6, 6)
-        ai_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        ai_group.setMinimumWidth(460)
+        ai_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        ai_group.setMinimumWidth(300)
 
         ai_controls = QHBoxLayout()
         self.ai_guess_btn = QPushButton(self.tr("Guess"))
@@ -9762,7 +9824,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.ai_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.ai_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.ai_table.setMinimumHeight(140)
-        self.ai_table.setMinimumWidth(420)
+        self.ai_table.setMinimumWidth(260)
+        self.ai_table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.ai_table.setStyleSheet(
             "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
             "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
@@ -12704,7 +12767,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         *,
         expand_fields: bool = False,
     ) -> None:
-        field_width = int(getattr(self, "_taxonomy_field_width", 560) or 560)
         label_width = int(getattr(self, "_taxonomy_label_width", 96) or 96)
         group = QGroupBox(title)
         group_layout = QFormLayout(group)
@@ -12718,7 +12780,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             combo = QComboBox()
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.NoInsert)
-            combo.setMaximumWidth(field_width)
             combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             combo.addItem(self.tr("Select..."), None)
             combo.currentIndexChanged.connect(
@@ -12743,8 +12804,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
             )
             row_widget = QWidget()
-            row_widget.setMaximumWidth(field_width + 28)
-            row_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(4)

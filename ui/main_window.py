@@ -64,6 +64,13 @@ _SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" 
     a1.65 1.65 0 0 0-1.51 1z"/>
 </svg>"""
 
+_SVG_CLOUD_DISCONNECTED = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m2 2 20 20"/>
+  <path d="M5.7 5.8A5.9 5.9 0 0 0 4 10.2C2.2 10.7 1 12.2 1 14c0 2.2 1.8 4 4 4h10.2"/>
+  <path d="M8.7 4.3A7 7 0 0 1 19 10.5c2.3.4 4 2.4 4 4.8 0 1-.3 2-.9 2.8"/>
+</svg>"""
+
 # Stage micrometer: tick-marked ruler bar inside a circle
 try:
     from pathlib import Path
@@ -89,7 +96,13 @@ def _make_svg_icon(svg_bytes: bytes, color: str = "#c1c8c4") -> QIcon:
     """
     from PySide6.QtSvg import QSvgRenderer
     from PySide6.QtGui import QPainter
-    svg = svg_bytes.replace(b"currentColor", color.encode())
+    color_bytes = color.encode()
+    svg = svg_bytes.replace(b"currentColor", color_bytes)
+    # Some bundled Inkscape icons predate the currentColor convention and
+    # carry fixed grey/red strokes. Recolor those so startup theme rendering
+    # matches later theme switches.
+    for hardcoded in (b"#565656", b"#932916"):
+        svg = svg.replace(hardcoded, color_bytes)
     renderer = QSvgRenderer(svg)
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.transparent)
@@ -4221,6 +4234,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.setGeometry(100, 100, 1600, 900)
         self.app_version = app_version or ""
         self._update_check_started = False
+        self._cloud_client = None
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_order: list[str] = []
         self._pixmap_cache_max = 6
@@ -4592,7 +4606,10 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _update_corner_ui(self):
         if not hasattr(self, "_calib_corner_btn"):
             return
-        dark = self._is_dark_theme()
+        theme = str(SettingsDB.get_setting("ui_theme", "auto") or "auto").strip().lower()
+        if theme not in {"auto", "light", "dark"}:
+            theme = "auto"
+        dark = _is_dark(theme)
         # Darker and more pronounced color in light mode
         icon_color = "#f0f0f0" if dark else "#333333"
         
@@ -4601,13 +4618,38 @@ class MainWindow(GeometryMixin, QMainWindow):
         
         self._settings_corner_btn.setIcon(_make_svg_icon(_SVG_SETTINGS, icon_color))
         self._settings_corner_btn.setIconSize(QSize(22, 22))
-        
-        cloud_email = str(get_app_settings().get("cloud_user_email") or "").strip()
-        if cloud_email:
+
+        settings = get_app_settings()
+        cloud_client = getattr(self, "_cloud_client", None)
+        has_stored_cloud_credentials = bool(
+            (settings.get("cloud_access_token") and settings.get("cloud_user_id"))
+            or settings.get("cloud_refresh_token")
+            or settings.get("cloud_user_email")
+        )
+        if cloud_client is not None and not has_stored_cloud_credentials:
+            cloud_client = None
+            self._cloud_client = None
+        if cloud_client is None:
+            try:
+                from utils.cloud_sync import SporelyCloudClient
+
+                cloud_client = SporelyCloudClient.from_stored_credentials()
+            except Exception:
+                cloud_client = None
+            self._cloud_client = cloud_client
+        cloud_email = str(settings.get("cloud_user_email") or "").strip()
+        cloud_user_id = str(
+            getattr(cloud_client, "user_id", "")
+            or settings.get("cloud_user_id")
+            or settings.get("linked_cloud_user_id")
+            or ""
+        ).strip()
+        if cloud_client is not None:
             self._avatar_corner_btn.setVisible(True)
+            self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
             profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
             name = str(profile.get("name") or "").strip()
-            display_str = name if name else cloud_email
+            display_str = name or cloud_email or cloud_user_id
             initial = display_str[0].upper() if display_str else "?"
             
             pixmap = QPixmap(26, 26)
@@ -4632,13 +4674,16 @@ class MainWindow(GeometryMixin, QMainWindow):
 
             try:
                 # Ensure uid is correctly linked during cloud login
-                uid = get_app_settings().get("linked_cloud_user_id")
+                uid = cloud_user_id
                 if uid:
                     self._fetch_and_set_cloud_avatar(uid)
             except Exception:
                 pass
         else:
-            self._avatar_corner_btn.setVisible(False)
+            self._avatar_corner_btn.setVisible(True)
+            self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud: Not logged in"))
+            self._avatar_corner_btn.setIcon(_make_svg_icon(_SVG_CLOUD_DISCONNECTED, icon_color))
+            self._avatar_corner_btn.setIconSize(QSize(22, 22))
 
     def _fetch_and_set_cloud_avatar(self, user_id: str):
         if hasattr(self, "_avatar_pixmap_cached"):
