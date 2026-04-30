@@ -105,7 +105,7 @@ class ImageGalleryWidget(QGroupBox):
     ) -> None:
         super().__init__(title, parent)
         self.setCheckable(False)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setFocusPolicy(Qt.StrongFocus)
         self._min_height = max(0, int(min_height))
         self._default_height = max(self._min_height, int(default_height))
