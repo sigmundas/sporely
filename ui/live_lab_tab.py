@@ -32,6 +32,15 @@ from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
 from .hint_status import HintBar, HintStatusController
 from .image_gallery_widget import ImageGalleryWidget
+from .splitter_state import (
+    GALLERY_DEFAULT_HEIGHT,
+    GALLERY_MIN_HEIGHT,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    configure_sidebar_scroll,
+    configure_splitter_pane,
+    install_persistent_splitter,
+)
 from .zoomable_image_widget import ZoomableImageLabel
 
 
@@ -41,6 +50,8 @@ class LiveLabTab(QWidget):
     SETTING_WATCH_DIR = "live_lab_watch_dir"
     SETTING_LAST_OBJECTIVE = "live_lab_last_objective"
     SETTING_SESSION_MODE = "live_lab_session_mode"
+    SETTING_MAIN_SPLITTER = "live_lab_main_splitter_sizes"
+    SETTING_CONTENT_SPLITTER = "live_lab_content_splitter_sizes"
     SESSION_MODE_LIVE = "live"
     SESSION_MODE_OFFLINE = "offline"
     VIEWER_PREVIEW_MAX_DIM = 2400
@@ -220,20 +231,17 @@ class LiveLabTab(QWidget):
         left_layout.addWidget(tag_group)
         left_layout.addStretch(1)
 
-        left_panel.setMinimumWidth(400)
-        left_panel.setMaximumWidth(400)
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         left_scroll.setWidget(left_panel)
-        left_scroll.setMinimumWidth(420)
-        left_scroll.setMaximumWidth(420)
+        configure_sidebar_scroll(left_scroll, left_panel, SIDEBAR_MIN_WIDTH)
         main_splitter.addWidget(left_scroll)
 
         right_panel = QWidget()
+        configure_splitter_pane(right_panel, min_width=360)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
@@ -266,7 +274,7 @@ class LiveLabTab(QWidget):
 
         self.live_image_label = ZoomableImageLabel()
         self.live_image_label.setObjectName("liveLabImageLabel")
-        self.live_image_label.setMinimumSize(800, 420)
+        self.live_image_label.setMinimumSize(320, 240)
         self.live_image_label.set_pan_without_shift(True)
         self.live_image_label.set_measurement_active(False)
         self.live_image_label.set_show_measure_labels(False)
@@ -279,8 +287,8 @@ class LiveLabTab(QWidget):
             show_delete=False,
             show_badges=True,
             thumbnail_size=132,
-            default_height=220,
-            min_height=80,
+            default_height=GALLERY_DEFAULT_HEIGHT,
+            min_height=GALLERY_MIN_HEIGHT,
         )
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
 
@@ -290,13 +298,23 @@ class LiveLabTab(QWidget):
         content_splitter.addWidget(self.session_gallery)
         content_splitter.setStretchFactor(0, 4)
         content_splitter.setStretchFactor(1, 1)
-        content_splitter.setSizes([760, 220])
+        install_persistent_splitter(
+            content_splitter,
+            key=self.SETTING_CONTENT_SPLITTER,
+            default_sizes=[760, GALLERY_DEFAULT_HEIGHT],
+            minimum_sizes=[240, GALLERY_MIN_HEIGHT],
+        )
         right_layout.addWidget(content_splitter, 1)
 
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([420, 1180])
+        install_persistent_splitter(
+            main_splitter,
+            key=self.SETTING_MAIN_SPLITTER,
+            default_sizes=[SIDEBAR_DEFAULT_WIDTH, 1180],
+            minimum_sizes=[SIDEBAR_MIN_WIDTH, 360],
+        )
 
         self.hint_bar = HintBar(self)
         self.hint_bar.set_wrap_mode(True)

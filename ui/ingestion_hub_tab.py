@@ -40,6 +40,15 @@ from utils.thumbnail_generator import generate_all_sizes
 
 from .hint_status import HintBar, HintStatusController, style_progress_widgets
 from .image_gallery_widget import ImageGalleryWidget
+from .splitter_state import (
+    GALLERY_DEFAULT_HEIGHT,
+    GALLERY_MIN_HEIGHT,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    configure_sidebar_scroll,
+    configure_splitter_pane,
+    install_persistent_splitter,
+)
 from .sync_shot_dialog import SyncShotDialog
 from .zoomable_image_widget import ZoomableImageLabel
 
@@ -50,6 +59,8 @@ class IngestionHubTab(QWidget):
     SETTING_SCAN_DIR = "ingestion_hub_scan_dir"
     SETTING_FIELD_MATCH_TOLERANCE_SECONDS = "ingestion_hub_field_match_tolerance_seconds"
     SETTING_OFFSET_SECONDS = "ingestion_hub_offset_seconds"
+    SETTING_MAIN_SPLITTER = "ingestion_hub_main_splitter_sizes"
+    SETTING_CONTENT_SPLITTER = "ingestion_hub_content_splitter_sizes"
     VIEWER_PREVIEW_MAX_DIM = 2400
 
     def __init__(self, main_window, parent=None) -> None:
@@ -181,20 +192,17 @@ class IngestionHubTab(QWidget):
         left_layout.addWidget(actions_group)
         left_layout.addStretch(1)
 
-        left_panel.setMinimumWidth(400)
-        left_panel.setMaximumWidth(400)
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         left_scroll.setWidget(left_panel)
-        left_scroll.setMinimumWidth(420)
-        left_scroll.setMaximumWidth(420)
+        configure_sidebar_scroll(left_scroll, left_panel, SIDEBAR_MIN_WIDTH)
         main_splitter.addWidget(left_scroll)
 
         right_panel = QWidget()
+        configure_splitter_pane(right_panel, min_width=360)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
@@ -226,7 +234,7 @@ class IngestionHubTab(QWidget):
         viewer_layout.addWidget(viewer_header)
 
         self.image_viewer = ZoomableImageLabel()
-        self.image_viewer.setMinimumSize(800, 420)
+        self.image_viewer.setMinimumSize(320, 240)
         self.image_viewer.set_pan_without_shift(True)
         self.image_viewer.set_measurement_active(False)
         self.image_viewer.set_show_measure_labels(False)
@@ -239,8 +247,8 @@ class IngestionHubTab(QWidget):
             show_delete=False,
             show_badges=True,
             thumbnail_size=132,
-            default_height=220,
-            min_height=80,
+            default_height=GALLERY_DEFAULT_HEIGHT,
+            min_height=GALLERY_MIN_HEIGHT,
         )
         self.staging_gallery.set_multi_select(True)
         self.staging_gallery.imageClicked.connect(self._on_gallery_clicked)
@@ -252,13 +260,23 @@ class IngestionHubTab(QWidget):
         content_splitter.addWidget(self.staging_gallery)
         content_splitter.setStretchFactor(0, 4)
         content_splitter.setStretchFactor(1, 1)
-        content_splitter.setSizes([760, 220])
+        install_persistent_splitter(
+            content_splitter,
+            key=self.SETTING_CONTENT_SPLITTER,
+            default_sizes=[760, GALLERY_DEFAULT_HEIGHT],
+            minimum_sizes=[240, GALLERY_MIN_HEIGHT],
+        )
         right_layout.addWidget(content_splitter, 1)
 
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([420, 1180])
+        install_persistent_splitter(
+            main_splitter,
+            key=self.SETTING_MAIN_SPLITTER,
+            default_sizes=[SIDEBAR_DEFAULT_WIDTH, 1180],
+            minimum_sizes=[SIDEBAR_MIN_WIDTH, 360],
+        )
 
         self.hint_bar = HintBar(self)
         self.hint_bar.set_wrap_mode(True)

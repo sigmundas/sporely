@@ -6,6 +6,16 @@ from PIL import Image
 from PIL import ExifTags
 
 
+def _gps_info_to_dict(value: Any) -> Dict[Any, Any] | None:
+    """Return a GPS IFD mapping, ignoring raw EXIF pointer values."""
+    if not value or not hasattr(value, "items"):
+        return None
+    try:
+        return dict(value)
+    except Exception:
+        return None
+
+
 def get_exif_data(image_path: str) -> Dict[str, Any]:
     """
     Extract EXIF data from an image file.
@@ -37,6 +47,8 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
                         decoded = {}
                         for tag_id, value in exif.items():
                             tag = ExifTags.TAGS.get(tag_id, tag_id)
+                            if tag == 'GPSInfo':
+                                continue
                             decoded[tag] = value
 
                         # Handle EXIF IFD separately (camera settings)
@@ -52,8 +64,9 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
                         # Handle GPS IFD separately
                         try:
                             gps_ifd = exif.get_ifd(0x8825)  # GPSInfo tag
-                            if gps_ifd:
-                                decoded['GPSInfo'] = dict(gps_ifd)
+                            gps_info = _gps_info_to_dict(gps_ifd)
+                            if gps_info:
+                                decoded['GPSInfo'] = gps_info
                         except (KeyError, AttributeError):
                             pass
 
@@ -81,12 +94,16 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
                 # Check for GPS info in legacy exif data
                 gps_tag_id = 34853  # GPSInfo tag ID
                 if gps_tag_id in exif_data:
-                    decoded['GPSInfo'] = exif_data[gps_tag_id]
+                    gps_info = _gps_info_to_dict(exif_data[gps_tag_id])
+                    if gps_info:
+                        decoded['GPSInfo'] = gps_info
                 return decoded
 
             decoded = {}
             for tag_id, value in exif.items():
                 tag = ExifTags.TAGS.get(tag_id, tag_id)
+                if tag == 'GPSInfo':
+                    continue
                 decoded[tag] = value
 
             # Handle EXIF IFD separately (camera settings like ISO, shutter, f-stop)
@@ -102,8 +119,9 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
             # Handle GPS IFD separately
             try:
                 gps_ifd = exif.get_ifd(0x8825)  # GPSInfo tag
-                if gps_ifd:
-                    decoded['GPSInfo'] = dict(gps_ifd)
+                gps_info = _gps_info_to_dict(gps_ifd)
+                if gps_info:
+                    decoded['GPSInfo'] = gps_info
             except (KeyError, AttributeError):
                 pass
 
@@ -198,6 +216,8 @@ def get_gps_coordinates(image_path: str) -> Tuple[Optional[float], Optional[floa
         return None, None
 
     gps_info = exif['GPSInfo']
+    if not hasattr(gps_info, "items"):
+        return None, None
 
     # Decode GPS tags
     gps_data = {}

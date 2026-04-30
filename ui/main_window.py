@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QStyle, QLineEdit, QApplication, QProgressDialog,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
                                  QPlainTextEdit, QSlider, QGraphicsOpacityEffect,
-                                 QListWidget, QListWidgetItem, QStackedWidget)
+                                 QListWidget, QListWidgetItem, QStackedWidget,
+                                 QScrollArea)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -158,6 +159,17 @@ from utils.publish_targets import (
     publish_target_label,
 )
 from .image_gallery_widget import ImageGalleryWidget
+from .splitter_state import (
+    GALLERY_DEFAULT_HEIGHT,
+    GALLERY_MIN_HEIGHT,
+    SECONDARY_PANEL_MIN_WIDTH,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    configure_sidebar_scroll,
+    configure_splitter_pane,
+    install_persistent_splitter,
+    restore_splitter_sizes,
+)
 from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
 from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
@@ -5401,21 +5413,36 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.measure_tab = tab
 
-        # Left panel - controls (fixed width)
         left_panel = self.create_control_panel()
-        left_panel.setMaximumWidth(400)
-        left_panel.setMinimumWidth(400)
-        layout.addWidget(left_panel)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setWidget(left_panel)
+        configure_sidebar_scroll(left_scroll, left_panel, SIDEBAR_MIN_WIDTH)
 
-        # Center - image panel
         image_panel = self.create_image_panel()
-        layout.addWidget(image_panel, 1)
+        configure_splitter_pane(image_panel, min_width=360)
 
-        # Right panel - Stats and measurements table (fixed width)
         right_panel = self.create_right_panel()
-        right_panel.setMaximumWidth(340)
-        right_panel.setMinimumWidth(340)
-        layout.addWidget(right_panel)
+        configure_splitter_pane(right_panel, min_width=SECONDARY_PANEL_MIN_WIDTH)
+
+        self.measure_main_splitter = QSplitter(Qt.Horizontal)
+        self.measure_main_splitter.setChildrenCollapsible(False)
+        self.measure_main_splitter.addWidget(left_scroll)
+        self.measure_main_splitter.addWidget(image_panel)
+        self.measure_main_splitter.addWidget(right_panel)
+        self.measure_main_splitter.setStretchFactor(0, 0)
+        self.measure_main_splitter.setStretchFactor(1, 1)
+        self.measure_main_splitter.setStretchFactor(2, 0)
+        install_persistent_splitter(
+            self.measure_main_splitter,
+            key="measure_main_splitter_sizes",
+            default_sizes=[SIDEBAR_DEFAULT_WIDTH, 900, 340],
+            minimum_sizes=[SIDEBAR_MIN_WIDTH, 360, SECONDARY_PANEL_MIN_WIDTH],
+        )
+        layout.addWidget(self.measure_main_splitter, 1)
 
         self.next_image_shortcut = QShortcut(QKeySequence(Qt.Key_N), tab)
         self.next_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
@@ -5457,7 +5484,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.image_label = ZoomableImageLabel()
         self.image_label.setObjectName("imageLabel")
-        self.image_label.setMinimumSize(800, 400)
+        self.image_label.setMinimumSize(320, 240)
         self.image_label.clicked.connect(self.image_clicked)
         self.image_label.rightClicked.connect(self.image_right_clicked)
         self.image_label.set_measurement_color(self.measure_color)
@@ -5478,8 +5505,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self,
             show_delete=True,
             show_badges=True,
-            min_height=50,
-            default_height=220,
+            min_height=GALLERY_MIN_HEIGHT,
+            default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for online publishing"),
         )
@@ -5488,15 +5515,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_gallery.deleteRequested.connect(self._on_measure_gallery_delete_requested)
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
 
-        splitter = QSplitter(Qt.Vertical)
-        splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self.image_label)
-        splitter.addWidget(self.measure_gallery)
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([700, 220])
+        self.measure_image_splitter = QSplitter(Qt.Vertical)
+        self.measure_image_splitter.setChildrenCollapsible(False)
+        self.measure_image_splitter.addWidget(self.image_label)
+        self.measure_image_splitter.addWidget(self.measure_gallery)
+        self.measure_image_splitter.setStretchFactor(0, 4)
+        self.measure_image_splitter.setStretchFactor(1, 1)
+        install_persistent_splitter(
+            self.measure_image_splitter,
+            key="measure_image_splitter_sizes",
+            default_sizes=[700, GALLERY_DEFAULT_HEIGHT],
+            minimum_sizes=[240, GALLERY_MIN_HEIGHT],
+        )
 
-        layout.addWidget(splitter)
+        layout.addWidget(self.measure_image_splitter)
         return panel
 
     def create_gallery_panel(self):
@@ -5864,19 +5896,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_save_stats_btn.clicked.connect(self.save_spore_stats)
         self._sync_gallery_histogram_controls()
 
-        left_panel.setMinimumWidth(400)
-        left_panel.setMaximumWidth(400)
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         left_scroll.setWidget(left_panel)
-        left_scroll.setMinimumWidth(420)
-        left_scroll.setMaximumWidth(420)
+        configure_sidebar_scroll(left_scroll, left_panel, SIDEBAR_MIN_WIDTH)
 
         right_panel = QWidget()
+        configure_splitter_pane(right_panel, min_width=360)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
@@ -5978,14 +6007,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_splitter.addWidget(gallery_panel)
         self.gallery_splitter.setStretchFactor(0, 1)
         self.gallery_splitter.setStretchFactor(1, 0)
-        self.gallery_splitter.setSizes([650, 220])
+        self.gallery_splitter.setSizes([650, GALLERY_DEFAULT_HEIGHT])
         right_layout.addWidget(self.gallery_splitter)
 
         main_splitter.addWidget(left_scroll)
         main_splitter.addWidget(right_panel)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([380, 905])
+        install_persistent_splitter(
+            main_splitter,
+            key="analysis_main_splitter_sizes",
+            default_sizes=[SIDEBAR_DEFAULT_WIDTH, 905],
+            minimum_sizes=[SIDEBAR_MIN_WIDTH, 360],
+        )
 
         main_layout.addWidget(main_splitter, 1)
 
@@ -6009,7 +6043,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         main_layout.addLayout(bottom_row)
 
-        self._set_gallery_strip_height()
+        self._gallery_splitter_user_resized = False
+        self._set_gallery_strip_height(force=True)
         return panel
 
     def _register_gallery_hint_widget(
@@ -6193,7 +6228,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             else:
                 self._gallery_pan_recently_dragged = False
 
-    def _set_gallery_strip_height(self):
+    def _set_gallery_strip_height(self, force: bool = False):
         if not hasattr(self, "gallery_splitter"):
             return
         gallery_widget = self.gallery_splitter.widget(1)
@@ -6209,8 +6244,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             target_height += layout.contentsMargins().top() + layout.contentsMargins().bottom()
             target_height += layout.spacing()
         if gallery_widget:
-            gallery_widget.setMaximumHeight(target_height)
-            gallery_widget.setMinimumHeight(0)
+            gallery_widget.setMaximumHeight(16777215)
+            gallery_widget.setMinimumHeight(GALLERY_MIN_HEIGHT)
+        if not force and bool(getattr(self, "_gallery_splitter_user_resized", False)):
+            return
         sizes = self.gallery_splitter.sizes()
         total = sum(sizes) if sizes else 0
         if total <= 0:
@@ -6342,6 +6379,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not hasattr(self, "gallery_splitter"):
             return
         sizes = self.gallery_splitter.sizes()
+        self._gallery_splitter_user_resized = True
         collapsed = bool(sizes and sizes[1] == 0)
         if collapsed != self._gallery_collapsed:
             self._gallery_collapsed = collapsed
@@ -16077,6 +16115,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "reference_panel": self._collect_reference_panel_state(),
             "reference_values": self._serialize_reference_data_for_settings(self.reference_values),
             "reference_series": serialized_reference_series,
+            "gallery_splitter_sizes": self.gallery_splitter.sizes() if hasattr(self, "gallery_splitter") else [],
             "plot_width_splitter_sizes": self.plot_width_splitter.sizes() if hasattr(self, "plot_width_splitter") else [],
         }
 
@@ -16209,15 +16248,24 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_include_details_checkbox.blockSignals(False)
         if hasattr(self, "plot_width_splitter"):
             splitter_sizes = settings.get("plot_width_splitter_sizes")
-            if (
-                isinstance(splitter_sizes, list)
-                and len(splitter_sizes) >= 2
-                and all(isinstance(value, (int, float)) for value in splitter_sizes[:2])
-            ):
-                self.plot_width_splitter.setSizes([max(0, int(splitter_sizes[0])), max(0, int(splitter_sizes[1]))])
+            restore_splitter_sizes(
+                self.plot_width_splitter,
+                splitter_sizes,
+                default_sizes=[760, 280],
+                minimum_sizes=[240, 180],
+            )
+        restored_gallery_splitter = False
+        if hasattr(self, "gallery_splitter"):
+            restored_gallery_splitter = restore_splitter_sizes(
+                self.gallery_splitter,
+                settings.get("gallery_splitter_sizes"),
+                default_sizes=[650, GALLERY_DEFAULT_HEIGHT],
+                minimum_sizes=[240, GALLERY_MIN_HEIGHT],
+            )
+            self._gallery_splitter_user_resized = restored_gallery_splitter
         if settings.get("measurement_type"):
             self._pending_gallery_category = settings.get("measurement_type")
-        self._set_gallery_strip_height()
+        self._set_gallery_strip_height(force=not restored_gallery_splitter)
         self._apply_saved_reference_state(settings)
         self._update_gallery_stats_preview()
 

@@ -253,6 +253,41 @@ If the user confirms, execute the database reset logic, log the user out of thei
 
 ## Active Tasks (TODO) - image handling
 - [ ] **Image rotation** — Fix image import of jpg from the android app: thumbnails in sporely-py shows up rotated 90 deg. counter-clockwise when photo is in portrait mode. Image is rotated correctly when viewed in Prepare images dialog. Rotated 90 dg. cc in Measure tab.
+
+## Shared Priority: Accurate Place Names From Coordinates (`sporely-py` and `sporely-web`)
+*Goal: resolve photo/observation GPS coordinates to accurate place names across desktop and web/mobile. Accuracy matters more than lookup speed because desktop photo processing is infrequent (typically every 2-5 minutes), and mobile/web can resolve once per observation instead of once per photo.*
+
+### Step 1: Primary Global Lookup with Nominatim
+- [ ] **Use OpenStreetMap Nominatim as the global reverse-geocoder first.** When a photo or observation needs location tagging, extract latitude/longitude and query:
+  `https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json`
+- [ ] **Always send a custom User-Agent header.** Use an app-specific header such as `SporelyApp/1.0 (contact@sporely.no)` or a configurable support/contact email. Do not call Nominatim with the default Python/browser HTTP user agent.
+- [ ] **Parse and persist useful global lookup fields.** Store the full `display_name`, and extract `address.country_code` as a 2-letter country code.
+
+### Step 2: Conditional Evaluation
+- [ ] **If `country_code != "no"`:** stop after Nominatim and tag the photo/observation from the Nominatim `display_name` or more specific address fields.
+- [ ] **If `country_code == "no"`:** treat the point as Norway and continue to the high-precision local lookup.
+
+### Step 3: High-Precision Norway Lookup with Artsdatabanken
+- [ ] **For Norwegian coordinates, query Artsdatabanken using the same GPS point:**
+  `https://stedsnavn.artsdatabanken.no/v1/punkt?lat={lat}&lng={lon}&zoom=45`
+- [ ] **Parse the response.** Extract `navn` as the local place name and `dist` as a float distance/quality value.
+- [ ] **Validate before using the Norwegian result.** If `dist <= 0.006`, tag with Artsdatabanken `navn`. If `dist > 0.006`, treat it as an anomalous snap/offshore-boundary result and fall back to the Nominatim `display_name`.
+
+### Step 4: Denmark Lookup with DAWA
+- [ ] **For Danish coordinates (`country_code == "dk"`), query DAWA before using Nominatim as the selected label:**
+  `https://api.dataforsyningen.dk/adgangsadresser/reverse?x={lon}&y={lat}`
+- [ ] **Format DAWA results from local to regional.** Use fields such as `vejstykke.navn`, `postnummer.navn`, `kommune.navn`, and `region.navn`, ending with `Danmark`.
+
+### Step 5: Multiple Location Suggestions
+- [ ] **Show location suggestions in a dropdown on both `sporely-py` and `sporely-web`.** The first suggestion should still auto-fill the Location field, but clicking/focusing the field should show all available suggestions.
+- [ ] **Norway suggestion order:** first validated Artsdatabanken `navn`, then Nominatim suggestions.
+- [ ] **Denmark suggestion order:** first DAWA, then Nominatim suggestions.
+- [ ] **Nominatim suggestions:** include the full `display_name`, plus a local hierarchy based on `address` fields as prototyped in `sporely-py/database/reverse_location_lookup.py`: `addr.get("amenity") or addr.get("road")`, then `addr.get("neighbourhood") or addr.get("suburb")`, then city/town/village, municipality/county, state, country.
+- [ ] **Deduplicate suggestions while preserving source-priority order.**
+
+### Step 6: Throttle and Rate-Limit Management
+- [ ] **Desktop batch imports (`sporely-py`):** enforce a hard `sleep(1)` between every Nominatim request in any loop that processes imported photos. This keeps the desktop app within Nominatim's maximum of 1 request per second.
+- [ ] **Web/mobile (`sporely-web`):** avoid per-photo reverse geocoding when one observation has multiple photos from the same place. Resolve once per observation/session when possible, then reuse the place name for photos attached to that observation.
 ---
 
 ## Phase 2: Web-Native Analysis (app.sporely.no)

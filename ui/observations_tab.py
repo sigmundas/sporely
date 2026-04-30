@@ -43,6 +43,7 @@ import json
 import unicodedata
 from queue import SimpleQueue, Empty
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, CalibrationDB
+from database.reverse_location_lookup import LocationLookupResult, lookup_location_suggestions
 from database.database_tags import DatabaseTerms
 from database.schema import (
     get_connection,
@@ -63,7 +64,7 @@ from utils.ml_export import export_coco_format, get_export_summary
 from datetime import datetime
 import re
 import requests
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote_plus
 from utils.vernacular_utils import (
     normalize_vernacular_language,
     resolve_vernacular_db_path,
@@ -282,13 +283,54 @@ def _extract_coords_from_osm_url(text: str) -> tuple[float, float] | None:
     return None
 
 
+def _clean_map_link_location_name(value: str | None) -> str:
+    text = unquote_plus(str(value or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"^\s*loc:\s*", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"\s*@\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?(?:\s*,\s*\d+z?)?\s*$", "", text).strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?(?:\s*,\s*\d+z?)?", text):
+        return ""
+    return text
+
+
+def _extract_location_name_from_map_url(text: str) -> str | None:
+    if not text:
+        return None
+    parsed = urlparse(text)
+    query = parse_qs(parsed.query)
+    for key in ("query", "q", "place", "name"):
+        values = query.get(key)
+        if not values:
+            continue
+        name = _clean_map_link_location_name(values[0])
+        if name:
+            return name
+
+    path_parts = [
+        part for part in str(parsed.path or "").split("/")
+        if part
+    ]
+    for marker in ("place", "search"):
+        if marker not in path_parts:
+            continue
+        idx = path_parts.index(marker) + 1
+        if idx >= len(path_parts):
+            continue
+        name = _clean_map_link_location_name(path_parts[idx])
+        if name:
+            return name
+    return None
+
+
 class UploadCancelledError(Exception):
     """Raised when user cancels an upload task from the progress dialog."""
 
 
 class LocationLookupWorker(QThread):
     """Background worker to look up place name from coordinates."""
-    resultReady = Signal(str)
+    resultReady = Signal(object)
 
     def __init__(self, lat: float, lon: float, parent=None):
         super().__init__(parent)
@@ -297,17 +339,9 @@ class LocationLookupWorker(QThread):
 
     def run(self):
         try:
-            resp = requests.get(
-                "https://stedsnavn.artsdatabanken.no/v1/punkt",
-                params={"lat": self.lat, "lng": self.lon, "zoom": 55},
-                headers={"Accept": "application/json"},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                name = data.get("navn", "")
-                if name:
-                    self.resultReady.emit(name)
+            result = lookup_location_suggestions(self.lat, self.lon)
+            if result.suggestions:
+                self.resultReady.emit(result)
         except Exception:
             pass
 
@@ -8898,7 +8932,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._publish_target_manual_override = False
         self._publish_target_sync_in_progress = False
         self._location_lookup_name = ""
+        self._location_lookup_suggestions: list[str] = []
         self._last_applied_location_lookup_name = ""
+        self._force_apply_next_location_lookup_name = False
         self._sharing_scope_value = self._default_sharing_scope()
         self._debug_dialog_created_at = time.perf_counter()
         self._loading_form = True
@@ -9191,6 +9227,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.location_input = QLineEdit()
         self.location_input.setPlaceholderText(self.tr("e.g., Bymarka, Trondheim"))
         self.location_input.textEdited.connect(self._on_location_name_edited)
+        self.location_input.installEventFilter(self)
+        self._location_suggestions_model = QStringListModel(self)
+        self._location_suggestions_completer = QCompleter(self._location_suggestions_model, self)
+        self._location_suggestions_completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
+        self._location_suggestions_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._location_suggestions_completer.activated.connect(self._on_location_suggestion_selected)
+        self.location_input.setCompleter(self._location_suggestions_completer)
         location_layout.addWidget(self.location_input, 1)
         self.location_lookup_apply_btn = QPushButton(self.tr("Get name"))
         self.location_lookup_apply_btn.setMinimumWidth(self.maplink_open_btn.sizeHint().width())
@@ -10291,7 +10334,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         super().done(result)
 
     def closeEvent(self, event):
-        self.shutdown()
+        self._cleanup_dialog_threads()
         super().closeEvent(event)
 
     def _on_ai_guess_finished(
@@ -10865,12 +10908,58 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._location_lookup_worker = worker
         worker.start()
 
-    def _on_location_lookup_result(self, name: str):
-        """Store the place name from the API and apply it only when appropriate."""
-        resolved_name = str(name or "").strip()
+    def _set_location_lookup_suggestions(self, suggestions: list[str]) -> None:
+        """Store location lookup suggestions and refresh the Location popup."""
+        clean: list[str] = []
+        seen: set[str] = set()
+        for value in suggestions or []:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            key = " ".join(text.casefold().split())
+            if key in seen:
+                continue
+            seen.add(key)
+            clean.append(text)
+        self._location_lookup_suggestions = clean
+        if hasattr(self, "_location_suggestions_model"):
+            self._location_suggestions_model.setStringList(clean)
+
+    def _show_location_suggestions_dropdown(self) -> None:
+        if not getattr(self, "_location_lookup_suggestions", None):
+            return
+        completer = getattr(self, "_location_suggestions_completer", None)
+        if completer is None:
+            return
+        completer.setCompletionPrefix("")
+        completer.complete()
+
+    def _on_location_suggestion_selected(self, value: str) -> None:
+        text = str(value or "").strip()
+        if not text or not hasattr(self, "location_input"):
+            return
+        self.location_input.setText(text)
+        self._last_applied_location_lookup_name = text
+        self._update_location_lookup_button_state()
+
+    def _on_location_lookup_result(self, result):
+        """Store place-name suggestions from the API and apply the best one when appropriate."""
+        if isinstance(result, LocationLookupResult):
+            suggestions = list(result.suggestions)
+        elif isinstance(result, (list, tuple)):
+            suggestions = [str(value or "").strip() for value in result]
+        else:
+            suggestions = [str(result or "").strip()]
+        self._set_location_lookup_suggestions(suggestions)
+        resolved_name = self._location_lookup_suggestions[0] if self._location_lookup_suggestions else ""
         self._location_lookup_name = resolved_name
         current_name = (self.location_input.text() or "").strip() if hasattr(self, "location_input") else ""
-        should_apply = not current_name or current_name == (self._last_applied_location_lookup_name or "").strip()
+        should_apply = (
+            bool(getattr(self, "_force_apply_next_location_lookup_name", False))
+            or not current_name
+            or current_name == (self._last_applied_location_lookup_name or "").strip()
+        )
+        self._force_apply_next_location_lookup_name = False
         if resolved_name and should_apply:
             self.location_input.setText(resolved_name)
             self._last_applied_location_lookup_name = resolved_name
@@ -10949,9 +11038,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not coords:
             return
         lat, lon = coords
+        link_name = _extract_location_name_from_map_url(text)
+        if link_name and hasattr(self, "location_input"):
+            self.location_input.setText(link_name)
+            self._location_lookup_name = link_name
+            self._set_location_lookup_suggestions([link_name])
+            self._last_applied_location_lookup_name = link_name
+            self._force_apply_next_location_lookup_name = False
+            self._update_location_lookup_button_state()
+        else:
+            self._force_apply_next_location_lookup_name = True
         self.lat_input.setValue(lat)
         self.lon_input.setValue(lon)
         self._update_map_button()
+        self._schedule_location_lookup()
 
     def open_map(self):
         """Open the GPS coordinates in a map service."""
@@ -12340,6 +12440,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._last_species = self.species_input.text().strip()
 
     def eventFilter(self, obj, event):
+        if obj == getattr(self, "location_input", None) and event.type() in (QEvent.FocusIn, QEvent.MouseButtonPress):
+            QTimer.singleShot(0, self._show_location_suggestions_dropdown)
         if event.type() == QEvent.FocusIn and self.vernacular_db:
             if obj == self.vernacular_input:
                 if not self.vernacular_input.text().strip():

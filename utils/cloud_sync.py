@@ -1634,7 +1634,10 @@ def _inject_obs_exif_into_field_image(
                 t in existing_tags
                 for t in ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime')
             )
-            already_has_gps = 'GPSInfo' in existing_tags
+            try:
+                already_has_gps = bool(existing_exif.get_ifd(0x8825))
+            except Exception:
+                already_has_gps = False
             if already_has_dt and already_has_gps:
                 return  # nothing to do
 
@@ -3300,7 +3303,10 @@ def _backfill_missing_exif_on_cloud_images() -> None:
                     already_has_dt = any(
                         t in tags for t in ('DateTimeOriginal', 'DateTimeDigitized', 'DateTime')
                     )
-                    already_has_gps = 'GPSInfo' in tags
+                    try:
+                        already_has_gps = bool(exif.get_ifd(0x8825))
+                    except Exception:
+                        already_has_gps = False
                     if already_has_dt and already_has_gps:
                         continue
             except Exception:
@@ -3308,8 +3314,8 @@ def _backfill_missing_exif_on_cloud_images() -> None:
             obs_id = int(row[2] or 0)
             if obs_id <= 0:
                 continue
-            lat, lon, date_str = _load_obs_gps_date(obs_id)
-            _inject_obs_exif_into_field_image(p, lat, lon, date_str)
+            lat, lon, altitude, date_str = _load_obs_exif_fallback(obs_id)
+            _inject_obs_exif_into_field_image(p, lat, lon, altitude, date_str)
     except Exception as exc:
         print(f'[cloud_sync] EXIF backfill skipped: {exc}')
 
