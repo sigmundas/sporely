@@ -282,7 +282,7 @@ If the user confirms, execute the database reset logic, log the user out of thei
 - [ ] **Show location suggestions in a dropdown on both `sporely-py` and `sporely-web`.** The first suggestion should still auto-fill the Location field, but clicking/focusing the field should show all available suggestions.
 - [ ] **Norway suggestion order:** first validated Artsdatabanken `navn`, then Nominatim suggestions.
 - [ ] **Denmark suggestion order:** first DAWA, then Nominatim suggestions.
-- [ ] **Nominatim suggestions:** include the full `display_name`, plus a local hierarchy based on `address` fields as prototyped in `sporely-py/database/reverse_location_lookup.py`: `addr.get("amenity") or addr.get("road")`, then `addr.get("neighbourhood") or addr.get("suburb")`, then city/town/village, municipality/county, state, country.
+- [ ] **Nominatim suggestions:** store the full `display_name` for fallback/reference, but show only the first two local address fields as separate dropdown entries: `addr.get("amenity") or addr.get("road")`, then `addr.get("neighbourhood") or addr.get("suburb")`. Do not show the full local-to-regional chain as the primary user-facing suggestion.
 - [ ] **Deduplicate suggestions while preserving source-priority order.**
 
 ### Step 6: Throttle and Rate-Limit Management

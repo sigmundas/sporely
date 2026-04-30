@@ -151,13 +151,6 @@ from utils.vernacular_utils import (
     resolve_vernacular_db_path,
     list_available_vernacular_languages,
 )
-from utils.publish_targets import (
-    PUBLISH_TARGET_ARTPORTALEN_SE,
-    PUBLISH_TARGET_ARTSOBS_NO,
-    SETTING_ACTIVE_REPORTING_TARGET,
-    normalize_publish_target,
-    publish_target_label,
-)
 from .image_gallery_widget import ImageGalleryWidget
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
@@ -1255,7 +1248,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
     SETTING_UPLOAD_TARGET = "artsobs_upload_target"
     SETTING_ENABLED_UPLOAD_TARGETS = "artsobs_enabled_upload_targets"
-    SETTING_ACTIVE_REPORTING_TARGET = SETTING_ACTIVE_REPORTING_TARGET
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
     SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
@@ -1489,25 +1481,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.setContentsMargins(10, 10, 10, 10)
         websites_layout.setSpacing(8)
 
-        reporting_row = QHBoxLayout()
-        reporting_row.setContentsMargins(0, 0, 0, 0)
-        reporting_row.setSpacing(12)
-        reporting_row.addWidget(QLabel(self.tr("Reporting system:")))
-        self.reporting_target_group = QButtonGroup(self)
-        self.reporting_target_group.setExclusive(True)
-        self.reporting_target_no_radio = QRadioButton(self.tr("Norway"))
-        self.reporting_target_se_radio = QRadioButton(self.tr("Sweden"))
-        self.reporting_target_group.addButton(self.reporting_target_no_radio)
-        self.reporting_target_group.addButton(self.reporting_target_se_radio)
-        self.reporting_target_no_radio.toggled.connect(self._on_reporting_target_changed)
-        self.reporting_target_se_radio.toggled.connect(self._on_reporting_target_changed)
-        reporting_row.addWidget(self.reporting_target_no_radio)
-        reporting_row.addWidget(self.reporting_target_se_radio)
-        reporting_row.addStretch(1)
-        websites_layout.addLayout(reporting_row)
-
         reporting_note = QLabel(
-            self.tr("This controls the biotope/substrate choices in the observation editor and which Nordic publish target appears on the Publish button.")
+            self.tr("Norway/Sweden biotope and substrate choices are selected automatically from the observation coordinates.")
         )
         reporting_note.setWordWrap(True)
         reporting_note.setStyleSheet("color: #6b7280; font-size: 11px;")
@@ -1868,10 +1843,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not self._loading_settings:
             self._save_settings()
 
-    def _on_reporting_target_changed(self) -> None:
-        if not self._loading_settings:
-            self._save_settings()
-
     def _on_target_enabled_item_changed(self, item: QTableWidgetItem) -> None:
         if self._loading_settings or item is None or item.column() != 0:
             return
@@ -2073,16 +2044,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.SETTING_ENABLED_UPLOAD_TARGETS,
             json.dumps(self._enabled_target_keys_from_table()),
         )
-        selected_reporting_target = (
-            PUBLISH_TARGET_ARTPORTALEN_SE
-            if getattr(self, "reporting_target_se_radio", None) is not None
-            and self.reporting_target_se_radio.isChecked()
-            else PUBLISH_TARGET_ARTSOBS_NO
-        )
-        SettingsDB.set_setting(
-            self.SETTING_ACTIVE_REPORTING_TARGET,
-            selected_reporting_target,
-        )
         SettingsDB.set_setting(
             self.SETTING_INCLUDE_ANNOTATIONS,
             "1" if self.include_annotations_checkbox.isChecked() else "0",
@@ -2200,25 +2161,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         return enabled
 
     @classmethod
-    def active_reporting_target(cls) -> str:
-        return normalize_publish_target(
-            SettingsDB.get_setting(cls.SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
-            fallback=PUBLISH_TARGET_ARTSOBS_NO,
-        )
-
-    @classmethod
     def enabled_upload_target_keys(cls, uploaders: list | None = None) -> list[str]:
         available_keys = cls._stored_enabled_upload_target_keys(uploaders)
         if not available_keys:
             return []
-        active_uploader = "artportalen" if cls.active_reporting_target() == PUBLISH_TARGET_ARTPORTALEN_SE else "web"
         enabled: list[str] = []
         for key in available_keys:
-            if key in {"web", "mobile", "artportalen"}:
-                if key == active_uploader:
-                    enabled.append(key)
-            else:
-                enabled.append(key)
+            enabled.append(key)
         return enabled
 
     def _refresh_target_status(self) -> None:
@@ -2691,13 +2640,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             selected_target = (SettingsDB.get_setting(self.SETTING_UPLOAD_TARGET, "") or "").strip().lower()
             if selected_target == "mobile":
                 selected_target = "web"
-            active_target = self.active_reporting_target()
-            self.reporting_target_no_radio.blockSignals(True)
-            self.reporting_target_se_radio.blockSignals(True)
-            self.reporting_target_no_radio.setChecked(active_target == PUBLISH_TARGET_ARTSOBS_NO)
-            self.reporting_target_se_radio.setChecked(active_target == PUBLISH_TARGET_ARTPORTALEN_SE)
-            self.reporting_target_no_radio.blockSignals(False)
-            self.reporting_target_se_radio.blockSignals(False)
             selected_row = -1
             if selected_target:
                 for row in range(self.targets_table.rowCount()):
