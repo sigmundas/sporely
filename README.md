@@ -2,6 +2,20 @@
 
 Sporely is a desktop app for field observations, microscopy calibration, and spore measurements.
 
+## What Sporely Is For
+
+Sporely helps you keep mushroom finds, field photos, macro photos, microscope images, measurements, and notes together in one place. The goal is to make it easy to move between platforms and cameras without losing the story of a find, from the first mobile photo in the field to later microscopy and spore analysis.
+
+Sporely Cloud is being built around a simple idea: mushroom spore data and analysis should be available and useful for everyone. Its main purpose is to make measurements, images, and analysis easier to preserve, compare, and share. A secondary goal is social: connecting with friends, sharing finds, locations, and images when you choose to.
+
+Regional publishing and place support follows the services that make the most sense locally:
+
+- Norway: Sporely uses Norwegian place-name and reporting support, including Artsobservasjoner-oriented workflows.
+- Sweden: Sporely uses Swedish reporting support through Artportalen-oriented workflows.
+- Denmark: support is pending, with Danmarks Svampeatlas as the intended regional destination.
+- Everywhere else: iNaturalist and Sporely Cloud 
+
+
 ## Installation
 
 ### Prebuilt application

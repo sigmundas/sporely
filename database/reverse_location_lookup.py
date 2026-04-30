@@ -23,7 +23,10 @@ class LocationLookupResult:
     """Ordered place-name suggestions for a coordinate."""
 
     suggestions: list[str]
+    latitude: float | None = None
+    longitude: float | None = None
     country_code: str | None = None
+    country_name: str | None = None
     nominatim_display_name: str | None = None
     source: str | None = None
 
@@ -47,10 +50,14 @@ def _dedupe_text(values: list[str | None]) -> list[str]:
     return result
 
 
-def extract_hierarchy(places: list[str | None], country: str | None = None) -> str:
+def extract_hierarchy(
+    places: list[str | None],
+    country: str | None = None,
+    max_parts: int = 5,
+) -> str:
     """Return a compact local-to-regional location label."""
     result = _dedupe_text([*(places or []), country])
-    return ", ".join(result[:5])
+    return ", ".join(result[:max(1, int(max_parts))])
 
 
 def _safe_json(response: requests.Response) -> dict[str, Any]:
@@ -87,26 +94,28 @@ def _request_nominatim(lat: float, lon: float, timeout: float = 10.0) -> dict[st
     return _safe_json(response)
 
 
-def nominatim_local_name(data: dict[str, Any]) -> str:
-    """Build the compact Nominatim name used as a secondary suggestion."""
+def nominatim_local_parts(data: dict[str, Any]) -> list[str]:
+    """Return the two most local Nominatim address fields as separate suggestions."""
     addr = data.get("address")
     if not isinstance(addr, dict):
-        return ""
-    places = [
+        return []
+    return _dedupe_text([
         addr.get("amenity") or addr.get("road"),
         addr.get("neighbourhood") or addr.get("suburb"),
-        addr.get("city") or addr.get("town") or addr.get("village"),
-        addr.get("municipality") or addr.get("county"),
-        addr.get("state"),
-    ]
-    return extract_hierarchy(places, addr.get("country"))
+    ])
+
+
+def nominatim_local_name(data: dict[str, Any]) -> str:
+    """Build the compact two-part Nominatim name for display outside dropdowns."""
+    return ", ".join(nominatim_local_parts(data))
 
 
 def nominatim_suggestions(data: dict[str, Any]) -> list[str]:
-    """Return Nominatim display and local-hierarchy suggestions."""
+    """Return user-facing Nominatim suggestions."""
+    local_parts = nominatim_local_parts(data)
     return _dedupe_text([
-        str(data.get("display_name") or "").strip(),
-        nominatim_local_name(data),
+        *local_parts,
+        str(data.get("display_name") or "").strip() if not local_parts else "",
     ])
 
 
@@ -116,6 +125,14 @@ def _country_code_from_nominatim(data: dict[str, Any]) -> str | None:
         return None
     code = str(addr.get("country_code") or "").strip().lower()
     return code or None
+
+
+def _country_name_from_nominatim(data: dict[str, Any]) -> str | None:
+    addr = data.get("address")
+    if not isinstance(addr, dict):
+        return None
+    country = str(addr.get("country") or "").strip()
+    return country or None
 
 
 def _request_artsdatabanken(lat: float, lon: float, timeout: float = 10.0) -> dict[str, Any]:
@@ -180,6 +197,7 @@ def lookup_location_suggestions(
 
     nominatim = _request_nominatim(lat, lon, timeout=timeout)
     country_code = _country_code_from_nominatim(nominatim)
+    country_name = _country_name_from_nominatim(nominatim)
     display_name = str(nominatim.get("display_name") or "").strip() or None
     suggestions: list[str | None] = []
     source = "nominatim"
@@ -200,7 +218,10 @@ def lookup_location_suggestions(
     suggestions.extend(nominatim_suggestions(nominatim))
     return LocationLookupResult(
         suggestions=_dedupe_text(suggestions),
+        latitude=lat,
+        longitude=lon,
         country_code=country_code,
+        country_name=country_name,
         nominatim_display_name=display_name,
         source=source,
     )

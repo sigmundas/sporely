@@ -38,6 +38,15 @@ def nonregional_uploader_keys() -> tuple[str, ...]:
     return ("inat", "mo")
 
 
+def publish_target_from_country_code(country_code: str | None) -> str | None:
+    text = str(country_code or "").strip().lower()
+    if text == "no":
+        return PUBLISH_TARGET_ARTSOBS_NO
+    if text == "se":
+        return PUBLISH_TARGET_ARTPORTALEN_SE
+    return None
+
+
 def infer_publish_target_from_coords(
     latitude: float | None,
     longitude: float | None,

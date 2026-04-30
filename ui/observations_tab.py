@@ -74,10 +74,10 @@ from utils.vernacular_utils import (
 from utils.publish_targets import (
     PUBLISH_TARGET_ARTPORTALEN_SE,
     PUBLISH_TARGET_ARTSOBS_NO,
-    SETTING_ACTIVE_REPORTING_TARGET,
     infer_publish_target_from_coords,
     normalize_publish_target,
     nonregional_uploader_keys,
+    publish_target_from_country_code,
     publish_target_label,
     uploader_key_for_publish_target,
 )
@@ -2538,10 +2538,7 @@ class ObservationsTab(QWidget):
         return labels
 
     def _active_reporting_target(self) -> str:
-        return normalize_publish_target(
-            SettingsDB.get_setting(SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
-            fallback=PUBLISH_TARGET_ARTSOBS_NO,
-        )
+        return PUBLISH_TARGET_ARTSOBS_NO
 
     def _refresh_publish_targets_if_needed(self) -> None:
         try:
@@ -8933,6 +8930,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._publish_target_sync_in_progress = False
         self._location_lookup_name = ""
         self._location_lookup_suggestions: list[str] = []
+        self._location_country_code = ""
+        self._location_country_name = ""
         self._last_applied_location_lookup_name = ""
         self._force_apply_next_location_lookup_name = False
         self._sharing_scope_value = self._default_sharing_scope()
@@ -8951,14 +8950,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         elif self.draft_data:
             self._load_observation_values(self.draft_data)
         else:
-            inferred_target = infer_publish_target_from_coords(
-                self.lat_input.value() if hasattr(self, "lat_input") else None,
-                self.lon_input.value() if hasattr(self, "lon_input") else None,
-            )
-            self._set_publish_target_combo(
-                inferred_target or self._active_reporting_target(),
-                manual_override=False,
-            )
+            self._set_publish_target_combo(self._active_reporting_target(), manual_override=False)
             self._set_sharing_scope(None)
             self._apply_primary_metadata()
         self._loading_form = False
@@ -10881,6 +10873,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_loading_form", False):
             self._deferred_location_lookup_pending = True
             return
+        self._location_country_code = ""
+        self._location_country_name = ""
+        self._refresh_location_reporting_summary()
         self._location_lookup_timer.start()
 
     def _do_location_lookup(self):
@@ -10928,6 +10923,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _show_location_suggestions_dropdown(self) -> None:
         if not getattr(self, "_location_lookup_suggestions", None):
             return
+        if getattr(self, "_close_cleanup_done", False) or not self.isVisible():
+            return
         completer = getattr(self, "_location_suggestions_completer", None)
         if completer is None:
             return
@@ -10945,7 +10942,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_location_lookup_result(self, result):
         """Store place-name suggestions from the API and apply the best one when appropriate."""
         if isinstance(result, LocationLookupResult):
+            if not self._location_lookup_result_matches_current_coords(result):
+                return
             suggestions = list(result.suggestions)
+            self._location_country_code = str(result.country_code or "").strip().lower()
+            self._location_country_name = str(result.country_name or "").strip()
         elif isinstance(result, (list, tuple)):
             suggestions = [str(value or "").strip() for value in result]
         else:
@@ -10963,8 +10964,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if resolved_name and should_apply:
             self.location_input.setText(resolved_name)
             self._last_applied_location_lookup_name = resolved_name
+        self._apply_publish_target_from_lookup_country()
         self._update_location_lookup_button_state()
         self._location_lookup_worker = None
+
+    def _location_lookup_result_matches_current_coords(self, result: LocationLookupResult) -> bool:
+        try:
+            result_lat = float(result.latitude)
+            result_lon = float(result.longitude)
+            current_lat = float(self.lat_input.value())
+            current_lon = float(self.lon_input.value())
+        except (TypeError, ValueError, AttributeError):
+            return True
+        return abs(result_lat - current_lat) < 0.000001 and abs(result_lon - current_lon) < 0.000001
 
     def _on_location_name_edited(self, _text: str) -> None:
         self._update_location_lookup_button_state()
@@ -11084,8 +11096,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             lon = self.lon_input.value()
 
         publish_target = normalize_publish_target(self.publish_target_combo.currentData())
-        nin2_path = self._selected_habitat_tree_path("nin2")
-        substrate_path = self._selected_habitat_tree_path("substrate")
+        include_regional_habitat = self._regional_habitat_tabs_enabled()
+        nin2_path = self._selected_habitat_tree_path("nin2") if include_regional_habitat else []
+        substrate_path = self._selected_habitat_tree_path("substrate") if include_regional_habitat else []
         nin2_labels = [str(node.get("name") or "").strip() for node in nin2_path if isinstance(node, dict)]
         substrate_labels = [str(node.get("name") or "").strip() for node in substrate_path if isinstance(node, dict)]
         nin2_ids = [int(node.get("id")) for node in nin2_path if isinstance(node, dict) and node.get("id") is not None]
@@ -11127,8 +11140,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'open_comment': self.open_comment_input.toPlainText().strip() or None,
             'private_comment': self.private_comment_input.toPlainText().strip() or None,
             'interesting_comment': False,
-            'habitat_nin2_note': (self.nin2_note_input.toPlainText().strip() if hasattr(self, "nin2_note_input") else "") or None,
-            'habitat_substrate_note': (self.substrate_note_input.toPlainText().strip() if hasattr(self, "substrate_note_input") else "") or None,
+            'habitat_nin2_note': (
+                self.nin2_note_input.toPlainText().strip()
+                if include_regional_habitat and hasattr(self, "nin2_note_input")
+                else ""
+            ) or None,
+            'habitat_substrate_note': (
+                self.substrate_note_input.toPlainText().strip()
+                if include_regional_habitat and hasattr(self, "substrate_note_input")
+                else ""
+            ) or None,
             'habitat_grows_on_note': (self.grows_on_note_input.toPlainText().strip() if hasattr(self, "grows_on_note_input") else "") or None,
             'gps_latitude': lat,
             'gps_longitude': lon
@@ -11159,26 +11180,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_publish_target_specific_controls()
 
     def _active_reporting_target(self) -> str:
-        return normalize_publish_target(
-            SettingsDB.get_setting(SETTING_ACTIVE_REPORTING_TARGET, PUBLISH_TARGET_ARTSOBS_NO),
-            fallback=PUBLISH_TARGET_ARTSOBS_NO,
-        )
+        return PUBLISH_TARGET_ARTSOBS_NO
 
     def _country_name_from_coords(self) -> str:
-        lat = self.lat_input.value() if hasattr(self, "lat_input") else None
-        lon = self.lon_input.value() if hasattr(self, "lon_input") else None
-        if lat is not None and hasattr(self, "lat_input") and lat <= self.lat_input.minimum():
-            lat = None
-        if lon is not None and hasattr(self, "lon_input") and lon <= self.lon_input.minimum():
-            lon = None
-        inferred = infer_publish_target_from_coords(lat, lon)
-        if inferred == PUBLISH_TARGET_ARTPORTALEN_SE:
-            return self.tr("Sweden")
-        if inferred == PUBLISH_TARGET_ARTSOBS_NO:
-            return self.tr("Norway")
-        if lat is not None and lon is not None:
-            return self._reporting_system_name()
-        return ""
+        return str(getattr(self, "_location_country_name", "") or "").strip()
+
+    def _apply_publish_target_from_lookup_country(self) -> None:
+        target = publish_target_from_country_code(getattr(self, "_location_country_code", ""))
+        if target:
+            self._set_publish_target_combo(target, manual_override=False)
+            return
+        self._refresh_location_reporting_summary()
 
     def _reporting_system_name(self) -> str:
         if not hasattr(self, "publish_target_combo"):
@@ -11205,6 +11217,42 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 else ""
             )
             self.reporting_system_summary_label.setVisible(bool(system_name))
+        self._apply_regional_habitat_tab_visibility()
+
+    def _regional_habitat_tabs_enabled(self) -> bool:
+        country_code = str(getattr(self, "_location_country_code", "") or "").strip().lower()
+        if country_code in {"no", "se"}:
+            return True
+        # Until a country has been resolved, keep existing habitat data reachable.
+        if not country_code and not self._country_name_from_coords():
+            return True
+        return False
+
+    def _apply_regional_habitat_tab_visibility(self) -> None:
+        tabs = getattr(self, "taxonomy_tabs", None)
+        if tabs is None:
+            return
+        visible = self._regional_habitat_tabs_enabled()
+        regional_tabs = [
+            getattr(self, "nin2_tab", None),
+            getattr(self, "substrate_tab", None),
+        ]
+        current_widget = tabs.currentWidget()
+        for widget in regional_tabs:
+            if widget is None:
+                continue
+            index = tabs.indexOf(widget)
+            if index < 0:
+                continue
+            if hasattr(tabs, "setTabVisible"):
+                tabs.setTabVisible(index, visible)
+            else:
+                widget.setVisible(visible)
+        if not visible and current_widget in regional_tabs:
+            fallback = getattr(self, "species_tab", None) or getattr(self, "grows_tab", None)
+            fallback_index = tabs.indexOf(fallback)
+            if fallback_index >= 0:
+                tabs.setCurrentIndex(fallback_index)
 
     def _norwegian_habitat_tree_ids_enabled(self) -> bool:
         if not hasattr(self, "publish_target_combo"):
@@ -11295,19 +11343,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_taxonomy_tab_indicators()
 
     def _maybe_autoselect_publish_target_from_coords(self, _value=None) -> None:
-        if getattr(self, "_publish_target_manual_override", False):
-            self._refresh_location_reporting_summary()
-            return
-        lat = self.lat_input.value() if hasattr(self, "lat_input") else None
-        lon = self.lon_input.value() if hasattr(self, "lon_input") else None
-        if lat is not None and hasattr(self, "lat_input") and lat <= self.lat_input.minimum():
-            lat = None
-        if lon is not None and hasattr(self, "lon_input") and lon <= self.lon_input.minimum():
-            lon = None
-        inferred = infer_publish_target_from_coords(lat, lon)
-        if inferred:
-            self._set_publish_target_combo(inferred, manual_override=False)
-            return
+        self._location_country_code = ""
+        self._location_country_name = ""
         self._refresh_location_reporting_summary()
 
     def _tab_title_with_state(self, title: str, filled: bool) -> str:
@@ -12440,8 +12477,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._last_species = self.species_input.text().strip()
 
     def eventFilter(self, obj, event):
-        if obj == getattr(self, "location_input", None) and event.type() in (QEvent.FocusIn, QEvent.MouseButtonPress):
-            QTimer.singleShot(0, self._show_location_suggestions_dropdown)
+        if obj == getattr(self, "location_input", None) and event.type() == QEvent.MouseButtonRelease:
+            self._show_location_suggestions_dropdown()
         if event.type() == QEvent.FocusIn and self.vernacular_db:
             if obj == self.vernacular_input:
                 if not self.vernacular_input.text().strip():
