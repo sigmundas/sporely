@@ -100,102 +100,10 @@ Important:
 ### Existing Refactor & Audit Tasks
 - [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
 - [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
-## Cloud vs local db
 
-### Phase 1
-I need to implement a "Database Lock" feature in my Sporely desktop app (`sporely-py`) to prevent users from accidentally syncing a single local SQLite database to multiple Supabase accounts.
-
-Currently, `app_settings.json` stores `cloud_last_pull_at`. I want to expand this to also store a `linked_cloud_user_id`.
-
-Please write the Python code for `sporely/utils/cloud_sync.py` (and any related settings managers) to do the following:
-1. **Fetch Current User:** Before starting the push/pull sync loop, decode the current session's JWT or make a quick API call to Supabase to get the active user's `user_id`.
-2. **Check Lock:** Compare this `user_id` against `linked_cloud_user_id` in `app_settings.json`.
-3. **Bind on First Sync:** If `linked_cloud_user_id` is null/empty, save the current `user_id` to the settings file and proceed with the sync.
-4. **Abort on Mismatch:** If the `user_id` does not match the stored `linked_cloud_user_id`, immediately abort the sync and raise a custom exception (e.g., `AccountMismatchError`).
-5. Provide the PySide6 UI code snippet to catch this `AccountMismatchError` and show a `QMessageBox.critical` stating: "This local database is permanently linked to another Sporely Cloud account. Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' tool in Settings to migrate your data to a new account."
-
-### Phase 2
-I need to add a "Reset Cloud Sync State" feature to the settings tab of my Sporely desktop app (`sporely-py`). Because I am on a free hosting tier, I need to be very careful about users abandoning old accounts and eating up my Supabase/R2 quotas with duplicate uploads.
-
-Please write the SQLite database queries, Python logic, and PySide6 UI code to handle this reset.
-
-**1. Database Reset Logic (`sporely/database/models.py` or similar):**
-Write a function that strictly wipes all cloud references from the local SQLite database so it treats all local data as unpublished/new. It needs to:
-* Set `cloud_id` to NULL and `sync_status` to 'dirty' for all observations.
-* Nullify any cloud-specific media paths (e.g., stored R2 keys) in the local image records, forcing the next sync to re-upload them.
-* Clear `cloud_last_pull_at` and the new `linked_cloud_user_id` from `app_settings.json`.
-
-**2. PySide6 UI Implementation:**
-Create a "Reset Cloud Link..." button in the Settings UI. When clicked, it must show a high-friction `QMessageBox.critical` to ensure the user understands the old cloud data will NOT be automatically deleted. Use the following workflow:
-
-* **Title:** CRITICAL: Reset Cloud Link
-* **Text:** "Resetting the cloud link will sever the connection to your current Sporely Cloud account. Your local data will remain safe, but the next time you sync, ALL local images and observations will be uploaded as brand new files.\n\nIMPORTANT: This action DOES NOT delete your old cloud data. To prevent duplicate storage, you MUST do the following first:\n1. Open the Sporely Web App.\n2. Log into your CURRENT account.\n3. Go to Profile -> Delete Account to erase your old data."
-* **Buttons:** * "Cancel" (Default, safe option)
-  * "I have already deleted my old account, proceed with reset" (Executes the SQLite wipe)
-
-**3. Execution:**
-If the user confirms, execute the database reset logic, log the user out of their current desktop session, and show a success message prompting them to log in with their new account.
-
-### Manual test plan: cloud account lock and reset
-
-#### Phase 0: Export and backup coverage check
-- [ ] **Do not use the app database export as the golden backup for this test.** `utils/db_share.py` exports a share/import bundle: selected observation/image/measurement/calibration tables, copied image files, objective profiles, and reference values. It does not currently export `app_settings.json`, the full SQLite `settings` table, keyring credentials, thumbnail caches, or every user preference.
-- [ ] **Use a raw profile backup instead.** Locate the active Sporely app data directory and copy the full set needed to recreate the local state: `mushrooms.db`, `mushrooms.db-wal`, `mushrooms.db-shm` if present, `reference_values.db` if needed, `app_settings.json`, `objectives.json`, and the complete local images directory.
-- [ ] **Confirm image path coverage.** Before backing up, open the SQLite `images` table and verify the files referenced by `images.filepath` and `images.original_filepath` live under the configured local images directory, or add those external files to the backup manually.
-- [ ] **Use the app export only for its intended workflow.** It is suitable for moving selected observations/images/measurements/calibrations/reference values into another existing profile, but not for restoring an exact cloud-lock test state.
-
-#### Phase 1: Preparation and golden backup
-- [ ] **Create test accounts:** Register two disposable Sporely Cloud users, for example `testA+sporely@example.com` and `testB+sporely@example.com`. Use real inboxes or plus aliases that can receive confirmation email unless email confirmation is disabled in the test environment.
-- [ ] **Stage local data:** Open the desktop app. Create 2-3 local observations and attach a mix of field and microscope images. Add at least one measurement so measurement cloud IDs are covered. Do not sync yet.
-- [ ] **Record local paths:** Note the active database path, images directory, and `app_settings.json` path from the app settings or `database/schema.py` resolution.
-- [ ] **Create the golden backup:** Close the app. Copy the raw profile files listed in Phase 0 into a ZIP or separate folder. Restore from this backup whenever a test run needs to start over.
-- [ ] **Preflight cloud state:** Confirm both test accounts have no existing observations/media, or delete them through the web Profile deletion flow before starting.
-
-#### Phase 2: Database lock happy path
-- [ ] **Log in as Test A:** Open the desktop app and log into the Test A account.
-- [ ] **First sync:** Start Sporely Cloud sync and let it finish.
-- [ ] **Verify settings lock:** Open `app_settings.json`. Confirm `linked_cloud_user_id` is populated with Test A's Supabase `auth.users.id` UUID, not an email address.
-- [ ] **Verify local DB:** Open `mushrooms.db`. Confirm staged observations now have non-empty `observations.cloud_id`, `sync_status = 'synced'`, and `synced_at` populated. Confirm synced local images have `images.cloud_id` and `images.synced_at` populated.
-- [ ] **Verify cloud rows:** In Supabase, confirm Test A owns the uploaded `observations`, `observation_images`, and any synced `spore_measurements`.
-- [ ] **Verify R2 media:** Confirm uploaded media exists under an R2 key prefixed by Test A's user UUID.
-
-#### Phase 3: Mismatch guardrail
-- [ ] **Switch accounts:** Log out of Test A in the desktop app. Log into Test B.
-- [ ] **Attempt sync:** Start Sporely Cloud sync.
-- [ ] **Verify rejection UI:** Sync should halt before push/pull work and show the critical message: "This local database is permanently linked to another Sporely Cloud account..."
-- [ ] **Verify no local relink:** Confirm `app_settings.json` still contains Test A's `linked_cloud_user_id`.
-- [ ] **Verify cloud integrity:** Check Supabase and R2 for Test B. There must be no new observations, images, measurements, or media objects from this local database.
-
-#### Phase 4: Reset Cloud Link tool
-- [ ] **Trigger reset:** Go to Settings -> Sporely Cloud and click **Reset Cloud Link...**.
-- [ ] **Verify warning UI:** Confirm the high-friction critical dialog appears, warns that old cloud data is not deleted automatically, and instructs the user to delete the old account through the web Profile page first.
-- [ ] **Cancel path:** Click **Cancel** once. Confirm no DB/settings changes occurred and Test A's `linked_cloud_user_id` remains.
-- [ ] **Execute reset:** Open the reset dialog again and click **I have already deleted my old account, proceed with reset**.
-- [ ] **Verify logout:** Confirm the desktop is no longer logged into Sporely Cloud.
-- [ ] **Verify settings wipe:** Open `app_settings.json`. Confirm `linked_cloud_user_id`, `cloud_last_pull_at`, and `cloud_recent_import_local_ids` are absent or null.
-- [ ] **Verify DB wipe:** Open `mushrooms.db`. Confirm all `observations.cloud_id`, `images.cloud_id`, and `spore_measurements.cloud_id` values are `NULL`; confirm observations have `sync_status = 'dirty'` and `synced_at` cleared. In the current desktop schema, local image rows do not store R2 `storage_path`, `image_key`, or `thumb_key`; if such local columns are added later, include them in this verification and reset logic.
-- [ ] **Verify sync baselines cleared:** Confirm cloud snapshot/media-signature keys such as `sporely_cloud_snapshot_obs_%`, `sporely_cloud_image_file_sig_%`, and `sporely_cloud_local_media_sig_obs_%` are removed from the local SQLite `settings` table.
-
-#### Phase 5: Migration to the new account
-- [ ] **Log in as Test B:** If reset did not already leave the desktop logged out, explicitly log out and log into Test B.
-- [ ] **Migration sync:** Start Sporely Cloud sync and let it finish.
-- [ ] **Verify new settings lock:** Check `app_settings.json`. `linked_cloud_user_id` should now equal Test B's Supabase UUID.
-- [ ] **Verify local DB:** Confirm observations/images/measurements have fresh cloud IDs and `sync_status = 'synced'`.
-- [ ] **Verify Test B cloud data:** Check Supabase and R2. Test B should now have a fresh copy of all staged database rows and media.
-- [ ] **Verify R2 paths:** Confirm new media keys are under Test B's user UUID path, not Test A's.
-- [ ] **Verify Test A unchanged:** Unless already deleted, Test A's cloud rows/media should be unchanged by Test B migration.
-
-#### Phase 6: Restore and cleanup
-- [ ] **Restore golden backup:** Close the desktop app. Replace the current raw profile files with the golden backup from Phase 1. Reopen the app and verify the original unsynced local state is back.
-- [ ] **Test web account deletion:** Log into Test A in the web app and use Profile -> Delete Account. Confirm the Supabase Edge Function deletes the auth user, owned DB rows, and R2 storage if R2 deletion is part of that function. Repeat for Test B.
-- [ ] **Post-cleanup audit:** In Supabase and R2, search both user UUIDs. Confirm no test rows or media objects remain unless intentionally retained for debugging.
-
-#### Phase 7: Automated regression coverage
-- [x] **Unit test account lock:** `tests/test_cloud_account_lock.py` covers first-bind, same-account sync, and mismatch rejection without network access.
-- [x] **Unit test reset wipe:** `tests/test_cloud_sync_reset.py` covers local cloud reference clearing, app-setting clearing, and preservation of unrelated settings.
+## Cloud Sync Follow-Up
+- [ ] **Run live cloud-lock QA:** Use two disposable Sporely Cloud accounts to verify the implemented account lock, mismatch dialog, Reset Cloud Link flow, R2 ownership paths, and web Profile deletion cleanup against the real Supabase/R2 environment.
 - [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
-
-
 
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
@@ -242,53 +150,29 @@ If the user confirms, execute the database reset logic, log the user out of thei
 ## Active Tasks (TODO) - Automated Testing & Auditing
 *Goal: Build an automated safety net to replace the manual 10-point audit checklist and prevent sync regressions.*
 - [ ] **Static Analysis** — Introduce `Ruff` and `mypy` for automated linting, formatting, and type-checking. Configure them to fail on dead code, missing variables, and unused imports.
-- [ ] **Unit Testing Framework** — Introduce `pytest` for the desktop application.
-- [ ] **Core Logic Tests** — Write tests for `cloud_sync.py` (conflict resolution, local media signatures), `image_crop` math, and `utils/r2_storage.py`.
+- [ ] **Broaden pytest coverage** — Keep expanding the existing pytest suite around cloud sync conflict resolution, local media signatures, image crop math, and `utils/r2_storage.py`.
 - [ ] **Database Tests** — Create automated tests for local SQLite migrations and CRUD operations in `database/models.py`.
 
 ## Active Tasks (TODO) - UI
+- Intestion tab: change name to Camera import
+- Sync shot: rename to Camera time offset
+- Microscope sessions: rename to Live lab sessions
+- Change the order of groups in the left tab on Camera import tab: Import folder at the top, Camera time offset, Live lab sessions, then Actions.
+- Hint text for buttons:
+   * Browse: Select folder with camera images 
+   * Scan folder: Find images that match Live Lab sessions or observation time stamps
+   * New Sync shot: Calculate camera time offset to match images by date stamp
+   * Use image: Manually select Sync Shot
+   * Clear: Clear current Sync Shot settings and image data
+   * Refresh matches: Refresh against sync data
+   * Add selected images: Add to matched observaiont. Select a thumbnail or multi-select (shift+click for range, ctrl+click for single pick)
+   * Add all images: Add all images to matched observation(s)
 - [ ] **Implement fine-tue for multi-line segments** — Currently, multi-line does not appear in the preview window. Implement feature to drag each segment node. Show nodes as small dots that highlight with mouse over.
 - [ ] **Add hint bar at the bottom of the Measure tab** — Current messages that appear below the Start measuring button should go in the hint bar, same as other tabs. Hint bar should span the whole width of the window.
 - [ ] **Height of thumbnail image galleries** — These change sometimes when code changes, and I don't know why. They should all be user adjustable, and the thumbnails should reduce in size down to a reasonable small view, say 100px. Currently, the Prepare Images dialog has a gallery that is too small verticaly, and the thumbnails are cropped so 60% is hidden. User cannot resize.
 
 ## Active Tasks (TODO) - image handling
 - [ ] **Image rotation** — Fix image import of jpg from the android app: thumbnails in sporely-py shows up rotated 90 deg. counter-clockwise when photo is in portrait mode. Image is rotated correctly when viewed in Prepare images dialog. Rotated 90 dg. cc in Measure tab.
-
-## Shared Priority: Accurate Place Names From Coordinates (`sporely-py` and `sporely-web`)
-*Goal: resolve photo/observation GPS coordinates to accurate place names across desktop and web/mobile. Accuracy matters more than lookup speed because desktop photo processing is infrequent (typically every 2-5 minutes), and mobile/web can resolve once per observation instead of once per photo.*
-
-### Step 1: Primary Global Lookup with Nominatim
-- [ ] **Use OpenStreetMap Nominatim as the global reverse-geocoder first.** When a photo or observation needs location tagging, extract latitude/longitude and query:
-  `https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json`
-- [ ] **Always send a custom User-Agent header.** Use an app-specific header such as `SporelyApp/1.0 (contact@sporely.no)` or a configurable support/contact email. Do not call Nominatim with the default Python/browser HTTP user agent.
-- [ ] **Parse and persist useful global lookup fields.** Store the full `display_name`, and extract `address.country_code` as a 2-letter country code.
-
-### Step 2: Conditional Evaluation
-- [ ] **If `country_code != "no"`:** stop after Nominatim and tag the photo/observation from the Nominatim `display_name` or more specific address fields.
-- [ ] **If `country_code == "no"`:** treat the point as Norway and continue to the high-precision local lookup.
-
-### Step 3: High-Precision Norway Lookup with Artsdatabanken
-- [ ] **For Norwegian coordinates, query Artsdatabanken using the same GPS point:**
-  `https://stedsnavn.artsdatabanken.no/v1/punkt?lat={lat}&lng={lon}&zoom=45`
-- [ ] **Parse the response.** Extract `navn` as the local place name and `dist` as a float distance/quality value.
-- [ ] **Validate before using the Norwegian result.** If `dist <= 0.006`, tag with Artsdatabanken `navn`. If `dist > 0.006`, treat it as an anomalous snap/offshore-boundary result and fall back to the Nominatim `display_name`.
-
-### Step 4: Denmark Lookup with DAWA
-- [ ] **For Danish coordinates (`country_code == "dk"`), query DAWA before using Nominatim as the selected label:**
-  `https://api.dataforsyningen.dk/adgangsadresser/reverse?x={lon}&y={lat}`
-- [ ] **Format DAWA results from local to regional.** Use fields such as `vejstykke.navn`, `postnummer.navn`, `kommune.navn`, and `region.navn`, ending with `Danmark`.
-
-### Step 5: Multiple Location Suggestions
-- [ ] **Show location suggestions in a dropdown on both `sporely-py` and `sporely-web`.** The first suggestion should still auto-fill the Location field, but clicking/focusing the field should show all available suggestions.
-- [ ] **Norway suggestion order:** first validated Artsdatabanken `navn`, then Nominatim suggestions.
-- [ ] **Denmark suggestion order:** first DAWA, then Nominatim suggestions.
-- [ ] **Nominatim suggestions:** store the full `display_name` for fallback/reference, but show only the first two local address fields as separate dropdown entries: `addr.get("amenity") or addr.get("road")`, then `addr.get("neighbourhood") or addr.get("suburb")`. Do not show the full local-to-regional chain as the primary user-facing suggestion.
-- [ ] **Deduplicate suggestions while preserving source-priority order.**
-
-### Step 6: Throttle and Rate-Limit Management
-- [ ] **Desktop batch imports (`sporely-py`):** enforce a hard `sleep(1)` between every Nominatim request in any loop that processes imported photos. This keeps the desktop app within Nominatim's maximum of 1 request per second.
-- [ ] **Web/mobile (`sporely-web`):** avoid per-photo reverse geocoding when one observation has multiple photos from the same place. Resolve once per observation/session when possible, then reuse the place name for photos attached to that observation.
----
 
 ## Phase 2: Web-Native Analysis (app.sporely.no)
 *Goal: Replicate core analysis insights in a responsive browser environment.*
@@ -316,9 +200,6 @@ If the user confirms, execute the database reset logic, log the user out of thei
 ## Community Spore Data (Supabase/Desktop Sync)
 *Status: Active*
 
-- [x] Use dedicated cloud-review dialog.
-- [x] Support genus-only search (species optional).
-- [x] Separate `spore_data_visibility` from observation visibility.
 - [ ] **Remaining:** Return QC metadata in RPC responses.
 - [ ] **Remaining:** Add stronger visual distinction for cloud-origin imported sources in the reference panel.
 
@@ -345,3 +226,25 @@ If the user confirms, execute the database reset logic, log the user out of thei
 ## Long-Term Goals (Phase 3)
 - [ ] **In-Browser Measurement** — Replicate manual spore clicking and calibration using HTML5 Canvas.
 - [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
+
+---
+
+## Phase 4: Multi-Format Cloud Storage Support (AVIF/JPEG)
+*Goal: Seamlessly ingest and render AVIF files uploaded by the Android native client alongside standard JPEGs from iOS/Web.*
+
+### Client-Side Display (PySide6 / Pillow)
+Since the Android app will start uploading storage-optimized AVIF files, the Python desktop application must be able to load, render, and manipulate them seamlessly. Standard `Pillow` requires a plugin for AVIF support.
+
+- **Dependency:** Add `pillow-heif` to `requirements.txt`.
+- **Code Snippet (Python):**
+```python
+from PIL import Image
+from pillow_heif import register_avif_opener
+
+# Run this globally upon Sporely application boot
+register_avif_opener()
+
+# Now Pillow's Image.open() will seamlessly decode downloaded .avif files
+# from Cloudflare R2 alongside standard .jpg files.
+img = Image.open(downloaded_cloud_media_path)
+```

@@ -1,7 +1,8 @@
 """Image processing utilities."""
 from pathlib import Path
 from PIL import Image
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QImageReader, QPixmap
 from typing import Optional
 
 
@@ -34,8 +35,34 @@ def scale_image(pixmap: QPixmap, max_width: int, max_height: int) -> QPixmap:
     Returns:
         Scaled QPixmap
     """
-    from PySide6.QtCore import Qt
     return pixmap.scaled(max_width, max_height, Qt.KeepAspectRatio)
+
+
+def load_oriented_pixmap(image_path: str, max_dim: int | None = None) -> QPixmap:
+    """Load a pixmap while honoring EXIF orientation."""
+    path = str(image_path or "")
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    if max_dim and max_dim > 0:
+        size = reader.size()
+        if size.isValid():
+            scaled_size = QSize(size)
+            scaled_size.scale(max_dim, max_dim, Qt.KeepAspectRatio)
+            if (
+                scaled_size.isValid()
+                and scaled_size.width() > 0
+                and scaled_size.height() > 0
+                and (
+                    scaled_size.width() < size.width()
+                    or scaled_size.height() < size.height()
+                )
+            ):
+                reader.setScaledSize(scaled_size)
+    image = reader.read()
+    pixmap = QPixmap.fromImage(image) if not image.isNull() else QPixmap(path)
+    if max_dim and not pixmap.isNull() and (pixmap.width() > max_dim or pixmap.height() > max_dim):
+        pixmap = pixmap.scaled(max_dim, max_dim, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    return pixmap
 
 def cleanup_import_temp_file(
     source_path: str,

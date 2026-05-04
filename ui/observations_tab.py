@@ -57,7 +57,7 @@ from database.schema import (
     update_app_settings,
 )
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
-from utils.image_utils import cleanup_import_temp_file
+from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
 from utils.heic_converter import maybe_convert_heic
 from utils.ml_export import export_coco_format, get_export_summary
@@ -3257,7 +3257,7 @@ class ObservationsTab(QWidget):
         cached = self._observation_thumb_icon_cache.get(cache_key)
         if cached is not None:
             return cached
-        pixmap = QPixmap(path)
+        pixmap = load_oriented_pixmap(path)
         if pixmap.isNull():
             return None
         size = self._observation_table_thumbnail_size()
@@ -8033,10 +8033,14 @@ class ObservationsTab(QWidget):
         if not source_path or scale_factor >= 0.999:
             return source_path
         try:
+            from PIL import ImageOps
             with Image.open(source_path) as img:
+                img = ImageOps.exif_transpose(img)
+                exif = img.getexif()
+                if exif is not None:
+                    exif[274] = 1
                 exif_bytes = None
                 try:
-                    exif = img.getexif()
                     if exif:
                         exif_bytes = exif.tobytes()
                 except Exception:
