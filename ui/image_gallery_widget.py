@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QImageReader, QDrag, QShortcut, QKeySequence
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from PySide6.QtWidgets import (
     QApplication,
@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 from database.models import ImageDB, MeasurementDB
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
 from database.database_tags import DatabaseTerms
-from utils.thumbnail_generator import get_thumbnail_path
+from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
+from utils.image_utils import load_oriented_pixmap
 from .styles import pt
 
 _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
@@ -345,6 +346,11 @@ class ImageGalleryWidget(QGroupBox):
                     "badges": badges,
                 }
             )
+            if img_id and img.get("filepath"):
+                try:
+                    generate_all_sizes(str(img.get("filepath")), int(img_id))
+                except Exception as exc:
+                    print(f"Warning: Could not refresh thumbnails for image {img_id}: {exc}")
         self._items = items
         self._render()
 
@@ -1156,40 +1162,6 @@ class ImageGalleryWidget(QGroupBox):
                 frame.thumb_label.setPixmap(self._scaled_thumb(pixmap, self._thumb_size))
 
     def _load_pixmap(self, item: dict) -> QPixmap | None:
-        def _load_oriented(path: str, max_dim: int | None = None) -> QPixmap:
-            reader = QImageReader(path)
-            reader.setAutoTransform(True)
-            if max_dim and max_dim > 0:
-                size = reader.size()
-                if size.isValid():
-                    scaled_size = QSize(size)
-                    scaled_size.scale(max_dim, max_dim, Qt.KeepAspectRatio)
-                    if (
-                        scaled_size.isValid()
-                        and scaled_size.width() > 0
-                        and scaled_size.height() > 0
-                        and (
-                            scaled_size.width() < size.width()
-                            or scaled_size.height() < size.height()
-                        )
-                    ):
-                        reader.setScaledSize(scaled_size)
-            image = reader.read()
-            if image.isNull():
-                pixmap = QPixmap(path)
-            else:
-                pixmap = QPixmap.fromImage(image)
-            if max_dim and not pixmap.isNull() and (
-                pixmap.width() > max_dim or pixmap.height() > max_dim
-            ):
-                pixmap = pixmap.scaled(
-                    max_dim,
-                    max_dim,
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
-                )
-            return pixmap
-
         def _cache_key(path: str, variant: str = "") -> str:
             try:
                 mtime_ns = Path(path).stat().st_mtime_ns
@@ -1226,7 +1198,7 @@ class ImageGalleryWidget(QGroupBox):
                 cached = _cache_get(thumb_path, "thumb")
                 if cached is not None:
                     return cached
-                pixmap = _load_oriented(thumb_path, max_dim=max(256, self._decode_max_dim))
+                pixmap = load_oriented_pixmap(thumb_path, max_dim=max(256, self._decode_max_dim))
                 _cache_put(thumb_path, pixmap, "thumb")
                 return pixmap
         if filepath:
@@ -1235,7 +1207,7 @@ class ImageGalleryWidget(QGroupBox):
             cached = _cache_get(filepath, variant)
             if cached is not None:
                 return cached
-            pixmap = _load_oriented(filepath, max_dim=self._decode_max_dim)
+            pixmap = load_oriented_pixmap(filepath, max_dim=self._decode_max_dim)
             _cache_put(filepath, pixmap, variant)
             return pixmap
         return None

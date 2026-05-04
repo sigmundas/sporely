@@ -1,6 +1,6 @@
 """Thumbnail generator for efficient loading and ML training."""
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 import sqlite3
 from database.schema import get_connection, DATABASE_PATH
 
@@ -46,6 +46,7 @@ def generate_thumbnail(image_path: str, size: tuple, output_path: Path) -> bool:
                 raise RuntimeError("HEIC import requires pillow-heif") from exc
 
         with Image.open(image_path) as img:
+            img = ImageOps.exif_transpose(img)
             # Convert to RGB if necessary (handles RGBA, grayscale, etc.)
             if img.mode in ('RGBA', 'LA'):
                 # Create white background for transparent images

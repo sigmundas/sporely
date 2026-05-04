@@ -141,7 +141,7 @@ from database.schema import (
 )
 from utils.annotation_capture import save_spore_annotation
 from utils.thumbnail_generator import generate_all_sizes
-from utils.image_utils import cleanup_import_temp_file
+from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.heic_converter import maybe_convert_heic
 from .delegates import SpeciesItemDelegate
 from utils.vernacular_utils import (
@@ -9362,7 +9362,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _load_pixmap_cached(self, path: str) -> QPixmap:
         if path in self._pixmap_cache:
             return self._pixmap_cache[path]
-        pixmap = QPixmap(path)
+        pixmap = load_oriented_pixmap(path)
         self._cache_pixmap(path, pixmap)
         return pixmap
 

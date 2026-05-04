@@ -21,7 +21,7 @@ A Python-based desktop application for field observations, microscopy calibratio
 | Component | Choice |
 |---|---|
 | **Static Analysis** | Ruff (linting/formatting), mypy (type-checking) (planned) |
-| **Testing Framework**| pytest (planned) for testing sync logic, EXIF injection, and database models |
+| **Testing Framework**| pytest for sync safety, EXIF handling, reverse location lookup, map-link parsing, stats helpers, and other core logic |
 
 ---
 
@@ -46,6 +46,18 @@ A Python-based desktop application for field observations, microscopy calibratio
    - **Artsobservasjoner / Artportalen**: Web session cookies managed invisibly.
 4. **External Publishing State**: Successful uploads store the external observation IDs directly on the local `observations` row (`artsdata_id`, `artportalen_id`, `inaturalist_id`, `mushroomobserver_id`). The desktop Publish column renders service links from those persisted IDs and uses them as the local "already uploaded" markers to prevent duplicate publishing.
 5. **Cloud Media Fault Tolerance**: Desktop cloud pull now tolerates missing R2 objects for individual cloud images by skipping the broken image and continuing the rest of the sync, while still surfacing meaningful review items when the remote image set changed.
+
+---
+
+## Location Lookup and Regional Metadata
+- `database/reverse_location_lookup.py` is the desktop source of truth for reverse geocoding. It returns a `LocationLookupResult` containing ordered user-facing suggestions, coordinates, `country_code`, `country_name`, Nominatim `display_name`, and the winning source.
+- Nominatim is queried first for every coordinate with an app-specific `User-Agent`, a global 1 request/second throttle, and parsing of `display_name`, `address.country_code`, and `address.country`.
+- Nominatim suggestions shown in the Location field are intentionally local and separate: first `address.amenity` or `address.road`, then `address.neighbourhood` or `address.suburb`. The full `display_name` is kept as fallback/reference, not as the normal dropdown label.
+- Norway gets a second high-precision lookup through Artsdatabanken. A result is used only when `dist <= 0.006`; otherwise Sporely falls back to the Nominatim suggestions to avoid snapped offshore/boundary anomalies.
+- Denmark gets a second local lookup through DAWA. DAWA results are placed before Nominatim suggestions for Danish coordinates.
+- The edit-observation dialog auto-fills the first suggestion, exposes all suggestions in a dropdown, and ignores stale async lookup results whose coordinates no longer match the current form.
+- Resolved country drives regional UI behavior: `no` selects Artsobservasjoner-oriented publishing, `se` selects Artportalen-oriented publishing, and other countries keep their actual country label without pretending to be Norway or Sweden.
+- NIN2/Biotope and Substrate tabs are visible only when the resolved country is Norway or Sweden, or while the country is still unknown. When hidden for other countries, their values are omitted from the saved observation payload.
 
 ---
 

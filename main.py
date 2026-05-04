@@ -169,6 +169,26 @@ def main():
     app.setApplicationName(APP_FULL_NAME)
     app.setApplicationDisplayName(APP_DISPLAY_NAME)
     app.setApplicationVersion(APP_VERSION)
+
+    _exec_started = False
+
+    def _request_quit(*_args):
+        print("\nShutdown requested, exiting...")
+        if _exec_started:
+            app.quit()
+        else:
+            sys.exit(0)
+
+    signal.signal(signal.SIGINT, _request_quit)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _request_quit)
+
+    # Keep Python signal handling responsive while Qt runs its event loop.
+    signal_pump = QTimer()
+    signal_pump.setInterval(200)
+    signal_pump.timeout.connect(lambda: None)
+    signal_pump.start()
+
     # Fusion style gives fully consistent QSS rendering on every platform —
     # no native-style quirks that partially ignore stylesheet rules.
     app.setStyle("Fusion")
@@ -265,20 +285,7 @@ def main():
         splash.finish(window)
     window.start_update_check()
 
-    # Keep Python signal handling responsive while Qt runs its event loop.
-    signal_pump = QTimer()
-    signal_pump.setInterval(200)
-    signal_pump.timeout.connect(lambda: None)
-    signal_pump.start()
-
-    def _request_quit(*_args):
-        print("\nShutdown requested, exiting...")
-        app.quit()
-
-    signal.signal(signal.SIGINT, _request_quit)
-    if hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, _request_quit)
-
+    _exec_started = True
     exit_code = app.exec()
     signal_pump.stop()
     parked_threads = list(getattr(app, "_sporely_parked_threads", set()) or [])
