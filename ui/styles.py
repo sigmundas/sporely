@@ -66,6 +66,25 @@ def _is_dark(theme: str) -> bool:
     return False
 
 
+def get_button_icon_color(object_name: str | None = None, theme: str = "auto") -> str:
+    """Return the correct icon color for a button object name in the current theme."""
+    dark = _is_dark(theme)
+    if dark:
+        text = "#e8e8e8"
+        primary_button_text = "#1f422f"
+        destructive_fg = "#e4a7a1"
+    else:
+        text = "#2b3437"
+        primary_button_text = "#164627"
+        destructive_fg = "#9b3d35"
+
+    if object_name == "primaryButton":
+        return primary_button_text
+    if object_name == "destructiveButton":
+        return destructive_fg
+    return text
+
+
 def apply_palette(theme: str = "auto") -> None:
     """Set the QApplication colour palette for the given theme.
 
@@ -191,6 +210,13 @@ def get_style(theme: str = "auto") -> str:
         indicator_disabled = "#353534"
         data_brd     = "#353534"
         data_fg      = "#c1c8c4"
+        destructive_fg = "#e4a7a1"
+        destructive_border = "#8b3530"
+        destructive_hover_bg = "rgba(228, 167, 161, 0.16)"
+        destructive_pressed_bg = "rgba(228, 167, 161, 0.24)"
+        primary_button_bg = "#8cc49a"
+        primary_button_bg_h = "#7ebd8f"
+        primary_button_text = "#1f422f"
         dialog_brd   = "transparent"
     else:
         # Slate Lab — technical, clinical, cool off-white
@@ -220,6 +246,13 @@ def get_style(theme: str = "auto") -> str:
         indicator_disabled = "#cdd5d2"
         data_brd     = "#e0e0e0"         # neutral grey divider
         data_fg      = "#586064"
+        destructive_fg = "#9b3d35"
+        destructive_border = "#d2938d"
+        destructive_hover_bg = "#f6e4e2"
+        destructive_pressed_bg = "#e7c9c6"
+        primary_button_bg = "#dff5e8"
+        primary_button_bg_h = "#cceedf"
+        primary_button_text = "#164627"
         dialog_brd   = "#586064"
 
     chk_url = _CHK_URL
@@ -325,24 +358,49 @@ QPushButton:disabled {{
     color: {dis_fg};
 }}
 
+QPushButton::icon {{
+    margin-right: 14px;
+}}
+
+QPushButton#primaryButton {{
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {primary_button_bg}, stop:1 {primary_button_bg_h});
+    color: {primary_button_text};
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    min-height: 44px;
+    font-weight: bold;
+    font-size: {base_pt}pt;
+}}
+
+QPushButton#primaryButton:hover {{
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {primary_button_bg_h}, stop:1 {primary_button_bg});
+}}
+
+QPushButton#primaryButton:pressed {{
+    background-color: {accent_p};
+}}
+
 QPushButton#outlineButton {{
-    background-color: transparent;
-    color: {accent};
+    background-color: {surface};
+    color: {text};
     border: 1.5px solid {accent};
-    border-radius: 8px;
-    padding: 5px 16px;
+    border-radius: 10px;
+    padding: 8px 14px;
     font-weight: bold;
 }}
 
 QPushButton#outlineButton:hover {{
-    background-color: {sel_bg};
-    color: {accent};
+    background-color: {surface_low};
+    border-color: {accent_h};
 }}
 
 QPushButton#outlineButton:pressed {{
-    background-color: {accent_p};
+    background-color: {surface_hover};
     border-color: {accent_p};
-    color: white;
+    color: {text};
 }}
 
 QPushButton#outlineButton:disabled {{
@@ -352,22 +410,22 @@ QPushButton#outlineButton:disabled {{
 }}
 
 QPushButton#dataButton {{
-    background-color: transparent;
-    color: {data_fg};
-    border: 1px solid {data_brd};
-    border-radius: 8px;
-    padding: 4px 12px;
+    background-color: {surface_low};
+    color: {text};
+    border: 1.5px solid {data_brd};
+    border-radius: 10px;
+    padding: 8px 12px;
     font-weight: normal;
 }}
 
 QPushButton#dataButton:hover {{
-    background-color: {input_bg};
+    background-color: {surface};
     color: {text};
-    border-color: {text_dim};
+    border-color: {accent};
 }}
 
 QPushButton#dataButton:pressed {{
-    background-color: {dis_bg};
+    background-color: {input_bg};
 }}
 
 QPushButton#dataButton:disabled {{
@@ -377,22 +435,22 @@ QPushButton#dataButton:disabled {{
 
 QPushButton#destructiveButton {{
     background-color: transparent;
-    color: #a73b21;
-    border: 1px solid #a73b21;
-    border-radius: 8px;
-    padding: 4px 12px;
+    color: {destructive_fg};
+    border: 1.5px solid {destructive_border};
+    border-radius: 10px;
+    padding: 8px 12px;
     font-weight: normal;
 }}
 
 QPushButton#destructiveButton:hover {{
-    background-color: #a73b21;
-    color: white;
+    background-color: {destructive_hover_bg};
+    color: {destructive_fg};
 }}
 
 QPushButton#destructiveButton:pressed {{
-    background-color: #8a2f18;
-    border-color: #8a2f18;
-    color: white;
+    background-color: {destructive_pressed_bg};
+    border-color: {destructive_border};
+    color: {destructive_fg};
 }}
 
 QPushButton#destructiveButton:disabled {{

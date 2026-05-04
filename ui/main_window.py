@@ -15434,6 +15434,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         theme = SettingsDB.get_setting("ui_theme", "auto")
         apply_palette(theme)
         self.setStyleSheet(get_style(theme))
+        if hasattr(self, "observations_tab") and self.observations_tab is not None:
+            self.observations_tab.update_button_icons(theme)
         self._sync_appearance_menu()
         if hasattr(self, "gallery_plot_figure") and hasattr(self, "gallery_plot_canvas"):
             self.update_graph_plots_only()

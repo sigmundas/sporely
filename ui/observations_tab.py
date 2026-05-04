@@ -108,7 +108,7 @@ from .dialog_helpers import (
     ask_wrapped_yes_no_with_checkbox,
     make_github_help_button,
 )
-from .styles import pt
+from .styles import pt, get_button_icon_color
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
@@ -895,6 +895,26 @@ class ObservationsTab(QWidget):
         options = SettingsDB.get_list_setting(setting_key, defaults)
         return DatabaseTerms.canonicalize_list(category, options)
 
+    def _btn_icon(self, name: str, color: str) -> QIcon:
+        from PySide6.QtSvg import QSvgRenderer
+
+        svg_bytes = (self._icons / name).read_bytes()
+        color_bytes = color.encode()
+        for token in (b"white", b"#ffffff", b"#fff", b"#FFF"):
+            svg_bytes = svg_bytes.replace(token, color_bytes)
+
+        renderer = QSvgRenderer(svg_bytes)
+        pixmap = QPixmap(self._icon_size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
+    def update_button_icons(self, theme: str = "auto") -> None:
+        for button, (icon_name, object_name) in getattr(self, "_button_icon_map", {}).items():
+            button.setIcon(self._btn_icon(icon_name, get_button_icon_color(object_name, theme)))
+
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 10)
@@ -913,20 +933,112 @@ class ObservationsTab(QWidget):
         left_panel_layout.setContentsMargins(12, 12, 12, 12)
         left_panel_layout.setSpacing(8)
 
-        _icons = Path(__file__).parent.parent / "assets" / "icons"
-        _iz = QSize(16, 16)
-
-        def _btn_icon(name: str) -> QIcon:
-            return QIcon(str(_icons / name))
+        self._icons = Path(__file__).parent.parent / "assets" / "icons"
+        self._icon_size = QSize(16, 16)
+        self._button_icon_map: dict[QPushButton, tuple[str, str]] = {}
 
         # ── New — full-width primary action ───────────────────────────────
         self.new_btn = QPushButton(self.tr("+ New (N)"))
         self.new_btn.setObjectName("primaryButton")
+        self.new_btn.setIcon(self._btn_icon("icon_new.svg", get_button_icon_color("primaryButton")))
+        self.new_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.new_btn] = ("icon_new.svg", "primaryButton")
         self.new_btn.setToolTip(self.tr("Create a new observation"))
         self.new_btn.clicked.connect(self.create_new_observation)
         left_panel_layout.addWidget(self.new_btn)
 
-        # ── Search ────────────────────────────────────────────────────────
+        # ── Edit — frequent, single-selection ─────────────────────────────
+        self.rename_btn = QPushButton(self.tr("Edit"))
+        self.rename_btn.setObjectName("outlineButton")
+        self.rename_btn.setIcon(self._btn_icon("icon_edit.svg", get_button_icon_color("outlineButton")))
+        self.rename_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.rename_btn] = ("icon_edit.svg", "outlineButton")
+        self.rename_btn.setEnabled(False)
+        self.rename_btn.setToolTip(self.tr("Edit selected observation (⌘E / double-click)"))
+        self.rename_btn.clicked.connect(self.edit_observation)
+        left_panel_layout.addWidget(self.rename_btn)
+
+        # ── Plate | Publish — sharing pair ────────────────────────────────
+        share_row = QHBoxLayout()
+        share_row.setSpacing(5)
+
+        self.plate_btn = QPushButton(self.tr("Plate"))
+        self.plate_btn.setObjectName("outlineButton")
+        self.plate_btn.setIcon(self._btn_icon("icon_plate.svg", get_button_icon_color("outlineButton")))
+        self.plate_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.plate_btn] = ("icon_plate.svg", "outlineButton")
+        self.plate_btn.setToolTip(self.tr("Generate a species plate for selected observation"))
+        self.plate_btn.setEnabled(False)
+        self.plate_btn.clicked.connect(self._on_plate_clicked)
+        share_row.addWidget(self.plate_btn)
+
+        self.publish_menu = QMenu(self)
+        self.publish_btn = QPushButton(self.tr("Publish"))
+        self.publish_btn.setObjectName("outlineButton")
+        self.publish_btn.setIcon(self._btn_icon("icon_publish.svg", get_button_icon_color("outlineButton")))
+        self.publish_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.publish_btn] = ("icon_publish.svg", "outlineButton")
+        self.publish_btn.setMenu(self.publish_menu)
+        self.publish_btn.setEnabled(False)
+        self._publish_direct_click_connected = False
+        self._build_publish_menu()
+        share_row.addWidget(self.publish_btn)
+
+        left_panel_layout.addLayout(share_row)
+
+        # ── Refresh — full-width, above the separator ─────────────────────
+        self.refresh_btn = QPushButton(self.tr("Refresh"))
+        self.refresh_btn.setObjectName("outlineButton")
+        self.refresh_btn.setIcon(self._btn_icon("icon_refresh.svg", get_button_icon_color("outlineButton")))
+        self.refresh_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.refresh_btn] = ("icon_refresh.svg", "outlineButton")
+        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
+        left_panel_layout.addWidget(self.refresh_btn)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Plain)
+        sep.setFixedHeight(1)
+        left_panel_layout.addWidget(sep)
+
+        # ── Delete — full-width destructive ───────────────────────────────
+        self.delete_btn = QPushButton(self.tr("Delete"))
+        self.delete_btn.setObjectName("destructiveButton")
+        self.delete_btn.setIcon(self._btn_icon("icon_delete.svg", get_button_icon_color("destructiveButton")))
+        self.delete_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.delete_btn] = ("icon_delete.svg", "destructiveButton")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
+        self.delete_btn.clicked.connect(self.delete_selected_observation)
+        left_panel_layout.addWidget(self.delete_btn)
+
+        # ── Import | Export ───────────────────────────────────────────────
+        io_row = QHBoxLayout()
+        io_row.setSpacing(5)
+
+        self.import_btn = QPushButton(self.tr("Import"))
+        self.import_btn.setObjectName("dataButton")
+        self.import_btn.setIcon(self._btn_icon("icon_import.svg", get_button_icon_color("dataButton")))
+        self.import_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.import_btn] = ("icon_import.svg", "dataButton")
+        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
+        self.import_btn.clicked.connect(self._on_import_db_clicked)
+        io_row.addWidget(self.import_btn)
+
+        self.export_btn = QPushButton(self.tr("Export"))
+        self.export_btn.setObjectName("dataButton")
+        self.export_btn.setIcon(self._btn_icon("icon_export.svg", get_button_icon_color("dataButton")))
+        self.export_btn.setIconSize(self._icon_size)
+        self._button_icon_map[self.export_btn] = ("icon_export.svg", "dataButton")
+        self.export_btn.setEnabled(True)
+        self.export_btn.setToolTip(self.tr("Export database bundle to zip archive"))
+        self.export_btn.clicked.connect(self._on_export_db_clicked)
+        io_row.addWidget(self.export_btn)
+
+        left_panel_layout.addLayout(io_row)
+
+        # ── Search and filters — less frequent
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("Search observations..."))
         self.search_input.setClearButtonEnabled(True)
@@ -959,76 +1071,6 @@ class ObservationsTab(QWidget):
         table_filter_row.addWidget(self.show_new_imports_checkbox)
         table_filter_row.addStretch(1)
         left_panel_layout.addLayout(table_filter_row)
-
-        # ── Edit — frequent, single-selection ─────────────────────────────
-        self.rename_btn = QPushButton(self.tr("Edit"))
-        self.rename_btn.setObjectName("outlineButton")
-        self.rename_btn.setEnabled(False)
-        self.rename_btn.setToolTip(self.tr("Edit selected observation (⌘E / double-click)"))
-        self.rename_btn.clicked.connect(self.edit_observation)
-        left_panel_layout.addWidget(self.rename_btn)
-
-        # ── Plate | Publish — sharing pair ────────────────────────────────
-        share_row = QHBoxLayout()
-        share_row.setSpacing(5)
-
-        self.plate_btn = QPushButton(self.tr("Plate"))
-        self.plate_btn.setObjectName("outlineButton")
-        self.plate_btn.setToolTip(self.tr("Generate a species plate for selected observation"))
-        self.plate_btn.setEnabled(False)
-        self.plate_btn.clicked.connect(self._on_plate_clicked)
-        share_row.addWidget(self.plate_btn)
-
-        self.publish_menu = QMenu(self)
-        self.publish_btn = QPushButton(self.tr("Publish"))
-        self.publish_btn.setObjectName("outlineButton")
-        self.publish_btn.setMenu(self.publish_menu)
-        self.publish_btn.setEnabled(False)
-        self._publish_direct_click_connected = False
-        self._build_publish_menu()
-        share_row.addWidget(self.publish_btn)
-
-        left_panel_layout.addLayout(share_row)
-
-        # ── Refresh — full-width, above the separator ─────────────────────
-        self.refresh_btn = QPushButton(self.tr("Refresh"))
-        self.refresh_btn.setObjectName("dataButton")
-        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
-        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
-        left_panel_layout.addWidget(self.refresh_btn)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Plain)
-        sep.setFixedHeight(1)
-        left_panel_layout.addWidget(sep)
-
-        # ── Delete — full-width destructive ───────────────────────────────
-        self.delete_btn = QPushButton(self.tr("Delete"))
-        self.delete_btn.setObjectName("destructiveButton")
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setToolTip(self.tr("Delete selected observation(s)"))
-        self.delete_btn.clicked.connect(self.delete_selected_observation)
-        left_panel_layout.addWidget(self.delete_btn)
-
-        # ── Import | Export ───────────────────────────────────────────────
-        io_row = QHBoxLayout()
-        io_row.setSpacing(5)
-
-        self.import_btn = QPushButton(self.tr("Import"))
-        self.import_btn.setObjectName("dataButton")
-        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
-        self.import_btn.clicked.connect(self._on_import_db_clicked)
-        io_row.addWidget(self.import_btn)
-
-        self.export_btn = QPushButton(self.tr("Export"))
-        self.export_btn.setObjectName("dataButton")
-        self.export_btn.setEnabled(True)
-        self.export_btn.setToolTip(self.tr("Export database bundle to zip archive"))
-        self.export_btn.clicked.connect(self._on_export_db_clicked)
-        io_row.addWidget(self.export_btn)
-
-        left_panel_layout.addLayout(io_row)
 
         content_layout.addWidget(left_panel)
 
