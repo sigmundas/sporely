@@ -2296,7 +2296,7 @@ class SporelyCloudClient:
         if self._has_column('observations', 'image_key'):
             payload['image_key'] = normalized_key
         if self._has_column('observations', 'thumb_key'):
-            payload['thumb_key'] = media_variant_key(normalized_key, 'small')
+            payload['thumb_key'] = media_variant_key(normalized_key, 'thumb')
         if payload:
             self._patch(f'observations?id=eq.{obs_cloud_id}', payload)
 
@@ -2492,7 +2492,7 @@ class SporelyCloudClient:
                 continue
             cleaned.append(path_str)
 
-            for variant in ('small', 'medium'):
+            for variant in ('thumb', 'small', 'medium'):
                 cleaned.append(media_variant_key(path_str, variant))
 
         if not cleaned:
@@ -2618,6 +2618,7 @@ class SporelyCloudClient:
 
         # Generate and upload thumbnail variants to match web app behavior
         variants = [
+            ('thumb', 400, 70),
             ('small', 240, 74),
             ('medium', 720, 82),
         ]
@@ -2750,7 +2751,7 @@ class SporelyCloudClient:
                 if self._has_column('spore_measurements', 'image_key'):
                     payload['image_key'] = storage_key
                 if self._has_column('spore_measurements', 'thumb_key'):
-                    payload['thumb_key'] = media_variant_key(storage_key, 'small')
+                    payload['thumb_key'] = media_variant_key(storage_key, 'thumb')
         rows = self._get(
             f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select=id'
         )

@@ -93,7 +93,7 @@ def media_variant_key(key: str | None, variant: str = "original") -> str:
     parts = normalized.split("/")
     file_name = parts.pop() if parts else normalized
     dir_path = "/".join(parts)
-    variant_name = f"thumb_{variant}_{file_name}"
+    variant_name = f"thumb_{file_name}" if variant == "thumb" else f"thumb_{variant}_{file_name}"
     return f"{dir_path}/{variant_name}" if dir_path else variant_name
 
 
