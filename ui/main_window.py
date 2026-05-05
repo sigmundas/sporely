@@ -1257,7 +1257,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
-    SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
     SETTING_CLOUD_INCLUDE_ANNOTATIONS = "sporely_cloud_include_annotations"
     SETTING_CLOUD_SHOW_SCALE_BAR = "sporely_cloud_show_scale_bar"
     SETTING_CLOUD_INCLUDE_MEASURE_PLOTS = "sporely_cloud_include_measure_plots"
@@ -1539,17 +1538,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         cloud_layout.setContentsMargins(10, 10, 10, 10)
         cloud_layout.setSpacing(8)
 
-        cloud_note = QLabel(
-            self.tr(
-                "Cloud backup uses the same image selection and image overlay options as online publishing. "
-                "Choose whether synced images should keep full size or be reduced to 2 MP. "
-                "Reduced is the planned low-cost default for future free cloud hosting, while full size keeps the door open for a later Pro backup tier."
-            )
-        )
-        cloud_note.setWordWrap(True)
-        cloud_note.setStyleSheet("color: #6b7280; font-size: 11px;")
-        cloud_layout.addWidget(cloud_note)
-
         cloud_preferences_row = QHBoxLayout()
         cloud_preferences_row.setContentsMargins(0, 0, 0, 0)
         cloud_preferences_row.setSpacing(20)
@@ -1572,24 +1560,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             radio.toggled.connect(self._on_cloud_sharing_changed)
             cloud_sharing_column.addWidget(radio)
 
-        cloud_image_size_column = QVBoxLayout()
-        cloud_image_size_column.setContentsMargins(0, 0, 0, 0)
-        cloud_image_size_column.setSpacing(4)
-        cloud_image_size_column.addWidget(QLabel(self.tr("Sync image size:")))
-        self.cloud_image_size_group = QButtonGroup(self)
-        self.cloud_image_size_reduced_radio = QRadioButton(self.tr("Reduced (2 MP)"))
-        self.cloud_image_size_full_radio = QRadioButton(self.tr("Full size"))
-        for radio, mode in (
-            (self.cloud_image_size_reduced_radio, "reduced"),
-            (self.cloud_image_size_full_radio, "full"),
-        ):
-            self.cloud_image_size_group.addButton(radio)
-            radio.setProperty("cloud_image_size_mode", mode)
-            radio.toggled.connect(self._on_cloud_image_size_changed)
-            cloud_image_size_column.addWidget(radio)
-
         cloud_preferences_row.addLayout(cloud_sharing_column, 1)
-        cloud_preferences_row.addLayout(cloud_image_size_column, 1)
         cloud_layout.addLayout(cloud_preferences_row)
 
         self.cloud_status_label = QLabel(self.tr("Not logged in"))
@@ -1875,31 +1846,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not self._loading_settings:
             self._save_settings()
 
-    def _selected_cloud_image_size_mode(self) -> str:
-        for radio, mode in (
-            (getattr(self, "cloud_image_size_reduced_radio", None), "reduced"),
-            (getattr(self, "cloud_image_size_full_radio", None), "full"),
-        ):
-            if radio is not None and radio.isChecked():
-                return mode
-        return "reduced"
-
-    def _set_cloud_image_size_mode(self, mode: str | None) -> None:
-        normalized = str(mode or "").strip().lower()
-        if normalized not in {"reduced", "full"}:
-            normalized = "reduced"
-        radio_map = {
-            "reduced": getattr(self, "cloud_image_size_reduced_radio", None),
-            "full": getattr(self, "cloud_image_size_full_radio", None),
-        }
-        radio = radio_map.get(normalized) or getattr(self, "cloud_image_size_reduced_radio", None)
-        if radio is not None:
-            radio.setChecked(True)
-
-    def _on_cloud_image_size_changed(self, _checked: bool) -> None:
-        if not self._loading_settings:
-            self._save_settings()
-
     @staticmethod
     def _normalize_debug_cloud_plan_override(value: str | None) -> str:
         raw = str(value or "").strip().lower()
@@ -1966,13 +1912,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         override_mode = self._selected_debug_cloud_plan_override()
         if hasattr(self, "cloud_debug_override_container"):
             self.cloud_debug_override_container.setVisible(visible)
-        manual_size_enabled = override_mode == "server"
-        for radio in (
-            getattr(self, "cloud_image_size_reduced_radio", None),
-            getattr(self, "cloud_image_size_full_radio", None),
-        ):
-            if radio is not None:
-                radio.setEnabled(manual_size_enabled)
         if hasattr(self, "cloud_debug_note_label"):
             self.cloud_debug_note_label.setText(
                 self.tr("Local testing only. Server uses your normal cloud settings.")
@@ -2079,10 +2018,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
             self._selected_cloud_sharing_scope(),
-        )
-        SettingsDB.set_setting(
-            self.SETTING_CLOUD_IMAGE_SIZE_MODE,
-            self._selected_cloud_image_size_mode(),
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_ANNOTATIONS,
@@ -2753,12 +2688,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 SettingsDB.get_setting(
                     self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
                     "private",
-                )
-            )
-            self._set_cloud_image_size_mode(
-                SettingsDB.get_setting(
-                    self.SETTING_CLOUD_IMAGE_SIZE_MODE,
-                    "reduced",
                 )
             )
             self._set_debug_cloud_plan_override(
@@ -4432,7 +4361,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.tab_widget.addTab(self.live_lab_tab, self.tr("Live Lab ({alt}L)").format(alt=_ALT_LABEL))
 
         self.ingestion_hub_tab = IngestionHubTab(self)
-        self.tab_widget.addTab(self.ingestion_hub_tab, self.tr("Ingestion ({alt}I)").format(alt=_ALT_LABEL))
+        self.tab_widget.addTab(self.ingestion_hub_tab, self.tr("Camera import ({alt}+C)").format(alt=_ALT_LABEL))
 
         main_layout.addWidget(self.tab_widget, 1)
 
@@ -4482,19 +4411,20 @@ class MainWindow(GeometryMixin, QMainWindow):
             (self.measure_tab,      Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.measure_tab,      Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
             (self.measure_tab,      Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
-            (self.measure_tab,      Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
+            (self.measure_tab,      Qt.Key_C, lambda: self.tab_widget.setCurrentIndex(4)),
             (self.analysis_tab,     Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.analysis_tab,     Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
             (self.analysis_tab,     Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
-            (self.analysis_tab,     Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
+            (self.analysis_tab,     Qt.Key_C, lambda: self.tab_widget.setCurrentIndex(4)),
             (self.live_lab_tab,     Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.live_lab_tab,     Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
             (self.live_lab_tab,     Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
-            (self.live_lab_tab,     Qt.Key_I, lambda: self.tab_widget.setCurrentIndex(4)),
+            (self.live_lab_tab,     Qt.Key_C, lambda: self.tab_widget.setCurrentIndex(4)),
             (self.ingestion_hub_tab, Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.ingestion_hub_tab, Qt.Key_M, lambda: self.tab_widget.setCurrentIndex(1)),
             (self.ingestion_hub_tab, Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
             (self.ingestion_hub_tab, Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
+            (self.ingestion_hub_tab, Qt.Key_C, lambda: self.tab_widget.setCurrentIndex(4)),
         ]
         self._tab_nav_shortcuts = []
         for widget, key, slot in _tab_shortcuts:

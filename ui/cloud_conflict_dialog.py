@@ -211,7 +211,7 @@ class CloudConflictDialog(QDialog):
         prepare_images_cb=None,
     ):
         super().__init__(parent)
-        self.setWindowTitle('Sporely Cloud review')
+        self.setWindowTitle('Review cloud sync conflicts')
         self.setModal(True)
         self.resize(1080, 720)
 
@@ -236,6 +236,14 @@ class CloudConflictDialog(QDialog):
         )
         intro.setWordWrap(True)
         root.addWidget(intro)
+
+        note = QLabel(
+            'If you cancel now, any unresolved conflicts remain for later review and no partial '
+            'decisions are applied.'
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet('color: #6b7280;')
+        root.addWidget(note)
 
         self._status_label = QLabel('')
         self._status_label.setWordWrap(True)
