@@ -45,6 +45,12 @@ def _extract_runtime_profile_args(argv: list[str]) -> list[str]:
 
 sys.argv = _extract_runtime_profile_args(sys.argv)
 
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
+
 if sys.platform.startswith("linux"):
     # Avoid loading libproxy-based GIO module in mixed snap/system setups.
     os.environ["GIO_USE_PROXY_RESOLVER"] = "0"
@@ -68,7 +74,7 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.7.9"
+APP_VERSION = "0.8.0"
 
 
 def _canonical_ui_language(code: str | None) -> str | None:
