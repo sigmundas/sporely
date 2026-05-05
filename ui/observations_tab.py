@@ -114,7 +114,6 @@ from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
 SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
-SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
 SETTING_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_debug_cloud_plan_override"
 SHARING_SCOPE_PRIVATE = "private"
 SHARING_SCOPE_FRIENDS = "friends"
@@ -1045,10 +1044,7 @@ class ObservationsTab(QWidget):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         left_panel_layout.addWidget(self.search_input)
 
-        table_filter_row = QHBoxLayout()
-        table_filter_row.setContentsMargins(0, 0, 0, 0)
-        table_filter_row.setSpacing(12)
-
+        # Table filters - separate rows for better text display
         self.show_table_thumbnails_checkbox = QCheckBox(self.tr("Show thumbnail"))
         self.show_table_thumbnails_checkbox.setChecked(
             self._observation_setting_enabled(self.SETTING_SHOW_TABLE_THUMBNAILS, default=False)
@@ -1056,7 +1052,7 @@ class ObservationsTab(QWidget):
         self.show_table_thumbnails_checkbox.toggled.connect(
             self._on_show_table_thumbnails_toggled
         )
-        table_filter_row.addWidget(self.show_table_thumbnails_checkbox)
+        left_panel_layout.addWidget(self.show_table_thumbnails_checkbox)
 
         self.show_new_imports_checkbox = QCheckBox(self.tr("Last cloud import"))
         self.show_new_imports_checkbox.setToolTip(
@@ -1068,9 +1064,7 @@ class ObservationsTab(QWidget):
         self.show_new_imports_checkbox.toggled.connect(
             self._on_show_new_imports_toggled
         )
-        table_filter_row.addWidget(self.show_new_imports_checkbox)
-        table_filter_row.addStretch(1)
-        left_panel_layout.addLayout(table_filter_row)
+        left_panel_layout.addWidget(self.show_new_imports_checkbox)
 
         content_layout.addWidget(left_panel)
 
@@ -5046,8 +5040,7 @@ class ObservationsTab(QWidget):
             return "reduced"
         if debug_override == "pro":
             return "full"
-        mode = str(SettingsDB.get_setting(SETTING_CLOUD_IMAGE_SIZE_MODE, "reduced") or "reduced").strip().lower()
-        return "full" if mode == "full" else "reduced"
+        return "full"
 
     @staticmethod
     def _cloud_sync_image_max_pixels() -> int:

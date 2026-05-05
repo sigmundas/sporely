@@ -114,7 +114,6 @@ _SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
 _SETTING_PROFILE_NAME = "profile_name"
 _SETTING_PROFILE_EMAIL = "profile_email"
 _SETTING_CLOUD_MEDIA_SIGNATURE = "sporely_cloud_media_signature_v1"
-_SETTING_CLOUD_IMAGE_SIZE_MODE = "sporely_cloud_image_size_mode"
 _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
 _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
@@ -1207,7 +1206,7 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
     payload = {
         'render_version': _CLOUD_LOCAL_MEDIA_RENDER_VERSION,
         'cloud_media_signature': _cloud_media_signature(),
-        'cloud_image_size_mode': str(SettingsDB.get_setting(_SETTING_CLOUD_IMAGE_SIZE_MODE, 'reduced') or 'reduced').strip(),
+        'cloud_image_size_mode': 'full',
         'excluded_image_ids_raw': excluded_raw,
         'gallery_settings_raw': gallery_settings_raw,
         'images': [

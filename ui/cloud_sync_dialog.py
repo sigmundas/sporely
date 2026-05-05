@@ -7,6 +7,17 @@ from PySide6.QtWidgets import (
     QPushButton, QProgressBar, QFrame, QMessageBox, QCheckBox,
 )
 
+_running_cloud_sync_workers: list[QThread] = []
+
+def _track_worker(worker: QThread) -> None:
+    _running_cloud_sync_workers.append(worker)
+    def _on_finished() -> None:
+        try:
+            _running_cloud_sync_workers.remove(worker)
+        except ValueError:
+            pass
+    worker.finished.connect(_on_finished)
+
 from database.models import ObservationDB
 from database.schema import get_app_settings
 from utils.cloud_sync import (
@@ -230,6 +241,7 @@ class CloudSyncDialog(QDialog):
         self._login_worker = _LoginWorker(email, pw)
         self._login_worker.ok.connect(self._on_login_ok)
         self._login_worker.fail.connect(self._on_login_fail)
+        _track_worker(self._login_worker)
         self._login_worker.start()
 
     def _on_login_ok(self, client: SporelyCloudClient) -> None:
@@ -277,6 +289,7 @@ class CloudSyncDialog(QDialog):
         self._worker.progress.connect(self._on_sync_progress)
         self._worker.finished.connect(self._on_sync_done)
         self._worker.error.connect(self._on_sync_error)
+        _track_worker(self._worker)
         self._worker.start()
 
     def _on_sync_progress(self, msg: str, cur: int, total: int) -> None:
@@ -399,37 +412,40 @@ class CloudSyncDialog(QDialog):
                 conflicts=conflicts,
                 prepare_images_cb=self._prepare_images_cb,
             )
-            dialog.exec()
-            
-            if dialog.decisions:
+            result = dialog.exec()
+
+            if result == QDialog.Accepted and dialog.decisions:
                 from .cloud_conflict_dialog import ConflictResolutionWorker
                 self._resolution_worker = ConflictResolutionWorker(dialog.decisions, prepare_images_cb=self._prepare_images_cb)
-                
+                _track_worker(self._resolution_worker)
+
                 def _on_progress(msg, current, total):
                     self._progress.show()
                     self._progress.setMaximum(total)
                     self._progress.setValue(current)
                     self._status_label.setText(msg)
-                    
-                self._resolution_worker.progress.connect(_on_progress)
-                
+
                 def _on_finished(resolved_any):
                     self._progress.hide()
-                    self._status_label.setText("Conflict resolution finished.")
+                    self._status_label.setText('Conflict resolution finished.')
                     if deleted_remote:
                         self._prompt_for_deleted_cloud_observations(deleted_remote)
-                        
+
                 def _on_error(err):
                     self._progress.hide()
-                    self._status_label.setText(f"Conflict resolution error: {err}")
+                    self._status_label.setText(f'Conflict resolution error: {err}')
                     if deleted_remote:
                         self._prompt_for_deleted_cloud_observations(deleted_remote)
-                        
+
                 self._resolution_worker.finished.connect(_on_finished)
                 self._resolution_worker.error.connect(_on_error)
                 self._resolution_worker.start()
                 return # Deleted remote handled in callback
-                
+            else:
+                self._status_label.setText(
+                    'Conflict review canceled. Unresolved conflicts remain and no decisions were applied.'
+                )
+
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
 
