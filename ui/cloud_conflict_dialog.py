@@ -33,6 +33,7 @@ from utils.cloud_sync import (
     get_conflict_detail,
     resolve_conflict_keep_cloud,
     resolve_conflict_keep_local,
+    resolve_conflict_merge,
 )
 from PySide6.QtCore import QThread, Signal
 
@@ -86,6 +87,8 @@ class ConflictResolutionWorker(QThread):
                         if client_retry is None:
                             raise CloudSyncError('Not logged in to Sporely Cloud')
                         resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None)
+                elif action == 'merge':
+                    resolve_conflict_merge(client, local_id, cloud_id=cloud_id or None, prepare_images_cb=self.prepare_images_cb)
                 resolved_any = True
             
             self.progress.emit("Conflict resolution finished.", total, total)
@@ -326,6 +329,10 @@ class CloudConflictDialog(QDialog):
         self._keep_remote_btn.clicked.connect(self._resolve_keep_cloud)
         action_row.addWidget(self._keep_remote_btn)
 
+        self._merge_btn = QPushButton('Merge')
+        self._merge_btn.clicked.connect(self._resolve_merge)
+        action_row.addWidget(self._merge_btn)
+
         self._cancel_btn = QPushButton('Cancel')
         self._cancel_btn.clicked.connect(self.reject)
         action_row.addWidget(self._cancel_btn)
@@ -379,6 +386,7 @@ class CloudConflictDialog(QDialog):
         self._refresh_btn.setEnabled(enabled)
         self._keep_local_btn.setEnabled(enabled)
         self._keep_remote_btn.setEnabled(enabled)
+        self._merge_btn.setEnabled(enabled)
 
     def _show_status(self, message: str, *, tone: str = 'info') -> None:
         text = str(message or '').strip()
@@ -596,5 +604,18 @@ class CloudConflictDialog(QDialog):
             'local_id': local_id,
             'cloud_id': cloud_id,
             'action': 'keep_cloud'
+        })
+        self._remove_current_conflict()
+
+    def _resolve_merge(self) -> None:
+        conflict = self._current_conflict()
+        if not conflict:
+            return
+        local_id = int(conflict.get('local_id') or 0)
+        cloud_id = str(conflict.get('cloud_id') or '').strip()
+        self.decisions.append({
+            'local_id': local_id,
+            'cloud_id': cloud_id,
+            'action': 'merge'
         })
         self._remove_current_conflict()
