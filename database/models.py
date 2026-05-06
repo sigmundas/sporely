@@ -9,6 +9,7 @@ from datetime import datetime
 from .schema import (
     get_app_settings,
     get_connection,
+    get_database_path,
     get_reference_connection,
     get_images_dir,
     get_calibrations_dir,
@@ -39,6 +40,58 @@ _CLOUD_SQLITE_SETTING_KEYS = {
 # Images directory
 def _images_dir() -> Path:
     return get_images_dir()
+
+
+def _thumbnails_dir() -> Path:
+    return get_database_path().parent / "thumbnails"
+
+
+def _path_under_root(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _remove_file_under_root(path_value: str | None, root: Path) -> str | None:
+    if not path_value:
+        return None
+    try:
+        path = Path(path_value).resolve()
+        if not _path_under_root(path, root):
+            return None
+        if path.exists() and path.is_file():
+            path.unlink()
+            _prune_empty_dirs(path.parent, root)
+    except Exception as exc:
+        print(f"Warning: Could not delete file {path_value}: {exc}")
+        return str(path_value)
+    return None
+
+
+def _prune_empty_dirs(start_dir: str | Path | None, root: Path) -> list[str]:
+    if not start_dir:
+        return []
+    failed: list[str] = []
+    try:
+        current = Path(start_dir).resolve()
+        resolved_root = root.resolve()
+    except Exception:
+        return failed
+    while current != resolved_root and _path_under_root(current, resolved_root):
+        try:
+            current.rmdir()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            break
+        except Exception as exc:
+            print(f"Warning: Could not remove empty folder {current}: {exc}")
+            failed.append(str(current))
+            break
+        current = current.parent
+    return failed
 
 
 def _sqlite_now_text() -> str:
@@ -1053,6 +1106,7 @@ class ObservationDB:
         cursor = conn.cursor()
         folder_path = None
         image_rows = []
+        thumbnail_paths: list[str] = []
         failed_paths: list[str] = []
         shared_file_refs: dict[str, bool] = {}
         shared_folder_ref = False
@@ -1068,6 +1122,21 @@ class ObservationDB:
                 (observation_id,),
             )
             image_rows = cursor.fetchall()
+
+            cursor.execute(
+                '''
+                SELECT t.filepath
+                FROM thumbnails t
+                JOIN images i ON i.id = t.image_id
+                WHERE i.observation_id = ?
+                ''',
+                (observation_id,),
+            )
+            thumbnail_paths = [
+                str(row[0] or '').strip()
+                for row in cursor.fetchall()
+                if str(row[0] or '').strip()
+            ]
 
             for row in image_rows:
                 for candidate in (row["filepath"], row["original_filepath"]):
@@ -1154,27 +1223,22 @@ class ObservationDB:
 
         # Remove thumbnails and image files from disk
         images_root = _images_dir()
+        thumbnails_root = _thumbnails_dir()
+        for thumb_path in sorted(set(thumbnail_paths)):
+            failed = _remove_file_under_root(thumb_path, thumbnails_root)
+            if failed:
+                failed_paths.append(failed)
+
         total_images = len(image_rows)
         for index, (image_id, filepath, original_filepath) in enumerate(image_rows, start=1):
-            try:
-                from utils.thumbnail_generator import delete_thumbnails
-                delete_thumbnails(image_id)
-            except Exception as e:
-                print(f"Warning: Could not delete thumbnails for image {image_id}: {e}")
-
             for candidate in (filepath, original_filepath):
                 if not candidate:
                     continue
                 if shared_file_refs.get(str(candidate)):
                     continue
-                try:
-                    path = Path(candidate).resolve()
-                    root = images_root.resolve()
-                    if path.exists() and path.is_relative_to(root):
-                        path.unlink()
-                except Exception as e:
-                    print(f"Warning: Could not delete image file {candidate}: {e}")
-                    failed_paths.append(str(candidate))
+                failed = _remove_file_under_root(candidate, images_root)
+                if failed:
+                    failed_paths.append(failed)
             if callable(progress_cb):
                 try:
                     progress_cb(index, total_images, int(image_id or 0))
@@ -1185,16 +1249,19 @@ class ObservationDB:
         if folder_path:
             try:
                 obs_folder = Path(folder_path).resolve()
-                root = images_root.resolve()
                 if (
                     not shared_folder_ref
                     and obs_folder.exists()
-                    and obs_folder.is_relative_to(root)
+                    and _path_under_root(obs_folder, images_root)
                 ):
-                    shutil.rmtree(obs_folder)
+                    failed_paths.extend(_prune_empty_dirs(obs_folder, images_root))
             except Exception as e:
                 print(f"Warning: Could not delete observation folder {folder_path}: {e}")
                 failed_paths.append(str(folder_path))
+        for row in image_rows:
+            for candidate in (row["filepath"], row["original_filepath"]):
+                if candidate:
+                    failed_paths.extend(_prune_empty_dirs(Path(candidate).parent, images_root))
         return failed_paths
 
 class ImageDB:
@@ -1735,16 +1802,49 @@ class ImageDB:
 
     @staticmethod
     def delete_image(image_id: int):
-        """Delete an image and its measurements"""
+        """Delete an image, its measurements, thumbnails, and unshared local files."""
+        failed_paths: list[str] = []
+        filepath = None
+        original_filepath = None
+        thumbnail_paths: list[str] = []
+        shared_file_refs: dict[str, bool] = {}
         conn = get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
+            cursor.execute(
+                'SELECT observation_id, filepath, original_filepath FROM images WHERE id = ?',
+                (image_id,),
+            )
             image_row = cursor.fetchone()
             try:
                 observation_id = int(image_row[0]) if image_row and image_row[0] is not None else None
             except Exception:
                 observation_id = None
+            if image_row:
+                filepath = image_row[1]
+                original_filepath = image_row[2]
+
+            cursor.execute('SELECT filepath FROM thumbnails WHERE image_id = ?', (image_id,))
+            thumbnail_paths = [
+                str(row[0] or '').strip()
+                for row in cursor.fetchall()
+                if str(row[0] or '').strip()
+            ]
+
+            for candidate in (filepath, original_filepath):
+                if not candidate:
+                    continue
+                ref_row = cursor.execute(
+                    '''
+                    SELECT 1
+                    FROM images
+                    WHERE id != ?
+                      AND (filepath = ? OR original_filepath = ?)
+                    LIMIT 1
+                    ''',
+                    (image_id, candidate, candidate),
+                ).fetchone()
+                shared_file_refs[str(candidate)] = bool(ref_row)
 
             # Delete dependent rows first to satisfy foreign keys.
             cursor.execute(
@@ -1793,6 +1893,24 @@ class ImageDB:
             raise
         finally:
             conn.close()
+
+        thumbnails_root = _thumbnails_dir()
+        for thumb_path in sorted(set(thumbnail_paths)):
+            failed = _remove_file_under_root(thumb_path, thumbnails_root)
+            if failed:
+                failed_paths.append(failed)
+
+        images_root = _images_dir()
+        for candidate in (filepath, original_filepath):
+            if not candidate or shared_file_refs.get(str(candidate)):
+                continue
+            failed = _remove_file_under_root(candidate, images_root)
+            if failed:
+                failed_paths.append(failed)
+        for candidate in (filepath, original_filepath):
+            if candidate:
+                failed_paths.extend(_prune_empty_dirs(Path(candidate).parent, images_root))
+        return failed_paths
 
 
 class SessionLogDB:

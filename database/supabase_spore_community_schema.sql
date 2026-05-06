@@ -202,7 +202,7 @@ AS $$
       coalesce(m.image_key, i.storage_path) AS image_key,
       coalesce(
         m.thumb_key,
-        regexp_replace(i.storage_path, '(^|/)([^/]+)$', E'\\1thumb_small_\\2')
+        regexp_replace(i.storage_path, '(^|/)([^/]+)$', E'\\1thumb_\\2')
       ) AS thumb_key,
       m.p1_x,
       m.p1_y,

@@ -1,23 +1,33 @@
 """Thumbnail generator for efficient loading and ML training."""
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, features
 import sqlite3
 from database.schema import get_connection, DATABASE_PATH
 
 # Thumbnail output directory
 THUMBNAIL_DIR = DATABASE_PATH.parent / "thumbnails"
 
-# Size presets for thumbnails
-# Only 224x224 needed for UI display (observation browser)
-# ML training uses spore crops exported on-demand via "Export for ML"
+# Size presets for thumbnails. Keep one UI thumbnail only; ML training uses
+# spore crops exported on-demand via "Export for ML".
 SIZE_PRESETS = {
     '224x224': (224, 224),
 }
 
 SIZE_PRESET_ALIASES = {
-    'small': ('small', '224x224'),
-    '224x224': ('224x224', 'small'),
+    'small': ('small', '224x224', 'thumb'),
+    'thumb': ('thumb', '224x224', 'small'),
+    '224x224': ('224x224', 'thumb', 'small'),
 }
+
+# These thumbnails are read directly by Qt/PySide in the desktop UI. Pillow can
+# write AVIF here, but the packaged Qt image plugins do not reliably read it.
+THUMBNAIL_FORMAT = 'WEBP' if features.check('webp') else 'JPEG'
+THUMBNAIL_EXTENSION = '.webp' if THUMBNAIL_FORMAT == 'WEBP' else '.jpg'
+THUMBNAIL_SAVE_OPTIONS = (
+    {'quality': 58, 'method': 4}
+    if THUMBNAIL_FORMAT == 'WEBP'
+    else {'quality': 78}
+)
 
 
 def ensure_thumbnail_dir():
@@ -82,8 +92,7 @@ def generate_thumbnail(image_path: str, size: tuple, output_path: Path) -> bool:
             # Ensure output directory exists
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Save as JPEG with high quality
-            img_cropped.save(output_path, 'JPEG', quality=82)
+            img_cropped.save(output_path, THUMBNAIL_FORMAT, **THUMBNAIL_SAVE_OPTIONS)
             return True
 
     except Exception as e:
@@ -115,7 +124,7 @@ def generate_all_sizes(image_path: str, image_id: int) -> dict:
 
     for preset_name, size in SIZE_PRESETS.items():
         # Generate unique filename using image_id and preset
-        thumbnail_filename = f"img_{image_id}_{preset_name}.jpg"
+        thumbnail_filename = f"img_{image_id}_{preset_name}{THUMBNAIL_EXTENSION}"
         thumbnail_path = THUMBNAIL_DIR / thumbnail_filename
 
         # Generate the thumbnail

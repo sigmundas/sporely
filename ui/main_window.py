@@ -1742,11 +1742,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self.tr("Include plate"),
                 self.tr("Uploads the current species plate image."),
             ),
-            (
-                self.cloud_include_copyright_checkbox,
-                self.tr("Include watermark"),
-                self.tr("Adds a visible watermark on synced images."),
-            ),
         )
         for checkbox, text, help_text in cloud_content_options:
             checkbox.toggled.connect(self._save_settings)
@@ -2037,7 +2032,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_COPYRIGHT,
-            "1" if self.cloud_include_copyright_checkbox.isChecked() else "0",
+            "0",
         )
         SettingsDB.set_setting(
             self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,

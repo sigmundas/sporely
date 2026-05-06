@@ -54,7 +54,7 @@ WITH ranked_images AS (
 )
 UPDATE public.observations o
 SET image_key = r.storage_path,
-    thumb_key = regexp_replace(r.storage_path, '(^|/)([^/]+)$', E'\\1thumb_small_\\2')
+    thumb_key = regexp_replace(r.storage_path, '(^|/)([^/]+)$', E'\\1thumb_\\2')
 FROM ranked_images r
 WHERE r.rn = 1
   AND o.id = r.observation_id;
@@ -62,7 +62,7 @@ WHERE r.rn = 1
 -- 4. Backfill per-measurement image + thumbnail keys from the parent image row
 UPDATE public.spore_measurements m
 SET image_key = i.storage_path,
-    thumb_key = regexp_replace(i.storage_path, '(^|/)([^/]+)$', E'\\1thumb_small_\\2')
+    thumb_key = regexp_replace(i.storage_path, '(^|/)([^/]+)$', E'\\1thumb_\\2')
 FROM public.observation_images i
 WHERE i.id = m.image_id
   AND coalesce(i.storage_path, '') <> '';

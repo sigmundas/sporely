@@ -25,7 +25,7 @@ from typing import Callable
 from urllib.parse import quote
 
 import requests
-from PIL import Image
+from PIL import Image, ImageOps, features
 
 from app_identity import runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, update_app_settings
@@ -120,6 +120,7 @@ _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
 _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
+_CLOUD_THUMB_MAX_EDGE = 400
 _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
     'ai_crop_x1',
     'ai_crop_y1',
@@ -523,14 +524,14 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
         labels = ", ".join(_image_label(row) for row in added[:3])
         if len(added) > 3:
             labels += ", …"
-        lines.append(f'Added {len(added)} image(s) since last sync: {labels}')
+        lines.append(f'Images added since last sync: {labels}')
     if removed:
         labels = ", ".join(_image_label(row) for row in removed[:3])
         if len(removed) > 3:
             labels += ", …"
-        lines.append(f'Removed {len(removed)} image(s) since last sync: {labels}')
+        lines.append(f'Images removed since last sync: {labels}')
     if metadata_changed:
-        lines.append(f'Changed metadata on {metadata_changed} image(s) since last sync')
+        lines.append(f'Image metadata changed on {metadata_changed} image(s) since last sync')
     if not lines and len(current) != len(baseline):
         lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
     return lines
@@ -1726,9 +1727,9 @@ def _load_obs_exif_fallback(observation_id: int, fallback_datetime: str | None =
         lon = obs.get('gps_longitude')
         altitude = obs.get('gps_altitude')
         datetime_str = str(
-            fallback_datetime
-            or obs.get('captured_at')
+            obs.get('captured_at')
             or obs.get('date')
+            or fallback_datetime
             or ''
         ).strip() or None
         return (float(lat) if lat is not None else None,
@@ -1758,6 +1759,244 @@ def _cloud_missing_image_warning(local_id: int, remote_image: dict) -> str:
     )
 
 
+def _cloud_thumb_save_format(path: Path) -> tuple[str, str, dict]:
+    if features.check('webp'):
+        return 'WEBP', 'image/webp', {'quality': 58, 'method': 4}
+    return 'JPEG', 'image/jpeg', {'quality': 72}
+
+
+def _content_type_for_path(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == '.webp':
+        return 'image/webp'
+    return mimetypes.guess_type(path.name)[0] or 'image/jpeg'
+
+
+def _cloud_storage_objects_exist(client, storage_path: str) -> bool:
+    key = _normalize_cloud_media_key(storage_path)
+    if not key:
+        return False
+    try:
+        r2 = client._get_r2()
+        return r2.object_exists(key) and r2.object_exists(media_variant_key(key, 'thumb'))
+    except Exception as exc:
+        print(f'[cloud_sync] Could not verify cloud storage object for {key}: {exc}')
+        return False
+
+
+def _prepared_item_for_remote_image(prepared_items: list[dict], remote_image: dict) -> dict | None:
+    remote_cloud_id = str((remote_image or {}).get('id') or '').strip()
+    remote_desktop_id = _safe_int((remote_image or {}).get('desktop_id'))
+    remote_sort_order = _safe_int((remote_image or {}).get('sort_order'), default=-1)
+    remote_type = str((remote_image or {}).get('image_type') or 'field').strip().lower()
+
+    fallback: dict | None = None
+    for item in prepared_items or []:
+        img = dict((item or {}).get('image_row') or {})
+        if not img:
+            continue
+        local_id = _safe_int(img.get('id'))
+        local_cloud_id = str(img.get('cloud_id') or '').strip()
+        if remote_cloud_id and local_cloud_id == remote_cloud_id:
+            return item
+        if remote_desktop_id and local_id == remote_desktop_id:
+            return item
+        if (
+            fallback is None
+            and remote_sort_order >= 0
+            and _safe_int(img.get('sort_order'), default=-2) == remote_sort_order
+            and str(img.get('image_type') or 'field').strip().lower() == remote_type
+        ):
+            fallback = item
+    return fallback
+
+
+def _load_local_observations_by_cloud_id(cloud_ids: list[str]) -> dict[str, dict]:
+    cleaned = [str(value or '').strip() for value in cloud_ids if str(value or '').strip()]
+    if not cleaned:
+        return {}
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        result: dict[str, dict] = {}
+        for start in range(0, len(cleaned), 500):
+            chunk = cleaned[start : start + 500]
+            placeholders = ','.join('?' for _ in chunk)
+            rows = conn.execute(
+                f"SELECT * FROM observations WHERE cloud_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                obs = dict(row)
+                cloud_id = str(obs.get('cloud_id') or '').strip()
+                if cloud_id:
+                    result[cloud_id] = obs
+        return result
+    finally:
+        conn.close()
+
+
+def _repair_missing_cloud_media_objects(
+    client: "SporelyCloudClient",
+    remote_obs: list[dict] | None,
+    prepare_images_cb: PreparedImagesCallback | None = None,
+    progress_cb: ProgressCallback | None = None,
+    progress_state: dict | None = None,
+) -> dict:
+    """Re-upload R2 files that are still referenced by Supabase but missing in storage."""
+    cloud_ids = [
+        str((row or {}).get('id') or '').strip()
+        for row in (remote_obs or [])
+        if str((row or {}).get('id') or '').strip()
+    ]
+    local_by_cloud_id = _load_local_observations_by_cloud_id(cloud_ids)
+    if not local_by_cloud_id:
+        return {'repaired': 0, 'missing': 0, 'errors': []}
+
+    remote_images = client.pull_bulk_image_metadata(list(local_by_cloud_id.keys()))
+    missing_by_obs: dict[str, list[dict]] = {}
+    for remote_image in remote_images or []:
+        cloud_id = str((remote_image or {}).get('observation_id') or '').strip()
+        storage_path = _normalize_cloud_media_key((remote_image or {}).get('storage_path'))
+        if not cloud_id or cloud_id not in local_by_cloud_id or not storage_path:
+            continue
+        if not _cloud_storage_objects_exist(client, storage_path):
+            missing_by_obs.setdefault(cloud_id, []).append(dict(remote_image or {}))
+
+    missing_count = sum(len(rows) for rows in missing_by_obs.values())
+    if not missing_count:
+        return {'repaired': 0, 'missing': 0, 'errors': []}
+
+    _extend_progress_total(progress_state, missing_count)
+    repaired = 0
+    errors: list[str] = []
+
+    for cloud_id, missing_rows in missing_by_obs.items():
+        local_obs = local_by_cloud_id.get(cloud_id)
+        if not local_obs:
+            continue
+        obs_name = _observation_display_name(local_obs)
+        cleanup = None
+        try:
+            if callable(prepare_images_cb):
+                prepared_items, cleanup, warnings = prepare_images_cb(
+                    local_obs,
+                    lambda message, _current=None, _total=None: _emit_progress(progress_cb, message, progress_state),
+                )
+                for warning in warnings or []:
+                    print(f'[cloud_sync] Observation {local_obs.get("id")}: {warning}')
+            else:
+                prepared_items = [
+                    {'image_row': img, 'upload_path': img.get('filepath')}
+                    for img in ImageDB.get_images_for_observation(local_obs['id'])
+                ]
+
+            for remote_image in missing_rows:
+                remote_cloud_id = str(remote_image.get('id') or '').strip()
+                item = _prepared_item_for_remote_image(prepared_items, remote_image)
+                if not item:
+                    errors.append(
+                        f"obs {local_obs.get('id')}: could not repair missing cloud image {remote_cloud_id or '?'}"
+                    )
+                    _advance_progress(progress_state, 1)
+                    continue
+                img = dict(item.get('image_row') or {})
+                upload_path = str(item.get('upload_path') or img.get('filepath') or '').strip()
+                if not upload_path or not Path(upload_path).exists():
+                    errors.append(
+                        f"obs {local_obs.get('id')}: local file missing for cloud image {remote_cloud_id or '?'}"
+                    )
+                    _advance_progress(progress_state, 1)
+                    continue
+
+                storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
+                upload_suffix = Path(upload_path).suffix.lower()
+                if storage_path and upload_suffix:
+                    storage_parts = storage_path.split('/')
+                    storage_name = storage_parts[-1] if storage_parts else storage_path
+                    storage_suffix = Path(storage_name).suffix.lower()
+                    if storage_suffix and storage_suffix != upload_suffix:
+                        migrated_name = f"{Path(storage_name).stem}{upload_suffix}"
+                        storage_path = '/'.join([*storage_parts[:-1], migrated_name])
+                        client._patch(
+                            f'observation_images?id=eq.{remote_cloud_id}',
+                            {'storage_path': storage_path},
+                        )
+                        client._set_observation_media_keys(
+                            cloud_id,
+                            storage_path,
+                            remote_image.get('sort_order'),
+                        )
+
+                _emit_progress(
+                    progress_cb,
+                    f"Repairing missing cloud image for observation {local_obs.get('id')}: {obs_name}…",
+                    progress_state,
+                )
+                client.upload_image_file(upload_path, cloud_id, remote_cloud_id, storage_path=storage_path)
+                repaired += 1
+
+                local_image_id = _safe_int(img.get('id'))
+                if local_image_id > 0:
+                    conn = get_connection()
+                    try:
+                        conn.execute(
+                            'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
+                            (remote_cloud_id, datetime.now(timezone.utc).isoformat(), local_image_id),
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                    file_sig = _file_content_signature(upload_path)
+                    if file_sig:
+                        _store_cloud_image_file_signature(local_obs.get('id'), local_image_id, file_sig)
+                _advance_progress(progress_state, 1)
+            _store_remote_snapshot(client, cloud_id)
+            _refresh_local_cloud_media_signature(local_obs.get('id'))
+        except Exception as exc:
+            errors.append(f"obs {local_obs.get('id')}: cloud media repair failed: {exc}")
+        finally:
+            if callable(cleanup):
+                try:
+                    cleanup()
+                except Exception:
+                    pass
+
+    return {'repaired': repaired, 'missing': missing_count, 'errors': errors}
+
+
+def _detected_image_extension(path: str | Path) -> str:
+    try:
+        with Image.open(path) as img:
+            fmt = str(img.format or '').strip().upper()
+    except Exception:
+        return Path(path).suffix.lower() or '.jpg'
+    if fmt == 'WEBP':
+        return '.webp'
+    if fmt == 'AVIF':
+        return '.avif'
+    if fmt in {'JPEG', 'JPG'}:
+        return '.jpg'
+    if fmt == 'PNG':
+        return '.png'
+    if fmt == 'TIFF':
+        return '.tif'
+    return Path(path).suffix.lower() or '.jpg'
+
+
+def _rename_to_detected_image_extension(path: Path) -> Path:
+    detected_ext = _detected_image_extension(path)
+    if not detected_ext or path.suffix.lower() == detected_ext:
+        return path
+    target = path.with_suffix(detected_ext)
+    counter = 1
+    while target.exists() and target != path:
+        target = path.with_name(f"{path.stem}_{counter}{detected_ext}")
+        counter += 1
+    path.rename(target)
+    return target
+
+
 def _sync_existing_remote_image_to_local(
     client: "SporelyCloudClient",
     local_image: dict,
@@ -1770,6 +2009,7 @@ def _sync_existing_remote_image_to_local(
         filename = Path(str(remote_image.get('original_filename') or '')).name or f'cloud_{image_id}.jpg'
         temp_path = temp_dir / filename
         client.download_image_file(str(remote_image.get('storage_path') or ''), temp_path)
+        temp_path = _rename_to_detected_image_extension(temp_path)
         image_type = str(remote_image.get('image_type') or 'field').strip().lower()
         target_path = Path(existing_path) if existing_path else temp_path
 
@@ -1791,11 +2031,14 @@ def _sync_existing_remote_image_to_local(
             if obs_id > 0:
                 lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
                     obs_id,
-                    fallback_datetime=remote_image.get('captured_at') or remote_image.get('created_at'),
+                    fallback_datetime=remote_image.get('captured_at'),
                 )
                 _inject_obs_exif_into_field_image(temp_path, lat, lon, altitude, datetime_str)
 
         if existing_path and not local_is_larger:
+            detected_ext = _detected_image_extension(temp_path)
+            if detected_ext and target_path.suffix.lower() != detected_ext:
+                target_path = target_path.with_suffix(detected_ext)
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(temp_path, target_path)
         # If local is larger it is the full-res desktop-imported original — keep it as-is.
@@ -1829,6 +2072,12 @@ def _sync_existing_remote_image_to_local(
             conn.close()
         try:
             generate_all_sizes(str(target_path), image_id)
+        except Exception:
+            pass
+        try:
+            file_sig = _file_content_signature(str(target_path))
+            if file_sig:
+                _store_cloud_image_file_signature(int(local_image.get('observation_id') or 0), image_id, file_sig)
         except Exception:
             pass
     finally:
@@ -1882,6 +2131,7 @@ def _apply_remote_images_to_local(
             download_path = temp_dir / filename
             try:
                 client.download_image_file(storage_path, download_path)
+                download_path = _rename_to_detected_image_extension(download_path)
             except CloudSyncError as exc:
                 if _is_missing_cloud_image_error(exc):
                     print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
@@ -1891,7 +2141,7 @@ def _apply_remote_images_to_local(
             if new_image_type == 'field':
                 lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
                     int(local_id),
-                    fallback_datetime=remote_image.get('captured_at') or remote_image.get('created_at'),
+                    fallback_datetime=remote_image.get('captured_at'),
                 )
                 _inject_obs_exif_into_field_image(download_path, lat, lon, altitude, datetime_str)
             local_image_id = ImageDB.add_image(
@@ -1911,7 +2161,7 @@ def _apply_remote_images_to_local(
                 resample_scale_factor=remote_image.get('resample_scale_factor'),
                 ai_crop_box=_remote_ai_crop_box(remote_image),
                 ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
-                captured_at=remote_image.get('captured_at') or remote_image.get('created_at'),
+                captured_at=remote_image.get('captured_at'),
                 copy_to_folder=True,
                 mark_observation_dirty=False,
             )
@@ -2173,6 +2423,67 @@ def resolve_conflict_keep_cloud(
         _cloud_observation_snapshot(remote_obs, remote_images),
     )
     return {'local_id': int(local_id), 'cloud_id': resolved_cloud_id, 'warnings': warnings}
+
+
+def resolve_conflict_merge(
+    client: "SporelyCloudClient",
+    local_id: int,
+    cloud_id: str | None = None,
+    prepare_images_cb: PreparedImagesCallback | None = None,
+    progress_cb: ProgressCallback | None = None,
+) -> dict:
+    # For merge, keep local observation but add any new images from cloud
+    local_obs = ObservationDB.get_observation(int(local_id))
+    if not local_obs:
+        raise CloudSyncError(f'Local observation {local_id} not found')
+    resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
+    if not resolved_cloud_id:
+        raise CloudSyncError(f'Observation {local_id} is not linked to Sporely Cloud')
+
+    # First, pull any new images from cloud and add to local
+    remote_obs = client.get_observation(resolved_cloud_id)
+    if remote_obs:
+        remote_images = [
+            dict(row or {})
+            for row in (client.pull_image_metadata(resolved_cloud_id) or [])
+            if should_pull_cloud_image_to_desktop(row)
+        ]
+        warnings = _apply_remote_images_to_local(client, int(local_id), remote_images)
+    else:
+        warnings = []
+
+    # Then push the local observation (which now includes merged images)
+    cloud_id = client.push_observation(local_obs)
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
+            (cloud_id, datetime.now(timezone.utc).isoformat(), int(local_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Push images if needed
+    should_push_images = prepare_images_cb is not None
+    if should_push_images:
+        images_ok = _push_images_for_observation(
+            client,
+            local_obs,
+            cloud_id,
+            prepare_images_cb=prepare_images_cb,
+            progress_cb=progress_cb,
+            progress_state={'done': 0, 'total': 0},
+            observation_index=1,
+            observation_total=1,
+        )
+        if not images_ok:
+            mark_observation_dirty(int(local_id))
+            raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
+
+    _store_remote_snapshot(client, cloud_id)
+    _refresh_local_cloud_media_signature(int(local_id))
+    return {'local_id': int(local_id), 'cloud_id': cloud_id, 'warnings': warnings}
 
 
 def _get_keyring_module():
@@ -2572,7 +2883,11 @@ class SporelyCloudClient:
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
         payload['desktop_id']        = img['id']
-        payload['original_filename'] = Path(img.get('filepath') or '').name or None
+        payload['original_filename'] = (
+            str(img.get('original_filename') or '').strip()
+            or Path(img.get('filepath') or '').name
+            or None
+        )
         payload['storage_path']      = _normalize_cloud_media_key(storage_path)
         if payload.get('gps_source') is not None:
             payload['gps_source'] = bool(payload['gps_source'])
@@ -2599,14 +2914,22 @@ class SporelyCloudClient:
             self._set_observation_media_keys(obs_cloud_id, normalized_key, img.get('sort_order'))
         return cloud_id
 
-    def upload_image_file(self, local_path: str, obs_cloud_id: str, img_cloud_id: str) -> str | None:
+    def upload_image_file(
+        self,
+        local_path: str,
+        obs_cloud_id: str,
+        img_cloud_id: str,
+        storage_path: str | None = None,
+    ) -> str | None:
         """Upload file to Cloudflare R2. Returns the relative media key or None if missing."""
         path = Path(local_path)
         if not path.exists():
             return None
 
-        storage_path = _normalize_cloud_media_key(self._build_storage_path(obs_cloud_id, img_cloud_id, local_path))
-        mime = mimetypes.guess_type(path.name)[0] or 'image/jpeg'
+        storage_path = _normalize_cloud_media_key(
+            storage_path or self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
+        )
+        mime = _content_type_for_path(path)
         cache_control = 'public, max-age=31536000, immutable'
         r2 = self._get_r2()
 
@@ -2615,14 +2938,10 @@ class SporelyCloudClient:
         except Exception as exc:
             raise CloudSyncError(f'R2 upload failed: {exc}') from exc
 
-        # Generate and upload thumbnail variants to match web app behavior
-        variants = [
-            ('thumb', 400, 70),
-            ('small', 240, 74),
-            ('medium', 720, 82),
-        ]
+        # Generate the single cloud thumbnail variant used by web and desktop.
         try:
             with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img)
                 if img.mode in ('RGBA', 'LA'):
                     background = Image.new('RGB', img.size, (255, 255, 255))
                     if img.mode == 'RGBA':
@@ -2634,25 +2953,24 @@ class SporelyCloudClient:
                     img = img.convert('RGB')
                     
                 orig_w, orig_h = img.size
+                scale = min(1.0, _CLOUD_THUMB_MAX_EDGE / max(orig_w, orig_h))
+                target_w = max(1, int(orig_w * scale))
+                target_h = max(1, int(orig_h * scale))
 
-                for variant, max_edge, quality in variants:
-                    scale = min(1.0, max_edge / max(orig_w, orig_h))
-                    target_w = max(1, int(orig_w * scale))
-                    target_h = max(1, int(orig_h * scale))
-
-                    variant_path = media_variant_key(storage_path, variant)
-                    img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                    buffer = io.BytesIO()
-                    img_resized.save(buffer, format='JPEG', quality=quality)
-                    r2.put_bytes(
-                        buffer.getvalue(),
-                        variant_path,
-                        content_type='image/jpeg',
-                        cache_control=cache_control,
-                        timeout=60,
-                    )
+                variant_path = media_variant_key(storage_path, 'thumb')
+                img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                buffer = io.BytesIO()
+                thumb_format, thumb_mime, thumb_options = _cloud_thumb_save_format(path)
+                img_resized.save(buffer, format=thumb_format, **thumb_options)
+                r2.put_bytes(
+                    buffer.getvalue(),
+                    variant_path,
+                    content_type=thumb_mime,
+                    cache_control=cache_control,
+                    timeout=60,
+                )
         except Exception as e:
-            print(f"[cloud_sync] Warning: Could not generate/upload thumbnail variants for {storage_path}: {e}")
+            print(f"[cloud_sync] Warning: Could not generate/upload thumbnail for {storage_path}: {e}")
 
         return storage_path
 
@@ -3087,7 +3405,16 @@ def _push_images_for_observation(
                     remote_row = existing_by_id.get(local_cloud_id)
 
                 remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
-                storage_path = client._build_storage_path(
+                existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
+                upload_suffix = Path(upload_path).suffix.lower()
+                if existing_storage_path and upload_suffix:
+                    existing_parts = existing_storage_path.split('/')
+                    existing_name = existing_parts[-1] if existing_parts else existing_storage_path
+                    existing_suffix = Path(existing_name).suffix.lower()
+                    if existing_suffix and existing_suffix != upload_suffix:
+                        migrated_name = f"{Path(existing_name).stem}{upload_suffix}"
+                        existing_storage_path = '/'.join([*existing_parts[:-1], migrated_name])
+                storage_path = existing_storage_path or client._build_storage_path(
                     obs_cloud_id,
                     remote_cloud_id or str(local_image_id or img.get('id') or ''),
                     upload_path,
@@ -3099,6 +3426,8 @@ def _push_images_for_observation(
                     include_ai_crop=include_ai_crop,
                     include_upload_meta=include_upload_meta,
                 )
+                if remote_row and remote_row.get('original_filename'):
+                    expected_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                 remote_payload = _remote_image_payload(
                     remote_row,
                     include_ai_crop=include_ai_crop,
@@ -3121,11 +3450,24 @@ def _push_images_for_observation(
                     ):
                         file_matches = True
 
+                if file_matches and not _cloud_storage_objects_exist(client, storage_path):
+                    file_matches = False
+
                 img_cloud_id = remote_cloud_id
                 if not img_cloud_id or not metadata_matches:
+                    if remote_row and remote_row.get('original_filename'):
+                        img['original_filename'] = str(remote_row.get('original_filename') or '').strip()
                     img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path)
-                    if storage_path != client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path):
+                    if (
+                        not existing_storage_path
+                        and storage_path != client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path)
+                    ):
                         storage_path = _normalize_cloud_media_key(client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path))
+                        client._patch(
+                            f'observation_images?id=eq.{img_cloud_id}',
+                            {'storage_path': storage_path},
+                        )
+                    elif remote_row and _normalize_cloud_media_key(remote_row.get('storage_path')) != _normalize_cloud_media_key(storage_path):
                         client._patch(
                             f'observation_images?id=eq.{img_cloud_id}',
                             {'storage_path': storage_path},
@@ -3137,9 +3479,11 @@ def _push_images_for_observation(
                         include_ai_crop=include_ai_crop,
                         include_upload_meta=include_upload_meta,
                     )
+                    if remote_row and remote_row.get('original_filename'):
+                        remote_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                     metadata_matches = True
                 if not file_matches:
-                    client.upload_image_file(upload_path, obs_cloud_id, img_cloud_id)
+                    client.upload_image_file(upload_path, obs_cloud_id, img_cloud_id, storage_path=storage_path)
                 kept_cloud_ids.add(str(img_cloud_id or '').strip())
 
                 try:
@@ -3583,8 +3927,9 @@ def _create_local_from_remote(
     spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
 
     # Map cloud columns to create_observation kwargs
+    remote_captured_at = str(remote.get('captured_at') or '').strip()
     kwargs = dict(
-        date=remote.get('date') or datetime.now().strftime('%Y-%m-%d'),
+        date=remote_captured_at or remote.get('date') or datetime.now().strftime('%Y-%m-%d'),
         genus=remote.get('genus'),
         species=remote.get('species'),
         common_name=remote.get('common_name'),
@@ -3691,6 +4036,7 @@ def _import_remote_images(
                 download_path = temp_dir / f'{idx:02d}_{filename}'
                 try:
                     client.download_image_file(storage_path, download_path)
+                    download_path = _rename_to_detected_image_extension(download_path)
                 except CloudSyncError as exc:
                     if _is_missing_cloud_image_error(exc):
                         print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, image_row)}')
@@ -3714,6 +4060,7 @@ def _import_remote_images(
                     resample_scale_factor=image_row.get('resample_scale_factor'),
                     ai_crop_box=_remote_ai_crop_box(image_row),
                     ai_crop_source_size=_remote_ai_crop_source_size(image_row),
+                    captured_at=image_row.get('captured_at') or remote.get('captured_at'),
                     copy_to_folder=True,
                     mark_observation_dirty=False,
                 )
@@ -3743,6 +4090,14 @@ def _import_remote_images(
                             generate_all_sizes(str(stored.get('filepath')), int(local_image_id))
                     except Exception:
                         pass
+                try:
+                    stored = ImageDB.get_image(int(local_image_id))
+                    sig_path = str((stored or {}).get('filepath') or download_path)
+                    file_sig = _file_content_signature(sig_path)
+                    if file_sig:
+                        _store_cloud_image_file_signature(int(local_id), int(local_image_id), file_sig)
+                except Exception:
+                    pass
             finally:
                 _advance_progress(progress_state, 1)
                 if remote_index and remote_total:
@@ -3774,6 +4129,16 @@ def sync_all(
             "Could not fetch the current cloud state before syncing.\n\n"
             f"Details:\n{exc}"
         ) from exc
+    if sync_images:
+        repair_result = _repair_missing_cloud_media_objects(
+            client,
+            remote_obs_before_push,
+            prepare_images_cb=prepare_images_cb,
+            progress_cb=progress_cb,
+            progress_state=progress_state,
+        )
+    else:
+        repair_result = {'repaired': 0, 'missing': 0, 'errors': []}
     try:
         push_result = push_all(
             client,
@@ -3839,7 +4204,13 @@ def sync_all(
     return {
         'pushed': push_result['pushed'] + final_push_result['pushed'],
         'pulled': pull_result['pulled'],
-        'errors': push_result['errors'] + pull_result['errors'] + final_push_result['errors'],
+        'repaired_media': int(repair_result.get('repaired') or 0),
+        'errors': (
+            list(repair_result.get('errors') or [])
+            + push_result['errors']
+            + pull_result['errors']
+            + final_push_result['errors']
+        ),
         'deleted_remote': list(pull_result.get('deleted_remote') or []),
     }
 

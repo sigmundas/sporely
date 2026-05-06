@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
 )
-from PIL import Image
+from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
 from pathlib import Path
 import sqlite3
@@ -1536,6 +1536,27 @@ class ObservationsTab(QWidget):
                     client.download_image_file(storage_path, local_path)
                 except Exception:
                     pass
+            if local_path.exists():
+                try:
+                    with Image.open(local_path) as img:
+                        fmt = str(img.format or "").strip().upper()
+                    detected_ext = {
+                        "WEBP": ".webp",
+                        "AVIF": ".avif",
+                        "JPEG": ".jpg",
+                        "PNG": ".png",
+                        "TIFF": ".tif",
+                    }.get(fmt, local_path.suffix.lower())
+                    if detected_ext and local_path.suffix.lower() != detected_ext:
+                        renamed_path = local_path.with_suffix(detected_ext)
+                        counter = 1
+                        while renamed_path.exists() and renamed_path != local_path:
+                            renamed_path = local_path.with_name(f"{local_path.stem}_{counter}{detected_ext}")
+                            counter += 1
+                        local_path.rename(renamed_path)
+                        local_path = renamed_path
+                except Exception:
+                    pass
             local_text = str(local_path) if local_path.exists() else ""
             merged = dict(image_row)
             merged["_local_path"] = local_text
@@ -1973,6 +1994,7 @@ class ObservationsTab(QWidget):
         self._set_status_progress("", 0, 1)
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
+        repaired_media = int(result.get("repaired_media", 0) or 0)
         errors = list(result.get("errors", []) or [])
         deleted_remote = [dict(row or {}) for row in (result.get("deleted_remote") or []) if row]
         issue_summary = summarize_sync_issues(errors)
@@ -1985,7 +2007,7 @@ class ObservationsTab(QWidget):
                 print(f"[cloud_sync] {error}")
         if result.get("skipped"):
             return
-        if pushed or pulled:
+        if pushed or pulled or repaired_media:
             parts = []
             if pushed:
                 parts.append(
@@ -1994,6 +2016,10 @@ class ObservationsTab(QWidget):
             if pulled:
                 parts.append(
                     self.tr("{count} imported").format(count=pulled)
+                )
+            if repaired_media:
+                parts.append(
+                    self.tr("{count} media file(s) repaired").format(count=repaired_media)
                 )
             message = self.tr("Sporely Cloud synced: {summary}.").format(summary=", ".join(parts))
             level = "warning" if errors else "success"
@@ -4739,23 +4765,14 @@ class ObservationsTab(QWidget):
                 )
                 continue
             try:
-                with Image.open(source_path) as img:
-                    source_width = int(img.width or 0)
-                    source_height = int(img.height or 0)
-                    img = img.convert("RGB")
-                    current_pixels = max(1, int(img.width) * int(img.height))
-                    if max_pixels and current_pixels > int(max_pixels):
-                        scale = (float(max_pixels) / float(current_pixels)) ** 0.5
-                        target = (
-                            max(1, int(round(float(img.width) * scale))),
-                            max(1, int(round(float(img.height) * scale))),
-                        )
-                        img = img.resize(target, Image.Resampling.LANCZOS)
-                    image_id = int(image_row.get("id") or idx)
-                    out_path = temp_dir / f"cloud_{image_id:04d}.jpg"
-                    img.save(out_path, "JPEG", quality=90)
-                    stored_width = int(img.width or 0)
-                    stored_height = int(img.height or 0)
+                upload_path, source_width, source_height, stored_width, stored_height = (
+                    self._prepare_clean_cloud_image_file(
+                        source_path=source_path,
+                        temp_dir=temp_dir,
+                        image_id=int(image_row.get("id") or idx),
+                        max_pixels=max_pixels,
+                    )
+                )
             except Exception:
                 warnings.append(
                     self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
@@ -4765,14 +4782,14 @@ class ObservationsTab(QWidget):
             prepared.append(
                 {
                     "image_row": image_row,
-                    "upload_path": str(out_path),
+                    "upload_path": str(upload_path),
                     "cloud_upload_meta": {
                         "upload_mode": upload_mode,
                         "source_width": source_width or None,
                         "source_height": source_height or None,
                         "stored_width": stored_width or None,
                         "stored_height": stored_height or None,
-                        "stored_bytes": int(out_path.stat().st_size) if out_path.exists() else None,
+                        "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
                     },
                 }
             )
@@ -4787,84 +4804,59 @@ class ObservationsTab(QWidget):
             warnings,
         )
 
-    def _render_cloud_sync_pixmap_for_image(
-        self,
-        image_row: dict,
-        obs: dict,
-        max_pixels: int | None = None,
-    ) -> QPixmap | None:
-        if max_pixels is None:
-            max_pixels = self._cloud_sync_image_max_pixels()
-        source_path = image_row.get("filepath") or image_row.get("original_filepath")
-        if not source_path:
-            return None
-        pixmap = QPixmap(str(source_path))
-        if pixmap.isNull():
-            return None
+    @staticmethod
+    def _cloud_sync_output_format(source_path: str, resized: bool) -> tuple[str, str, dict]:
+        suffix = Path(source_path).suffix.lower()
+        if suffix == ".webp" and not resized:
+            return "ORIGINAL", ".webp", {}
+        if features.check("webp"):
+            return "WEBP", ".webp", {"quality": 72, "method": 4}
+        return "JPEG", ".jpg", {"quality": 88}
 
-        preferences = self._publish_render_preferences()
-        include_copyright = self._publish_option_enabled(
-            self.SETTING_INCLUDE_COPYRIGHT,
-            default=False,
-        )
+    @classmethod
+    def _prepare_clean_cloud_image_file(
+        cls,
+        *,
+        source_path: str,
+        temp_dir: Path,
+        image_id: int,
+        max_pixels: int | None,
+    ) -> tuple[Path, int, int, int, int]:
+        source = Path(source_path)
+        with Image.open(source) as img:
+            img = ImageOps.exif_transpose(img)
+            source_width = int(img.width or 0)
+            source_height = int(img.height or 0)
+            current_pixels = max(1, int(img.width) * int(img.height))
+            resized = bool(max_pixels and current_pixels > int(max_pixels))
+            fmt, ext, save_options = cls._cloud_sync_output_format(str(source), resized)
+            if fmt == "ORIGINAL":
+                return source, source_width, source_height, source_width, source_height
 
-        lines, rectangles, labels = self._build_publish_overlays_for_image(image_row)
-        show_overlays = bool(preferences["show_overlays"]) and bool(lines or rectangles)
-        show_labels = show_overlays and bool(preferences["show_labels"]) and bool(labels)
-        exported = pixmap
+            if img.mode in ("RGBA", "LA"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                mask = img.split()[3] if img.mode == "RGBA" else img.split()[1]
+                background.paste(img, mask=mask)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
 
-        has_scale_bar = False
-        if preferences["show_scale_bar"]:
+            if resized:
+                scale = (float(max_pixels) / float(current_pixels)) ** 0.5
+                target = (
+                    max(1, int(round(float(img.width) * scale))),
+                    max(1, int(round(float(img.height) * scale))),
+                )
+                img = img.resize(target, Image.Resampling.LANCZOS)
+
+            out_path = temp_dir / f"cloud_{int(image_id):04d}{ext}"
+            img.save(out_path, fmt, **save_options)
             try:
-                mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
+                source_stat = source.stat()
+                os.utime(out_path, (source_stat.st_atime, source_stat.st_mtime))
             except Exception:
-                mpp_value = 0.0
-            has_scale_bar = mpp_value > 0
-
-        if show_overlays or has_scale_bar:
-            widget = ZoomableImageLabel()
-            widget.set_image(pixmap)
-            orig_pixels = max(1, pixmap.width() * pixmap.height())
-            publish_measure_label_scale = max(
-                1.0,
-                min(4.0, ((orig_pixels / 2_000_000.0) ** 0.5) * 0.85),
-            )
-            widget.set_export_measure_label_scale_multiplier(publish_measure_label_scale)
-            measure_color = (image_row.get("measure_color") or "").strip()
-            if measure_color:
-                widget.set_measurement_color(QColor(measure_color))
-            widget.set_show_measure_overlays(show_overlays)
-            widget.set_show_measure_labels(show_labels)
-            widget.set_measurement_lines(lines if show_overlays else [])
-            widget.set_measurement_rectangles(rectangles if show_overlays else [])
-            widget.set_measurement_labels(labels if show_labels else [])
-            if has_scale_bar:
-                try:
-                    mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
-                except Exception:
-                    mpp_value = 0.0
-                if mpp_value > 0:
-                    scale_bar_um, unit = self._publish_scale_bar_for_image(
-                        image_row=image_row,
-                        pixmap=pixmap,
-                        parent=self.window(),
-                        fallback_um=float(preferences["scale_bar_um"]),
-                    )
-                    if scale_bar_um and scale_bar_um > 0:
-                        widget.set_microns_per_pixel(mpp_value)
-                        widget.set_scale_bar(True, float(scale_bar_um), unit=unit)
-            rendered = widget.export_annotated_pixmap()
-            if rendered and not rendered.isNull():
-                exported = rendered
-
-        if include_copyright:
-            copyright_text = self._publish_copyright_text(obs)
-            if copyright_text:
-                watermarked = QPixmap(exported)
-                if self._draw_publish_copyright(watermarked, copyright_text):
-                    exported = watermarked
-
-        return self._scale_pixmap_to_max_pixels(exported, max_pixels)
+                pass
+            return out_path, source_width, source_height, int(img.width or 0), int(img.height or 0)
 
     def prepare_cloud_sync_image_uploads(
         self,
@@ -4904,6 +4896,11 @@ class ObservationsTab(QWidget):
             self.SETTING_INCLUDE_PLATE,
             default=False,
         )
+        include_overlays = any((
+            self._publish_option_enabled(self.SETTING_INCLUDE_ANNOTATIONS, default=False),
+            self._publish_option_enabled(self.SETTING_SHOW_SCALE_BAR, default=False),
+            self._publish_option_enabled(self.SETTING_INCLUDE_COPYRIGHT, default=False),
+        ))
         if not selected_images and not (include_measure_plots or include_thumbnail_gallery or include_plate):
             return [], None, []
 
@@ -4918,6 +4915,10 @@ class ObservationsTab(QWidget):
                     "Generated plot, gallery, and plate media stay local and were skipped for cloud sync."
                 )
             )
+        if include_overlays:
+            warnings.append(
+                self.tr("Cloud sync does not add visible overlays or watermarks to uploaded images.")
+            )
 
         for idx, image_row in enumerate(selected_images, start=1):
             self._yield_background_sync_ui()
@@ -4931,50 +4932,37 @@ class ObservationsTab(QWidget):
                     max(1, total),
                 )
             self._yield_background_sync_ui()
-            rendered = self._render_cloud_sync_pixmap_for_image(
-                image_row,
-                obs,
-                max_pixels=max_pixels,
-            )
-            if rendered is None or rendered.isNull():
+            source_path = str(image_row.get("filepath") or image_row.get("original_filepath") or "")
+            if not source_path or not Path(source_path).exists():
                 warnings.append(
                     self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
                 )
                 continue
-            source_path = str(image_row.get("filepath") or image_row.get("original_filepath") or "")
-            source_width = int(rendered.width() or 0)
-            source_height = int(rendered.height() or 0)
-            if source_path:
-                try:
-                    source_pixmap = QPixmap(source_path)
-                    if not source_pixmap.isNull():
-                        source_width = int(source_pixmap.width() or source_width or 0)
-                        source_height = int(source_pixmap.height() or source_height or 0)
-                except Exception:
-                    pass
-            suffix = Path(source_path).suffix.lower()
-            image_format = "PNG" if suffix == ".png" else "JPEG"
-            out_suffix = ".png" if image_format == "PNG" else ".jpg"
-            image_id = int(image_row.get("id") or idx)
-            out_path = temp_dir / f"cloud_{image_id:04d}{out_suffix}"
-            saved = rendered.save(str(out_path), image_format, 90 if image_format == "JPEG" else -1)
-            if not saved:
+            try:
+                upload_path, source_width, source_height, stored_width, stored_height = (
+                    self._prepare_clean_cloud_image_file(
+                        source_path=source_path,
+                        temp_dir=temp_dir,
+                        image_id=int(image_row.get("id") or idx),
+                        max_pixels=max_pixels,
+                    )
+                )
+            except Exception:
                 warnings.append(
                     self.tr("Could not save image {index} for cloud upload.").format(index=idx)
                 )
                 continue
-            saved_path = str(out_path)
             prepared.append(
                 {
                     "image_row": image_row,
-                    "upload_path": saved_path,
+                    "upload_path": str(upload_path),
                     "cloud_upload_meta": {
                         "upload_mode": upload_mode,
                         "source_width": source_width or None,
                         "source_height": source_height or None,
-                        "stored_width": int(rendered.width() or 0) or None,
-                        "stored_height": int(rendered.height() or 0) or None,
-                        "stored_bytes": int(out_path.stat().st_size) if out_path.exists() else None,
+                        "stored_width": stored_width or None,
+                        "stored_height": stored_height or None,
+                        "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
                     },
                 }
             )
@@ -9630,6 +9618,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
         self.submit_observation_btn.setObjectName("primaryButton")
         self.submit_observation_btn.setMinimumHeight(35)
+        self.submit_observation_btn.setMaximumHeight(35)
         self.submit_observation_btn.setAutoDefault(True)
         self.submit_observation_btn.setDefault(True)
         self.submit_observation_btn.clicked.connect(self.accept)
@@ -9900,11 +9889,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.ai_table.setMinimumHeight(140)
         self.ai_table.setMinimumWidth(260)
         self.ai_table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        self.ai_table.setShowGrid(False)
+        self.ai_table.setAttribute(Qt.WA_MacShowFocusRect, False)
         self.ai_table.setStyleSheet(
-            "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
-            "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; }"
+            "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
+            "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
+            "QTableWidget::item:focus, QTableWidget::item:selected:focus, QTableWidget::item:selected:!active:focus { outline: none; border: none; }"
+            "QTableWidget { gridline-color: transparent; }"
         )
         self.ai_table.itemSelectionChanged.connect(self._on_ai_selection_changed)
+        self.ai_table.doubleClicked.connect(self._on_ai_copy_to_taxonomy)
         ai_layout.addWidget(self.ai_table)
 
         self.ai_status_label = QLabel("")

@@ -369,7 +369,7 @@ QPushButton#primaryButton {{
     border: none;
     border-radius: 12px;
     padding: 10px 16px;
-    min-height: 44px;
+    min-height: 35px;
     font-weight: bold;
     font-size: {base_pt}pt;
 }}
@@ -1069,6 +1069,7 @@ QPushButton#primaryButton {{
     border: none;
     border-radius: 8px;
     padding: 7px 18px;
+    min-height: 35px;
     font-weight: bold;
     font-size: {base_pt}pt;
 }}
