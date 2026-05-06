@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QThread
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from PySide6.QtWidgets import (
@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from database.models import ImageDB, MeasurementDB
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
 from database.database_tags import DatabaseTerms
-from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
+from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
 from .styles import pt
 
@@ -79,6 +79,35 @@ class _PublishToggle(QLabel):
         self.setPixmap(self._pixmap_checked if self._checked else self._pixmap_unchecked)
 
 
+class _ObservationGalleryLoader(QThread):
+    """Fetch observation image metadata away from the GUI thread."""
+
+    loaded = Signal(int, object, object)  # observation_id, image rows, measurement image ids
+
+    def __init__(self, observation_id: int) -> None:
+        super().__init__()
+        self._observation_id = int(observation_id)
+
+    def run(self) -> None:
+        images = []
+        measurement_image_ids: set[int] = set()
+        try:
+            images = ImageDB.get_images_for_observation(self._observation_id)
+        except Exception:
+            images = []
+        try:
+            measurements = MeasurementDB.get_measurements_for_observation(self._observation_id)
+        except Exception:
+            measurements = []
+        for measurement in measurements or []:
+            image_id = measurement.get("image_id")
+            try:
+                measurement_image_ids.add(int(image_id))
+            except (TypeError, ValueError):
+                continue
+        self.loaded.emit(self._observation_id, images, measurement_image_ids)
+
+
 class ImageGalleryWidget(QGroupBox):
     """Collapsible thumbnail gallery for observations or explicit image lists."""
 
@@ -90,6 +119,7 @@ class ImageGalleryWidget(QGroupBox):
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
     itemsReordered = Signal(object)
+    observationLoaded = Signal(object)
 
     def __init__(
         self,
@@ -137,6 +167,14 @@ class ImageGalleryWidget(QGroupBox):
         self._suppress_publish_signal = False
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_max = 512
+        self._render_batch_size = 8
+        self._render_generation = 0
+        self._render_index = 0
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self._render_next_batch)
+        self._observation_load_generation = 0
+        self._observation_loaders: set[_ObservationGalleryLoader] = set()
         self._content = QWidget(self)
         content_layout = QVBoxLayout(self._content)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -171,6 +209,10 @@ class ImageGalleryWidget(QGroupBox):
         self._previous_image_shortcut.activated.connect(lambda: self._select_adjacent_image(-1))
 
     def clear(self) -> None:
+        self._render_generation += 1
+        self._observation_load_generation += 1
+        self._render_timer.stop()
+        self._render_index = 0
         self._items = []
         self._selected_id = None
         self._selected_keys = set()
@@ -251,6 +293,7 @@ class ImageGalleryWidget(QGroupBox):
         self.set_items(items)
 
     def set_items(self, items: Iterable[dict]) -> None:
+        self._observation_load_generation += 1
         self._items = []
         for idx, item in enumerate(items):
             if not item:
@@ -285,12 +328,56 @@ class ImageGalleryWidget(QGroupBox):
         self._render()
 
     def set_observation_id(self, observation_id: int | None) -> None:
+        self._observation_load_generation += 1
         if not observation_id:
             self.clear()
             return
         images = ImageDB.get_images_for_observation(observation_id)
-        objectives = self._get_objectives_cache()
         measurement_image_ids = self._spore_measurement_image_ids_for_observation(observation_id)
+        self._set_observation_rows(observation_id, images, measurement_image_ids)
+
+    def set_observation_id_async(self, observation_id: int | None) -> None:
+        self._observation_load_generation += 1
+        generation = self._observation_load_generation
+        if not observation_id:
+            self.clear()
+            return
+        loader = _ObservationGalleryLoader(int(observation_id))
+        self._observation_loaders.add(loader)
+        loader.loaded.connect(
+            lambda loaded_obs_id, images, measurement_ids, gen=generation:
+                self._on_observation_rows_loaded(gen, loaded_obs_id, images, measurement_ids)
+        )
+        loader.finished.connect(lambda worker=loader: self._observation_loaders.discard(worker))
+        loader.finished.connect(loader.deleteLater)
+        loader.start(QThread.LowPriority)
+
+    def _on_observation_rows_loaded(
+        self,
+        generation: int,
+        observation_id: int,
+        images: object,
+        measurement_image_ids: object,
+    ) -> None:
+        if generation != self._observation_load_generation:
+            return
+        try:
+            measurement_ids = {int(v) for v in (measurement_image_ids or set())}
+        except Exception:
+            measurement_ids = set()
+        self._set_observation_rows(observation_id, list(images or []), measurement_ids)
+        self.observationLoaded.emit(int(observation_id))
+
+    def _set_observation_rows(
+        self,
+        observation_id: int | None,
+        images: Iterable[dict],
+        measurement_image_ids: set[int],
+    ) -> None:
+        if not observation_id:
+            self.clear()
+            return
+        objectives = self._get_objectives_cache()
         objective_label_cache: dict[str, str | None] = {}
         items = []
         for idx, img in enumerate(images):
@@ -346,11 +433,6 @@ class ImageGalleryWidget(QGroupBox):
                     "badges": badges,
                 }
             )
-            if img_id and img.get("filepath"):
-                try:
-                    generate_all_sizes(str(img.get("filepath")), int(img_id))
-                except Exception as exc:
-                    print(f"Warning: Could not refresh thumbnails for image {img_id}: {exc}")
         self._items = items
         self._render()
 
@@ -582,17 +664,40 @@ class ImageGalleryWidget(QGroupBox):
         return widgets
 
     def _render(self) -> None:
+        self._render_generation += 1
+        self._render_timer.stop()
+        self._render_index = 0
         self._clear_widgets()
         self._thumb_size = self._target_thumb_size()
         self._sync_container_height()
-        for item in self._items:
+        if not self._items:
+            return
+        self._render_next_batch()
+
+    def _render_next_batch(self) -> None:
+        generation = self._render_generation
+        end_index = min(len(self._items), self._render_index + self._render_batch_size)
+        while self._render_index < end_index:
+            item = self._items[self._render_index]
+            self._render_index += 1
             frame = self._create_thumbnail_widget(item)
             self._frames.append(frame)
             self._grid.addWidget(frame)
+            key = self._item_key(item)
+            if key in self._selected_keys:
+                frame.setStyleSheet(
+                    self._frame_style(
+                        selected=True,
+                        border_color=getattr(frame, "frame_border_color", None),
+                    )
+                )
+                self._apply_frame_glow(frame, True)
         if self._selected_id is not None:
             self.select_image(self._selected_id)
         elif self._selected_keys:
             self._apply_selection_styles()
+        if generation == self._render_generation and self._render_index < len(self._items):
+            self._render_timer.start(0)
 
     def eventFilter(self, obj, event):
         if self._reorderable and event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
