@@ -1772,199 +1772,6 @@ def _content_type_for_path(path: Path) -> str:
     return mimetypes.guess_type(path.name)[0] or 'image/jpeg'
 
 
-def _cloud_storage_objects_exist(client, storage_path: str) -> bool:
-    key = _normalize_cloud_media_key(storage_path)
-    if not key:
-        return False
-    try:
-        r2 = client._get_r2()
-        return r2.object_exists(key) and r2.object_exists(media_variant_key(key, 'thumb'))
-    except Exception as exc:
-        print(f'[cloud_sync] Could not verify cloud storage object for {key}: {exc}')
-        return False
-
-
-def _prepared_item_for_remote_image(prepared_items: list[dict], remote_image: dict) -> dict | None:
-    remote_cloud_id = str((remote_image or {}).get('id') or '').strip()
-    remote_desktop_id = _safe_int((remote_image or {}).get('desktop_id'))
-    remote_sort_order = _safe_int((remote_image or {}).get('sort_order'), default=-1)
-    remote_type = str((remote_image or {}).get('image_type') or 'field').strip().lower()
-
-    fallback: dict | None = None
-    for item in prepared_items or []:
-        img = dict((item or {}).get('image_row') or {})
-        if not img:
-            continue
-        local_id = _safe_int(img.get('id'))
-        local_cloud_id = str(img.get('cloud_id') or '').strip()
-        if remote_cloud_id and local_cloud_id == remote_cloud_id:
-            return item
-        if remote_desktop_id and local_id == remote_desktop_id:
-            return item
-        if (
-            fallback is None
-            and remote_sort_order >= 0
-            and _safe_int(img.get('sort_order'), default=-2) == remote_sort_order
-            and str(img.get('image_type') or 'field').strip().lower() == remote_type
-        ):
-            fallback = item
-    return fallback
-
-
-def _load_local_observations_by_cloud_id(cloud_ids: list[str]) -> dict[str, dict]:
-    cleaned = [str(value or '').strip() for value in cloud_ids if str(value or '').strip()]
-    if not cleaned:
-        return {}
-    conn = get_connection()
-    conn.row_factory = __import__('sqlite3').Row
-    try:
-        result: dict[str, dict] = {}
-        for start in range(0, len(cleaned), 500):
-            chunk = cleaned[start : start + 500]
-            placeholders = ','.join('?' for _ in chunk)
-            rows = conn.execute(
-                f"SELECT * FROM observations WHERE cloud_id IN ({placeholders})",
-                chunk,
-            ).fetchall()
-            for row in rows:
-                obs = dict(row)
-                cloud_id = str(obs.get('cloud_id') or '').strip()
-                if cloud_id:
-                    result[cloud_id] = obs
-        return result
-    finally:
-        conn.close()
-
-
-def _repair_missing_cloud_media_objects(
-    client: "SporelyCloudClient",
-    remote_obs: list[dict] | None,
-    prepare_images_cb: PreparedImagesCallback | None = None,
-    progress_cb: ProgressCallback | None = None,
-    progress_state: dict | None = None,
-) -> dict:
-    """Re-upload R2 files that are still referenced by Supabase but missing in storage."""
-    cloud_ids = [
-        str((row or {}).get('id') or '').strip()
-        for row in (remote_obs or [])
-        if str((row or {}).get('id') or '').strip()
-    ]
-    local_by_cloud_id = _load_local_observations_by_cloud_id(cloud_ids)
-    if not local_by_cloud_id:
-        return {'repaired': 0, 'missing': 0, 'errors': []}
-
-    remote_images = client.pull_bulk_image_metadata(list(local_by_cloud_id.keys()))
-    missing_by_obs: dict[str, list[dict]] = {}
-    for remote_image in remote_images or []:
-        cloud_id = str((remote_image or {}).get('observation_id') or '').strip()
-        storage_path = _normalize_cloud_media_key((remote_image or {}).get('storage_path'))
-        if not cloud_id or cloud_id not in local_by_cloud_id or not storage_path:
-            continue
-        if not _cloud_storage_objects_exist(client, storage_path):
-            missing_by_obs.setdefault(cloud_id, []).append(dict(remote_image or {}))
-
-    missing_count = sum(len(rows) for rows in missing_by_obs.values())
-    if not missing_count:
-        return {'repaired': 0, 'missing': 0, 'errors': []}
-
-    _extend_progress_total(progress_state, missing_count)
-    repaired = 0
-    errors: list[str] = []
-
-    for cloud_id, missing_rows in missing_by_obs.items():
-        local_obs = local_by_cloud_id.get(cloud_id)
-        if not local_obs:
-            continue
-        obs_name = _observation_display_name(local_obs)
-        cleanup = None
-        try:
-            if callable(prepare_images_cb):
-                prepared_items, cleanup, warnings = prepare_images_cb(
-                    local_obs,
-                    lambda message, _current=None, _total=None: _emit_progress(progress_cb, message, progress_state),
-                )
-                for warning in warnings or []:
-                    print(f'[cloud_sync] Observation {local_obs.get("id")}: {warning}')
-            else:
-                prepared_items = [
-                    {'image_row': img, 'upload_path': img.get('filepath')}
-                    for img in ImageDB.get_images_for_observation(local_obs['id'])
-                ]
-
-            for remote_image in missing_rows:
-                remote_cloud_id = str(remote_image.get('id') or '').strip()
-                item = _prepared_item_for_remote_image(prepared_items, remote_image)
-                if not item:
-                    errors.append(
-                        f"obs {local_obs.get('id')}: could not repair missing cloud image {remote_cloud_id or '?'}"
-                    )
-                    _advance_progress(progress_state, 1)
-                    continue
-                img = dict(item.get('image_row') or {})
-                upload_path = str(item.get('upload_path') or img.get('filepath') or '').strip()
-                if not upload_path or not Path(upload_path).exists():
-                    errors.append(
-                        f"obs {local_obs.get('id')}: local file missing for cloud image {remote_cloud_id or '?'}"
-                    )
-                    _advance_progress(progress_state, 1)
-                    continue
-
-                storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
-                upload_suffix = Path(upload_path).suffix.lower()
-                if storage_path and upload_suffix:
-                    storage_parts = storage_path.split('/')
-                    storage_name = storage_parts[-1] if storage_parts else storage_path
-                    storage_suffix = Path(storage_name).suffix.lower()
-                    if storage_suffix and storage_suffix != upload_suffix:
-                        migrated_name = f"{Path(storage_name).stem}{upload_suffix}"
-                        storage_path = '/'.join([*storage_parts[:-1], migrated_name])
-                        client._patch(
-                            f'observation_images?id=eq.{remote_cloud_id}',
-                            {'storage_path': storage_path},
-                        )
-                        client._set_observation_media_keys(
-                            cloud_id,
-                            storage_path,
-                            remote_image.get('sort_order'),
-                        )
-
-                _emit_progress(
-                    progress_cb,
-                    f"Repairing missing cloud image for observation {local_obs.get('id')}: {obs_name}…",
-                    progress_state,
-                )
-                client.upload_image_file(upload_path, cloud_id, remote_cloud_id, storage_path=storage_path)
-                repaired += 1
-
-                local_image_id = _safe_int(img.get('id'))
-                if local_image_id > 0:
-                    conn = get_connection()
-                    try:
-                        conn.execute(
-                            'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
-                            (remote_cloud_id, datetime.now(timezone.utc).isoformat(), local_image_id),
-                        )
-                        conn.commit()
-                    finally:
-                        conn.close()
-                    file_sig = _file_content_signature(upload_path)
-                    if file_sig:
-                        _store_cloud_image_file_signature(local_obs.get('id'), local_image_id, file_sig)
-                _advance_progress(progress_state, 1)
-            _store_remote_snapshot(client, cloud_id)
-            _refresh_local_cloud_media_signature(local_obs.get('id'))
-        except Exception as exc:
-            errors.append(f"obs {local_obs.get('id')}: cloud media repair failed: {exc}")
-        finally:
-            if callable(cleanup):
-                try:
-                    cleanup()
-                except Exception:
-                    pass
-
-    return {'repaired': repaired, 'missing': missing_count, 'errors': errors}
-
-
 def _detected_image_extension(path: str | Path) -> str:
     try:
         with Image.open(path) as img:
@@ -3450,9 +3257,6 @@ def _push_images_for_observation(
                     ):
                         file_matches = True
 
-                if file_matches and not _cloud_storage_objects_exist(client, storage_path):
-                    file_matches = False
-
                 img_cloud_id = remote_cloud_id
                 if not img_cloud_id or not metadata_matches:
                     if remote_row and remote_row.get('original_filename'):
@@ -4129,16 +3933,6 @@ def sync_all(
             "Could not fetch the current cloud state before syncing.\n\n"
             f"Details:\n{exc}"
         ) from exc
-    if sync_images:
-        repair_result = _repair_missing_cloud_media_objects(
-            client,
-            remote_obs_before_push,
-            prepare_images_cb=prepare_images_cb,
-            progress_cb=progress_cb,
-            progress_state=progress_state,
-        )
-    else:
-        repair_result = {'repaired': 0, 'missing': 0, 'errors': []}
     try:
         push_result = push_all(
             client,
@@ -4204,13 +3998,7 @@ def sync_all(
     return {
         'pushed': push_result['pushed'] + final_push_result['pushed'],
         'pulled': pull_result['pulled'],
-        'repaired_media': int(repair_result.get('repaired') or 0),
-        'errors': (
-            list(repair_result.get('errors') or [])
-            + push_result['errors']
-            + pull_result['errors']
-            + final_push_result['errors']
-        ),
+        'errors': push_result['errors'] + pull_result['errors'] + final_push_result['errors'],
         'deleted_remote': list(pull_result.get('deleted_remote') or []),
     }
 

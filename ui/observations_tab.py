@@ -869,6 +869,11 @@ class ObservationsTab(QWidget):
         self._search_refresh_timer.setSingleShot(True)
         self._search_refresh_timer.setInterval(180)
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
+        self._pending_gallery_observation_id: int | None = None
+        self._gallery_load_timer = QTimer(self)
+        self._gallery_load_timer.setSingleShot(True)
+        self._gallery_load_timer.setInterval(45)
+        self._gallery_load_timer.timeout.connect(self._load_pending_gallery_observation)
         self.setAcceptDrops(True)
         self.init_ui()
         QTimer.singleShot(0, self.refresh_observations)
@@ -1148,6 +1153,7 @@ class ObservationsTab(QWidget):
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
+        self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
 
         detail_layout.addWidget(self.gallery_widget)
         self.detail_widget.setMaximumHeight(self._observations_detail_max_height())
@@ -1994,7 +2000,6 @@ class ObservationsTab(QWidget):
         self._set_status_progress("", 0, 1)
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
-        repaired_media = int(result.get("repaired_media", 0) or 0)
         errors = list(result.get("errors", []) or [])
         deleted_remote = [dict(row or {}) for row in (result.get("deleted_remote") or []) if row]
         issue_summary = summarize_sync_issues(errors)
@@ -2007,7 +2012,7 @@ class ObservationsTab(QWidget):
                 print(f"[cloud_sync] {error}")
         if result.get("skipped"):
             return
-        if pushed or pulled or repaired_media:
+        if pushed or pulled:
             parts = []
             if pushed:
                 parts.append(
@@ -2016,10 +2021,6 @@ class ObservationsTab(QWidget):
             if pulled:
                 parts.append(
                     self.tr("{count} imported").format(count=pulled)
-                )
-            if repaired_media:
-                parts.append(
-                    self.tr("{count} media file(s) repaired").format(count=repaired_media)
                 )
             message = self.tr("Sporely Cloud synced: {summary}.").format(summary=", ".join(parts))
             level = "warning" if errors else "success"
@@ -4450,6 +4451,32 @@ class ObservationsTab(QWidget):
         for checkbox in self.gallery_widget.publish_checkbox_widgets():
             self._status_hint_controller.register_widget(checkbox, hint)
 
+    def _cancel_pending_gallery_load(self) -> None:
+        self._pending_gallery_observation_id = None
+        timer = getattr(self, "_gallery_load_timer", None)
+        if timer is not None:
+            timer.stop()
+
+    def _schedule_gallery_observation_load(self, observation_id: int) -> None:
+        self._pending_gallery_observation_id = int(observation_id)
+        self._gallery_load_timer.start()
+
+    def _load_pending_gallery_observation(self) -> None:
+        observation_id = self._pending_gallery_observation_id
+        self._pending_gallery_observation_id = None
+        if not observation_id or observation_id != self.selected_observation_id:
+            return
+        self.gallery_widget.set_observation_id_async(int(observation_id))
+
+    def _on_gallery_observation_loaded(self, observation_id: object) -> None:
+        try:
+            loaded_observation_id = int(observation_id)
+        except (TypeError, ValueError):
+            return
+        if loaded_observation_id != self.selected_observation_id:
+            return
+        self._apply_gallery_publish_selection_for_observation(loaded_observation_id)
+
     def _apply_gallery_publish_selection_for_observation(self, observation_id: int | None) -> None:
         if not observation_id or not hasattr(self, "gallery_widget"):
             return
@@ -4538,6 +4565,7 @@ class ObservationsTab(QWidget):
             self.export_btn.setEnabled(True)
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
+            self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
@@ -4548,6 +4576,7 @@ class ObservationsTab(QWidget):
                 self.delete_btn.setEnabled(True)
             if hasattr(self, "export_btn") and not has_cloud:
                 self.export_btn.setEnabled(True)
+            self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
@@ -4557,6 +4586,7 @@ class ObservationsTab(QWidget):
         row = selected_rows[0].row()
         id_item = self.table.item(row, 0)
         if id_item is None:
+            self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
@@ -4566,8 +4596,10 @@ class ObservationsTab(QWidget):
             row_data = self._observation_row_data_from_item(id_item)
             if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
                 self.rename_btn.setEnabled(True)
+                self._cancel_pending_gallery_load()
                 self.gallery_widget.set_items(self._cloud_gallery_items(row_data))
             else:
+                self._cancel_pending_gallery_load()
                 self.gallery_widget.clear()
             self.selected_observation_id = None
             self._update_publish_controls()
@@ -4579,9 +4611,8 @@ class ObservationsTab(QWidget):
         self.delete_btn.setEnabled(not self._is_cloud_sync_running())
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(True)
-        # Populate image browser for the selected row only (no extra full-table DB fetch).
-        self.gallery_widget.set_observation_id(obs_id)
-        self._apply_gallery_publish_selection_for_observation(obs_id)
+        # Let the table selection repaint before the heavier gallery DB/image work.
+        self._schedule_gallery_observation_load(obs_id)
         # Do not force a full Measure-tab reload on every table click.
         # MainWindow.on_tab_changed() synchronizes the selected observation when the
         # user switches to Measure/Analysis, and explicit actions can still call
@@ -4734,20 +4765,6 @@ class ObservationsTab(QWidget):
         warnings: list[str] = []
         total = len(selected_images)
 
-        if any((
-            self._publish_option_enabled(self.SETTING_INCLUDE_ANNOTATIONS, default=False),
-            self._publish_option_enabled(self.SETTING_SHOW_SCALE_BAR, default=False),
-            self._publish_option_enabled(self.SETTING_INCLUDE_COPYRIGHT, default=False),
-            self._publish_option_enabled(self.SETTING_INCLUDE_MEASURE_PLOTS, default=False),
-            self._publish_option_enabled(self.SETTING_INCLUDE_THUMBNAIL_GALLERY, default=False),
-            self._publish_option_enabled(self.SETTING_INCLUDE_PLATE, default=False),
-        )):
-            warnings.append(
-                self.tr(
-                    "Cloud sync is running in the background, so overlays, watermark, and generated media were skipped for this upload."
-                )
-            )
-
         for idx, image_row in enumerate(selected_images, start=1):
             if progress_cb:
                 progress_cb(
@@ -4884,41 +4901,13 @@ class ObservationsTab(QWidget):
             for image_row in self._collect_publish_selected_image_rows(int(observation_id))
             if should_push_local_image_to_cloud(image_row)
         ]
-        include_measure_plots = self._publish_option_enabled(
-            self.SETTING_INCLUDE_MEASURE_PLOTS,
-            default=False,
-        )
-        include_thumbnail_gallery = self._publish_option_enabled(
-            self.SETTING_INCLUDE_THUMBNAIL_GALLERY,
-            default=False,
-        )
-        include_plate = self._publish_option_enabled(
-            self.SETTING_INCLUDE_PLATE,
-            default=False,
-        )
-        include_overlays = any((
-            self._publish_option_enabled(self.SETTING_INCLUDE_ANNOTATIONS, default=False),
-            self._publish_option_enabled(self.SETTING_SHOW_SCALE_BAR, default=False),
-            self._publish_option_enabled(self.SETTING_INCLUDE_COPYRIGHT, default=False),
-        ))
-        if not selected_images and not (include_measure_plots or include_thumbnail_gallery or include_plate):
+        if not selected_images:
             return [], None, []
 
         temp_dir = Path(tempfile.mkdtemp(prefix=f"sporely_cloud_{int(observation_id)}_"))
         prepared: list[dict] = []
         warnings: list[str] = []
         total = len(selected_images)
-
-        if include_measure_plots or include_thumbnail_gallery or include_plate:
-            warnings.append(
-                self.tr(
-                    "Generated plot, gallery, and plate media stay local and were skipped for cloud sync."
-                )
-            )
-        if include_overlays:
-            warnings.append(
-                self.tr("Cloud sync does not add visible overlays or watermarks to uploaded images.")
-            )
 
         for idx, image_row in enumerate(selected_images, start=1):
             self._yield_background_sync_ui()

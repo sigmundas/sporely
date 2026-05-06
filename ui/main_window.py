@@ -1093,7 +1093,6 @@ class SettingsHubDialog(QDialog):
         layout.setSpacing(0)
         # Cloud and copyright sections live on their own pages; content checklist stays here
         self._artsobs_dialog._cloud_section.hide()
-        self._artsobs_dialog._cloud_content_section.hide()
         self._artsobs_dialog._copyright_section.hide()
         layout.addWidget(self._artsobs_dialog)
         return page
@@ -1107,10 +1106,6 @@ class SettingsHubDialog(QDialog):
         cloud.setParent(page)
         cloud.show()
         layout.addWidget(cloud)
-        cloud_content = self._artsobs_dialog._cloud_content_section
-        cloud_content.setParent(page)
-        cloud_content.show()
-        layout.addWidget(cloud_content)
         layout.addStretch()
         return page
 
@@ -1711,43 +1706,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
         layout.addWidget(options_group, 1)
 
-        # ── Cloud publish content (subset — no spore stats, no thumbnail gallery) ──
-        cloud_content_group = QGroupBox(self.tr("Sync content"), self)
-        cloud_content_layout = QVBoxLayout(cloud_content_group)
-        cloud_content_layout.setContentsMargins(10, 10, 10, 10)
-        cloud_content_layout.setSpacing(6)
-        self.cloud_include_annotations_checkbox = QCheckBox(self)
-        self.cloud_show_scale_bar_checkbox = QCheckBox(self)
-        self.cloud_include_measure_plots_checkbox = QCheckBox(self)
-        self.cloud_include_plate_checkbox = QCheckBox(self)
-        self.cloud_include_copyright_checkbox = QCheckBox(self)
-        cloud_content_options = (
-            (
-                self.cloud_include_annotations_checkbox,
-                self.tr("Show measures on images"),
-                self.tr("Include measures on synced images"),
-            ),
-            (
-                self.cloud_show_scale_bar_checkbox,
-                self.tr("Show scale bar on images"),
-                self.tr("Shows a scale bar on synced images"),
-            ),
-            (
-                self.cloud_include_measure_plots_checkbox,
-                self.tr("Include measure plots"),
-                self.tr("Uploads an image of the plot in the Analysis module."),
-            ),
-            (
-                self.cloud_include_plate_checkbox,
-                self.tr("Include plate"),
-                self.tr("Uploads the current species plate image."),
-            ),
-        )
-        for checkbox, text, help_text in cloud_content_options:
-            checkbox.toggled.connect(self._save_settings)
-            self._add_wrapped_checkbox_row(cloud_content_layout, checkbox, text, help_text)
-        self._cloud_content_section = cloud_content_group
-
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
@@ -1771,22 +1729,24 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         help_text: str | None = None,
     ) -> None:
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         checkbox.setText("")
         self._register_hint_widget(checkbox, help_text)
-        row.addWidget(checkbox, 0, Qt.AlignTop)
+        row.addWidget(checkbox, 0, Qt.AlignVCenter)
         text_row = QHBoxLayout()
         text_row.setContentsMargins(0, 0, 0, 0)
         text_row.setSpacing(4)
 
         label = QLabel(text, self)
         label.setWordWrap(True)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         label.setTextInteractionFlags(Qt.NoTextInteraction)
         label.setCursor(Qt.PointingHandCursor)
         label.mousePressEvent = lambda _event, cb=checkbox: cb.click() if cb.isEnabled() else None
         self._register_hint_widget(label, help_text)
-        text_row.addWidget(label, 1)
+        text_row.addWidget(label, 1, Qt.AlignVCenter)
         row.addLayout(text_row, 1)
         parent_layout.addLayout(row)
 
@@ -2014,21 +1974,23 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
             self._selected_cloud_sharing_scope(),
         )
+        # Sporely Cloud sync always uploads clean images only. Keep legacy
+        # per-sync content settings disabled in case older versions set them.
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_ANNOTATIONS,
-            "1" if self.cloud_include_annotations_checkbox.isChecked() else "0",
+            "0",
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_SHOW_SCALE_BAR,
-            "1" if self.cloud_show_scale_bar_checkbox.isChecked() else "0",
+            "0",
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_MEASURE_PLOTS,
-            "1" if self.cloud_include_measure_plots_checkbox.isChecked() else "0",
+            "0",
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_PLATE,
-            "1" if self.cloud_include_plate_checkbox.isChecked() else "0",
+            "0",
         )
         SettingsDB.set_setting(
             self.SETTING_CLOUD_INCLUDE_COPYRIGHT,
@@ -2632,31 +2594,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 (
                     self.include_copyright_checkbox,
                     self.SETTING_INCLUDE_COPYRIGHT,
-                    False,
-                ),
-                (
-                    self.cloud_include_annotations_checkbox,
-                    self.SETTING_CLOUD_INCLUDE_ANNOTATIONS,
-                    False,
-                ),
-                (
-                    self.cloud_show_scale_bar_checkbox,
-                    self.SETTING_CLOUD_SHOW_SCALE_BAR,
-                    False,
-                ),
-                (
-                    self.cloud_include_measure_plots_checkbox,
-                    self.SETTING_CLOUD_INCLUDE_MEASURE_PLOTS,
-                    False,
-                ),
-                (
-                    self.cloud_include_plate_checkbox,
-                    self.SETTING_CLOUD_INCLUDE_PLATE,
-                    False,
-                ),
-                (
-                    self.cloud_include_copyright_checkbox,
-                    self.SETTING_CLOUD_INCLUDE_COPYRIGHT,
                     False,
                 ),
             )

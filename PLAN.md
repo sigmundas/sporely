@@ -236,7 +236,7 @@ Important:
 - ✅ Web/mobile JPEG/WebP uploads now work on both iOS and Android.
 - ✅ Desktop R2 download uses direct object keys, so `.jpg`, `.jpeg`, `.webp`, and `.avif` keys can be pulled without the old Cloudflare CDN conversion trick.
 - ✅ `pillow-heif` is present in `requirements.txt` and registered on boot, so Pillow can decode HEIF/AVIF formats when the local dependency supports them.
-- ✅ Desktop upload metadata and thumbnail naming have been aligned with the web app's primary `thumb_{filename}` variant, while retaining legacy `thumb_small_` / `thumb_medium_` cleanup support.
+- ✅ Desktop upload metadata and thumbnail naming have been aligned with the web app's single `thumb_{filename}` variant.
 
 ### Follow-Up: Desktop AVIF for Resized Microscope Uploads
 - Consider adding an opt-in AVIF encode path only for desktop-generated/resized microscope images, especially when `resample_scale_factor < 1.0`.

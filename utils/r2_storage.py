@@ -202,18 +202,6 @@ class CloudflareR2Client:
                     handle.write(chunk)
         return destination
 
-    def object_exists(self, key: str, *, timeout: int = 30) -> bool:
-        normalized = normalize_media_key(key)
-        if not normalized:
-            return False
-        response = self._request("HEAD", key=normalized, timeout=timeout)
-        if response.ok:
-            return True
-        if response.status_code == 404:
-            return False
-        self._raise_for_status(response, "R2 object check failed")
-        return False
-
     def delete_objects(self, keys: Iterable[str]) -> None:
         cleaned = []
         for key in keys:
