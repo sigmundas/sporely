@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                 QDateTimeEdit, QFileDialog, QLabel, QMessageBox,
                                 QSplitter, QRadioButton, QButtonGroup,
                                 QComboBox,
-                                QListWidget, QListWidgetItem, QGroupBox, QCheckBox,
+                                QListWidget, QListWidgetItem, QCheckBox,
                                 QDoubleSpinBox, QTabWidget, QDialogButtonBox, QCompleter,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
@@ -59,7 +59,7 @@ from database.schema import (
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
-from utils.heic_converter import maybe_convert_heic
+from utils.heic_converter import maybe_convert_heic, save_image_as_webp
 from utils.ml_export import export_coco_format, get_export_summary
 from datetime import datetime
 import re
@@ -108,13 +108,15 @@ from .dialog_helpers import (
     ask_wrapped_yes_no_with_checkbox,
     make_github_help_button,
 )
-from .styles import pt, get_button_icon_color
+from .styles import pt, get_button_icon_color, get_design_tokens
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
 SETTING_CLOUD_DEFAULT_SHARING_SCOPE = "sporely_cloud_default_sharing_scope"
 SETTING_DEBUG_CLOUD_PLAN_OVERRIDE = "sporely_debug_cloud_plan_override"
+LOCATION_PRECISION_EXACT = "exact"
+LOCATION_PRECISION_FUZZED = "fuzzed"
 SHARING_SCOPE_PRIVATE = "private"
 SHARING_SCOPE_FRIENDS = "friends"
 SHARING_SCOPE_PUBLIC = "public"
@@ -136,16 +138,26 @@ def _parse_observation_datetime(value: str | None) -> QDateTime | None:
     return dt_value if dt_value.isValid() else None
 
 
-def normalize_sharing_scope(value: str | None, fallback: str = SHARING_SCOPE_PRIVATE) -> str:
+def normalize_sharing_scope(value: str | None, fallback: str = SHARING_SCOPE_PUBLIC) -> str:
+    if str(value or "").strip().lower() == "draft":
+        return SHARING_SCOPE_PRIVATE
     raw = str(value or "").strip().lower()
     if raw in _VALID_SHARING_SCOPES:
         return raw
-    normalized_fallback = str(fallback or SHARING_SCOPE_PRIVATE).strip().lower()
-    return normalized_fallback if normalized_fallback in _VALID_SHARING_SCOPES else SHARING_SCOPE_PRIVATE
+    normalized_fallback = str(fallback or SHARING_SCOPE_PUBLIC).strip().lower()
+    return normalized_fallback if normalized_fallback in _VALID_SHARING_SCOPES else SHARING_SCOPE_PUBLIC
 
 
 def sharing_scope_location_public(value: str | None) -> bool:
     return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
+
+
+def normalize_location_precision(value: str | None, fallback: str = LOCATION_PRECISION_EXACT) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {LOCATION_PRECISION_EXACT, LOCATION_PRECISION_FUZZED}:
+        return raw
+    fallback_raw = str(fallback or LOCATION_PRECISION_EXACT).strip().lower()
+    return fallback_raw if fallback_raw in {LOCATION_PRECISION_EXACT, LOCATION_PRECISION_FUZZED} else LOCATION_PRECISION_EXACT
 
 
 class _CloudAutoSyncWorker(QThread):
@@ -1616,8 +1628,10 @@ class ObservationsTab(QWidget):
             "common_name": raw.get("common_name"),
             "species_guess": raw.get("species_guess"),
             "publish_target": raw.get("publish_target"),
-            "sharing_scope": raw.get("sharing_scope"),
+            "is_draft": raw.get("is_draft", True),
+            "sharing_scope": raw.get("sharing_scope") or raw.get("visibility"),
             "location_public": raw.get("location_public"),
+            "location_precision": raw.get("location_precision"),
             "uncertain": bool(raw.get("uncertain", False)),
             "unspontaneous": bool(raw.get("unspontaneous", False)),
             "determination_method": raw.get("determination_method"),
@@ -4827,7 +4841,7 @@ class ObservationsTab(QWidget):
         if suffix == ".webp" and not resized:
             return "ORIGINAL", ".webp", {}
         if features.check("webp"):
-            return "WEBP", ".webp", {"quality": 72, "method": 4}
+            return "WEBP", ".webp", {"quality": 65, "method": 4}
         return "JPEG", ".jpg", {"quality": 88}
 
     @classmethod
@@ -7086,8 +7100,10 @@ class ObservationsTab(QWidget):
                     species=data.get('species'),
                     common_name=data.get('common_name'),
                     publish_target=data.get('publish_target'),
+                    is_draft=data.get('is_draft'),
                     sharing_scope=data.get('sharing_scope'),
                     location_public=data.get('location_public'),
+                    location_precision=data.get('location_precision'),
                     species_guess=data.get('species_guess'),
                     uncertain=1 if data.get('uncertain') else 0,
                     unspontaneous=1 if data.get('unspontaneous') else 0,
@@ -8061,27 +8077,19 @@ class ObservationsTab(QWidget):
                 new_h = max(1, int(round(img.height * scale_factor)))
                 resized = img.resize((new_w, new_h), Image.LANCZOS)
                 src_path = Path(source_path)
-                suffix = src_path.suffix or ".jpg"
-                temp_path = output_dir / f"{src_path.stem}_resized{suffix}"
+                temp_path = output_dir / f"{src_path.stem}_resized.webp"
                 counter = 1
                 while temp_path.exists():
-                    temp_path = output_dir / f"{src_path.stem}_resized_{counter}{suffix}"
+                    temp_path = output_dir / f"{src_path.stem}_resized_{counter}.webp"
                     counter += 1
-                save_kwargs = {}
-                fmt = img.format or None
-                if suffix.lower() in {".jpg", ".jpeg"}:
+                if resized.mode not in {"RGB", "RGBA", "L"}:
                     resized = resized.convert("RGB")
-                    quality = SettingsDB.get_setting("resize_jpeg_quality", 80)
-                    try:
-                        quality = int(quality)
-                    except (TypeError, ValueError):
-                        quality = 80
-                    quality = max(1, min(100, quality))
-                    save_kwargs["quality"] = quality
-                    fmt = "JPEG"
-                    if exif_bytes:
-                        save_kwargs["exif"] = exif_bytes
-                resized.save(temp_path, format=fmt, **save_kwargs)
+                save_image_as_webp(resized, temp_path, exif_bytes=exif_bytes)
+                try:
+                    source_stat = src_path.stat()
+                    os.utime(temp_path, (source_stat.st_atime, source_stat.st_mtime))
+                except Exception:
+                    pass
                 return str(temp_path)
         except Exception as exc:
             print(f"Warning: Could not resize image {source_path}: {exc}")
@@ -8859,6 +8867,61 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
     _taxonomy_splitter_key = "splitter/ObservationDetailsDialogTaxonomy"
 
+    class BoxHeader(QFrame):
+        def __init__(self, title: str, parent=None):
+            super().__init__(parent)
+            colors = get_design_tokens()
+            surface_low = colors["surface_low"]
+            data_brd = colors["data_brd"]
+            self.setObjectName("boxHeader")
+            self.setStyleSheet(
+                f"QFrame#boxHeader {{ background-color: {surface_low}; border-bottom: 1px solid {data_brd}; "
+                "border-top-left-radius: 11px; border-top-right-radius: 11px; }"
+            )
+            layout = QHBoxLayout(self)
+            layout.setContentsMargins(12, 8, 12, 8)
+            layout.setSpacing(8)
+
+            self.title_label = QLabel(str(title or "").upper())
+            self.title_label.setObjectName("metaLabel")
+            layout.addWidget(self.title_label)
+            layout.addStretch()
+
+        def set_title(self, title: str) -> None:
+            self.title_label.setText(str(title or "").upper())
+
+    def _create_dialog_box(
+        self,
+        title: str,
+        layout_type=QVBoxLayout,
+        *,
+        body_margins: tuple[int, int, int, int] = (12, 12, 12, 12),
+        body_spacing: int = 8,
+    ) -> tuple[QFrame, object]:
+        colors = get_design_tokens()
+        surface = colors["surface"]
+        data_brd = colors["data_brd"]
+        card = QFrame()
+        card.setObjectName("sectionCard")
+        card.setFrameShape(QFrame.NoFrame)
+        card.setStyleSheet(
+            f"QFrame#sectionCard {{ background-color: {surface}; border: 1px solid {data_brd}; border-radius: 12px; }}"
+        )
+
+        outer_layout = QVBoxLayout(card)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+        header = self.BoxHeader(title, card)
+        card._box_header = header
+        outer_layout.addWidget(header)
+
+        body = QWidget(card)
+        body_layout = layout_type(body)
+        body_layout.setContentsMargins(*body_margins)
+        body_layout.setSpacing(body_spacing)
+        outer_layout.addWidget(body, 1)
+        return card, body_layout
+
     def __init__(
         self,
         parent=None,
@@ -9128,26 +9191,35 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         top_content_layout.setSpacing(10)
 
         # ===== OBSERVATION DETAILS SECTION =====
-        details_group = QGroupBox(self.tr("Observation Details"))
-        details_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        details_layout = QHBoxLayout(details_group)
+        details_group, details_layout = self._create_dialog_box(
+            self.tr("Observation Details"),
+            QHBoxLayout,
+            body_margins=(12, 12, 12, 12),
+            body_spacing=12,
+        )
+        details_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         details_layout.setSpacing(12)
         details_layout.setAlignment(Qt.AlignTop)
 
         left_panel = QWidget()
-        left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_layout = QGridLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setHorizontalSpacing(8)
         left_layout.setVerticalSpacing(8)
 
         right_panel = QWidget()
-        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        right_layout = QFormLayout(right_panel)
+        right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
-        right_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignTop)
-        right_layout.setFormAlignment(Qt.AlignTop)
+
+        self.is_draft_checkbox = QCheckBox(self.tr("Draft / WIP"))
+        self.is_draft_checkbox.setToolTip(self.tr("Draft observations are visible as work in progress until you mark them finished."))
+        self.is_draft_checkbox.setChecked(True)
+        _details_row = 0
+        left_layout.addWidget(self.is_draft_checkbox, _details_row, 0, 1, 3)
+        _details_row += 1
 
         # Date and time
         datetime_container = QWidget()
@@ -9162,7 +9234,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         _cal.setMinimumSize(300, 240)
         self.datetime_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         datetime_layout.addWidget(self.datetime_input, 1)
-        _details_row = 0
         left_layout.addWidget(QLabel(self.tr("Date & time:")), _details_row, 0)
         left_layout.addWidget(datetime_container, _details_row, 1, 1, 2)
         _details_row += 1
@@ -9258,7 +9329,63 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         left_layout.addWidget(self.country_summary_label, _details_row, 1, 1, 2)
         _details_row += 1
 
+        cloud_divider = QFrame()
+        cloud_divider.setFrameShape(QFrame.HLine)
+        cloud_divider.setFixedHeight(1)
+        data_brd = get_design_tokens()["data_brd"]
+        cloud_divider.setStyleSheet(
+            f"QFrame {{ height: 1px; max-height: 1px; color: {data_brd}; background-color: {data_brd}; border: none; }}"
+        )
+        left_layout.addWidget(cloud_divider, _details_row, 0, 1, 3)
+        _details_row += 1
+
+        cloud_controls = QWidget()
+        cloud_layout = QVBoxLayout(cloud_controls)
+        cloud_layout.setContentsMargins(0, 0, 0, 0)
+        cloud_layout.setSpacing(6)
+
+        cloud_title = QLabel(self.tr("Sporely Cloud").upper())
+        cloud_title.setObjectName("metaLabel")
+        cloud_layout.addWidget(cloud_title)
+
+        self.sharing_scope_combo = QComboBox()
+        self.sharing_scope_combo.addItem(self.tr("Private (1 slot)"), SHARING_SCOPE_PRIVATE)
+        self.sharing_scope_combo.addItem(self.tr("Friends (1 slot)"), SHARING_SCOPE_FRIENDS)
+        self.sharing_scope_combo.addItem(self.tr("Public"), SHARING_SCOPE_PUBLIC)
+        self.sharing_scope_combo.setToolTip(self.tr("Who can see this observation in Sporely Cloud."))
+        self.sharing_scope_combo.currentIndexChanged.connect(
+            lambda _index: setattr(self, "_sharing_scope_value", normalize_sharing_scope(self.sharing_scope_combo.currentData()))
+        )
+
+        self.location_precision_combo = QComboBox()
+        self.location_precision_combo.addItem(self.tr("Exact"), LOCATION_PRECISION_EXACT)
+        self.location_precision_combo.addItem(self.tr("Fuzzed (1 slot)"), LOCATION_PRECISION_FUZZED)
+        self.location_precision_combo.setToolTip(self.tr("Fuzzed locations are rounded in public and follow feeds."))
+
+        def _add_cloud_row(label_text: str, widget: QWidget) -> None:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+            label = QLabel(label_text)
+            label.setMinimumWidth(120)
+            row.addWidget(label)
+            row.addWidget(widget, 1)
+            cloud_layout.addLayout(row)
+
+        _add_cloud_row(self.tr("Cloud sharing:"), self.sharing_scope_combo)
+        _add_cloud_row(self.tr("Location precision:"), self.location_precision_combo)
+
+        left_layout.addWidget(cloud_controls, _details_row, 0, 1, 3)
+        _details_row += 1
+
+        comments_container = QWidget()
+        comments_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        comments_layout = QVBoxLayout(comments_container)
+        comments_layout.setContentsMargins(0, 0, 0, 0)
+        comments_layout.setSpacing(8)
+
         open_comment_container = QWidget()
+        open_comment_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         open_comment_layout = QVBoxLayout(open_comment_container)
         open_comment_layout.setContentsMargins(0, 0, 0, 0)
         open_comment_layout.setSpacing(6)
@@ -9268,13 +9395,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self.open_comment_input = QTextEdit()
         self.open_comment_input.setPlaceholderText(self.tr("Open comment..."))
-        comment_h = (self.open_comment_input.fontMetrics().lineSpacing() * 3) + 14
-        self.open_comment_input.setFixedHeight(comment_h)
-        self.open_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        open_comment_layout.addWidget(self.open_comment_input)
-        right_layout.addRow(open_comment_container)
+        self.open_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        open_comment_layout.addWidget(self.open_comment_input, 1)
+        comments_layout.addWidget(open_comment_container, 1)
 
         private_comment_container = QWidget()
+        private_comment_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         private_comment_layout = QVBoxLayout(private_comment_container)
         private_comment_layout.setContentsMargins(0, 0, 0, 0)
         private_comment_layout.setSpacing(6)
@@ -9284,10 +9410,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self.private_comment_input = QTextEdit()
         self.private_comment_input.setPlaceholderText(self.tr("Private comment..."))
-        self.private_comment_input.setFixedHeight(comment_h)
-        self.private_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        private_comment_layout.addWidget(self.private_comment_input)
-        right_layout.addRow(private_comment_container)
+        self.private_comment_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        private_comment_layout.addWidget(self.private_comment_input, 1)
+        comments_layout.addWidget(private_comment_container, 1)
+        right_layout.addWidget(comments_container, 1)
 
         # GPS info label (shows source of coordinates)
         self.gps_info_label = QLabel("")
@@ -9298,15 +9424,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Put location/date/GPS on the left, and comments on the right (about 40/60 split).
         details_layout.addWidget(left_panel, 4)
         details_layout.addWidget(right_panel, 6)
-        top_content_layout.addWidget(details_group)
+        top_content_layout.addWidget(details_group, 1)
 
         # ===== TAXONOMY SECTION =====
-        taxonomy_group = QGroupBox(self.tr("Taxonomy"))
+        taxonomy_group, taxonomy_layout = self._create_dialog_box(
+            self.tr("Taxonomy"),
+            QVBoxLayout,
+            body_margins=(0, 0, 0, 0),
+            body_spacing=0,
+        )
         taxonomy_group.setMinimumWidth(360)
         taxonomy_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        taxonomy_layout = QVBoxLayout(taxonomy_group)
-        taxonomy_layout.setContentsMargins(8, 8, 8, 8)
-        taxonomy_layout.setSpacing(8)
 
         left_container = QWidget()
         left_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -9494,10 +9622,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         grows_tab_layout.setContentsMargins(8, 8, 8, 8)
         grows_tab_layout.setSpacing(8)
         grows_tab_layout.setAlignment(Qt.AlignTop)
-        grows_group = QGroupBox(self._grows_on_tab_title())
-        grows_layout = QVBoxLayout(grows_group)
-        grows_layout.setContentsMargins(8, 8, 8, 8)
-        grows_layout.setSpacing(6)
+        grows_group, grows_layout = self._create_dialog_box(
+            self._grows_on_tab_title(),
+            QVBoxLayout,
+            body_margins=(8, 8, 8, 8),
+            body_spacing=6,
+        )
         self.host_genus_input = QLineEdit()
         self.host_genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.host_genus_input.setPlaceholderText(self.tr("e.g., Betula"))
@@ -9845,10 +9975,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             for idx in indices
         )
 
-    def _build_ai_suggestions_group(self) -> QGroupBox:
-        ai_group = QGroupBox(self.tr("AI suggestions"))
-        ai_layout = QVBoxLayout(ai_group)
-        ai_layout.setContentsMargins(6, 6, 6, 6)
+    def _build_ai_suggestions_group(self) -> QFrame:
+        ai_group, ai_layout = self._create_dialog_box(
+            self.tr("AI suggestions"),
+            QVBoxLayout,
+            body_margins=(8, 8, 8, 8),
+            body_spacing=8,
+        )
         ai_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         ai_group.setMinimumWidth(300)
 
@@ -11108,6 +11241,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         common_name = self.vernacular_input.text().strip() or None
         working_title = None
         sharing_scope = self._selected_sharing_scope()
+        location_precision = self._selected_location_precision()
 
         # Get GPS values (None if at minimum/special value)
         lat = None
@@ -11145,8 +11279,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'species': species,
             'common_name': common_name,
             'publish_target': publish_target,
+            'is_draft': self.is_draft_checkbox.isChecked() if hasattr(self, "is_draft_checkbox") else True,
             'sharing_scope': sharing_scope,
             'location_public': sharing_scope_location_public(sharing_scope),
+            'location_precision': location_precision,
             'species_guess': working_title,
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
@@ -11316,7 +11452,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         state["index"] = self._build_habitat_tree_index(roots)
         state["source_file"] = filename
         group = state.get("group")
-        if group is not None:
+        header = state.get("group_header")
+        if header is not None and hasattr(header, "set_title"):
+            header.set_title(self._habitat_group_title(key))
+        elif group is not None and hasattr(group, "setTitle"):
             group.setTitle(self._habitat_group_title(key))
         note_label = state.get("note_label")
         if note_label is not None:
@@ -12929,9 +13068,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         expand_fields: bool = False,
     ) -> None:
         label_width = int(getattr(self, "_taxonomy_label_width", 96) or 96)
-        group = QGroupBox(title)
-        group_layout = QFormLayout(group)
-        group_layout.setSpacing(6)
+        group, group_layout = self._create_dialog_box(
+            title,
+            QFormLayout,
+            body_margins=(8, 8, 8, 8),
+            body_spacing=6,
+        )
         group_layout.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         group_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         group_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
@@ -12981,6 +13123,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "combos": combos,
             "index": tree_index,
             "group": group,
+            "group_header": getattr(group, "_box_header", None),
             "note_label": getattr(self, f"{key}_target_note", None),
             "suppress_text_filter": False,
         }
@@ -13181,6 +13324,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             obs.get("sharing_scope"),
             location_public=obs.get("location_public"),
         )
+        self._set_location_precision(obs.get("location_precision"))
+        if hasattr(self, "is_draft_checkbox"):
+            self.is_draft_checkbox.setChecked(bool(obs.get("is_draft", 1)))
         method = obs.get("determination_method")
         idx = self.determination_method_combo.findData(method)
         if idx >= 0:
@@ -13225,12 +13371,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return normalize_sharing_scope(
             SettingsDB.get_setting(
                 SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
-                SHARING_SCOPE_PRIVATE,
+                SHARING_SCOPE_PUBLIC,
             ),
-            fallback=SHARING_SCOPE_PRIVATE,
+            fallback=SHARING_SCOPE_PUBLIC,
         )
 
     def _selected_sharing_scope(self) -> str:
+        if hasattr(self, "sharing_scope_combo"):
+            return normalize_sharing_scope(self.sharing_scope_combo.currentData(), fallback=self._default_sharing_scope())
         return normalize_sharing_scope(
             getattr(self, "_sharing_scope_value", None),
             fallback=self._default_sharing_scope(),
@@ -13246,6 +13394,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 else self._default_sharing_scope()
             )
         self._sharing_scope_value = normalized
+        if hasattr(self, "sharing_scope_combo"):
+            idx = self.sharing_scope_combo.findData(normalized)
+            if idx >= 0:
+                self.sharing_scope_combo.setCurrentIndex(idx)
+
+    def _selected_location_precision(self) -> str:
+        if hasattr(self, "location_precision_combo"):
+            return normalize_location_precision(self.location_precision_combo.currentData())
+        return LOCATION_PRECISION_EXACT
+
+    def _set_location_precision(self, value: str | None) -> None:
+        normalized = normalize_location_precision(value)
+        if hasattr(self, "location_precision_combo"):
+            idx = self.location_precision_combo.findData(normalized)
+            if idx >= 0:
+                self.location_precision_combo.setCurrentIndex(idx)
 
     def _load_existing_observation(self):
         """Preload observation details and images for editing."""

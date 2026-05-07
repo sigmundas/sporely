@@ -46,6 +46,8 @@ _OBS_PUSH_COLS = [
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude',
     'location_public',
+    'is_draft',
+    'location_precision',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -59,12 +61,34 @@ _OBS_PUSH_COLS = [
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 
 
-def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> str:
+def _normalize_sharing_scope(value: str | None, fallback: str = 'public') -> str:
     raw = str(value or '').strip().lower()
+    if raw == 'draft':
+        return 'private'
     if raw in {'private', 'friends', 'public'}:
         return raw
-    fallback_raw = str(fallback or 'private').strip().lower()
-    return fallback_raw if fallback_raw in {'private', 'friends', 'public'} else 'private'
+    fallback_raw = str(fallback or 'public').strip().lower()
+    if fallback_raw == 'draft':
+        return 'private'
+    return fallback_raw if fallback_raw in {'private', 'friends', 'public'} else 'public'
+
+
+def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'public') -> str:
+    """Map local desktop sharing scope to the Phase 7 cloud visibility value."""
+    return _normalize_sharing_scope(value, fallback=fallback)
+
+
+def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'public') -> str:
+    """Map Phase 7 cloud visibility back to the local desktop sharing scope."""
+    return _normalize_sharing_scope(value, fallback=fallback)
+
+
+def _normalize_location_precision(value: str | None, fallback: str = 'exact') -> str:
+    raw = str(value or '').strip().lower()
+    if raw in {'exact', 'fuzzed'}:
+        return raw
+    fallback_raw = str(fallback or 'exact').strip().lower()
+    return fallback_raw if fallback_raw in {'exact', 'fuzzed'} else 'exact'
 
 
 def _encode_postgrest_filter_value(value: str | None) -> str:
@@ -134,6 +158,7 @@ _SNAPSHOT_OBS_FIELDS = [
     'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude', 'location_public',
+    'is_draft', 'location_precision',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -172,6 +197,8 @@ _CONFLICT_COMPARE_FIELDS = [
     'publish_target',
     'visibility',
     'location_public',
+    'is_draft',
+    'location_precision',
     'spore_statistics',
 ]
 
@@ -190,6 +217,8 @@ _CONFLICT_FIELD_LABELS = {
     'publish_target': 'Publishing target',
     'visibility': 'Visibility',
     'location_public': 'Public GPS',
+    'is_draft': 'Draft',
+    'location_precision': 'Location precision',
     'spore_statistics': 'Spore statistics',
 }
 
@@ -347,7 +376,7 @@ def _normalize_observation_field_value(field: str, value):
         if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
             return text[:10]
         return text
-    if field in {'location_public', 'uncertain', 'unspontaneous', 'interesting_comment'}:
+    if field in {'location_public', 'is_draft', 'uncertain', 'unspontaneous', 'interesting_comment'}:
         return None if value is None else bool(value)
     return _normalize_snapshot_value(value)
 
@@ -382,15 +411,19 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
             payload[field] = _normalize_observation_field_value(field, (
                 _normalize_sharing_scope(
                     row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='private',
+                    fallback='public',
                 )
             ))
         elif field == 'sharing_scope':
             payload[field] = _normalize_observation_field_value(field, (
                 _normalize_sharing_scope(
                     row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='private',
+                    fallback='public',
                 )
+            ))
+        elif field == 'location_precision':
+            payload[field] = _normalize_observation_field_value(field, (
+                _normalize_location_precision(row.get('location_precision'))
             ))
         else:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
@@ -415,9 +448,11 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
                 field,
                 _normalize_sharing_scope(
                     row.get('visibility') or row.get('sharing_scope'),
-                    fallback='private',
+                    fallback='public',
                 ),
             )
+        elif field == 'location_precision':
+            payload[field] = _normalize_observation_field_value(field, _normalize_location_precision(row.get('location_precision')))
         else:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
     genus = str(payload.get('genus') or '').strip()
@@ -1509,11 +1544,13 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat': remote.get('habitat'),
         'notes': remote.get('notes'),
         'open_comment': remote.get('open_comment'),
-        'sharing_scope': _normalize_sharing_scope(
+        'sharing_scope': _cloud_visibility_to_sharing_scope(
             remote.get('visibility') or remote.get('sharing_scope'),
-            fallback='friends' if location_public else 'private',
+            fallback='friends' if location_public else 'public',
         ),
         'location_public': location_public,
+        'is_draft': bool(remote.get('is_draft', True)),
+        'location_precision': _normalize_location_precision(remote.get('location_precision')),
         'spore_data_visibility': (lambda v: v if v in {'private', 'friends', 'public'} else 'public')(
             str(remote.get('spore_data_visibility') or 'public').strip().lower()
         ),
@@ -1761,7 +1798,7 @@ def _cloud_missing_image_warning(local_id: int, remote_image: dict) -> str:
 
 def _cloud_thumb_save_format(path: Path) -> tuple[str, str, dict]:
     if features.check('webp'):
-        return 'WEBP', 'image/webp', {'quality': 58, 'method': 4}
+        return 'WEBP', 'image/webp', {'quality': 65, 'method': 4}
     return 'JPEG', 'image/jpeg', {'quality': 72}
 
 
@@ -2499,6 +2536,16 @@ class SporelyCloudClient:
 
     def fetch_current_user_id(self) -> str:
         """Return the authenticated Supabase user id for the current session."""
+        user_info = self.fetch_current_user_info()
+        user_id = _normalize_cloud_user_id(user_info.get('id') if isinstance(user_info, dict) else None)
+        if user_id:
+            if user_id != self.user_id:
+                self.user_id = user_id
+            return user_id
+        raise CloudSyncError('Could not fetch current cloud user.')
+
+    def fetch_current_user_info(self) -> dict:
+        """Return the authenticated Supabase user record."""
         resp = self._s.get(f'{SUPABASE_URL}/auth/v1/user', timeout=15)
         if resp.ok:
             try:
@@ -2509,13 +2556,63 @@ class SporelyCloudClient:
             if user_id:
                 if user_id != self.user_id:
                     self.user_id = user_id
-                return user_id
+                return data if isinstance(data, dict) else {'id': user_id}
         token_user_id = _decode_jwt_subject(self.access_token)
         if token_user_id:
             if token_user_id != self.user_id:
                 self.user_id = token_user_id
-            return token_user_id
+            return {'id': token_user_id}
         raise CloudSyncError(f'Could not fetch current cloud user: {resp.text if resp is not None else ""}')
+
+    def fetch_profile(self) -> dict:
+        rows = self._get(
+            f'profiles?id=eq.{self.user_id}&select=id,username,display_name,bio,avatar_url&limit=1'
+        )
+        return dict(rows[0] or {}) if rows else {}
+
+    def update_profile(
+        self,
+        *,
+        username: str | None = None,
+        display_name: str | None = None,
+        bio: str | None = None,
+        avatar_url: str | None = None,
+    ) -> None:
+        payload: dict[str, object] = {}
+        if username is not None:
+            normalized = str(username or '').strip().lstrip('@')
+            payload['username'] = normalized or None
+        if display_name is not None:
+            normalized = str(display_name or '').strip()
+            payload['display_name'] = normalized or None
+        if bio is not None:
+            normalized = str(bio or '').strip()
+            payload['bio'] = normalized or None
+        if avatar_url is not None:
+            normalized = str(avatar_url or '').strip()
+            payload['avatar_url'] = normalized or None
+        if not payload:
+            return
+        self._patch(f'profiles?id=eq.{self.user_id}', payload)
+
+    def upload_profile_avatar(self, jpeg_bytes: bytes) -> str:
+        content = bytes(jpeg_bytes or b'')
+        if not content:
+            raise CloudSyncError('Missing avatar image data.')
+        path = f'{self.user_id}/avatar.jpg'
+        url = f'{SUPABASE_URL}/storage/v1/object/avatars/{path}'
+        headers = {
+            'Content-Type': 'image/jpeg',
+            'x-upsert': 'true',
+        }
+        resp = self._s.post(url, data=content, headers=headers, timeout=30)
+        if not resp.ok:
+            resp = self._s.put(url, data=content, headers=headers, timeout=30)
+        if not resp.ok:
+            raise CloudSyncError(f'Avatar upload failed: {resp.text}')
+        public_url = f'{SUPABASE_URL}/storage/v1/object/public/avatars/{path}'
+        self.update_profile(avatar_url=public_url)
+        return public_url
 
     def save_credentials(
         self,
@@ -2646,12 +2743,14 @@ class SporelyCloudClient:
         payload = {col: obs.get(col) for col in _OBS_PUSH_COLS}
         payload['user_id']    = self.user_id
         payload['desktop_id'] = obs['id']
-        payload['visibility'] = _normalize_sharing_scope(obs.get('sharing_scope'), fallback='private')
+        payload['visibility'] = _sharing_scope_to_cloud_visibility(obs.get('sharing_scope'), fallback='public')
+        payload['is_draft'] = bool(obs.get('is_draft', True))
+        payload['location_precision'] = _normalize_location_precision(obs.get('location_precision'))
         raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
         payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
 
         # Normalise SQLite 0/1 integers to proper JSON booleans
-        for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public'):
+        for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public', 'is_draft'):
             if payload.get(col) is not None:
                 payload[col] = bool(payload[col])
 
@@ -3723,9 +3822,9 @@ def _create_local_from_remote(
     """Insert a cloud observation into local SQLite. Returns new local ID."""
     raw_location_public = remote.get('location_public')
     location_public = None if raw_location_public is None else bool(raw_location_public)
-    sharing_scope = _normalize_sharing_scope(
+    sharing_scope = _cloud_visibility_to_sharing_scope(
         remote.get('visibility') or remote.get('sharing_scope'),
-        fallback='friends' if location_public else 'private',
+        fallback='friends' if location_public else 'public',
     )
     raw_spore_vis = str(remote.get('spore_data_visibility') or 'public').strip().lower()
     spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
@@ -3742,8 +3841,10 @@ def _create_local_from_remote(
         habitat=remote.get('habitat'),
         notes=remote.get('notes'),
         open_comment=remote.get('open_comment'),
+        is_draft=bool(remote.get('is_draft', True)),
         sharing_scope=sharing_scope,
         location_public=location_public,
+        location_precision=_normalize_location_precision(remote.get('location_precision')),
         spore_data_visibility=spore_data_visibility,
         uncertain=bool(remote.get('uncertain', False)),
         unspontaneous=bool(remote.get('unspontaneous', False)),

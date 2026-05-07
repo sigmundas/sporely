@@ -483,6 +483,16 @@ class ObservationDB:
     """Handle observation database operations"""
 
     @staticmethod
+    def _normalize_sharing_scope(value: str | None, fallback: str = "public") -> str:
+        normalized = str(value or fallback or "public").strip().lower()
+        return normalized if normalized in {"private", "friends", "public"} else "public"
+
+    @staticmethod
+    def _normalize_location_precision(value: str | None, fallback: str = "exact") -> str:
+        normalized = str(value or fallback or "exact").strip().lower()
+        return normalized if normalized in {"exact", "fuzzed"} else "exact"
+
+    @staticmethod
     def _build_observation_folder_path(
         genus: str | None,
         species: str | None,
@@ -579,7 +589,9 @@ class ObservationDB:
                           common_name: str = None, location: str = None, habitat: str = None,
                           species_guess: str = None, notes: str = None,
                           open_comment: str = None, private_comment: str = None, interesting_comment: bool = False,
+                          is_draft: bool | None = None,
                           sharing_scope: str | None = None, location_public: bool | None = None,
+                          location_precision: str | None = None,
                           spore_data_visibility: str | None = None,
                           uncertain: bool = False, inaturalist_id: int = None,
                           artportalen_id: int | None = None,
@@ -626,14 +638,14 @@ class ObservationDB:
                 or PUBLISH_TARGET_ARTSOBS_NO
             ),
         )
-        resolved_sharing_scope = str(sharing_scope or "private").strip().lower()
-        if resolved_sharing_scope not in {"private", "friends", "public"}:
-            resolved_sharing_scope = "private"
+        resolved_is_draft = True if is_draft is None else bool(is_draft)
+        resolved_sharing_scope = ObservationDB._normalize_sharing_scope(sharing_scope)
         resolved_location_public = (
             bool(location_public)
             if location_public is not None
             else resolved_sharing_scope != "private"
         )
+        resolved_location_precision = ObservationDB._normalize_location_precision(location_precision)
         resolved_spore_visibility = str(spore_data_visibility or "public").strip().lower()
         if resolved_spore_visibility not in {"private", "friends", "public"}:
             resolved_spore_visibility = "public"
@@ -641,7 +653,7 @@ class ObservationDB:
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
                                      artsdata_id, artportalen_id, publish_target, species_guess, notes, uncertain, unspontaneous,
-                                     sharing_scope, location_public, spore_data_visibility,
+                                     is_draft, sharing_scope, location_public, location_precision, spore_data_visibility,
                                      determination_method,
                                      folder_path, inaturalist_id, gps_latitude, gps_longitude,
                                      author, source_type, citation, data_provider,
@@ -649,10 +661,11 @@ class ObservationDB:
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
-              resolved_sharing_scope, 1 if resolved_location_public else 0, resolved_spore_visibility,
+              1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
+              resolved_location_precision, resolved_spore_visibility,
               determination_method,
               folder_path,
               inaturalist_id, gps_latitude, gps_longitude, author, source_type,
@@ -672,7 +685,9 @@ class ObservationDB:
                            common_name: str | object = _UNSET, location: str | object = _UNSET, habitat: str | object = _UNSET,
                            notes: str | object = _UNSET, uncertain: bool | object = _UNSET,
                            open_comment: str | object = _UNSET, private_comment: str | object = _UNSET, interesting_comment: bool | object = _UNSET,
+                           is_draft: bool | object = _UNSET,
                            sharing_scope: str | object = _UNSET, location_public: bool | object = _UNSET,
+                           location_precision: str | object = _UNSET,
                            spore_data_visibility: str | object = _UNSET,
                            species_guess: str | object = _UNSET, date: str | object = _UNSET,
                            gps_latitude: float | object = _UNSET, gps_longitude: float | object = _UNSET,
@@ -784,15 +799,19 @@ class ObservationDB:
             if publish_target is not _UNSET and (allow_nulls or publish_target is not None):
                 updates.append('publish_target = ?')
                 values.append(normalize_publish_target(str(publish_target) if publish_target is not None else None))
+            if is_draft is not _UNSET and (allow_nulls or is_draft is not None):
+                updates.append('is_draft = ?')
+                values.append(1 if is_draft else 0)
             if sharing_scope is not _UNSET and (allow_nulls or sharing_scope is not None):
-                normalized_scope = str(sharing_scope or "private").strip().lower()
-                if normalized_scope not in {"private", "friends", "public"}:
-                    normalized_scope = "private"
+                normalized_scope = ObservationDB._normalize_sharing_scope(str(sharing_scope) if sharing_scope is not None else None)
                 updates.append('sharing_scope = ?')
                 values.append(normalized_scope)
             if location_public is not _UNSET and (allow_nulls or location_public is not None):
                 updates.append('location_public = ?')
                 values.append(1 if location_public else 0)
+            if location_precision is not _UNSET and (allow_nulls or location_precision is not None):
+                updates.append('location_precision = ?')
+                values.append(ObservationDB._normalize_location_precision(str(location_precision) if location_precision is not None else None))
             if spore_data_visibility is not _UNSET and (allow_nulls or spore_data_visibility is not None):
                 normalized_vis = str(spore_data_visibility or "public").strip().lower()
                 if normalized_vis not in {"private", "friends", "public"}:
@@ -2900,13 +2919,25 @@ class SettingsDB:
     def get_profile() -> dict:
         return {
             "name": SettingsDB.get_setting("profile_name", ""),
-            "email": SettingsDB.get_setting("profile_email", "")
+            "email": SettingsDB.get_setting("profile_email", ""),
+            "bio": SettingsDB.get_setting("profile_bio", ""),
+            "username": SettingsDB.get_setting("profile_username", ""),
+            "avatar_url": SettingsDB.get_setting("profile_avatar_url", ""),
         }
 
     @staticmethod
-    def set_profile(name: str, email: str) -> None:
+    def set_profile(
+        name: str,
+        email: str,
+        bio: str = "",
+        username: str = "",
+        avatar_url: str = "",
+    ) -> None:
         SettingsDB.set_setting("profile_name", name or "")
         SettingsDB.set_setting("profile_email", email or "")
+        SettingsDB.set_setting("profile_bio", bio or "")
+        SettingsDB.set_setting("profile_username", username or "")
+        SettingsDB.set_setting("profile_avatar_url", avatar_url or "")
 
 
 class CalibrationDB:

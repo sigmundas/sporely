@@ -39,18 +39,20 @@ Click **Log in** and enter your Mushroom Observer user API key.
 
 ### Sporely Cloud
 
-Click **Log in** and sign in with your Sporely Cloud account. If you enable **Save password on this device**, Sporely stores the password securely in the OS keyring.
+Go to **Settings → Profile & Cloud**, click **Log in**, and sign in with your Sporely Cloud account. If you enable **Save password on this device**, Sporely stores the password securely in the OS keyring.
 
 Sporely Cloud and Artsobservasjoner are separate services with separate login/session handling.
 
-Cloud sync uses the same publish-content options as the other upload targets when run from the desktop sync dialog. On desktop:
+The local database is linked to the first Sporely Cloud account it syncs with. Later login attempts for a different cloud account are blocked until you explicitly reset/migrate the cloud link, preventing the same local data from being duplicated across multiple cloud accounts.
+
+The Profile & Cloud page also edits the shared Sporely profile (`username`, display name, bio, and avatar). When signed in, the local profile email follows the Sporely Cloud account email.
+
+Cloud sync does not use the online-publishing overlay options. On desktop:
 - only checked observation-gallery images are uploaded
-- optional generated media can be added from the publish-content checkboxes
 - synced images can be sent either at full size or reduced to 2 MP
+- images and thumbnails uploaded to Sporely Cloud stay clean: no watermark, scale bar, measure overlay, plot, plate, or gallery mosaic is added
 
-Cloud sync now prepares generated media on the main UI thread and uploads the files in the background worker. That means overlays, watermarking, measure plots, thumbnail galleries, and plates are included in cloud sync as long as the matching publish-content options are enabled.
-
-If you change publish-image selection, image order, image metadata, measurements/spore stats, or the publish-content settings, the affected observation is marked for cloud re-sync so generated media stays up to date after the first upload.
+If you change publish-image selection, image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
 
 After the first clean cloud media sync for an observation, later startup syncs try a lightweight local signature check first. If the selected images, measurements, and relevant publish settings have not changed, Sporely skips gallery/plot/media preparation and does not re-upload unchanged cloud media.
 
@@ -58,7 +60,7 @@ If the same linked observation changed on both desktop and web since the last sy
 
 When that happens, Sporely opens a conflict review dialog with a side-by-side comparison of the changed fields plus desktop/cloud change summaries. You can then choose **Keep desktop** or **Keep cloud** for each conflicted observation.
 
-The cloud visibility level is set globally in this dialog with **Default sharing**. It is stored in the cloud as the `visibility` field.
+The cloud visibility level is set globally in Profile & Cloud with **Default sharing**. It is stored in the cloud as the `visibility` field.
 
 ## Publishing an observation
 

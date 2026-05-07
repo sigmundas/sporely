@@ -1827,11 +1827,6 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
         <translation>Verschieben der Datenbank fehlgeschlagen</translation>
     </message>
     <message>
-        <location filename="../ui/database_settings_dialog.py" line="109"/>
-        <source>Resize JPEG quality:</source>
-        <translation>JPEG-Qualität beim Skalieren:</translation>
-    </message>
-    <message>
         <location filename="../ui/database_settings_dialog.py" line="139"/>
         <source>Save</source>
         <translation>Speichern</translation>
