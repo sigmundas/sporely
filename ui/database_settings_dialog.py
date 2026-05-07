@@ -12,13 +12,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QSpinBox,
     QMessageBox,
     QTabWidget,
     QListWidget,
     QListWidgetItem,
     QWidget,
-    QSizePolicy,
 )
 
 from database.models import SettingsDB
@@ -80,6 +78,7 @@ class DatabaseSettingsDialog(QDialog):
             "Predefined tags can be toggled on/off. Add custom tags as you like"
         )
         self._hint_controller: HintStatusController | None = None
+        self._loading_settings = False
         self.init_ui()
 
     def init_ui(self):
@@ -88,6 +87,7 @@ class DatabaseSettingsDialog(QDialog):
 
         # Database folder
         self.db_path_input = QLineEdit()
+        self.db_path_input.editingFinished.connect(self._save_settings)
         db_browse = QPushButton(self.tr("Browse"))
         db_browse.clicked.connect(self._browse_db_folder)
         db_row = QHBoxLayout()
@@ -97,21 +97,13 @@ class DatabaseSettingsDialog(QDialog):
 
         # Images folder
         self.images_dir_input = QLineEdit()
+        self.images_dir_input.editingFinished.connect(self._save_settings)
         img_browse = QPushButton(self.tr("Browse"))
         img_browse.clicked.connect(self._browse_images_dir)
         img_row = QHBoxLayout()
         img_row.addWidget(self.images_dir_input)
         img_row.addWidget(img_browse)
         form.addRow(self.tr("Images folder:"), img_row)
-
-        # JPEG quality (right under image folder)
-        self.resize_quality_input = QSpinBox()
-        self.resize_quality_input.setRange(1, 100)
-        self.resize_quality_input.setValue(80)
-        self.resize_quality_input.setSuffix("%")
-        fit_width = self.resize_quality_input.fontMetrics().horizontalAdvance("100%") + 24
-        self.resize_quality_input.setMaximumWidth(fit_width)
-        form.addRow(self.tr("Resize JPEG quality:"), self.resize_quality_input)
 
         layout.addLayout(form)
 
@@ -135,20 +127,19 @@ class DatabaseSettingsDialog(QDialog):
         custom_row.addStretch()
         layout.addLayout(custom_row)
 
-        bottom_row = QHBoxLayout()
+        self._bottom_widget = QWidget(self)
+        bottom_row = QHBoxLayout(self._bottom_widget)
+        bottom_row.setContentsMargins(0, 0, 0, 0)
         self.hint_bar = HintBar(self)
         bottom_row.addWidget(self.hint_bar, 1)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         self.set_hint(self._default_hint_text)
 
-        save_btn = QPushButton(self.tr("Save"))
-        save_btn.setObjectName("primaryButton")
-        save_btn.clicked.connect(self._save)
-        cancel_btn = QPushButton(self.tr("Cancel"))
-        cancel_btn.clicked.connect(self.reject)
-        bottom_row.addWidget(save_btn)
-        bottom_row.addWidget(cancel_btn)
-        layout.addLayout(bottom_row)
+        close_btn = QPushButton(self.tr("Close"))
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.accept)
+        bottom_row.addWidget(close_btn)
+        layout.addWidget(self._bottom_widget)
 
         self._load_settings()
 
@@ -164,6 +155,7 @@ class DatabaseSettingsDialog(QDialog):
         tag_list.setMouseTracking(True)
         tag_list.viewport().setMouseTracking(True)
         tag_list.itemEntered.connect(self._on_tag_item_hovered)
+        tag_list.itemChanged.connect(lambda _item: self._save_tag_settings())
         tag_list.viewport().installEventFilter(self)
         tag_list.setStyleSheet(
             "QListWidget::item { padding: 4px 6px; min-height: 22px; }"
@@ -202,7 +194,6 @@ class DatabaseSettingsDialog(QDialog):
                 if contrast_hint:
                     translated_hint = self.tr(contrast_hint)
                     item.setData(Qt.UserRole + 2, translated_hint)
-                    item.setToolTip(translated_hint)
             elif category == "mount":
                 mount_hint = self.MOUNT_HINTS.get(
                     DatabaseTerms._normalize_token(canonical)
@@ -210,7 +201,6 @@ class DatabaseSettingsDialog(QDialog):
                 if mount_hint:
                     translated_hint = self.tr(mount_hint)
                     item.setData(Qt.UserRole + 2, translated_hint)
-                    item.setToolTip(translated_hint)
             elif category == "stain":
                 stain_hint = self.STAIN_HINTS.get(
                     DatabaseTerms._normalize_token(canonical)
@@ -218,7 +208,6 @@ class DatabaseSettingsDialog(QDialog):
                 if stain_hint:
                     translated_hint = self.tr(stain_hint)
                     item.setData(Qt.UserRole + 2, translated_hint)
-                    item.setToolTip(translated_hint)
             tag_list.addItem(item)
 
         for canonical in current_tags:
@@ -253,7 +242,6 @@ class DatabaseSettingsDialog(QDialog):
         return DatabaseTerms.canonicalize_list(category, values)
 
     def _add_custom_tag(self) -> None:
-        category = self._active_category()
         tag_list = self._active_tag_list()
         item = QListWidgetItem(self.tr("New tag"))
         item.setFlags(item.flags() | Qt.ItemIsEditable)
@@ -262,6 +250,7 @@ class DatabaseSettingsDialog(QDialog):
         tag_list.addItem(item)
         tag_list.setCurrentItem(item)
         tag_list.editItem(item)
+        self._save_tag_settings()
 
     def _remove_selected_custom_tag(self) -> None:
         tag_list = self._active_tag_list()
@@ -271,6 +260,7 @@ class DatabaseSettingsDialog(QDialog):
         if item.data(Qt.UserRole + 1) != "custom":
             return
         tag_list.takeItem(tag_list.row(item))
+        self._save_tag_settings()
 
     def set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
@@ -292,6 +282,7 @@ class DatabaseSettingsDialog(QDialog):
         return super().eventFilter(watched, event)
 
     def _load_settings(self):
+        self._loading_settings = True
         settings = get_app_settings()
         db_folder = settings.get("database_folder")
         if not db_folder and settings.get("database_path"):
@@ -308,13 +299,7 @@ class DatabaseSettingsDialog(QDialog):
             current_tags = DatabaseTerms.canonicalize_list(category, current_tags)
             self._populate_category_list(category, current_tags)
 
-        resize_quality = SettingsDB.get_setting("resize_jpeg_quality", 80)
-        try:
-            resize_quality = int(resize_quality)
-        except (TypeError, ValueError):
-            resize_quality = 80
-        resize_quality = max(1, min(100, resize_quality))
-        self.resize_quality_input.setValue(resize_quality)
+        self._loading_settings = False
 
     def _browse_db_folder(self):
         path = QFileDialog.getExistingDirectory(
@@ -322,6 +307,7 @@ class DatabaseSettingsDialog(QDialog):
         )
         if path:
             self.db_path_input.setText(path)
+            self._save_settings()
 
     def _browse_images_dir(self):
         path = QFileDialog.getExistingDirectory(
@@ -329,8 +315,23 @@ class DatabaseSettingsDialog(QDialog):
         )
         if path:
             self.images_dir_input.setText(path)
+            self._save_settings()
 
-    def _save(self):
+    def _save_tag_settings(self):
+        if self._loading_settings:
+            return
+        for category, _label in self.TAG_CATEGORIES:
+            setting_key = DatabaseTerms.setting_key(category)
+            SettingsDB.set_list_setting(setting_key, self._collect_category_tags(category))
+
+        # Always remember last used values.
+        SettingsDB.set_setting("remember_last_used", True)
+        SettingsDB.set_setting("original_storage_mode", "none")
+        SettingsDB.set_setting("store_original_images", False)
+
+    def _save_settings(self):
+        if self._loading_settings:
+            return
         settings = get_app_settings()
         db_folder = self.db_path_input.text().strip()
         images_dir = self.images_dir_input.text().strip()
@@ -366,15 +367,4 @@ class DatabaseSettingsDialog(QDialog):
 
         init_database()
 
-        for category, _label in self.TAG_CATEGORIES:
-            setting_key = DatabaseTerms.setting_key(category)
-            SettingsDB.set_list_setting(setting_key, self._collect_category_tags(category))
-
-        # Always remember last used values.
-        SettingsDB.set_setting("remember_last_used", True)
-
-        SettingsDB.set_setting("resize_jpeg_quality", int(self.resize_quality_input.value()))
-        SettingsDB.set_setting("original_storage_mode", "none")
-        SettingsDB.set_setting("store_original_images", False)
-
-        self.accept()
+        self._save_tag_settings()

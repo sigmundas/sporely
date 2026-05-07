@@ -46,6 +46,9 @@ from PySide6.QtCore import (
     QModelIndex,
     QT_TRANSLATE_NOOP,
     QSysInfo,
+    QBuffer,
+    QByteArray,
+    QIODevice,
 )
 
 _ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
@@ -958,9 +961,8 @@ class SettingsHubDialog(QDialog):
     PAGE_PROFILE    = 0
     PAGE_DATABASE   = 1
     PAGE_PUBLISHING = 2
-    PAGE_CLOUD      = 3
-    PAGE_LANGUAGE   = 4
-    PAGE_APPEARANCE = 5
+    PAGE_LANGUAGE   = 3
+    PAGE_APPEARANCE = 4
 
     def __init__(self, parent=None, start_page: int = 0):
         super().__init__(parent)
@@ -975,8 +977,11 @@ class SettingsHubDialog(QDialog):
         self._language_vern_changed = False
         self._publishing_changed   = False
         self._database_changed     = False
+        self._cloud_profile_loaded_user_id = ""
+        self._profile_avatar_url = ""
 
         self._build_ui()
+        start_page = max(0, min(int(start_page or 0), self._stack.count() - 1))
         self._nav.setCurrentRow(start_page)
         self._stack.setCurrentIndex(start_page)
 
@@ -997,10 +1002,9 @@ class SettingsHubDialog(QDialog):
         self._nav.setFixedWidth(180)
         self._nav.setFocusPolicy(Qt.NoFocus)
         for label in (
-            self.tr("User profile"),
+            self.tr("Profile & Cloud"),
             self.tr("Database"),
             self.tr("Online publishing"),
-            self.tr("Sporely Cloud"),
             self.tr("Language"),
             self.tr("Appearance"),
         ):
@@ -1012,12 +1016,12 @@ class SettingsHubDialog(QDialog):
         self._stack.addWidget(self._build_profile_page())
         self._stack.addWidget(self._build_database_page())
         self._stack.addWidget(self._build_publishing_page())
-        self._stack.addWidget(self._build_cloud_page())
         self._stack.addWidget(self._build_language_page())
         self._stack.addWidget(self._build_appearance_page())
 
         # Wire nav after stack exists
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.currentRowChanged.connect(self._update_embedded_bottom_row)
 
         root.addWidget(self._nav)
 
@@ -1027,7 +1031,18 @@ class SettingsHubDialog(QDialog):
         right.addWidget(self._stack)
 
         btn_row = QHBoxLayout()
-        btn_row.addStretch()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(8)
+        self._hub_hint_holder = QWidget(self)
+        self._hub_hint_layout = QHBoxLayout(self._hub_hint_holder)
+        self._hub_hint_layout.setContentsMargins(0, 0, 0, 0)
+        self._hub_hint_layout.setSpacing(0)
+        btn_row.addWidget(self._hub_hint_holder, 1)
+        self._hub_help_holder = QWidget(self)
+        self._hub_help_layout = QHBoxLayout(self._hub_help_holder)
+        self._hub_help_layout.setContentsMargins(0, 0, 0, 0)
+        self._hub_help_layout.setSpacing(0)
+        btn_row.addWidget(self._hub_help_holder, 0, Qt.AlignRight | Qt.AlignVCenter)
         close_btn = QPushButton(self.tr("Close"))
         close_btn.setDefault(True)
         close_btn.clicked.connect(self.accept)
@@ -1037,6 +1052,41 @@ class SettingsHubDialog(QDialog):
         right_widget = QWidget()
         right_widget.setLayout(right)
         root.addWidget(right_widget, 1)
+        self._update_embedded_bottom_row(self._nav.currentRow())
+
+    def _clear_hub_bottom_layout(self, layout: QHBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+
+    def _update_embedded_bottom_row(self, page_index: int) -> None:
+        if not hasattr(self, "_hub_hint_layout"):
+            return
+        for dialog in (getattr(self, "_artsobs_dialog", None), getattr(self, "_db_dialog", None)):
+            bottom = getattr(dialog, "_bottom_widget", None)
+            if bottom is not None:
+                bottom.hide()
+
+        self._clear_hub_bottom_layout(self._hub_hint_layout)
+        self._clear_hub_bottom_layout(self._hub_help_layout)
+
+        hint_bar = None
+        help_button = None
+        if page_index == self.PAGE_PUBLISHING:
+            hint_bar = getattr(self._artsobs_dialog, "hint_bar", None)
+            help_button = getattr(self._artsobs_dialog, "_help_button", None)
+        elif page_index == self.PAGE_DATABASE:
+            hint_bar = getattr(self._db_dialog, "hint_bar", None)
+
+        if hint_bar is not None:
+            self._hub_hint_layout.addWidget(hint_bar, 1)
+            hint_bar.show()
+        if help_button is not None:
+            self._hub_help_layout.addWidget(help_button)
+            help_button.show()
 
     # ── Pages ─────────────────────────────────────────────────────────────────
 
@@ -1049,29 +1099,50 @@ class SettingsHubDialog(QDialog):
         profile = SettingsDB.get_profile()
 
         info = QLabel(self.tr(
-            "Name is used for the copyright watermark on images.\n"
-            "Name and email (optional) are added to observations in the database, "
-            "useful if you share your observations with others."
+            "Your profile is used for Sporely Cloud, contributor labels, and image watermarks. "
+            "When you sign in, the local profile email follows your Sporely Cloud account email."
         ))
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        identity_row = QHBoxLayout()
+        identity_row.setContentsMargins(0, 0, 0, 0)
+        identity_row.setSpacing(12)
+        self._profile_avatar_button = QToolButton(page)
+        self._profile_avatar_button.setFixedSize(72, 72)
+        self._profile_avatar_button.setIconSize(QSize(68, 68))
+        self._profile_avatar_button.setToolTip(self.tr("Change profile photo"))
+        self._profile_avatar_button.clicked.connect(self._choose_profile_avatar)
+        identity_row.addWidget(self._profile_avatar_button, 0, Qt.AlignTop)
+
         form = QFormLayout()
+        self._profile_username = QLineEdit(profile.get("username", ""))
+        self._profile_username.setPlaceholderText(self.tr("@username"))
         self._profile_name  = QLineEdit(profile.get("name", ""))
         self._profile_email = QLineEdit(profile.get("email", ""))
-        form.addRow(self.tr("Name"), self._profile_name)
+        self._profile_bio = QPlainTextEdit(profile.get("bio", ""))
+        self._profile_bio.setPlaceholderText(self.tr("Short bio"))
+        self._profile_bio.setFixedHeight(90)
+        self._profile_avatar_url = str(profile.get("avatar_url") or "").strip()
+        form.addRow(self.tr("Username"), self._profile_username)
+        form.addRow(self.tr("Display name"), self._profile_name)
         form.addRow(self.tr("Email"), self._profile_email)
-        layout.addLayout(form)
+        form.addRow(self.tr("Bio"), self._profile_bio)
+        identity_row.addLayout(form, 1)
+        layout.addLayout(identity_row)
 
         save_btn = QPushButton(self.tr("Save"))
         save_btn.clicked.connect(self._save_profile)
         layout.addWidget(save_btn)
 
-        copyright = self._artsobs_dialog._copyright_section
-        copyright.setParent(page)
-        copyright.show()
-        layout.addWidget(copyright)
+        cloud = self._artsobs_dialog._cloud_section
+        cloud.setParent(page)
+        cloud.show()
+        layout.addWidget(cloud)
+
         layout.addStretch()
+        self._render_profile_avatar()
+        QTimer.singleShot(0, self._refresh_cloud_profile_fields)
         return page
 
     def _build_database_page(self) -> QWidget:
@@ -1091,22 +1162,9 @@ class SettingsHubDialog(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        # Cloud and copyright sections live on their own pages; content checklist stays here
-        self._artsobs_dialog._cloud_section.hide()
-        self._artsobs_dialog._copyright_section.hide()
+        # Cloud/profile identity lives on the profile page; publishing content
+        # and image copyright stay together here.
         layout.addWidget(self._artsobs_dialog)
-        return page
-
-    def _build_cloud_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        cloud = self._artsobs_dialog._cloud_section
-        cloud.setParent(page)
-        cloud.show()
-        layout.addWidget(cloud)
-        layout.addStretch()
         return page
 
     def _build_language_page(self) -> QWidget:
@@ -1170,15 +1228,208 @@ class SettingsHubDialog(QDialog):
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 
-    def _save_profile(self):
+    def _cloud_client(self):
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            return SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            return None
+
+    def _profile_email_for_save(self) -> str:
+        cloud_email = str(get_app_settings().get("cloud_user_email") or "").strip()
+        return cloud_email or self._profile_email.text().strip()
+
+    def _render_profile_avatar(self) -> None:
+        button = getattr(self, "_profile_avatar_button", None)
+        if button is None:
+            return
+        display = (
+            self._profile_username.text().strip().lstrip("@")
+            or self._profile_name.text().strip()
+            or self._profile_email.text().strip()
+            or "?"
+        )
+        initial = display[0].upper() if display else "?"
+        pixmap = QPixmap(68, 68)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        colors = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6"]
+        color_idx = sum(ord(c) for c in display) % len(colors)
+        painter.setBrush(QColor(colors[color_idx]))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(2, 2, 64, 64)
+        painter.setPen(QColor("white"))
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(22)
+        painter.setFont(font)
+        painter.drawText(QRectF(2, 2, 64, 64), Qt.AlignCenter, initial)
+        painter.end()
+        button.setIcon(QIcon(pixmap))
+
+    def _avatar_jpeg_bytes_from_path(self, path: str) -> bytes:
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        image = reader.read()
+        if image.isNull():
+            raise RuntimeError(self.tr("Could not read profile photo."))
+        side = min(image.width(), image.height())
+        if side <= 0:
+            raise RuntimeError(self.tr("Could not read profile photo."))
+        x = max(0, (image.width() - side) // 2)
+        y = max(0, (image.height() - side) // 2)
+        image = image.copy(x, y, side, side).scaled(
+            512,
+            512,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        self._profile_avatar_preview = QPixmap.fromImage(image)
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        if not image.save(buffer, "JPEG", 88):
+            raise RuntimeError(self.tr("Could not encode profile photo."))
+        buffer.close()
+        return bytes(data)
+
+    def _choose_profile_avatar(self) -> None:
+        client = self._cloud_client()
+        if client is None:
+            QMessageBox.information(
+                self,
+                self.tr("Sporely Cloud"),
+                self.tr("Sign in to Sporely Cloud before changing your profile photo."),
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr("Choose profile photo"),
+            "",
+            self.tr("Images (*.jpg *.jpeg *.png *.webp *.heic *.heif);;All files (*.*)"),
+        )
+        if not path:
+            return
+        try:
+            avatar_bytes = self._avatar_jpeg_bytes_from_path(path)
+            avatar_url = client.upload_profile_avatar(avatar_bytes)
+            self._profile_avatar_url = avatar_url
+            SettingsDB.set_setting("profile_avatar_url", avatar_url)
+            preview = getattr(self, "_profile_avatar_preview", None)
+            if isinstance(preview, QPixmap) and not preview.isNull():
+                self._profile_avatar_button.setIcon(
+                    QIcon(preview.scaled(68, 68, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+                )
+            else:
+                self._render_profile_avatar()
+            parent = self.parent()
+            if parent is not None:
+                if hasattr(parent, "_avatar_pixmap_cached"):
+                    delattr(parent, "_avatar_pixmap_cached")
+                if hasattr(parent, "_update_corner_ui"):
+                    parent._update_corner_ui()
+            QMessageBox.information(self, self.tr("Sporely Cloud"), self.tr("Profile photo updated."))
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Upload Failed"),
+                self.tr("Could not update profile photo.\n\n{error}").format(error=exc),
+            )
+
+    def _refresh_cloud_profile_fields(self, force: bool = False) -> None:
+        if not hasattr(self, "_profile_email"):
+            return
+        client = self._cloud_client()
+        if client is None:
+            self._profile_email.setReadOnly(False)
+            self._profile_email.setToolTip("")
+            return
+        user_id = str(getattr(client, "user_id", "") or "").strip()
+        if not force and user_id and self._cloud_profile_loaded_user_id == user_id:
+            return
+        try:
+            user_info = client.fetch_current_user_info()
+            account_email = str(user_info.get("email") or get_app_settings().get("cloud_user_email") or "").strip()
+            cloud_profile = client.fetch_profile()
+        except Exception as exc:
+            self._profile_email.setReadOnly(True)
+            self._profile_email.setToolTip(self.tr("Signed in to Sporely Cloud."))
+            self._cloud_profile_loaded_user_id = user_id
+            self._profile_email.setText(str(get_app_settings().get("cloud_user_email") or "").strip())
+            self._render_profile_avatar()
+            return
+
+        username = str(cloud_profile.get("username") or "").strip()
+        display_name = str(cloud_profile.get("display_name") or "").strip()
+        bio = str(cloud_profile.get("bio") or "").strip()
+        avatar_url = str(cloud_profile.get("avatar_url") or "").strip()
+        if username:
+            self._profile_username.setText(username)
+        if display_name:
+            self._profile_name.setText(display_name)
+        if account_email:
+            self._profile_email.setText(account_email)
+        self._profile_email.setReadOnly(True)
+        self._profile_email.setToolTip(self.tr("Profile email is the signed-in Sporely Cloud account."))
+        if bio:
+            self._profile_bio.setPlainText(bio)
+        if avatar_url:
+            self._profile_avatar_url = avatar_url
         SettingsDB.set_profile(
             self._profile_name.text().strip(),
             self._profile_email.text().strip(),
+            self._profile_bio.toPlainText().strip(),
+            self._profile_username.text().strip().lstrip("@"),
+            self._profile_avatar_url,
         )
+        self._cloud_profile_loaded_user_id = user_id
+        self._render_profile_avatar()
+
+    def _on_cloud_login_changed(self, client=None, email: str | None = None) -> None:
+        self._cloud_profile_loaded_user_id = ""
+        if email:
+            self._profile_email.setText(str(email or "").strip())
+            SettingsDB.set_setting("profile_email", str(email or "").strip())
+        self._refresh_cloud_profile_fields(force=True)
+
+    def _on_cloud_logout_changed(self) -> None:
+        self._cloud_profile_loaded_user_id = ""
+        if hasattr(self, "_profile_email"):
+            self._profile_email.setReadOnly(False)
+            self._profile_email.setToolTip("")
+
+    def _save_profile(self):
+        username = self._profile_username.text().strip().lstrip("@")
+        name = self._profile_name.text().strip()
+        email = self._profile_email_for_save()
+        bio = self._profile_bio.toPlainText().strip()
+        avatar_url = str(getattr(self, "_profile_avatar_url", "") or "").strip()
+        SettingsDB.set_profile(name, email, bio, username, avatar_url)
+        client = self._cloud_client()
+        if client is not None:
+            try:
+                client.update_profile(
+                    username=username,
+                    display_name=name,
+                    bio=bio,
+                )
+                self._cloud_profile_loaded_user_id = str(getattr(client, "user_id", "") or "").strip()
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Profile Not Synced"),
+                    self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc),
+                )
+                return
         self._profile_changed = True
         parent = self.parent()
         if parent and hasattr(parent, "_update_measure_copyright_overlay"):
             parent._update_measure_copyright_overlay()
+        if parent and hasattr(parent, "_update_corner_ui"):
+            parent._update_corner_ui()
+        QMessageBox.information(self, self.tr("Profile"), self.tr("Profile saved."))
 
     def _load_language_settings(self):
         current_ui = str(SettingsDB.get_setting("ui_language", "en") or "en").replace("-", "_")
@@ -1610,8 +1861,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
         options_group = QGroupBox(self.tr("Publish content"), self)
         options_layout = QVBoxLayout(options_group)
-        options_layout.setContentsMargins(10, 10, 10, 10)
-        options_layout.setSpacing(6)
+        options_layout.setContentsMargins(10, 8, 10, 8)
+        options_layout.setSpacing(2)
         self.include_annotations_checkbox = QCheckBox(self)
         self.show_scale_bar_checkbox = QCheckBox(self)
         self.include_spore_stats_checkbox = QCheckBox(self)
@@ -1624,6 +1875,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.hint_bar = HintBar(self)
         self.hint_bar.set_wrap_mode(True)
         self._hint_controller = HintStatusController(self.hint_bar, self)
+        watermark_help = self.tr(
+            "Adds a visible watermark on published images. The selected license still applies even if watermark is off."
+        )
         wrapped_options = (
             (
                 self.include_annotations_checkbox,
@@ -1658,6 +1912,11 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 self.tr("Include plate"),
                 self.tr("Uploads the current species plate image."),
             ),
+            (
+                self.include_copyright_checkbox,
+                self.tr("Include watermark"),
+                watermark_help,
+            ),
         )
         for checkbox, text, help_text in wrapped_options:
             checkbox.toggled.connect(self._save_settings)
@@ -1673,9 +1932,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         copyright_layout.setContentsMargins(10, 10, 10, 10)
         copyright_layout.setSpacing(6)
 
-        watermark_help = self.tr(
-            "Adds a visible watermark on published images. The selected license still applies even if watermark is off."
-        )
         license_help = ""
         self.image_license_label.setWordWrap(True)
         self._register_hint_widget(self.image_license_label, license_help)
@@ -1694,32 +1950,24 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         license_row.addWidget(self.image_license_combo, 1)
         copyright_layout.addLayout(license_row)
 
-        self.include_copyright_checkbox.toggled.connect(self._save_settings)
         self.include_copyright_checkbox.toggled.connect(self._update_watermark_controls)
-        self._add_wrapped_checkbox_row(
-            copyright_layout,
-            self.include_copyright_checkbox,
-            self.tr("Include watermark"),
-            watermark_help,
-        )
         self._copyright_section = copyright_group
 
-        layout.addWidget(options_group, 1)
+        layout.addWidget(options_group, 0)
+        layout.addWidget(copyright_group, 0)
 
-        bottom_row = QHBoxLayout()
+        self._bottom_widget = QWidget(self)
+        bottom_row = QHBoxLayout(self._bottom_widget)
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
         bottom_row.addWidget(self.hint_bar, 1)
-        bottom_row.addWidget(
-            make_github_help_button(self, "artsobservasjoner.md"),
-            0,
-            Qt.AlignRight | Qt.AlignVCenter,
-        )
+        self._help_button = make_github_help_button(self, "artsobservasjoner.md")
+        bottom_row.addWidget(self._help_button, 0, Qt.AlignRight | Qt.AlignVCenter)
         buttons = QDialogButtonBox(self)
         close_button = buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
         close_button.clicked.connect(self.reject)
         bottom_row.addWidget(buttons, 0, Qt.AlignRight | Qt.AlignVCenter)
-        layout.addLayout(bottom_row)
+        layout.addWidget(self._bottom_widget, 0)
 
     def _add_wrapped_checkbox_row(
         self,
@@ -1728,27 +1976,32 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         text: str,
         help_text: str | None = None,
     ) -> None:
-        row = QHBoxLayout()
+        row_widget = QWidget(self)
+        row_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        row.setSpacing(6)
         checkbox.setText("")
+        checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._register_hint_widget(checkbox, help_text)
         row.addWidget(checkbox, 0, Qt.AlignVCenter)
-        text_row = QHBoxLayout()
-        text_row.setContentsMargins(0, 0, 0, 0)
-        text_row.setSpacing(4)
 
-        label = QLabel(text, self)
+        label = QLabel(text, row_widget)
         label.setWordWrap(True)
         label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         label.setTextInteractionFlags(Qt.NoTextInteraction)
         label.setCursor(Qt.PointingHandCursor)
         label.mousePressEvent = lambda _event, cb=checkbox: cb.click() if cb.isEnabled() else None
         self._register_hint_widget(label, help_text)
-        text_row.addWidget(label, 1, Qt.AlignVCenter)
-        row.addLayout(text_row, 1)
-        parent_layout.addLayout(row)
+        row.addWidget(label, 1, Qt.AlignVCenter)
+        min_height = max(
+            checkbox.sizeHint().height(),
+            label.sizeHint().height(),
+            self.fontMetrics().height() + 8,
+        )
+        row_widget.setFixedHeight(min_height)
+        parent_layout.addWidget(row_widget)
 
     def _register_hint_widget(self, widget: QWidget, hint_text: str | None) -> None:
         if not widget:
@@ -2288,15 +2541,27 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
     def _on_cloud_login_success(self, client, email: str) -> None:
         try:
+            from utils.cloud_sync import ensure_database_linked_to_cloud_user
+
+            ensure_database_linked_to_cloud_user(client)
             client.save_credentials(
                 email=str(email or "").strip(),
                 password=getattr(self, "_cloud_login_password", None),
                 remember_password=bool(getattr(self, "_cloud_login_remember", False)),
             )
             update_app_settings({"cloud_user_email": str(email or "").strip()})
+            SettingsDB.set_setting("profile_email", str(email or "").strip())
             self._cloud_client = client
             self.set_hint(self.tr("Logged in to Sporely Cloud"), tone="success")
-            main_window = self.parent()
+            settings_hub = self.parent()
+            if settings_hub is not None and hasattr(settings_hub, "_on_cloud_login_changed"):
+                try:
+                    settings_hub._on_cloud_login_changed(client, str(email or "").strip())
+                except Exception:
+                    pass
+            main_window = settings_hub.parent() if settings_hub is not None and hasattr(settings_hub, "parent") else None
+            if main_window is None:
+                main_window = self.parent()
             if main_window is not None and hasattr(main_window, "observations_tab"):
                 try:
                     main_window.observations_tab._start_cloud_sync(show_status=True, run_refresh_flow=True)
@@ -2340,6 +2605,12 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._cloud_client = None
         self._update_cloud_controls()
         self._update_status()
+        settings_hub = self.parent()
+        if settings_hub is not None and hasattr(settings_hub, "_on_cloud_logout_changed"):
+            try:
+                settings_hub._on_cloud_logout_changed()
+            except Exception:
+                pass
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
@@ -4307,7 +4578,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._avatar_corner_btn.setObjectName("cornerAvatarBtn")
         self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
         self._avatar_corner_btn.setCursor(Qt.PointingHandCursor)
-        self._avatar_corner_btn.clicked.connect(lambda: self.open_settings_hub(page=3))
+        self._avatar_corner_btn.clicked.connect(lambda: self.open_settings_hub(page=SettingsHubDialog.PAGE_PROFILE))
         self._avatar_corner_btn.setStyleSheet("QToolButton { border: none; padding: 2px; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 14px; }")
         corner_layout.addWidget(self._avatar_corner_btn)
 
@@ -4464,8 +4735,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._avatar_corner_btn.setVisible(True)
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
             profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
+            username = str(profile.get("username") or "").strip().lstrip("@")
             name = str(profile.get("name") or "").strip()
-            display_str = name or cloud_email or cloud_user_id
+            display_str = username or name or cloud_email or cloud_user_id
             initial = display_str[0].upper() if display_str else "?"
             
             pixmap = QPixmap(26, 26)
@@ -8975,7 +9247,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             QMessageBox.warning(
                 self,
                 "HEIC Conversion Failed",
-                f"Could not convert {Path(original_path).name} to JPEG."
+                f"Could not convert {Path(original_path).name} to WebP."
             )
             return
 
@@ -9422,7 +9694,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 QMessageBox.warning(
                     self,
                     "HEIC Conversion Failed",
-                    f"Could not convert {Path(path).name} to JPEG."
+                    f"Could not convert {Path(path).name} to WebP."
                 )
                 continue
 
@@ -15227,7 +15499,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         dialog.resize(560, dialog.sizeHint().height())
 
         if dialog.exec() == QDialog.Accepted:
-            SettingsDB.set_profile(name_input.text().strip(), email_input.text().strip())
+            SettingsDB.set_profile(
+                name_input.text().strip(),
+                email_input.text().strip(),
+                profile.get("bio", ""),
+                profile.get("username", ""),
+                profile.get("avatar_url", ""),
+            )
             self._update_measure_copyright_overlay()
 
     def open_cloud_sync_dialog(self):
@@ -16650,7 +16928,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 QMessageBox.warning(
                     self,
                     "HEIC Conversion Failed",
-                    f"Could not convert {Path(path).name} to JPEG."
+                    f"Could not convert {Path(path).name} to WebP."
                 )
                 continue
 

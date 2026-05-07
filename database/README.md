@@ -85,3 +85,5 @@ This folder also contains `.sql` migration files for the Sporely Cloud (Supabase
 - `supabase_spore_measurements_sync.sql` — Prepares the `spore_measurements` table to receive synced measurements from the desktop.
 - `supabase_people_directory.sql` — Adds the `search_people_directory` RPC used by the web People screen for privacy-aware public contributor stats.
 - `supabase_unique_constraints.sql` — Adds `UNIQUE (desktop_id, user_id)` constraints to ensure high-performance upserts during desktop-to-cloud sync.
+- `supabase_phase7_privacy_social_costs.sql` — Base Phase 7 privacy/social migration with `profiles.is_pro`, the first non-public slot trigger, privacy-aware feed views, and matching RLS policies.
+- `supabase_phase7_transparency_social_trails.sql` — Follow-up Phase 7 delta that separates WIP state (`is_draft`) from sharing (`private` / `friends` / `public`), adds `location_precision`, introduces follows, and updates the 20-slot trigger to count private/friends or fuzzed observations.

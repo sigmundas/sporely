@@ -1485,10 +1485,6 @@ Vil du uppdatera disse bildene til √• bruke den nye kalibreringen och beregne m√
         <source>Images folder:</source>
         <translation>Bildermapp:</translation></message>
     <message>
-        <location filename="../ui/database_settings_dialog.py" line="109" />
-        <source>Resize JPEG quality:</source>
-        <translation>JPEG-kvalitet ved skalering:</translation></message>
-    <message>
         <location filename="../ui/database_settings_dialog.py" line="113" />
         <source>Microscope tags</source>
         <translation>Mikroskoptagger</translation></message>

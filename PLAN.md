@@ -102,7 +102,9 @@ Important:
 - [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
 
 ## Cloud Sync Follow-Up
-- [ ] **Run live cloud-lock QA:** Use two disposable Sporely Cloud accounts to verify the implemented account lock, mismatch dialog, Reset Cloud Link flow, R2 ownership paths, and web Profile deletion cleanup against the real Supabase/R2 environment.
+- [ ] **Run live cloud-lock QA:** Use two disposable Sporely Cloud accounts to verify the implemented account lock, login-time mismatch block, mismatch dialog, Reset Cloud Link flow, R2 ownership paths, and web Profile deletion cleanup against the real Supabase/R2 environment.
+- [ ] **Account migration guardrail:** Design a safer user-facing migration flow before encouraging users to delete/recreate accounts. Resetting the local cloud link must remain explicit, should not delete remote data, and should explain duplicate-risk versus data-loss-risk clearly.
+- [ ] **Profile parity QA:** Verify desktop Profile & Cloud saves `username`, `display_name`, `bio`, and `avatar_url` to Supabase `profiles`, and that the web Profile shows the same values. Confirm local `profile_email` follows the cloud auth email when signed in.
 - [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
 
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
@@ -228,18 +230,114 @@ Important:
 - [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
 
 ---
+# Phase 7: Privacy, Social Feeds, and Costs
 
-## Phase 4: Cloud Image Format Compatibility
-*Goal: Keep desktop sync compatible with the web/mobile JPEG/WebP pipeline now in production, while leaving a clean path for desktop-generated AVIF where it makes sense.*
+## Implementation Checklist
+- [x] **Create Phase 7 Supabase migration:** Add the `private` / `friends` / `public` visibility model, `is_draft`, `location_precision`, `profiles.is_pro`, privacy helper functions, non-public slot enforcement, RLS policies, and feed views in `database/supabase_phase7_privacy_social_costs.sql` plus `database/supabase_phase7_transparency_social_trails.sql`.
+- [x] **Preserve desktop/cloud visibility compatibility:** Keep desktop/local `private` semantics while translating legacy cloud `draft` rows back to local `private`. New desktop pushes send Supabase `private`, not legacy `draft`.
+- [x] **Run local tests for the compatibility slice:** Execute the focused Phase 7 cloud visibility tests and any nearby cloud-sync tests.
+- [ ] **Apply current Supabase delta in staging/live:** Run the latest `database/supabase_phase7_transparency_social_trails.sql` after the already-applied base SQL, then verify it against current production tables and policies.
+- [ ] **Verify live RLS/feed behavior:** Test owner, accepted friend, stranger, blocked user, banned profile, and non-public limit paths with disposable accounts.
+- [ ] **Strip GPS EXIF from public media serving path:** Ensure the Cloudflare public image path cannot leak embedded GPS metadata.
+- [x] **Remove web capture sticky visibility toggle:** Default capture/review flows to public, draft, exact-location observations.
+- [x] **Add desktop privacy controls:** Let desktop users mark Draft/WIP, Private/Friends/Public, and Exact/Fuzzed location. Desktop does not need social/feed controls.
 
-### 2026-05-05 Status
-- ✅ Web/mobile JPEG/WebP uploads now work on both iOS and Android.
-- ✅ Desktop R2 download uses direct object keys, so `.jpg`, `.jpeg`, `.webp`, and `.avif` keys can be pulled without the old Cloudflare CDN conversion trick.
-- ✅ `pillow-heif` is present in `requirements.txt` and registered on boot, so Pillow can decode HEIF/AVIF formats when the local dependency supports them.
-- ✅ Desktop upload metadata and thumbnail naming have been aligned with the web app's single `thumb_{filename}` variant.
 
-### Follow-Up: Desktop AVIF for Resized Microscope Uploads
-- Consider adding an opt-in AVIF encode path only for desktop-generated/resized microscope images, especially when `resample_scale_factor < 1.0`.
-- Keep original source files local for measurement provenance; upload the resized cloud derivative as `.avif` with `content_type='image/avif'` and matching `storage_path`.
-- Continue generating a browser-friendly `thumb_{filename}` variant. If the thumb itself becomes AVIF, verify web detail/gallery rendering on current Safari/iOS, Chrome/Android, and desktop browsers first.
-- Web should be able to display AVIF via normal `<img>` in modern browsers, and the web app now accepts `.avif` inputs, but this still needs explicit QA before making AVIF the only cloud representation for microscope media.
+## Change of plans:
+Remove **The "Sticky" Capture Toggle (Web App)**
+
+By making **Drafts Public by default**, you allow the community to see the "Live Stream" of science happening.
+* **The UI:** In the feed, a "Draft" has a subtle **"Draft"** badge.
+* **The Logic:** It doesn't appear in the "Featured" or "Verified" lists, but it *is* on the map.
+* **The Benefit:** If someone sees a public draft of a rare species, they can "Follow" it to get notified when you finally upload the spore measurements or a final ID.
+
+If a user wants to work on a find in total secrecy (e.g., they found a massive Porcini patch and don't want anyone seeing the exact pin until the season is over), they toggle it to **Private**.
+* **Cost:** This consumes **1 Privacy Slot**.
+* **Slot Count:** I think **20 slots** is the "sweet spot." Ten feels a bit stingy if someone is doing a heavy microscopy weekend. Twenty allows for a full "Foray" to be kept private while they process the data.
+
+
+This is a significant refinement. We are moving from a "Safety First" (hidden by default) model to an **"Open Science First"** (transparent by default) model. This is much better for data density and user growth.
+
+Below is the new **Phase 7 Plan**, reconciled with your existing SQL and the new UI requirements.
+
+---
+
+# Phase 7 - New version: Transparency, Social Trails, and Privacy Slots
+
+## 1. The Core Logic & Database Changes
+We need to update the Supabase schema to support the "Draft" state and the "Privacy Slot" accounting.
+
+### Schema Updates
+* **`is_draft` (boolean, default: true):** New column. Observations are WIP until "Finished." Public by default.
+* **`location_precision` (text, default: 'exact'):** New column (`'exact'` or `'fuzzed'`).
+* **`visibility` (text, default: 'public'):** Values: `'public'`, `'friends'`, `'private'`. (Note: We use `'private'` instead of the legacy `'draft'` visibility level to avoid confusion with the `is_draft` status).
+
+### The "Privacy Slot" Engine (Trigger Update)
+A "Privacy Slot" is consumed if an observation is **not** fully transparent.
+> **Logic:** `(visibility != 'public') OR (location_precision = 'fuzzed')`
+* **Free Tier Limit:** 20 slots.
+* **Pro Tier:** Unlimited.
+
+### Updated Feed Logic (Views)
+* **`observations_community_view`:** * Return **Exact GPS** by default.
+    * Only `ROUND()` coordinates if `location_precision = 'fuzzed'`.
+    * Hide completely if `visibility = 'private'`.
+* **`observations_follow_view` (New):**
+    * Joins the `follows` table.
+    * Shows updates for followed **Users**, **Species**, or **Genera**.
+
+---
+
+## 2. UI Refinements (Mobile/Web)
+
+### Find-Detail View
+* **Identify Row:** Shrink the "Identify with Artsorakel AI" button width. Place the `🧭` (Compass) follow icon next to it on the same line.
+* **Header Row:** Add the Author's Avatar and Username in the top-right corner, aligned with the Species name.
+* **Social Controls:** * When viewing another user's find: Show `🤍` (Friend Request) and `🧭` (Follow User).
+    * **Reciprocity:** Heart turns `❤️` when a friendship is accepted.
+* **Sharing Section:** Keep the three buttons (`Private`, `Friends`, `Public`) but add a small `(1 slot)` label under Private and Friends for free users.
+
+### Finds Tab (Main Feed)
+* **New Tab:** Add **`Feed 🧭`** alongside `Mine`, `Friends`, and `Public`.
+* **Draft Indicator:** Add a "Draft" or "WIP" corner badge to images in the gallery that have `is_draft = true`.
+
+---
+
+## 3. Revised Phase 7 Todo-List for Agent
+
+- [x] **SQL Migration (Schema):**
+    - [x] Add `is_draft` (bool) and `location_precision` (text) to `observations`.
+    - [x] Create `follows` table (`user_id`, `target_type`, `target_id`).
+- [x] **SQL Migration (Triggers):**
+    - [x] Update `enforce_non_public_observation_limit()` to check for `(visibility != 'public' OR location_precision = 'fuzzed')`.
+    - [x] Increase/keep the limit at **20** for non-pro users.
+- [x] **SQL Migration (Views):**
+    - [x] Update `observations_community_view` to show exact GPS by default.
+    - [x] Implement `observations_follow_view`.
+- [x] **Frontend (Find-Detail):**
+    - [x] Layout adjustment: Narrow ID button + Follow icon.
+    - [x] Layout adjustment: Username/Avatar in header.
+    - [x] Logic: Social toggle for `🤍` and `🧭`.
+- [x] **Frontend (Feed):**
+    - [x] Add the `Feed 🧭` tab.
+    - [x] Implement the "Draft" badge on gallery cards.
+- [x] **Desktop (sporely-py):**
+    - [x] Add local `is_draft` and `location_precision` columns.
+    - [x] Add observation edit controls for Draft, Private/Friends/Public, and Exact/Fuzzed location.
+    - [x] Push/pull `is_draft`, `visibility`, and `location_precision` with Supabase.
+    - [x] Update cloud visibility tests from legacy `draft` visibility to new `private` visibility.
+- [ ] **Growth Features:**
+    - [ ] Implement "Export to iNaturalist" with the `sporely.no` deep link.
+    - [ ] Implement Bluesky "Share Card" generator.
+
+---
+
+## Reconciling with your last SQL
+Your last SQL established a solid foundation for `profiles.is_pro` and the `are_friends()` helpers. We can reuse those entirely.
+
+**What changes:**
+1.  **Visibility Values:** We will shift the legacy `'draft'` visibility value to `'private'` to allow the new `is_draft` (WIP) boolean to handle the workflow state independently of privacy.
+2.  **The Trigger:** The trigger logic needs to be expanded to watch the `location_precision` column as well.
+3.  **The View:** The `observations_community_view` is currently rounding everything for strangers. We will change it to only round if the user has explicitly requested "fuzzing" via a privacy slot.
+
+The remaining Phase 7 risk is live Supabase verification: apply the current delta SQL, then test RLS/feed visibility and the privacy-slot trigger with disposable accounts.

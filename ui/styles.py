@@ -71,11 +71,11 @@ def get_button_icon_color(object_name: str | None = None, theme: str = "auto") -
     dark = _is_dark(theme)
     if dark:
         text = "#e8e8e8"
-        primary_button_text = "#1f422f"
+        primary_button_text = "#ffffff"
         destructive_fg = "#e4a7a1"
     else:
-        text = "#2b3437"
-        primary_button_text = "#164627"
+        text = "#1e293b"
+        primary_button_text = "#ffffff"
         destructive_fg = "#9b3d35"
 
     if object_name == "primaryButton":
@@ -83,6 +83,21 @@ def get_button_icon_color(object_name: str | None = None, theme: str = "auto") -
     if object_name == "destructiveButton":
         return destructive_fg
     return text
+
+
+def get_design_tokens(theme: str = "auto") -> dict[str, str]:
+    """Return shared color tokens used by code-built widgets."""
+    if _is_dark(theme):
+        return {
+            "surface": "#1c1b1b",
+            "surface_low": "#252423",
+            "data_brd": "#334155",
+        }
+    return {
+        "surface": "#ffffff",
+        "surface_low": "#f1f5f9",
+        "data_brd": "#e2e8f0",
+    }
 
 
 def apply_palette(theme: str = "auto") -> None:
@@ -128,26 +143,26 @@ def apply_palette(theme: str = "auto") -> None:
     else:
         # Slate Lab
         palette.setColor(QPalette.Window,          QColor("#f8f9fa"))
-        palette.setColor(QPalette.WindowText,      QColor("#2b3437"))
+        palette.setColor(QPalette.WindowText,      QColor("#1e293b"))
         palette.setColor(QPalette.Base,            QColor("#ffffff"))
-        palette.setColor(QPalette.AlternateBase,   QColor("#f0f1f2"))
+        palette.setColor(QPalette.AlternateBase,   QColor("#f1f5f9"))
         palette.setColor(QPalette.ToolTipBase,     QColor("#ffffff"))
-        palette.setColor(QPalette.ToolTipText,     QColor("#2b3437"))
-        palette.setColor(QPalette.Text,            QColor("#2b3437"))
-        palette.setColor(QPalette.Button,          QColor("#f0f1f2"))
-        palette.setColor(QPalette.ButtonText,      QColor("#2b3437"))
+        palette.setColor(QPalette.ToolTipText,     QColor("#1e293b"))
+        palette.setColor(QPalette.Text,            QColor("#1e293b"))
+        palette.setColor(QPalette.Button,          QColor("#f1f5f9"))
+        palette.setColor(QPalette.ButtonText,      QColor("#1e293b"))
         palette.setColor(QPalette.BrightText,      QColor("white"))
-        palette.setColor(QPalette.Mid,             QColor("#e0e2e3"))
-        palette.setColor(QPalette.Dark,            QColor("#e0e0e0"))
+        palette.setColor(QPalette.Mid,             QColor("#e2e8f0"))
+        palette.setColor(QPalette.Dark,            QColor("#e2e8f0"))
         palette.setColor(QPalette.Light,           QColor("#ffffff"))
-        palette.setColor(QPalette.Highlight,       QColor("#defff4"))
-        palette.setColor(QPalette.HighlightedText, QColor("#2b3437"))
-        palette.setColor(QPalette.PlaceholderText, QColor("#8a9490"))
-        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#8a9490"))
-        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#8a9490"))
-        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#8a9490"))
-        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#e8edeb"))
-        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#e8edeb"))
+        palette.setColor(QPalette.Highlight,       QColor("#f0fdfa"))
+        palette.setColor(QPalette.HighlightedText, QColor("#1e293b"))
+        palette.setColor(QPalette.PlaceholderText, QColor("#64748b"))
+        palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#64748b"))
+        palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#64748b"))
+        palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#64748b"))
+        palette.setColor(QPalette.Disabled, QPalette.Base,       QColor("#f1f5f9"))
+        palette.setColor(QPalette.Disabled, QPalette.Button,     QColor("#f1f5f9"))
 
     app.setPalette(palette)
 
@@ -176,7 +191,7 @@ def get_style(theme: str = "auto") -> str:
         if sz > 0:
             base_pt = sz
 
-    small_pt   = max(base_pt - 2, 7)
+    small_pt   = max(base_pt - 2, 8)
     header_pt  = base_pt + 2
     obj_tag_pt = base_pt + 1
 
@@ -186,15 +201,15 @@ def get_style(theme: str = "auto") -> str:
         # Clinical Nocturne — atmospheric, high-contrast, lab-optimised
         bg           = "#131313"         # deep charcoal background
         surface      = "#1c1b1b"         # slightly lighter charcoal for cards
-        surface_low   = "#1c1b1b"         # tab bar, header row, side panel
+        surface_low   = "#252423"         # tab bar, header row, side panel
         surface_hover = "#252423"         # hover on surface_low elements
-        input_bg      = "#252423"         # input fields (just visible lift)
-        brd_focus    = "#aecdc3"         # soft mint focus ring
+        input_bg      = "#1c1b1b"         # input fields
+        brd_focus    = "#4d7c7a"         # teal focus ring
         text         = "#e8e8e8"         # off-white primary text
-        text_dim     = "#c1c8c4"         # muted sage-grey secondary text
-        accent       = "#2e5c35"         # mid forest green — button background
-        accent_h     = "#3a7042"         # slightly lighter hover
-        accent_p     = "#3d5a52"         # deep teal pressed
+        text_dim     = "#a1a1aa"         # muted slate secondary text
+        accent       = "#4d7c7a"         # guess/action teal
+        accent_h     = "#5a908d"         # lighter hover
+        accent_p     = "#3f6765"         # pressed teal
         dis_bg       = "#353534"         # dark grey disabled bg
         dis_fg       = "#6b7270"         # muted disabled text
         menubar_bg   = "#131313"
@@ -203,57 +218,57 @@ def get_style(theme: str = "auto") -> str:
         sel_bg       = "#3d5a52"         # deep forest green selection
         sel_fg       = "#e8e8e8"
         sel_inact    = "#2a3c38"
-        inline_brd   = "#aecdc3"
-        indicator_border   = "#3a7042"   # green indicator border
-        indicator_checked  = "#2e5c35"   # forest green fill for checked state (matches buttons)
+        inline_brd   = "#4d7c7a"
+        indicator_border   = "#4d7c7a"   # teal indicator border
+        indicator_checked  = "#52796f"   # save green fill for checked state
         indicator_bg       = "#1c1b1b"
         indicator_disabled = "#353534"
-        data_brd     = "#353534"
-        data_fg      = "#c1c8c4"
+        data_brd     = "#334155"
+        data_fg      = "#a1a1aa"
         destructive_fg = "#e4a7a1"
         destructive_border = "#8b3530"
         destructive_hover_bg = "rgba(228, 167, 161, 0.16)"
         destructive_pressed_bg = "rgba(228, 167, 161, 0.24)"
-        primary_button_bg = "#8cc49a"
-        primary_button_bg_h = "#7ebd8f"
-        primary_button_text = "#1f422f"
+        primary_button_bg = "#52796f"
+        primary_button_bg_h = "#486b62"
+        primary_button_text = "#ffffff"
         dialog_brd   = "transparent"
     else:
-        # Slate Lab — technical, clinical, cool off-white
-        bg           = "#f8f9fa"         # cool off-white canvas
-        surface      = "#ffffff"         # pure white for cards/inputs
-        surface_low   = "#f0f1f2"         # light grey tonal shift (tab bar, headers, side panel)
-        surface_hover = "#e0e2e3"         # hover on surface_low elements
-        input_bg      = "#e8edeb"         # soft input background
-        brd_focus    = "#47645c"         # desaturated slate green
-        text         = "#2b3437"         # dark slate grey primary text
-        text_dim     = "#586064"         # medium grey secondary text
-        accent       = "#47645c"         # desaturated slate green
-        accent_h     = "#3a5450"         # hover: slightly darker
-        accent_p     = "#2e4440"         # pressed: deepest
-        dis_bg       = "#cdd5d2"         # muted disabled background
-        dis_fg       = "#8a9490"         # muted disabled text
-        menubar_bg   = "#47645c"
-        menubar_h    = "#3a5450"
-        img_bg       = "#f0f1f2"         # matches surface_low
-        sel_bg       = "#defff4"         # very light mint selection
-        sel_fg       = "#2b3437"
-        sel_inact    = "#e8f8f4"         # lighter inactive selection
-        inline_brd   = "#47645c"
-        indicator_border   = "#586064"
-        indicator_checked  = "#47645c"   # slate green fill for checked state
+        # Slate Lab — refined for the web-style card layout.
+        bg           = "#f8f9fa"         # bg-slate-50
+        surface      = "#ffffff"         # pure white cards/inputs
+        surface_low   = "#f1f5f9"         # box headers and soft panels
+        surface_hover = "#e2e8f0"         # hover on surface_low elements
+        input_bg      = "#ffffff"         # white inputs
+        brd_focus    = "#4d7c7a"         # teal focus ring
+        text         = "#1e293b"         # text-slate-800
+        text_dim     = "#64748b"         # text-slate-500
+        accent       = "#4d7c7a"         # guess/action teal
+        accent_h     = "#466f6d"         # hover: slightly darker
+        accent_p     = "#3d6260"         # pressed: deepest
+        dis_bg       = "#e2e8f0"         # muted disabled background
+        dis_fg       = "#64748b"         # muted disabled text
+        menubar_bg   = "#52796f"
+        menubar_h    = "#486b62"
+        img_bg       = "#f1f5f9"         # matches surface_low
+        sel_bg       = "#f0fdfa"         # subtle emerald tint
+        sel_fg       = "#1e293b"
+        sel_inact    = "#f0fdfa"         # focus tint
+        inline_brd   = "#4d7c7a"
+        indicator_border   = "#64748b"
+        indicator_checked  = "#52796f"   # save green fill for checked state
         indicator_bg       = "#ffffff"
-        indicator_disabled = "#cdd5d2"
-        data_brd     = "#e0e0e0"         # neutral grey divider
-        data_fg      = "#586064"
+        indicator_disabled = "#e2e8f0"
+        data_brd     = "#e2e8f0"         # border-slate-200
+        data_fg      = "#64748b"
         destructive_fg = "#9b3d35"
         destructive_border = "#d2938d"
         destructive_hover_bg = "#f6e4e2"
         destructive_pressed_bg = "#e7c9c6"
-        primary_button_bg = "#dff5e8"
-        primary_button_bg_h = "#cceedf"
-        primary_button_text = "#164627"
-        dialog_brd   = "#586064"
+        primary_button_bg = "#52796f"
+        primary_button_bg_h = "#486b62"
+        primary_button_text = "#ffffff"
+        dialog_brd   = "#e2e8f0"
 
     chk_url = _CHK_URL
 
@@ -266,6 +281,21 @@ QWidget {{
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
     font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {base_pt}pt;
+    color: {text};
+}}
+
+QFrame#sectionCard,
+QFrame#dialogBoxCard {{
+    background-color: {surface};
+    border: 1px solid {data_brd};
+    border-radius: 12px;
+}}
+
+QFrame#boxHeader {{
+    background-color: {surface_low};
+    border-bottom: 1px solid {data_brd};
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
 }}
 
 /* ── Seamless tab navigation ──────────────────────────────────────── */
@@ -273,7 +303,7 @@ QWidget {{
    between them disappears. margin-top: -1px hides the default separator. */
 QTabWidget::pane {{
     border: none;
-    background-color: {bg};
+    background-color: {surface_low};
     margin-top: -1px;
 }}
 
@@ -299,7 +329,7 @@ QTabBar::tab {{
 }}
 
 QTabBar::tab:selected {{
-    background-color: {bg};
+    background-color: {surface_low};
     color: {text};
     border-bottom: 3px solid {accent};
 }}
@@ -493,17 +523,16 @@ QLabel#sectionHeader {{
 
 QLineEdit {{
     background-color: {input_bg};
-    border: none;
-    border-radius: 8px;
-    border-bottom: 2px solid transparent;
-    padding: 5px 8px;
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
 }}
 
 QLineEdit:focus {{
     background-color: {sel_inact};
-    border-bottom: 2px solid {brd_focus};
+    border: 1px solid {brd_focus};
 }}
 
 /* Inline editors in item views need tighter padding to avoid clipped text. */
@@ -519,12 +548,17 @@ QAbstractItemView QLineEdit {{
 
 QTextEdit {{
     background-color: {input_bg};
-    border: none;
-    border-radius: 8px;
-    padding: 5px 8px;
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: {small_pt}pt;
     color: {text};
+}}
+
+QTextEdit:focus {{
+    background-color: {sel_inact};
+    border: 1px solid {brd_focus};
 }}
 
 QLabel {{
@@ -747,7 +781,7 @@ QLabel#metaLabel {{
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
     font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
     font-size: {small_pt}pt;
-    font-weight: 600;
+    font-weight: 800;
     color: {text_dim};
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -810,10 +844,9 @@ QMessageBox {{
 
 QComboBox {{
     background-color: {input_bg};
-    border: none;
-    border-radius: 8px;
-    border-bottom: 2px solid transparent;
-    padding: 5px 8px;
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
 }}
@@ -864,7 +897,7 @@ QComboBoxPrivateContainer QListView::item:hover {{
 
 QComboBox:focus {{
     background-color: {sel_inact};
-    border-bottom: 2px solid {brd_focus};
+    border: 1px solid {brd_focus};
 }}
 
 QComboBox::drop-down {{
@@ -884,10 +917,9 @@ QComboBox::down-arrow {{
 QSpinBox,
 QDoubleSpinBox {{
     background-color: {input_bg};
-    border: none;
-    border-radius: 8px;
-    border-bottom: 2px solid transparent;
-    padding: 5px 8px;
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
     padding-right: 2px;
     font-size: {base_pt}pt;
     color: {text};
@@ -896,7 +928,7 @@ QDoubleSpinBox {{
 QSpinBox:focus,
 QDoubleSpinBox:focus {{
     background-color: {sel_inact};
-    border-bottom: 2px solid {brd_focus};
+    border: 1px solid {brd_focus};
 }}
 
 QSpinBox::up-button,   QDoubleSpinBox::up-button,
@@ -910,10 +942,9 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {{
 QDateEdit,
 QDateTimeEdit {{
     background-color: {input_bg};
-    border: none;
-    border-radius: 8px;
-    border-bottom: 2px solid transparent;
-    padding: 5px 8px;
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
 }}
@@ -921,7 +952,7 @@ QDateTimeEdit {{
 QDateEdit:focus,
 QDateTimeEdit:focus {{
     background-color: {sel_inact};
-    border-bottom: 2px solid {brd_focus};
+    border: 1px solid {brd_focus};
 }}
 
 QDateEdit::drop-down,
@@ -1063,23 +1094,53 @@ QPushButton#categoryButton[position="middle"] {{
 
 /* Primary action button — full gradient, same as default but explicit */
 QPushButton#primaryButton {{
-    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {accent}, stop:1 {accent_h});
-    color: white;
+    background-color: {primary_button_bg};
+    color: {primary_button_text};
     border: none;
-    border-radius: 8px;
-    padding: 7px 18px;
+    border-radius: 6px;
+    padding: 8px 20px;
     min-height: 35px;
     font-weight: bold;
     font-size: {base_pt}pt;
 }}
 
 QPushButton#primaryButton:hover {{
-    background-color: {accent_h};
+    background-color: {primary_button_bg_h};
 }}
 
 QPushButton#primaryButton:pressed {{
     background-color: {accent_p};
+}}
+
+QPushButton#saveButton {{
+    background-color: {primary_button_bg};
+    color: {primary_button_text};
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 20px;
+}}
+
+QPushButton#saveButton:hover {{
+    background-color: {primary_button_bg_h};
+}}
+
+QPushButton#guessButton {{
+    background-color: {accent};
+    color: white;
+    font-weight: 600;
+    border-radius: 4px;
+}}
+
+QPushButton#guessButton:hover {{
+    background-color: {accent_h};
+}}
+
+QPushButton#mapButton {{
+    background-color: #334155;
+    color: white;
+    font-size: {small_pt}pt;
+    border-radius: 4px;
+    padding: 4px 12px;
 }}
 
 /* Inline map link — looks like a text hyperlink */
