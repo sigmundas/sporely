@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
                                  QPlainTextEdit, QSlider, QGraphicsOpacityEffect,
                                  QListWidget, QListWidgetItem, QStackedWidget,
-                                 QScrollArea)
+                                 QScrollArea, QGridLayout)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -186,6 +186,7 @@ from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_sync_dialog import CloudSyncDialog
 from .cloud_reference_dialog import CloudReferenceDialog
+from .section_card import create_section_card
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
@@ -4966,9 +4967,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Import/Export now available from the top menus
 
         # Scale group
-        calib_group = QGroupBox(self.tr("Scale"))
+        calib_group, calib_layout = create_section_card(self.tr("Scale"))
         self.calib_group = calib_group
-        calib_layout = QVBoxLayout()
 
         self.scale_combo = QComboBox()
         self.scale_combo.currentIndexChanged.connect(self.on_scale_combo_changed)
@@ -5009,12 +5009,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_warning_label.setVisible(False)
         calib_layout.addWidget(self.scale_warning_label)
 
-        calib_group.setLayout(calib_layout)
         layout.addWidget(calib_group)
 
         # Measurement group (category dropdown lives at the top)
-        measure_group = QGroupBox(self.tr("Measure"))
-        measure_layout = QVBoxLayout()
+        measure_group, measure_layout = create_section_card(self.tr("Measure"))
 
         self.measure_category_combo = QComboBox()
         self._populate_measure_categories()
@@ -5055,12 +5053,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_status_label.setVisible(True)
         measure_layout.addWidget(self.measure_status_label)
 
-        measure_group.setLayout(measure_layout)
         layout.addWidget(measure_group)
 
         # Zoom controls
-        zoom_group = QGroupBox(self.tr("View"))
-        zoom_layout = QVBoxLayout()
+        zoom_group, zoom_layout = create_section_card(self.tr("View"))
         view_buttons_row = QHBoxLayout()
 
         reset_btn = QPushButton(self.tr("Reset"))
@@ -5093,19 +5089,46 @@ class MainWindow(GeometryMixin, QMainWindow):
         color_row.addStretch()
         zoom_layout.addLayout(color_row)
 
-        self.show_measures_checkbox = QCheckBox(self.tr("Show measures"))
+        self.show_options_label = QLabel(self.tr("Show:"))
+        zoom_layout.addWidget(self.show_options_label)
+
+        show_grid_widget = QWidget()
+        show_grid = QGridLayout(show_grid_widget)
+        show_grid.setContentsMargins(0, 0, 0, 0)
+        show_grid.setHorizontalSpacing(12)
+        show_grid.setVerticalSpacing(4)
+
+        self.show_measures_checkbox = QCheckBox(self.tr("Measures"))
         self.show_measures_checkbox.setChecked(
             self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_LABELS, default=True)
         )
         self.show_measures_checkbox.toggled.connect(self.on_show_measures_toggled)
-        zoom_layout.addWidget(self.show_measures_checkbox)
 
-        self.show_rectangles_checkbox = QCheckBox(self.tr("Show rectangles"))
+        self.show_rectangles_checkbox = QCheckBox(self.tr("Rectangles"))
         self.show_rectangles_checkbox.setChecked(
             self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_OVERLAYS, default=True)
         )
         self.show_rectangles_checkbox.toggled.connect(self.on_show_rectangles_toggled)
-        zoom_layout.addWidget(self.show_rectangles_checkbox)
+
+        self.show_scale_bar_checkbox = QCheckBox(self.tr("Scale bar"))
+        self.show_scale_bar_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False)
+        )
+        self.show_scale_bar_checkbox.toggled.connect(self.on_show_scale_bar_toggled)
+
+        self.show_copyright_checkbox = QCheckBox(self.tr("Copyright"))
+        self.show_copyright_checkbox.setChecked(
+            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False)
+        )
+        self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
+
+        show_grid.addWidget(self.show_measures_checkbox, 0, 0)
+        show_grid.addWidget(self.show_rectangles_checkbox, 0, 1)
+        show_grid.addWidget(self.show_scale_bar_checkbox, 1, 0)
+        show_grid.addWidget(self.show_copyright_checkbox, 1, 1)
+        show_grid.setColumnStretch(0, 1)
+        show_grid.setColumnStretch(1, 1)
+        zoom_layout.addWidget(show_grid_widget)
 
         self.rectangle_style_container = QWidget()
         rectangle_style_layout = QVBoxLayout(self.rectangle_style_container)
@@ -5157,13 +5180,6 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.set_measure_color(self.measure_color)
 
-        self.show_scale_bar_checkbox = QCheckBox(self.tr("Show scale bar"))
-        self.show_scale_bar_checkbox.setChecked(
-            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_SCALE_BAR, default=False)
-        )
-        self.show_scale_bar_checkbox.toggled.connect(self.on_show_scale_bar_toggled)
-        zoom_layout.addWidget(self.show_scale_bar_checkbox)
-
         scale_bar_row = QHBoxLayout()
         scale_bar_row.setContentsMargins(0, 0, 0, 0)
         scale_bar_row.setSpacing(6)
@@ -5188,18 +5204,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_bar_container.setVisible(False)
         zoom_layout.addWidget(self.scale_bar_container)
 
-        self.show_copyright_checkbox = QCheckBox(self.tr("Show copyright"))
-        self.show_copyright_checkbox.setChecked(
-            self._measure_view_setting_enabled(self.SETTING_MEASURE_SHOW_COPYRIGHT, default=False)
-        )
-        self.show_copyright_checkbox.toggled.connect(self.on_show_copyright_toggled)
-        zoom_layout.addWidget(self.show_copyright_checkbox)
-
-        zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
 
-        info_group = QGroupBox(self.tr("Info"))
-        info_layout = QVBoxLayout()
+        info_group, info_layout = create_section_card(self.tr("Info"))
         self.exif_info_label = QLabel(self.tr("No image loaded"))
         self.exif_info_label.setWordWrap(True)
         self.exif_info_label.setStyleSheet(f"font-size: {pt(8)}pt;")
@@ -5213,7 +5220,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_image_note_input.setEnabled(False)
         self.measure_image_note_input.textChanged.connect(self._queue_measure_image_note_save)
         info_layout.addWidget(self.measure_image_note_input)
-        info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
         layout.addStretch()
@@ -5893,11 +5899,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         reference_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        gallery_group = QGroupBox(self.tr("Gallery"))
+        gallery_group, gallery_controls = create_section_card(
+            self.tr("Gallery"),
+            body_margins=(8, 8, 8, 8),
+            body_spacing=6,
+        )
         gallery_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        gallery_controls = QVBoxLayout(gallery_group)
-        gallery_controls.setContentsMargins(8, 8, 8, 8)
-        gallery_controls.setSpacing(6)
 
         gallery_row = QHBoxLayout()
         self.orient_checkbox = QCheckBox(self.tr("Orient"))
@@ -5935,7 +5942,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         top_sections_layout.setSpacing(8)
         top_sections_layout.addWidget(plot_section)
         top_sections_layout.addWidget(reference_section, 1)
-        top_sections_layout.addWidget(self._build_spore_sharing_panel())
 
         left_layout.addWidget(top_sections, 0)
         left_layout.addStretch(1)
@@ -8341,9 +8347,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Measurement preview group
-        self.preview_group = QGroupBox(self.tr("Measurement Fine tune"))
-        preview_layout = QVBoxLayout()
-        preview_layout.setContentsMargins(5, 5, 5, 5)
+        self.preview_group, preview_layout = create_section_card(
+            self.tr("Measurement Fine tune"),
+            body_margins=(5, 5, 5, 5),
+        )
 
         self.spore_preview = SporePreviewWidget()
         self.spore_preview.dimensions_changed.connect(self.on_dimensions_changed)
@@ -8355,14 +8362,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         preview_layout.addWidget(self.spore_preview)
 
-        self.preview_group.setLayout(preview_layout)
         layout.addWidget(self.preview_group)
         self._update_preview_title()
 
         # Measurements table group
-        measurements_group = QGroupBox(self.tr("Measurements"))
-        measurements_layout = QVBoxLayout()
-        measurements_layout.setContentsMargins(5, 5, 5, 5)
+        measurements_group, measurements_layout = create_section_card(
+            self.tr("Measurements"),
+            body_margins=(5, 5, 5, 5),
+        )
 
         self.measurements_table = QTableWidget()
         self.measurements_table.setColumnCount(5)
@@ -8391,7 +8398,6 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         measurements_layout.addWidget(self.measurements_table)
 
-        measurements_group.setLayout(measurements_layout)
         layout.addWidget(measurements_group)
 
         return panel
@@ -16650,7 +16656,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             category = self.measure_category_combo.currentData()
             if category:
                 label = f"{self.format_measurement_category(category)} Fine tune"
-        self.preview_group.setTitle(label)
+        header = getattr(self.preview_group, "_box_header", None)
+        if header is not None and hasattr(header, "set_title"):
+            header.set_title(label)
+        elif hasattr(self.preview_group, "setTitle"):
+            self.preview_group.setTitle(label)
 
     def _show_loading(self, message="Loading..."):
         """Show a blocking loading indicator."""

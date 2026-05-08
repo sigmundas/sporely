@@ -119,7 +119,16 @@ jobs:
           generate_release_notes: true
 
   build-macos:
-    runs-on: macos-latest
+    # Use a matrix to build for both Intel (x86_64) and Apple Silicon (arm64)
+    strategy:
+      matrix:
+        include:
+          - arch: intel
+            runner: macos-13      # Standard Intel runner
+          - arch: apple-silicon
+            runner: macos-latest  # Now defaults to M1/arm64 on GitHub
+    
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
@@ -134,9 +143,8 @@ jobs:
       - name: Generate icons
         run: |
           pip install pillow --quiet --disable-pip-version-check
+          # Icon generation is architecture-independent
           python tools/make_ico.py
-
-          # Build .icns using iconutil (built into macOS)
           ICONSET=assets/icons/Sporely.iconset
           mkdir -p "$ICONSET"
           python3 - << 'PYEOF'
@@ -148,14 +156,10 @@ jobs:
           w, h = img.size; side = min(w, h)
           img = img.crop(((w-side)//2, (h-side)//2, (w+side)//2, (h+side)//2))
           for size, name in [
-              (16,  "icon_16x16.png"),
-              (32,  "icon_16x16@2x.png"),
-              (32,  "icon_32x32.png"),
-              (64,  "icon_32x32@2x.png"),
-              (128, "icon_128x128.png"),
-              (256, "icon_128x128@2x.png"),
-              (256, "icon_256x256.png"),
-              (512, "icon_256x256@2x.png"),
+              (16,  "icon_16x16.png"), (32,  "icon_16x16@2x.png"),
+              (32,  "icon_32x32.png"), (64,  "icon_32x32@2x.png"),
+              (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"),
+              (256, "icon_256x256.png"), (512, "icon_256x256@2x.png"),
               (512, "icon_512x512.png"),
           ]:
               img.resize((size, size), Image.LANCZOS).save(str(iconset / name))
@@ -166,17 +170,16 @@ jobs:
       - name: Build with PyInstaller
         run: |
           chmod +x ./build_mac.sh
+          # PyInstaller automatically detects the runner's architecture
           ./build_mac.sh
 
       - name: Package .dmg
         id: dmg
         run: |
-          # FIX: Give macOS Spotlight time to finish indexing the newly built .app 
-          # before hdiutil attempts to lock and package it.
           sleep 10
-          
           tag="${{ github.ref_name }}"
-          dmg_name="Sporely-${tag}-macos.dmg"
+          # Include architecture in the filename for clarity
+          dmg_name="Sporely-${tag}-macos-${{ matrix.arch }}.dmg"
           staging="dmg_staging"
           mkdir -p "$staging"
           cp -R dist/Sporely.app "$staging/"

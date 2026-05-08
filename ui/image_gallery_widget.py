@@ -135,6 +135,7 @@ class ImageGalleryWidget(QGroupBox):
         publish_checkbox_hint: str = "",
     ) -> None:
         super().__init__(title, parent)
+        self._gallery_title = str(title or "")
         self.setCheckable(False)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -153,6 +154,7 @@ class ImageGalleryWidget(QGroupBox):
         self._thumb_size = self._base_thumb_size
         self._fixed_thumbnail_size = False
         self._compact_overlay = False
+        self._plain_container = False
         self._decode_max_dim = max(384, self._base_thumb_size * 4)
         self._items: list[dict] = []
         self._frames: list[QFrame] = []
@@ -207,6 +209,7 @@ class ImageGalleryWidget(QGroupBox):
         self._previous_image_shortcut = QShortcut(QKeySequence(Qt.Key_Backtab), self)
         self._previous_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self._previous_image_shortcut.activated.connect(lambda: self._select_adjacent_image(-1))
+        self.set_plain_container(True)
 
     def clear(self) -> None:
         self._render_generation += 1
@@ -237,17 +240,41 @@ class ImageGalleryWidget(QGroupBox):
         if self._items:
             self._render()
 
+    def set_plain_container(self, enabled: bool = True) -> None:
+        self._plain_container = bool(enabled)
+        self.setTitle("" if self._plain_container else self._gallery_title)
+        if self._plain_container:
+            self.setObjectName("plainImageGallery")
+            self.setStyleSheet(
+                "QGroupBox#plainImageGallery { background: transparent; border: none; "
+                "border-radius: 0px; margin: 0px; padding: 0px; }"
+                "QGroupBox#plainImageGallery::title { height: 0px; margin: 0px; padding: 0px; }"
+            )
+            self.setContentsMargins(0, 0, 0, 0)
+            if self.layout() is not None:
+                self.layout().setContentsMargins(0, 0, 0, 0)
+            self._content.layout().setContentsMargins(0, 0, 0, 0)
+            self._scroll.setFrameShape(QFrame.NoFrame)
+            self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+            self._scroll.viewport().setStyleSheet("background: transparent;")
+        else:
+            self.setObjectName("")
+            self.setStyleSheet("")
+            self.setContentsMargins(0, 0, 0, 0)
+            if self.layout() is not None:
+                self.layout().setContentsMargins(0, 0, 0, 0)
+
     def preferred_single_row_height(self) -> int:
-        title_height = max(24, self.fontMetrics().height() + 12)
+        title_height = 0 if self._plain_container else max(24, self.fontMetrics().height() + 12)
         frame_height = int(self._scroll.frameWidth()) * 2 if self._scroll is not None else 2
         scrollbar_height = (
             int(self._scroll.horizontalScrollBar().sizeHint().height())
             if self._scroll is not None
             else 16
         )
-        spacing = 10
+        spacing = 0 if self._plain_container else 10
         style = self.style()
-        if style is not None:
+        if style is not None and not self._plain_container:
             try:
                 spacing = max(spacing, int(style.pixelMetric(QStyle.PM_LayoutVerticalSpacing, None, self)))
             except Exception:

@@ -91,12 +91,22 @@ def get_design_tokens(theme: str = "auto") -> dict[str, str]:
         return {
             "surface": "#1c1b1b",
             "surface_low": "#252423",
+            "tab_surface": "#2b2a29",
+            "surface_hover": "#252423",
             "data_brd": "#334155",
+            "text": "#e8e8e8",
+            "text_dim": "#a1a1aa",
+            "accent": "#4d7c7a",
         }
     return {
         "surface": "#ffffff",
         "surface_low": "#f1f5f9",
-        "data_brd": "#e2e8f0",
+        "tab_surface": "#f1f5f9",
+        "surface_hover": "#e2e8f0",
+        "data_brd": "#cbd5e1",
+        "text": "#1e293b",
+        "text_dim": "#64748b",
+        "accent": "#4d7c7a",
     }
 
 
@@ -152,8 +162,8 @@ def apply_palette(theme: str = "auto") -> None:
         palette.setColor(QPalette.Button,          QColor("#f1f5f9"))
         palette.setColor(QPalette.ButtonText,      QColor("#1e293b"))
         palette.setColor(QPalette.BrightText,      QColor("white"))
-        palette.setColor(QPalette.Mid,             QColor("#e2e8f0"))
-        palette.setColor(QPalette.Dark,            QColor("#e2e8f0"))
+        palette.setColor(QPalette.Mid,             QColor("#cbd5e1"))
+        palette.setColor(QPalette.Dark,            QColor("#cbd5e1"))
         palette.setColor(QPalette.Light,           QColor("#ffffff"))
         palette.setColor(QPalette.Highlight,       QColor("#f0fdfa"))
         palette.setColor(QPalette.HighlightedText, QColor("#1e293b"))
@@ -202,6 +212,7 @@ def get_style(theme: str = "auto") -> str:
         bg           = "#131313"         # deep charcoal background
         surface      = "#1c1b1b"         # slightly lighter charcoal for cards
         surface_low   = "#252423"         # tab bar, header row, side panel
+        tab_surface   = "#2b2a29"         # slightly lighter than box headers
         surface_hover = "#252423"         # hover on surface_low elements
         input_bg      = "#1c1b1b"         # input fields
         brd_focus    = "#4d7c7a"         # teal focus ring
@@ -232,12 +243,15 @@ def get_style(theme: str = "auto") -> str:
         primary_button_bg = "#52796f"
         primary_button_bg_h = "#486b62"
         primary_button_text = "#ffffff"
+        crop_image_active = "#b85a52"
+        crop_ai_active = "#b9702b"
         dialog_brd   = "transparent"
     else:
         # Slate Lab — refined for the web-style card layout.
         bg           = "#f8f9fa"         # bg-slate-50
         surface      = "#ffffff"         # pure white cards/inputs
         surface_low   = "#f1f5f9"         # box headers and soft panels
+        tab_surface   = "#f1f5f9"         # full-width taxonomy tab strip
         surface_hover = "#e2e8f0"         # hover on surface_low elements
         input_bg      = "#ffffff"         # white inputs
         brd_focus    = "#4d7c7a"         # teal focus ring
@@ -259,7 +273,7 @@ def get_style(theme: str = "auto") -> str:
         indicator_checked  = "#52796f"   # save green fill for checked state
         indicator_bg       = "#ffffff"
         indicator_disabled = "#e2e8f0"
-        data_brd     = "#e2e8f0"         # border-slate-200
+        data_brd     = "#cbd5e1"         # border-slate-300
         data_fg      = "#64748b"
         destructive_fg = "#9b3d35"
         destructive_border = "#d2938d"
@@ -268,6 +282,8 @@ def get_style(theme: str = "auto") -> str:
         primary_button_bg = "#52796f"
         primary_button_bg_h = "#486b62"
         primary_button_text = "#ffffff"
+        crop_image_active = "#b94a42"
+        crop_ai_active = "#b86b20"
         dialog_brd   = "#e2e8f0"
 
     chk_url = _CHK_URL
@@ -298,13 +314,52 @@ QFrame#boxHeader {{
     border-top-right-radius: 11px;
 }}
 
+QFrame#segmentedControl {{
+    background-color: {surface_low};
+    border: 1px solid {data_brd};
+    border-radius: 22px;
+}}
+
+QPushButton#segmentedButton {{
+    background-color: transparent;
+    color: {text};
+    border: none;
+    border-radius: 17px;
+    padding: 7px 18px;
+    min-height: 34px;
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
+    font-size: {base_pt}pt;
+    font-weight: 700;
+}}
+
+QPushButton#segmentedButton:hover:!checked {{
+    background-color: {surface_hover};
+}}
+
+QPushButton#segmentedButton:checked {{
+    background-color: {accent};
+    color: white;
+}}
+
 /* ── Seamless tab navigation ──────────────────────────────────────── */
-/* pane background must match the selected tab background so the border
-   between them disappears. margin-top: -1px hides the default separator. */
+/* The tab widget paints the whole strip, including empty space after the last tab.
+   The pane below returns to the card surface used by dialog content. */
+QTabWidget {{
+    background-color: {tab_surface};
+}}
+
 QTabWidget::pane {{
     border: none;
-    background-color: {surface_low};
-    margin-top: -1px;
+    background-color: {surface};
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    margin-top: 0px;
+}}
+
+QWidget#taxonomyPage {{
+    background-color: {surface};
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
 }}
 
 QTabWidget::tab-bar {{
@@ -312,14 +367,16 @@ QTabWidget::tab-bar {{
 }}
 
 QTabBar {{
-    background-color: {surface_low};
+    background-color: {tab_surface};
+    border: none;
+    qproperty-drawBase: 0;
 }}
 
 QTabBar::tab {{
-    background-color: {surface_low};
+    background-color: {tab_surface};
     color: {text_dim};
     border: none;
-    border-bottom: 3px solid transparent;
+    border-bottom: 2px solid transparent;
     padding: 10px 20px;
     font-family: 'Manrope', 'SF Pro Display', 'Segoe UI', sans-serif;
     font-family: 'Manrope', 'Segoe UI', sans-serif;
@@ -329,9 +386,9 @@ QTabBar::tab {{
 }}
 
 QTabBar::tab:selected {{
-    background-color: {surface_low};
-    color: {text};
-    border-bottom: 3px solid {accent};
+    background-color: {tab_surface};
+    color: {accent};
+    border-bottom: 2px solid {accent};
 }}
 
 QTabBar::tab:hover:!selected {{
@@ -559,6 +616,19 @@ QTextEdit {{
 QTextEdit:focus {{
     background-color: {sel_inact};
     border: 1px solid {brd_focus};
+}}
+
+QPlainTextEdit#imageNoteInput {{
+    background-color: transparent;
+    border: none;
+    border-radius: 0px;
+    padding: 2px 0px;
+    color: {text};
+}}
+
+QPlainTextEdit#imageNoteInput:focus {{
+    background-color: transparent;
+    border: none;
 }}
 
 QLabel {{
@@ -1122,6 +1192,66 @@ QPushButton#saveButton {{
 
 QPushButton#saveButton:hover {{
     background-color: {primary_button_bg_h};
+}}
+
+QPushButton#dialogPrimaryButton {{
+    background-color: {primary_button_bg};
+    color: {primary_button_text};
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    min-height: 0px;
+    font-weight: bold;
+    font-size: {base_pt}pt;
+}}
+
+QPushButton#dialogPrimaryButton:hover {{
+    background-color: {primary_button_bg_h};
+}}
+
+QPushButton#dialogPrimaryButton:pressed {{
+    background-color: {accent_p};
+}}
+
+QPushButton#cropActionButton {{
+    background-color: {surface_low};
+    color: {text};
+    border: 1px solid {data_brd};
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-weight: bold;
+}}
+
+QPushButton#cropActionButton:hover {{
+    background-color: {surface_hover};
+}}
+
+QPushButton#cropActionButton[active="true"][cropRole="image"] {{
+    background-color: {crop_image_active};
+    color: white;
+    border-color: {crop_image_active};
+}}
+
+QPushButton#cropActionButton[active="true"][cropRole="ai"] {{
+    background-color: {crop_ai_active};
+    color: white;
+    border-color: {crop_ai_active};
+}}
+
+QPushButton#cropActionButton[hasUndo="true"] {{
+    background-color: {surface};
+    color: {destructive_fg};
+    border-color: {destructive_border};
+}}
+
+QPushButton#cropActionButton[hasUndo="true"]:hover {{
+    background-color: {destructive_hover_bg};
+}}
+
+QPushButton#cropActionButton:disabled {{
+    background-color: {dis_bg};
+    color: {dis_fg};
+    border-color: {dis_bg};
 }}
 
 QPushButton#guessButton {{

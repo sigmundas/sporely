@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QIntValidator, QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QComboBox, QFormLayout, QGroupBox, QTabWidget, QWidget, QDoubleSpinBox,
+    QComboBox, QFormLayout, QTabWidget, QWidget, QDoubleSpinBox,
     QSplitter, QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QFileDialog, QMessageBox, QSizePolicy,
     QCheckBox, QProgressBar, QGridLayout, QLayout, QDialogButtonBox, QStyle,
@@ -32,6 +32,7 @@ from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
+from .section_card import create_section_card
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 from .zoomable_image_widget import ZoomableImageLabel
@@ -1329,8 +1330,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         manual_layout.setContentsMargins(0, 0, 0, 0)
 
         # Measurements group
-        measurements_group = QGroupBox(self.tr("Calibration Measurements"))
-        measurements_layout = QVBoxLayout(measurements_group)
+        measurements_group, measurements_layout = create_section_card(self.tr("Calibration Measurements"))
 
         # Known distance input (mm)
         distance_row = QHBoxLayout()
@@ -1375,10 +1375,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
         manual_layout.addWidget(measurements_group)
 
         # Results group
-        results_group = QGroupBox(self.tr("Results"))
+        results_group, results_layout = create_section_card(self.tr("Results"), QFormLayout)
         results_group.setMinimumHeight(160)
         results_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        results_layout = QFormLayout(results_group)
 
         self.result_average_label = QLabel("--")
         self.result_average_label.setStyleSheet(f"font-weight: bold; font-size: {pt(14)}pt;")
@@ -1411,8 +1410,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         right_layout.addWidget(resize_group)
 
         # Notes
-        notes_group = QGroupBox(self.tr("Notes"))
-        notes_layout = QVBoxLayout(notes_group)
+        notes_group, notes_layout = create_section_card(self.tr("Notes"))
         self.notes_input = QLineEdit()
         self.notes_input.setPlaceholderText(self.tr("Optional notes about this calibration..."))
         notes_layout.addWidget(self.notes_input)
@@ -1430,8 +1428,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        input_group = QGroupBox(self.tr("Automatic Calibration"))
-        input_layout = QFormLayout(input_group)
+        input_group, input_layout = create_section_card(self.tr("Automatic Calibration"), QFormLayout)
 
         self.auto_division_input = QComboBox()
         self.auto_division_input.addItem(self.tr("0.01 mm (10 µm)"), 0.01)
@@ -1479,10 +1476,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         layout.addWidget(input_group)
 
-        results_group = QGroupBox(self.tr("Results"))
+        results_group, results_layout = create_section_card(self.tr("Results"), QFormLayout)
         results_group.setMinimumHeight(275)
         results_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        results_layout = QFormLayout(results_group)
 
         self.auto_scale_title = QLabel(self.tr("Scale (this image):"))
         self.auto_scale_label = QLabel("--")
@@ -1597,10 +1593,11 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         return tab
 
-    def _build_resize_options_group(self) -> QGroupBox:
-        group = QGroupBox(self.tr("Image resize"))
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(6, 6, 6, 6)
+    def _build_resize_options_group(self) -> QWidget:
+        group, layout = create_section_card(
+            self.tr("Image resize"),
+            body_margins=(6, 6, 6, 6),
+        )
 
         self.sampling_status_title = HintLabel(
             text=self.tr("Resolution:"),
@@ -1665,8 +1662,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         layout.addWidget(instructions)
 
         # Form
-        form_group = QGroupBox(self.tr("Scale Value"))
-        form_layout = QFormLayout(form_group)
+        form_group, form_layout = create_section_card(self.tr("Scale Value"), QFormLayout)
 
         self.manual_scale_input = QDoubleSpinBox()
         self.manual_scale_input.setRange(1, 100000)
@@ -2480,10 +2476,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(enabled)
 
-    def _build_history_section(self) -> QGroupBox:
+    def _build_history_section(self) -> QWidget:
         """Build the calibration history table section."""
-        group = QGroupBox(self.tr("Calibration History"))
-        layout = QVBoxLayout(group)
+        group, layout = create_section_card(self.tr("Calibration History"))
 
         self.history_table = QTableWidget(0, 13)
         self.history_table.setHorizontalHeaderLabels([

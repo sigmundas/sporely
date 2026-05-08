@@ -108,6 +108,7 @@ from .dialog_helpers import (
     ask_wrapped_yes_no_with_checkbox,
     make_github_help_button,
 )
+from .section_card import create_section_card
 from .styles import pt, get_button_icon_color, get_design_tokens
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
@@ -8867,29 +8868,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
     _taxonomy_splitter_key = "splitter/ObservationDetailsDialogTaxonomy"
 
-    class BoxHeader(QFrame):
-        def __init__(self, title: str, parent=None):
-            super().__init__(parent)
-            colors = get_design_tokens()
-            surface_low = colors["surface_low"]
-            data_brd = colors["data_brd"]
-            self.setObjectName("boxHeader")
-            self.setStyleSheet(
-                f"QFrame#boxHeader {{ background-color: {surface_low}; border-bottom: 1px solid {data_brd}; "
-                "border-top-left-radius: 11px; border-top-right-radius: 11px; }"
-            )
-            layout = QHBoxLayout(self)
-            layout.setContentsMargins(12, 8, 12, 8)
-            layout.setSpacing(8)
-
-            self.title_label = QLabel(str(title or "").upper())
-            self.title_label.setObjectName("metaLabel")
-            layout.addWidget(self.title_label)
-            layout.addStretch()
-
-        def set_title(self, title: str) -> None:
-            self.title_label.setText(str(title or "").upper())
-
     def _create_dialog_box(
         self,
         title: str,
@@ -8898,29 +8876,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         body_margins: tuple[int, int, int, int] = (12, 12, 12, 12),
         body_spacing: int = 8,
     ) -> tuple[QFrame, object]:
-        colors = get_design_tokens()
-        surface = colors["surface"]
-        data_brd = colors["data_brd"]
-        card = QFrame()
-        card.setObjectName("sectionCard")
-        card.setFrameShape(QFrame.NoFrame)
-        card.setStyleSheet(
-            f"QFrame#sectionCard {{ background-color: {surface}; border: 1px solid {data_brd}; border-radius: 12px; }}"
+        return create_section_card(
+            title,
+            layout_type,
+            body_margins=body_margins,
+            body_spacing=body_spacing,
         )
-
-        outer_layout = QVBoxLayout(card)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
-        outer_layout.setSpacing(0)
-        header = self.BoxHeader(title, card)
-        card._box_header = header
-        outer_layout.addWidget(header)
-
-        body = QWidget(card)
-        body_layout = layout_type(body)
-        body_layout.setContentsMargins(*body_margins)
-        body_layout.setSpacing(body_spacing)
-        outer_layout.addWidget(body, 1)
-        return card, body_layout
 
     def __init__(
         self,
@@ -8949,7 +8910,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("Edit Observation") if self.edit_mode else self.tr("New Observation")
         )
         self.setModal(True)
-        self.setMinimumSize(1280, 900)
+        self.setMinimumSize(1100, 900)
         self.resize(1680, 1000)
         self._observation_datetime = _parse_observation_datetime(
             observation.get("date") if observation else None
@@ -9305,7 +9266,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         location_layout.setSpacing(6)
         self.location_input = QLineEdit()
         self.location_input.setPlaceholderText(self.tr("e.g., Bymarka, Trondheim"))
-        self.location_input.textEdited.connect(self._on_location_name_edited)
         self.location_input.installEventFilter(self)
         self._location_suggestions_model = QStringListModel(self)
         self._location_suggestions_completer = QCompleter(self._location_suggestions_model, self)
@@ -9314,11 +9274,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._location_suggestions_completer.activated.connect(self._on_location_suggestion_selected)
         self.location_input.setCompleter(self._location_suggestions_completer)
         location_layout.addWidget(self.location_input, 1)
-        self.location_lookup_apply_btn = QPushButton(self.tr("Get name"))
-        self.location_lookup_apply_btn.setMinimumWidth(self.maplink_open_btn.sizeHint().width())
-        self.location_lookup_apply_btn.setEnabled(False)
-        self.location_lookup_apply_btn.clicked.connect(self._apply_lookup_location_name)
-        location_layout.addWidget(self.location_lookup_apply_btn)
         left_layout.addWidget(QLabel(self.tr("Location:")), _details_row, 0)
         left_layout.addWidget(location_container, _details_row, 1, 1, 2)
         _details_row += 1
@@ -9441,16 +9396,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         left_container.setMinimumWidth(0)
         left_layout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
+        left_layout.setSpacing(0)
 
         # Taxonomy tab widget (Species + Biotope + Grows on)
         self.taxonomy_tabs = QTabWidget()
+        self.taxonomy_tabs.setObjectName("taxonomyTabs")
+        self.taxonomy_tabs.setDocumentMode(True)
         self.taxonomy_tabs.setMinimumHeight(120)
         self.taxonomy_tabs.setMinimumWidth(0)
+        try:
+            self.taxonomy_tabs.tabBar().setDrawBase(False)
+        except Exception:
+            pass
         self.taxonomy_tabs.currentChanged.connect(self.on_taxonomy_tab_changed)
 
         # Tab 1: Identified (vernacular + genus/species)
         identified_tab = QWidget()
+        identified_tab.setObjectName("taxonomyPage")
         self.species_tab = identified_tab
         identified_layout = QVBoxLayout(identified_tab)
         identified_layout.setContentsMargins(8, 8, 8, 8)
@@ -9563,6 +9525,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._habitat_tree_states: dict[str, dict] = {}
         nin2_nodes = self._load_habitat_tree("nin2_biotopes_tree.json")
         nin2_tab = QWidget()
+        nin2_tab.setObjectName("taxonomyPage")
         self.nin2_tab = nin2_tab
         nin2_layout = QVBoxLayout(nin2_tab)
         nin2_layout.setContentsMargins(8, 8, 8, 8)
@@ -9591,6 +9554,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Tab 3: Substrate metadata
         substrate_nodes = self._load_habitat_tree("substrate_tree.json")
         substrate_tab = QWidget()
+        substrate_tab.setObjectName("taxonomyPage")
         self.substrate_tab = substrate_tab
         substrate_layout = QVBoxLayout(substrate_tab)
         substrate_layout.setContentsMargins(8, 8, 8, 8)
@@ -9617,6 +9581,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # Tab 4: Grows-on species metadata
         grows_tab = QWidget()
+        grows_tab.setObjectName("taxonomyPage")
         self.grows_tab = grows_tab
         grows_tab_layout = QVBoxLayout(grows_tab)
         grows_tab_layout.setContentsMargins(8, 8, 8, 8)
@@ -9681,7 +9646,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # ===== IMAGES SUMMARY (BOTTOM) =====
         self.image_gallery = ImageGalleryWidget(
-            self.tr("Images"),
+            "",
             self,
             show_delete=True,
             show_badges=True,
@@ -9690,6 +9655,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             default_height=120,
             thumbnail_tooltip=self.tr("Double-click to edit"),
         )
+        self.image_gallery.set_plain_container(True)
         self.image_gallery.set_compact_overlay(True)
         self.image_gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.image_gallery.set_reorderable(True)
@@ -9723,21 +9689,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.edit_images_btn = QPushButton(
                 self.tr("Edit images ({key})").format(key=_edit_key)
             )
-            self.edit_images_btn.setMinimumHeight(35)
+            self.edit_images_btn.setFixedHeight(35)
             self.edit_images_btn.setMinimumWidth(120)
             self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
             bottom_buttons.addWidget(self.edit_images_btn)
         cancel_btn = QPushButton(self.tr("Cancel"))
-        cancel_btn.setMinimumHeight(35)
+        cancel_btn.setFixedHeight(35)
         cancel_btn.setStyleSheet("background-color: #e74c3c;")
         cancel_btn.clicked.connect(self.reject)
         bottom_buttons.addWidget(cancel_btn)
         self.submit_observation_btn = QPushButton(
             self.tr("Save Observation") if self.edit_mode else self.tr("Create Observation")
         )
-        self.submit_observation_btn.setObjectName("primaryButton")
-        self.submit_observation_btn.setMinimumHeight(35)
-        self.submit_observation_btn.setMaximumHeight(35)
+        self.submit_observation_btn.setObjectName("dialogPrimaryButton")
+        self.submit_observation_btn.setFixedHeight(35)
         self.submit_observation_btn.setAutoDefault(True)
         self.submit_observation_btn.setDefault(True)
         self.submit_observation_btn.clicked.connect(self.accept)
@@ -9883,13 +9848,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._register_hint_widget(self.maplink_open_btn, maplink_hint)
         self._register_hint_widget(
             self.location_input,
-            self.tr("Place name for the observation. Manual edits are kept until you explicitly fetch the API name."),
-        )
-        self._register_hint_widget(
-            self.location_lookup_apply_btn,
-            self.tr("Replace the current place name with the latest API lookup result."),
-            allow_when_disabled=True,
-            disabled_hint=self.tr("The current place name already matches the latest API lookup."),
+            self.tr("Place name for the observation. Click the field to choose from lookup suggestions."),
         )
         self._register_hint_widget(
             self.map_btn,
@@ -11092,7 +11051,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         self.location_input.setText(text)
         self._last_applied_location_lookup_name = text
-        self._update_location_lookup_button_state()
 
     def _on_location_lookup_result(self, result):
         """Store place-name suggestions from the API and apply the best one when appropriate."""
@@ -11120,7 +11078,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.location_input.setText(resolved_name)
             self._last_applied_location_lookup_name = resolved_name
         self._apply_publish_target_from_lookup_country()
-        self._update_location_lookup_button_state()
         self._location_lookup_worker = None
 
     def _location_lookup_result_matches_current_coords(self, result: LocationLookupResult) -> bool:
@@ -11132,25 +11089,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         except (TypeError, ValueError, AttributeError):
             return True
         return abs(result_lat - current_lat) < 0.000001 and abs(result_lon - current_lon) < 0.000001
-
-    def _on_location_name_edited(self, _text: str) -> None:
-        self._update_location_lookup_button_state()
-
-    def _apply_lookup_location_name(self) -> None:
-        resolved_name = (self._location_lookup_name or "").strip()
-        if not resolved_name or not hasattr(self, "location_input"):
-            return
-        self.location_input.setText(resolved_name)
-        self._last_applied_location_lookup_name = resolved_name
-        self._update_location_lookup_button_state()
-
-    def _update_location_lookup_button_state(self) -> None:
-        button = getattr(self, "location_lookup_apply_btn", None)
-        if button is None or not hasattr(self, "location_input"):
-            return
-        current_name = (self.location_input.text() or "").strip()
-        resolved_name = (self._location_lookup_name or "").strip()
-        button.setEnabled(bool(resolved_name) and current_name != resolved_name)
 
     def _on_location_lookup_worker_finished(self) -> None:
         worker = self.sender()
@@ -11212,7 +11150,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_location_lookup_suggestions([link_name])
             self._last_applied_location_lookup_name = link_name
             self._force_apply_next_location_lookup_name = False
-            self._update_location_lookup_button_state()
         else:
             self._force_apply_next_location_lookup_name = True
         self.lat_input.setValue(lat)
@@ -12639,7 +12576,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def eventFilter(self, obj, event):
         if obj == getattr(self, "location_input", None) and event.type() == QEvent.MouseButtonRelease:
-            self._show_location_suggestions_dropdown()
+            if not self.location_input.hasSelectedText():
+                self._show_location_suggestions_dropdown()
         if event.type() == QEvent.FocusIn and self.vernacular_db:
             if obj == self.vernacular_input:
                 if not self.vernacular_input.text().strip():

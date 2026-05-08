@@ -58,13 +58,17 @@ if sys.platform.startswith("linux"):
     # Drop these extra modules to avoid non-fatal GLIBCXX warnings at startup.
     os.environ.pop("GIO_EXTRA_MODULES", None)
 
-from PySide6.QtWidgets import QApplication, QSplashScreen
+from PySide6.QtWidgets import QApplication, QSplashScreen, QWidget
 from PySide6.QtGui import QFont, QPixmap, QPainter, QColor, QPalette
-from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer
+from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer, QSettings, QRect
 from app_identity import (
     APP_DISPLAY_NAME,
     APP_FULL_NAME,
     LEGACY_APP_NAME,
+    LEGACY_SETTINGS_APP,
+    LEGACY_SETTINGS_ORG,
+    SETTINGS_APP,
+    SETTINGS_ORG,
     app_data_dir,
     current_profile_name,
     migrate_legacy_storage,
@@ -127,6 +131,50 @@ def _create_splash(app: QApplication, version: str, theme: str = "auto") -> QSpl
     splash = QSplashScreen(splash_pixmap)
     splash.setWindowFlag(Qt.WindowStaysOnTopHint, True)
     return splash
+
+
+def _saved_main_window_rect() -> QRect | None:
+    key = "geometry/MainWindow"
+    geom = QSettings(SETTINGS_ORG, SETTINGS_APP).value(key)
+    if not geom:
+        geom = QSettings(LEGACY_SETTINGS_ORG, LEGACY_SETTINGS_APP).value(key)
+    if not geom:
+        return None
+
+    probe = QWidget()
+    try:
+        if not probe.restoreGeometry(geom):
+            return None
+        rect = probe.frameGeometry()
+        return QRect(rect) if rect.isValid() else None
+    finally:
+        probe.deleteLater()
+
+
+def _place_splash_near_saved_main_window(app: QApplication, splash: QSplashScreen) -> None:
+    target_rect = _saved_main_window_rect()
+    if target_rect is None:
+        return
+
+    target_screen = app.screenAt(target_rect.center())
+    if target_screen is None:
+        for screen in app.screens():
+            if screen.availableGeometry().intersects(target_rect):
+                target_screen = screen
+                break
+    if target_screen is None:
+        return
+
+    available = target_screen.availableGeometry()
+    splash_rect = splash.frameGeometry()
+    center = target_rect.center()
+    if not available.contains(center):
+        center = available.center()
+    x = center.x() - splash_rect.width() // 2
+    y = center.y() - splash_rect.height() // 2
+    x = max(available.left(), min(x, available.right() - splash_rect.width() + 1))
+    y = max(available.top(), min(y, available.bottom() - splash_rect.height() + 1))
+    splash.move(x, y)
 
 
 def _apply_light_palette(app: QApplication) -> None:
@@ -252,6 +300,7 @@ def main():
     splash = _create_splash(app, APP_VERSION, theme=splash_theme)
     splash_shown_at: float | None = None
     if splash:
+        _place_splash_near_saved_main_window(app, splash)
         splash.show()
         splash.raise_()
         app.processEvents()
