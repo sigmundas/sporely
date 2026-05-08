@@ -59,8 +59,6 @@ Thumbs.db
 .idea/
 .claude/
 .geminiignore
-CLAUDE.md
-GEMINI.md
 SporeApp.code-workspace
 
 # Test artifacts

@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -32,6 +31,7 @@ from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
 from .hint_status import HintBar, HintStatusController
 from .image_gallery_widget import ImageGalleryWidget
+from .section_card import create_section_card
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -113,10 +113,10 @@ class LiveLabTab(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        current_group = QGroupBox(self.tr("Current observation"))
-        current_layout = QVBoxLayout(current_group)
-        current_layout.setContentsMargins(10, 12, 10, 10)
-        current_layout.setSpacing(8)
+        current_group, current_layout = create_section_card(
+            self.tr("Current observation"),
+            body_margins=(10, 12, 10, 10),
+        )
         current_row = QHBoxLayout()
         current_row.setContentsMargins(0, 0, 0, 0)
         current_row.setSpacing(10)
@@ -169,10 +169,10 @@ class LiveLabTab(QWidget):
         self.session_count_label.setStyleSheet("color: #6b7280;")
         left_layout.addWidget(self.session_count_label)
 
-        mode_group = QGroupBox(self.tr("Capture mode"))
-        mode_layout = QVBoxLayout(mode_group)
-        mode_layout.setContentsMargins(10, 12, 10, 10)
-        mode_layout.setSpacing(8)
+        mode_group, mode_layout = create_section_card(
+            self.tr("Capture mode"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.session_mode_combo = self._make_combo()
         self.session_mode_combo.addItem(self.tr("Live capture (watch folder)"), self.SESSION_MODE_LIVE)
         self.session_mode_combo.addItem(self.tr("Retrospective session (log only)"), self.SESSION_MODE_OFFLINE)
@@ -180,11 +180,11 @@ class LiveLabTab(QWidget):
         mode_layout.addWidget(self.session_mode_combo)
         left_layout.addWidget(mode_group)
 
-        watch_group = QGroupBox(self.tr("Watched folder"))
+        watch_group, watch_layout = create_section_card(
+            self.tr("Watched folder"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.watch_group = watch_group
-        watch_layout = QVBoxLayout(watch_group)
-        watch_layout.setContentsMargins(10, 12, 10, 10)
-        watch_layout.setSpacing(8)
         self.watch_dir_input = QLineEdit()
         self.watch_dir_input.setPlaceholderText(self.tr("Choose the microscope capture folder"))
         self.watch_dir_input.textChanged.connect(self._on_watch_dir_changed)
@@ -201,9 +201,11 @@ class LiveLabTab(QWidget):
         watch_layout.addLayout(watch_buttons)
         left_layout.addWidget(watch_group)
 
-        tag_group = QGroupBox(self.tr("Current Lab State"))
-        tag_form = QFormLayout(tag_group)
-        tag_form.setContentsMargins(10, 12, 10, 10)
+        tag_group, tag_form = create_section_card(
+            self.tr("Current Lab State"),
+            QFormLayout,
+            body_margins=(10, 12, 10, 10),
+        )
         tag_form.setSpacing(8)
         self.objective_combo = self._make_combo()
         self.objective_combo.currentIndexChanged.connect(self._save_objective_selection)

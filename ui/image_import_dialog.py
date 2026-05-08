@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -45,7 +45,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
-    QRadioButton,
     QStackedLayout,
     QSizePolicy,
     QSplitter,
@@ -60,6 +59,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QToolButton,
+    QFrame,
 )
 
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG
@@ -84,6 +84,7 @@ from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .dialog_helpers import ask_measurements_exist_delete, make_github_help_button
+from .section_card import create_section_card
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 
@@ -170,6 +171,23 @@ class ImageImportResult:
     original_filepath: Optional[str] = None
     scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
     scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
+
+
+@dataclass
+class ImageCropUndoState:
+    backup_path: str
+    filepath: str
+    preview_path: Optional[str]
+    image_path: str
+    ai_crop_box: Optional[tuple[float, float, float, float]]
+    ai_crop_source_size: Optional[tuple[int, int]]
+    crop_mode: Optional[str]
+    pending_image_crop_offset: Optional[tuple[int, int]]
+    scale_bar_selection: Optional[tuple]
+    had_ai_crop_entry: bool
+    ai_crop_entry: Optional[tuple[float, float, float, float]]
+    had_crop_mode_entry: bool
+    crop_mode_entry: Optional[str]
 
 
 class AIGuessWorker(QThread):
@@ -532,6 +550,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_selected_taxon: dict | None = None
         self._ai_crop_boxes: dict[int, tuple[float, float, float, float]] = {}
         self._crop_mode_by_index: dict[int, str] = {}
+        self._image_crop_undo_by_index: dict[int, ImageCropUndoState] = {}
         self._crop_active_mode: str | None = None
         self._ai_thread: QThread | None = None
         self._scale_bar_dialog: ScaleBarImportDialog | None = None
@@ -974,34 +993,54 @@ class ImageImportDialog(GeometryMixin, QDialog):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(8)
 
-        add_btn = QPushButton(self.tr("Add Images..."))
-        add_btn.clicked.connect(self._on_add_images_clicked)
-        outer.addWidget(add_btn)
-
-        settings_header = QLabel(self.tr("Image settings"))
-        settings_header.setObjectName("sectionHeader")
-        outer.addWidget(settings_header)
-
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        type_group = QGroupBox(self.tr("Image type"))
-        type_layout = QHBoxLayout(type_group)
         self.image_type_group = QButtonGroup(self)
-        self.field_radio = QRadioButton(self.tr("Field (F)"))
-        self.micro_radio = QRadioButton(self.tr("Micro (M)"))
+        self.image_type_group.setExclusive(True)
+        segmented_control_height = 52
+        image_type_pill = QFrame()
+        image_type_pill.setObjectName("segmentedControl")
+        image_type_pill.setFixedHeight(segmented_control_height)
+        image_type_pill.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        image_type_layout = QHBoxLayout(image_type_pill)
+        image_type_layout.setContentsMargins(4, 4, 4, 4)
+        image_type_layout.setSpacing(4)
+
+        self.field_radio = QPushButton(self.tr("Field Image (F)"))
+        self.field_radio.setObjectName("segmentedButton")
+        self.field_radio.setCheckable(True)
+        self.field_radio.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.micro_radio = QPushButton(self.tr("Microscope Image (M)"))
+        self.micro_radio.setObjectName("segmentedButton")
+        self.micro_radio.setCheckable(True)
+        self.micro_radio.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.image_type_group.addButton(self.field_radio)
         self.image_type_group.addButton(self.micro_radio)
         self.field_radio.setChecked(True)
         self.image_type_group.buttonClicked.connect(self._on_settings_changed)
-        type_layout.addWidget(self.field_radio)
-        type_layout.addWidget(self.micro_radio)
-        layout.addWidget(type_group)
+        image_type_layout.addWidget(self.field_radio)
+        image_type_layout.addWidget(self.micro_radio)
+        layout.addWidget(image_type_pill)
 
-        self.scale_group = QGroupBox(self.tr("Scale"))
-        scale_layout = QVBoxLayout(self.scale_group)
+        add_btn = QPushButton(self.tr("Add Images..."))
+        add_btn.setFixedHeight(segmented_control_height)
+        add_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        add_btn.clicked.connect(self._on_add_images_clicked)
+        add_btn_row = QWidget()
+        add_btn_grid = QGridLayout(add_btn_row)
+        add_btn_grid.setContentsMargins(0, 0, 0, 0)
+        add_btn_grid.setHorizontalSpacing(0)
+        add_btn_grid.setVerticalSpacing(0)
+        add_btn_grid.addWidget(add_btn, 0, 0)
+        add_btn_grid.addWidget(QWidget(), 0, 1)
+        add_btn_grid.setColumnStretch(0, 1)
+        add_btn_grid.setColumnStretch(1, 1)
+        outer.addWidget(add_btn_row)
+
+        self.scale_group, scale_layout = create_section_card(self.tr("Scale"))
         self.objective_combo = QComboBox()
         self._apply_combo_popup_style(self.objective_combo)
         self._populate_objectives()
@@ -1040,10 +1079,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.addWidget(self.scale_group)
 
         # ── Microscope details group (disabled for field images) ───────────
-        self.micro_settings_group = QGroupBox(self.tr("Microscope"))
-        micro_form = QFormLayout(self.micro_settings_group)
+        self.micro_settings_group, micro_form = create_section_card(
+            self.tr("Microscope"),
+            QFormLayout,
+            body_margins=(8, 8, 8, 8),
+        )
         micro_form.setSpacing(6)
-        micro_form.setContentsMargins(8, 8, 8, 8)
         micro_form.setLabelAlignment(Qt.AlignLeft)
         micro_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
@@ -1077,13 +1118,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         layout.addWidget(self.micro_settings_group)
 
-        notes_group = QGroupBox(self.tr("Image note"))
-        notes_layout = QVBoxLayout(notes_group)
-        notes_layout.setContentsMargins(8, 8, 8, 8)
-        notes_layout.setSpacing(6)
+        notes_group, notes_layout = create_section_card(
+            self.tr("Image note"),
+            body_margins=(8, 8, 8, 8),
+            body_spacing=6,
+        )
         self.image_note_input = QPlainTextEdit()
+        self.image_note_input.setObjectName("imageNoteInput")
         self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
-        self.image_note_input.setMaximumHeight(78)
+        self.image_note_input.setFixedHeight(56)
+        self.image_note_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.image_note_input.textChanged.connect(self._on_settings_changed)
         self._register_hint_widget(
             self.image_note_input,
@@ -1148,12 +1192,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 4, 0, 0)
 
-        details_header = QLabel(self.tr("Import details"))
-        details_header.setObjectName("sectionHeader")
-        layout.addWidget(details_header)
-
-        current_group = QGroupBox(self.tr("Current image"))
-        current_layout = QFormLayout(current_group)
+        current_group, current_layout = create_section_card(self.tr("Current image"), QFormLayout)
         self.exif_datetime_label = QLabel("--")
         self.exif_camera_label = QLabel("--")
         self.exif_iso_label = QLabel("--")
@@ -1180,8 +1219,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         current_layout.addRow(self.tr("GPS:"), gps_row)
         layout.addWidget(current_group)
 
-        obs_group = QGroupBox(self.tr("Time and GPS"))
-        obs_layout = QFormLayout(obs_group)
+        obs_group, obs_layout = create_section_card(self.tr("Time and GPS"), QFormLayout)
 
         self.datetime_input = QDateTimeEdit()
         self.datetime_input.setMinimumDateTime(self._unset_datetime)
@@ -1199,18 +1237,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
         gps_container_layout = QVBoxLayout(gps_container)
         gps_container_layout.setContentsMargins(0, 0, 0, 0)
         gps_container_layout.setSpacing(4)
+        gps_label_width = max(
+            QLabel(self.tr("Lat:")).sizeHint().width(),
+            QLabel(self.tr("Lon:")).sizeHint().width(),
+        )
+        gps_input_width = 132
 
         gps_lat_row = QHBoxLayout()
         gps_lat_row.setContentsMargins(0, 0, 0, 0)
         gps_lat_row.setSpacing(6)
+        gps_lat_label = QLabel(self.tr("Lat:"))
+        gps_lat_label.setFixedWidth(gps_label_width)
         self.lat_input = QDoubleSpinBox()
         self.lat_input.setRange(-90.0, 90.0)
         self.lat_input.setDecimals(6)
         self.lat_input.setAlignment(Qt.AlignLeft)
         self.lat_input.setSpecialValueText("--")
+        self.lat_input.setFixedWidth(gps_input_width)
         self.lat_input.setValue(self.lat_input.minimum())
         self.lat_input.valueChanged.connect(self._on_metadata_changed)
-        gps_lat_row.addWidget(QLabel(self.tr("Lat:")))
+        gps_lat_row.addWidget(gps_lat_label)
         gps_lat_row.addWidget(self.lat_input, 0)
         gps_lat_row.addStretch(1)
         gps_container_layout.addLayout(gps_lat_row)
@@ -1218,14 +1264,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
         gps_lon_row = QHBoxLayout()
         gps_lon_row.setContentsMargins(0, 0, 0, 0)
         gps_lon_row.setSpacing(6)
+        gps_lon_label = QLabel(self.tr("Lon:"))
+        gps_lon_label.setFixedWidth(gps_label_width)
         self.lon_input = QDoubleSpinBox()
         self.lon_input.setRange(-180.0, 180.0)
         self.lon_input.setDecimals(6)
         self.lon_input.setAlignment(Qt.AlignLeft)
         self.lon_input.setSpecialValueText("--")
+        self.lon_input.setFixedWidth(gps_input_width)
         self.lon_input.setValue(self.lon_input.minimum())
         self.lon_input.valueChanged.connect(self._on_metadata_changed)
-        gps_lon_row.addWidget(QLabel(self.tr("Lon:")))
+        gps_lon_row.addWidget(gps_lon_label)
         gps_lon_row.addWidget(self.lon_input, 0)
         gps_lon_row.addStretch(1)
         gps_container_layout.addLayout(gps_lon_row)
@@ -1239,10 +1288,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         layout.addWidget(obs_group)
 
-        resize_group = QGroupBox(self.tr("Image resize"))
+        resize_group, resize_layout = create_section_card(
+            self.tr("Resize and crop"),
+            body_margins=(6, 6, 6, 6),
+        )
         self.resize_group = resize_group
-        resize_layout = QVBoxLayout(resize_group)
-        resize_layout.setContentsMargins(6, 6, 6, 6)
         self.resize_optimal_checkbox = QCheckBox(
             self.tr("Resize to optimal sampling (R)")
         )
@@ -1284,15 +1334,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
         resize_info.addRow(self.target_resolution_title, self.target_resolution_label)
         resize_layout.addLayout(resize_info)
 
-        layout.addWidget(resize_group)
-
-        ai_crop_group = QGroupBox(self.tr("Crop"))
-        ai_crop_layout = QVBoxLayout(ai_crop_group)
-        ai_crop_layout.setContentsMargins(6, 6, 6, 6)
         crop_button_row = QHBoxLayout()
         crop_button_row.setContentsMargins(0, 0, 0, 0)
         crop_button_row.setSpacing(6)
         self.image_crop_btn = QPushButton(self.tr("Crop (C)"))
+        self.image_crop_btn.setObjectName("cropActionButton")
+        self.image_crop_btn.setProperty("cropRole", "image")
+        self.image_crop_btn.setProperty("active", False)
+        self.image_crop_btn.setProperty("hasUndo", False)
         image_crop_hint = self.tr(
             "Draw an image crop area. Keyboard shortcut C."
         )
@@ -1302,6 +1351,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         crop_button_row.addWidget(self.image_crop_btn)
 
         self.ai_crop_btn = QPushButton(self.tr("AI crop"))
+        self.ai_crop_btn.setObjectName("cropActionButton")
+        self.ai_crop_btn.setProperty("cropRole", "ai")
+        self.ai_crop_btn.setProperty("active", False)
+        self.ai_crop_btn.setProperty("hasUndo", False)
         crop_hint = self.tr(
             "Draw a crop area for Artsorakelet."
         )
@@ -1309,14 +1362,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.ai_crop_btn.clicked.connect(self._on_ai_crop_clicked)
         self.ai_crop_btn.setEnabled(False)
         crop_button_row.addWidget(self.ai_crop_btn)
-        ai_crop_layout.addLayout(crop_button_row)
-        self.ai_crop_size_label = QLabel("")
-        self.ai_crop_size_label.setStyleSheet("color: #7f8c8d;")
-        self.ai_crop_size_label.setVisible(False)
-        ai_crop_layout.addWidget(self.ai_crop_size_label)
+        resize_layout.addLayout(crop_button_row)
         self._set_crop_active_mode(None)
 
-        layout.addWidget(ai_crop_group)
+        layout.addWidget(resize_group)
         layout.addStretch(1)
 
         return panel
@@ -1935,6 +1984,20 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _crop_mode_label(self, mode: str | None) -> str:
         return self.tr("AI crop") if mode == "ai" else self.tr("Image crop")
 
+    def _crop_overlay_label(
+        self,
+        mode: str | None,
+        dimensions: tuple[int, int] | None = None,
+    ) -> str:
+        label = self._crop_mode_label(mode)
+        if mode == "ai" and dimensions:
+            return self.tr("{label}: {w}x{h} px").format(
+                label=label,
+                w=max(1, int(dimensions[0])),
+                h=max(1, int(dimensions[1])),
+            )
+        return label
+
     def _stored_crop_mode_for_index(self, index: int | None) -> str | None:
         if index is None:
             return None
@@ -2041,19 +2104,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 return None
         return points
 
-    def _apply_crop_overlay_style(self, mode: str | None = None) -> None:
+    def _apply_crop_overlay_style(
+        self,
+        mode: str | None = None,
+        dimensions: tuple[int, int] | None = None,
+    ) -> None:
         if not hasattr(self, "preview"):
             return
         overlay_mode = mode or self._stored_crop_mode_for_index(self._current_single_index()) or "ai"
         if overlay_mode == "image":
             self.preview.set_crop_overlay_style(
-                self.tr("Image crop"),
+                self._crop_overlay_label("image", dimensions),
                 QColor("#d93025"),
                 QColor("#b3261e"),
             )
         else:
             self.preview.set_crop_overlay_style(
-                self.tr("AI crop"),
+                self._crop_overlay_label("ai", dimensions),
                 QColor("#f39c12"),
                 QColor("#d35400"),
             )
@@ -2069,37 +2136,50 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._apply_crop_overlay_style(normalized)
         self._update_crop_button_styles()
 
-    def _set_crop_button_style(self, button: QPushButton | None, *, enabled: bool, active: bool, accent: str) -> None:
+    def _set_crop_button_state(
+        self,
+        button: QPushButton | None,
+        *,
+        enabled: bool,
+        active: bool,
+        role: str,
+        has_undo: bool = False,
+    ) -> None:
         if button is None:
             return
-        if not enabled:
-            button.setStyleSheet(
-                "background-color: #bdc3c7; color: #7f8c8d; font-weight: bold;"
-            )
-            return
-        if active:
-            button.setStyleSheet(
-                f"background-color: {accent}; color: white; font-weight: bold;"
-            )
-            return
-        button.setStyleSheet(
-            "background-color: #3498db; color: white; font-weight: bold;"
-        )
+        button.setProperty("cropRole", role)
+        button.setProperty("active", bool(active))
+        button.setProperty("hasUndo", bool(has_undo))
+        button.setEnabled(enabled)
+        style = button.style()
+        style.unpolish(button)
+        style.polish(button)
+        button.update()
 
     def _update_crop_button_styles(self) -> None:
         image_enabled = bool(hasattr(self, "image_crop_btn") and self.image_crop_btn.isEnabled())
         ai_enabled = bool(hasattr(self, "ai_crop_btn") and self.ai_crop_btn.isEnabled())
-        self._set_crop_button_style(
+        index = self._current_single_index()
+        has_image_undo = index in self._image_crop_undo_by_index if index is not None else False
+        if hasattr(self, "image_crop_btn"):
+            if self._crop_active_mode == "image":
+                self.image_crop_btn.setText(self.tr("Cancel Crop"))
+            elif has_image_undo:
+                self.image_crop_btn.setText(self.tr("Undo Crop"))
+            else:
+                self.image_crop_btn.setText(self.tr("Crop (C)"))
+        self._set_crop_button_state(
             getattr(self, "image_crop_btn", None),
             enabled=image_enabled,
             active=self._crop_active_mode == "image",
-            accent="#d93025",
+            role="image",
+            has_undo=has_image_undo,
         )
-        self._set_crop_button_style(
+        self._set_crop_button_state(
             getattr(self, "ai_crop_btn", None),
             enabled=ai_enabled,
             active=self._crop_active_mode == "ai",
-            accent="#e67e22",
+            role="ai",
         )
 
     def _toggle_crop_mode(self, mode: str) -> None:
@@ -2146,10 +2226,113 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_crop_active_mode(normalized)
 
     def _on_image_crop_clicked(self) -> None:
+        index = self._current_single_index()
+        if (
+            index is not None
+            and self._crop_active_mode != "image"
+            and index in self._image_crop_undo_by_index
+        ):
+            self._undo_image_crop(index)
+            return
         self._toggle_crop_mode("image")
 
     def _on_ai_crop_clicked(self) -> None:
         self._toggle_crop_mode("ai")
+
+    def _discard_image_crop_undo_state(self, index: int) -> None:
+        state = self._image_crop_undo_by_index.pop(index, None)
+        if state is None:
+            return
+        backup_path = state.backup_path
+        self._temp_preview_paths.discard(backup_path)
+        try:
+            Path(backup_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def _create_image_crop_undo_state(self, index: int, source_path: str) -> bool:
+        if index < 0 or index >= len(self.import_results):
+            return False
+        source = Path(source_path)
+        if not source.exists():
+            return False
+        self._discard_image_crop_undo_state(index)
+        backup = source.with_name(
+            f"{source.stem}_before_crop_{int(time.time() * 1000)}{source.suffix}"
+        )
+        counter = 1
+        while backup.exists():
+            backup = source.with_name(
+                f"{source.stem}_before_crop_{int(time.time() * 1000)}_{counter}{source.suffix}"
+            )
+            counter += 1
+        try:
+            shutil.copy2(source, backup)
+        except Exception:
+            return False
+        result = self.import_results[index]
+        self._image_crop_undo_by_index[index] = ImageCropUndoState(
+            backup_path=str(backup),
+            filepath=str(result.filepath or source_path),
+            preview_path=result.preview_path,
+            image_path=self.image_paths[index] if 0 <= index < len(self.image_paths) else str(result.filepath or source_path),
+            ai_crop_box=result.ai_crop_box,
+            ai_crop_source_size=result.ai_crop_source_size,
+            crop_mode=result.crop_mode,
+            pending_image_crop_offset=result.pending_image_crop_offset,
+            scale_bar_selection=result.scale_bar_selection,
+            had_ai_crop_entry=index in self._ai_crop_boxes,
+            ai_crop_entry=self._ai_crop_boxes.get(index),
+            had_crop_mode_entry=index in self._crop_mode_by_index,
+            crop_mode_entry=self._crop_mode_by_index.get(index),
+        )
+        self._temp_preview_paths.add(str(backup))
+        return True
+
+    def _undo_image_crop(self, index: int) -> None:
+        state = self._image_crop_undo_by_index.get(index)
+        if state is None or index < 0 or index >= len(self.import_results):
+            return
+        backup = Path(state.backup_path)
+        target = Path(state.filepath)
+        if not backup.exists():
+            self._discard_image_crop_undo_state(index)
+            self._update_crop_button_styles()
+            return
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup, target)
+        except Exception:
+            self._set_settings_hint(self.tr("Could not undo crop"), "#e74c3c")
+            return
+        result = self.import_results[index]
+        old_filepath = result.filepath
+        old_preview = result.preview_path
+        result.filepath = state.filepath
+        result.preview_path = state.preview_path
+        result.ai_crop_box = state.ai_crop_box
+        result.ai_crop_source_size = state.ai_crop_source_size
+        result.crop_mode = state.crop_mode
+        result.pending_image_crop_offset = state.pending_image_crop_offset
+        result.scale_bar_selection = state.scale_bar_selection
+        if 0 <= index < len(self.image_paths):
+            self.image_paths[index] = state.image_path
+        if state.had_ai_crop_entry:
+            self._ai_crop_boxes[index] = state.ai_crop_entry
+        else:
+            self._ai_crop_boxes.pop(index, None)
+        if state.had_crop_mode_entry:
+            self._crop_mode_by_index[index] = state.crop_mode_entry
+        else:
+            self._crop_mode_by_index.pop(index, None)
+        for path in {old_filepath, old_preview, state.filepath, state.preview_path, state.backup_path}:
+            self._invalidate_cached_pixmap(path)
+        self._discard_image_crop_undo_state(index)
+        if self._crop_active_mode:
+            self._set_crop_active_mode(None)
+        self._refresh_gallery()
+        self._select_image(index)
+        self._set_settings_hint(self.tr("Image crop undone"), "#27ae60")
 
     def _on_crop_changed(self, box: tuple[float, float, float, float] | None) -> None:
         index = self._current_single_index()
@@ -2164,12 +2347,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 if normalized_box
                 else None
             )
+            undo_ready = (
+                self._create_image_crop_undo_state(index, source_path)
+                if source_path and normalized_box
+                else False
+            )
             if (
                 result is None
                 or not source_path
                 or not normalized_box
+                or not undo_ready
                 or not self._crop_image_file_in_place(index, source_path, normalized_box)
             ):
+                self._discard_image_crop_undo_state(index)
                 if self._crop_active_mode:
                     self._set_crop_active_mode(None)
                 self._update_ai_controls_state()
@@ -2246,8 +2436,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_crop_size_label()
 
     def _on_crop_preview_changed(self, box: tuple[float, float, float, float] | None) -> None:
-        if not hasattr(self, "ai_crop_size_label"):
-            return
         index = self._current_single_index()
         mode = self._crop_active_mode or self._stored_crop_mode_for_index(index) or "ai"
         if (
@@ -2272,26 +2460,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     crop_h *= float(source_size[1]) / float(preview_pixmap.height())
                 crop_w = max(1, int(round(crop_w)))
                 crop_h = max(1, int(round(crop_h)))
-                text = self.tr("{label}: {w}x{h}").format(
-                    label=self._crop_mode_label(mode),
-                    w=crop_w,
-                    h=crop_h,
-                )
-                self.ai_crop_size_label.setText(text)
-                self.ai_crop_size_label.setVisible(True)
+                self._apply_crop_overlay_style(mode, (crop_w, crop_h))
                 return
             except Exception:
                 pass
         self._update_ai_crop_size_label()
 
     def _update_ai_crop_size_label(self) -> None:
-        if not hasattr(self, "ai_crop_size_label"):
+        if not hasattr(self, "preview"):
             return
         index = self._current_single_index()
-        text = ""
+        dimensions: tuple[int, int] | None = None
+        crop_mode = self._stored_crop_mode_for_index(index) or self._crop_active_mode or "ai"
         if index is not None:
             crop_box = self._ai_crop_boxes.get(index)
-            crop_mode = self._stored_crop_mode_for_index(index) or "ai"
+            crop_mode = self._stored_crop_mode_for_index(index) or self._crop_active_mode or "ai"
             if 0 <= index < len(self.import_results):
                 result = self.import_results[index]
                 if crop_box is None:
@@ -2299,15 +2482,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             source_size = self._source_image_size_for_index(index, prefer_ai_size=(crop_mode == "ai"))
             if crop_mode == "image" and not crop_box and source_size and len(source_size) == 2:
                 try:
-                    text = self.tr("{label}: {w}x{h}").format(
-                        label=self._crop_mode_label(crop_mode),
-                        w=max(1, int(source_size[0])),
-                        h=max(1, int(source_size[1])),
-                    )
+                    dimensions = (max(1, int(source_size[0])), max(1, int(source_size[1])))
                 except Exception:
-                    text = ""
+                    dimensions = None
             if (
-                not text
+                dimensions is None
                 and
                 crop_box
                 and isinstance(crop_box, (tuple, list))
@@ -2324,15 +2503,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     y2 = max(0.0, min(1.0, float(max(crop_box[1], crop_box[3]))))
                     crop_w = max(1, int(round((x2 - x1) * src_w)))
                     crop_h = max(1, int(round((y2 - y1) * src_h)))
-                    text = self.tr("{label}: {w}x{h}").format(
-                        label=self._crop_mode_label(crop_mode),
-                        w=crop_w,
-                        h=crop_h,
-                    )
+                    dimensions = (crop_w, crop_h)
                 except Exception:
-                    text = ""
-        self.ai_crop_size_label.setText(text)
-        self.ai_crop_size_label.setVisible(bool(text))
+                    dimensions = None
+        self._apply_crop_overlay_style(crop_mode, dimensions)
 
     def _on_ai_guess_clicked(self) -> None:
         if not hasattr(self, "ai_guess_btn"):
@@ -3241,6 +3415,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
         self._crop_mode_by_index = self._remap_index_dict_after_reorder(
             self._crop_mode_by_index,
+            old_results,
+            new_index_by_key,
+        )
+        self._image_crop_undo_by_index = self._remap_index_dict_after_reorder(
+            self._image_crop_undo_by_index,
             old_results,
             new_index_by_key,
         )
@@ -4739,6 +4918,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             remapped = {}
             for old_index, value in source.items():
                 if old_index in removed_indices:
+                    if source is self._image_crop_undo_by_index and isinstance(value, ImageCropUndoState):
+                        self._temp_preview_paths.discard(value.backup_path)
+                        try:
+                            Path(value.backup_path).unlink(missing_ok=True)
+                        except Exception:
+                            pass
                     continue
                 remapped[new_index(old_index)] = value
             return remapped
@@ -4747,6 +4932,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._ai_selected_by_index = remap_dict(self._ai_selected_by_index)
         self._ai_crop_boxes = remap_dict(self._ai_crop_boxes)
         self._crop_mode_by_index = remap_dict(self._crop_mode_by_index)
+        self._image_crop_undo_by_index = remap_dict(self._image_crop_undo_by_index)
         self._ai_selected_taxon = None
 
     def _accept_and_close(self) -> None:
@@ -4935,6 +5121,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             except Exception:
                 pass
         self._temp_preview_paths.clear()
+        self._image_crop_undo_by_index.clear()
         if not self._accepted:
             for path in list(self._converted_import_paths):
                 try:

@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QDoubleSpinBox,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -40,6 +39,7 @@ from utils.thumbnail_generator import generate_all_sizes
 
 from .hint_status import HintBar, HintStatusController, style_progress_widgets
 from .image_gallery_widget import ImageGalleryWidget
+from .section_card import create_section_card
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -105,10 +105,10 @@ class IngestionHubTab(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        queue_group = QGroupBox(self.tr("Microscope sessions"))
-        queue_layout = QVBoxLayout(queue_group)
-        queue_layout.setContentsMargins(10, 12, 10, 10)
-        queue_layout.setSpacing(8)
+        queue_group, queue_layout = create_section_card(
+            self.tr("Microscope sessions"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.observation_queue = QListWidget()
         self.observation_queue.currentItemChanged.connect(self._on_observation_changed)
         queue_layout.addWidget(self.observation_queue, 1)
@@ -118,10 +118,10 @@ class IngestionHubTab(QWidget):
         queue_layout.addWidget(self.queue_summary_label)
         left_layout.addWidget(queue_group, 1)
 
-        folder_group = QGroupBox(self.tr("Import folder"))
-        folder_layout = QVBoxLayout(folder_group)
-        folder_layout.setContentsMargins(10, 12, 10, 10)
-        folder_layout.setSpacing(8)
+        folder_group, folder_layout = create_section_card(
+            self.tr("Import folder"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.scan_dir_input = QLineEdit()
         self.scan_dir_input.setPlaceholderText(self.tr("Choose a folder of field and microscope images"))
         self.scan_dir_input.textChanged.connect(self._on_scan_dir_changed)
@@ -138,10 +138,10 @@ class IngestionHubTab(QWidget):
         folder_layout.addLayout(folder_button_row)
         left_layout.addWidget(folder_group)
 
-        sync_group = QGroupBox(self.tr("Sync Shot"))
-        sync_layout = QVBoxLayout(sync_group)
-        sync_layout.setContentsMargins(10, 12, 10, 10)
-        sync_layout.setSpacing(8)
+        sync_group, sync_layout = create_section_card(
+            self.tr("Sync Shot"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.sync_shot_summary_label = QLabel("")
         self.sync_shot_summary_label.setWordWrap(True)
         self.sync_shot_summary_label.setStyleSheet("color: #4b5563;")
@@ -172,10 +172,10 @@ class IngestionHubTab(QWidget):
         sync_layout.addLayout(sync_button_row)
         left_layout.addWidget(sync_group)
 
-        actions_group = QGroupBox(self.tr("Actions"))
-        actions_layout = QVBoxLayout(actions_group)
-        actions_layout.setContentsMargins(10, 12, 10, 10)
-        actions_layout.setSpacing(8)
+        actions_group, actions_layout = create_section_card(
+            self.tr("Actions"),
+            body_margins=(10, 12, 10, 10),
+        )
         self.batch_summary_label = QLabel("")
         self.batch_summary_label.setWordWrap(True)
         self.batch_summary_label.setStyleSheet("color: #4b5563;")
