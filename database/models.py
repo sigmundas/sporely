@@ -599,6 +599,9 @@ class ObservationDB:
                           author: str = None, source_type: str = "personal",
                           citation: str = None, data_provider: str = None,
                           artsdata_id: int | None = None,
+                          inaturalist_taxon_id: int | None = None,
+                          red_list_category: str | None = None,
+                          red_list_categories_json: str | None = None,
                           publish_target: str | None = None,
                           unspontaneous: bool = False,
                           determination_method: int | None = None,
@@ -655,20 +658,23 @@ class ObservationDB:
                                      artsdata_id, artportalen_id, publish_target, species_guess, notes, uncertain, unspontaneous,
                                      is_draft, sharing_scope, location_public, location_precision, spore_data_visibility,
                                      determination_method,
-                                     folder_path, inaturalist_id, gps_latitude, gps_longitude,
+                                     folder_path, inaturalist_id, inaturalist_taxon_id,
+                                     red_list_category, red_list_categories_json,
+                                     gps_latitude, gps_longitude,
                                      author, source_type, citation, data_provider,
                                      habitat_nin2_path, habitat_substrate_path,
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
               resolved_location_precision, resolved_spore_visibility,
               determination_method,
               folder_path,
-              inaturalist_id, gps_latitude, gps_longitude, author, source_type,
+              inaturalist_id, inaturalist_taxon_id, red_list_category, red_list_categories_json,
+              gps_latitude, gps_longitude, author, source_type,
               citation, data_provider,
               habitat_nin2_path, habitat_substrate_path,
               habitat_host_genus, habitat_host_species, habitat_host_common_name,
@@ -694,6 +700,9 @@ class ObservationDB:
                            allow_nulls: bool = False,
                            artsdata_id: int | None | object = _UNSET,
                            artportalen_id: int | None | object = _UNSET,
+                           inaturalist_taxon_id: int | None | object = _UNSET,
+                           red_list_category: str | None | object = _UNSET,
+                           red_list_categories_json: str | None | object = _UNSET,
                            publish_target: str | object = _UNSET,
                            unspontaneous: bool | object = _UNSET,
                            determination_method: int | None | object = _UNSET,
@@ -796,6 +805,15 @@ class ObservationDB:
             if artportalen_id is not _UNSET and (allow_nulls or artportalen_id is not None):
                 updates.append('artportalen_id = ?')
                 values.append(artportalen_id)
+            if inaturalist_taxon_id is not _UNSET and (allow_nulls or inaturalist_taxon_id is not None):
+                updates.append('inaturalist_taxon_id = ?')
+                values.append(inaturalist_taxon_id)
+            if red_list_category is not _UNSET and (allow_nulls or red_list_category is not None):
+                updates.append('red_list_category = ?')
+                values.append(red_list_category)
+            if red_list_categories_json is not _UNSET and (allow_nulls or red_list_categories_json is not None):
+                updates.append('red_list_categories_json = ?')
+                values.append(red_list_categories_json)
             if publish_target is not _UNSET and (allow_nulls or publish_target is not None):
                 updates.append('publish_target = ?')
                 values.append(normalize_publish_target(str(publish_target) if publish_target is not None else None))

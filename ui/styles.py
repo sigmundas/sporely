@@ -110,6 +110,38 @@ def get_design_tokens(theme: str = "auto") -> dict[str, str]:
     }
 
 
+RED_LIST_BADGE_COLORS = {
+    "RE": "#2D3133",
+    "CR": "#D40015",
+    "EN": "#F04438",
+    "VU": "#E67E22",
+    "NT": "#DCB632",
+    "DD": "#63666A",
+    "LC": "#569D62",
+    "NA": "#ffffff",
+    "NE": "#ffffff",
+}
+
+
+def red_list_badge_stylesheet(code: str | None, size_px: int = 24) -> str:
+    """Return a circular red-list badge style for QLabel."""
+    clean = str(code or "").strip().upper()
+    bg = RED_LIST_BADGE_COLORS.get(clean, "#63666A")
+    is_open = clean in {"NA", "NE"}
+    fg = "#63666A" if is_open else "#ffffff"
+    border = "2px solid #63666A" if is_open else "0px solid transparent"
+    radius = max(1, int(size_px) // 2)
+    return (
+        f"background-color: {bg};"
+        f"color: {fg};"
+        f"border: {border};"
+        f"border-radius: {radius}px;"
+        "font-family: sans-serif;"
+        "font-weight: 700;"
+        "font-size: 12px;"
+    )
+
+
 def apply_palette(theme: str = "auto") -> None:
     """Set the QApplication colour palette for the given theme.
 
