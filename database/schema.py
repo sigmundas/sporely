@@ -995,7 +995,10 @@ def init_database():
             determination_method INTEGER,
             notes TEXT,
             inaturalist_id INTEGER,
+            inaturalist_taxon_id INTEGER,
             mushroomobserver_id INTEGER,
+            red_list_category TEXT,
+            red_list_categories_json TEXT,
             folder_path TEXT,
             spore_statistics TEXT,
             auto_threshold REAL,
@@ -1194,6 +1197,18 @@ def init_database():
         pass  # Column already exists
     try:
         cursor.execute('ALTER TABLE observations ADD COLUMN ai_state_json TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN inaturalist_taxon_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN red_list_category TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN red_list_categories_json TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
 

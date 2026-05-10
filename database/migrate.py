@@ -404,6 +404,12 @@ def migrate_database():
             cursor.execute("ALTER TABLE observations ADD COLUMN private_comment TEXT")
         if "interesting_comment" not in columns:
             cursor.execute("ALTER TABLE observations ADD COLUMN interesting_comment INTEGER DEFAULT 0")
+        if "inaturalist_taxon_id" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN inaturalist_taxon_id INTEGER")
+        if "red_list_category" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN red_list_category TEXT")
+        if "red_list_categories_json" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN red_list_categories_json TEXT")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_observations_species ON observations(genus, species)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_observations_source ON observations(source_type)")
 

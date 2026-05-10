@@ -93,14 +93,17 @@ class LocalCallbackServer:
 class INatOAuthClient:
     """Desktop OAuth2 client for iNaturalist."""
 
+    DEFAULT_CLIENT_ID = "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+    DEFAULT_REDIRECT_URI = "http://localhost:8000/callback"
     AUTH_URL = "https://www.inaturalist.org/oauth/authorize"
     TOKEN_URL = "https://www.inaturalist.org/oauth/token"
+    JWT_URL = "https://www.inaturalist.org/users/api_token"
 
     def __init__(
         self,
         client_id: str,
         client_secret: str | None = None,
-        redirect_uri: str = "http://localhost:8000/callback",
+        redirect_uri: str = DEFAULT_REDIRECT_URI,
         token_file: Path | str = "inaturalist_tokens.json",
         scope: str = "write",
         timeout_seconds: int = 20,
@@ -141,6 +144,12 @@ class INatOAuthClient:
                 self.token_file.unlink()
         except Exception:
             pass
+
+    def clear_api_token(self) -> None:
+        """Forget only the short-lived iNaturalist API JWT."""
+        for key in ("api_token", "api_token_created_at", "api_token_expires_at"):
+            self._tokens.pop(key, None)
+        self._save_tokens()
 
     def _auth_query(self, state: str, code_challenge: str | None = None) -> dict[str, str]:
         query = {
@@ -186,7 +195,18 @@ class INatOAuthClient:
             "created_at": created_at_i,
             "expires_at": expires_at,
             "saved_at": now_ts,
+            "api_token": self._tokens.get("api_token") or "",
+            "api_token_created_at": self._tokens.get("api_token_created_at"),
+            "api_token_expires_at": self._tokens.get("api_token_expires_at"),
         }
+        self._save_tokens()
+
+    def _store_api_token(self, api_token: str) -> None:
+        now_ts = int(time.time())
+        self._tokens["api_token"] = str(api_token or "")
+        self._tokens["api_token_created_at"] = now_ts
+        # iNaturalist API tokens are intentionally short lived. Refresh a bit early.
+        self._tokens["api_token_expires_at"] = now_ts + (20 * 60 * 60)
         self._save_tokens()
 
     def exchange_code_for_tokens(self, code: str, code_verifier: str | None = None) -> dict:
@@ -264,6 +284,19 @@ class INatOAuthClient:
         except Exception:
             return True
 
+    def _api_token_is_expired(self, leeway_seconds: int = 60) -> bool:
+        expires_at = self._tokens.get("api_token_expires_at")
+        if expires_at is None:
+            created_at = self._tokens.get("api_token_created_at")
+            try:
+                return time.time() >= (float(created_at) + (20 * 60 * 60) - float(leeway_seconds))
+            except Exception:
+                return True
+        try:
+            return time.time() >= (float(expires_at) - float(leeway_seconds))
+        except Exception:
+            return True
+
     def is_logged_in(self) -> bool:
         token = (self._tokens.get("access_token") or "").strip()
         refresh = (self._tokens.get("refresh_token") or "").strip()
@@ -280,6 +313,39 @@ class INatOAuthClient:
             token = (self._tokens.get("access_token") or "").strip()
             return token or None
         return token or None
+
+    def get_valid_api_token(self) -> str | None:
+        """Return an iNaturalist API JWT, refreshing it from the saved login when possible."""
+        api_token = (self._tokens.get("api_token") or "").strip()
+        if api_token and not self._api_token_is_expired():
+            return api_token
+
+        access_token = self.get_valid_access_token()
+        if not access_token:
+            return None
+
+        response = requests.get(
+            self.JWT_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=self.timeout_seconds,
+        )
+        if response.status_code == 401 and (self._tokens.get("refresh_token") or "").strip():
+            self.refresh_access_token()
+            access_token = self.get_valid_access_token()
+            if access_token:
+                response = requests.get(
+                    self.JWT_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=self.timeout_seconds,
+                )
+        if response.status_code >= 400:
+            raise RuntimeError(f"iNaturalist API token refresh failed ({response.status_code}): {response.text}")
+        payload = response.json()
+        api_token = (payload.get("api_token") or "").strip() if isinstance(payload, dict) else ""
+        if not api_token:
+            raise RuntimeError("iNaturalist API token response did not include api_token.")
+        self._store_api_token(api_token)
+        return api_token
 
 
 def example_login_and_print_access_token() -> None:

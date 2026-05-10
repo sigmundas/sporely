@@ -1593,6 +1593,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         return self.cookies_file.with_name("inaturalist_oauth_tokens.json")
 
     def _inat_credentials(self) -> tuple[str, str, str]:
+        from utils.inat_oauth import INatOAuthClient
+
         client_id = (
             (SettingsDB.get_setting(self.SETTING_INAT_CLIENT_ID, "") or "").strip()
             or (self._inat_session_client_id or "").strip()
@@ -1608,7 +1610,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not client_id:
             client_id = (os.getenv("INAT_CLIENT_ID", "") or "").strip()
         if not client_id:
-            client_id = "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            client_id = INatOAuthClient.DEFAULT_CLIENT_ID
         if not client_secret:
             client_secret = (os.getenv("INAT_CLIENT_SECRET", "") or "").strip()
         return client_id, client_secret, redirect_uri

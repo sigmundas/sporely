@@ -109,7 +109,13 @@ from .dialog_helpers import (
     make_github_help_button,
 )
 from .section_card import create_section_card
-from .styles import pt, get_button_icon_color, get_design_tokens
+from .styles import (
+    RED_LIST_BADGE_COLORS,
+    pt,
+    get_button_icon_color,
+    get_design_tokens,
+    red_list_badge_stylesheet,
+)
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
@@ -816,6 +822,209 @@ class MapServiceHelper:
         layout.addWidget(buttons)
 
         dialog.exec()
+
+
+class INatAIGuessWorker(QThread):
+    resultReady = Signal(list, list, object, object, list)
+    error = Signal(list, str)
+
+    SUGGEST_URL = "https://api.inaturalist.org/v2/taxa/suggest"
+
+    def __init__(
+        self,
+        requests: list[dict],
+        temp_dir: Path,
+        *,
+        client_id: str,
+        client_secret: str | None,
+        redirect_uri: str,
+        token_file: Path,
+        locale: str,
+        lat: float | None = None,
+        lon: float | None = None,
+        observed_on: str | None = None,
+        max_dim: int = 1600,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.requests: list[dict] = []
+        for request in requests or []:
+            if not request:
+                continue
+            index = request.get("index")
+            image_path = request.get("image_path")
+            if index is None or not image_path:
+                continue
+            self.requests.append(
+                {
+                    "index": int(index),
+                    "image_path": str(image_path),
+                    "crop_box": request.get("crop_box"),
+                }
+            )
+        self.indices = [req["index"] for req in self.requests]
+        self.temp_dir = temp_dir
+        self.client_id = str(client_id or "").strip()
+        self.client_secret = str(client_secret or "").strip() or None
+        self.redirect_uri = str(redirect_uri or "").strip()
+        self.token_file = Path(token_file)
+        self.locale = str(locale or "en").strip() or "en"
+        self.lat = lat
+        self.lon = lon
+        self.observed_on = str(observed_on or "").strip()
+        self.max_dim = max_dim
+
+    def _prepare_image(
+        self,
+        image_path: str,
+        crop_box: tuple[float, float, float, float] | None,
+    ) -> Path:
+        from uuid import uuid4
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            img = ImageOps.exif_transpose(img)
+            orig_w, orig_h = img.size
+            if crop_box:
+                x1, y1, x2, y2 = crop_box
+                x1n = max(0.0, min(1.0, float(min(x1, x2))))
+                y1n = max(0.0, min(1.0, float(min(y1, y2))))
+                x2n = max(0.0, min(1.0, float(max(x1, x2))))
+                y2n = max(0.0, min(1.0, float(max(y1, y2))))
+                crop_x1 = int(max(0, min(orig_w, round(x1n * orig_w))))
+                crop_y1 = int(max(0, min(orig_h, round(y1n * orig_h))))
+                crop_x2 = int(max(0, min(orig_w, round(x2n * orig_w))))
+                crop_y2 = int(max(0, min(orig_h, round(y2n * orig_h))))
+                if crop_x2 <= crop_x1:
+                    crop_x2 = min(orig_w, crop_x1 + 1)
+                    crop_x1 = max(0, crop_x2 - 1)
+                if crop_y2 <= crop_y1:
+                    crop_y2 = min(orig_h, crop_y1 + 1)
+                    crop_y1 = max(0, crop_y2 - 1)
+                img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+
+            if self.max_dim and max(img.size) > self.max_dim:
+                img.thumbnail((self.max_dim, self.max_dim), Image.Resampling.LANCZOS)
+            if img.mode not in {"RGB", "L"}:
+                img = img.convert("RGB")
+
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = self.temp_dir / f"inat_ai_guess_{uuid4().hex}.jpg"
+            img.save(temp_path, "JPEG", quality=90)
+            return temp_path
+
+    @staticmethod
+    def _score(item: dict) -> float:
+        for key in ("combined_score", "vision_score", "probability", "score", "frequency_score"):
+            value = item.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+        return 0.0
+
+    def _suggest(self, client, temp_path: Path) -> list[dict]:
+        api_token = client.get_valid_api_token()
+        if not api_token:
+            raise RuntimeError("Not logged in to iNaturalist. Log in via Settings -> Online publishing.")
+
+        data = {
+            "source": "visual",
+            "locale": self.locale,
+            "fields": json.dumps({
+                "combined_score": True,
+                "vision_score": True,
+                "taxon": {
+                    "id": True,
+                    "name": True,
+                    "rank": True,
+                    "preferred_common_name": True,
+                },
+            }),
+        }
+        if self.lat is not None:
+            data["lat"] = str(self.lat)
+        if self.lon is not None:
+            data["lng"] = str(self.lon)
+        if self.observed_on:
+            data["observed_on"] = self.observed_on
+
+        headers = {
+            "Authorization": api_token,
+            "User-Agent": f"{APP_NAME}/iNaturalistAI",
+        }
+        with open(temp_path, "rb") as handle:
+            response = requests.post(
+                self.SUGGEST_URL,
+                headers=headers,
+                files={"image": (temp_path.name, handle, "image/jpeg")},
+                data=data,
+                timeout=60,
+            )
+        if response.status_code == 401:
+            response.close()
+            client.clear_api_token()
+            api_token = client.get_valid_api_token()
+            headers["Authorization"] = api_token or ""
+            with open(temp_path, "rb") as handle:
+                response = requests.post(
+                    self.SUGGEST_URL,
+                    headers=headers,
+                    files={"image": (temp_path.name, handle, "image/jpeg")},
+                    data=data,
+                    timeout=60,
+                )
+        if response.status_code >= 400:
+            detail = (response.text or "").strip().replace("\n", " ")[:200]
+            response.close()
+            raise RuntimeError(f"iNaturalist AI request failed ({response.status_code}): {detail}")
+        try:
+            payload = response.json()
+        finally:
+            response.close()
+        hits = payload.get("results") if isinstance(payload, dict) else []
+        if not isinstance(hits, list):
+            hits = []
+        return sorted((hit for hit in hits if isinstance(hit, dict)), key=self._score, reverse=True)
+
+    def run(self) -> None:
+        if not self.requests:
+            return
+        try:
+            from utils.inat_oauth import INatOAuthClient
+
+            client = INatOAuthClient(
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                redirect_uri=self.redirect_uri,
+                token_file=self.token_file,
+            )
+            for request in self.requests:
+                if self.isInterruptionRequested():
+                    break
+                index = request.get("index")
+                if index is None:
+                    continue
+                temp_path: Path | None = None
+                try:
+                    temp_path = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    predictions = self._suggest(client, temp_path)
+                    if self.isInterruptionRequested():
+                        break
+                    self.resultReady.emit([int(index)], predictions, None, None, [str(temp_path)])
+                except Exception as exc:
+                    if self.isInterruptionRequested():
+                        break
+                    self.error.emit([int(index)], str(exc))
+                finally:
+                    if temp_path is not None:
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+        except Exception as exc:
+            self.error.emit(self.indices, str(exc))
 
 
 class ObservationsTab(QWidget):
@@ -2828,17 +3037,19 @@ class ObservationsTab(QWidget):
             return bool(str(cookies.get(".ASPXAUTH") or "").strip())
 
         if key == "inat":
+            from utils.inat_oauth import INatOAuthClient
+
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            ).strip() or INatOAuthClient.DEFAULT_CLIENT_ID
             if not client_id:
                 return False
             client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_SECRET", "") or ""
             ).strip() or None
             redirect_uri = (
-                SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
-                or "http://localhost:8000/callback"
+                SettingsDB.get_setting("inat_redirect_uri", INatOAuthClient.DEFAULT_REDIRECT_URI)
+                or INatOAuthClient.DEFAULT_REDIRECT_URI
             )
             try:
                 from utils.inat_oauth import INatOAuthClient
@@ -2916,17 +3127,19 @@ class ObservationsTab(QWidget):
                 return False
 
         if key == "inat":
+            from utils.inat_oauth import INatOAuthClient
+
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            ).strip() or INatOAuthClient.DEFAULT_CLIENT_ID
             if not client_id:
                 return False
             client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_SECRET", "") or ""
             ).strip() or None
             redirect_uri = (
-                SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
-                or "http://localhost:8000/callback"
+                SettingsDB.get_setting("inat_redirect_uri", INatOAuthClient.DEFAULT_REDIRECT_URI)
+                or INatOAuthClient.DEFAULT_REDIRECT_URI
             )
             try:
                 from utils.inat_oauth import INatOAuthClient
@@ -3812,6 +4025,8 @@ class ObservationsTab(QWidget):
             return None
         predictions = ai_state.get("predictions") or {}
         selected = ai_state.get("selected") or {}
+        inat_predictions = ai_state.get("inat_predictions") or {}
+        inat_selected = ai_state.get("inat_selected") or {}
         prev_paths = ai_state.get("paths") or []
         prev_image_ids = ai_state.get("image_ids") or []
         if not isinstance(predictions, dict) or not isinstance(selected, dict):
@@ -3826,38 +4041,48 @@ class ObservationsTab(QWidget):
         }
         new_predictions: dict[int, list] = {}
         new_selected: dict[int, dict] = {}
-        for old_idx, preds in predictions.items():
-            try:
-                old_index = int(old_idx)
-            except (TypeError, ValueError):
-                continue
-            old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
-            new_index = (
-                new_index_by_image_id.get(int(old_image_id))
-                if isinstance(old_image_id, int) and old_image_id > 0
-                else None
-            )
-            if new_index is None:
-                old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
-                new_index = new_index_by_path.get(old_path)
-            if new_index is not None:
-                new_predictions[new_index] = preds
-        for old_idx, sel in selected.items():
-            try:
-                old_index = int(old_idx)
-            except (TypeError, ValueError):
-                continue
-            old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
-            new_index = (
-                new_index_by_image_id.get(int(old_image_id))
-                if isinstance(old_image_id, int) and old_image_id > 0
-                else None
-            )
-            if new_index is None:
-                old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
-                new_index = new_index_by_path.get(old_path)
-            if new_index is not None:
-                new_selected[new_index] = sel
+        new_inat_predictions: dict[int, list] = {}
+        new_inat_selected: dict[int, dict] = {}
+        for source_predictions, target_predictions in (
+            (predictions, new_predictions),
+            (inat_predictions if isinstance(inat_predictions, dict) else {}, new_inat_predictions),
+        ):
+            for old_idx, preds in source_predictions.items():
+                try:
+                    old_index = int(old_idx)
+                except (TypeError, ValueError):
+                    continue
+                old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
+                new_index = (
+                    new_index_by_image_id.get(int(old_image_id))
+                    if isinstance(old_image_id, int) and old_image_id > 0
+                    else None
+                )
+                if new_index is None:
+                    old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
+                    new_index = new_index_by_path.get(old_path)
+                if new_index is not None:
+                    target_predictions[new_index] = preds
+        for source_selected, target_selected in (
+            (selected, new_selected),
+            (inat_selected if isinstance(inat_selected, dict) else {}, new_inat_selected),
+        ):
+            for old_idx, sel in source_selected.items():
+                try:
+                    old_index = int(old_idx)
+                except (TypeError, ValueError):
+                    continue
+                old_image_id = prev_image_ids[old_index] if 0 <= old_index < len(prev_image_ids) else None
+                new_index = (
+                    new_index_by_image_id.get(int(old_image_id))
+                    if isinstance(old_image_id, int) and old_image_id > 0
+                    else None
+                )
+                if new_index is None:
+                    old_path = prev_paths[old_index] if 0 <= old_index < len(prev_paths) else None
+                    new_index = new_index_by_path.get(old_path)
+                if new_index is not None:
+                    target_selected[new_index] = sel
         selected_index = ai_state.get("selected_index")
         new_selected_index = None
         if selected_index is not None:
@@ -3872,11 +4097,15 @@ class ObservationsTab(QWidget):
                 if new_selected_index is None and 0 <= old_index < len(prev_paths):
                     old_path = prev_paths[old_index]
                     new_selected_index = new_index_by_path.get(old_path)
-        if new_selected_index is None and new_predictions:
-            new_selected_index = sorted(new_predictions.keys())[0]
+        if new_selected_index is None:
+            available_indices = sorted(set(new_predictions) | set(new_inat_predictions))
+            if available_indices:
+                new_selected_index = available_indices[0]
         return {
             "predictions": new_predictions,
             "selected": new_selected,
+            "inat_predictions": new_inat_predictions,
+            "inat_selected": new_inat_selected,
             "selected_index": new_selected_index,
             "paths": new_paths,
             "image_ids": new_image_ids,
@@ -6299,6 +6528,13 @@ class ObservationsTab(QWidget):
         return taxon_id
 
     def _resolve_inaturalist_taxon_id(self, obs: dict) -> int | None:
+        stored_taxon_id = obs.get("inaturalist_taxon_id") if isinstance(obs, dict) else None
+        try:
+            stored_taxon_id = int(stored_taxon_id)
+        except (TypeError, ValueError):
+            stored_taxon_id = None
+        if stored_taxon_id and stored_taxon_id > 0:
+            return stored_taxon_id
         taxon_pair = self._extract_artsobs_taxon_pair(obs)
         if not taxon_pair:
             return None
@@ -6604,9 +6840,11 @@ class ObservationsTab(QWidget):
                 )
         elif uploader.key == "inat":
             taxon_id = self._resolve_inaturalist_taxon_id(obs)
+            from utils.inat_oauth import INatOAuthClient
+
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
                 os.getenv("INAT_CLIENT_ID", "") or ""
-            ).strip() or "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+            ).strip() or INatOAuthClient.DEFAULT_CLIENT_ID
             client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip() or None
             if not client_id:
                 return _fail(
@@ -6615,8 +6853,8 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             redirect_uri = (
-                SettingsDB.get_setting("inat_redirect_uri", "http://localhost:8000/callback")
-                or "http://localhost:8000/callback"
+                SettingsDB.get_setting("inat_redirect_uri", INatOAuthClient.DEFAULT_REDIRECT_URI)
+                or INatOAuthClient.DEFAULT_REDIRECT_URI
             )
             try:
                 from utils.inat_oauth import INatOAuthClient
@@ -7100,6 +7338,9 @@ class ObservationsTab(QWidget):
                     genus=data.get('genus'),
                     species=data.get('species'),
                     common_name=data.get('common_name'),
+                    inaturalist_taxon_id=data.get('inaturalist_taxon_id'),
+                    red_list_category=data.get('red_list_category'),
+                    red_list_categories_json=data.get('red_list_categories_json'),
                     publish_target=data.get('publish_target'),
                     is_draft=data.get('is_draft'),
                     sharing_scope=data.get('sharing_scope'),
@@ -8958,8 +9199,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._last_species = ""
         self._ai_predictions_by_index: dict[int, list[dict]] = {}
         self._ai_selected_by_index: dict[int, dict] = {}
+        self._inat_predictions_by_index: dict[int, list[dict]] = {}
+        self._inat_selected_by_index: dict[int, dict] = {}
         self._ai_selected_taxon: dict | None = None
+        self._selected_ai_source = "arts"
         self._ai_thread = None
+        self._inat_ai_thread = None
         self._artsobs_check_thread = None
         self._close_cleanup_done = False
         self._dialog_temp_preview_paths: set[str] = set()
@@ -8972,6 +9217,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._location_lookup_suggestions: list[str] = []
         self._location_country_code = ""
         self._location_country_name = ""
+        self._inaturalist_taxon_id: int | None = None
+        self._red_list_category = ""
+        self._red_list_categories: dict | None = None
         self._last_applied_location_lookup_name = ""
         self._force_apply_next_location_lookup_name = False
         self._sharing_scope_value = self._default_sharing_scope()
@@ -9471,6 +9719,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_row.addWidget(self.species_input, 1)
         identified_layout.addLayout(species_row)
 
+        red_list_row = QHBoxLayout()
+        red_list_label = QLabel(self.tr("Red list:"))
+        red_list_label.setFixedWidth(taxonomy_label_width)
+        red_list_row.addWidget(red_list_label)
+        self.red_list_badge_label = QLabel("")
+        self.red_list_badge_label.setAlignment(Qt.AlignCenter)
+        badge_size = max(24, int(self.species_input.sizeHint().height()))
+        self.red_list_badge_label.setFixedSize(badge_size, badge_size)
+        self.red_list_badge_label.setVisible(False)
+        red_list_row.addWidget(self.red_list_badge_label, 0, Qt.AlignVCenter)
+        self.red_list_status_label = QLabel("")
+        self.red_list_status_label.setWordWrap(False)
+        self.red_list_status_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.red_list_status_label.setMinimumHeight(badge_size)
+        red_list_row.addWidget(self.red_list_status_label, 1, Qt.AlignVCenter)
+        identified_layout.addLayout(red_list_row)
+
         determination_row = QHBoxLayout()
         determination_label = QLabel(self.tr("Determination:"))
         determination_label.setFixedWidth(taxonomy_label_width)
@@ -9868,16 +10133,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             getattr(self, "vernacular_language_btn", None),
             self.tr("Choose common-name language (applies to the whole app)."),
         )
-        self._register_hint_widget(
-            self.ai_guess_btn,
-            "",
-            allow_when_disabled=True,
-        )
-        self._register_hint_widget(
-            self.ai_copy_btn,
-            "",
-            allow_when_disabled=True,
-        )
+        for button in getattr(self, "ai_guess_buttons", {}).values():
+            self._register_hint_widget(
+                button,
+                "",
+                allow_when_disabled=True,
+            )
+        for button in getattr(self, "ai_copy_buttons", {}).values():
+            self._register_hint_widget(
+                button,
+                "",
+                allow_when_disabled=True,
+            )
         self._register_hint_widget(
             self.submit_observation_btn,
             self.tr("Save observation (Enter)") if self.edit_mode else self.tr("Create observation (Enter)"),
@@ -9889,19 +10156,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_ai_button_hints()
 
     def _update_ai_button_hints(self) -> None:
-        if hasattr(self, "ai_guess_btn"):
+        for _source, guess_btn in getattr(self, "ai_guess_buttons", {}).items():
             guess_hint = (
                 self.tr("Guess species using AI - select one or more thumbnails (shift/ctrl + click)")
-                if self.ai_guess_btn.isEnabled()
+                if guess_btn.isEnabled()
                 else self.tr("Select a field image to use AI recognition")
             )
             self._set_widget_hint(
-                self.ai_guess_btn,
+                guess_btn,
                 guess_hint,
                 allow_when_disabled=True,
             )
-        if hasattr(self, "ai_copy_btn"):
-            if self.ai_copy_btn.isEnabled():
+        for _source, copy_btn in getattr(self, "ai_copy_buttons", {}).items():
+            if copy_btn.isEnabled():
                 copy_hint = (
                     self.tr("Transfer selected species to grows-on")
                     if hasattr(self, "taxonomy_tabs") and self.taxonomy_tabs.currentWidget() == getattr(self, "grows_tab", None)
@@ -9915,7 +10182,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 else:
                     copy_hint = self.tr("Select an AI suggestion to copy")
             self._set_widget_hint(
-                self.ai_copy_btn,
+                copy_btn,
                 copy_hint,
                 allow_when_disabled=True,
             )
@@ -9944,56 +10211,97 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ai_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         ai_group.setMinimumWidth(300)
 
-        ai_controls = QHBoxLayout()
-        self.ai_guess_btn = QPushButton(self.tr("Guess"))
-        self.ai_guess_btn.clicked.connect(self._on_ai_guess_clicked)
-        self.ai_copy_btn = QPushButton(self.tr("Copy"))
-        self.ai_copy_btn.clicked.connect(self._on_ai_copy_to_taxonomy)
-        self.ai_copy_btn.setEnabled(False)
-        self.ai_guess_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.ai_copy_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        ai_controls.addWidget(self.ai_guess_btn)
-        ai_controls.addWidget(self.ai_copy_btn)
-        ai_controls.setStretch(0, 1)
-        ai_controls.setStretch(1, 1)
-        ai_layout.addLayout(ai_controls)
+        self.ai_source_tabs = QTabWidget()
+        self.ai_source_tabs.setDocumentMode(True)
+        self.ai_source_tabs.currentChanged.connect(self._on_ai_source_tab_changed)
+        self.ai_tables: dict[str, QTableWidget] = {}
+        self.ai_guess_buttons: dict[str, QPushButton] = {}
+        self.ai_copy_buttons: dict[str, QPushButton] = {}
+        self.ai_status_labels: dict[str, QLabel] = {}
 
-        self.ai_table = QTableWidget(0, 3)
-        self.ai_table.setHorizontalHeaderLabels([self.tr("Suggested species"), "Match", "Link"])
-        self.ai_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.ai_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.ai_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.ai_table.verticalHeader().setVisible(False)
-        self.ai_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.ai_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.ai_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.ai_table.setMinimumHeight(140)
-        self.ai_table.setMinimumWidth(260)
-        self.ai_table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
-        self.ai_table.setShowGrid(False)
-        self.ai_table.setAttribute(Qt.WA_MacShowFocusRect, False)
-        self.ai_table.setStyleSheet(
+        self.ai_table = self._build_ai_provider_tab(
+            source="arts",
+            title=self.tr("Artsorakel"),
+            headers=[self.tr("Suggested species"), "Match", self.tr("Red List"), "Link"],
+        )
+        self.inat_ai_table = self._build_ai_provider_tab(
+            source="inat",
+            title=self.tr("iNaturalist"),
+            headers=[self.tr("Suggested species"), "Match", "Link"],
+        )
+        self.ai_guess_btn = self.ai_guess_buttons["arts"]
+        self.ai_copy_btn = self.ai_copy_buttons["arts"]
+        self.ai_status_label = self.ai_status_labels["arts"]
+        ai_layout.addWidget(self.ai_source_tabs)
+
+        return ai_group
+
+    def _build_ai_provider_tab(self, source: str, title: str, headers: list[str]) -> QTableWidget:
+        tab = QWidget()
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 6, 0, 0)
+        tab_layout.setSpacing(8)
+
+        controls = QHBoxLayout()
+        guess_btn = QPushButton(self.tr("Guess"))
+        guess_btn.clicked.connect(lambda _checked=False, src=source: self._on_ai_guess_clicked(src))
+        copy_btn = QPushButton(self.tr("Copy"))
+        copy_btn.clicked.connect(lambda _checked=False, src=source: self._on_ai_copy_to_taxonomy(src))
+        copy_btn.setEnabled(False)
+        guess_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        copy_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        controls.addWidget(guess_btn)
+        controls.addWidget(copy_btn)
+        controls.setStretch(0, 1)
+        controls.setStretch(1, 1)
+        tab_layout.addLayout(controls)
+
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, len(headers)):
+            table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        table.verticalHeader().setVisible(False)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setWordWrap(False)
+        table.setTextElideMode(Qt.ElideRight)
+        table.setMinimumHeight(140)
+        table.setMinimumWidth(260)
+        table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        table.setShowGrid(False)
+        table.setAttribute(Qt.WA_MacShowFocusRect, False)
+        table.setStyleSheet(
             "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
             "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
             "QTableWidget::item:focus, QTableWidget::item:selected:focus, QTableWidget::item:selected:!active:focus { outline: none; border: none; }"
             "QTableWidget { gridline-color: transparent; }"
         )
-        self.ai_table.itemSelectionChanged.connect(self._on_ai_selection_changed)
-        self.ai_table.doubleClicked.connect(self._on_ai_copy_to_taxonomy)
-        ai_layout.addWidget(self.ai_table)
+        table.itemSelectionChanged.connect(lambda src=source: self._on_ai_selection_changed(src))
+        table.cellClicked.connect(lambda row, col, src=source: self._on_ai_table_cell_clicked(src, row, col))
+        table.doubleClicked.connect(lambda index, src=source: self._on_ai_table_double_clicked(src, index))
+        tab_layout.addWidget(table)
 
-        self.ai_status_label = QLabel("")
-        self.ai_status_label.setWordWrap(True)
-        self.ai_status_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
-        ai_layout.addWidget(self.ai_status_label)
+        status_label = QLabel("")
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
+        tab_layout.addWidget(status_label)
 
-        return ai_group
+        self.ai_tables[source] = table
+        self.ai_guess_buttons[source] = guess_btn
+        self.ai_copy_buttons[source] = copy_btn
+        self.ai_status_labels[source] = status_label
+        self.ai_source_tabs.addTab(tab, title)
+        return table
 
     def _apply_ai_state(self, ai_state: dict | None) -> None:
         if not ai_state:
             return
         predictions = ai_state.get("predictions")
         selected = ai_state.get("selected")
+        inat_predictions = ai_state.get("inat_predictions")
+        inat_selected = ai_state.get("inat_selected")
         selected_index = ai_state.get("selected_index")
         if isinstance(predictions, dict):
             remapped: dict[int, list] = {}
@@ -10011,6 +10319,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 except (TypeError, ValueError):
                     continue
             self._ai_selected_by_index = remapped_selected
+        if isinstance(inat_predictions, dict):
+            remapped_inat: dict[int, list] = {}
+            for key, value in inat_predictions.items():
+                try:
+                    remapped_inat[int(key)] = value
+                except (TypeError, ValueError):
+                    continue
+            self._inat_predictions_by_index = remapped_inat
+        if isinstance(inat_selected, dict):
+            remapped_inat_selected: dict[int, dict] = {}
+            for key, value in inat_selected.items():
+                try:
+                    remapped_inat_selected[int(key)] = value
+                except (TypeError, ValueError):
+                    continue
+            self._inat_selected_by_index = remapped_inat_selected
         if isinstance(selected_index, int):
             self._ai_selected_index = selected_index
 
@@ -10018,10 +10342,33 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return {
             "predictions": dict(self._ai_predictions_by_index),
             "selected": dict(self._ai_selected_by_index),
+            "inat_predictions": dict(self._inat_predictions_by_index),
+            "inat_selected": dict(self._inat_selected_by_index),
             "selected_index": self._ai_selected_index,
             "paths": [item.filepath for item in self.image_results],
             "image_ids": [item.image_id for item in self.image_results],
         }
+
+    def _persist_ai_state_now(self) -> None:
+        """Persist AI lookup state for an existing observation without waiting for Save."""
+        obs = self.observation if isinstance(self.observation, dict) else {}
+        obs_id = obs.get("id")
+        try:
+            obs_id = int(obs_id)
+        except (TypeError, ValueError):
+            return
+        if obs_id <= 0:
+            return
+        try:
+            raw_state = json.dumps(self.get_ai_state(), ensure_ascii=False)
+            ObservationDB.update_observation(
+                obs_id,
+                ai_state_json=raw_state,
+                allow_nulls=True,
+            )
+            self.observation["ai_state_json"] = raw_state
+        except Exception:
+            pass
 
     def _select_initial_ai_image(self) -> None:
         index = self._current_ai_index()
@@ -10070,8 +10417,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._update_ai_table()
                 return
 
+    def _ai_source_key(self) -> str:
+        tabs = getattr(self, "ai_source_tabs", None)
+        if tabs is not None:
+            current = tabs.currentIndex()
+            if current == 1:
+                return "inat"
+        return "arts"
+
+    def _on_ai_source_tab_changed(self, _index: int) -> None:
+        self._selected_ai_source = self._ai_source_key()
+        self._update_ai_table()
+        self._update_ai_controls_state()
+
     def _update_ai_controls_state(self) -> None:
-        if not hasattr(self, "ai_guess_btn"):
+        if not hasattr(self, "ai_guess_buttons"):
             return
         indices = self._selected_gallery_indices()
         if not indices:
@@ -10086,56 +10446,99 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     (self.image_results[idx].image_type or "field").strip().lower() == "field"
                     for idx in indices
                 )
-        if self._ai_thread is not None:
-            enable = False
-        self.ai_guess_btn.setEnabled(enable)
+        arts_enable = enable and self._ai_thread is None
+        inat_enable = enable and self._inat_ai_thread is None
+        if "arts" in self.ai_guess_buttons:
+            self.ai_guess_buttons["arts"].setEnabled(arts_enable)
+        if "inat" in self.ai_guess_buttons:
+            self.ai_guess_buttons["inat"].setEnabled(inat_enable)
         self._update_ai_button_hints()
-        if hasattr(self, "ai_table"):
-            self._set_ai_copy_enabled(self.ai_table.currentRow() >= 0)
-        else:
-            self._set_ai_copy_enabled(False)
+        for source, table in getattr(self, "ai_tables", {}).items():
+            self._set_ai_copy_enabled(table.currentRow() >= 0, source=source)
 
     def _update_ai_table(self) -> None:
-        if not hasattr(self, "ai_table"):
+        if not hasattr(self, "ai_tables"):
             return
         index = self._current_ai_index()
-        self.ai_table.setRowCount(0)
-        if index is None:
-            self._set_ai_copy_enabled(False)
-            return
-        predictions = self._ai_predictions_by_index.get(index, [])
-        for row, pred in enumerate(predictions):
-            taxon = pred.get("taxon", {})
-            display_name = self._format_ai_taxon_name(taxon)
-            confidence = pred.get("probability", 0.0)
-            name_item = QTableWidgetItem(display_name)
-            name_item.setData(Qt.UserRole, pred)
-            conf_item = QTableWidgetItem(f"{confidence:.1%}")
-            link_widget = self._build_taxon_link_widget(self._ai_prediction_links(pred, taxon))
-            self.ai_table.insertRow(row)
-            self.ai_table.setItem(row, 0, name_item)
-            self.ai_table.setItem(row, 1, conf_item)
-            if link_widget:
-                self.ai_table.setCellWidget(row, 2, link_widget)
-            self.ai_table.setRowHeight(row, max(self.ai_table.verticalHeader().defaultSectionSize(), 28))
-        if predictions:
-            selected = self._ai_selected_by_index.get(index)
-            if selected:
-                for row in range(self.ai_table.rowCount()):
-                    item = self.ai_table.item(row, 0)
-                    if item and item.data(Qt.UserRole) == selected:
-                        self.ai_table.selectRow(row)
-                        break
+        for source, table in self.ai_tables.items():
+            table.setRowCount(0)
+            if index is None:
+                self._set_ai_copy_enabled(False, source=source)
+                continue
+            predictions = (
+                self._inat_predictions_by_index.get(index, [])
+                if source == "inat"
+                else self._ai_predictions_by_index.get(index, [])
+            )
+            for row, pred in enumerate(predictions):
+                taxon = pred.get("taxon", {})
+                display_name = self._format_ai_taxon_name(taxon, source=source)
+                confidence = self._ai_prediction_score(pred)
+                name_item = QTableWidgetItem(display_name)
+                name_item.setData(Qt.UserRole, pred)
+                conf_item = QTableWidgetItem(self._format_ai_prediction_score(pred, source=source))
+                table.insertRow(row)
+                table.setItem(row, 0, name_item)
+                table.setItem(row, 1, conf_item)
+                if source == "arts":
+                    red_item = self._build_red_list_table_item(
+                        self._red_list_display_from_prediction(pred, taxon, short=True),
+                        self._red_list_display_from_prediction(pred, taxon, short=False),
+                    )
+                    if red_item:
+                        table.setItem(row, 2, red_item)
+                    link_item = self._build_taxon_link_item(self._ai_prediction_links(pred, taxon, source=source))
+                    if link_item:
+                        table.setItem(row, 3, link_item)
+                else:
+                    link_item = self._build_taxon_link_item(self._ai_prediction_links(pred, taxon, source=source))
+                    if link_item:
+                        table.setItem(row, 2, link_item)
+                table.setRowHeight(row, max(table.verticalHeader().defaultSectionSize(), 28))
+            if predictions:
+                selected = (
+                    self._inat_selected_by_index.get(index)
+                    if source == "inat"
+                    else self._ai_selected_by_index.get(index)
+                )
+                if selected:
+                    for row in range(table.rowCount()):
+                        item = table.item(row, 0)
+                        if item and item.data(Qt.UserRole) == selected:
+                            table.selectRow(row)
+                            break
+                else:
+                    table.selectRow(0)
+                self._set_ai_copy_enabled(table.currentRow() >= 0, source=source)
             else:
-                self.ai_table.selectRow(0)
-            self._set_ai_copy_enabled(self.ai_table.currentRow() >= 0)
-        else:
-            self._ai_selected_taxon = None
-            self._set_ai_copy_enabled(False)
+                if source == self._ai_source_key():
+                    self._ai_selected_taxon = None
+                self._set_ai_copy_enabled(False, source=source)
 
-    def _format_ai_taxon_name(self, taxon: dict) -> str:
-        scientific = taxon.get("scientificName") or taxon.get("scientific_name") or taxon.get("name") or ""
-        vernacular = self._preferred_vernacular_from_taxon(taxon) or ""
+    @staticmethod
+    def _ai_prediction_score(pred: dict) -> float:
+        for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
+            value = pred.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+        return 0.0
+
+    def _format_ai_prediction_score(self, pred: dict, source: str = "arts") -> str:
+        score = self._ai_prediction_score(pred)
+        if source == "inat":
+            return f"{score:.1f}%"
+        return f"{score:.1%}"
+
+    def _format_ai_taxon_name(self, taxon: dict, source: str = "arts") -> str:
+        scientific = self._scientific_name_from_taxon(taxon)
+        vernacular = ""
+        if source == "inat":
+            vernacular = self._inat_preferred_common_name(taxon) or ""
+        if not vernacular:
+            vernacular = self._preferred_vernacular_from_taxon(taxon) or ""
         if vernacular and scientific:
             vernacular_norm = str(vernacular).strip()
             scientific_norm = str(scientific).strip()
@@ -10143,7 +10546,100 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 return f"{vernacular_norm} ({scientific_norm})"
         return vernacular or scientific or self.tr("Unknown")
 
-    def _ai_prediction_link(self, pred: dict, taxon: dict) -> str | None:
+    RED_LIST_LABELS = {
+        "RE": "regionalt utdødd",
+        "CR": "kritisk truet",
+        "EN": "sterkt truet",
+        "VU": "sårbar",
+        "NT": "nær truet",
+        "DD": "datamangel",
+        "LC": "livskraftig",
+        "NA": "ikke egnet",
+        "NE": "ikke vurdert",
+    }
+
+    def _red_list_label(self, code: str | None, *, include_code: bool = True) -> str:
+        clean = str(code or "").strip().upper()
+        if not clean:
+            return ""
+        label = self.RED_LIST_LABELS.get(clean)
+        if not label:
+            return clean
+        return f"{clean} - {label}" if include_code else label
+
+    def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
+        self._red_list_category = str(code or "").strip().upper()
+        self._red_list_categories = dict(categories) if isinstance(categories, dict) else None
+        badge = getattr(self, "red_list_badge_label", None)
+        if badge is not None:
+            if self._red_list_category:
+                size = max(1, badge.width() or badge.sizeHint().height() or 24)
+                badge.setText(self._red_list_category)
+                badge.setStyleSheet(red_list_badge_stylesheet(self._red_list_category, size_px=size))
+                badge.setVisible(True)
+            else:
+                badge.setText("")
+                badge.setVisible(False)
+        label = getattr(self, "red_list_status_label", None)
+        if label is not None:
+            label.setText(self._red_list_label(self._red_list_category, include_code=False) or self.tr("Not set"))
+
+    def _set_inaturalist_taxon_id(self, value) -> None:
+        try:
+            taxon_id = int(value)
+        except (TypeError, ValueError):
+            taxon_id = None
+        self._inaturalist_taxon_id = taxon_id if taxon_id and taxon_id > 0 else None
+
+    def _red_list_display_from_prediction(self, pred: dict, taxon: dict, *, short: bool) -> str:
+        code = ""
+        if isinstance(taxon, dict):
+            code = str(taxon.get("redListCategory") or "").strip()
+        if not code and isinstance(pred, dict):
+            code = str(pred.get("redListCategory") or "").strip()
+        return code.upper() if short and code else self._red_list_label(code)
+
+    def _build_red_list_badge_widget(self, code: str | None, size_px: int = 24) -> QWidget | None:
+        clean = str(code or "").strip().upper()
+        if not clean:
+            return None
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignCenter)
+        badge = QLabel(clean)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setFixedSize(size_px, size_px)
+        badge.setStyleSheet(red_list_badge_stylesheet(clean, size_px=size_px))
+        layout.addWidget(badge)
+        return container
+
+    def _build_red_list_table_item(self, code: str | None, tooltip: str | None = None) -> QTableWidgetItem | None:
+        clean = str(code or "").strip().upper()
+        if not clean:
+            return None
+        item = QTableWidgetItem(clean)
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setToolTip(str(tooltip or self._red_list_label(clean)).strip())
+        item.setBackground(QColor(RED_LIST_BADGE_COLORS.get(clean, "#63666A")))
+        item.setForeground(QColor("#63666A" if clean in {"NA", "NE"} else "#ffffff"))
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        return item
+
+    def _red_list_categories_from_prediction(self, pred: dict, taxon: dict) -> dict | None:
+        value = taxon.get("redListCategories") if isinstance(taxon, dict) else None
+        if value is None and isinstance(pred, dict):
+            value = pred.get("redListCategories")
+        return value if isinstance(value, dict) else None
+
+    def _ai_prediction_link(self, pred: dict, taxon: dict, source: str = "arts") -> str | None:
+        if source == "inat":
+            taxon_id = taxon.get("id") if isinstance(taxon, dict) else None
+            if taxon_id:
+                return f"https://www.inaturalist.org/taxon_names.json?taxon_id={taxon_id}"
+            return None
         if isinstance(pred, dict):
             for key in ("infoURL", "infoUrl", "info_url"):
                 value = pred.get(key)
@@ -10169,14 +10665,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
         return "https://artsdatabanken.no"
 
-    def _ai_prediction_links(self, pred: dict, taxon: dict) -> list[tuple[str, str]]:
+    def _ai_prediction_links(self, pred: dict, taxon: dict, source: str = "arts") -> list[tuple[str, str]]:
         links: list[tuple[str, str]] = []
-        adb_url = self._ai_prediction_link(pred, taxon)
-        if adb_url:
-            links.append(("Adb", adb_url))
+        url = self._ai_prediction_link(pred, taxon, source=source)
+        if url:
+            links.append((self.tr("Open link"), url))
         return links
 
-    def _build_taxon_link_widget(self, links: list[tuple[str, str]]) -> QLabel | None:
+    def _build_taxon_link_item(self, links: list[tuple[str, str]]) -> QTableWidgetItem | None:
         valid_links = [
             (str(label or "").strip(), str(url or "").strip())
             for label, url in (links or [])
@@ -10184,55 +10680,84 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ]
         if not valid_links:
             return None
-        link_html = " | ".join(
-            (
-                f'<a href="{html.escape(url, quote=True)}" '
-                'style="color:#2b6cb0; text-decoration:underline;">'
-                f"{html.escape(label)}</a>"
-            )
-            for label, url in valid_links
-        )
-        label = QLabel(link_html)
-        label.setTextFormat(Qt.RichText)
-        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        label.setOpenExternalLinks(True)
-        label.setAlignment(Qt.AlignCenter)
-        label.setMinimumWidth(44)
-        label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        label.setStyleSheet("QLabel { padding: 2px 6px; color: #2b6cb0; }")
-        return label
+        label, url = valid_links[0]
+        item = QTableWidgetItem(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "link.svg")), "")
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setToolTip(label)
+        item.setData(Qt.UserRole, url)
+        item.setForeground(QColor("#2563eb"))
+        return item
 
-    def _on_ai_selection_changed(self) -> None:
+    def _on_ai_table_cell_clicked(self, source: str, row: int, column: int) -> None:
+        table = self.ai_tables.get(source) if hasattr(self, "ai_tables") else None
+        if table is None:
+            return
+        link_column = 3 if source == "arts" else 2
+        if column != link_column:
+            return
+        item = table.item(row, column)
+        url = str(item.data(Qt.UserRole) or "").strip() if item else ""
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _on_ai_table_double_clicked(self, source: str, index: QModelIndex) -> None:
+        link_column = 3 if source == "arts" else 2
+        if index.isValid() and index.column() == link_column:
+            self._on_ai_table_cell_clicked(source, index.row(), index.column())
+            return
+        self._on_ai_copy_to_taxonomy(source)
+
+    def _on_ai_selection_changed(self, source: str | None = None) -> None:
+        source = source or self._ai_source_key()
         index = self._current_ai_index()
         if index is None:
             return
-        selected_items = self.ai_table.selectedItems()
+        table = self.ai_tables.get(source) if hasattr(self, "ai_tables") else getattr(self, "ai_table", None)
+        if table is None:
+            return
+        selected_items = table.selectedItems()
         if not selected_items:
             self._ai_selected_taxon = None
-            self._set_ai_status(None)
-            self._set_ai_copy_enabled(False)
+            self._set_ai_status(None, source=source)
+            self._set_ai_copy_enabled(False, source=source)
             return
-        row_item = self.ai_table.item(self.ai_table.currentRow(), 0)
+        row_item = table.item(table.currentRow(), 0)
         if not row_item:
             return
         pred = row_item.data(Qt.UserRole) or {}
-        self._ai_selected_by_index[index] = pred
+        if source == "inat":
+            self._inat_selected_by_index[index] = pred
+        else:
+            self._ai_selected_by_index[index] = pred
         self._ai_selected_taxon = pred.get("taxon") or {}
-        self._set_ai_status(None)
-        self._set_ai_copy_enabled(True)
+        self._set_ai_status(None, source=source)
+        self._set_ai_copy_enabled(True, source=source)
+        self._persist_ai_state_now()
 
-    def _set_ai_status(self, text: str | None, color: str = "#7f8c8d") -> None:
-        if not hasattr(self, "ai_status_label"):
+    def _set_ai_status(self, text: str | None, color: str = "#7f8c8d", source: str | None = None) -> None:
+        source = source or self._ai_source_key()
+        label = None
+        if hasattr(self, "ai_status_labels"):
+            label = self.ai_status_labels.get(source)
+        if label is None:
+            label = getattr(self, "ai_status_label", None)
+        if label is None:
             return
         if not text:
-            self.ai_status_label.setText("")
+            label.setText("")
             return
-        self.ai_status_label.setText(text)
-        self.ai_status_label.setStyleSheet(f"color: {color}; font-size: {pt(9)}pt;")
+        label.setText(text)
+        label.setStyleSheet(f"color: {color}; font-size: {pt(9)}pt;")
 
-    def _set_ai_copy_enabled(self, enabled: bool) -> None:
-        if hasattr(self, "ai_copy_btn"):
-            self.ai_copy_btn.setEnabled(bool(enabled) and self._can_copy_ai_to_current_tab())
+    def _set_ai_copy_enabled(self, enabled: bool, source: str | None = None) -> None:
+        source = source or self._ai_source_key()
+        button = None
+        if hasattr(self, "ai_copy_buttons"):
+            button = self.ai_copy_buttons.get(source)
+        if button is None:
+            button = getattr(self, "ai_copy_btn", None)
+        if button is not None:
+            button.setEnabled(bool(enabled) and self._can_copy_ai_to_current_tab())
             self._update_ai_button_hints()
 
     def _can_copy_ai_to_current_tab(self) -> bool:
@@ -10241,6 +10766,93 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return True
         current = tabs.currentWidget()
         return current in {getattr(self, "species_tab", None), getattr(self, "grows_tab", None)}
+
+    def _inat_credentials(self) -> tuple[str, str, str]:
+        from utils.inat_oauth import INatOAuthClient
+
+        client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip()
+        client_secret = (SettingsDB.get_setting("inat_client_secret", "") or "").strip()
+        redirect_uri = (
+            SettingsDB.get_setting("inat_redirect_uri", INatOAuthClient.DEFAULT_REDIRECT_URI)
+            or INatOAuthClient.DEFAULT_REDIRECT_URI
+        )
+        if not client_id:
+            client_id = (os.getenv("INAT_CLIENT_ID", "") or "").strip()
+        if not client_id:
+            client_id = INatOAuthClient.DEFAULT_CLIENT_ID
+        if not client_secret:
+            client_secret = (os.getenv("INAT_CLIENT_SECRET", "") or "").strip()
+        return client_id, client_secret, redirect_uri
+
+    def _inat_token_file(self) -> Path:
+        return app_data_dir() / "inaturalist_oauth_tokens.json"
+
+    def _inat_locale(self) -> str:
+        raw = str(SettingsDB.get_setting("ui_language", "") or get_app_settings().get("ui_language") or "en")
+        prefix = raw.replace("-", "_").split("_", 1)[0].lower()
+        if prefix in {"nb", "nn", "no"}:
+            return "nb"
+        if prefix in {"sv", "de", "en", "da", "fi", "fr", "es", "it", "pt", "pl"}:
+            return prefix
+        return "en"
+
+    def _first_common_name(self, value) -> str:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                name = self._first_common_name(item)
+                if name:
+                    return name
+            return ""
+        if isinstance(value, dict):
+            locale = self._inat_locale()
+            for key in (locale, normalize_vernacular_language(locale), "nb", "no", "en"):
+                if key in value:
+                    name = self._first_common_name(value.get(key))
+                    if name:
+                        return name
+            for item in value.values():
+                name = self._first_common_name(item)
+                if name:
+                    return name
+            return ""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"^\s*['\"]|['\"]\s*$", "", text)
+        parts = re.split(
+            r"\s*(?:\r?\n|[,;/|•]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )
+        return (parts[0] if parts else text).strip()
+
+    def _inat_preferred_common_name(self, taxon: dict) -> str | None:
+        if not isinstance(taxon, dict):
+            return None
+        for key in ("preferred_common_name", "preferred_common_names", "common_name", "common_names"):
+            value = self._first_common_name(taxon.get(key))
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _looks_like_scientific_name(text: str | None) -> bool:
+        value = str(text or "").strip()
+        parts = value.split()
+        if len(parts) < 2:
+            return False
+        return bool(re.match(r"^[A-Z][A-Za-z-]+$", parts[0]) and re.match(r"^[a-z][A-Za-z-]+$", parts[1]))
+
+    def _scientific_name_from_taxon(self, taxon: dict) -> str:
+        for key in ("scientificName", "scientific_name"):
+            value = str(taxon.get(key) or "").strip()
+            if value:
+                return value
+        value = str(taxon.get("name") or "").strip()
+        if self._looks_like_scientific_name(value):
+            return value
+        return ""
 
     def _extract_genus_species_from_taxon(self, taxon: dict) -> tuple[str | None, str | None]:
         if not isinstance(taxon, dict):
@@ -10253,18 +10865,44 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
         if genus and species:
             return str(genus).strip(), str(species).strip()
-        sci = taxon.get("scientificName") or taxon.get("scientific_name") or taxon.get("name")
+        sci = self._scientific_name_from_taxon(taxon)
         if sci and isinstance(sci, str):
             parts = sci.strip().split()
             if len(parts) >= 2:
                 return parts[0], parts[1]
         return None, None
 
-    def _on_ai_copy_to_taxonomy(self) -> None:
-        taxon = self._ai_selected_taxon or {}
+    def _selected_ai_prediction(self, source: str) -> dict:
+        table = self.ai_tables.get(source) if hasattr(self, "ai_tables") else None
+        if table is None:
+            return {}
+        row = table.currentRow()
+        if row < 0 and table.rowCount() > 0:
+            row = 0
+        item = table.item(row, 0) if row >= 0 else None
+        pred = item.data(Qt.UserRole) if item else None
+        return pred if isinstance(pred, dict) else {}
+
+    def _on_ai_copy_to_taxonomy(self, source: str | None = None) -> None:
+        source = source or self._ai_source_key()
+        index = self._current_ai_index()
+        selected_pred = self._selected_ai_prediction(source)
+        if index is not None:
+            if selected_pred:
+                if source == "inat":
+                    self._inat_selected_by_index[index] = selected_pred
+                else:
+                    self._ai_selected_by_index[index] = selected_pred
+            else:
+                selected_pred = (
+                    self._inat_selected_by_index.get(index)
+                    if source == "inat"
+                    else self._ai_selected_by_index.get(index)
+                ) or {}
+        taxon = (selected_pred or {}).get("taxon") or self._ai_selected_taxon or {}
         genus, species = self._extract_genus_species_from_taxon(taxon)
         if not genus or not species:
-            self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22")
+            self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22", source=source)
             return
         current_tab = self.taxonomy_tabs.currentWidget() if hasattr(self, "taxonomy_tabs") else None
         target_grows = current_tab == getattr(self, "grows_tab", None)
@@ -10276,7 +10914,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if self.vernacular_db:
                 self.host_vernacular_input.clear()
                 self._maybe_set_host_vernacular_from_taxon()
-            self._set_ai_status(self.tr("Copied to grows-on species."), "#27ae60")
+            self._set_ai_status(self.tr("Copied to grows-on species."), "#27ae60", source=source)
         else:
             if hasattr(self, "taxonomy_tabs"):
                 self.taxonomy_tabs.setCurrentIndex(self.taxonomy_tabs.indexOf(self.species_tab))
@@ -10287,21 +10925,36 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self.genus_input.setText(genus)
             if hasattr(self, "species_input"):
                 self.species_input.setText(species)
-            vernacular = self._preferred_vernacular_from_taxon(taxon)
+            vernacular = (
+                self._inat_preferred_common_name(taxon)
+                if source == "inat"
+                else self._preferred_vernacular_from_taxon(taxon)
+            )
             if hasattr(self, "vernacular_input"):
                 self.vernacular_input.setText(vernacular or "")
+            if source == "inat":
+                self._set_inaturalist_taxon_id(taxon.get("id"))
+                self._set_red_list_category(None, None)
+            else:
+                self._set_inaturalist_taxon_id(None)
+                self._set_red_list_category(
+                    taxon.get("redListCategory") or (selected_pred or {}).get("redListCategory"),
+                    self._red_list_categories_from_prediction(selected_pred or {}, taxon),
+                )
             self._suppress_taxon_autofill = False
             if self.vernacular_db:
                 self._update_vernacular_suggestions_for_taxon()
                 if not vernacular:
                     self._maybe_set_vernacular_from_taxon()
-            self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60")
+            self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60", source=source)
         self._update_taxonomy_tab_indicators()
+        self._persist_ai_state_now()
 
     def _on_ai_crop_clicked(self) -> None:
         return
 
-    def _on_ai_guess_clicked(self) -> None:
+    def _on_ai_guess_clicked(self, source: str | None = None) -> None:
+        source = source or self._ai_source_key()
         try:
             indices = self._selected_gallery_indices()
             if not indices:
@@ -10316,7 +10969,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 (self.image_results[idx].image_type or "field").strip().lower() != "field"
                 for idx in indices
             ):
-                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c")
+                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source=source)
                 return
             requests = []
             for idx in indices:
@@ -10333,34 +10986,74 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
             if not requests:
                 return
-            if self._ai_thread is not None:
+            if source == "inat" and self._inat_ai_thread is not None:
                 return
-            self.ai_guess_btn.setEnabled(False)
-            self.ai_guess_btn.setText(self.tr("AI guessing..."))
+            if source != "inat" and self._ai_thread is not None:
+                return
+            guess_btn = self.ai_guess_buttons.get(source) if hasattr(self, "ai_guess_buttons") else self.ai_guess_btn
+            guess_btn.setEnabled(False)
+            guess_btn.setText(self.tr("AI guessing..."))
             self._update_ai_button_hints()
             count = len(requests)
-            self._set_ai_status(
-                self.tr("Sending {count} image(s) to Artsdatabanken AI...").format(count=count),
-                "#3498db",
-            )
             temp_dir = get_images_dir() / "imports"
-            self._ai_thread = AIGuessWorker(requests, temp_dir, max_dim=1600, parent=self)
-            self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
-            self._ai_thread.error.connect(self._on_ai_guess_error)
-            self._ai_thread.finished.connect(self._ai_thread.deleteLater)
-            self._ai_thread.finished.connect(self._on_ai_thread_finished)
-            self._ai_thread.start()
+            if source == "inat":
+                client_id, client_secret, redirect_uri = self._inat_credentials()
+                observed_on = self.datetime_input.date().toString("yyyy-MM-dd") if hasattr(self, "datetime_input") else ""
+                lat = self.lat_input.value() if hasattr(self, "lat_input") and self.lat_input.value() > self.lat_input.minimum() else None
+                lon = self.lon_input.value() if hasattr(self, "lon_input") and self.lon_input.value() > self.lon_input.minimum() else None
+                self._set_ai_status(
+                    self.tr("Sending {count} image(s) to iNaturalist AI...").format(count=count),
+                    "#3498db",
+                    source=source,
+                )
+                self._inat_ai_thread = INatAIGuessWorker(
+                    requests,
+                    temp_dir,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    redirect_uri=redirect_uri,
+                    token_file=self._inat_token_file(),
+                    locale=self._inat_locale(),
+                    lat=lat,
+                    lon=lon,
+                    observed_on=observed_on,
+                    max_dim=1600,
+                    parent=self,
+                )
+                self._inat_ai_thread.resultReady.connect(self._on_inat_ai_guess_finished)
+                self._inat_ai_thread.error.connect(self._on_inat_ai_guess_error)
+                self._inat_ai_thread.finished.connect(self._inat_ai_thread.deleteLater)
+                self._inat_ai_thread.finished.connect(self._on_inat_ai_thread_finished)
+                self._inat_ai_thread.start()
+            else:
+                self._set_ai_status(
+                    self.tr("Sending {count} image(s) to Artsdatabanken AI...").format(count=count),
+                    "#3498db",
+                    source=source,
+                )
+                self._ai_thread = AIGuessWorker(requests, temp_dir, max_dim=1600, parent=self)
+                self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
+                self._ai_thread.error.connect(self._on_ai_guess_error)
+                self._ai_thread.finished.connect(self._ai_thread.deleteLater)
+                self._ai_thread.finished.connect(self._on_ai_thread_finished)
+                self._ai_thread.start()
         except Exception as exc:
-            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c")
-            if hasattr(self, "ai_guess_btn"):
-                self.ai_guess_btn.setEnabled(True)
-                self.ai_guess_btn.setText(self.tr("Guess"))
+            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source=source)
+            if hasattr(self, "ai_guess_buttons") and source in self.ai_guess_buttons:
+                self.ai_guess_buttons[source].setEnabled(True)
+                self.ai_guess_buttons[source].setText(self.tr("Guess"))
                 self._update_ai_button_hints()
 
     def _on_ai_thread_finished(self) -> None:
         self._ai_thread = None
-        if hasattr(self, "ai_guess_btn"):
-            self.ai_guess_btn.setText(self.tr("Guess"))
+        if hasattr(self, "ai_guess_buttons") and "arts" in self.ai_guess_buttons:
+            self.ai_guess_buttons["arts"].setText(self.tr("Guess"))
+        self._update_ai_controls_state()
+
+    def _on_inat_ai_thread_finished(self) -> None:
+        self._inat_ai_thread = None
+        if hasattr(self, "ai_guess_buttons") and "inat" in self.ai_guess_buttons:
+            self.ai_guess_buttons["inat"].setText(self.tr("Guess"))
         self._update_ai_controls_state()
 
     def _park_thread_until_finished(self, thread: QThread | None) -> None:
@@ -10434,6 +11127,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._park_thread_until_finished(self._ai_thread)
             except Exception:
                 pass
+        if self._inat_ai_thread is not None:
+            try:
+                self._inat_ai_thread.requestInterruption()
+            except Exception:
+                pass
+            try:
+                self._inat_ai_thread.wait(1000)
+                if self._inat_ai_thread.isRunning():
+                    self._park_thread_until_finished(self._inat_ai_thread)
+            except Exception:
+                pass
 
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
@@ -10462,17 +11166,47 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._ai_predictions_by_index[index] = predictions or []
         self._update_ai_table()
         if predictions:
-            self._set_ai_status(self.tr("AI suggestion updated"), "#27ae60")
+            self._set_ai_status(self.tr("AI suggestion updated"), "#27ae60", source="arts")
         else:
-            self._set_ai_status(self.tr("No AI suggestions found"), "#7f8c8d")
+            self._set_ai_status(self.tr("No AI suggestions found"), "#7f8c8d", source="arts")
         self._update_ai_controls_state()
+        self._persist_ai_state_now()
 
     def _on_ai_guess_error(self, _indices: list, message: str) -> None:
         if "500" in message:
             hint = self.tr("AI guess failed: server error (500). Try again later.")
         else:
             hint = self.tr("AI guess failed: {message}").format(message=message)
-        self._set_ai_status(hint, "#e74c3c")
+        self._set_ai_status(hint, "#e74c3c", source="arts")
+        self._update_ai_controls_state()
+
+    def _on_inat_ai_guess_finished(
+        self,
+        indices: list,
+        predictions: list,
+        _box: object,
+        _warnings: object,
+        temp_paths: list,
+    ) -> None:
+        for temp_path in temp_paths or []:
+            if not temp_path:
+                continue
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        for index in indices or []:
+            self._inat_predictions_by_index[index] = predictions or []
+        self._update_ai_table()
+        if predictions:
+            self._set_ai_status(self.tr("AI suggestion updated"), "#27ae60", source="inat")
+        else:
+            self._set_ai_status(self.tr("No AI suggestions found"), "#7f8c8d", source="inat")
+        self._update_ai_controls_state()
+        self._persist_ai_state_now()
+
+    def _on_inat_ai_guess_error(self, _indices: list, message: str) -> None:
+        self._set_ai_status(self.tr("AI guess failed: {message}").format(message=message), "#e74c3c", source="inat")
         self._update_ai_controls_state()
 
     def _on_edit_images_clicked(self):
@@ -11215,6 +11949,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'genus': genus,
             'species': species,
             'common_name': common_name,
+            'inaturalist_taxon_id': self._inaturalist_taxon_id,
+            'red_list_category': self._red_list_category or None,
+            'red_list_categories_json': (
+                json.dumps(self._red_list_categories, ensure_ascii=False)
+                if isinstance(self._red_list_categories, dict) and self._red_list_categories
+                else None
+            ),
             'publish_target': publish_target,
             'is_draft': self.is_draft_checkbox.isChecked() if hasattr(self, "is_draft_checkbox") else True,
             'sharing_scope': sharing_scope,
@@ -13256,6 +13997,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
         if hasattr(self, "vernacular_input"):
             self.vernacular_input.setText(obs.get("common_name") or "")
+        self._set_inaturalist_taxon_id(obs.get("inaturalist_taxon_id"))
+        red_categories = None
+        raw_red_categories = obs.get("red_list_categories_json")
+        if raw_red_categories:
+            try:
+                parsed_red_categories = json.loads(raw_red_categories)
+                if isinstance(parsed_red_categories, dict):
+                    red_categories = parsed_red_categories
+            except Exception:
+                red_categories = None
+        self._set_red_list_category(obs.get("red_list_category"), red_categories)
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
         self._set_sharing_scope(
