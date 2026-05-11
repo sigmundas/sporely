@@ -279,7 +279,7 @@ class INatOAuthClient:
         self._store_token_payload(payload)
         return payload
 
-    def authorize(self, open_browser: bool = True, timeout: int = 180) -> dict:
+    def authorize(self, open_browser: bool = True, timeout: int = 180, tick_callback=None) -> dict:
         if not self.client_id:
             raise RuntimeError("Missing client_id.")
         state = secrets.token_urlsafe(24)

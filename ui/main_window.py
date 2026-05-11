@@ -10734,18 +10734,39 @@ class MainWindow(GeometryMixin, QMainWindow):
         lines = []
         lines.append(f"File: {path.name}")
 
-        try:
-            with Image.open(path) as img:
-                exif = img.getexif()
-                if not exif:
-                    return lines
-                exif_data = {ExifTags.TAGS.get(k, k): v for k, v in exif.items()}
-        except Exception:
-            return lines
+        db_date = None
+        db_gps = None
+        
+        if getattr(self, "current_image_id", None):
+            try:
+                img_data = ImageDB.get_image(self.current_image_id)
+                if img_data and img_data.get("captured_at"):
+                    db_date = str(img_data["captured_at"]).replace("T", " ")
+            except Exception:
+                pass
+                
+        if getattr(self, "active_observation_id", None):
+            try:
+                obs_data = ObservationDB.get_observation(self.active_observation_id)
+                if obs_data and obs_data.get("gps_latitude") is not None and obs_data.get("gps_longitude") is not None:
+                    db_gps = f"{obs_data['gps_latitude']:.6f}, {obs_data['gps_longitude']:.6f}"
+            except Exception:
+                pass
 
-        date = exif_data.get("DateTimeOriginal") or exif_data.get("DateTime")
+        try:
+            from utils.exif_reader import get_exif_data
+            exif_data = get_exif_data(str(path))
+            if not exif_data and not db_date and not db_gps:
+                return lines
+        except Exception:
+            exif_data = {}
+
+        date = db_date or exif_data.get("DateTimeOriginal") or exif_data.get("DateTime")
         if date:
             lines.append(f"Date: {date}")
+            
+        if db_gps:
+            lines.append(f"GPS: {db_gps}")
 
         iso = exif_data.get("ISOSpeedRatings")
         if iso is None:

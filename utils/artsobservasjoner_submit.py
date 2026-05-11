@@ -1076,6 +1076,11 @@ class ArtsObservasjonerWebClient:
                 return parsed.strftime("%d.%m.%Y")
             except ValueError:
                 try:
+                    parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+                    return parsed.strftime("%d.%m.%Y")
+                except ValueError:
+                    pass
+                try:
                     parsed = datetime.strptime(value, "%Y-%m-%d %H:%M")
                     return parsed.strftime("%d.%m.%Y")
                 except ValueError:
@@ -1095,6 +1100,11 @@ class ArtsObservasjonerWebClient:
                 parsed = datetime.fromisoformat(value)
                 return parsed.strftime("%H:%M")
             except ValueError:
+                try:
+                    parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+                    return parsed.strftime("%H:%M")
+                except ValueError:
+                    pass
                 try:
                     parsed = datetime.strptime(value, "%Y-%m-%d %H:%M")
                     return parsed.strftime("%H:%M")
