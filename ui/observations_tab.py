@@ -10537,8 +10537,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         vernacular = ""
         if source == "inat":
             vernacular = self._inat_preferred_common_name(taxon) or ""
-        if not vernacular:
+        else:
             vernacular = self._preferred_vernacular_from_taxon(taxon) or ""
+            
         if vernacular and scientific:
             vernacular_norm = str(vernacular).strip()
             scientific_norm = str(scientific).strip()
@@ -10638,7 +10639,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if source == "inat":
             taxon_id = taxon.get("id") if isinstance(taxon, dict) else None
             if taxon_id:
-                return f"https://www.inaturalist.org/taxon_names.json?taxon_id={taxon_id}"
+                return f"https://www.inaturalist.org/taxa/{taxon_id}"
             return None
         if isinstance(pred, dict):
             for key in ("infoURL", "infoUrl", "info_url"):
@@ -10788,10 +10789,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return app_data_dir() / "inaturalist_oauth_tokens.json"
 
     def _inat_locale(self) -> str:
-        raw = str(SettingsDB.get_setting("ui_language", "") or get_app_settings().get("ui_language") or "en")
+        raw = str(SettingsDB.get_setting("vernacular_language", "") or get_app_settings().get("vernacular_language") or "no")
         prefix = raw.replace("-", "_").split("_", 1)[0].lower()
         if prefix in {"nb", "nn", "no"}:
-            return "nb"
+            return "no"
         if prefix in {"sv", "de", "en", "da", "fi", "fr", "es", "it", "pt", "pl"}:
             return prefix
         return "en"
@@ -10820,7 +10821,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return ""
         text = re.sub(r"^\s*['\"]|['\"]\s*$", "", text)
         parts = re.split(
-            r"\s*(?:\r?\n|[,;/|•]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
+            r"\s*(?:\r?\n|[,;/|•·・]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
             text,
             maxsplit=1,
             flags=re.IGNORECASE,

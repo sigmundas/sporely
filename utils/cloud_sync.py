@@ -46,8 +46,6 @@ _OBS_PUSH_COLS = [
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude',
     'location_public',
-    'is_draft',
-    'location_precision',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -61,34 +59,27 @@ _OBS_PUSH_COLS = [
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 
 
-def _normalize_sharing_scope(value: str | None, fallback: str = 'public') -> str:
+def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> str:
     raw = str(value or '').strip().lower()
     if raw == 'draft':
         return 'private'
     if raw in {'private', 'friends', 'public'}:
         return raw
-    fallback_raw = str(fallback or 'public').strip().lower()
+    fallback_raw = str(fallback or 'private').strip().lower()
     if fallback_raw == 'draft':
         return 'private'
-    return fallback_raw if fallback_raw in {'private', 'friends', 'public'} else 'public'
+    return fallback_raw if fallback_raw in {'private', 'friends', 'public'} else 'private'
 
 
-def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'public') -> str:
+def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'private') -> str:
     """Map local desktop sharing scope to the Phase 7 cloud visibility value."""
-    return _normalize_sharing_scope(value, fallback=fallback)
+    normalized = _normalize_sharing_scope(value, fallback=fallback)
+    return 'draft' if normalized == 'private' else normalized
 
 
-def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'public') -> str:
+def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'private') -> str:
     """Map Phase 7 cloud visibility back to the local desktop sharing scope."""
     return _normalize_sharing_scope(value, fallback=fallback)
-
-
-def _normalize_location_precision(value: str | None, fallback: str = 'exact') -> str:
-    raw = str(value or '').strip().lower()
-    if raw in {'exact', 'fuzzed'}:
-        return raw
-    fallback_raw = str(fallback or 'exact').strip().lower()
-    return fallback_raw if fallback_raw in {'exact', 'fuzzed'} else 'exact'
 
 
 def _encode_postgrest_filter_value(value: str | None) -> str:
@@ -158,7 +149,6 @@ _SNAPSHOT_OBS_FIELDS = [
     'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude', 'location_public',
-    'is_draft', 'location_precision',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -197,8 +187,6 @@ _CONFLICT_COMPARE_FIELDS = [
     'publish_target',
     'visibility',
     'location_public',
-    'is_draft',
-    'location_precision',
     'spore_statistics',
 ]
 
@@ -217,8 +205,6 @@ _CONFLICT_FIELD_LABELS = {
     'publish_target': 'Publishing target',
     'visibility': 'Visibility',
     'location_public': 'Public GPS',
-    'is_draft': 'Draft',
-    'location_precision': 'Location precision',
     'spore_statistics': 'Spore statistics',
 }
 
@@ -376,7 +362,7 @@ def _normalize_observation_field_value(field: str, value):
         if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
             return text[:10]
         return text
-    if field in {'location_public', 'is_draft', 'uncertain', 'unspontaneous', 'interesting_comment'}:
+    if field in {'location_public', 'uncertain', 'unspontaneous', 'interesting_comment'}:
         return None if value is None else bool(value)
     return _normalize_snapshot_value(value)
 
@@ -411,19 +397,15 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
             payload[field] = _normalize_observation_field_value(field, (
                 _normalize_sharing_scope(
                     row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='public',
+                    fallback='private',
                 )
             ))
         elif field == 'sharing_scope':
             payload[field] = _normalize_observation_field_value(field, (
                 _normalize_sharing_scope(
                     row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='public',
+                    fallback='private',
                 )
-            ))
-        elif field == 'location_precision':
-            payload[field] = _normalize_observation_field_value(field, (
-                _normalize_location_precision(row.get('location_precision'))
             ))
         else:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
@@ -448,11 +430,9 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
                 field,
                 _normalize_sharing_scope(
                     row.get('visibility') or row.get('sharing_scope'),
-                    fallback='public',
+                    fallback='private',
                 ),
             )
-        elif field == 'location_precision':
-            payload[field] = _normalize_observation_field_value(field, _normalize_location_precision(row.get('location_precision')))
         else:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
     genus = str(payload.get('genus') or '').strip()
@@ -1546,11 +1526,9 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'open_comment': remote.get('open_comment'),
         'sharing_scope': _cloud_visibility_to_sharing_scope(
             remote.get('visibility') or remote.get('sharing_scope'),
-            fallback='friends' if location_public else 'public',
+            fallback='friends' if location_public else 'private',
         ),
         'location_public': location_public,
-        'is_draft': bool(remote.get('is_draft', True)),
-        'location_precision': _normalize_location_precision(remote.get('location_precision')),
         'spore_data_visibility': (lambda v: v if v in {'private', 'friends', 'public'} else 'public')(
             str(remote.get('spore_data_visibility') or 'public').strip().lower()
         ),
@@ -2743,14 +2721,12 @@ class SporelyCloudClient:
         payload = {col: obs.get(col) for col in _OBS_PUSH_COLS}
         payload['user_id']    = self.user_id
         payload['desktop_id'] = obs['id']
-        payload['visibility'] = _sharing_scope_to_cloud_visibility(obs.get('sharing_scope'), fallback='public')
-        payload['is_draft'] = bool(obs.get('is_draft', True))
-        payload['location_precision'] = _normalize_location_precision(obs.get('location_precision'))
+        payload['visibility'] = _sharing_scope_to_cloud_visibility(obs.get('sharing_scope'), fallback='private')
         raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
         payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
 
         # Normalise SQLite 0/1 integers to proper JSON booleans
-        for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public', 'is_draft'):
+        for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public'):
             if payload.get(col) is not None:
                 payload[col] = bool(payload[col])
 
@@ -3766,8 +3742,8 @@ def pull_all(
                         review_reasons.append('both desktop and cloud changed the same observation fields')
                     if remote_image_changes.get('removed_keys'):
                         review_reasons.append('cloud removed local image files')
-                    if local_media_changed and remote_image_changes.get('metadata_changed_keys'):
-                        review_reasons.append('both desktop and cloud changed image or media details')
+                # Sporely-py owns measurements and high-fidelity media metadata.
+                # If both changed image details, auto-merge in favor of desktop without prompting.
 
                     if review_reasons:
                         errors.append(_format_review_needed_error(local_id, cloud_id, review_reasons))
@@ -3824,7 +3800,7 @@ def _create_local_from_remote(
     location_public = None if raw_location_public is None else bool(raw_location_public)
     sharing_scope = _cloud_visibility_to_sharing_scope(
         remote.get('visibility') or remote.get('sharing_scope'),
-        fallback='friends' if location_public else 'public',
+        fallback='friends' if location_public else 'private',
     )
     raw_spore_vis = str(remote.get('spore_data_visibility') or 'public').strip().lower()
     spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
@@ -3841,10 +3817,8 @@ def _create_local_from_remote(
         habitat=remote.get('habitat'),
         notes=remote.get('notes'),
         open_comment=remote.get('open_comment'),
-        is_draft=bool(remote.get('is_draft', True)),
         sharing_scope=sharing_scope,
         location_public=location_public,
-        location_precision=_normalize_location_precision(remote.get('location_precision')),
         spore_data_visibility=spore_data_visibility,
         uncertain=bool(remote.get('uncertain', False)),
         unspontaneous=bool(remote.get('unspontaneous', False)),

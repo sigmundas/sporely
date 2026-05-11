@@ -1900,12 +1900,32 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _format_ai_taxon_name(self, taxon: dict) -> str:
         scientific = taxon.get("scientificName") or taxon.get("scientific_name") or taxon.get("name") or ""
         vernacular = ""
-        vernacular_names = taxon.get("vernacularNames") or {}
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        
+        # 1. Local Sporely-py vernacularNames dict (from Artsdatabanken payload)
+        vernacular_names = taxon.get("vernacularNames") or {}
         if isinstance(vernacular_names, dict) and lang:
             vernacular = vernacular_names.get(lang, "")
+            
         if not vernacular:
-            vernacular = taxon.get("vernacularName") or ""
+            vernacular = taxon.get("vernacularName") or taxon.get("preferred_common_name") or ""
+            
+        # Extract only the first common name if multiple are returned
+        if vernacular and isinstance(vernacular, str):
+            import re
+            parts = re.split(
+                r"\s*(?:\r?\n|[,;/|•·・]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
+                vernacular,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )
+            vernacular = (parts[0] if parts else vernacular).strip()
+
+        if vernacular and scientific:
+            vernacular_norm = str(vernacular).strip()
+            scientific_norm = str(scientific).strip()
+            if vernacular_norm and scientific_norm and vernacular_norm.casefold() != scientific_norm.casefold():
+                return f"{vernacular_norm} ({scientific_norm})"
         return vernacular or scientific or self.tr("Unknown")
 
     def _ai_prediction_link(self, pred: dict, taxon: dict) -> str | None:
