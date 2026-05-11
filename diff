@@ -1,0 +1,364 @@
+diff --git a/ui/ingestion_hub_tab.py b/ui/ingestion_hub_tab.py
+index d4e221c..818cf99 100644
+--- a/ui/ingestion_hub_tab.py
++++ b/ui/ingestion_hub_tab.py
+@@ -255,6 +255,7 @@ class IngestionHubTab(QWidget):
+         self.staging_gallery.selectionChanged.connect(self._on_gallery_selection_changed)
+ 
+         content_splitter = QSplitter(Qt.Vertical)
++        content_splitter.setObjectName("gallerySplitter")
+         content_splitter.setChildrenCollapsible(False)
+         content_splitter.addWidget(viewer_panel)
+         content_splitter.addWidget(self.staging_gallery)
+diff --git a/ui/live_lab_tab.py b/ui/live_lab_tab.py
+index 91434ff..7d797e9 100644
+--- a/ui/live_lab_tab.py
++++ b/ui/live_lab_tab.py
+@@ -295,6 +295,7 @@ class LiveLabTab(QWidget):
+         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
+ 
+         content_splitter = QSplitter(Qt.Vertical)
++        content_splitter.setObjectName("gallerySplitter")
+         content_splitter.setChildrenCollapsible(False)
+         content_splitter.addWidget(viewer_panel)
+         content_splitter.addWidget(self.session_gallery)
+diff --git a/ui/main_window.py b/ui/main_window.py
+index cf02c5f..dd7bd33 100644
+--- a/ui/main_window.py
++++ b/ui/main_window.py
+@@ -2635,15 +2635,37 @@ class ArtsobservasjonerSettingsDialog(QDialog):
+                 )
+                 return
+             try:
+-                oauth.authorize(open_browser=True, timeout=300)
++                self.login_button.setText(self.tr("Waiting for browser..."))
++                self.login_button.setEnabled(False)
++                
++                def _tick():
++                    QApplication.processEvents()
++                    try:
++                        if not self.isVisible():
++                            raise InterruptedError("Login cancelled.")
++                    except RuntimeError:
++                        raise InterruptedError("Login cancelled.")
++                        
++                oauth.authorize(open_browser=True, timeout=300, tick_callback=_tick)
+                 token = oauth.get_valid_access_token()
++            except InterruptedError:
++                return
+             except Exception as exc:
+-                QMessageBox.warning(
+-                    self,
+-                    self.tr("Login Failed"),
+-                    self.tr("iNaturalist login failed.\n\n{error}").format(error=exc),
+-                )
++                try:
++                    QMessageBox.warning(
++                        self,
++                        self.tr("Login Failed"),
++                        self.tr("iNaturalist login failed.\n\n{error}").format(error=exc),
++                    )
++                except RuntimeError:
++                    pass
+                 return
++            finally:
++                try:
++                    self.login_button.setText(self.tr("Log in"))
++                    self.login_button.setEnabled(True)
++                except RuntimeError:
++                    pass
+             if token:
+                 self._on_login_success({"access_token": token}, target_key="inat", already_saved=True)
+             return
+@@ -5600,6 +5622,7 @@ class MainWindow(GeometryMixin, QMainWindow):
+         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
+ 
+         self.measure_image_splitter = QSplitter(Qt.Vertical)
++        self.measure_image_splitter.setObjectName("gallerySplitter")
+         self.measure_image_splitter.setChildrenCollapsible(False)
+         self.measure_image_splitter.addWidget(self.image_label)
+         self.measure_image_splitter.addWidget(self.measure_gallery)
+@@ -5995,6 +6018,7 @@ class MainWindow(GeometryMixin, QMainWindow):
+         right_layout.setSpacing(8)
+ 
+         self.gallery_splitter = CollapsibleSplitter(Qt.Vertical, collapse_index=1)
++        self.gallery_splitter.setObjectName("gallerySplitter")
+         self.gallery_splitter.setChildrenCollapsible(True)
+         self.gallery_splitter.collapse_toggled.connect(self._on_gallery_collapse_toggled)
+         self.gallery_splitter.splitterMoved.connect(self._on_gallery_splitter_moved)
+diff --git a/ui/observations_tab.py b/ui/observations_tab.py
+index 9d68ed7..12f66b1 100644
+--- a/ui/observations_tab.py
++++ b/ui/observations_tab.py
+@@ -93,6 +93,11 @@ from utils.cloud_sync import (
+ )
+ from .cloud_conflict_dialog import CloudConflictDialog
+ from .image_gallery_widget import ImageGalleryWidget
++from .splitter_state import (
++    install_persistent_splitter,
++    GALLERY_DEFAULT_HEIGHT,
++    GALLERY_MIN_HEIGHT,
++)
+ from .image_import_dialog import (
+     ImageImportDialog,
+     ImageImportResult,
+@@ -1297,6 +1302,7 @@ class ObservationsTab(QWidget):
+ 
+         # Splitter for table and detail view
+         splitter = QSplitter(Qt.Vertical)
++        splitter.setObjectName("gallerySplitter")
+         self.observations_splitter = splitter
+ 
+         # Observations table
+@@ -1350,25 +1356,18 @@ class ObservationsTab(QWidget):
+         self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
+         splitter.addWidget(self.table)
+ 
+-        # Detail view (shows selected observation info and images)
+-        self.detail_widget = QWidget()
+-        detail_layout = QVBoxLayout(self.detail_widget)
+-        detail_layout.setContentsMargins(5, 5, 5, 5)
+-        detail_layout.setSpacing(5)
+-
+-        # Image gallery (collapsible) in a resizable splitter.
++        # Image gallery in a resizable splitter.
+         self.gallery_widget = ImageGalleryWidget(
+             self.tr("Images"),
+             self,
+             show_delete=True,
+             show_badges=True,
+-            min_height=50,
+-            default_height=180,
++            min_height=GALLERY_MIN_HEIGHT,
++            default_height=GALLERY_DEFAULT_HEIGHT,
+             show_publish_checkbox=True,
+             publish_checkbox_hint=self.tr("Select image for online publishing"),
+         )
+-        self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+-        self.gallery_widget.setFixedHeight(190)
++        self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+         self.gallery_widget.set_multi_select(True)
+         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
+         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
+@@ -1377,19 +1376,14 @@ class ObservationsTab(QWidget):
+         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
+         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
+ 
+-        detail_layout.addWidget(self.gallery_widget)
+-        self.detail_widget.setMaximumHeight(self._observations_detail_max_height())
++        splitter.addWidget(self.gallery_widget)
+ 
+-        splitter.addWidget(self.detail_widget)
+-
+-        splitter.setStretchFactor(0, 2)
+         drop_targets = [
+             self,
+             left_panel,
+             splitter,
+             self.table,
+             self.table.viewport(),
+-            self.detail_widget,
+             self.gallery_widget,
+         ]
+         drop_targets.extend(self.findChildren(QWidget))
+@@ -1403,9 +1397,13 @@ class ObservationsTab(QWidget):
+             seen_drop_targets.add(marker)
+             drop_target.setAcceptDrops(True)
+             drop_target.installEventFilter(self)
+-        splitter.setStretchFactor(1, 3)
+-        splitter.setSizes([600, 180])
+-        splitter.splitterMoved.connect(self._on_observations_splitter_moved)
++
++        install_persistent_splitter(
++            splitter,
++            key="observations_main_splitter_sizes",
++            default_sizes=[600, GALLERY_DEFAULT_HEIGHT],
++            minimum_sizes=[200, GALLERY_MIN_HEIGHT],
++        )
+ 
+         content_layout.addWidget(splitter, 1)
+ 
+@@ -3861,67 +3859,6 @@ class ObservationsTab(QWidget):
+                 item.setIcon(icon)
+                 item.setText("")
+ 
+-    def _observations_detail_default_height(self) -> int:
+-        gallery = getattr(self, "gallery_widget", None)
+-        detail_widget = getattr(self, "detail_widget", None)
+-        if gallery is None:
+-            return 190
+-        gallery_height = max(gallery.minimumHeight(), 190)
+-        if detail_widget is None or detail_widget.layout() is None:
+-            return gallery_height
+-        margins = detail_widget.layout().contentsMargins()
+-        return gallery_height + margins.top() + margins.bottom()
+-
+-    def _observations_detail_max_height(self) -> int:
+-        gallery = getattr(self, "gallery_widget", None)
+-        detail_widget = getattr(self, "detail_widget", None)
+-        if gallery is None:
+-            return 220
+-        gallery_max = max(gallery.minimumHeight(), gallery.maximum_useful_height())
+-        if detail_widget is None or detail_widget.layout() is None:
+-            return gallery_max
+-        margins = detail_widget.layout().contentsMargins()
+-        return gallery_max + margins.top() + margins.bottom()
+-
+-    def _apply_observations_splitter_height(self, detail_height: int | None = None) -> None:
+-        splitter = getattr(self, "observations_splitter", None)
+-        detail_widget = getattr(self, "detail_widget", None)
+-        if splitter is None or detail_widget is None:
+-            return
+-        target = self._observations_detail_default_height() if detail_height is None else int(detail_height)
+-        target = max(detail_widget.minimumHeight(), min(self._observations_detail_max_height(), target))
+-        detail_widget.setMaximumHeight(self._observations_detail_max_height())
+-        sizes = splitter.sizes()
+-        total = sum(sizes) if sizes else 0
+-        if total <= 0:
+-            total = splitter.height()
+-        if total <= 0:
+-            total = max(self.height(), target + 400)
+-        if self._observations_splitter_syncing:
+-            return
+-        self._observations_splitter_syncing = True
+-        try:
+-            splitter.setSizes([max(0, total - target), target])
+-        finally:
+-            self._observations_splitter_syncing = False
+-
+-    def _on_observations_splitter_moved(self, _pos: int, _index: int) -> None:
+-        splitter = getattr(self, "observations_splitter", None)
+-        if splitter is None or self._observations_splitter_syncing:
+-            return
+-        sizes = splitter.sizes()
+-        detail_height = sizes[1] if len(sizes) >= 2 else None
+-        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
+-
+-    def resizeEvent(self, event):
+-        super().resizeEvent(event)
+-        splitter = getattr(self, "observations_splitter", None)
+-        if splitter is None or self._observations_splitter_syncing:
+-            return
+-        sizes = splitter.sizes()
+-        detail_height = sizes[1] if len(sizes) >= 2 else None
+-        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
+-
+     def refresh_observations(
+         self,
+         show_status: bool = False,
+diff --git a/ui/styles.py b/ui/styles.py
+index 6c9255f..86a817b 100644
+--- a/ui/styles.py
++++ b/ui/styles.py
+@@ -325,6 +325,26 @@ QMainWindow {{
+     background-color: {bg};
+ }}
+ 
++QSplitter#gallerySplitter::handle {{
++    background-color: {data_brd};
++}}
++
++QSplitter#gallerySplitter::handle:horizontal {{
++    width: 3px;
++    margin: 4px 0px;
++    border-radius: 1px;
++}}
++
++QSplitter#gallerySplitter::handle:vertical {{
++    height: 3px;
++    margin: 0px 4px;
++    border-radius: 1px;
++}}
++
++QSplitter#gallerySplitter::handle:hover {{
++    background-color: {accent};
++}}
++
+ QWidget {{
+     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
+     font-family: 'Inter 18pt', 'Segoe UI', sans-serif;
+diff --git a/utils/inat_oauth.py b/utils/inat_oauth.py
+index 2ece83d..19a72a6 100644
+--- a/utils/inat_oauth.py
++++ b/utils/inat_oauth.py
+@@ -9,6 +9,7 @@ import secrets
+ import threading
+ import time
+ import webbrowser
++import socket
+ from dataclasses import dataclass
+ from http.server import BaseHTTPRequestHandler, HTTPServer
+ from pathlib import Path
+@@ -25,6 +26,25 @@ class OAuthCallbackPayload:
+     error_description: str | None = None
+ 
+ 
++class DualStackServer(HTTPServer):
++    """HTTP server that binds to both IPv4 and IPv6 if available."""
++
++    def __init__(self, server_address, RequestHandlerClass):
++        host, port = server_address
++        if host in ("localhost", "127.0.0.1", "::1", "") and getattr(socket, "has_ipv6", False):
++            self.address_family = socket.AF_INET6
++            host = "::"
++        super().__init__((host, port), RequestHandlerClass)
++
++    def server_bind(self):
++        if self.address_family == getattr(socket, "AF_INET6", object()):
++            try:
++                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
++            except Exception:
++                pass
++        super().server_bind()
++
++
+ class LocalCallbackServer:
+     """Temporary local HTTP server used for OAuth redirect callbacks."""
+ 
+@@ -40,7 +60,7 @@ class LocalCallbackServer:
+         self.path = parsed.path or "/callback"
+         self.bind_host = "127.0.0.1" if self.host in {"localhost", "127.0.0.1"} else self.host
+ 
+-    def wait_for_callback(self, timeout: int = 180) -> OAuthCallbackPayload:
++    def wait_for_callback(self, timeout: int = 180, tick_callback=None) -> OAuthCallbackPayload:
+         payload = OAuthCallbackPayload()
+         callback_event = threading.Event()
+         callback_path = self.path
+@@ -74,14 +94,24 @@ class LocalCallbackServer:
+                     self._send(200, "<html><body><h3>Login complete.</h3>You may close this tab.</body></html>")
+ 
+         try:
+-            server = HTTPServer((self.bind_host, self.port), Handler)
++            try:
++                server = DualStackServer((self.bind_host, self.port), Handler)
++            except OSError:
++                # Fallback to standard IPv4 if dual-stack IPv6 failed
++                server = HTTPServer(("127.0.0.1", self.port), Handler)
+         except OSError as exc:
+             raise RuntimeError(f"Could not start local callback server on {self.bind_host}:{self.port}: {exc}") from exc
+         try:
+-            server.timeout = 0.5
++            server.timeout = 0.05
+             deadline = time.time() + max(1, int(timeout))
+             while time.time() < deadline and not callback_event.is_set():
+                 server.handle_request()
++                if tick_callback is not None:
++                    try:
++                        tick_callback()
++                    except Exception as exc:
++                        if isinstance(exc, InterruptedError):
++                            raise
+         finally:
+             server.server_close()
+ 
+@@ -264,8 +294,9 @@ class INatOAuthClient:
+         url = self.build_authorization_url(state, code_challenge)
+         callback_server = LocalCallbackServer(self.redirect_uri)
+         if open_browser:
++            print(f"Opening browser for iNaturalist login: {url}\n(If browser doesn't open automatically, ensure xdg-utils is installed on Linux)")
+             webbrowser.open(url, new=2)
+-        callback = callback_server.wait_for_callback(timeout=timeout)
++        callback = callback_server.wait_for_callback(timeout=timeout, tick_callback=tick_callback)
+         if callback.error:
+             desc = callback.error_description or callback.error
+             raise RuntimeError(f"Authorization failed: {desc}")

@@ -325,6 +325,26 @@ QMainWindow {{
     background-color: {bg};
 }}
 
+QSplitter#gallerySplitter::handle {{
+    background-color: {data_brd};
+}}
+
+QSplitter#gallerySplitter::handle:horizontal {{
+    width: 3px;
+    margin: 4px 0px;
+    border-radius: 1px;
+}}
+
+QSplitter#gallerySplitter::handle:vertical {{
+    height: 3px;
+    margin: 0px 4px;
+    border-radius: 1px;
+}}
+
+QSplitter#gallerySplitter::handle:hover {{
+    background-color: {accent};
+}}
+
 QWidget {{
     font-family: 'Inter 18pt', '-apple-system', 'Segoe UI', sans-serif;
     font-family: 'Inter 18pt', 'Segoe UI', sans-serif;

@@ -255,6 +255,7 @@ class IngestionHubTab(QWidget):
         self.staging_gallery.selectionChanged.connect(self._on_gallery_selection_changed)
 
         content_splitter = QSplitter(Qt.Vertical)
+        content_splitter.setObjectName("gallerySplitter")
         content_splitter.setChildrenCollapsible(False)
         content_splitter.addWidget(viewer_panel)
         content_splitter.addWidget(self.staging_gallery)

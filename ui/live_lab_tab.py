@@ -295,6 +295,7 @@ class LiveLabTab(QWidget):
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
 
         content_splitter = QSplitter(Qt.Vertical)
+        content_splitter.setObjectName("gallerySplitter")
         content_splitter.setChildrenCollapsible(False)
         content_splitter.addWidget(viewer_panel)
         content_splitter.addWidget(self.session_gallery)
