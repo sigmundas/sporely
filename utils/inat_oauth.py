@@ -9,6 +9,7 @@ import secrets
 import threading
 import time
 import webbrowser
+import socket
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -23,6 +24,25 @@ class OAuthCallbackPayload:
     state: str | None = None
     error: str | None = None
     error_description: str | None = None
+
+
+class DualStackServer(HTTPServer):
+    """HTTP server that binds to both IPv4 and IPv6 if available."""
+
+    def __init__(self, server_address, RequestHandlerClass):
+        host, port = server_address
+        if host in ("localhost", "127.0.0.1", "::1", "") and getattr(socket, "has_ipv6", False):
+            self.address_family = socket.AF_INET6
+            host = "::"
+        super().__init__((host, port), RequestHandlerClass)
+
+    def server_bind(self):
+        if self.address_family == getattr(socket, "AF_INET6", object()):
+            try:
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            except Exception:
+                pass
+        super().server_bind()
 
 
 class LocalCallbackServer:
@@ -40,7 +60,7 @@ class LocalCallbackServer:
         self.path = parsed.path or "/callback"
         self.bind_host = "127.0.0.1" if self.host in {"localhost", "127.0.0.1"} else self.host
 
-    def wait_for_callback(self, timeout: int = 180) -> OAuthCallbackPayload:
+    def wait_for_callback(self, timeout: int = 180, tick_callback=None) -> OAuthCallbackPayload:
         payload = OAuthCallbackPayload()
         callback_event = threading.Event()
         callback_path = self.path
@@ -74,14 +94,24 @@ class LocalCallbackServer:
                     self._send(200, "<html><body><h3>Login complete.</h3>You may close this tab.</body></html>")
 
         try:
-            server = HTTPServer((self.bind_host, self.port), Handler)
+            try:
+                server = DualStackServer((self.bind_host, self.port), Handler)
+            except OSError:
+                # Fallback to standard IPv4 if dual-stack IPv6 failed
+                server = HTTPServer(("127.0.0.1", self.port), Handler)
         except OSError as exc:
             raise RuntimeError(f"Could not start local callback server on {self.bind_host}:{self.port}: {exc}") from exc
         try:
-            server.timeout = 0.5
+            server.timeout = 0.05
             deadline = time.time() + max(1, int(timeout))
             while time.time() < deadline and not callback_event.is_set():
                 server.handle_request()
+                if tick_callback is not None:
+                    try:
+                        tick_callback()
+                    except Exception as exc:
+                        if isinstance(exc, InterruptedError):
+                            raise
         finally:
             server.server_close()
 
@@ -264,8 +294,9 @@ class INatOAuthClient:
         url = self.build_authorization_url(state, code_challenge)
         callback_server = LocalCallbackServer(self.redirect_uri)
         if open_browser:
+            print(f"Opening browser for iNaturalist login: {url}\n(If browser doesn't open automatically, ensure xdg-utils is installed on Linux)")
             webbrowser.open(url, new=2)
-        callback = callback_server.wait_for_callback(timeout=timeout)
+        callback = callback_server.wait_for_callback(timeout=timeout, tick_callback=tick_callback)
         if callback.error:
             desc = callback.error_description or callback.error
             raise RuntimeError(f"Authorization failed: {desc}")

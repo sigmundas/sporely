@@ -2635,15 +2635,37 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 )
                 return
             try:
-                oauth.authorize(open_browser=True, timeout=300)
+                self.login_button.setText(self.tr("Waiting for browser..."))
+                self.login_button.setEnabled(False)
+                
+                def _tick():
+                    QApplication.processEvents()
+                    try:
+                        if not self.isVisible():
+                            raise InterruptedError("Login cancelled.")
+                    except RuntimeError:
+                        raise InterruptedError("Login cancelled.")
+                        
+                oauth.authorize(open_browser=True, timeout=300, tick_callback=_tick)
                 token = oauth.get_valid_access_token()
-            except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Failed"),
-                    self.tr("iNaturalist login failed.\n\n{error}").format(error=exc),
-                )
+            except InterruptedError:
                 return
+            except Exception as exc:
+                try:
+                    QMessageBox.warning(
+                        self,
+                        self.tr("Login Failed"),
+                        self.tr("iNaturalist login failed.\n\n{error}").format(error=exc),
+                    )
+                except RuntimeError:
+                    pass
+                return
+            finally:
+                try:
+                    self.login_button.setText(self.tr("Log in"))
+                    self.login_button.setEnabled(True)
+                except RuntimeError:
+                    pass
             if token:
                 self._on_login_success({"access_token": token}, target_key="inat", already_saved=True)
             return
@@ -5600,6 +5622,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
+        self.measure_image_splitter.setObjectName("gallerySplitter")
         self.measure_image_splitter.setChildrenCollapsible(False)
         self.measure_image_splitter.addWidget(self.image_label)
         self.measure_image_splitter.addWidget(self.measure_gallery)
@@ -5995,6 +6018,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         right_layout.setSpacing(8)
 
         self.gallery_splitter = CollapsibleSplitter(Qt.Vertical, collapse_index=1)
+        self.gallery_splitter.setObjectName("gallerySplitter")
         self.gallery_splitter.setChildrenCollapsible(True)
         self.gallery_splitter.collapse_toggled.connect(self._on_gallery_collapse_toggled)
         self.gallery_splitter.splitterMoved.connect(self._on_gallery_splitter_moved)

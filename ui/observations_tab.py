@@ -93,6 +93,11 @@ from utils.cloud_sync import (
 )
 from .cloud_conflict_dialog import CloudConflictDialog
 from .image_gallery_widget import ImageGalleryWidget
+from .splitter_state import (
+    install_persistent_splitter,
+    GALLERY_DEFAULT_HEIGHT,
+    GALLERY_MIN_HEIGHT,
+)
 from .image_import_dialog import (
     ImageImportDialog,
     ImageImportResult,
@@ -1297,6 +1302,7 @@ class ObservationsTab(QWidget):
 
         # Splitter for table and detail view
         splitter = QSplitter(Qt.Vertical)
+        splitter.setObjectName("gallerySplitter")
         self.observations_splitter = splitter
 
         # Observations table
@@ -1350,25 +1356,18 @@ class ObservationsTab(QWidget):
         self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
         splitter.addWidget(self.table)
 
-        # Detail view (shows selected observation info and images)
-        self.detail_widget = QWidget()
-        detail_layout = QVBoxLayout(self.detail_widget)
-        detail_layout.setContentsMargins(5, 5, 5, 5)
-        detail_layout.setSpacing(5)
-
-        # Image gallery (collapsible) in a resizable splitter.
+        # Image gallery in a resizable splitter.
         self.gallery_widget = ImageGalleryWidget(
             self.tr("Images"),
             self,
             show_delete=True,
             show_badges=True,
-            min_height=50,
-            default_height=180,
+            min_height=GALLERY_MIN_HEIGHT,
+            default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for online publishing"),
         )
-        self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.gallery_widget.setFixedHeight(190)
+        self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
@@ -1377,19 +1376,14 @@ class ObservationsTab(QWidget):
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
 
-        detail_layout.addWidget(self.gallery_widget)
-        self.detail_widget.setMaximumHeight(self._observations_detail_max_height())
+        splitter.addWidget(self.gallery_widget)
 
-        splitter.addWidget(self.detail_widget)
-
-        splitter.setStretchFactor(0, 2)
         drop_targets = [
             self,
             left_panel,
             splitter,
             self.table,
             self.table.viewport(),
-            self.detail_widget,
             self.gallery_widget,
         ]
         drop_targets.extend(self.findChildren(QWidget))
@@ -1403,9 +1397,13 @@ class ObservationsTab(QWidget):
             seen_drop_targets.add(marker)
             drop_target.setAcceptDrops(True)
             drop_target.installEventFilter(self)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([600, 180])
-        splitter.splitterMoved.connect(self._on_observations_splitter_moved)
+
+        install_persistent_splitter(
+            splitter,
+            key="observations_main_splitter_sizes",
+            default_sizes=[600, GALLERY_DEFAULT_HEIGHT],
+            minimum_sizes=[200, GALLERY_MIN_HEIGHT],
+        )
 
         content_layout.addWidget(splitter, 1)
 
@@ -3860,67 +3858,6 @@ class ObservationsTab(QWidget):
             if icon is not None:
                 item.setIcon(icon)
                 item.setText("")
-
-    def _observations_detail_default_height(self) -> int:
-        gallery = getattr(self, "gallery_widget", None)
-        detail_widget = getattr(self, "detail_widget", None)
-        if gallery is None:
-            return 190
-        gallery_height = max(gallery.minimumHeight(), 190)
-        if detail_widget is None or detail_widget.layout() is None:
-            return gallery_height
-        margins = detail_widget.layout().contentsMargins()
-        return gallery_height + margins.top() + margins.bottom()
-
-    def _observations_detail_max_height(self) -> int:
-        gallery = getattr(self, "gallery_widget", None)
-        detail_widget = getattr(self, "detail_widget", None)
-        if gallery is None:
-            return 220
-        gallery_max = max(gallery.minimumHeight(), gallery.maximum_useful_height())
-        if detail_widget is None or detail_widget.layout() is None:
-            return gallery_max
-        margins = detail_widget.layout().contentsMargins()
-        return gallery_max + margins.top() + margins.bottom()
-
-    def _apply_observations_splitter_height(self, detail_height: int | None = None) -> None:
-        splitter = getattr(self, "observations_splitter", None)
-        detail_widget = getattr(self, "detail_widget", None)
-        if splitter is None or detail_widget is None:
-            return
-        target = self._observations_detail_default_height() if detail_height is None else int(detail_height)
-        target = max(detail_widget.minimumHeight(), min(self._observations_detail_max_height(), target))
-        detail_widget.setMaximumHeight(self._observations_detail_max_height())
-        sizes = splitter.sizes()
-        total = sum(sizes) if sizes else 0
-        if total <= 0:
-            total = splitter.height()
-        if total <= 0:
-            total = max(self.height(), target + 400)
-        if self._observations_splitter_syncing:
-            return
-        self._observations_splitter_syncing = True
-        try:
-            splitter.setSizes([max(0, total - target), target])
-        finally:
-            self._observations_splitter_syncing = False
-
-    def _on_observations_splitter_moved(self, _pos: int, _index: int) -> None:
-        splitter = getattr(self, "observations_splitter", None)
-        if splitter is None or self._observations_splitter_syncing:
-            return
-        sizes = splitter.sizes()
-        detail_height = sizes[1] if len(sizes) >= 2 else None
-        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        splitter = getattr(self, "observations_splitter", None)
-        if splitter is None or self._observations_splitter_syncing:
-            return
-        sizes = splitter.sizes()
-        detail_height = sizes[1] if len(sizes) >= 2 else None
-        QTimer.singleShot(0, lambda h=detail_height: self._apply_observations_splitter_height(h))
 
     def refresh_observations(
         self,
