@@ -74,7 +74,7 @@ def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> st
 def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'private') -> str:
     """Map local desktop sharing scope to the Phase 7 cloud visibility value."""
     normalized = _normalize_sharing_scope(value, fallback=fallback)
-    return 'draft' if normalized == 'private' else normalized
+    return normalized
 
 
 def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'private') -> str:
@@ -1621,22 +1621,28 @@ def _inject_obs_exif_into_field_image(
     obs_lon: float | None,
     obs_altitude: float | None,
     obs_datetime_str: str | None,
+    camera_model: str | None = None,
+    iso: int | None = None,
+    exposure_time: float | None = None,
+    f_number: float | None = None,
+    gps_accuracy: float | None = None,
 ) -> None:
-    """Write observation GPS/datetime into a JPEG that has no EXIF.
+    """Write observation GPS/datetime and camera metadata into an image that has no EXIF.
 
     Called on cloud-synced field images whose EXIF was stripped by the web
-    app's 2 MP conversion.  Only modifies the file when the image has no
+    app's conversion.  Only modifies the file when the image has no
     existing DateTimeOriginal AND the observation has GPS or datetime data.
-    Does nothing for non-JPEG files or on any error.
+    Does nothing for unsupported files or on any error.
     """
     if not image_path.exists():
         return
     suffix = image_path.suffix.lower()
-    if suffix not in {'.jpg', '.jpeg'}:
+    if suffix not in {'.jpg', '.jpeg', '.webp'}:
         return
     has_coords = obs_lat is not None and obs_lon is not None
     has_datetime = bool(obs_datetime_str)
-    if not has_coords and not has_datetime:
+    has_camera_data = any(x is not None for x in (camera_model, iso, exposure_time, f_number))
+    if not has_coords and not has_datetime and not has_camera_data:
         return
     try:
         from PIL import Image as _PilImage, ExifTags as _ExifTags
@@ -1653,7 +1659,13 @@ def _inject_obs_exif_into_field_image(
                 already_has_gps = bool(existing_exif.get_ifd(0x8825))
             except Exception:
                 already_has_gps = False
-            if already_has_dt and already_has_gps:
+                
+            already_has_camera = any(
+                t in existing_tags
+                for t in ('Model', 'Make', 'ISOSpeedRatings', 'ExposureTime', 'FNumber')
+            )
+            
+            if already_has_dt and already_has_gps and already_has_camera:
                 return  # nothing to do
 
             exif = existing_exif if existing_exif is not None else img.getexif()
@@ -1661,7 +1673,7 @@ def _inject_obs_exif_into_field_image(
             if not already_has_dt and has_datetime:
                 try:
                     dt_exif = _exif_datetime_from_text(obs_datetime_str)
-                    # Tag 306 = DateTime, 36867 = DateTimeOriginal
+                    # Tag 306 = DateTime, 36867 = DateTimeOriginal, 36868 = DateTimeDigitized
                     if dt_exif:
                         exif[306] = dt_exif
                         exif[36867] = dt_exif
@@ -1689,16 +1701,54 @@ def _inject_obs_exif_into_field_image(
                         altitude = float(obs_altitude)
                         gps_ifd[5] = 1 if altitude < 0 else 0  # GPSAltitudeRef
                         gps_ifd[6] = (int(round(abs(altitude) * 100)), 100)
+                    if gps_accuracy is not None:
+                        acc = float(gps_accuracy)
+                        if acc >= 0:
+                            gps_ifd[31] = (int(round(acc * 100)), 100)  # GPSHPositioningError
                     exif[34853] = gps_ifd  # GPSInfo
+                except Exception:
+                    pass
+                    
+            if not already_has_camera:
+                try:
+                    if camera_model:
+                        exif[272] = camera_model  # Model
+                    if iso is not None:
+                        exif[34855] = int(iso)  # ISOSpeedRatings
+                    if exposure_time is not None:
+                        try:
+                            ex_time = float(exposure_time)
+                            if ex_time > 0:
+                                if ex_time >= 1:
+                                    exif[33434] = (int(round(ex_time * 1000)), 1000)  # ExposureTime
+                                else:
+                                    exif[33434] = (1, int(round(1 / ex_time)))
+                        except Exception:
+                            pass
+                    if f_number is not None:
+                        try:
+                            fn = float(f_number)
+                            if fn > 0:
+                                exif[33437] = (int(round(fn * 10)), 10)  # FNumber
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
             mode = img.mode
-            if mode not in {'RGB', 'L'}:
+            if suffix in {'.jpg', '.jpeg'} and mode not in {'RGB', 'L'}:
                 img = img.convert('RGB')
             try:
                 exif_bytes = exif.tobytes()
-                img.save(image_path, format='JPEG', quality=92, exif=exif_bytes)
+                if suffix == '.webp':
+                    save_kwargs = {'format': 'WEBP', 'exif': exif_bytes}
+                    if mode == 'RGBA':
+                        save_kwargs['lossless'] = True
+                    else:
+                        save_kwargs['quality'] = 96
+                else:
+                    save_kwargs = {'format': 'JPEG', 'exif': exif_bytes, 'quality': 92}
+                img.save(image_path, **save_kwargs)
             except Exception:
                 pass
     except Exception as exc:
@@ -1732,15 +1782,16 @@ def _exif_datetime_from_text(value: str | None) -> str | None:
         return None
 
 
-def _load_obs_exif_fallback(observation_id: int, fallback_datetime: str | None = None) -> tuple[float | None, float | None, float | None, str | None]:
-    """Return (lat, lon, altitude, datetime_str) from local observation data."""
+def _load_obs_exif_fallback(observation_id: int, fallback_datetime: str | None = None) -> tuple[float | None, float | None, float | None, float | None, str | None]:
+    """Return (lat, lon, altitude, gps_accuracy, datetime_str) from local observation data."""
     try:
         obs = ObservationDB.get_observation(observation_id)
         if not obs:
-            return None, None, None, fallback_datetime
+            return None, None, None, None, fallback_datetime
         lat = obs.get('gps_latitude')
         lon = obs.get('gps_longitude')
         altitude = obs.get('gps_altitude')
+        accuracy = obs.get('gps_accuracy')
         datetime_str = str(
             obs.get('captured_at')
             or obs.get('date')
@@ -1750,9 +1801,10 @@ def _load_obs_exif_fallback(observation_id: int, fallback_datetime: str | None =
         return (float(lat) if lat is not None else None,
                 float(lon) if lon is not None else None,
                 float(altitude) if altitude is not None else None,
+                float(accuracy) if accuracy is not None else None,
                 datetime_str)
     except Exception:
-        return None, None, None, fallback_datetime
+        return None, None, None, None, fallback_datetime
 
 
 def _is_missing_cloud_image_error(exc: Exception | str | None) -> bool:
@@ -1851,11 +1903,22 @@ def _sync_existing_remote_image_to_local(
         if image_type == 'field' and not local_is_larger:
             obs_id = int(local_image.get('observation_id') or 0)
             if obs_id > 0:
-                lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
+                lat, lon, altitude, gps_acc, datetime_str = _load_obs_exif_fallback(
                     obs_id,
                     fallback_datetime=remote_image.get('captured_at'),
                 )
-                _inject_obs_exif_into_field_image(temp_path, lat, lon, altitude, datetime_str)
+                img_lat = remote_image.get('gps_latitude') if remote_image.get('gps_latitude') is not None else lat
+                img_lon = remote_image.get('gps_longitude') if remote_image.get('gps_longitude') is not None else lon
+                img_alt = remote_image.get('gps_altitude') if remote_image.get('gps_altitude') is not None else altitude
+                img_acc = remote_image.get('gps_accuracy') if remote_image.get('gps_accuracy') is not None else gps_acc
+                _inject_obs_exif_into_field_image(
+                    temp_path, img_lat, img_lon, img_alt, datetime_str,
+                    camera_model=remote_image.get('camera_model'),
+                    iso=remote_image.get('iso'),
+                    exposure_time=remote_image.get('exposure_time'),
+                    f_number=remote_image.get('f_number'),
+                    gps_accuracy=img_acc,
+                )
 
         if existing_path and not local_is_larger:
             detected_ext = _detected_image_extension(temp_path)
@@ -1961,11 +2024,22 @@ def _apply_remote_images_to_local(
                 raise
             new_image_type = str(remote_image.get('image_type') or 'field').strip().lower()
             if new_image_type == 'field':
-                lat, lon, altitude, datetime_str = _load_obs_exif_fallback(
+                lat, lon, altitude, gps_acc, datetime_str = _load_obs_exif_fallback(
                     int(local_id),
                     fallback_datetime=remote_image.get('captured_at'),
                 )
-                _inject_obs_exif_into_field_image(download_path, lat, lon, altitude, datetime_str)
+                img_lat = remote_image.get('gps_latitude') if remote_image.get('gps_latitude') is not None else lat
+                img_lon = remote_image.get('gps_longitude') if remote_image.get('gps_longitude') is not None else lon
+                img_alt = remote_image.get('gps_altitude') if remote_image.get('gps_altitude') is not None else altitude
+                img_acc = remote_image.get('gps_accuracy') if remote_image.get('gps_accuracy') is not None else gps_acc
+                _inject_obs_exif_into_field_image(
+                    download_path, img_lat, img_lon, img_alt, datetime_str,
+                    camera_model=remote_image.get('camera_model'),
+                    iso=remote_image.get('iso'),
+                    exposure_time=remote_image.get('exposure_time'),
+                    f_number=remote_image.get('f_number'),
+                    gps_accuracy=img_acc,
+                )
             local_image_id = ImageDB.add_image(
                 observation_id=int(local_id),
                 filepath=str(download_path),
@@ -3517,7 +3591,7 @@ def _backfill_missing_exif_on_cloud_images() -> None:
             if not filepath:
                 continue
             p = Path(filepath)
-            if not p.exists() or p.suffix.lower() not in {'.jpg', '.jpeg'}:
+            if not p.exists() or p.suffix.lower() not in {'.jpg', '.jpeg', '.webp'}:
                 continue
             try:
                 with _PilImg.open(p) as img:
@@ -3537,8 +3611,8 @@ def _backfill_missing_exif_on_cloud_images() -> None:
             obs_id = int(row[2] or 0)
             if obs_id <= 0:
                 continue
-            lat, lon, altitude, date_str = _load_obs_exif_fallback(obs_id)
-            _inject_obs_exif_into_field_image(p, lat, lon, altitude, date_str)
+            lat, lon, altitude, gps_acc, date_str = _load_obs_exif_fallback(obs_id)
+            _inject_obs_exif_into_field_image(p, lat, lon, altitude, date_str, gps_accuracy=gps_acc)
     except Exception as exc:
         print(f'[cloud_sync] EXIF backfill skipped: {exc}')
 
@@ -3573,6 +3647,8 @@ def pull_all(
         elif not stored_snapshot:
             should_check = True
         elif _remote_observation_changed_since_last_sync(local_obs, remote):
+            should_check = True
+        elif str((local_obs or {}).get('sync_status') or '').strip().lower() == 'dirty':
             should_check = True
         if should_check:
             candidates.append((remote, local_obs, stored_snapshot))
@@ -3748,8 +3824,6 @@ def pull_all(
                     if review_reasons:
                         errors.append(_format_review_needed_error(local_id, cloud_id, review_reasons))
                         should_store_snapshot = False
-                        if not local_dirty:
-                            _set_observation_sync_state(local_id, cloud_id, dirty=False)
                         if applied_remote_fields or applied_safe_media:
                             pulled += 1
                     else:
@@ -3992,6 +4066,34 @@ def _import_remote_images(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def _write_sync_log(result: dict) -> None:
+    from app_identity import app_data_dir
+    log_path = app_data_dir() / "cloud_sync.log"
+    try:
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = [f"--- Sync at {now_str} ---"]
+        lines.append(f"Pushed: {result.get('pushed', 0)}")
+        lines.append(f"Pulled: {result.get('pulled', 0)}")
+        errors = result.get('errors', [])
+        if errors:
+            lines.append("Errors/Warnings:")
+            for e in errors:
+                lines.append(f"  - {e}")
+        else:
+            lines.append("No errors.")
+        lines.append("")
+        
+        mode = "a"
+        if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
+            mode = "w"
+            
+        with open(log_path, mode, encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as e:
+        print(f"Failed to write sync log: {e}")
+
+
 def sync_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
@@ -4070,12 +4172,14 @@ def sync_all(
     else:
         final_push_result = {'pushed': 0, 'errors': []}
 
-    return {
+    res = {
         'pushed': push_result['pushed'] + final_push_result['pushed'],
         'pulled': pull_result['pulled'],
         'errors': push_result['errors'] + pull_result['errors'] + final_push_result['errors'],
         'deleted_remote': list(pull_result.get('deleted_remote') or []),
     }
+    _write_sync_log(res)
+    return res
 
 
 def mark_observation_dirty(observation_id: int) -> None:

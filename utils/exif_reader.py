@@ -82,6 +82,12 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
         # Standard image formats
         with Image.open(image_path) as img:
             exif = img.getexif()
+            if (exif is None or len(exif) == 0) and 'exif' in img.info:
+                try:
+                    exif.load(img.info['exif'])
+                except Exception:
+                    pass
+
             if not exif:
                 # Try legacy method for older PIL versions
                 exif_data = getattr(img, '_getexif', lambda: None)()

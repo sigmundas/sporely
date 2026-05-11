@@ -9,6 +9,8 @@
 - [ ] **Account migration guardrail:** Design a safer user-facing migration flow before encouraging users to delete/recreate accounts. Resetting the local cloud link must remain explicit, should not delete remote data, and should explain duplicate-risk versus data-loss-risk clearly.
 - [ ] **Profile parity QA:** Verify desktop Profile & Cloud saves `username`, `display_name`, `bio`, and `avatar_url` to Supabase `profiles`, and that the web Profile shows the same values. Confirm local `profile_email` follows the cloud auth email when signed in.
 - [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
+- [ ] **Local DB as metadata source of truth:** Prioritize local SQLite DB values (`captured_at`, `gps_latitude`, `gps_longitude`) over file EXIF in the "Prepare Images" dialog and "Measure" tab Info box, since web-uploaded `.webp` files lack EXIF.
+- [ ] **Fix cloud-synced image warning:** Ensure the warning overlay indicating an image is cloud-synced (and thus lacks EXIF) displays correctly in the "Prepare Images" dialog (currently the warning still does not show up).
 
 ## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
 *Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*

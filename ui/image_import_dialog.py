@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QToolButton,
+    QStackedLayout,
     QFrame,
 )
 
@@ -1192,7 +1193,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 4, 0, 0)
 
-        current_group, current_layout = create_section_card(self.tr("Current image"), QFormLayout)
+        current_group, current_base_layout = create_section_card(self.tr("Current image"), QVBoxLayout)
+        
+        self.current_image_stack = QStackedLayout()
+        current_base_layout.addLayout(self.current_image_stack)
+        
+        self.current_image_form_widget = QWidget()
+        current_layout = QFormLayout(self.current_image_form_widget)
+        current_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.exif_datetime_label = QLabel("--")
         self.exif_camera_label = QLabel("--")
         self.exif_iso_label = QLabel("--")
@@ -1217,6 +1226,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
         gps_row.addLayout(gps_values, 1)
         gps_row.addWidget(self.exif_map_btn)
         current_layout.addRow(self.tr("GPS:"), gps_row)
+        
+        self.current_image_stack.addWidget(self.current_image_form_widget)
+        
+        self.current_image_cloud_widget = QWidget()
+        cloud_layout = QVBoxLayout(self.current_image_cloud_widget)
+        cloud_layout.setContentsMargins(0, 20, 0, 20)
+        
+        self.exif_cloud_warning_label = QLabel(self.tr("Cloud-synced image\n\nOriginal EXIF data is omitted to save space and protect privacy."))
+        self.exif_cloud_warning_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(10)}pt;")
+        self.exif_cloud_warning_label.setAlignment(Qt.AlignCenter)
+        self.exif_cloud_warning_label.setWordWrap(True)
+        cloud_layout.addWidget(self.exif_cloud_warning_label)
+        
+        self.current_image_stack.addWidget(self.current_image_cloud_widget)
+        
         layout.addWidget(current_group)
 
         obs_group, obs_layout = create_section_card(self.tr("Time and GPS"), QFormLayout)
@@ -1623,30 +1647,37 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not hasattr(self, "resize_group"):
             return
         indices = self._current_selection_indices()
+        
+        enable_resize = True
         if not indices:
-            self.resize_group.setEnabled(False)
-            return
-        all_micro = all(
-            self.import_results[idx].image_type == "microscope"
-            for idx in indices
-            if 0 <= idx < len(self.import_results)
-        )
-        if not all_micro:
-            self.resize_group.setEnabled(False)
-            return
-        selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
-        if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
-            self.resize_group.setEnabled(False)
-            return
-        if self._objective_optics_type(selected_objective) == "macro":
-            self.resize_group.setEnabled(False)
-            return
-        any_resized = any(
-            self._is_resized_image(self.import_results[idx])
-            for idx in indices
-            if 0 <= idx < len(self.import_results)
-        )
-        self.resize_group.setEnabled(not any_resized)
+            enable_resize = False
+        else:
+            all_micro = all(
+                self.import_results[idx].image_type == "microscope"
+                for idx in indices
+                if 0 <= idx < len(self.import_results)
+            )
+            if not all_micro:
+                enable_resize = False
+            else:
+                selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
+                if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
+                    enable_resize = False
+                elif self._objective_optics_type(selected_objective) == "macro":
+                    enable_resize = False
+                else:
+                    any_resized = any(
+                        self._is_resized_image(self.import_results[idx])
+                        for idx in indices
+                        if 0 <= idx < len(self.import_results)
+                    )
+                    if any_resized:
+                        enable_resize = False
+                        
+        if hasattr(self, "resize_optimal_checkbox"):
+            self.resize_optimal_checkbox.setEnabled(enable_resize)
+        if hasattr(self, "target_sampling_input"):
+            self.target_sampling_input.setEnabled(enable_resize)
 
     def _has_pending_resize_operations(self) -> bool:
         for result in self.import_results:
@@ -4701,6 +4732,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.exif_lat_label.setText("Lat: --")
         self.exif_lon_label.setText("Lon: --")
         self.exif_map_btn.setEnabled(False)
+        if hasattr(self, "current_image_stack"):
+            self.current_image_stack.setCurrentWidget(self.current_image_form_widget)
         if hasattr(self, "exif_sampling_label"):
             self._set_hintable_label_text(self.exif_sampling_label, "--", "")
         if hasattr(self, "current_resolution_label"):

@@ -5005,7 +5005,7 @@ class ObservationsTab(QWidget):
     @staticmethod
     def _cloud_sync_output_format(source_path: str, resized: bool) -> tuple[str, str, dict]:
         suffix = Path(source_path).suffix.lower()
-        if suffix == ".webp" and not resized:
+        if suffix in {".webp", ".jpg", ".jpeg"} and not resized:
             return "ORIGINAL", ".webp", {}
         if features.check("webp"):
             return "WEBP", ".webp", {"quality": 65, "method": 4}
@@ -9373,7 +9373,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         datetime_layout.setContentsMargins(0, 0, 0, 0)
         self.datetime_input = QDateTimeEdit()
         self.datetime_input.setDateTime(QDateTime.currentDateTime())
-        self.datetime_input.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.datetime_input.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
         self.datetime_input.setCalendarPopup(True)
         _cal = self.datetime_input.calendarWidget()
         _cal.setHorizontalHeaderFormat(_cal.HorizontalHeaderFormat.SingleLetterDayNames)
@@ -11903,7 +11903,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
             'determination_method': self.determination_method_combo.currentData(),
-            'date': self.datetime_input.dateTime().toString("yyyy-MM-dd HH:mm"),
+            'date': self.datetime_input.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
             'location': self.location_input.text().strip() or None,
             'habitat': " | ".join(habitat_parts) if habitat_parts else None,
             'habitat_nin2_path': json.dumps(nin2_ids) if nin2_ids else None,
