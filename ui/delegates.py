@@ -54,15 +54,20 @@ class SpeciesItemDelegate(QStyledItemDelegate):
 
 
 class RedListCircleDelegate(QStyledItemDelegate):
-    """Paints a filled circle using the item's foreground color."""
+    """Paints a filled circle and the text next to it."""
 
     DIAMETER = 14  # px
+
+    def displayText(self, value, locale):
+        return ""
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
         painter.save()
 
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
         # Draw default background (handles selection highlight etc.)
-        super().paint(painter, option, index)
+        super().paint(painter, opt, index)
 
         brush_or_color = index.data(Qt.ForegroundRole)
         if isinstance(brush_or_color, QBrush):
@@ -70,51 +75,86 @@ class RedListCircleDelegate(QStyledItemDelegate):
         else:
             color = brush_or_color
             
-        if not isinstance(color, QColor) or not color.isValid():
-            painter.restore()
-            return
-
+        margin = 6
         d = self.DIAMETER
-        cx = option.rect.left() + option.rect.width() // 2
-        cy = option.rect.top() + option.rect.height() // 2
-        circle = QRect(cx - d // 2, cy - d // 2, d, d)
+        text_rect = QRect(opt.rect)
 
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QBrush(color))
-        painter.setPen(QPen(color.darker(130), 1))
-        painter.drawEllipse(circle)
+        if isinstance(color, QColor) and color.isValid():
+            cx = opt.rect.left() + margin + d // 2
+            cy = opt.rect.top() + opt.rect.height() // 2
+            circle = QRect(cx - d // 2, cy - d // 2, d, d)
+
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(QBrush(color))
+            painter.setPen(QPen(color.darker(130), 1))
+            painter.drawEllipse(circle)
+            
+            text_rect.setLeft(circle.right() + margin)
+
+        text = str(index.data(Qt.DisplayRole) or "")
+        if text:
+            from PySide6.QtGui import QPalette
+            if isinstance(color, QColor) and color.isValid():
+                painter.setPen(color)
+            elif opt.state & QStyle.State_Selected:
+                painter.setPen(opt.palette.color(QPalette.HighlightedText))
+            else:
+                
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
 
         painter.restore()
 
     def sizeHint(self, option, index):
-        return super().sizeHint(option, index).expandedTo(QSize(28, 24))
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        hint = super().sizeHint(option, index)
+        text = str(index.data(Qt.DisplayRole) or "")
+        text_width = opt.fontMetrics.horizontalAdvance(text) if text else 0
+        return QSize(text_width + self.DIAMETER + 20, max(hint.height(), 24))
 
 
 class RedListCircleWidget(QWidget):
-    """A simple widget that paints a filled circle for the red list badge."""
+    """A simple widget that paints a filled circle and text for the red list badge."""
     DIAMETER = 14
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self._color = QColor()
-        self.setFixedSize(24, 24)
+        self._text = ""
+        self.setMinimumSize(44, 24)
 
-    def set_color(self, hex_color: str):
+    def set_color_and_text(self, hex_color: str, text: str):
         self._color = QColor(hex_color)
+        self._text = text
         self.update()
 
     def paintEvent(self, event):
-        if not self._color.isValid():
+        if not self._color.isValid() and not self._text:
             return
+            
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
+        margin = 0
         d = self.DIAMETER
-        cx = self.width() // 2
-        cy = self.height() // 2
-        circle = QRect(cx - d // 2, cy - d // 2, d, d)
+        text_rect = QRect(self.rect())
         
-        painter.setBrush(QBrush(self._color))
-        painter.setPen(QPen(self._color.darker(130), 1))
-        painter.drawEllipse(circle)
+        if self._color.isValid():
+            cx = self.rect().left() + margin + d // 2
+            cy = self.rect().top() + self.rect().height() // 2
+            circle = QRect(cx - d // 2, cy - d // 2, d, d)
+            
+            painter.setBrush(QBrush(self._color))
+            painter.setPen(QPen(self._color.darker(130), 1))
+            painter.drawEllipse(circle)
+            
+            text_rect.setLeft(circle.right() + margin + 6)
+            
+        if self._text:
+            painter.setPen(self.palette().color(self.foregroundRole()))
+            font = painter.font()
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._text)
+            
         painter.end()

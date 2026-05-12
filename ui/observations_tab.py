@@ -9696,7 +9696,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         from ui.delegates import RedListCircleWidget
         self.red_list_badge_widget = RedListCircleWidget()
         badge_size = max(24, int(self.species_input.sizeHint().height()))
-        self.red_list_badge_widget.setFixedSize(badge_size, badge_size)
+        self.red_list_badge_widget.setFixedSize(48, badge_size)
         self.red_list_badge_widget.setVisible(False)
         red_list_row.addWidget(self.red_list_badge_widget, 0, Qt.AlignVCenter)
         self.red_list_status_label = QLabel("")
@@ -10573,7 +10573,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if badge is not None:
             if self._red_list_category:
                 hex_color = RED_LIST_BADGE_COLORS.get(self._red_list_category, "#63666A")
-                badge.set_color(hex_color)
+                badge.set_color_and_text(hex_color, self._red_list_category)
                 badge.setVisible(True)
             else:
                 badge.setVisible(False)
@@ -10600,7 +10600,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         clean = str(code or "").strip().upper()
         if not clean:
             return None
-        item = QTableWidgetItem()
+        item = QTableWidgetItem(clean)
         item.setToolTip(str(tooltip or self._red_list_label(clean)).strip())
         hex_color = RED_LIST_BADGE_COLORS.get(clean, "#63666A")
         item.setForeground(QColor(hex_color))
@@ -10660,11 +10660,27 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not valid_links:
             return None
         label, url = valid_links[0]
-        item = QTableWidgetItem(QIcon(str(Path(__file__).parent.parent / "assets" / "icons" / "link.svg")), "")
+        
+        color = get_design_tokens().get("text", "#2c3e50")
+        svg_data = f"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>""".encode("utf-8")
+        
+        from PySide6.QtSvg import QSvgRenderer
+        renderer = QSvgRenderer(svg_data)
+        pixmap = QPixmap(48, 48)  # Render cleanly at 2x for high-DPI displays
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        renderer.render(painter)
+        painter.end()
+        
+        item = QTableWidgetItem(QIcon(pixmap), "")
         item.setTextAlignment(Qt.AlignCenter)
         item.setToolTip(label)
         item.setData(Qt.UserRole, url)
-        item.setForeground(QColor("#2563eb"))
         return item
 
     def _on_ai_table_cell_clicked(self, source: str, row: int, column: int) -> None:
