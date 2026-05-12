@@ -40,3 +40,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 ## External Integrations
 - **Authentication:** Email/password for Sporely Cloud. Custom PKCE OAuth2 flow over `http://localhost:8000` for iNaturalist.
 - **Publishing:** Artsobservasjoner and Artportalen run on invisible web session cookies. Successfully published observations persist their remote ID (`artsdata_id`, `inaturalist_id`, etc.) locally to prevent duplicate uploads.
+- **AI Species Suggestion:** The observation editor provides AI-powered species suggestions from Artsdatabanken (Artsorakel) and iNaturalist.
+  - Pressing "Guess" sends the selected image to both services simultaneously.
+  - Results are displayed in separate tabs.
+  - iNaturalist suggestions require the user to be logged in via the OAuth2 flow. If not logged in, a message is displayed.

@@ -2399,6 +2399,7 @@ class SpeciesPlateDialog(QDialog):
         left_layout.addWidget(sr_grp)
 
         self._layout_table = QTableWidget(0, 4)
+        self._layout_table.setFocusPolicy(Qt.NoFocus)
         self._layout_table.setHorizontalHeaderLabels(["", self.tr("Preview"), "BG", "○"])
         hdr = self._layout_table.horizontalHeader()
         for col in range(4):

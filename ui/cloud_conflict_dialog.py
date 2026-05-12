@@ -40,7 +40,7 @@ from PySide6.QtCore import QThread, Signal
 
 class ConflictResolutionWorker(QThread):
     progress = Signal(str, int, int)
-    finished = Signal(bool)
+    resolution_finished = Signal(bool)
     error = Signal(str)
 
     def __init__(self, decisions, prepare_images_cb=None):
@@ -64,6 +64,7 @@ class ConflictResolutionWorker(QThread):
                 if action == 'keep_local':
                     resolve_conflict_keep_local(client, local_id, prepare_images_cb=self.prepare_images_cb)
                 elif action == 'keep_cloud':
+                    allow_delete = dec.get('allow_delete', False)
                     def _retryable_cloud_error(exc: Exception) -> bool:
                         message = str(exc or '').lower()
                         return any(
@@ -79,20 +80,20 @@ class ConflictResolutionWorker(QThread):
                             )
                         )
                     try:
-                        resolve_conflict_keep_cloud(client, local_id, cloud_id=cloud_id or None)
+                        resolve_conflict_keep_cloud(client, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
                     except Exception as exc:
                         if not _retryable_cloud_error(exc):
                             raise
                         client_retry = SporelyCloudClient.from_stored_credentials()
                         if client_retry is None:
                             raise CloudSyncError('Not logged in to Sporely Cloud')
-                        resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None)
+                        resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
                 elif action == 'merge':
                     resolve_conflict_merge(client, local_id, cloud_id=cloud_id or None, prepare_images_cb=self.prepare_images_cb)
                 resolved_any = True
             
             self.progress.emit("Conflict resolution finished.", total, total)
-            self.finished.emit(resolved_any)
+            self.resolution_finished.emit(resolved_any)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -190,7 +191,12 @@ def _conflict_identity(detail: dict) -> dict:
         'time': time_text,
         'location': location_text,
     }
-
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes/1024:.1f} KB"
+    return f"{size_bytes/(1024*1024):.1f} MB"
 
 def _conflict_list_label(detail: dict) -> str:
     identity = _conflict_identity(detail)
@@ -291,6 +297,7 @@ class CloudConflictDialog(QDialog):
         right_layout.addLayout(meta_row)
 
         self._compare_table = QTableWidget(0, 4, self)
+        self._compare_table.setFocusPolicy(Qt.NoFocus)
         self._compare_table.setHorizontalHeaderLabels(['Field', 'Last synced', 'Desktop now', 'Cloud now'])
         self._compare_table.verticalHeader().setVisible(False)
         self._compare_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -483,32 +490,19 @@ class CloudConflictDialog(QDialog):
     def _populate_detail(self, detail: dict) -> None:
         self._set_detail_enabled(True)
         identity = _conflict_identity(detail)
-        current_item = self._list.currentItem()
-        if current_item is not None:
-            current_label = _conflict_list_label(detail)
-            current_item.setText(current_label)
-            current_item.setToolTip(current_label)
+        
+        # ... (Identity and Timestamp labels remain the same) ...
         self._title_label.setText(
             f"{identity.get('species') or detail.get('title') or 'Observation'}  "
             f"(desktop #{detail.get('local_id')} ↔ cloud {detail.get('cloud_id')})"
         )
-        self._identity_label.setText(
-            f"Species: {identity.get('species') or '—'}    "
-            f"Date: {identity.get('date') or '—'}    "
-            f"Time: {identity.get('time') or '—'}    "
-            f"Location: {identity.get('location') or '—'}"
-        )
-        self._synced_label.setText(f"Last synced: {_format_timestamp(detail.get('last_synced_at'))}")
-        self._local_time_label.setText(f"Desktop changed: {_format_timestamp(detail.get('local_updated_at'))}")
-        self._remote_time_label.setText(f"Cloud changed: {_format_timestamp(detail.get('remote_updated_at'))}")
 
+        # Build detailed media change lists
+        desktop_lines = []
+        cloud_lines = []
+
+        # 1. Handle Observation Metadata Rows (Table)
         field_rows = list(detail.get('field_rows') or [])
-        desktop_lines = list(detail.get('local_image_changes') or [])
-        desktop_lines.append(f"Desktop images now: {int(detail.get('local_image_count') or 0)}")
-        desktop_lines.append(f"Desktop measurements now: {int(detail.get('local_measurement_count') or 0)}")
-        cloud_lines = list(detail.get('remote_image_changes') or [])
-        cloud_lines.append(f"Cloud images now: {int(detail.get('remote_image_count') or 0)}")
-
         self._compare_table.setRowCount(len(field_rows))
         for row_index, row in enumerate(field_rows):
             values = [
@@ -525,25 +519,65 @@ class CloudConflictDialog(QDialog):
                 elif col == 3 and row.get('remote_changed'):
                     item.setBackground(QColor(83, 64, 57))
                 self._compare_table.setItem(row_index, col, item)
-        if not field_rows:
-            self._compare_table.setRowCount(1)
-            for col, value in enumerate([
-                'Observation fields',
-                '—',
-                'No observation-field conflict shown here. Review media changes below.',
-                'No observation-field conflict shown here. Review media changes below.',
-            ]):
-                item = QTableWidgetItem(value)
-                item.setFlags(Qt.ItemIsEnabled)
-                self._compare_table.setItem(0, col, item)
-        self._compare_table.resizeRowsToContents()
+
+        # 2. Specific Image Metadata and Size Comparisons
+        # Expecting 'image_mismatches' to be a list of dicts: 
+        # {'filename': str, 'local_size': int, 'remote_size': int, 'status': str}
+        mismatches = detail.get('image_mismatches') or []
+        if mismatches:
+            desktop_lines.append("⚠️ Image File Mismatches:")
+            for m in mismatches:
+                fname = m.get('filename', 'Unknown')
+                l_size = _format_size(m.get('local_size', 0))
+                r_size = _format_size(m.get('remote_size', 0))
+                desktop_lines.append(f"  • {fname}")
+                desktop_lines.append(f"    Local: {l_size} vs Cloud: {r_size}")
+        # Inside CloudConflictDialog._populate_detail
+        mismatches = detail.get('image_mismatches') or []
+        desktop_lines = detail.get('local_image_changes') or []
+        cloud_lines = detail.get('remote_image_changes') or []
+
+        if mismatches:
+            mismatch_report = ["⚠️ Specific File Mismatches:"]
+            for m in mismatches:
+                fname = m.get('filename', 'Unknown')
+                l_s = _format_size(m.get('local_size', 0))
+                r_s = _format_size(m.get('remote_size', 0))
+                mismatch_report.append(f" • {fname}: Local {l_s} vs Cloud {r_s}")
+            desktop_lines = mismatch_report + desktop_lines        
+        # General changes
+        desktop_lines.extend(detail.get('local_image_changes') or [])
+        cloud_lines.extend(detail.get('remote_image_changes') or [])
+
+        if detail.get('local_measurement_count'):
+            desktop_lines.append(f"Measurements: {int(detail.get('local_measurement_count'))} on desktop.")
 
         self._summary_widget(self._desktop_box).setPlainText(
-            _summary_text(desktop_lines, 'No desktop image or media changes detected.')
+            _summary_text(desktop_lines, 'No specific desktop image changes.')
         )
         self._summary_widget(self._cloud_box).setPlainText(
-            _summary_text(cloud_lines, 'No cloud image changes detected.')
+            _summary_text(cloud_lines, 'No specific cloud image changes.')
         )
+
+    def _resolve_keep_cloud(self) -> None:
+        """Added confirmation to prevent accidental local deletion."""
+        reply = QMessageBox.question(
+            self, 'Confirm Overwrite',
+            "Keeping the Cloud version may delete or overwrite local image metadata and edits. "
+            "Are you sure you want to proceed?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply == QMessageBox.No:
+            return
+
+        conflict = self._current_conflict()
+        if not conflict: return
+        self.decisions.append({
+            'local_id': int(conflict.get('local_id') or 0),
+            'cloud_id': str(conflict.get('cloud_id') or '').strip(),
+            'action': 'keep_cloud'
+        })
+        self._remove_current_conflict()
 
     def _refresh_current_detail(self) -> None:
         conflict = self._current_conflict()

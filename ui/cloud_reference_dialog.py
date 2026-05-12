@@ -210,6 +210,7 @@ class CloudReferenceDialog(QDialog):
         left_layout.addWidget(left_title)
 
         self.results_table = QTableWidget(0, 4)
+        self.results_table.setFocusPolicy(Qt.NoFocus)
         self.results_table.setHorizontalHeaderLabels(
             [self.tr("Source"), self.tr("n"), self.tr("Q / L-W"), self.tr("Contributor")]
         )
@@ -255,6 +256,7 @@ class CloudReferenceDialog(QDialog):
         self.summary_meta_label.setWordWrap(True)
         self.summary_layout.addWidget(self.summary_meta_label)
         self.summary_table = QTableWidget(3, 4)
+        self.summary_table.setFocusPolicy(Qt.NoFocus)
         self.summary_table.setHorizontalHeaderLabels(
             [self.tr("Metric"), self.tr("Min"), self.tr("Median / Mean"), self.tr("Max")]
         )

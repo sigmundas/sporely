@@ -529,12 +529,17 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
     removed = [baseline_map[key] for key in baseline_keys if key not in current_map]
     shared_keys = [key for key in current_keys if key in baseline_map]
 
-    metadata_changed = 0
-    for key in shared_keys:
-        if _image_metadata_payload(current_map[key]) != _image_metadata_payload(baseline_map[key]):
-            metadata_changed += 1
-
     lines: list[str] = []
+
+    metadata_changes = []
+    for key in shared_keys:
+        c_meta = _image_metadata_payload(current_map[key])
+        b_meta = _image_metadata_payload(baseline_map[key])
+        if c_meta != b_meta:
+            changed_fields = [k for k, v in c_meta.items() if v != b_meta.get(k)]
+            label = _image_label(current_map[key])
+            metadata_changes.append(f"{label} changed: {', '.join(changed_fields)}")
+
     if added:
         labels = ", ".join(_image_label(row) for row in added[:3])
         if len(added) > 3:
@@ -545,8 +550,11 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
         if len(removed) > 3:
             labels += ", …"
         lines.append(f'Images removed since last sync: {labels}')
-    if metadata_changed:
-        lines.append(f'Image metadata changed on {metadata_changed} image(s) since last sync')
+    if metadata_changes:
+        for mc in metadata_changes[:5]:
+            lines.append(mc)
+        if len(metadata_changes) > 5:
+            lines.append(f"...and {len(metadata_changes) - 5} more metadata changes")
     if not lines and len(current) != len(baseline):
         lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
     return lines
@@ -903,6 +911,48 @@ def _store_local_cloud_media_signature(observation_id: int | str, signature: str
         str(signature or '').strip(),
     )
 
+def sync_all(
+    client: SporelyCloudClient,
+    progress_cb: ProgressCallback | None = None,
+    sync_images: bool = True,
+    prepare_images_cb: PreparedImagesCallback | None = None,
+) -> dict:
+    """Run a full bidirectional sync: push local changes then pull remote ones."""
+    # Safety check: ensure this DB belongs to the current user
+    ensure_database_linked_to_cloud_user(client)
+
+    # Initialize a shared progress state to keep the bar moving smoothly across both phases
+    progress_state = {'done': 0, 'total': 0}
+    _emit_progress(progress_cb, "Connecting to Sporely Cloud...", progress_state)
+    
+    # Pre-fetch remote metadata once to reuse in both phases
+    remote_obs = client.list_remote_observations()
+
+    # Phase 1: Push local edits to the cloud
+    push_result = push_all(
+        client,
+        progress_cb=progress_cb,
+        sync_images=sync_images,
+        prepare_images_cb=prepare_images_cb,
+        progress_state=progress_state,
+        remote_obs=remote_obs,
+    )
+
+    # Phase 2: Pull cloud edits to the desktop
+    pull_result = pull_all(
+        client,
+        progress_cb=progress_cb,
+        progress_state=progress_state,
+        remote_obs=remote_obs,
+    )
+
+    # Combine results for the UI summary
+    return {
+        'pushed': push_result.get('pushed', 0),
+        'pulled': pull_result.get('pulled', 0),
+        'errors': push_result.get('errors', []) + pull_result.get('errors', []),
+        'deleted_remote': pull_result.get('deleted_remote', []),
+    }
 
 def _parsed_local_media_signature(signature: str | None) -> dict:
     text = str(signature or '').strip()
@@ -2112,104 +2162,51 @@ def _store_remote_snapshot(client: "SporelyCloudClient", cloud_id: str, remote: 
     _store_cloud_observation_snapshot(cloud_value, _cloud_observation_snapshot(remote_obs, images))
 
 
-def get_conflict_detail(
-    client: "SporelyCloudClient",
-    local_id: int,
-    cloud_id: str | None = None,
-) -> dict:
-    local_obs = ObservationDB.get_observation(int(local_id))
-    if not local_obs:
-        raise CloudSyncError(f'Local observation {local_id} not found')
+def _prompt_for_deleted_cloud_observations(self, deleted_remote: list[dict]) -> bool:
+        """Refined to ensure local files aren't deleted without explicit user choice."""
+        entries = [dict(row or {}) for row in (deleted_remote or []) if row]
+        if not entries:
+            return False
+        
+        changed = False
+        for entry in entries:
+            local_id = int(entry.get('local_id') or 0)
+            if local_id <= 0: continue
 
-    resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
-    if not resolved_cloud_id:
-        raise CloudSyncError(f'Observation {local_id} is not linked to Sporely Cloud')
-
-    remote_obs = client.get_observation(resolved_cloud_id)
-    if not remote_obs:
-        raise CloudSyncError(f'Cloud observation {resolved_cloud_id} not found')
-    remote_images = [
-        dict(row or {})
-        for row in (client.pull_image_metadata(resolved_cloud_id) or [])
-        if should_pull_cloud_image_to_desktop(row)
-    ]
-
-    snapshot_raw = _load_cloud_observation_snapshot(resolved_cloud_id)
-    snapshot = _parse_cloud_observation_snapshot(snapshot_raw)
-    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
-    baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
-
-    local_payload = _observation_compare_payload(local_obs, local=True)
-    remote_payload = _observation_compare_payload(remote_obs, local=False)
-    field_rows = []
-    for field in _CONFLICT_COMPARE_FIELDS:
-        baseline_value = baseline_obs.get(field)
-        local_value = local_payload.get(field)
-        remote_value = remote_payload.get(field)
-        if local_value == baseline_value and remote_value == baseline_value:
-            continue
-        if local_value == remote_value:
-            continue
-        field_rows.append(
-            {
-                'field': field,
-                'label': _CONFLICT_FIELD_LABELS.get(field, field.replace('_', ' ').title()),
-                'baseline': baseline_value,
-                'local': local_value,
-                'remote': remote_value,
-                'local_changed': local_value != baseline_value,
-                'remote_changed': remote_value != baseline_value,
-            }
-        )
-
-    local_images = [
-        _local_image_snapshot_payload(img)
-        for img in ImageDB.get_images_for_observation(int(local_id))
-        if should_pull_cloud_image_to_desktop(img)
-    ]
-    remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
-    local_image_changes = _summarize_image_changes(local_images, baseline_images)
-    remote_image_changes = _summarize_image_changes(remote_image_payloads, baseline_images)
-
-    stored_local_media_signature = _load_local_cloud_media_signature(local_id)
-    current_local_media_signature = _local_cloud_media_signature(local_id)
-    local_media_changed = bool(
-        stored_local_media_signature
-        and current_local_media_signature
-        and not _local_media_signatures_match(
-            stored_local_media_signature,
-            current_local_media_signature,
-        )
-    )
-    if not local_media_changed:
-        _store_local_media_signature_if_equivalent(
-            local_id,
-            stored_local_media_signature,
-            current_local_media_signature,
-        )
-    local_measurement_count = len(MeasurementDB.get_measurements_for_observation(int(local_id)))
-    if local_media_changed:
-        local_image_changes.append(
-            f'Desktop media details changed since last sync ({local_measurement_count} measurement(s) or publish-image settings)'
-        )
-
-    return {
-        'local_id': int(local_id),
-        'cloud_id': resolved_cloud_id,
-        'title': _observation_display_name(local_obs) or _observation_display_name(remote_obs),
-        'local_observation': local_obs,
-        'remote_observation': remote_obs,
-        'baseline_observation': baseline_obs,
-        'field_rows': field_rows,
-        'local_image_changes': local_image_changes,
-        'remote_image_changes': remote_image_changes,
-        'last_synced_at': local_obs.get('synced_at'),
-        'local_updated_at': local_obs.get('updated_at') or local_obs.get('created_at'),
-        'remote_updated_at': remote_obs.get('updated_at') or remote_obs.get('created_at'),
-        'local_measurement_count': local_measurement_count,
-        'remote_image_count': len(remote_images),
-        'local_image_count': len(local_images),
-    }
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Question)
+            box.setWindowTitle('Cloud Observation Deleted')
+            box.setText(f"Observation was deleted from Sporely Cloud.")
+            box.setInformativeText(
+                self._format_deleted_cloud_observation_label(entry) +
+                "\n\nHow would you like to handle the local desktop copy?"
+            )
+            
+            # Action Buttons
+            keep_btn = box.addButton('Keep local only (Unlink)', QMessageBox.NoRole)
+            delete_btn = box.addButton('Delete local copy', QMessageBox.DestructiveRole)
+            box.setDefaultButton(keep_btn)
+            
+            box.exec()
+            clicked = box.clickedButton()
+            
+            if clicked is delete_btn:
+                # Double check for files specifically
+                confirm = QMessageBox.warning(
+                    self, "Confirm Delete",
+                    "This will permanently delete the observation record and associated local image references. Continue?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if confirm == QMessageBox.Yes:
+                    ObservationDB.delete_observation(local_id)
+                    changed = True
+            else:
+                # User chose to keep it local but remove the cloud link
+                unlink_local_observation_from_cloud(local_id)
+                changed = True
+        
+        # ... (refresh logic) ...
+        return changed
 
 
 def resolve_conflict_keep_local(
@@ -2293,6 +2290,7 @@ def resolve_conflict_keep_cloud(
     client: "SporelyCloudClient",
     local_id: int,
     cloud_id: str | None = None,
+    allow_delete: bool = False,
 ) -> dict:
     local_obs = ObservationDB.get_observation(int(local_id))
     if not local_obs:
@@ -2311,7 +2309,7 @@ def resolve_conflict_keep_cloud(
     ]
 
     _apply_remote_observation_fields(int(local_id), remote_obs)
-    warnings = _apply_remote_images_to_local(client, int(local_id), remote_images)
+    warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=allow_delete)
     _stamp_observation_synced(int(local_id), resolved_cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
     _store_cloud_observation_snapshot(
@@ -2344,7 +2342,7 @@ def resolve_conflict_merge(
             for row in (client.pull_image_metadata(resolved_cloud_id) or [])
             if should_pull_cloud_image_to_desktop(row)
         ]
-        warnings = _apply_remote_images_to_local(client, int(local_id), remote_images)
+        warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=False)
     else:
         warnings = []
 
@@ -3074,7 +3072,76 @@ class SporelyCloudClient:
                 ) from exc
             raise CloudSyncError(f'Download failed: {exc}') from exc
 
+def _format_size(size_bytes: int) -> str:
+    if size_bytes < 1024: return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024: return f"{size_bytes/1024:.1f} KB"
+    return f"{size_bytes/(1024*1024):.1f} MB"
 
+def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: str | None = None) -> dict:
+    """Enhanced conflict details with specific image size and filename comparisons."""
+    local_obs = ObservationDB.get_observation(int(local_id))
+    if not local_obs:
+        raise CloudSyncError(f'Local observation {local_id} not found')
+
+    resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
+    remote_obs = client.get_observation(resolved_cloud_id)
+    
+    remote_images = client.pull_image_metadata(resolved_cloud_id) or []
+    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(resolved_cloud_id))
+    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
+    baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
+
+    # 1. Field Comparisons
+    local_payload = _observation_compare_payload(local_obs, local=True)
+    remote_payload = _observation_compare_payload(remote_obs, local=False)
+    field_rows = []
+    for field in _CONFLICT_COMPARE_FIELDS:
+        l_val, r_val, b_val = local_payload.get(field), remote_payload.get(field), baseline_obs.get(field)
+        if l_val == r_val: continue
+        field_rows.append({
+            'field': field,
+            'label': _CONFLICT_FIELD_LABELS.get(field, field.replace('_', ' ').title()),
+            'baseline': b_val, 'local': l_val, 'remote': r_val,
+            'local_changed': l_val != b_val, 'remote_changed': r_val != b_val,
+        })
+
+    # 2. Detailed Image Mismatches
+    local_images_raw = ImageDB.get_images_for_observation(int(local_id))
+    local_image_payloads = [_local_image_snapshot_payload(img) for img in local_images_raw]
+    remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
+    
+    image_mismatches = []
+    local_map = {str(img.get('original_filename')): img for img in local_image_payloads}
+    remote_map = {str(img.get('original_filename')): img for img in remote_image_payloads}
+    
+    for fname in sorted(set(local_map.keys()) | set(remote_map.keys())):
+        l_img, r_img = local_map.get(fname), remote_map.get(fname)
+        l_size, r_size = 0, int((r_img or {}).get('stored_bytes') or 0)
+        
+        if l_img:
+            l_row = next((r for r in local_images_raw if _safe_int(r.get('id')) == _safe_int(l_img.get('desktop_id'))), None)
+            if l_row and l_row.get('filepath'):
+                try: l_size = Path(l_row['filepath']).stat().st_size
+                except: pass
+        
+        if not l_img or not r_img or l_size != r_size:
+            image_mismatches.append({
+                'filename': fname,
+                'local_size': l_size,
+                'remote_size': r_size,
+                'status': 'mismatch' if (l_img and r_img) else ('local_only' if l_img else 'cloud_only')
+            })
+
+    return {
+        'local_id': int(local_id),
+        'cloud_id': resolved_cloud_id,
+        'title': _observation_display_name(local_obs),
+        'field_rows': field_rows,
+        'image_mismatches': image_mismatches,
+        'local_image_changes': _summarize_image_changes(local_image_payloads, baseline_images),
+        'remote_image_changes': _summarize_image_changes(remote_image_payloads, baseline_images),
+        'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
+    }
 # ── High-level sync entry points ──────────────────────────────────────────────
 
 def push_all(
@@ -3951,255 +4018,58 @@ def _import_remote_images(
     client = SporelyCloudClient.from_stored_credentials()
     if client is None:
         return
-    remote_images = list(remote_images or client.pull_image_metadata(cloud_id) or [])
-    remote_images = [dict(row or {}) for row in remote_images if should_pull_cloud_image_to_desktop(row)]
-    if not remote_images:
+    
+    # Ensure we only pull what is relevant for desktop
+    remote_images_raw = list(remote_images or client.pull_image_metadata(cloud_id) or [])
+    images_to_pull = [dict(row or {}) for row in remote_images_raw if should_pull_cloud_image_to_desktop(row)]
+    
+    if not images_to_pull:
         return
-    _extend_progress_total(progress_state, len(remote_images))
-
-    def _sort_key(image_row: dict) -> tuple[int, str]:
-        try:
-            sort_value = int(image_row.get('sort_order'))
-        except (TypeError, ValueError):
-            sort_value = 10**9
-        return sort_value, str(image_row.get('id') or '')
-
+        
+    _extend_progress_total(progress_state, len(images_to_pull))
     temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
     synced_at = datetime.now(timezone.utc).isoformat()
-    created_image_ids: list[int] = []
     observation_name = _observation_display_name(remote)
+
     try:
-        images_to_pull = [img for img in remote_images if should_pull_cloud_image_to_desktop(img)]
-        for idx, image_row in enumerate(sorted(images_to_pull, key=_sort_key), start=1):
+        for idx, image_row in enumerate(images_to_pull, start=1):
             try:
                 if remote_index and remote_total:
-                    _emit_progress(
-                        progress_cb,
-                        (
-                            f"Importing cloud image {idx}/{len(remote_images)} "
-                            f"for observation {remote_index}/{max(1, remote_total)}: {observation_name}…"
-                        ),
-                        progress_state,
-                    )
+                    _emit_progress(progress_cb, f"Importing image {idx}/{len(images_to_pull)}: {observation_name}…", progress_state)
+                
                 storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
-                if not storage_path:
-                    continue
-                cloud_image_id = str(image_row.get('id') or '').strip()
-                filename = Path(str(image_row.get('original_filename') or '')).name or f'cloud_{idx}.jpg'
-                download_path = temp_dir / f'{idx:02d}_{filename}'
-                try:
-                    client.download_image_file(storage_path, download_path)
-                    download_path = _rename_to_detected_image_extension(download_path)
-                except CloudSyncError as exc:
-                    if _is_missing_cloud_image_error(exc):
-                        print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, image_row)}')
-                        continue
-                    raise
+                if not storage_path: continue
+
+                download_path = temp_dir / f"{idx:02d}_{Path(str(image_row.get('original_filename') or '')).name or 'img.jpg'}"
+                client.download_image_file(storage_path, download_path)
+                download_path = _rename_to_detected_image_extension(download_path)
 
                 local_image_id = ImageDB.add_image(
                     observation_id=int(local_id),
                     filepath=str(download_path),
                     image_type=str(image_row.get('image_type') or 'field'),
-                    scale=image_row.get('scale_microns_per_pixel'),
-                    notes=image_row.get('notes'),
-                    micro_category=image_row.get('micro_category'),
-                    objective_name=image_row.get('objective_name'),
-                    mount_medium=image_row.get('mount_medium'),
-                    stain=image_row.get('stain'),
-                    sample_type=image_row.get('sample_type'),
-                    contrast=image_row.get('contrast'),
-                    sort_order=image_row.get('sort_order'),
-                    gps_source=image_row.get('gps_source'),
-                    resample_scale_factor=image_row.get('resample_scale_factor'),
-                    ai_crop_box=_remote_ai_crop_box(image_row),
-                    ai_crop_source_size=_remote_ai_crop_source_size(image_row),
-                    captured_at=image_row.get('captured_at') or remote.get('captured_at'),
                     copy_to_folder=True,
-                    mark_observation_dirty=False,
+                    mark_observation_dirty=False
                 )
-                created_image_ids.append(int(local_image_id))
 
+                # Update sync metadata
                 conn = get_connection()
                 try:
-                    conn.execute(
-                        'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
-                        (cloud_image_id, synced_at, int(local_image_id)),
-                    )
+                    conn.execute('UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?', 
+                                 (image_row.get('id'), synced_at, int(local_image_id)))
                     conn.commit()
                 finally:
                     conn.close()
 
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
-                except Exception:
-                    pass
+                # Generate thumbnails and signature
+                generate_all_sizes(str(download_path), int(local_image_id))
+                file_sig = _file_content_signature(download_path)
+                if file_sig:
+                    _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
 
-                try:
-                    generate_all_sizes(str(download_path), int(local_image_id))
-                except Exception:
-                    try:
-                        stored = ImageDB.get_image(int(local_image_id))
-                        if stored and stored.get('filepath'):
-                            generate_all_sizes(str(stored.get('filepath')), int(local_image_id))
-                    except Exception:
-                        pass
-                try:
-                    stored = ImageDB.get_image(int(local_image_id))
-                    sig_path = str((stored or {}).get('filepath') or download_path)
-                    file_sig = _file_content_signature(sig_path)
-                    if file_sig:
-                        _store_cloud_image_file_signature(int(local_id), int(local_image_id), file_sig)
-                except Exception:
-                    pass
+            except Exception as e:
+                print(f'[cloud_sync] Failed image import: {e}')
             finally:
                 _advance_progress(progress_state, 1)
-                if remote_index and remote_total:
-                    _emit_progress(
-                        progress_cb,
-                        (
-                            f"Imported cloud image {idx}/{len(remote_images)} "
-                            f"for observation {remote_index}/{max(1, remote_total)}: {observation_name}"
-                        ),
-                        progress_state,
-                    )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def _write_sync_log(result: dict) -> None:
-    from app_identity import app_data_dir
-    log_path = app_data_dir() / "cloud_sync.log"
-    try:
-        from datetime import datetime
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        lines = [f"--- Sync at {now_str} ---"]
-        lines.append(f"Pushed: {result.get('pushed', 0)}")
-        lines.append(f"Pulled: {result.get('pulled', 0)}")
-        errors = result.get('errors', [])
-        if errors:
-            lines.append("Errors/Warnings:")
-            for e in errors:
-                lines.append(f"  - {e}")
-        else:
-            lines.append("No errors.")
-        lines.append("")
-        
-        mode = "a"
-        if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
-            mode = "w"
-            
-        with open(log_path, mode, encoding="utf-8") as f:
-            f.write("\n".join(lines))
-    except Exception as e:
-        print(f"Failed to write sync log: {e}")
-
-
-def sync_all(
-    client: SporelyCloudClient,
-    progress_cb: ProgressCallback | None = None,
-    sync_images: bool = True,
-    prepare_images_cb: PreparedImagesCallback | None = None,
-) -> dict:
-    """Run push then pull. Returns combined summary."""
-    ensure_database_linked_to_cloud_user(client)
-    progress_state = {'done': 0, 'total': 0}
-    try:
-        remote_obs_before_push = client.list_remote_observations()
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Could not fetch the current cloud state before syncing.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
-    try:
-        push_result = push_all(
-            client,
-            progress_cb=progress_cb,
-            sync_images=sync_images,
-            prepare_images_cb=prepare_images_cb,
-            progress_state=progress_state,
-            remote_obs=remote_obs_before_push,
-        )
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Push phase failed while uploading local observations to Sporely Cloud.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
-
-    try:
-        remote_obs_after_push = client.list_remote_observations()
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Could not refresh cloud observations after push.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
-
-    try:
-        pull_result = pull_all(
-            client,
-            progress_cb=progress_cb,
-            progress_state=progress_state,
-            remote_obs=remote_obs_after_push,
-        )
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Pull phase failed while fetching observations from Sporely Cloud.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
-
-    try:
-        remote_obs_after_pull = client.list_remote_observations()
-    except CloudSyncError as exc:
-        raise CloudSyncError(
-            "Could not refresh cloud observations before finishing sync.\n\n"
-            f"Details:\n{exc}"
-        ) from exc
-
-    if _has_pending_local_push_work():
-        try:
-            final_push_result = push_all(
-                client,
-                progress_cb=progress_cb,
-                sync_images=sync_images,
-                prepare_images_cb=prepare_images_cb,
-                progress_state=progress_state,
-                remote_obs=remote_obs_after_pull,
-            )
-        except CloudSyncError as exc:
-            raise CloudSyncError(
-                "Final push phase failed while uploading remaining local observations to Sporely Cloud.\n\n"
-                f"Details:\n{exc}"
-            ) from exc
-    else:
-        final_push_result = {'pushed': 0, 'errors': []}
-
-    res = {
-        'pushed': push_result['pushed'] + final_push_result['pushed'],
-        'pulled': pull_result['pulled'],
-        'errors': push_result['errors'] + pull_result['errors'] + final_push_result['errors'],
-        'deleted_remote': list(pull_result.get('deleted_remote') or []),
-    }
-    _write_sync_log(res)
-    return res
-
-
-def mark_observation_dirty(observation_id: int) -> None:
-    """Call this after updating an observation locally so it gets re-pushed."""
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            UPDATE observations
-            SET sync_status = 'dirty',
-                updated_at = ?
-            WHERE id = ?
-              AND cloud_id IS NOT NULL
-            """,
-            (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), observation_id),
-        )
-    except Exception:
-        conn.execute(
-            "UPDATE observations SET sync_status = 'dirty' WHERE id = ? AND cloud_id IS NOT NULL",
-            (observation_id,),
-        )
-    conn.commit()
-    conn.close()

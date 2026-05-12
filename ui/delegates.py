@@ -1,7 +1,7 @@
 """Reusable item delegates for UI widgets."""
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle, QApplication
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QStyledItemDelegate, QStyle, QApplication, QStyleOptionViewItem, QWidget
+from PySide6.QtCore import Qt, QRect, QSize
+from PySide6.QtGui import QColor, QPainter, QBrush, QPen
 
 
 class SpeciesItemDelegate(QStyledItemDelegate):
@@ -51,3 +51,70 @@ class SpeciesItemDelegate(QStyledItemDelegate):
                 painter.fillRect(option.rect, highlight)
                 painter.restore()
         super().paint(painter, option, index)
+
+
+class RedListCircleDelegate(QStyledItemDelegate):
+    """Paints a filled circle using the item's foreground color."""
+
+    DIAMETER = 14  # px
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        painter.save()
+
+        # Draw default background (handles selection highlight etc.)
+        super().paint(painter, option, index)
+
+        brush_or_color = index.data(Qt.ForegroundRole)
+        if isinstance(brush_or_color, QBrush):
+            color = brush_or_color.color()
+        else:
+            color = brush_or_color
+            
+        if not isinstance(color, QColor) or not color.isValid():
+            painter.restore()
+            return
+
+        d = self.DIAMETER
+        cx = option.rect.left() + option.rect.width() // 2
+        cy = option.rect.top() + option.rect.height() // 2
+        circle = QRect(cx - d // 2, cy - d // 2, d, d)
+
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QBrush(color))
+        painter.setPen(QPen(color.darker(130), 1))
+        painter.drawEllipse(circle)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return super().sizeHint(option, index).expandedTo(QSize(28, 24))
+
+
+class RedListCircleWidget(QWidget):
+    """A simple widget that paints a filled circle for the red list badge."""
+    DIAMETER = 14
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._color = QColor()
+        self.setFixedSize(24, 24)
+
+    def set_color(self, hex_color: str):
+        self._color = QColor(hex_color)
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._color.isValid():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        d = self.DIAMETER
+        cx = self.width() // 2
+        cy = self.height() // 2
+        circle = QRect(cx - d // 2, cy - d // 2, d, d)
+        
+        painter.setBrush(QBrush(self._color))
+        painter.setPen(QPen(self._color.darker(130), 1))
+        painter.drawEllipse(circle)
+        painter.end()

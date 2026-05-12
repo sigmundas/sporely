@@ -1,6 +1,6 @@
 # ui/observations_tab.py
 """Observations tab for managing mushroom observations and photos."""
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox,
                                 QTableWidget, QTableWidgetItem, QHeaderView,
                                 QDialog, QFormLayout, QLineEdit, QTextEdit,
                                 QDateTimeEdit, QFileDialog, QLabel, QMessageBox,
@@ -119,7 +119,6 @@ from .styles import (
     pt,
     get_button_icon_color,
     get_design_tokens,
-    red_list_badge_stylesheet,
 )
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
@@ -172,9 +171,28 @@ def normalize_location_precision(value: str | None, fallback: str = LOCATION_PRE
     return fallback_raw if fallback_raw in {LOCATION_PRECISION_EXACT, LOCATION_PRECISION_FUZZED} else LOCATION_PRECISION_EXACT
 
 
+_running_cloud_workers: list[QThread] = []
+
+
+def _track_worker(worker: QThread) -> None:
+    _running_cloud_workers.append(worker)
+    def _on_finished() -> None:
+        def _remove():
+            try:
+                _running_cloud_workers.remove(worker)
+            except ValueError:
+                pass
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+        QTimer.singleShot(2000, _remove)
+    worker.finished.connect(_on_finished)
+
+
 class _CloudAutoSyncWorker(QThread):
     progress = Signal(str, int, int)
-    finished = Signal(dict)
+    sync_finished = Signal(dict)
     error = Signal(str)
     prepare_requested = Signal(object)
 
@@ -222,7 +240,7 @@ class _CloudAutoSyncWorker(QThread):
         try:
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
-                self.finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
+                self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
                 return
             result = sync_all(
                 client,
@@ -232,7 +250,7 @@ class _CloudAutoSyncWorker(QThread):
             )
             if "skipped" not in result:
                 result["skipped"] = False
-            self.finished.emit(result)
+            self.sync_finished.emit(result)
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
@@ -1307,6 +1325,7 @@ class ObservationsTab(QWidget):
 
         # Observations table
         self.table = QTableWidget()
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
             self._observation_first_column_title(),
@@ -2069,7 +2088,7 @@ class ObservationsTab(QWidget):
             parent=self,
         )
         self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
-        self._cloud_sync_worker.finished.connect(self._on_cloud_sync_finished)
+        self._cloud_sync_worker.sync_finished.connect(self._on_cloud_sync_finished)
         self._cloud_sync_worker.error.connect(self._on_cloud_sync_error)
         self._cloud_sync_worker.finished.connect(self._on_cloud_sync_worker_done)
         self._cloud_sync_worker.error.connect(self._on_cloud_sync_worker_done)
@@ -2119,19 +2138,18 @@ class ObservationsTab(QWidget):
                 dialog.decisions,
                 prepare_images_cb=self.prepare_cloud_sync_image_uploads,
             )
+            _track_worker(self._cloud_conflict_resolution_worker)
             self._cloud_conflict_resolution_worker.progress.connect(self._set_status_progress)
             
             def _on_finished(resolved_any):
                 self._set_status_progress("", 0, 0)
-                self._cloud_conflict_resolution_worker = None
                 if resolved_any:
                     self.refresh_observations(show_status=False)
                     
             def _on_error(err):
-                self._cloud_conflict_resolution_worker = None
                 self.set_status_message(self.tr("Conflict resolution error: {err}").format(err=err), level="error")
                 
-            self._cloud_conflict_resolution_worker.finished.connect(_on_finished)
+            self._cloud_conflict_resolution_worker.resolution_finished.connect(_on_finished)
             self._cloud_conflict_resolution_worker.error.connect(_on_error)
             self._cloud_conflict_resolution_worker.start()
             return True
@@ -2324,10 +2342,25 @@ class ObservationsTab(QWidget):
         self._cloud_sync_show_status = False
         self._cloud_sync_run_refresh_flow = False
         if worker is not None:
-            try:
-                worker.deleteLater()
-            except Exception:
-                pass
+            app = QApplication.instance()
+            if app:
+                parked = getattr(app, "_sporely_parked_threads", None)
+                if parked is None:
+                    parked = set()
+                    setattr(app, "_sporely_parked_threads", parked)
+                parked.add(worker)
+                def _cleanup(w=worker, p=parked):
+                    try:
+                        w.deleteLater()
+                    except Exception:
+                        pass
+                    p.discard(w)
+                QTimer.singleShot(2000, _cleanup)
+            else:
+                try:
+                    worker.deleteLater()
+                except Exception:
+                    pass
         if hasattr(self, "table"):
             try:
                 self.on_selection_changed()
@@ -9660,12 +9693,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         red_list_label = QLabel(self.tr("Red list:"))
         red_list_label.setFixedWidth(taxonomy_label_width)
         red_list_row.addWidget(red_list_label)
-        self.red_list_badge_label = QLabel("")
-        self.red_list_badge_label.setAlignment(Qt.AlignCenter)
+        from ui.delegates import RedListCircleWidget
+        self.red_list_badge_widget = RedListCircleWidget()
         badge_size = max(24, int(self.species_input.sizeHint().height()))
-        self.red_list_badge_label.setFixedSize(badge_size, badge_size)
-        self.red_list_badge_label.setVisible(False)
-        red_list_row.addWidget(self.red_list_badge_label, 0, Qt.AlignVCenter)
+        self.red_list_badge_widget.setFixedSize(badge_size, badge_size)
+        self.red_list_badge_widget.setVisible(False)
+        red_list_row.addWidget(self.red_list_badge_widget, 0, Qt.AlignVCenter)
         self.red_list_status_label = QLabel("")
         self.red_list_status_label.setWordWrap(False)
         self.red_list_status_label.setStyleSheet("color: #6b7280; font-size: 11px;")
@@ -10142,19 +10175,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ai_group, ai_layout = self._create_dialog_box(
             self.tr("AI suggestions"),
             QVBoxLayout,
-            body_margins=(8, 8, 8, 8),
-            body_spacing=8,
+            body_margins=(0, 0, 0, 0),
+            body_spacing=0,
         )
         ai_group.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         ai_group.setMinimumWidth(300)
 
         self.ai_source_tabs = QTabWidget()
+        self.ai_source_tabs.setObjectName("taxonomyTabs")
         self.ai_source_tabs.setDocumentMode(True)
+        try:
+            self.ai_source_tabs.tabBar().setDrawBase(False)
+        except Exception:
+            pass
         self.ai_source_tabs.currentChanged.connect(self._on_ai_source_tab_changed)
         self.ai_tables: dict[str, QTableWidget] = {}
         self.ai_guess_buttons: dict[str, QPushButton] = {}
         self.ai_copy_buttons: dict[str, QPushButton] = {}
         self.ai_status_labels: dict[str, QLabel] = {}
+        self.ai_tabs: dict[str, QWidget] = {}
+        self.ai_tab_titles: dict[str, str] = {}
 
         self.ai_table = self._build_ai_provider_tab(
             source="arts",
@@ -10175,8 +10215,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _build_ai_provider_tab(self, source: str, title: str, headers: list[str]) -> QTableWidget:
         tab = QWidget()
+        tab.setObjectName("taxonomyPage")
         tab_layout = QVBoxLayout(tab)
-        tab_layout.setContentsMargins(0, 6, 0, 0)
+        tab_layout.setContentsMargins(8, 8, 8, 8)
         tab_layout.setSpacing(8)
 
         controls = QHBoxLayout()
@@ -10194,6 +10235,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         tab_layout.addLayout(controls)
 
         table = QTableWidget(0, len(headers))
+        table.setFocusPolicy(Qt.NoFocus)
+        table.setObjectName("aiTable")
         table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         for col in range(1, len(headers)):
@@ -10209,11 +10252,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         table.setShowGrid(False)
         table.setAttribute(Qt.WA_MacShowFocusRect, False)
+        if source == "arts":
+            from ui.delegates import RedListCircleDelegate
+            table.setItemDelegateForColumn(2, RedListCircleDelegate(table))
         table.setStyleSheet(
-            "QTableWidget::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
-            "QTableWidget::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
-            "QTableWidget::item:focus, QTableWidget::item:selected:focus, QTableWidget::item:selected:!active:focus { outline: none; border: none; }"
-            "QTableWidget { gridline-color: transparent; }"
+            "#aiTable::item:selected { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
+            "#aiTable::item:selected:!active { background-color: #f0f2f4; color: #2c3e50; font-weight: bold; border: none; }"
+            "#aiTable::item:focus, #aiTable::item:selected:focus, #aiTable::item:selected:!active:focus { outline: none; border: none; }"
+            "#aiTable { gridline-color: transparent; }"
         )
         table.itemSelectionChanged.connect(lambda src=source: self._on_ai_selection_changed(src))
         table.cellClicked.connect(lambda row, col, src=source: self._on_ai_table_cell_clicked(src, row, col))
@@ -10229,7 +10275,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.ai_guess_buttons[source] = guess_btn
         self.ai_copy_buttons[source] = copy_btn
         self.ai_status_labels[source] = status_label
-        self.ai_source_tabs.addTab(tab, title)
+        self.ai_tabs[source] = tab
+        self.ai_tab_titles[source] = title
+        self.ai_source_tabs.addTab(tab, self._tab_title_with_state(title, False))
         return table
 
     def _apply_ai_state(self, ai_state: dict | None) -> None:
@@ -10393,6 +10441,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         for source, table in getattr(self, "ai_tables", {}).items():
             self._set_ai_copy_enabled(table.currentRow() >= 0, source=source)
 
+    def _update_ai_tab_indicator(self, source: str, has_data: bool) -> None:
+        if not hasattr(self, "ai_source_tabs") or not hasattr(self, "ai_tabs") or not hasattr(self, "ai_tab_titles"):
+            return
+        tab = self.ai_tabs.get(source)
+        title = self.ai_tab_titles.get(source)
+        if tab is None or title is None:
+            return
+        idx = self.ai_source_tabs.indexOf(tab)
+        if idx >= 0:
+            self.ai_source_tabs.setTabText(idx, self._tab_title_with_state(title, has_data))
+
     def _update_ai_table(self) -> None:
         if not hasattr(self, "ai_tables"):
             return
@@ -10401,12 +10460,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             table.setRowCount(0)
             if index is None:
                 self._set_ai_copy_enabled(False, source=source)
+                self._update_ai_tab_indicator(source, False)
                 continue
             predictions = (
                 self._inat_predictions_by_index.get(index, [])
                 if source == "inat"
                 else self._ai_predictions_by_index.get(index, [])
             )
+            self._update_ai_tab_indicator(source, bool(predictions))
             for row, pred in enumerate(predictions):
                 taxon = pred.get("taxon", {})
                 display_name = self._format_ai_taxon_name(taxon, source=source)
@@ -10508,15 +10569,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
         self._red_list_category = str(code or "").strip().upper()
         self._red_list_categories = dict(categories) if isinstance(categories, dict) else None
-        badge = getattr(self, "red_list_badge_label", None)
+        badge = getattr(self, "red_list_badge_widget", None)
         if badge is not None:
             if self._red_list_category:
-                size = max(1, badge.width() or badge.sizeHint().height() or 24)
-                badge.setText(self._red_list_category)
-                badge.setStyleSheet(red_list_badge_stylesheet(self._red_list_category, size_px=size))
+                hex_color = RED_LIST_BADGE_COLORS.get(self._red_list_category, "#63666A")
+                badge.set_color(hex_color)
                 badge.setVisible(True)
             else:
-                badge.setText("")
                 badge.setVisible(False)
         label = getattr(self, "red_list_status_label", None)
         if label is not None:
@@ -10537,33 +10596,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             code = str(pred.get("redListCategory") or "").strip()
         return code.upper() if short and code else self._red_list_label(code)
 
-    def _build_red_list_badge_widget(self, code: str | None, size_px: int = 24) -> QWidget | None:
-        clean = str(code or "").strip().upper()
-        if not clean:
-            return None
-        container = QWidget()
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setAlignment(Qt.AlignCenter)
-        badge = QLabel(clean)
-        badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(size_px, size_px)
-        badge.setStyleSheet(red_list_badge_stylesheet(clean, size_px=size_px))
-        layout.addWidget(badge)
-        return container
-
     def _build_red_list_table_item(self, code: str | None, tooltip: str | None = None) -> QTableWidgetItem | None:
         clean = str(code or "").strip().upper()
         if not clean:
             return None
-        item = QTableWidgetItem(clean)
-        item.setTextAlignment(Qt.AlignCenter)
+        item = QTableWidgetItem()
         item.setToolTip(str(tooltip or self._red_list_label(clean)).strip())
-        item.setBackground(QColor(RED_LIST_BADGE_COLORS.get(clean, "#63666A")))
-        item.setForeground(QColor("#63666A" if clean in {"NA", "NE"} else "#ffffff"))
-        font = item.font()
-        font.setBold(True)
-        item.setFont(font)
+        hex_color = RED_LIST_BADGE_COLORS.get(clean, "#63666A")
+        item.setForeground(QColor(hex_color))
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         return item
 
     def _red_list_categories_from_prediction(self, pred: dict, taxon: dict) -> dict | None:
@@ -10892,7 +10933,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return
 
     def _on_ai_guess_clicked(self, source: str | None = None) -> None:
-        source = source or self._ai_source_key()
         try:
             indices = self._selected_gallery_indices()
             if not indices:
@@ -10907,7 +10947,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 (self.image_results[idx].image_type or "field").strip().lower() != "field"
                 for idx in indices
             ):
-                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source=source)
+                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="arts")
+                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="inat")
                 return
             requests = []
             for idx in indices:
@@ -10924,50 +10965,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
             if not requests:
                 return
-            if source == "inat" and self._inat_ai_thread is not None:
-                return
-            if source != "inat" and self._ai_thread is not None:
-                return
-            guess_btn = self.ai_guess_buttons.get(source) if hasattr(self, "ai_guess_buttons") else self.ai_guess_btn
-            guess_btn.setEnabled(False)
-            guess_btn.setText(self.tr("AI guessing..."))
-            self._update_ai_button_hints()
+
             count = len(requests)
             temp_dir = get_images_dir() / "imports"
-            if source == "inat":
-                client_id, client_secret, redirect_uri = self._inat_credentials()
-                observed_on = self.datetime_input.date().toString("yyyy-MM-dd") if hasattr(self, "datetime_input") else ""
-                lat = self.lat_input.value() if hasattr(self, "lat_input") and self.lat_input.value() > self.lat_input.minimum() else None
-                lon = self.lon_input.value() if hasattr(self, "lon_input") and self.lon_input.value() > self.lon_input.minimum() else None
-                self._set_ai_status(
-                    self.tr("Sending {count} image(s) to iNaturalist AI...").format(count=count),
-                    "#3498db",
-                    source=source,
-                )
-                self._inat_ai_thread = INatAIGuessWorker(
-                    requests,
-                    temp_dir,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    redirect_uri=redirect_uri,
-                    token_file=self._inat_token_file(),
-                    locale=self._inat_locale(),
-                    lat=lat,
-                    lon=lon,
-                    observed_on=observed_on,
-                    max_dim=1600,
-                    parent=self,
-                )
-                self._inat_ai_thread.resultReady.connect(self._on_inat_ai_guess_finished)
-                self._inat_ai_thread.error.connect(self._on_inat_ai_guess_error)
-                self._inat_ai_thread.finished.connect(self._inat_ai_thread.deleteLater)
-                self._inat_ai_thread.finished.connect(self._on_inat_ai_thread_finished)
-                self._inat_ai_thread.start()
-            else:
+
+            # --- Artsorakel ---
+            if self._ai_thread is None:
+                arts_guess_btn = self.ai_guess_buttons.get("arts")
+                if arts_guess_btn:
+                    arts_guess_btn.setEnabled(False)
+                    arts_guess_btn.setText(self.tr("AI guessing..."))
                 self._set_ai_status(
                     self.tr("Sending {count} image(s) to Artsdatabanken AI...").format(count=count),
                     "#3498db",
-                    source=source,
+                    source="arts",
                 )
                 self._ai_thread = AIGuessWorker(requests, temp_dir, max_dim=1600, parent=self)
                 self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
@@ -10975,12 +10986,63 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._ai_thread.finished.connect(self._ai_thread.deleteLater)
                 self._ai_thread.finished.connect(self._on_ai_thread_finished)
                 self._ai_thread.start()
+
+            # --- iNaturalist ---
+            if self._inat_ai_thread is None:
+                from utils.inat_oauth import INatOAuthClient
+                client_id, client_secret, redirect_uri = self._inat_credentials()
+                oauth = INatOAuthClient(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    redirect_uri=redirect_uri,
+                    token_file=self._inat_token_file(),
+                )
+                if not oauth.is_logged_in():
+                    self._set_ai_status(
+                        self.tr("Not logged in to iNaturalist. Log in via Settings -> Online publishing."),
+                        "#e67e22",
+                        source="inat"
+                    )
+                else:
+                    inat_guess_btn = self.ai_guess_buttons.get("inat")
+                    if inat_guess_btn:
+                        inat_guess_btn.setEnabled(False)
+                        inat_guess_btn.setText(self.tr("AI guessing..."))
+                    observed_on = self.datetime_input.date().toString("yyyy-MM-dd") if hasattr(self, "datetime_input") else ""
+                    lat = self.lat_input.value() if hasattr(self, "lat_input") and self.lat_input.value() > self.lat_input.minimum() else None
+                    lon = self.lon_input.value() if hasattr(self, "lon_input") and self.lon_input.value() > self.lon_input.minimum() else None
+                    self._set_ai_status(
+                        self.tr("Sending {count} image(s) to iNaturalist AI...").format(count=count),
+                        "#3498db",
+                        source="inat",
+                    )
+                    self._inat_ai_thread = INatAIGuessWorker(
+                        requests,
+                        temp_dir,
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        redirect_uri=redirect_uri,
+                        token_file=self._inat_token_file(),
+                        locale=self._inat_locale(),
+                        lat=lat,
+                        lon=lon,
+                        observed_on=observed_on,
+                        max_dim=1600,
+                        parent=self,
+                    )
+                    self._inat_ai_thread.resultReady.connect(self._on_inat_ai_guess_finished)
+                    self._inat_ai_thread.error.connect(self._on_inat_ai_guess_error)
+                    self._inat_ai_thread.finished.connect(self._inat_ai_thread.deleteLater)
+                    self._inat_ai_thread.finished.connect(self._on_inat_ai_thread_finished)
+                    self._inat_ai_thread.start()
+
+            self._update_ai_button_hints()
         except Exception as exc:
-            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source=source)
-            if hasattr(self, "ai_guess_buttons") and source in self.ai_guess_buttons:
-                self.ai_guess_buttons[source].setEnabled(True)
-                self.ai_guess_buttons[source].setText(self.tr("Guess"))
-                self._update_ai_button_hints()
+            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source="arts")
+            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source="inat")
+            self._on_ai_thread_finished()
+            self._on_inat_ai_thread_finished()
+
 
     def _on_ai_thread_finished(self) -> None:
         self._ai_thread = None
@@ -11021,12 +11083,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             pass
 
         def _release_thread(t=thread, a=app):
-            try:
-                parked_threads = getattr(a, "_sporely_parked_threads", None)
-                if parked_threads is not None:
-                    parked_threads.discard(t)
-            except Exception:
-                pass
+            def _delayed_release():
+                try:
+                    parked_threads = getattr(a, "_sporely_parked_threads", None)
+                    if parked_threads is not None:
+                        parked_threads.discard(t)
+                except Exception:
+                    pass
+            QTimer.singleShot(2000, _delayed_release)
 
         try:
             thread.finished.connect(thread.deleteLater)
@@ -11765,7 +11829,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_location_lookup_worker_finished(self) -> None:
         worker = self.sender()
         if isinstance(worker, QThread):
-            self._location_lookup_workers.discard(worker)
+            def _discard(w=worker):
+                self._location_lookup_workers.discard(w)
+            QTimer.singleShot(2000, _discard)
             if self._location_lookup_worker is worker:
                 self._location_lookup_worker = None
 

@@ -565,6 +565,7 @@ class ObservationSelectionDialog(QDialog):
 
         # Table with multi-select
         self.table = QTableWidget(0, 5)
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setHorizontalHeaderLabels([
             self.tr("Species"),
             self.tr("Common Name"),
@@ -2481,6 +2482,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         group, layout = create_section_card(self.tr("Calibration History"))
 
         self.history_table = QTableWidget(0, 13)
+        self.history_table.setFocusPolicy(Qt.NoFocus)
         self.history_table.setHorizontalHeaderLabels([
             self.tr("Date"),
             self.tr("Image date"),
@@ -3887,6 +3889,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         layout.addWidget(message)
 
         table = QTableWidget(0, 5)
+        table.setFocusPolicy(Qt.NoFocus)
         table.setHorizontalHeaderLabels([
             self.tr("ID"),
             self.tr("Genus"),
@@ -4035,6 +4038,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         layout.addWidget(message)
 
         table = QTableWidget(0, 5)
+        table.setFocusPolicy(Qt.NoFocus)
         table.setHorizontalHeaderLabels([
             self.tr("ID"),
             self.tr("Genus"),

@@ -1,4 +1,4 @@
-﻿"""Compact statistics table widget."""
+﻿﻿"""Compact statistics table widget."""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
 
 
@@ -15,6 +15,7 @@ class StatsTableWidget(QWidget):
 
         # Stats table
         self.table = QTableWidget()
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setColumnCount(2)
         self.table.setRowCount(3)
         self.table.setHorizontalHeaderLabels(["Mean +/- SD (um)", "Range (um)"])

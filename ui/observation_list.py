@@ -25,6 +25,7 @@ class ObservationList(QWidget):
 
         # Table for displaying observations
         self.table = QTableWidget()
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
             self.tr("ID"),

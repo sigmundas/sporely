@@ -813,7 +813,7 @@ class LanguageSettingsDialog(QDialog):
         form = QFormLayout()
 
         restart_notice = QLabel(
-            self.tr("Language change will apply after restart. Incomplete translations fall back to English.")
+            self.tr("Language change will apply after restart.")
         )
         restart_notice.setWordWrap(True)
         restart_notice.setStyleSheet("color: #34495e;")
@@ -1175,8 +1175,7 @@ class SettingsHubDialog(QDialog):
         layout.setSpacing(8)
 
         restart_notice = QLabel(self.tr(
-            "Language change will apply after restart. "
-            "Incomplete translations fall back to English."
+            "Language change will apply after restart."
         ))
         restart_notice.setWordWrap(True)
         layout.addWidget(restart_notice)
@@ -1200,12 +1199,11 @@ class SettingsHubDialog(QDialog):
         form.addRow(self.tr("Vernacular names:"), self._lang_vern_combo)
         layout.addLayout(form)
 
-        save_btn = QPushButton(self.tr("Save"))
-        save_btn.clicked.connect(self._save_language)
-        layout.addWidget(save_btn)
         layout.addStretch()
 
         self._load_language_settings()
+        self._lang_ui_combo.currentIndexChanged.connect(lambda _: self._save_language())
+        self._lang_vern_combo.currentIndexChanged.connect(lambda _: self._save_language())
         return page
 
     def _build_appearance_page(self) -> QWidget:
@@ -1737,6 +1735,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.addWidget(reporting_note)
 
         self.targets_table = QTableWidget(0, 3, self)
+        self.targets_table.setFocusPolicy(Qt.NoFocus)
         self.targets_table.setHorizontalHeaderLabels(
             [self.tr("Use"), self.tr("Publish target"), self.tr("Status")]
         )
@@ -3326,6 +3325,7 @@ class ReferenceValuesDialog(QDialog):
         self.vernacular_input.installEventFilter(self)
 
         self.table = QTableWidget(3, 5)
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setHorizontalHeaderLabels(
             [self.tr("Min"), self.tr("5%"), self.tr("50%"), self.tr("95%"), self.tr("Max")]
         )
@@ -3836,6 +3836,7 @@ class SporeDataTable(QTableWidget):
 
     def __init__(self, parent=None):
         super().__init__(0, 3, parent)
+        self.setFocusPolicy(Qt.NoFocus)
         self.setHorizontalHeaderLabels([self.tr("Length (\u03bcm)"), self.tr("Width (\u03bcm)"), "Q"])
         header = self.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -3996,6 +3997,7 @@ class ReferenceAddDialog(QDialog):
         minmax_tab = QWidget()
         minmax_layout = QVBoxLayout(minmax_tab)
         self.minmax_table = QTableWidget(3, 5)
+        self.minmax_table.setFocusPolicy(Qt.NoFocus)
         self.minmax_table.setHorizontalHeaderLabels(
             [self.tr("Min"), self.tr("5%"), self.tr("50%"), self.tr("95%"), self.tr("Max")]
         )
@@ -6690,6 +6692,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         _add_section_divider()
 
         self.ref_series_table = QTableWidget(0, 4)
+        self.ref_series_table.setFocusPolicy(Qt.NoFocus)
         self.ref_series_table.setHorizontalHeaderLabels(
             [self.tr("Plot"), "", self.tr("Data set"), self.tr("Color")]
         )
@@ -8398,6 +8401,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
 
         self.measurements_table = QTableWidget()
+        self.measurements_table.setFocusPolicy(Qt.NoFocus)
         self.measurements_table.setColumnCount(5)
         self.measurements_table.setHorizontalHeaderLabels(["Img", "Cat", "L", "W", "Q"])
 

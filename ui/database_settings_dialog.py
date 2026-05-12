@@ -115,6 +115,7 @@ class DatabaseSettingsDialog(QDialog):
         for category, label in self.TAG_CATEGORIES:
             page = self._build_tag_page(category)
             self.tag_tabs.addTab(page, self.tr(label))
+        self.tag_tabs.currentChanged.connect(lambda _idx: self._update_remove_button_state())
         layout.addWidget(self.tag_tabs, 1)
 
         custom_row = QHBoxLayout()
@@ -142,6 +143,7 @@ class DatabaseSettingsDialog(QDialog):
         layout.addWidget(self._bottom_widget)
 
         self._load_settings()
+        self._update_remove_button_state()
 
     def _build_tag_page(self, category: str):
         page = QWidget(self)
@@ -156,6 +158,7 @@ class DatabaseSettingsDialog(QDialog):
         tag_list.viewport().setMouseTracking(True)
         tag_list.itemEntered.connect(self._on_tag_item_hovered)
         tag_list.itemChanged.connect(lambda _item: self._save_tag_settings())
+        tag_list.itemSelectionChanged.connect(self._update_remove_button_state)
         tag_list.viewport().installEventFilter(self)
         tag_list.setStyleSheet(
             "QListWidget::item { padding: 4px 6px; min-height: 22px; }"
@@ -175,6 +178,14 @@ class DatabaseSettingsDialog(QDialog):
 
     def _active_tag_list(self) -> QListWidget:
         return self._tag_lists[self._active_category()]
+
+    def _update_remove_button_state(self):
+        tag_list = self._active_tag_list()
+        item = tag_list.currentItem()
+        if item and item.data(Qt.UserRole + 1) == "custom":
+            self.remove_custom_btn.setEnabled(True)
+        else:
+            self.remove_custom_btn.setEnabled(False)
 
     def _populate_category_list(self, category: str, current_tags: list[str]) -> None:
         tag_list = self._tag_lists[category]

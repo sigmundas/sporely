@@ -2637,12 +2637,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             pass
 
         def _release_thread(t=thread, a=app):
-            try:
-                parked_threads = getattr(a, "_sporely_parked_threads", None)
-                if parked_threads is not None:
-                    parked_threads.discard(t)
-            except Exception:
-                pass
+            def _delayed_release():
+                try:
+                    parked_threads = getattr(a, "_sporely_parked_threads", None)
+                    if parked_threads is not None:
+                        parked_threads.discard(t)
+                except Exception:
+                    pass
+            QTimer.singleShot(2000, _delayed_release)
 
         try:
             thread.finished.connect(thread.deleteLater)
