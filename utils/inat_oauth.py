@@ -248,10 +248,8 @@ class INatOAuthClient:
         }
         if code_verifier:
             data["code_verifier"] = code_verifier
-        elif self.client_secret:
-            data["client_secret"] = self.client_secret
         else:
-            raise RuntimeError("A client_secret or code_verifier is required for token exchange.")
+            raise RuntimeError("A code_verifier is required for PKCE token exchange.")
 
         response = requests.post(self.TOKEN_URL, data=data, timeout=self.timeout_seconds)
         if response.status_code >= 400:
@@ -283,13 +281,9 @@ class INatOAuthClient:
         if not self.client_id:
             raise RuntimeError("Missing client_id.")
         state = secrets.token_urlsafe(24)
-        code_challenge = None
-        self._code_verifier = None
-
-        if not self.client_secret:
-            self._code_verifier = secrets.token_urlsafe(32)
-            hashed = hashlib.sha256(self._code_verifier.encode("utf-8")).digest()
-            code_challenge = base64.urlsafe_b64encode(hashed).rstrip(b'=').decode("utf-8")
+        self._code_verifier = secrets.token_urlsafe(32)
+        hashed = hashlib.sha256(self._code_verifier.encode("utf-8")).digest()
+        code_challenge = base64.urlsafe_b64encode(hashed).rstrip(b'=').decode("utf-8")
 
         url = self.build_authorization_url(state, code_challenge)
         callback_server = LocalCallbackServer(self.redirect_uri)

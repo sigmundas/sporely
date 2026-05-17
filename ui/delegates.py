@@ -99,7 +99,7 @@ class RedListCircleDelegate(QStyledItemDelegate):
             elif opt.state & QStyle.State_Selected:
                 painter.setPen(opt.palette.color(QPalette.HighlightedText))
             else:
-                
+                painter.setPen(opt.palette.color(QPalette.Text))
             painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
 
         painter.restore()
