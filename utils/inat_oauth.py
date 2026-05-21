@@ -123,7 +123,7 @@ class LocalCallbackServer:
 class INatOAuthClient:
     """Desktop OAuth2 client for iNaturalist."""
 
-    DEFAULT_CLIENT_ID = "bJW2eDa8qF8GJIQbQbuG_LBgmOQYRGMh9-Ja58QBqmc"
+    DEFAULT_CLIENT_ID = "mokllBoCw7JRirpPhnjEwWWxrMDx6Kbs1q0cmn7LvPU"
     DEFAULT_REDIRECT_URI = "http://localhost:8000/callback"
     AUTH_URL = "https://www.inaturalist.org/oauth/authorize"
     TOKEN_URL = "https://www.inaturalist.org/oauth/token"
