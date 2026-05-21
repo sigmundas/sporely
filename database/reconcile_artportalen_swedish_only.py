@@ -7,7 +7,7 @@ Input:
   taxa that were present in Artportalen but not in the local Norway SQLite DB
 
 Checks performed:
-- exact normalized scientific-name lookup in ``database/taxon.txt``
+- exact normalized scientific-name lookup in ``database/reference_data/sources/taxon.txt``
 - resolve synonym rows via ``acceptedNameUsageID``
 - report whether the accepted Norwegian taxon exists in the local SQLite DB
 
@@ -25,16 +25,22 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from fetch_artportalen_taxon_ids import _normalize_text
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR, REFERENCE_DATA_SOURCES_DIR
 
 
-DEFAULT_SWEDISH_ONLY_CSV = Path("database/artportalen_taxon_ids_swedish_only.csv")
-DEFAULT_TAXON_TXT = Path("database/taxon.txt")
-DEFAULT_LOCAL_DB = Path("database/vernacular_multilanguage.sqlite3")
-DEFAULT_OUTPUT_CSV = Path("database/artportalen_taxon_ids_swedish_only_reconciled.csv")
+DEFAULT_SWEDISH_ONLY_CSV = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only.csv"
+DEFAULT_TAXON_TXT = REFERENCE_DATA_SOURCES_DIR / "taxon.txt"
+DEFAULT_LOCAL_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage.sqlite3"
+DEFAULT_OUTPUT_CSV = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only_reconciled.csv"
 
 
 def _set_csv_field_limit() -> None:

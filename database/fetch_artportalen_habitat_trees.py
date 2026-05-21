@@ -20,13 +20,18 @@ from typing import Any
 
 import requests
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from utils.artportalen_auth import ArtportalenAuth
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
 
 BASE_URL = "https://www.artportalen.se"
 REQUEST_TIMEOUT = 25
-DEFAULT_BIOTOPE_OUTPUT = Path("database/artportalen_biotopes_tree.json")
-DEFAULT_SUBSTRATE_OUTPUT = Path("database/artportalen_substrate_tree.json")
+DEFAULT_BIOTOPE_OUTPUT = REFERENCE_DATA_GENERATED_DIR / "artportalen_biotopes_tree.json"
+DEFAULT_SUBSTRATE_OUTPUT = REFERENCE_DATA_GENERATED_DIR / "artportalen_substrate_tree.json"
 
 ITEM_RE = re.compile(r'<li class="listitem".*?</li>', re.DOTALL)
 ID_RE = re.compile(r'data-id="(\d+)"')

@@ -44,15 +44,25 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import (
+    REFERENCE_DATA_GENERATED_DIR,
+    REFERENCE_DATA_SOURCES_DIR,
+)
+
 
 DEFAULT_LANGS = ["en", "de", "fr", "es", "da", "sv", "no", "fi", "pl", "pt", "it"]
-DEFAULT_INPUT_CSV = "vernacular_inat_11lang.csv"
-DEFAULT_OUTPUT_DB = "vernacular_multilanguage_legacy.sqlite3"
-DEFAULT_NO_TAXON = "taxon.txt"
-DEFAULT_NO_VERNACULAR = "vernacularname.txt"
+DEFAULT_INPUT_CSV = REFERENCE_DATA_GENERATED_DIR / "vernacular_inat_11lang.csv"
+DEFAULT_OUTPUT_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage_legacy.sqlite3"
+DEFAULT_NO_TAXON = REFERENCE_DATA_SOURCES_DIR / "taxon.txt"
+DEFAULT_NO_VERNACULAR = REFERENCE_DATA_SOURCES_DIR / "vernacularname.txt"
 
 
 def _set_csv_field_limit() -> None:

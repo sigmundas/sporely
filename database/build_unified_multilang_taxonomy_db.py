@@ -22,10 +22,20 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import (
+    REFERENCE_DATA_GENERATED_DIR,
+    REFERENCE_DATA_SOURCES_DIR,
+)
 
 try:
     from build_multilang_vernacular_db import (
@@ -45,12 +55,12 @@ except ImportError:  # pragma: no cover - fallback when imported as a module
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-DEFAULT_INPUT_CSV = SCRIPT_DIR / "vernacular_inat_11lang.csv"
-DEFAULT_OUTPUT_DB = SCRIPT_DIR / "vernacular_multilanguage.sqlite3"
-DEFAULT_NO_TAXON = SCRIPT_DIR / "taxon.txt"
-DEFAULT_NO_VERNACULAR = SCRIPT_DIR / "vernacularname.txt"
-DEFAULT_ARTPORTALEN_MATCHED = SCRIPT_DIR / "artportalen_taxon_ids_by_genus.csv"
-DEFAULT_ARTPORTALEN_RECONCILED = SCRIPT_DIR / "artportalen_taxon_ids_swedish_only_reconciled.csv"
+DEFAULT_INPUT_CSV = REFERENCE_DATA_GENERATED_DIR / "vernacular_inat_11lang.csv"
+DEFAULT_OUTPUT_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage.sqlite3"
+DEFAULT_NO_TAXON = REFERENCE_DATA_SOURCES_DIR / "taxon.txt"
+DEFAULT_NO_VERNACULAR = REFERENCE_DATA_SOURCES_DIR / "vernacularname.txt"
+DEFAULT_ARTPORTALEN_MATCHED = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_by_genus.csv"
+DEFAULT_ARTPORTALEN_RECONCILED = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only_reconciled.csv"
 
 
 @dataclass(frozen=True)

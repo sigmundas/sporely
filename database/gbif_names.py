@@ -265,14 +265,14 @@ def load_results_from_csv(csv_path: Path) -> List[Dict]:
 # Usage example
 if __name__ == "__main__":
     # Find the database
-    db_path = Path(__file__).parent / "vernacular_multilanguage.sqlite3"
+    db_path = Path(__file__).resolve().with_name("reference_data") / "generated" / "vernacular_multilanguage.sqlite3"
     if not db_path.exists():
-        db_path = Path("database/vernacular_multilanguage.sqlite3")
+        db_path = Path(__file__).parent / "vernacular_multilanguage.sqlite3"
     if not db_path.exists():
         print(f"Database not found at {db_path}")
         exit(1)
 
-    csv_path = Path(__file__).parent / "gbif_comparison_results.csv"
+    csv_path = Path(__file__).resolve().with_name("reference_data") / "generated" / "gbif_comparison_results.csv"
 
     # Check if we have cached results
     if csv_path.exists():

@@ -18,7 +18,7 @@ Key tables include:
 - **calibrations**: objective calibration history, camera, and megapixels.
 - **thumbnails** and **spore_annotations** for UI and ML tooling.
 
-## Reference Database (reference_values.db)
+## Reference Database (`reference_data/generated/reference_values.db`)
 
 - **reference_values**: genus, species, source, mount medium, and min/percentile ranges.
 

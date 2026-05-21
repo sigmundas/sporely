@@ -526,7 +526,11 @@ class MapServiceHelper:
             except OverflowError:
                 csv.field_size_limit(2147483647)
             base_dir = Path(__file__).resolve().parents[1]
-            taxon_path = base_dir / "database" / "taxon.txt"
+            taxon_candidates = [
+                base_dir / "database" / "reference_data" / "sources" / "taxon.txt",
+                base_dir / "database" / "taxon.txt",
+            ]
+            taxon_path = next((candidate for candidate in taxon_candidates if candidate.exists()), taxon_candidates[0])
             if not taxon_path.exists():
                 return self._nbic_index
             with taxon_path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -2181,15 +2185,19 @@ class ObservationsTab(QWidget):
             self.observation_deleted.emit(local_id)
             return True
 
-        delete_all_remaining = False
+        bulk_choice: str | None = None
         total = len(entries)
         for index, entry in enumerate(entries):
             local_id = int(entry.get("local_id") or 0)
             cloud_id = str(entry.get("cloud_id") or "").strip() or "?"
             if local_id <= 0:
                 continue
-            if delete_all_remaining:
+            if bulk_choice == "delete":
                 changed = _delete_local_copy(entry) or changed
+                continue
+            if bulk_choice == "keep":
+                unlink_local_observation_from_cloud(local_id)
+                changed = True
                 continue
             remaining = total - index
             prompt = self.tr(
@@ -2209,8 +2217,10 @@ class ObservationsTab(QWidget):
                     self,
                     self.tr("Cloud Observation Deleted"),
                     prompt,
-                    checkbox_text=self.tr("Delete all"),
+                    checkbox_text=self.tr("Apply this choice to all remaining deleted cloud observations"),
                     default_yes=False,
+                    yes_text=self.tr("Delete local copy"),
+                    no_text=self.tr("Keep local only (Unlink)"),
                 )
             else:
                 delete_local = self._question_yes_no(
@@ -2222,10 +2232,12 @@ class ObservationsTab(QWidget):
             if delete_local:
                 changed = _delete_local_copy(entry) or changed
                 if delete_all_checked:
-                    delete_all_remaining = True
+                    bulk_choice = "delete"
                 continue
             unlink_local_observation_from_cloud(local_id)
             changed = True
+            if delete_all_checked:
+                bulk_choice = "keep"
         if changed:
             self.refresh_observations(show_status=False)
         return changed
@@ -6583,7 +6595,12 @@ class ObservationsTab(QWidget):
         mapping: dict[tuple[str, str], tuple[str, str]] = {}
         rows: list[tuple[str, str, str, str, str]] = []
         try:
-            taxon_path = Path(__file__).resolve().parents[1] / "database" / "taxon.txt"
+            base_dir = Path(__file__).resolve().parents[1]
+            taxon_candidates = [
+                base_dir / "database" / "reference_data" / "sources" / "taxon.txt",
+                base_dir / "database" / "taxon.txt",
+            ]
+            taxon_path = next((candidate for candidate in taxon_candidates if candidate.exists()), taxon_candidates[0])
             if not taxon_path.exists():
                 self._accepted_taxon_pair_cache = mapping
                 return mapping
@@ -13480,7 +13497,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return entries
 
     def _load_habitat_tree(self, filename: str) -> list[dict]:
-        path = Path(__file__).resolve().parents[1] / "database" / filename
+        base_dir = Path(__file__).resolve().parents[1]
+        candidates = [
+            base_dir / "database" / "reference_data" / "generated" / filename,
+            base_dir / "database" / filename,
+            Path(filename),
+        ]
+        path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
         try:
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)

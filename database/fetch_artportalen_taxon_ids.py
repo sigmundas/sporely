@@ -3,7 +3,7 @@
 Fetch Artportalen taxon ids for taxa in the local Sporely taxonomy database.
 
 The script reads accepted species from ``taxon_min`` in
-``vernacular_multilanguage.sqlite3``, queries Artportalen's taxon picker, and
+``database/reference_data/generated/vernacular_multilanguage.sqlite3``, queries Artportalen's taxon picker, and
 writes a CSV mapping file with:
 
 - local Artsdatabanken taxon id
@@ -49,8 +49,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_SOURCE_DB = Path("database/vernacular_multilanguage.sqlite3")
-DEFAULT_OUTPUT_CSV = Path("database/artportalen_taxon_ids.csv")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
+
+DEFAULT_SOURCE_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage.sqlite3"
+DEFAULT_OUTPUT_CSV = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids.csv"
 REPORT_URL = "https://www.artportalen.se/SubmitSighting/Report"
 PICKER_URL = "https://www.artportalen.se/Taxon/PickerSearch"
 HOME_URL = "https://www.artportalen.se/"

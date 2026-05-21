@@ -41,7 +41,7 @@
 
 ### R2 Migration Status
 - [ ] **Deploy Upload Worker** — Cloudflare Worker code is in the repo, but still needs deployment, route setup, and R2 binding.
-- [ ] **Run R2 SQL Migration in Supabase** — Apply `database/supabase_r2_media_migration.sql` against the live project.
+- [ ] **Run R2 SQL Migration in Supabase** — Apply `../sporely-web/supabase/migrations/supabase_r2_media_migration.sql` against the live project.
 - [ ] **Run Initial Local Media Migration** — Execute the one-time bulk uploader against the full local image library.
 - [ ] **Switch Desktop to Worker Uploads** — Optional follow-up if you want desktop uploads to go through the same authenticated Worker instead of direct R2 credentials.
 
@@ -50,7 +50,7 @@
 ## Active Tasks (TODO) - Web & Infrastructure
 - [ ] **Deploy Worker Secrets and Route** — Configure `SUPABASE_URL`, optional JWT issuer/audience overrides, `MEDIA_PUBLIC_BASE_URL`, and bind `sporely-media` as the Worker bucket.
 - [ ] **Offline Queue** — Wrap R2-bound upload failures in IndexedDB so photos aren't lost when in the field.
-- [ ] **Unique Constraints** — Run `database/supabase_unique_constraints.sql` to support high-performance upserts during desktop-to-cloud sync.
+- [ ] **Unique Constraints** — Run `../sporely-web/supabase/migrations/supabase_unique_constraints.sql` to support high-performance upserts during desktop-to-cloud sync.
 - [ ] **Optional cloud summary RPC/view** — Add a Supabase-side per-observation change summary for `observations` + `observation_images` so desktop sync can skip most client-side deep comparison work entirely.
 
 
@@ -143,7 +143,7 @@
 ## Phase 7: Privacy, Social Feeds, and Costs
 
 ### Active Implementation Tasks
-- [ ] **Apply current Supabase delta in staging/live:** Run the latest `database/supabase_phase7_transparency_social_trails.sql` after the already-applied base SQL, then verify it against current production tables and policies.
+- [ ] **Apply current Supabase delta in staging/live:** Run the latest `../sporely-web/supabase/migrations/supabase_phase7_transparency_social_trails.sql` after the already-applied base SQL, then verify it against current production tables and policies.
 - [ ] **Verify live RLS/feed behavior:** Test owner, accepted friend, stranger, blocked user, banned profile, and non-public limit paths with disposable accounts.
 - [ ] **Strip GPS EXIF from public media serving path:** Ensure the Cloudflare public image path cannot leak embedded GPS metadata.
 

@@ -14,16 +14,26 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 import time
 from pathlib import Path
 
 import requests
 from requests.exceptions import RequestException
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import (
+    REFERENCE_DATA_GENERATED_DIR,
+    REFERENCE_DATA_SOURCES_DIR,
+)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_TAXON_FILE = SCRIPT_DIR / "taxon.txt"
-DEFAULT_OUT_CSV = SCRIPT_DIR / "vernacular_inat_11lang.csv"
+DEFAULT_TAXON_FILE = REFERENCE_DATA_SOURCES_DIR / "taxon.txt"
+DEFAULT_OUT_CSV = REFERENCE_DATA_GENERATED_DIR / "vernacular_inat_11lang.csv"
 
 # Target filters
 ASCO_ORDERS = {"pezizales", "morchellales", "helvellales", "tuberales"}

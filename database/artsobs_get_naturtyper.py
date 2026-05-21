@@ -1,7 +1,16 @@
 import json
+import sys
 import time
 import requests
 from bs4 import BeautifulSoup
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
 BASE = "https://www.artsobservasjoner.no"
 
@@ -81,6 +90,8 @@ def download_nin2_tree(cookie_header: str | None = None):
 
 if __name__ == "__main__":
     tree = download_nin2_tree(cookie_header=None)  # or paste your Cookie: ... here
-    with open("nin2_biotopes_tree.json", "w", encoding="utf-8") as f:
+    output_path = REFERENCE_DATA_GENERATED_DIR / "nin2_biotopes_tree.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(tree, f, ensure_ascii=False, indent=2)
-    print("Wrote nin2_biotopes_tree.json")
+    print(f"Wrote {output_path}")

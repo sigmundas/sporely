@@ -11,7 +11,7 @@ pyinstaller \
   --name Sporely \
   --icon "assets/icons/sporely.icns" \
   --add-data "i18n:i18n" \
-  --add-data "database/reference_values.db:database" \
+  --add-data "database/reference_data:database/reference_data" \
   --hidden-import pillow_heif \
   --exclude-module PySide6.QtQml \
   --exclude-module PySide6.QtQuick \

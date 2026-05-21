@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QCheckBox,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -113,7 +115,7 @@ def _format_timestamp(value) -> str:
 def _format_compare_value(field: str, value) -> str:
     if value is None or value == '':
         return '—'
-    if field in {'location_public'}:
+    if field in {'location_public', 'is_draft'}:
         return 'Yes' if bool(value) else 'No'
     if field in {'visibility', 'sharing_scope'}:
         return str(value).capitalize()
@@ -318,6 +320,12 @@ class CloudConflictDialog(QDialog):
         summary_splitter.addWidget(self._cloud_box)
         right_layout.addWidget(summary_splitter, 1)
 
+        self._apply_all_check = QCheckBox(
+            self.tr('Apply this choice to all remaining conflicts'),
+            self,
+        )
+        right_layout.addWidget(self._apply_all_check)
+
         splitter.addWidget(right)
         splitter.setSizes([280, 780])
 
@@ -328,15 +336,15 @@ class CloudConflictDialog(QDialog):
 
         action_row.addStretch(1)
 
-        self._keep_local_btn = QPushButton('Keep desktop')
+        self._keep_local_btn = QPushButton(self.tr('Use Desktop version'))
         self._keep_local_btn.clicked.connect(self._resolve_keep_local)
         action_row.addWidget(self._keep_local_btn)
 
-        self._keep_remote_btn = QPushButton('Keep cloud')
+        self._keep_remote_btn = QPushButton(self.tr('Use Cloud version'))
         self._keep_remote_btn.clicked.connect(self._resolve_keep_cloud)
         action_row.addWidget(self._keep_remote_btn)
 
-        self._merge_btn = QPushButton('Merge')
+        self._merge_btn = QPushButton(self.tr('Merge safe additions'))
         self._merge_btn.clicked.connect(self._resolve_merge)
         action_row.addWidget(self._merge_btn)
 
@@ -394,6 +402,8 @@ class CloudConflictDialog(QDialog):
         self._keep_local_btn.setEnabled(enabled)
         self._keep_remote_btn.setEnabled(enabled)
         self._merge_btn.setEnabled(enabled)
+        if hasattr(self, '_apply_all_check'):
+            self._apply_all_check.setEnabled(enabled)
 
     def _show_status(self, message: str, *, tone: str = 'info') -> None:
         text = str(message or '').strip()
@@ -520,34 +530,20 @@ class CloudConflictDialog(QDialog):
                     item.setBackground(QColor(83, 64, 57))
                 self._compare_table.setItem(row_index, col, item)
 
-        # 2. Specific Image Metadata and Size Comparisons
-        # Expecting 'image_mismatches' to be a list of dicts: 
-        # {'filename': str, 'local_size': int, 'remote_size': int, 'status': str}
-        mismatches = detail.get('image_mismatches') or []
-        if mismatches:
-            desktop_lines.append("⚠️ Image File Mismatches:")
-            for m in mismatches:
-                fname = m.get('filename', 'Unknown')
-                l_size = _format_size(m.get('local_size', 0))
-                r_size = _format_size(m.get('remote_size', 0))
-                desktop_lines.append(f"  • {fname}")
-                desktop_lines.append(f"    Local: {l_size} vs Cloud: {r_size}")
-        # Inside CloudConflictDialog._populate_detail
-        mismatches = detail.get('image_mismatches') or []
-        desktop_lines = detail.get('local_image_changes') or []
-        cloud_lines = detail.get('remote_image_changes') or []
+        mismatches = list(detail.get('image_mismatches') or [])
+        desktop_lines = list(detail.get('local_image_changes') or [])
+        cloud_lines = list(detail.get('remote_image_changes') or [])
 
         if mismatches:
-            mismatch_report = ["⚠️ Specific File Mismatches:"]
-            for m in mismatches:
-                fname = m.get('filename', 'Unknown')
-                l_s = _format_size(m.get('local_size', 0))
-                r_s = _format_size(m.get('remote_size', 0))
-                mismatch_report.append(f" • {fname}: Local {l_s} vs Cloud {r_s}")
-            desktop_lines = mismatch_report + desktop_lines        
-        # General changes
-        desktop_lines.extend(detail.get('local_image_changes') or [])
-        cloud_lines.extend(detail.get('remote_image_changes') or [])
+            image_lines = [self.tr('Image differences needing review:')]
+            for mismatch in mismatches:
+                fname = str(mismatch.get('filename') or 'Unknown')
+                status = str(mismatch.get('status') or '').strip()
+                if status == 'local_only':
+                    image_lines.append(self.tr('• {name}: Desktop only copy').format(name=fname))
+                else:
+                    image_lines.append(self.tr('• {name}: Cloud only copy').format(name=fname))
+            desktop_lines = image_lines + desktop_lines
 
         if detail.get('local_measurement_count'):
             desktop_lines.append(f"Measurements: {int(detail.get('local_measurement_count'))} on desktop.")
@@ -559,24 +555,63 @@ class CloudConflictDialog(QDialog):
             _summary_text(cloud_lines, 'No specific cloud image changes.')
         )
 
+    def _append_decisions_for_conflicts(
+        self,
+        action: str,
+        conflicts: list[dict],
+        *,
+        allow_delete: bool = False,
+    ) -> None:
+        for conflict in conflicts:
+            decision = {
+                'local_id': int(conflict.get('local_id') or 0),
+                'cloud_id': str(conflict.get('cloud_id') or '').strip(),
+                'action': action,
+            }
+            if action == 'keep_cloud':
+                decision['allow_delete'] = bool(allow_delete)
+            self.decisions.append(decision)
+        if self.decisions:
+            self.resolved_any = True
+
+    def _batch_selected(self) -> bool:
+        return bool(getattr(self, '_apply_all_check', None) and self._apply_all_check.isChecked())
+
+    def _current_conflict_decisions(self) -> list[dict]:
+        return [dict(conflict) for conflict in self._conflicts]
+
     def _resolve_keep_cloud(self) -> None:
-        """Added confirmation to prevent accidental local deletion."""
+        conflict = self._current_conflict()
+        if not conflict:
+            return
+        prompt = (
+            self.tr('Use the Cloud version for all remaining conflicts?')
+            if self._batch_selected()
+            else self.tr('Use the Cloud version for this conflict?')
+        )
+        prompt += self.tr(
+            '\n\nDesktop-only image files will be kept unless you explicitly review and delete them later.'
+        )
         reply = QMessageBox.question(
-            self, 'Confirm Overwrite',
-            "Keeping the Cloud version may delete or overwrite local image metadata and edits. "
-            "Are you sure you want to proceed?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            self,
+            self.tr('Confirm Cloud Version'),
+            prompt,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
         )
         if reply == QMessageBox.No:
             return
-
-        conflict = self._current_conflict()
-        if not conflict: return
+        if self._batch_selected():
+            self._append_decisions_for_conflicts('keep_cloud', self._current_conflict_decisions(), allow_delete=False)
+            self.accept()
+            return
         self.decisions.append({
             'local_id': int(conflict.get('local_id') or 0),
             'cloud_id': str(conflict.get('cloud_id') or '').strip(),
-            'action': 'keep_cloud'
+            'action': 'keep_cloud',
+            'allow_delete': False,
         })
+        self.resolved_any = True
         self._remove_current_conflict()
 
     def _refresh_current_detail(self) -> None:
@@ -619,6 +654,10 @@ class CloudConflictDialog(QDialog):
         conflict = self._current_conflict()
         if not conflict:
             return
+        if self._batch_selected():
+            self._append_decisions_for_conflicts('keep_local', self._current_conflict_decisions())
+            self.accept()
+            return
         local_id = int(conflict.get('local_id') or 0)
         cloud_id = str(conflict.get('cloud_id') or '').strip()
         self.decisions.append({
@@ -626,24 +665,16 @@ class CloudConflictDialog(QDialog):
             'cloud_id': cloud_id,
             'action': 'keep_local'
         })
-        self._remove_current_conflict()
-
-    def _resolve_keep_cloud(self) -> None:
-        conflict = self._current_conflict()
-        if not conflict:
-            return
-        local_id = int(conflict.get('local_id') or 0)
-        cloud_id = str(conflict.get('cloud_id') or '').strip()
-        self.decisions.append({
-            'local_id': local_id,
-            'cloud_id': cloud_id,
-            'action': 'keep_cloud'
-        })
+        self.resolved_any = True
         self._remove_current_conflict()
 
     def _resolve_merge(self) -> None:
         conflict = self._current_conflict()
         if not conflict:
+            return
+        if self._batch_selected():
+            self._append_decisions_for_conflicts('merge', self._current_conflict_decisions())
+            self.accept()
             return
         local_id = int(conflict.get('local_id') or 0)
         cloud_id = str(conflict.get('cloud_id') or '').strip()
@@ -652,4 +683,5 @@ class CloudConflictDialog(QDialog):
             'cloud_id': cloud_id,
             'action': 'merge'
         })
+        self.resolved_any = True
         self._remove_current_conflict()

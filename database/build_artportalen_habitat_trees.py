@@ -11,16 +11,23 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_BIOTOPE_SOURCE = Path("/Users/sigmundas/Documents/Code/Artportalen/artportalen biotop.txt")
 DEFAULT_SUBSTRATE_SOURCE = Path("/Users/sigmundas/Documents/Code/Artportalen/artportalen substrate.txt")
-DEFAULT_BIOTOPE_OUTPUT = SCRIPT_DIR / "artportalen_biotopes_tree.json"
-DEFAULT_SUBSTRATE_OUTPUT = SCRIPT_DIR / "artportalen_substrate_tree.json"
+DEFAULT_BIOTOPE_OUTPUT = REFERENCE_DATA_GENERATED_DIR / "artportalen_biotopes_tree.json"
+DEFAULT_SUBSTRATE_OUTPUT = REFERENCE_DATA_GENERATED_DIR / "artportalen_substrate_tree.json"
 
 ITEM_RE = re.compile(r'<span class="itemjson">(\{.*?\})</span>')
 REQUEST_RE = re.compile(

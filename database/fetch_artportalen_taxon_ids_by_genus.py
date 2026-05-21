@@ -30,6 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from fetch_artportalen_taxon_ids import (
     DEFAULT_SOURCE_DB,
     HOME_URL,
@@ -49,9 +53,11 @@ from fetch_artportalen_taxon_ids import (
     parse_picker_results,
 )
 
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
-DEFAULT_LOCAL_OUTPUT_CSV = Path("database/artportalen_taxon_ids_by_genus.csv")
-DEFAULT_SWEDISH_ONLY_CSV = Path("database/artportalen_taxon_ids_swedish_only.csv")
+
+DEFAULT_LOCAL_OUTPUT_CSV = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_by_genus.csv"
+DEFAULT_SWEDISH_ONLY_CSV = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only.csv"
 CHILDREN_URL = "https://www.artportalen.se/Taxon/RenderChildren"
 
 

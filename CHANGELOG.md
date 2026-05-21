@@ -13,7 +13,7 @@ All notable changes to Sporely are documented here.
 ### Added
 - **Community spore search**: search by genus only (species now optional) — results list includes species name so you can distinguish entries across species.
 - **Spore data visibility per observation**: new "Spore data sharing" collapsible section in the Analysis tab sidebar. Each observation can be set to Public (default), Friends only, or Private. The setting is synced to and from Sporely Cloud.
-- **Spore measurement sync**: spore measurements are now pushed to Sporely Cloud during observation sync. Measurements are upserted by desktop ID so repeated syncs are safe. Requires running `database/supabase_spore_measurements_sync.sql` in the Supabase SQL editor once.
+- **Spore measurement sync**: spore measurements are now pushed to Sporely Cloud during observation sync. Measurements are upserted by desktop ID so repeated syncs are safe. Requires running `../sporely-web/supabase/migrations/supabase_spore_measurements_sync.sql` in the Supabase SQL editor once.
 - `spore_data_visibility` column added to local SQLite `observations` table; migrated automatically on first launch.
 - `cloud_id` column added to local SQLite `spore_measurements` table to track which rows have been synced; migrated automatically on first launch.
 

@@ -14,13 +14,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from database.models import ReferenceDB
 from database.schema import get_reference_database_path, init_reference_database
+from database.reference_data_paths import REFERENCE_DATA_SOURCES_DIR
 
 
 DEFAULT_SOURCE = "Parmasto, 1987"
 
-TABLE35_DEFAULT = Path(__file__).resolve().with_name("parmasto_table35.csv")
+TABLE35_DEFAULT = REFERENCE_DATA_SOURCES_DIR / "parmasto_table35.csv"
 TABLE36_CANDIDATES = (
-    Path(__file__).resolve().with_name("parmasto_table36.csv"),
+    REFERENCE_DATA_SOURCES_DIR / "parmasto_table36.csv",
     Path.home() / "Documents" / "table36.csv",
 )
 

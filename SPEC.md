@@ -13,15 +13,15 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 - **Cloud Syncing:** `cloud_sync.py` manages bidirectional REST sync with the Supabase PostgreSQL database.
 - **Conflict Resolution:** 
   - Sync engine stores a last-seen snapshot for cloud observations.
-  - Overlapping text edits trigger a manual conflict resolution dialog.
-  - Concurrent image metadata modifications automatically merge in favor of the desktop's high-fidelity data.
+  - Cloud is the source of truth for linked observation metadata; manual review is reserved for destructive cases such as image removal.
+  - Reduced cloud image copies and harmless metadata drift are merged without a modal.
   - Missing R2 media objects are gracefully skipped, allowing the rest of the sync to continue.
 - **Account Lock:** `linked_cloud_user_id` is stored in local settings after the first sync. Any attempt to sync with a different account without explicitly resetting the local cloud link throws an `AccountMismatchError`.
 
 ## Privacy & Visibility Model
 - **Workflow vs Privacy:** 
-  - `is_draft`: Indicates a WIP observation. 
-  - `sharing_scope`: Maps to Supabase `visibility` (`private`, `friends`, `public`). Note: New desktop pushes send `private` instead of the legacy `draft` flag.
+  - `is_draft`: Indicates a WIP observation and stays separate from visibility.
+  - `sharing_scope`: Maps to Supabase `visibility` (`private`, `friends`, `public`).
   - `location_precision`: Maps to Supabase `location_precision` (`exact`, `fuzzed`).
 - **Privacy Slots:** When an observation syncs as non-public (`visibility != 'public'` or `location_precision = 'fuzzed'`), it consumes 1 of 20 available free-tier privacy slots in Supabase.
 

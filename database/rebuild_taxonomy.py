@@ -8,16 +8,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+from database.reference_data_paths import (
+    REFERENCE_DATA_GENERATED_DIR,
+    REFERENCE_DATA_SOURCES_DIR,
+)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_TAXON_TXT = SCRIPT_DIR / "taxon.txt"
-DEFAULT_VERNACULAR_TXT = SCRIPT_DIR / "vernacularname.txt"
-DEFAULT_INAT_CSV = SCRIPT_DIR / "vernacular_inat_11lang.csv"
-DEFAULT_BASE_DB = SCRIPT_DIR / "vernacular_multilanguage_legacy.sqlite3"
-DEFAULT_ARTPORTALEN_MATCHED = SCRIPT_DIR / "artportalen_taxon_ids_by_genus.csv"
-DEFAULT_ARTPORTALEN_SWEDISH_ONLY = SCRIPT_DIR / "artportalen_taxon_ids_swedish_only.csv"
-DEFAULT_ARTPORTALEN_RECONCILED = SCRIPT_DIR / "artportalen_taxon_ids_swedish_only_reconciled.csv"
-DEFAULT_OUTPUT_DB = SCRIPT_DIR / "vernacular_multilanguage.sqlite3"
+DEFAULT_TAXON_TXT = REFERENCE_DATA_SOURCES_DIR / "taxon.txt"
+DEFAULT_VERNACULAR_TXT = REFERENCE_DATA_SOURCES_DIR / "vernacularname.txt"
+DEFAULT_INAT_CSV = REFERENCE_DATA_GENERATED_DIR / "vernacular_inat_11lang.csv"
+DEFAULT_BASE_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage_legacy.sqlite3"
+DEFAULT_ARTPORTALEN_MATCHED = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_by_genus.csv"
+DEFAULT_ARTPORTALEN_SWEDISH_ONLY = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only.csv"
+DEFAULT_ARTPORTALEN_RECONCILED = REFERENCE_DATA_GENERATED_DIR / "artportalen_taxon_ids_swedish_only_reconciled.csv"
+DEFAULT_OUTPUT_DB = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilanguage.sqlite3"
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

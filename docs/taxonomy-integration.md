@@ -11,15 +11,15 @@ Sporely uses a local multilingual taxonomy SQLite database for:
 
 The main database file is:
 
-- `database/vernacular_multilanguage.sqlite3`
+- `database/reference_data/generated/vernacular_multilanguage.sqlite3`
 
 ## Current implementation
 
 The local taxonomy database combines several sources:
 
-- Norwegian backbone taxonomy from `taxon.txt`
-- Norwegian vernacular names from `vernacularname.txt`
-- multilingual common names from iNaturalist in `vernacular_inat_11lang.csv`
+- Norwegian backbone taxonomy from `database/reference_data/sources/taxon.txt`
+- Norwegian vernacular names from `database/reference_data/sources/vernacularname.txt`
+- multilingual common names from iNaturalist in `database/reference_data/generated/vernacular_inat_11lang.csv`
 - Swedish scientific names and Swedish vernacular names from Artportalen CSVs
 
 The unified DB keeps the core lookup tables:
@@ -89,7 +89,7 @@ This pipeline now runs in order:
 1. build the iNaturalist multilingual common-name CSV
 2. build a temporary base taxonomy DB from Norwegian sources plus iNaturalist names
 3. fetch Swedish Artportalen taxonomy matches by genus
-4. reconcile Swedish-only taxa against `taxon.txt`
+4. reconcile Swedish-only taxa against `database/reference_data/sources/taxon.txt`
 5. build the final unified taxonomy DB
 
 That makes it possible to rebuild cleanly when:
@@ -103,7 +103,7 @@ That makes it possible to rebuild cleanly when:
 ## Key scripts
 
 - `database/inat_common_names_from_taxon.py`
-  Builds `vernacular_inat_11lang.csv` and now also includes `inaturalist_taxon_id`.
+  Builds `database/reference_data/generated/vernacular_inat_11lang.csv` and now also includes `inaturalist_taxon_id`.
 - `database/build_multilang_vernacular_db.py`
   Builds a base accepted-species DB from Norwegian taxonomy plus multilingual vernacular names.
 - `database/fetch_artportalen_taxon_ids_by_genus.py`

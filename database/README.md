@@ -1,89 +1,27 @@
-# Database Notes
+# Desktop Database
 
-## Taxonomy rebuild pipeline
+This folder contains the desktop app's SQLite runtime schema, migration helpers, and database-adjacent code.
 
-The main taxonomy DB used by Sporely is:
+## Important boundaries
 
-- `vernacular_multilanguage.sqlite3`
+- The desktop SQLite database is not intended to match Supabase/Postgres DDL exactly.
+- `schema.py` and `migrate.py` own the local schema/versioning behavior.
+- `sqlite_migrations/` is reserved for standalone local SQL migrations if we add them later.
+- Shared field names should be validated by contract or code review, not by copying Postgres DDL into SQLite.
 
-The full rebuild can now be run with:
+## Runtime SQLite files
 
-```bash
-python database/rebuild_taxonomy.py --cookie-json path/to/artportalen_cookies.json --overwrite
-```
+- The local app database lives outside the repo in the user's app-data directory.
+- The bundled reference database and taxonomy lookup files now live under `reference_data/`.
 
-This pipeline runs:
+## Reference data pipeline
 
-1. `inat_common_names_from_taxon.py`
-   Builds `vernacular_inat_11lang.csv` with multilingual iNaturalist common names and `inaturalist_taxon_id`.
-2. `build_multilang_vernacular_db.py`
-   Builds a temporary base DB from `taxon.txt`, `vernacularname.txt`, and the iNaturalist CSV.
-3. `fetch_artportalen_taxon_ids_by_genus.py`
-   Fetches Swedish Artportalen taxa and writes matched plus Swedish-only CSVs.
-4. `reconcile_artportalen_swedish_only.py`
-   Resolves Swedish-only rows against `taxon.txt`, including synonym cases.
-5. `build_unified_multilang_taxonomy_db.py`
-   Builds the final unified taxonomy DB used by the app.
+- `reference_data/sources/` holds source inputs such as `taxon.txt`, `vernacularname.txt`, and Parmasto tables.
+- `reference_data/generated/` holds build artifacts such as `reference_values.db`, `vernacular_multilanguage*.sqlite3`, and the Artportalen lookup exports.
+- Rebuild instructions live in `reference_data/README.md`.
 
-## Unified taxonomy DB
+## Schema helpers
 
-The unified output keeps:
+- `schema.py` initializes and upgrades the local app database.
+- `migrate.py` and `add_point_columns.py` are app-maintenance scripts, not Supabase migrations.
 
-- `taxon_min`
-- `vernacular_min`
-
-and adds:
-
-- `norwegian_taxon_id`
-- `swedish_taxon_id`
-- `inaturalist_taxon_id`
-- `scientific_name_min`
-- `taxon_external_id_min`
-
-This lets one local accepted taxon row keep:
-
-- Norwegian backbone identity
-- Norwegian and Swedish common names
-- scientific aliases and synonyms
-- Artportalen taxon IDs
-- iNaturalist taxon IDs
-
-Swedish names from Artportalen are treated as preferred where appropriate, while older names can remain as secondary rows.
-
-## Partial rebuilds
-
-Reuse existing intermediate files:
-
-```bash
-python database/rebuild_taxonomy.py \
-  --skip-inat \
-  --skip-artportalen-fetch \
-  --skip-artportalen-reconcile
-```
-
-Refresh only the Swedish Artportalen side:
-
-```bash
-python database/rebuild_taxonomy.py --skip-inat --cookie-json path/to/artportalen_cookies.json --overwrite
-```
-
-## Reporting targets
-
-Observation records carry an explicit `publish_target`, currently:
-
-- `artsobs_no`
-- `artportalen_se`
-
-Target-specific upload IDs are stored separately from the local taxonomy DB.
-
-## Supabase Cloud Migrations
-
-This folder also contains `.sql` migration files for the Sporely Cloud (Supabase) PostgreSQL database. These are meant to be executed manually in the Supabase SQL Editor to keep the cloud schema in sync with the desktop application:
-
-- `supabase_r2_media_migration.sql` — Adds `image_key` and `thumb_key` columns to support Cloudflare R2 media hosting, and normalizes legacy storage paths.
-- `supabase_observation_images_ai_crop.sql` — Adds AI crop geometry columns (`ai_crop_x1`, etc.) to the `observation_images` table so crops sync across platforms.
-- `supabase_spore_measurements_sync.sql` — Prepares the `spore_measurements` table to receive synced measurements from the desktop.
-- `supabase_people_directory.sql` — Adds the `search_people_directory` RPC used by the web People screen for privacy-aware public contributor stats.
-- `supabase_unique_constraints.sql` — Adds `UNIQUE (desktop_id, user_id)` constraints to ensure high-performance upserts during desktop-to-cloud sync.
-- `supabase_phase7_privacy_social_costs.sql` — Base Phase 7 privacy/social migration with `profiles.is_pro`, the first non-public slot trigger, privacy-aware feed views, and matching RLS policies.
-- `supabase_phase7_transparency_social_trails.sql` — Follow-up Phase 7 delta that separates WIP state (`is_draft`) from sharing (`private` / `friends` / `public`), adds `location_precision`, introduces follows, and updates the 20-slot trigger to count private/friends or fuzzed observations.

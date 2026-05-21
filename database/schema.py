@@ -7,11 +7,11 @@ from pathlib import Path
 
 from app_identity import app_data_dir
 from database.database_tags import DatabaseTerms
+from database.reference_data_paths import BUNDLED_REFERENCE_DATABASE_PATH
 
 _app_dir = app_data_dir()
 DATABASE_PATH = _app_dir / "mushrooms.db"
 REFERENCE_DATABASE_PATH = _app_dir / "reference_values.db"
-BUNDLED_REFERENCE_DATABASE_PATH = Path(__file__).resolve().with_name("reference_values.db")
 SETTINGS_PATH = _app_dir / "app_settings.json"
 
 DEFAULT_OBJECTIVES = {
@@ -1239,6 +1239,7 @@ def init_database():
             ai_crop_y2 REAL,
             ai_crop_source_w INTEGER,
             ai_crop_source_h INTEGER,
+            ai_crop_is_custom INTEGER DEFAULT 0,
             crop_mode TEXT,
             gps_source INTEGER DEFAULT 0,
             artsobs_web_unpublished INTEGER DEFAULT 0,
@@ -1353,6 +1354,10 @@ def init_database():
         pass
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN ai_crop_source_h INTEGER')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN ai_crop_is_custom INTEGER DEFAULT 0')
     except sqlite3.OperationalError:
         pass
     try:

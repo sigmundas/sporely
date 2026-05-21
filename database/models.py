@@ -1329,6 +1329,7 @@ class ImageDB:
                   calibration_id: int = None,
                   ai_crop_box: tuple[float, float, float, float] | None = None,
                   ai_crop_source_size: tuple[int, int] | None = None,
+                  ai_crop_is_custom: bool | None = None,
                   crop_mode: str | None = None,
                   gps_source: bool | None = None,
                   resample_scale_factor: float | None = None,
@@ -1466,6 +1467,7 @@ class ImageDB:
         if ai_crop_source_size and len(ai_crop_source_size) == 2:
             crop_w, crop_h = ai_crop_source_size
         gps_source_value = None if gps_source is None else (1 if gps_source else 0)
+        ai_crop_is_custom_value = 1 if ai_crop_is_custom else 0
         lab_metadata_json = _serialize_json_object(lab_metadata)
 
         cursor.execute('''
@@ -1474,12 +1476,12 @@ class ImageDB:
                               mount_medium, stain, sample_type, contrast, measure_color, notes, lab_metadata, calibration_id,
                               captured_at,
                               ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
-                              ai_crop_source_w, ai_crop_source_h, crop_mode, gps_source, original_filepath, sort_order,
+                              ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom, crop_mode, gps_source, original_filepath, sort_order,
                               artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (observation_id, final_filepath, image_type, micro_category,
               objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
-              lab_metadata_json, calibration_id, captured_at_text, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, crop_mode, gps_source_value,
+              lab_metadata_json, calibration_id, captured_at_text, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, ai_crop_is_custom_value, crop_mode, gps_source_value,
               final_original_filepath, sort_order, artsobs_web_unpublished))
 
         img_id = cursor.lastrowid
@@ -1649,6 +1651,7 @@ class ImageDB:
                      contrast: str = None, calibration_id: int | None | object = _UNSET,
                      ai_crop_box: tuple[float, float, float, float] | None | object = _UNSET,
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
+                     ai_crop_is_custom: bool | None | object = _UNSET,
                      crop_mode: str | None | object = _UNSET,
                      gps_source: bool | None | object = _UNSET,
                      resample_scale_factor: float | None | object = _UNSET,
@@ -1735,6 +1738,9 @@ class ImageDB:
                 crop_w, crop_h = ai_crop_source_size
             updates.extend(['ai_crop_source_w = ?', 'ai_crop_source_h = ?'])
             values.extend([crop_w, crop_h])
+        if ai_crop_is_custom is not _UNSET and 'ai_crop_is_custom' in image_columns:
+            updates.append('ai_crop_is_custom = ?')
+            values.append(None if ai_crop_is_custom is None else (1 if ai_crop_is_custom else 0))
         if crop_mode is not _UNSET and 'crop_mode' in image_columns:
             updates.append('crop_mode = ?')
             values.append(crop_mode)

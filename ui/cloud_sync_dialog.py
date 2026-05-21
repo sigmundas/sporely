@@ -27,6 +27,7 @@ def _track_worker(worker: QThread) -> None:
 
 from database.models import ObservationDB
 from database.schema import get_app_settings
+from .dialog_helpers import ask_wrapped_yes_no_with_checkbox
 from utils.cloud_sync import (
     SporelyCloudClient,
     ACCOUNT_MISMATCH_MESSAGE,
@@ -324,45 +325,67 @@ class CloudSyncDialog(QDialog):
         entries = [dict(row or {}) for row in (deleted_remote or []) if row]
         if not entries:
             return False
-        
         changed = False
-        for entry in entries:
+        bulk_choice: str | None = None
+        total = len(entries)
+        for index, entry in enumerate(entries):
             local_id = int(entry.get('local_id') or 0)
-            if local_id <= 0: continue
+            if local_id <= 0:
+                continue
 
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Question)
-            box.setWindowTitle('Cloud Observation Deleted')
-            box.setText(f"Observation was deleted from Sporely Cloud.")
-            box.setInformativeText(
-                self._format_deleted_cloud_observation_label(entry) +
-                "\n\nHow would you like to handle the local desktop copy?"
+            if bulk_choice == 'delete':
+                ObservationDB.delete_observation(local_id)
+                changed = True
+                continue
+            if bulk_choice == 'keep':
+                unlink_local_observation_from_cloud(local_id)
+                changed = True
+                continue
+
+            remaining = total - index
+            prompt = self.tr(
+                "Cloud observation {cloud_id} was deleted.\n\n"
+                "{details}\n\n"
+                "Delete the desktop observation too?\n\n"
+                "Choose No to keep it locally only and remove the cloud link."
+            ).format(
+                cloud_id=str(entry.get('cloud_id') or '?').strip() or '?',
+                details=self._format_deleted_cloud_observation_label(entry),
             )
-            
-            # Action Buttons
-            keep_btn = box.addButton('Keep local only (Unlink)', QMessageBox.NoRole)
-            delete_btn = box.addButton('Delete local copy', QMessageBox.DestructiveRole)
-            box.setDefaultButton(keep_btn)
-            
-            box.exec()
-            clicked = box.clickedButton()
-            
-            if clicked is delete_btn:
-                # Double check for files specifically
+            if remaining > 1:
+                prompt += "\n\n" + self.tr("{count} observations remain in this review.").format(
+                    count=remaining,
+                )
+            delete_local, apply_to_all = ask_wrapped_yes_no_with_checkbox(
+                self,
+                self.tr("Cloud Observation Deleted"),
+                prompt,
+                checkbox_text=self.tr("Apply this choice to all remaining deleted cloud observations"),
+                default_yes=False,
+                yes_text=self.tr("Delete local copy"),
+                no_text=self.tr("Keep local only (Unlink)"),
+            )
+
+            if delete_local:
                 confirm = QMessageBox.warning(
-                    self, "Confirm Delete",
-                    "This will permanently delete the observation record and associated local image references. Continue?",
-                    QMessageBox.Yes | QMessageBox.No
+                    self,
+                    self.tr("Confirm Delete"),
+                    self.tr(
+                        "This will permanently delete the observation record and associated local image references. Continue?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
                 )
                 if confirm == QMessageBox.Yes:
                     ObservationDB.delete_observation(local_id)
                     changed = True
+                    if apply_to_all:
+                        bulk_choice = 'delete'
             else:
-                # User chose to keep it local but remove the cloud link
                 unlink_local_observation_from_cloud(local_id)
                 changed = True
-        
-        # ... (refresh logic) ...
+                if apply_to_all:
+                    bulk_choice = 'keep'
+
         return changed
 
     def _on_sync_done(self, result: dict) -> None:

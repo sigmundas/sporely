@@ -20,7 +20,7 @@ from pathlib import Path
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SERVICE_KEY  = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')
-DB_PATH      = Path(__file__).parent / 'vernacular_multilanguage_unified.sqlite3'
+DB_PATH      = Path(__file__).resolve().with_name('reference_data') / 'generated' / 'vernacular_multilanguage_unified.sqlite3'
 BATCH        = 500
 
 if not SERVICE_KEY:

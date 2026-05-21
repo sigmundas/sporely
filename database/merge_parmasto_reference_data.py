@@ -26,9 +26,10 @@ from database.schema import (  # noqa: E402
     get_reference_database_path,
     init_reference_database,
 )
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
 
-MERGED_CSV_DEFAULT = Path(__file__).resolve().with_name("parmasto_reference_merged.csv")
+MERGED_CSV_DEFAULT = REFERENCE_DATA_GENERATED_DIR / "parmasto_reference_merged.csv"
 
 REFERENCE_INSERT_COLUMNS = [
     "genus",
