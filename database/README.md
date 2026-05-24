@@ -25,3 +25,9 @@ This folder contains the desktop app's SQLite runtime schema, migration helpers,
 - `schema.py` initializes and upgrades the local app database.
 - `migrate.py` and `add_point_columns.py` are app-maintenance scripts, not Supabase migrations.
 
+## Calibration UUID Stage A
+
+- Local SQLite calibrations now carry an immutable `calibration_uuid` for shared identity.
+- Legacy rows are backfilled during local migration, and new calibrations get a UUID automatically.
+- Bundle export/import preserves calibration UUIDs and skips duplicate UUID imports instead of overwriting.
+- Cloud calibration sync is intentionally deferred to a later stage.

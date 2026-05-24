@@ -3,6 +3,7 @@ import json
 import re
 import sqlite3
 import shutil
+import uuid
 from pathlib import Path
 
 from app_identity import app_data_dir
@@ -964,6 +965,59 @@ def _migrate_image_sort_order(cursor: sqlite3.Cursor) -> None:
                 (index, image_id),
             )
 
+
+def ensure_calibration_uuid_column(cursor: sqlite3.Cursor) -> None:
+    """Ensure calibrations have a stable local UUID identity."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
+    if not cursor.fetchone():
+        return
+
+    cursor.execute("PRAGMA table_info(calibrations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "calibration_uuid" not in columns:
+        cursor.execute("ALTER TABLE calibrations ADD COLUMN calibration_uuid TEXT")
+
+    cursor.execute("SELECT id, calibration_uuid FROM calibrations ORDER BY id")
+    rows = cursor.fetchall()
+    seen: set[str] = set()
+    updates: list[tuple[str, int]] = []
+
+    def _new_uuid() -> str:
+        while True:
+            candidate = str(uuid.uuid4())
+            if candidate not in seen:
+                return candidate
+
+    for calibration_id, calibration_uuid in rows:
+        raw_value = str(calibration_uuid).strip() if calibration_uuid is not None else ""
+        if not raw_value:
+            normalized = _new_uuid()
+        else:
+            try:
+                normalized = str(uuid.UUID(raw_value))
+            except (TypeError, ValueError, AttributeError):
+                normalized = _new_uuid()
+
+        if normalized in seen:
+            normalized = _new_uuid()
+        seen.add(normalized)
+        if normalized != calibration_uuid:
+            updates.append((normalized, calibration_id))
+
+    if updates:
+        cursor.executemany(
+            "UPDATE calibrations SET calibration_uuid = ? WHERE id = ?",
+            updates,
+        )
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_calibrations_uuid
+        ON calibrations(calibration_uuid)
+        WHERE calibration_uuid IS NOT NULL AND TRIM(calibration_uuid) != ''
+        """
+    )
+
 def init_database():
     """Initialize the database with required tables"""
     db_path = get_database_path()
@@ -1529,6 +1583,7 @@ def init_database():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS calibrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            calibration_uuid TEXT NOT NULL,
             objective_key TEXT NOT NULL,
             calibration_date TEXT NOT NULL,
             calibration_image_date TEXT,
@@ -1584,6 +1639,8 @@ def init_database():
         cursor.execute('ALTER TABLE calibrations ADD COLUMN calibration_image_date TEXT')
     except sqlite3.OperationalError:
         pass
+
+    ensure_calibration_uuid_column(cursor)
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_species ON observations(genus, species)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_source ON observations(source_type)')

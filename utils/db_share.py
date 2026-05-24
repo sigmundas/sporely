@@ -4,6 +4,7 @@ import sqlite3
 import shutil
 import tempfile
 import zipfile
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -406,6 +407,33 @@ def import_database_bundle(
         imported_refs = 0
         imported_objectives = 0
         fallback_objectives: dict[str, dict] = {}
+        calibration_table_columns: set[str] = set()
+        existing_calibration_uuids: set[str] = set()
+
+        if include_calibrations and src_cur is not None:
+            try:
+                dest_cur.execute("PRAGMA table_info(calibrations)")
+                calibration_table_columns = {row[1] for row in dest_cur.fetchall()}
+            except sqlite3.OperationalError:
+                calibration_table_columns = set()
+
+            if "calibration_uuid" in calibration_table_columns:
+                try:
+                    dest_cur.execute(
+                        """
+                        SELECT calibration_uuid
+                        FROM calibrations
+                        WHERE calibration_uuid IS NOT NULL
+                          AND TRIM(calibration_uuid) != ''
+                        """
+                    )
+                    existing_calibration_uuids = {
+                        str(row[0]).strip()
+                        for row in dest_cur.fetchall()
+                        if row[0] is not None and str(row[0]).strip()
+                    }
+                except sqlite3.OperationalError:
+                    existing_calibration_uuids = set()
 
         if include_observations and src_cur is not None:
             src_cur.execute("SELECT * FROM observations ORDER BY id")
@@ -514,6 +542,18 @@ def import_database_bundle(
                 data = dict(row)
                 data.pop("id", None)
                 objective_key = str(data.get("objective_key") or "").strip()
+                if "calibration_uuid" in calibration_table_columns:
+                    calibration_uuid = str(data.get("calibration_uuid") or "").strip()
+                    if not calibration_uuid:
+                        calibration_uuid = str(uuid.uuid4())
+                    if calibration_uuid in existing_calibration_uuids:
+                        warnings.append(
+                            f"Skipped calibration import for duplicate calibration_uuid {calibration_uuid}."
+                        )
+                        continue
+                    data["calibration_uuid"] = calibration_uuid
+                else:
+                    data.pop("calibration_uuid", None)
 
                 restored_image = _restore_archive_asset(
                     data.get("image_filepath"),
@@ -563,6 +603,8 @@ def import_database_bundle(
                     f"INSERT INTO calibrations ({', '.join(columns)}) VALUES ({placeholders})",
                     values
                 )
+                if "calibration_uuid" in calibration_table_columns:
+                    existing_calibration_uuids.add(data["calibration_uuid"])
                 imported_calibrations += 1
 
             objectives_bundle_path = temp_dir / "objectives.json"

@@ -2,7 +2,12 @@
 import json
 import sqlite3
 import shutil
-from database.schema import get_database_path, load_objectives, resolve_objective_key
+from database.schema import (
+    ensure_calibration_uuid_column,
+    get_database_path,
+    load_objectives,
+    resolve_objective_key,
+)
 from database.database_tags import DatabaseTerms
 
 _DEFAULT_MEASURE_CATEGORIES = [
@@ -448,6 +453,7 @@ def migrate_database():
             cursor.execute("ALTER TABLE calibrations ADD COLUMN camera TEXT")
         if "megapixels" not in columns:
             cursor.execute("ALTER TABLE calibrations ADD COLUMN megapixels REAL")
+        ensure_calibration_uuid_column(cursor)
         # Normalize objective_name values to current objective keys when possible
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
         if cursor.fetchone():

@@ -3,6 +3,7 @@ import sqlite3
 import shutil
 import re
 import json
+import uuid
 from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime
@@ -3060,82 +3061,91 @@ class CalibrationDB:
         calibration_image_height: int | None = None,
         notes: str = None,
         set_active: bool = True,
+        calibration_uuid: str | None = None,
     ) -> int:
         """Add a new calibration record and return its ID."""
         conn = get_connection()
         cursor = conn.cursor()
+        try:
+            if calibration_date is None:
+                calibration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        if calibration_date is None:
-            calibration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # If setting as active, deactivate other calibrations for this objective
+            if set_active:
+                cursor.execute(
+                    "UPDATE calibrations SET is_active = 0 WHERE objective_key = ?",
+                    (objective_key,)
+                )
 
-        # If setting as active, deactivate other calibrations for this objective
-        if set_active:
+            cursor.execute("PRAGMA table_info(calibrations)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            insert_cols = [
+                "objective_key",
+                "calibration_date",
+                "calibration_image_date",
+                "microns_per_pixel",
+                "microns_per_pixel_std",
+                "confidence_interval_low",
+                "confidence_interval_high",
+                "num_measurements",
+                "measurements_json",
+                "image_filepath",
+            ]
+            values = [
+                objective_key,
+                calibration_date,
+                calibration_image_date,
+                microns_per_pixel,
+                microns_per_pixel_std,
+                confidence_interval_low,
+                confidence_interval_high,
+                num_measurements,
+                measurements_json,
+                image_filepath,
+            ]
+
+            if "calibration_uuid" in columns:
+                insert_cols.append("calibration_uuid")
+                normalized_uuid = str(calibration_uuid).strip() if calibration_uuid is not None else ""
+                values.append(normalized_uuid or str(uuid.uuid4()))
+            if "camera" in columns:
+                insert_cols.append("camera")
+                values.append(camera)
+            if "megapixels" in columns:
+                insert_cols.append("megapixels")
+                values.append(megapixels)
+            if "target_sampling_pct" in columns:
+                insert_cols.append("target_sampling_pct")
+                values.append(target_sampling_pct)
+            if "resample_scale_factor" in columns:
+                insert_cols.append("resample_scale_factor")
+                values.append(resample_scale_factor)
+            if "calibration_image_width" in columns:
+                insert_cols.append("calibration_image_width")
+                values.append(calibration_image_width)
+            if "calibration_image_height" in columns:
+                insert_cols.append("calibration_image_height")
+                values.append(calibration_image_height)
+
+            insert_cols.extend(["notes", "is_active"])
+            values.extend([notes, 1 if set_active else 0])
+
+            placeholders = ", ".join(["?"] * len(insert_cols))
+            cols_sql = ", ".join(insert_cols)
             cursor.execute(
-                "UPDATE calibrations SET is_active = 0 WHERE objective_key = ?",
-                (objective_key,)
+                f"INSERT INTO calibrations ({cols_sql}) VALUES ({placeholders})",
+                values,
             )
 
-        cursor.execute("PRAGMA table_info(calibrations)")
-        columns = {row[1] for row in cursor.fetchall()}
-
-        insert_cols = [
-            "objective_key",
-            "calibration_date",
-            "calibration_image_date",
-            "microns_per_pixel",
-            "microns_per_pixel_std",
-            "confidence_interval_low",
-            "confidence_interval_high",
-            "num_measurements",
-            "measurements_json",
-            "image_filepath",
-        ]
-        values = [
-            objective_key,
-            calibration_date,
-            calibration_image_date,
-            microns_per_pixel,
-            microns_per_pixel_std,
-            confidence_interval_low,
-            confidence_interval_high,
-            num_measurements,
-            measurements_json,
-            image_filepath,
-        ]
-
-        if "camera" in columns:
-            insert_cols.append("camera")
-            values.append(camera)
-        if "megapixels" in columns:
-            insert_cols.append("megapixels")
-            values.append(megapixels)
-        if "target_sampling_pct" in columns:
-            insert_cols.append("target_sampling_pct")
-            values.append(target_sampling_pct)
-        if "resample_scale_factor" in columns:
-            insert_cols.append("resample_scale_factor")
-            values.append(resample_scale_factor)
-        if "calibration_image_width" in columns:
-            insert_cols.append("calibration_image_width")
-            values.append(calibration_image_width)
-        if "calibration_image_height" in columns:
-            insert_cols.append("calibration_image_height")
-            values.append(calibration_image_height)
-
-        insert_cols.extend(["notes", "is_active"])
-        values.extend([notes, 1 if set_active else 0])
-
-        placeholders = ", ".join(["?"] * len(insert_cols))
-        cols_sql = ", ".join(insert_cols)
-        cursor.execute(
-            f"INSERT INTO calibrations ({cols_sql}) VALUES ({placeholders})",
-            values,
-        )
-
-        calibration_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return calibration_id
+            calibration_id = cursor.lastrowid
+            conn.commit()
+            return calibration_id
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     @staticmethod
     def get_calibration(calibration_id: int) -> Optional[dict]:
