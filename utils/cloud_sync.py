@@ -371,6 +371,9 @@ def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
             for row in images
             if should_pull_cloud_image_to_desktop(row)
         ]
+    measurements = data.get('measurements')
+    if isinstance(measurements, list):
+        data['measurements'] = [dict(row or {}) for row in measurements]
     return data
 
 
@@ -720,10 +723,22 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     current_media_sig = _local_cloud_media_signature(local_id)
     if not current_media_sig:
         return False
-    if _local_media_signatures_match(stored_media_sig, current_media_sig):
-        _store_local_media_signature_if_equivalent(local_id, stored_media_sig, current_media_sig)
-        return False
-    return True
+    if not _local_media_signatures_match(stored_media_sig, current_media_sig):
+        return True
+    _store_local_media_signature_if_equivalent(local_id, stored_media_sig, current_media_sig)
+
+    try:
+        local_measurements = MeasurementDB.get_measurements_for_observation(local_id)
+    except Exception:
+        return True
+    local_measurement_payloads = [
+        _local_measurement_snapshot_payload(row)
+        for row in (local_measurements or [])
+    ]
+    baseline_measurements = [dict(row or {}) for row in (snapshot.get('measurements') or [])]
+    if _analyze_measurement_changes(local_measurement_payloads, baseline_measurements).get('changed'):
+        return True
+    return False
 
 
 def _clear_observation_dirty_if_no_real_changes(local_id: int, cloud_id: str) -> bool:
@@ -890,7 +905,11 @@ def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
     return True
 
 
-def _cloud_observation_snapshot(remote: dict, remote_images: list[dict]) -> str:
+def _cloud_observation_snapshot(
+    remote: dict,
+    remote_images: list[dict],
+    remote_measurements: list[dict] | None = None,
+) -> str:
     obs_part = {
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
@@ -908,7 +927,23 @@ def _cloud_observation_snapshot(remote: dict, remote_images: list[dict]) -> str:
                 for field in _SNAPSHOT_IMG_FIELDS
             }
         )
-    payload = {'observation': obs_part, 'images': images_part}
+    measurements_part = []
+    filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
+    for measurement in sorted(
+        filtered_measurements,
+        key=lambda row: (
+            str(row.get('image_id') or ''),
+            _safe_int(row.get('desktop_id')),
+            str(row.get('id') or ''),
+        ),
+    ):
+        measurements_part.append(
+            {
+                field: _normalize_snapshot_value(measurement.get(field))
+                for field in _SNAPSHOT_MEAS_FIELDS
+            }
+        )
+    payload = {'observation': obs_part, 'images': images_part, 'measurements': measurements_part}
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
@@ -963,6 +998,46 @@ def _store_local_cloud_media_signature(observation_id: int | str, signature: str
         _cloud_local_media_signature_key(observation_id),
         str(signature or '').strip(),
     )
+
+
+def _pull_remote_measurements_for_images(
+    client: "SporelyCloudClient",
+    image_cloud_ids: list[str],
+) -> list[dict]:
+    fetcher = getattr(client, 'pull_measurements_for_images', None)
+    if not callable(fetcher):
+        return []
+    rows = fetcher(image_cloud_ids)
+    return [dict(row or {}) for row in (rows or [])]
+
+
+def _group_remote_measurements_by_observation(
+    remote_images: list[dict] | None,
+    remote_measurements: list[dict] | None,
+) -> dict[str, list[dict]]:
+    image_to_obs: dict[str, str] = {}
+    for image_row in (remote_images or []):
+        cloud_image_id = str(image_row.get('id') or '').strip()
+        cloud_obs_id = str(image_row.get('observation_id') or '').strip()
+        if cloud_image_id and cloud_obs_id:
+            image_to_obs[cloud_image_id] = cloud_obs_id
+    grouped: dict[str, list[dict]] = {}
+    for measurement_row in (remote_measurements or []):
+        cloud_image_id = str(measurement_row.get('image_id') or '').strip()
+        cloud_obs_id = image_to_obs.get(cloud_image_id)
+        if not cloud_obs_id:
+            continue
+        grouped.setdefault(cloud_obs_id, []).append(dict(measurement_row or {}))
+    for rows in grouped.values():
+        rows.sort(
+            key=lambda row: (
+                str(row.get('image_id') or ''),
+                _safe_int(row.get('desktop_id')),
+                str(row.get('id') or ''),
+            )
+        )
+    return grouped
+
 
 def sync_all(
     client: SporelyCloudClient,
@@ -1511,6 +1586,127 @@ def _remote_image_payload(
     return payload
 
 
+_SNAPSHOT_MEAS_FIELDS = [
+    'id', 'desktop_id', 'image_id', 'length_um', 'width_um', 'measurement_type',
+    'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
+    'p4_x', 'p4_y', 'measured_at',
+]
+
+
+def _normalize_measurement_type_value(value) -> str:
+    text = str(value or 'manual').strip().lower()
+    return text or 'manual'
+
+
+def _normalize_measurement_timestamp_value(value) -> str | None:
+    parsed = _parse_sync_timestamp(value)
+    if parsed is not None:
+        return parsed.isoformat()
+    text = str(value or '').strip()
+    return text or None
+
+
+def _measurement_compare_key(measurement_row: dict | None) -> str:
+    row = dict(measurement_row or {})
+    cloud_id = str(row.get('id') or '').strip()
+    desktop_id = str(row.get('desktop_id') or '').strip()
+    image_id = str(row.get('image_id') or '').strip()
+    if cloud_id:
+        return f'cloud:{cloud_id}'
+    if desktop_id:
+        return f'desktop:{desktop_id}'
+    if image_id:
+        return f'image:{image_id}'
+    return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+
+
+def _measurement_compare_payload(
+    measurement_row: dict | None,
+    *,
+    local: bool,
+) -> dict:
+    row = dict(measurement_row or {})
+    payload: dict = {}
+    if local:
+        payload['id'] = _normalize_snapshot_value(
+            str(row.get('cloud_id') or '').strip() or row.get('id')
+        )
+        payload['desktop_id'] = _normalize_snapshot_value(row.get('id'))
+        payload['image_id'] = _normalize_snapshot_value(
+            str(row.get('image_cloud_id') or '').strip() or row.get('image_id')
+        )
+    else:
+        payload['id'] = _normalize_snapshot_value(row.get('id'))
+        payload['desktop_id'] = _normalize_snapshot_value(row.get('desktop_id'))
+        payload['image_id'] = _normalize_snapshot_value(row.get('image_id'))
+
+    payload['length_um'] = _normalize_snapshot_value(row.get('length_um'))
+    payload['width_um'] = _normalize_snapshot_value(row.get('width_um'))
+    payload['measurement_type'] = _normalize_measurement_type_value(row.get('measurement_type'))
+    payload['gallery_rotation'] = _safe_int(row.get('gallery_rotation'))
+    payload['p1_x'] = _normalize_snapshot_value(row.get('p1_x'))
+    payload['p1_y'] = _normalize_snapshot_value(row.get('p1_y'))
+    payload['p2_x'] = _normalize_snapshot_value(row.get('p2_x'))
+    payload['p2_y'] = _normalize_snapshot_value(row.get('p2_y'))
+    payload['p3_x'] = _normalize_snapshot_value(row.get('p3_x'))
+    payload['p3_y'] = _normalize_snapshot_value(row.get('p3_y'))
+    payload['p4_x'] = _normalize_snapshot_value(row.get('p4_x'))
+    payload['p4_y'] = _normalize_snapshot_value(row.get('p4_y'))
+    payload['measured_at'] = _normalize_measurement_timestamp_value(row.get('measured_at'))
+    return payload
+
+
+def _local_measurement_snapshot_payload(measurement_row: dict | None) -> dict:
+    return _measurement_compare_payload(measurement_row, local=True)
+
+
+def _remote_measurement_snapshot_payload(measurement_row: dict | None) -> dict:
+    return _measurement_compare_payload(measurement_row, local=False)
+
+
+def _baseline_measurement_compare_payload(record: dict | None) -> dict:
+    row = dict(record or {})
+    payload: dict = {}
+    for field in _SNAPSHOT_MEAS_FIELDS:
+        if field == 'gallery_rotation':
+            payload[field] = _safe_int(row.get(field))
+        elif field == 'measurement_type':
+            payload[field] = _normalize_measurement_type_value(row.get(field))
+        elif field == 'measured_at':
+            payload[field] = _normalize_measurement_timestamp_value(row.get(field))
+        else:
+            payload[field] = _normalize_snapshot_value(row.get(field))
+    return payload
+
+
+def _analyze_measurement_changes(current_measurements: list[dict], baseline_measurements: list[dict]) -> dict:
+    current = [dict(row or {}) for row in (current_measurements or [])]
+    baseline = [dict(row or {}) for row in (baseline_measurements or [])]
+    current_keys = [_measurement_compare_key(row) for row in current]
+    baseline_keys = [_measurement_compare_key(row) for row in baseline]
+    current_map = {_measurement_compare_key(row): row for row in current}
+    baseline_map = {_measurement_compare_key(row): row for row in baseline}
+
+    added_keys = [key for key in current_keys if key not in baseline_map]
+    removed_keys = [key for key in baseline_keys if key not in current_map]
+    shared_keys = [key for key in current_keys if key in baseline_map]
+    changed_keys = [
+        key
+        for key in shared_keys
+        if _measurement_compare_payload(current_map[key], local=False)
+        != _measurement_compare_payload(baseline_map[key], local=False)
+    ]
+
+    return {
+        'added_keys': added_keys,
+        'removed_keys': removed_keys,
+        'changed_keys': changed_keys,
+        'added': [current_map[key] for key in added_keys],
+        'removed': [baseline_map[key] for key in removed_keys],
+        'changed': bool(added_keys or removed_keys or changed_keys),
+    }
+
+
 def _mark_cloud_observations_dirty_for_media_changes() -> None:
     current_signature = _cloud_media_signature()
     previous_signature = str(SettingsDB.get_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, '') or '').strip()
@@ -1581,6 +1777,38 @@ def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
     return by_cloud_id, by_local_id
 
 
+def _load_local_measurement_lookup(observation_id: int) -> tuple[dict[str, dict], dict[int, dict]]:
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            '''
+            SELECT
+                m.*,
+                i.cloud_id AS image_cloud_id
+            FROM spore_measurements m
+            JOIN images i ON i.id = m.image_id
+            WHERE i.observation_id = ?
+            ORDER BY m.id
+            ''',
+            (int(observation_id),),
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+    by_cloud_id: dict[str, dict] = {}
+    by_local_id: dict[int, dict] = {}
+    for row in rows:
+        local_id = _safe_int(row.get('id'))
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if local_id > 0:
+            by_local_id[local_id] = row
+        if cloud_id:
+            by_cloud_id[cloud_id] = row
+    return by_cloud_id, by_local_id
+
+
 def _find_local_observation_for_remote_cached(
     remote: dict,
     by_cloud_id: dict[str, dict],
@@ -1608,6 +1836,7 @@ def _remote_observation_changed_since_last_sync(local_obs: dict | None, remote: 
 def _remote_snapshot_has_meaningful_changes(
     remote: dict | None,
     remote_images: list[dict] | None,
+    remote_measurements: list[dict] | None,
     stored_snapshot: str | None,
 ) -> bool:
     snapshot = _parse_cloud_observation_snapshot(stored_snapshot)
@@ -1625,10 +1854,14 @@ def _remote_snapshot_has_meaningful_changes(
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
     remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
     remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
+    baseline_measurements = [dict(row or {}) for row in (snapshot.get('measurements') or [])]
+    remote_measurement_payloads = [_remote_measurement_snapshot_payload(row) for row in (remote_measurements or [])]
+    remote_measurement_changes = _analyze_measurement_changes(remote_measurement_payloads, baseline_measurements)
     return bool(
         remote_image_changes.get('added_keys')
         or remote_image_changes.get('removed_keys')
         or remote_image_changes.get('metadata_changed_keys')
+        or remote_measurement_changes.get('changed')
     )
 
 
@@ -2247,15 +2480,35 @@ def _apply_remote_images_to_local(
     return warnings
 
 
-def _store_remote_snapshot(client: "SporelyCloudClient", cloud_id: str, remote: dict | None = None, remote_images: list[dict] | None = None) -> None:
+def _store_remote_snapshot(
+    client: "SporelyCloudClient",
+    cloud_id: str,
+    remote: dict | None = None,
+    remote_images: list[dict] | None = None,
+    remote_measurements: list[dict] | None = None,
+) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
         return
     remote_obs = remote or client.get_observation(cloud_value)
     if not remote_obs:
         return
-    images = list(remote_images or client.pull_image_metadata(cloud_value) or [])
-    _store_cloud_observation_snapshot(cloud_value, _cloud_observation_snapshot(remote_obs, images))
+    images = (
+        [dict(row or {}) for row in (remote_images or [])]
+        if remote_images is not None
+        else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
+    )
+    if remote_measurements is not None:
+        measurements = [dict(row or {}) for row in remote_measurements]
+    else:
+        measurements = list(_pull_remote_measurements_for_images(
+            client,
+            [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
+        ))
+    _store_cloud_observation_snapshot(
+        cloud_value,
+        _cloud_observation_snapshot(remote_obs, images, measurements),
+    )
 
 
 def _prompt_for_deleted_cloud_observations(self, deleted_remote: list[dict]) -> bool:
@@ -2408,10 +2661,7 @@ def resolve_conflict_keep_cloud(
     warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=allow_delete)
     _stamp_observation_synced(int(local_id), resolved_cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
-    _store_cloud_observation_snapshot(
-        resolved_cloud_id,
-        _cloud_observation_snapshot(remote_obs, remote_images),
-    )
+    _store_remote_snapshot(client, resolved_cloud_id, remote_obs, remote_images)
     return {'local_id': int(local_id), 'cloud_id': resolved_cloud_id, 'warnings': warnings}
 
 
@@ -3050,6 +3300,27 @@ class SporelyCloudClient:
             f'observation_images?observation_id=eq.{obs_cloud_id}&select=*'
         )
 
+    def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
+        """Write the local SQLite measurement ID back to the cloud row for future dedup."""
+        self._patch(
+            f'spore_measurements?id=eq.{cloud_measurement_id}&user_id=eq.{self.user_id}',
+            {'desktop_id': desktop_id},
+        )
+
+    def pull_measurements_for_images(self, image_cloud_ids: list[str]) -> list[dict]:
+        image_ids = [str(image_id or '').strip() for image_id in (image_cloud_ids or []) if str(image_id or '').strip()]
+        if not image_ids:
+            return []
+        all_rows: list[dict] = []
+        for i in range(0, len(image_ids), 50):
+            chunk = image_ids[i:i + 50]
+            ids_str = ','.join(chunk)
+            rows = self._get(
+                f'spore_measurements?image_id=in.({ids_str})&user_id=eq.{self.user_id}&order=measured_at.asc,id.asc&select=*'
+            )
+            all_rows.extend(rows)
+        return all_rows
+
     def pull_bulk_image_metadata(self, obs_cloud_ids: list[str]) -> list[dict]:
         if not obs_cloud_ids:
             return []
@@ -3302,7 +3573,11 @@ def push_all(
                 continue
             if cloud_id and stored_snapshot and remote:
                 remote_images = client.pull_image_metadata(cloud_id) or []
-                remote_snapshot = _cloud_observation_snapshot(remote, remote_images)
+                remote_measurements = _pull_remote_measurements_for_images(
+                    client,
+                    [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+                )
+                remote_snapshot = _cloud_observation_snapshot(remote, remote_images, remote_measurements)
                 if remote_snapshot != stored_snapshot:
                     if _clear_observation_dirty_if_no_real_changes(int(obs['id']), cloud_id):
                         _advance_progress(progress_state, 1)
@@ -3804,23 +4079,9 @@ def pull_all(
         cloud_id = str(remote.get('id') or '').strip()
         local_obs = _find_local_observation_for_remote_cached(remote, local_by_cloud_id, local_by_id)
         stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
-        local_id = _safe_int((local_obs or {}).get('id'))
-        remote_desktop_id = _safe_int(remote.get('desktop_id'))
-        should_check = False
-        if local_obs is None:
-            should_check = True
-        elif cloud_id and remote_desktop_id not in (0, local_id):
-            should_check = True
-        elif not stored_snapshot:
-            should_check = True
-        elif _remote_observation_changed_since_last_sync(local_obs, remote):
-            should_check = True
-        elif str((local_obs or {}).get('sync_status') or '').strip().lower() == 'dirty':
-            should_check = True
-        if should_check:
-            candidates.append((remote, local_obs, stored_snapshot))
-            if cloud_id:
-                candidate_cloud_ids.append(cloud_id)
+        candidates.append((remote, local_obs, stored_snapshot))
+        if cloud_id:
+            candidate_cloud_ids.append(cloud_id)
 
     total = len(candidates)
     _extend_progress_total(progress_state, total)
@@ -3830,6 +4091,14 @@ def pull_all(
         obs_id = str(img.get('observation_id') or '').strip()
         if obs_id:
             remote_images_by_obs.setdefault(obs_id, []).append(img)
+    remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in bulk_images if str(row.get('id') or '').strip()],
+    )
+    remote_measurements_by_obs = _group_remote_measurements_by_observation(
+        bulk_images,
+        remote_measurements,
+    )
 
     for i, (remote, local_obs, stored_snapshot) in enumerate(candidates):
         name = _observation_display_name(remote)
@@ -3844,6 +4113,10 @@ def pull_all(
             # DO NOT filter by should_pull_cloud_image_to_desktop here, otherwise the 
             # conflict logic falsely thinks microscope images were deleted by the cloud!
             remote_images = [dict(row or {}) for row in remote_images_by_obs.get(cloud_id, [])]
+            remote_measurements = [
+                dict(row or {})
+                for row in remote_measurements_by_obs.get(cloud_id, [])
+            ]
 
             if local_obs is None:
                 local_id = _create_local_from_remote(
@@ -3853,6 +4126,8 @@ def pull_all(
                     remote_index=i + 1,
                     remote_total=total,
                     remote_images=remote_images,
+                    client=client,
+                    remote_measurements=remote_measurements,
                 )
                 if cloud_id:
                     client.set_desktop_id(cloud_id, local_id)
@@ -3880,6 +4155,7 @@ def pull_all(
                 remote_changed = (not stored_snapshot) or _remote_snapshot_has_meaningful_changes(
                     remote,
                     remote_images,
+                    remote_measurements,
                     stored_snapshot,
                 )
                 should_store_snapshot = True
@@ -3897,7 +4173,18 @@ def pull_all(
                         allow_delete=False,
                     )
                     errors.extend(warnings)
-                    _stamp_observation_synced(local_id, cloud_id)
+                    measurement_result = _import_remote_measurements_for_observation(
+                        client,
+                        local_id,
+                        cloud_id,
+                        remote_images,
+                        remote_measurements,
+                    )
+                    errors.extend(measurement_result.get('warnings') or [])
+                    if measurement_result.get('conflict'):
+                        _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                    else:
+                        _stamp_observation_synced(local_id, cloud_id)
                     _refresh_local_cloud_media_signature(local_id)
                     pulled += 1
                 elif remote_changed:
@@ -3973,10 +4260,18 @@ def pull_all(
                                 allow_delete=False,
                             )
                             errors.extend(warnings)
+                    measurement_result = _import_remote_measurements_for_observation(
+                        client,
+                        local_id,
+                        cloud_id,
+                        remote_images,
+                        remote_measurements,
+                    )
+                    errors.extend(measurement_result.get('warnings') or [])
                     remaining_local_changes = _remaining_local_changes_after_remote_merge(
                         field_changes,
                         local_media_changed=local_media_changed,
-                    )
+                    ) or bool(measurement_result.get('conflict'))
                     _set_observation_sync_state(local_id, cloud_id, dirty=remaining_local_changes)
                     if not local_media_changed:
                         _refresh_local_cloud_media_signature(local_id)
@@ -4014,6 +4309,8 @@ def _create_local_from_remote(
     remote_index: int | None = None,
     remote_total: int | None = None,
     remote_images: list[dict] | None = None,
+    client: SporelyCloudClient | None = None,
+    remote_measurements: list[dict] | None = None,
 ) -> int:
     """Insert a cloud observation into local SQLite. Returns new local ID."""
     raw_location_public = remote.get('location_public')
@@ -4082,6 +4379,16 @@ def _create_local_from_remote(
             remote_total=remote_total,
             remote_images=remote_images,
         )
+        measurement_result = _import_remote_measurements_for_observation(
+            client,
+            local_id,
+            cloud_id,
+            remote_images=remote_images,
+            remote_measurements=remote_measurements,
+        )
+        if measurement_result.get('warnings'):
+            for warning in measurement_result['warnings']:
+                print(f'[cloud_sync] Observation {local_id}: {warning}')
 
     return local_id
 
@@ -4182,3 +4489,250 @@ def _import_remote_images(
                 _advance_progress(progress_state, 1)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _import_remote_measurements_for_observation(
+    client: SporelyCloudClient | None,
+    local_id: int,
+    cloud_id: str,
+    remote_images: list[dict] | None = None,
+    remote_measurements: list[dict] | None = None,
+) -> dict:
+    warnings: list[str] = []
+    if not str(cloud_id or '').strip():
+        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+    if client is None:
+        client = SporelyCloudClient.from_stored_credentials()
+    if client is None:
+        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+
+    remote_images_raw = (
+        [dict(row or {}) for row in remote_images]
+        if remote_images is not None
+        else [dict(row or {}) for row in (client.pull_image_metadata(cloud_id) or [])]
+    )
+    remote_image_lookup = {
+        str(row.get('id') or '').strip(): row
+        for row in remote_images_raw
+        if str(row.get('id') or '').strip()
+    }
+    measurement_rows_source = (
+        [dict(row or {}) for row in (remote_measurements or [])]
+        if remote_measurements is not None
+        else _pull_remote_measurements_for_images(client, list(remote_image_lookup.keys()))
+    )
+    remote_measurements_by_obs = _group_remote_measurements_by_observation(remote_images_raw, measurement_rows_source)
+    measurement_rows = [dict(row or {}) for row in remote_measurements_by_obs.get(str(cloud_id), [])]
+    if not measurement_rows:
+        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+
+    def _load_local_images() -> tuple[dict[str, dict], dict[int, dict]]:
+        local_images = ImageDB.get_images_for_observation(int(local_id))
+        by_cloud_id: dict[str, dict] = {}
+        by_local_id: dict[int, dict] = {}
+        for image_row in local_images or []:
+            local_image_id = _safe_int(image_row.get('id'))
+            if local_image_id > 0:
+                by_local_id[local_image_id] = dict(image_row or {})
+            cloud_image_id = str(image_row.get('cloud_id') or '').strip()
+            if cloud_image_id:
+                by_cloud_id[cloud_image_id] = dict(image_row or {})
+        return by_cloud_id, by_local_id
+
+    def _measurement_write_values(remote_row: dict, local_image_id: int) -> dict:
+        return {
+            'image_id': int(local_image_id),
+            'length_um': remote_row.get('length_um'),
+            'width_um': remote_row.get('width_um'),
+            'measurement_type': _normalize_measurement_type_value(remote_row.get('measurement_type')),
+            'gallery_rotation': _safe_int(remote_row.get('gallery_rotation')),
+            'p1_x': remote_row.get('p1_x'),
+            'p1_y': remote_row.get('p1_y'),
+            'p2_x': remote_row.get('p2_x'),
+            'p2_y': remote_row.get('p2_y'),
+            'p3_x': remote_row.get('p3_x'),
+            'p3_y': remote_row.get('p3_y'),
+            'p4_x': remote_row.get('p4_x'),
+            'p4_y': remote_row.get('p4_y'),
+            'measured_at': (
+                str(remote_row.get('measured_at') or '').strip()
+                or datetime.now(timezone.utc).isoformat()
+            ),
+        }
+
+    local_images_by_cloud_id, local_images_by_id = _load_local_images()
+    local_measurements_by_cloud_id, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
+    set_measurement_desktop_id = getattr(client, 'set_measurement_desktop_id', None)
+    imported = 0
+    conflict = False
+
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    cursor = conn.cursor()
+    try:
+        for remote_row in measurement_rows:
+            remote_measurement_id = str(remote_row.get('id') or '').strip()
+            if not remote_measurement_id:
+                continue
+
+            remote_image_id = str(remote_row.get('image_id') or '').strip()
+            remote_image = remote_image_lookup.get(remote_image_id)
+            if not remote_image:
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"because cloud image {remote_image_id or '?'} is unavailable"
+                )
+                continue
+            if not should_pull_cloud_image_to_desktop(remote_image):
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"on excluded image {remote_image_id or '?'}"
+                )
+                continue
+
+            local_image = local_images_by_cloud_id.get(remote_image_id)
+            if local_image is None:
+                warnings.extend(_apply_remote_images_to_local(client, int(local_id), [remote_image], allow_delete=False))
+                local_images_by_cloud_id, local_images_by_id = _load_local_images()
+                local_image = local_images_by_cloud_id.get(remote_image_id)
+            if local_image is None:
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"because image {remote_image_id or '?'} could not be materialized"
+                )
+                continue
+
+            local_image_id = _safe_int(local_image.get('id'))
+            if local_image_id <= 0:
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"because the local image anchor is missing"
+                )
+                continue
+
+            local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
+            if local_measurement is None:
+                remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
+                if remote_desktop_measurement_id > 0:
+                    local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
+
+            remote_payload = _measurement_compare_payload(remote_row, local=False)
+            if local_measurement is None:
+                write_values = _measurement_write_values(remote_row, local_image_id)
+                cursor.execute(
+                    '''
+                    INSERT INTO spore_measurements (
+                        image_id, length_um, width_um, measurement_type, gallery_rotation,
+                        p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y,
+                        measured_at, cloud_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    (
+                        write_values['image_id'],
+                        write_values['length_um'],
+                        write_values['width_um'],
+                        write_values['measurement_type'],
+                        write_values['gallery_rotation'],
+                        write_values['p1_x'],
+                        write_values['p1_y'],
+                        write_values['p2_x'],
+                        write_values['p2_y'],
+                        write_values['p3_x'],
+                        write_values['p3_y'],
+                        write_values['p4_x'],
+                        write_values['p4_y'],
+                        write_values['measured_at'],
+                        remote_measurement_id,
+                    ),
+                )
+                new_local_measurement_id = _safe_int(cursor.lastrowid)
+                imported += 1
+                if callable(set_measurement_desktop_id):
+                    remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
+                    if remote_desktop_measurement_id != new_local_measurement_id:
+                        try:
+                            set_measurement_desktop_id(remote_measurement_id, new_local_measurement_id)
+                        except Exception:
+                            pass
+                local_measurements_by_cloud_id[remote_measurement_id] = {
+                    'id': new_local_measurement_id,
+                    'cloud_id': remote_measurement_id,
+                    'image_id': local_image_id,
+                    'image_cloud_id': str(local_image.get('cloud_id') or '').strip() or None,
+                    **write_values,
+                }
+                if new_local_measurement_id > 0:
+                    local_measurements_by_id[new_local_measurement_id] = dict(local_measurements_by_cloud_id[remote_measurement_id])
+                continue
+
+            local_payload = _measurement_compare_payload(local_measurement, local=True)
+            for identity_key in ('id', 'desktop_id'):
+                local_payload.pop(identity_key, None)
+                remote_payload.pop(identity_key, None)
+            if local_payload != remote_payload:
+                conflict = True
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"because the local copy changed"
+                )
+                continue
+
+            write_values = _measurement_write_values(remote_row, local_image_id)
+            cursor.execute(
+                '''
+                UPDATE spore_measurements
+                SET image_id = ?,
+                    length_um = ?,
+                    width_um = ?,
+                    measurement_type = ?,
+                    gallery_rotation = ?,
+                    p1_x = ?,
+                    p1_y = ?,
+                    p2_x = ?,
+                    p2_y = ?,
+                    p3_x = ?,
+                    p3_y = ?,
+                    p4_x = ?,
+                    p4_y = ?,
+                    measured_at = ?,
+                    cloud_id = ?
+                WHERE id = ?
+                ''',
+                (
+                    write_values['image_id'],
+                    write_values['length_um'],
+                    write_values['width_um'],
+                    write_values['measurement_type'],
+                    write_values['gallery_rotation'],
+                    write_values['p1_x'],
+                    write_values['p1_y'],
+                    write_values['p2_x'],
+                    write_values['p2_y'],
+                    write_values['p3_x'],
+                    write_values['p3_y'],
+                    write_values['p4_x'],
+                    write_values['p4_y'],
+                    write_values['measured_at'],
+                    remote_measurement_id,
+                    _safe_int(local_measurement.get('id')),
+                ),
+            )
+            imported += 1
+            if callable(set_measurement_desktop_id):
+                remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
+                local_measurement_id = _safe_int(local_measurement.get('id'))
+                if remote_desktop_measurement_id != local_measurement_id:
+                    try:
+                        set_measurement_desktop_id(remote_measurement_id, local_measurement_id)
+                    except Exception:
+                        pass
+    finally:
+        conn.commit()
+        conn.close()
+
+    return {
+        'warnings': warnings,
+        'conflict': conflict,
+        'imported': imported,
+    }

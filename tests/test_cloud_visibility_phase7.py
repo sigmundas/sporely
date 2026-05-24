@@ -161,6 +161,7 @@ def test_create_local_from_remote_preserves_interesting_comment(
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync.ObservationDB, "create_observation", fake_create_observation)
     monkeypatch.setattr(cloud_sync, "_import_remote_images", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", staticmethod(lambda: None))
     monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: None)
 
     remote = {
