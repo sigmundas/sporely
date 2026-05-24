@@ -30,7 +30,7 @@ import requests
 from PIL import Image, ImageOps, features
 
 from app_identity import runtime_profile_scope, using_isolated_profile
-from database.schema import get_connection, get_app_settings, update_app_settings
+from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
 from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB, CalibrationDB
 from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
@@ -325,6 +325,122 @@ def _calibration_display_name(row: dict | None) -> str:
     return f'{objective} • {date_text}'
 
 
+def _remap_known_local_calibration_path(path: Path) -> Path:
+    if path.exists():
+        return path
+    try:
+        from app_identity import app_data_dir, legacy_app_data_dir
+
+        legacy_root = legacy_app_data_dir().resolve()
+        current_root = app_data_dir().resolve()
+        rel = path.resolve(strict=False).relative_to(legacy_root)
+    except Exception:
+        return path
+    return current_root / rel
+
+
+def _is_readable_local_file(path: Path) -> bool:
+    try:
+        if not path.exists() or not path.is_file():
+            return False
+        with path.open('rb') as handle:
+            handle.read(1)
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None:
+    text = str(path_value or '').strip()
+    if not text:
+        return None
+    try:
+        raw_path = Path(text).expanduser()
+    except Exception:
+        return None
+
+    candidates: list[Path] = []
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+        remapped = _remap_known_local_calibration_path(raw_path)
+        if remapped != raw_path:
+            candidates.append(remapped)
+    else:
+        images_dir = get_images_dir()
+        if raw_path.parts and raw_path.parts[0] == images_dir.name:
+            candidates.append(images_dir.parent / raw_path)
+        candidates.append(images_dir / raw_path)
+        candidates.append(raw_path)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if _is_readable_local_file(candidate):
+            return candidate
+    return None
+
+
+def _select_representative_calibration_image_path(calibration: dict | None) -> Path | None:
+    record = dict(calibration or {})
+    local_image = _resolve_local_calibration_asset_path(record.get('image_filepath'))
+    if local_image is not None:
+        return local_image
+
+    measurements_json = record.get('measurements_json')
+    if isinstance(measurements_json, (dict, list, tuple)):
+        loaded = measurements_json
+    elif measurements_json:
+        try:
+            loaded = json.loads(str(measurements_json))
+        except Exception:
+            loaded = None
+    else:
+        loaded = None
+
+    if not isinstance(loaded, dict):
+        return None
+
+    for entry in loaded.get('images', []):
+        if not isinstance(entry, dict):
+            continue
+        path = _resolve_local_calibration_asset_path(entry.get('path'))
+        if path is not None:
+            return path
+    return None
+
+
+def _calibration_reference_save_format() -> tuple[str, str, dict, str]:
+    if features.check('webp'):
+        return 'WEBP', 'image/webp', {'quality': 82, 'method': 4}, '.webp'
+    return 'JPEG', 'image/jpeg', {'quality': 88, 'optimize': True}, '.jpg'
+
+
+def _calibration_reference_image_bytes(path: Path) -> tuple[bytes, str, str]:
+    with Image.open(path) as image:
+        image = ImageOps.exif_transpose(image)
+        if image.mode in {'RGBA', 'LA'} or 'transparency' in image.info:
+            rgba = image.convert('RGBA')
+            background = Image.new('RGB', rgba.size, (255, 255, 255))
+            background.paste(rgba, mask=rgba.getchannel('A'))
+            image = background
+        elif image.mode != 'RGB':
+            image = image.convert('RGB')
+        image.thumbnail((_CALIBRATION_REFERENCE_MAX_EDGE, _CALIBRATION_REFERENCE_MAX_EDGE), Image.Resampling.LANCZOS)
+
+        format_name, mime_type, save_options, extension = _calibration_reference_save_format()
+        buffer = io.BytesIO()
+        image.save(buffer, format=format_name, **save_options)
+        return buffer.getvalue(), mime_type, extension
+
+
+def _calibration_reference_storage_key(user_id: str, calibration_uuid: str, extension: str) -> str:
+    key = f"{str(user_id).strip()}/{str(calibration_uuid).strip()}/reference{extension}"
+    return _normalize_cloud_media_key(key)
+
+
 _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'scale_microns_per_pixel', 'resample_scale_factor',
@@ -368,6 +484,7 @@ _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
 _CLOUD_THUMB_MAX_EDGE = 400
+_CALIBRATION_REFERENCE_MAX_EDGE = 2048
 _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
     'ai_crop_x1',
     'ai_crop_y1',
@@ -1529,6 +1646,7 @@ def push_calibrations(
     errors: list[str] = []
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     _extend_progress_total(progress_state, total)
+    reference_image_uploader = getattr(client, 'push_calibration_reference_image', None)
 
     for index, local_row in enumerate(local_rows, start=1):
         calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
@@ -1547,17 +1665,42 @@ def push_calibrations(
             if remote_row is not None:
                 if not _calibration_payloads_match(local_row, remote_row):
                     errors.append(_calibration_sync_warning('push', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
+                    continue
+                if callable(reference_image_uploader):
+                    warning = reference_image_uploader(
+                        local_row,
+                        cloud_row_id=str(remote_row.get('id') or '').strip() or None,
+                        remote_row=remote_row,
+                    )
+                    if warning:
+                        errors.append(warning)
                 continue
 
             current_remote = client.find_remote_calibration(calibration_uuid)
             if current_remote is not None:
                 if _calibration_payloads_match(local_row, current_remote):
+                    if callable(reference_image_uploader):
+                        warning = reference_image_uploader(
+                            local_row,
+                            cloud_row_id=str(current_remote.get('id') or '').strip() or None,
+                            remote_row=current_remote,
+                        )
+                        if warning:
+                            errors.append(warning)
                     continue
                 errors.append(_calibration_sync_warning('push', local_row, current_remote, _calibration_diff_fields(local_row, current_remote)))
                 continue
 
-            client.push_calibration_metadata(local_row)
+            cloud_row_id = client.push_calibration_metadata(local_row)
             pushed += 1
+            if callable(reference_image_uploader):
+                warning = reference_image_uploader(
+                    local_row,
+                    cloud_row_id=cloud_row_id,
+                    remote_row={'id': cloud_row_id, 'image_storage_path': None},
+                )
+                if warning:
+                    errors.append(warning)
         except CloudSyncError as exc:
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         except Exception as exc:
@@ -3573,6 +3716,84 @@ class SporelyCloudClient:
         return self._get(
             f'calibrations?user_id=eq.{self.user_id}&order=created_at.asc&select=*'
         )
+
+    def push_calibration_reference_image(
+        self,
+        calibration: dict,
+        *,
+        cloud_row_id: str | None = None,
+        remote_row: dict | None = None,
+    ) -> str | None:
+        """Upload a derivative calibration reference image and patch the cloud row.
+
+        Returns a warning string when the image is missing or could not be uploaded.
+        """
+        record = dict(calibration or {})
+        calibration_uuid = _normalize_calibration_uuid(record.get('calibration_uuid'))
+        label = _calibration_display_name(record)
+
+        remote = dict(remote_row or {})
+        if not remote and calibration_uuid:
+            remote = dict(self.find_remote_calibration(calibration_uuid) or {})
+
+        existing_storage_path = _normalize_cloud_media_key(remote.get('image_storage_path'))
+        if existing_storage_path:
+            return None
+
+        target_cloud_row_id = str(cloud_row_id or remote.get('id') or '').strip()
+        if not target_cloud_row_id:
+            return (
+                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                f'because the cloud row id is unavailable'
+            )
+
+        local_path = _select_representative_calibration_image_path(record)
+        if local_path is None:
+            return (
+                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                f'because no readable local calibration image was found'
+            )
+
+        try:
+            image_bytes, content_type, extension = _calibration_reference_image_bytes(local_path)
+        except Exception as exc:
+            return (
+                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                f'because the image could not be prepared ({exc})'
+            )
+
+        storage_key = _calibration_reference_storage_key(
+            self.user_id,
+            calibration_uuid or str(remote.get('calibration_uuid') or '').strip() or target_cloud_row_id,
+            extension,
+        )
+        cache_control = 'public, max-age=31536000, immutable'
+        try:
+            self._get_r2().put_bytes(
+                image_bytes,
+                storage_key,
+                content_type=content_type,
+                cache_control=cache_control,
+                timeout=120,
+            )
+        except Exception as exc:
+            return (
+                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                f'because R2 upload failed ({exc})'
+            )
+
+        try:
+            self._patch(
+                f'calibrations?user_id=eq.{self.user_id}&id=eq.{target_cloud_row_id}',
+                {'image_storage_path': _normalize_cloud_media_key(storage_key)},
+            )
+        except Exception as exc:
+            return (
+                f'calibration {calibration_uuid or "?"}: uploaded reference image for {label} '
+                f'but could not update the cloud row ({exc})'
+            )
+
+        return None
 
     def push_calibration_metadata(self, calibration: dict) -> str:
         """Upsert calibration metadata row. Returns cloud row id."""

@@ -1,8 +1,12 @@
+import copy
+import io
 import json
 import sqlite3
 import uuid
+from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from database import models
 from utils import cloud_sync
@@ -61,6 +65,13 @@ def _fetch_rows(db_path):
         return [dict(row) for row in conn.execute("SELECT * FROM calibrations ORDER BY id").fetchall()]
     finally:
         conn.close()
+
+
+def _write_test_image(path: Path, size=(3200, 2400), color=(128, 64, 32)) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", size, color)
+    image.save(path)
+    return path
 
 
 def test_push_calibration_metadata_sends_calibration_uuid_and_omits_local_file_path(monkeypatch):
@@ -217,6 +228,204 @@ def test_push_calibration_metadata_normalizes_string_false_to_inactive(monkeypat
     )
 
     assert posted_payloads[0][1]["is_active"] is False
+
+
+def test_select_representative_calibration_image_prefers_readable_image_filepath(tmp_path):
+    preferred = _write_test_image(tmp_path / "preferred.jpg", size=(1024, 768))
+    fallback = _write_test_image(tmp_path / "fallback.jpg", size=(800, 600))
+
+    calibration = {
+        "image_filepath": str(preferred),
+        "measurements_json": json.dumps({"images": [{"path": str(fallback)}]}),
+    }
+
+    selected = cloud_sync._select_representative_calibration_image_path(calibration)
+
+    assert selected == preferred
+
+
+def test_select_representative_calibration_image_falls_back_to_measurements_json(tmp_path):
+    fallback = _write_test_image(tmp_path / "fallback.jpg", size=(640, 480))
+    calibration = {
+        "image_filepath": str(tmp_path / "missing.jpg"),
+        "measurements_json": json.dumps(
+            {
+                "images": [
+                    {"path": str(tmp_path / "also_missing.jpg")},
+                    {"path": str(fallback)},
+                ]
+            }
+        ),
+    }
+
+    selected = cloud_sync._select_representative_calibration_image_path(calibration)
+
+    assert selected == fallback
+
+
+def test_push_calibration_reference_image_uploads_derivative_and_patches_relative_key(monkeypatch, tmp_path):
+    source = _write_test_image(tmp_path / "source.jpg", size=(3200, 2400))
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": [{"path": str(tmp_path / "other.jpg")}]},
+    }
+    original = copy.deepcopy(calibration)
+
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    uploads = []
+    patches = []
+
+    class DummyR2:
+        def put_bytes(self, data, key, *, content_type=None, cache_control=None, timeout=None):
+            uploads.append(
+                {
+                    "data": bytes(data),
+                    "key": key,
+                    "content_type": content_type,
+                    "cache_control": cache_control,
+                    "timeout": timeout,
+                }
+            )
+
+        def put_file(self, *args, **kwargs):
+            raise AssertionError("put_file should not be used for calibration reference uploads")
+
+    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": None},
+    )
+
+    assert warning is None
+    assert calibration == original
+    assert len(uploads) == 1
+    assert len(patches) == 1
+    assert patches[0][0] == "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1"
+    assert patches[0][1]["image_storage_path"] == uploads[0]["key"]
+    assert uploads[0]["key"] == f"user-123/{calibration_uuid}/reference{Path(uploads[0]['key']).suffix}"
+    assert not uploads[0]["key"].startswith("http")
+    assert uploads[0]["content_type"] in {"image/webp", "image/jpeg"}
+
+    uploaded_image = Image.open(io.BytesIO(uploads[0]["data"]))
+    assert max(uploaded_image.size) <= cloud_sync._CALIBRATION_REFERENCE_MAX_EDGE
+    assert uploaded_image.size != (3200, 2400)
+
+
+def test_push_calibration_reference_image_skips_with_warning_when_no_readable_image_exists(monkeypatch):
+    calibration = {
+        "calibration_uuid": str(uuid.uuid4()),
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": "/tmp/missing-reference.jpg",
+        "measurements_json": {"images": [{"path": "/tmp/also-missing.jpg"}]},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    uploads = []
+    patches = []
+
+    class DummyR2:
+        def put_bytes(self, *args, **kwargs):
+            uploads.append((args, kwargs))
+
+    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": None},
+    )
+
+    assert warning is not None
+    assert "no readable local calibration image" in warning
+    assert uploads == []
+    assert patches == []
+
+
+def test_push_calibration_reference_image_respects_existing_cloud_image_storage_path(monkeypatch, tmp_path):
+    source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
+    calibration = {
+        "calibration_uuid": str(uuid.uuid4()),
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": []},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    uploads = []
+    patches = []
+
+    class DummyR2:
+        def put_bytes(self, *args, **kwargs):
+            uploads.append((args, kwargs))
+
+        def put_file(self, *args, **kwargs):
+            uploads.append(("put_file", args, kwargs))
+
+    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={
+            "id": "cloud-cal-1",
+            "calibration_uuid": calibration["calibration_uuid"],
+            "image_storage_path": "user-123/existing/reference.webp",
+        },
+    )
+
+    assert warning is None
+    assert uploads == []
+    assert patches == []
+
+
+def test_push_calibrations_still_pushes_metadata_when_reference_image_is_missing(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    calibration_uuid = str(uuid.uuid4())
+    missing_path = tmp_path / "missing-reference.jpg"
+
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.0315,
+        calibration_date="2026-05-08 08:30:00",
+        calibration_image_date="2026-05-07 12:00:00",
+        measurements_json=json.dumps({"images": [{"path": str(tmp_path / "also-missing.jpg")}]}),
+        image_filepath=str(missing_path),
+        notes="local note",
+        set_active=False,
+        calibration_uuid=calibration_uuid,
+    )
+
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    posted_payloads = []
+
+    monkeypatch.setattr(client, "find_remote_calibration", lambda calibration_uuid: None)
+    monkeypatch.setattr(client, "list_remote_calibrations", lambda: [])
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda path, payload: posted_payloads.append((path, dict(payload))) or [{"id": "cloud-cal-1"}],
+    )
+
+    result = cloud_sync.push_calibrations(client, remote_calibrations=[])
+
+    rows = _fetch_rows(db_path)
+    assert result["pushed"] == 1
+    assert len(posted_payloads) == 1
+    assert len(rows) == 1
+    assert any("no readable local calibration image" in error for error in result["errors"])
 
 
 def test_pull_calibrations_inserts_remote_metadata_into_empty_local_db(monkeypatch, tmp_path):
