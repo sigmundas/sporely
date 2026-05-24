@@ -223,6 +223,72 @@ def _touch_observation(cursor, observation_id: int | None, *, mark_dirty: bool =
             )
 
 
+def _upsert_image_tombstone(
+    cursor,
+    *,
+    deleted_cloud_id: str,
+    deleted_at: str | None = None,
+    delete_synced_at: str | None = None,
+    deleted_storage_path: str | None = None,
+    deleted_observation_cloud_id: str | None = None,
+    local_observation_id: int | None = None,
+    local_image_id: int | None = None,
+    image_type: str | None = None,
+    filepath: str | None = None,
+    original_filepath: str | None = None,
+) -> None:
+    cloud_id = str(deleted_cloud_id or "").strip()
+    if not cloud_id:
+        return
+    def _clean_text(value) -> str | None:
+        text = str(value or "").strip()
+        return text or None
+
+    deleted_at_text = _normalize_timestamp_text(deleted_at) or _sqlite_now_text()
+    cursor.execute(
+        """
+        INSERT INTO image_tombstones (
+            deleted_cloud_id,
+            deleted_at,
+            delete_synced_at,
+            deleted_storage_path,
+            deleted_observation_cloud_id,
+            local_observation_id,
+            local_image_id,
+            image_type,
+            filepath,
+            original_filepath
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(deleted_cloud_id) DO UPDATE SET
+            deleted_at = CASE
+                WHEN deleted_at IS NULL OR excluded.deleted_at < deleted_at
+                THEN excluded.deleted_at
+                ELSE deleted_at
+            END,
+            delete_synced_at = COALESCE(delete_synced_at, excluded.delete_synced_at),
+            deleted_storage_path = COALESCE(deleted_storage_path, excluded.deleted_storage_path),
+            deleted_observation_cloud_id = COALESCE(deleted_observation_cloud_id, excluded.deleted_observation_cloud_id),
+            local_observation_id = COALESCE(local_observation_id, excluded.local_observation_id),
+            local_image_id = COALESCE(local_image_id, excluded.local_image_id),
+            image_type = COALESCE(image_type, excluded.image_type),
+            filepath = COALESCE(filepath, excluded.filepath),
+            original_filepath = COALESCE(original_filepath, excluded.original_filepath)
+        """,
+        (
+            cloud_id,
+            deleted_at_text,
+            _clean_text(delete_synced_at),
+            _clean_text(deleted_storage_path),
+            _clean_text(deleted_observation_cloud_id),
+            local_observation_id,
+            local_image_id,
+            _clean_text(image_type),
+            _clean_text(filepath),
+            _clean_text(original_filepath),
+        ),
+    )
+
+
 def _normalize_taxon_key(genus: str | None, species: str | None) -> tuple[str, str] | None:
     if not genus or not species:
         return None
@@ -1855,8 +1921,14 @@ class ImageDB:
         conn = get_connection()
         try:
             cursor = conn.cursor()
+            image_columns = _table_columns(cursor, "images")
+            observation_columns = _table_columns(cursor, "observations")
+            select_columns = ["observation_id", "filepath", "original_filepath", "image_type"]
+            has_image_cloud_id = "cloud_id" in image_columns
+            if has_image_cloud_id:
+                select_columns.append("cloud_id")
             cursor.execute(
-                'SELECT observation_id, filepath, original_filepath FROM images WHERE id = ?',
+                f'SELECT {", ".join(select_columns)} FROM images WHERE id = ?',
                 (image_id,),
             )
             image_row = cursor.fetchone()
@@ -1867,6 +1939,32 @@ class ImageDB:
             if image_row:
                 filepath = image_row[1]
                 original_filepath = image_row[2]
+                image_type = image_row[3]
+                cloud_id = image_row[4] if has_image_cloud_id else None
+            else:
+                image_type = None
+                cloud_id = None
+
+            if image_row and cloud_id and str(cloud_id).strip():
+                deleted_observation_cloud_id = None
+                if observation_id and "cloud_id" in observation_columns:
+                    obs_row = cursor.execute(
+                        "SELECT cloud_id FROM observations WHERE id = ?",
+                        (observation_id,),
+                    ).fetchone()
+                    if obs_row:
+                        deleted_observation_cloud_id = str(obs_row[0] or "").strip() or None
+                _upsert_image_tombstone(
+                    cursor,
+                    deleted_cloud_id=str(cloud_id),
+                    deleted_storage_path=filepath or original_filepath,
+                    deleted_observation_cloud_id=deleted_observation_cloud_id,
+                    local_observation_id=observation_id,
+                    local_image_id=image_id,
+                    image_type=image_type,
+                    filepath=filepath,
+                    original_filepath=original_filepath,
+                )
 
             cursor.execute('SELECT filepath FROM thumbnails WHERE image_id = ?', (image_id,))
             thumbnail_paths = [

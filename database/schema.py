@@ -1018,6 +1018,40 @@ def ensure_calibration_uuid_column(cursor: sqlite3.Cursor) -> None:
         """
     )
 
+
+def _ensure_image_tombstones_table(cursor: sqlite3.Cursor) -> None:
+    """Ensure the local image tombstones table exists."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS image_tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deleted_cloud_id TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            delete_synced_at TEXT,
+            deleted_storage_path TEXT,
+            deleted_observation_cloud_id TEXT,
+            local_observation_id INTEGER,
+            local_image_id INTEGER,
+            image_type TEXT,
+            filepath TEXT,
+            original_filepath TEXT
+        )
+        """
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_image_tombstones_deleted_cloud_id "
+        "ON image_tombstones(deleted_cloud_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_image_tombstones_delete_synced_at "
+        "ON image_tombstones(delete_synced_at)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_image_tombstones_deleted_observation_cloud_id "
+        "ON image_tombstones(deleted_observation_cloud_id)"
+    )
+
+
 def init_database():
     """Initialize the database with required tables"""
     db_path = get_database_path()
@@ -1578,6 +1612,8 @@ def init_database():
             FOREIGN KEY (measurement_id) REFERENCES spore_measurements(id)
         )
     ''')
+
+    _ensure_image_tombstones_table(cursor)
 
     # Calibrations table for storing objective calibration history
     cursor.execute('''
