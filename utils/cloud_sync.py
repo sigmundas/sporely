@@ -1666,6 +1666,7 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat': remote.get('habitat'),
         'notes': remote.get('notes'),
         'open_comment': remote.get('open_comment'),
+        'interesting_comment': bool(remote.get('interesting_comment', False)),
         'sharing_scope': _cloud_visibility_to_sharing_scope(
             remote.get('visibility') or remote.get('sharing_scope'),
             fallback='friends' if location_public else 'private',
@@ -3111,7 +3112,10 @@ class SporelyCloudClient:
 
     def set_image_desktop_id(self, cloud_image_id: str, desktop_id: int) -> None:
         """Write the local SQLite image ID back to the cloud image row."""
-        self._patch(f'observation_images?id=eq.{cloud_image_id}', {'desktop_id': desktop_id})
+        self._patch(
+            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}',
+            {'desktop_id': desktop_id},
+        )
 
     def push_measurement(self, meas: dict, cloud_image_id: str) -> str:
         """Upsert one spore measurement row. Returns cloud UUID."""
@@ -4053,6 +4057,7 @@ def _create_local_from_remote(
         habitat_substrate_note=remote.get('habitat_substrate_note'),
         habitat_grows_on_note=remote.get('habitat_grows_on_note'),
         publish_target=remote.get('publish_target'),
+        interesting_comment=bool(remote.get('interesting_comment', False)),
     )
     local_id = ObservationDB.create_observation(**kwargs)
 
@@ -4127,18 +4132,43 @@ def _import_remote_images(
                     observation_id=int(local_id),
                     filepath=str(download_path),
                     image_type=str(image_row.get('image_type') or 'field'),
+                    scale=image_row.get('scale_microns_per_pixel'),
+                    notes=image_row.get('notes'),
+                    micro_category=image_row.get('micro_category'),
+                    objective_name=image_row.get('objective_name'),
+                    measure_color=image_row.get('measure_color'),
+                    mount_medium=image_row.get('mount_medium'),
+                    stain=image_row.get('stain'),
+                    sample_type=image_row.get('sample_type'),
+                    contrast=image_row.get('contrast'),
+                    sort_order=image_row.get('sort_order'),
+                    crop_mode=image_row.get('crop_mode'),
+                    gps_source=image_row.get('gps_source'),
+                    resample_scale_factor=image_row.get('resample_scale_factor'),
+                    ai_crop_box=_remote_ai_crop_box(image_row),
+                    ai_crop_source_size=_remote_ai_crop_source_size(image_row),
+                    ai_crop_is_custom=_remote_ai_crop_is_custom(image_row),
+                    captured_at=image_row.get('captured_at'),
                     copy_to_folder=True,
                     mark_observation_dirty=False
                 )
+                cloud_image_id = str(image_row.get('id') or '').strip()
 
                 # Update sync metadata
                 conn = get_connection()
                 try:
                     conn.execute('UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?', 
-                                 (image_row.get('id'), synced_at, int(local_image_id)))
+                                 (cloud_image_id or None, synced_at, int(local_image_id)))
                     conn.commit()
                 finally:
                     conn.close()
+
+                set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
+                if cloud_image_id and callable(set_image_desktop_id):
+                    try:
+                        set_image_desktop_id(cloud_image_id, int(local_image_id))
+                    except Exception:
+                        pass
 
                 # Generate thumbnails and signature
                 generate_all_sizes(str(download_path), int(local_image_id))
