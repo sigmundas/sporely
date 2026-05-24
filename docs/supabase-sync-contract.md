@@ -35,6 +35,39 @@ No schema or sync code changes are proposed in this document.
 - `near-term sync-required schema gap`: missing today, but needed soon for the shared model.
 - `future schema gap`: missing from one side even though the product model needs it.
 
+## Device-Local vs Cloud-Synced Boundary
+
+Sporely-py may run on several computers for the same user. The cloud should work as a bridge for shared domain data, not as a mirror of every desktop setting.
+
+### Device-local
+
+These stay local to each computer:
+
+- window and layout settings
+- hardware preferences
+- local file paths
+- import/watch-folder state
+- live lab state
+- cache paths
+- UI preferences
+- temporary session state
+
+### Cloud-synced
+
+These should sync because they are shared domain data needed to recreate or continue work across devices:
+
+- observations
+- image metadata
+- measurement geometry
+- calibration records
+- calibration photos or calibration image references
+- objective/calibration mapping
+- visibility/privacy fields
+- AI crop parameters
+- selected AI result
+
+Cloud sync should not overwrite higher-quality local originals or device-local workflow state. Local originals and local paths remain desktop-owned, while cloud media is used for web display, recovery, and cross-device continuity.
+
 ## Contract Principles
 
 - `sporely-web` is the cloud, social, sharing, and publishing layer.
@@ -64,7 +97,7 @@ No schema or sync code changes are proposed in this document.
 | Images and originals | mixed | Desktop originals stay local. Cloud stores derivatives and cloud media keys. |
 | Microscope images | `sync-required` for metadata | Geometry, scale, objective, stain, mount medium, sample type, and contrast matter for analysis. |
 | Measurements | `sync-required` | Raw geometry and calibration context must be reconstructable. |
-| Calibration | `future cloud feature` | Present in both data models, but not yet part of the active sync contract. |
+| Calibration | `sync-required, staged implementation` | Calibration records and calibration photos are shared domain data because cloud bridges multiple desktop installs. |
 | Analysis/reference comparison data | `future cloud feature` | Should become a shared dataset model, not per-observation duplication. |
 | Social and moderation | `cloud-only` | Comments, follows, friendships, shares, reports, and blocks stay in the cloud layer. |
 | Ingestion and lab workflow | `desktop-only` | Session logs, transient import state, and file system paths remain local. |
