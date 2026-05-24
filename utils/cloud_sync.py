@@ -17,8 +17,10 @@ import io
 import json
 import mimetypes
 import re
+import sqlite3
 import shutil
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -29,7 +31,7 @@ from PIL import Image, ImageOps, features
 
 from app_identity import runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, update_app_settings
-from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB
+from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB, CalibrationDB
 from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
 
@@ -105,6 +107,223 @@ def _encode_postgrest_filter_value(value: str | None) -> str:
 def _normalize_cloud_media_key(value: str | None) -> str:
     """Normalize cloud media references to the stored relative key form."""
     return normalize_media_key(value)
+
+_CALIBRATION_SYNC_COLS = [
+    'calibration_uuid',
+    'objective_key',
+    'calibration_date',
+    'calibration_image_date',
+    'microns_per_pixel',
+    'microns_per_pixel_std',
+    'confidence_interval_low',
+    'confidence_interval_high',
+    'num_measurements',
+    'measurements_json',
+    'camera',
+    'megapixels',
+    'target_sampling_pct',
+    'resample_scale_factor',
+    'calibration_image_width',
+    'calibration_image_height',
+    'notes',
+    'is_active',
+]
+
+
+def _normalize_calibration_uuid(value) -> str | None:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return str(uuid.UUID(text))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _normalize_calibration_text(value) -> str | None:
+    text = str(value or '').strip()
+    return text or None
+
+
+def _normalize_calibration_date(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    text = str(value or '').strip()
+    if not text:
+        return None
+    if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
+        return text[:10]
+    for fmt in (
+        '%Y-%m-%d',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S.%f',
+    ):
+        try:
+            return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+    except Exception:
+        return text[:10] if len(text) >= 10 else text or None
+
+
+def _normalize_calibration_float(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def _normalize_calibration_int(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def _normalize_calibration_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, float):
+        return value != 0.0
+    text = str(value).strip().lower()
+    if not text:
+        return False
+    if text in {'true', '1', 'yes', 'on'}:
+        return True
+    if text in {'false', '0', 'no', 'off'}:
+        return False
+    return bool(value)
+
+
+def _normalize_calibration_measurements_json(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, tuple)):
+        normalized = _normalize_snapshot_value(value)
+        if normalized in ({}, [], ''):
+            return None
+        return normalized
+    if isinstance(value, (bool, int, float)):
+        return value
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except Exception:
+        return text
+    if data in ({}, [], ''):
+        return None
+    return _normalize_snapshot_value(data)
+
+
+def _serialize_calibration_measurements_json(value) -> str | None:
+    normalized = _normalize_calibration_measurements_json(value)
+    if normalized is None:
+        return None
+    return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+
+
+def _calibration_sync_payload(row: dict | None) -> dict:
+    record = dict(row or {})
+    return {
+        'calibration_uuid': _normalize_calibration_uuid(record.get('calibration_uuid')),
+        'objective_key': _normalize_calibration_text(record.get('objective_key')),
+        'calibration_date': _normalize_calibration_date(record.get('calibration_date')),
+        'calibration_image_date': _normalize_calibration_date(record.get('calibration_image_date')),
+        'microns_per_pixel': _normalize_calibration_float(record.get('microns_per_pixel')),
+        'microns_per_pixel_std': _normalize_calibration_float(record.get('microns_per_pixel_std')),
+        'confidence_interval_low': _normalize_calibration_float(record.get('confidence_interval_low')),
+        'confidence_interval_high': _normalize_calibration_float(record.get('confidence_interval_high')),
+        'num_measurements': _normalize_calibration_int(record.get('num_measurements')),
+        'measurements_json': _normalize_calibration_measurements_json(record.get('measurements_json')),
+        'camera': _normalize_calibration_text(record.get('camera')),
+        'megapixels': _normalize_calibration_float(record.get('megapixels')),
+        'target_sampling_pct': _normalize_calibration_float(record.get('target_sampling_pct')),
+        'resample_scale_factor': _normalize_calibration_float(record.get('resample_scale_factor')),
+        'calibration_image_width': _normalize_calibration_int(record.get('calibration_image_width')),
+        'calibration_image_height': _normalize_calibration_int(record.get('calibration_image_height')),
+        'notes': _normalize_calibration_text(record.get('notes')),
+        'is_active': _normalize_calibration_bool(record.get('is_active')),
+    }
+
+
+def _calibration_insert_kwargs(row: dict | None) -> dict:
+    payload = _calibration_sync_payload(row)
+    return {
+        'objective_key': payload['objective_key'],
+        'calibration_date': payload['calibration_date'],
+        'calibration_image_date': payload['calibration_image_date'],
+        'microns_per_pixel': payload['microns_per_pixel'],
+        'microns_per_pixel_std': payload['microns_per_pixel_std'],
+        'confidence_interval_low': payload['confidence_interval_low'],
+        'confidence_interval_high': payload['confidence_interval_high'],
+        'num_measurements': payload['num_measurements'],
+        'measurements_json': _serialize_calibration_measurements_json(payload['measurements_json']),
+        'camera': payload['camera'],
+        'megapixels': payload['megapixels'],
+        'target_sampling_pct': payload['target_sampling_pct'],
+        'resample_scale_factor': payload['resample_scale_factor'],
+        'calibration_image_width': payload['calibration_image_width'],
+        'calibration_image_height': payload['calibration_image_height'],
+        'notes': payload['notes'],
+        'set_active': bool(payload['is_active']),
+        'calibration_uuid': payload['calibration_uuid'],
+    }
+
+
+def _calibration_payloads_match(local_row: dict | None, remote_row: dict | None) -> bool:
+    return _calibration_sync_payload(local_row) == _calibration_sync_payload(remote_row)
+
+
+def _calibration_diff_fields(local_row: dict | None, remote_row: dict | None) -> list[str]:
+    local_payload = _calibration_sync_payload(local_row)
+    remote_payload = _calibration_sync_payload(remote_row)
+    return [
+        field
+        for field in _CALIBRATION_SYNC_COLS
+        if local_payload.get(field) != remote_payload.get(field)
+    ]
+
+
+def _calibration_display_name(row: dict | None) -> str:
+    record = dict(row or {})
+    objective = _normalize_calibration_text(record.get('objective_key')) or '?'
+    date_text = _normalize_calibration_date(record.get('calibration_date')) or 'unknown date'
+    return f'{objective} • {date_text}'
+
 
 _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
@@ -1055,6 +1274,14 @@ def sync_all(
     
     # Pre-fetch remote metadata once to reuse in both phases
     remote_obs = client.list_remote_observations()
+    remote_calibrations = client.list_remote_calibrations()
+
+    calibration_push_result = push_calibrations(
+        client,
+        progress_cb=progress_cb,
+        progress_state=progress_state,
+        remote_calibrations=remote_calibrations,
+    )
 
     # Phase 1: Push local edits to the cloud
     push_result = push_all(
@@ -1064,6 +1291,7 @@ def sync_all(
         prepare_images_cb=prepare_images_cb,
         progress_state=progress_state,
         remote_obs=remote_obs,
+        sync_calibrations=False,
     )
 
     # Phase 2: Pull cloud edits to the desktop
@@ -1072,13 +1300,28 @@ def sync_all(
         progress_cb=progress_cb,
         progress_state=progress_state,
         remote_obs=remote_obs,
+        sync_calibrations=False,
+    )
+
+    calibration_pull_result = pull_calibrations(
+        client,
+        progress_cb=progress_cb,
+        progress_state=progress_state,
+        remote_calibrations=remote_calibrations,
     )
 
     # Combine results for the UI summary
     return {
         'pushed': push_result.get('pushed', 0),
         'pulled': pull_result.get('pulled', 0),
-        'errors': push_result.get('errors', []) + pull_result.get('errors', []),
+        'calibrations_pushed': calibration_push_result.get('pushed', 0),
+        'calibrations_pulled': calibration_pull_result.get('pulled', 0),
+        'errors': (
+            calibration_push_result.get('errors', [])
+            + push_result.get('errors', [])
+            + pull_result.get('errors', [])
+            + calibration_pull_result.get('errors', [])
+        ),
         'deleted_remote': pull_result.get('deleted_remote', []),
     }
 
@@ -1210,6 +1453,186 @@ def _detect_deleted_remote_observations(remote_obs: list[dict] | None) -> list[d
             }
         )
     return deleted
+
+
+def _load_local_calibration_rows() -> list[dict]:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM calibrations
+            ORDER BY objective_key ASC, calibration_date ASC, id ASC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def _load_local_calibration_by_uuid(calibration_uuid: str) -> dict | None:
+    uuid_value = _normalize_calibration_uuid(calibration_uuid)
+    if not uuid_value:
+        return None
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT * FROM calibrations WHERE calibration_uuid = ? LIMIT 1",
+            (uuid_value,),
+        ).fetchone()
+        return dict(row) if row else None
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+
+
+def _local_calibration_lookup(rows: list[dict] | None = None) -> dict[str, dict]:
+    lookup: dict[str, dict] = {}
+    for row in (rows or _load_local_calibration_rows()):
+        uuid_value = _normalize_calibration_uuid((row or {}).get('calibration_uuid'))
+        if uuid_value:
+            lookup[uuid_value] = dict(row or {})
+    return lookup
+
+
+def _calibration_sync_warning(direction: str, local_row: dict | None, remote_row: dict | None, fields: list[str]) -> str:
+    calibration_uuid = _normalize_calibration_uuid((local_row or remote_row or {}).get('calibration_uuid')) or '?'
+    label = _calibration_display_name(local_row or remote_row)
+    field_text = ', '.join(fields[:6]) if fields else 'metadata'
+    return (
+        f'calibration {calibration_uuid}: skipped {direction} for {label} '
+        f'because the same UUID has conflicting metadata ({field_text})'
+    )
+
+
+def push_calibrations(
+    client: SporelyCloudClient,
+    progress_cb: ProgressCallback | None = None,
+    progress_state: dict | None = None,
+    remote_calibrations: list[dict] | None = None,
+) -> dict:
+    """Push calibration metadata rows that exist only on the desktop."""
+    remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
+    remote_map = {
+        _normalize_calibration_uuid(row.get('calibration_uuid')): row
+        for row in remote_rows
+        if _normalize_calibration_uuid(row.get('calibration_uuid'))
+    }
+    local_rows = _load_local_calibration_rows()
+    total = len(local_rows)
+    pushed = 0
+    errors: list[str] = []
+    progress_state = progress_state if isinstance(progress_state, dict) else {}
+    _extend_progress_total(progress_state, total)
+
+    for index, local_row in enumerate(local_rows, start=1):
+        calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
+        label = _calibration_display_name(local_row)
+        _emit_progress(
+            progress_cb,
+            f"Syncing calibration {index}/{max(1, total)}: {label}…",
+            progress_state,
+        )
+        try:
+            if not calibration_uuid:
+                errors.append('calibration ?: skipped push because calibration_uuid is missing')
+                continue
+
+            remote_row = remote_map.get(calibration_uuid)
+            if remote_row is not None:
+                if not _calibration_payloads_match(local_row, remote_row):
+                    errors.append(_calibration_sync_warning('push', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
+                continue
+
+            current_remote = client.find_remote_calibration(calibration_uuid)
+            if current_remote is not None:
+                if _calibration_payloads_match(local_row, current_remote):
+                    continue
+                errors.append(_calibration_sync_warning('push', local_row, current_remote, _calibration_diff_fields(local_row, current_remote)))
+                continue
+
+            client.push_calibration_metadata(local_row)
+            pushed += 1
+        except CloudSyncError as exc:
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        except Exception as exc:
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        finally:
+            _advance_progress(progress_state, 1)
+
+    return {'pushed': pushed, 'total': total, 'errors': errors}
+
+
+def pull_calibrations(
+    client: SporelyCloudClient,
+    progress_cb: ProgressCallback | None = None,
+    progress_state: dict | None = None,
+    remote_calibrations: list[dict] | None = None,
+) -> dict:
+    """Pull cloud calibration metadata into local rows keyed by UUID."""
+    remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
+    local_rows = _load_local_calibration_rows()
+    local_map = _local_calibration_lookup(local_rows)
+    total = len(remote_rows)
+    pulled = 0
+    errors: list[str] = []
+    progress_state = progress_state if isinstance(progress_state, dict) else {}
+    _extend_progress_total(progress_state, total)
+
+    remote_rows_sorted = sorted(
+        remote_rows,
+        key=lambda row: (
+            _normalize_calibration_bool(row.get('is_active')),
+            _normalize_calibration_text(row.get('objective_key')) or '',
+            _normalize_calibration_date(row.get('calibration_date')) or '',
+            str(row.get('id') or ''),
+        ),
+    )
+
+    for index, remote_row in enumerate(remote_rows_sorted, start=1):
+        calibration_uuid = _normalize_calibration_uuid(remote_row.get('calibration_uuid'))
+        label = _calibration_display_name(remote_row)
+        _emit_progress(
+            progress_cb,
+            f"Checking calibration {index}/{max(1, total)}: {label}…",
+            progress_state,
+        )
+        try:
+            if not calibration_uuid:
+                errors.append('calibration ?: skipped pull because calibration_uuid is missing')
+                continue
+
+            local_row = local_map.get(calibration_uuid)
+            if local_row is not None:
+                if not _calibration_payloads_match(local_row, remote_row):
+                    errors.append(_calibration_sync_warning('pull', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
+                continue
+
+            try:
+                CalibrationDB.add_calibration(**_calibration_insert_kwargs(remote_row))
+                pulled += 1
+                local_map[calibration_uuid] = _load_local_calibration_by_uuid(calibration_uuid) or dict(remote_row)
+            except sqlite3.IntegrityError:
+                current_local = _load_local_calibration_by_uuid(calibration_uuid)
+                if current_local and _calibration_payloads_match(current_local, remote_row):
+                    local_map[calibration_uuid] = current_local
+                    continue
+                errors.append(_calibration_sync_warning('pull', current_local or remote_row, remote_row, _calibration_diff_fields(current_local or {}, remote_row)))
+            except Exception as exc:
+                errors.append(f'calibration {calibration_uuid}: {exc}')
+        except CloudSyncError as exc:
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        except Exception as exc:
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        finally:
+            _advance_progress(progress_state, 1)
+
+    return {'pulled': pulled, 'total': total, 'errors': errors}
 
 
 def unlink_local_observation_from_cloud(local_id: int) -> dict:
@@ -3137,6 +3560,54 @@ class SporelyCloudClient:
             f'observations?user_id=eq.{self.user_id}&order=created_at.asc&select=*'
         )
 
+    def find_remote_calibration(self, calibration_uuid: str) -> dict | None:
+        calibration_id = _normalize_calibration_uuid(calibration_uuid)
+        if not calibration_id:
+            return None
+        rows = self._get(
+            f'calibrations?user_id=eq.{self.user_id}&calibration_uuid=eq.{calibration_id}&select=*'
+        )
+        return rows[0] if rows else None
+
+    def list_remote_calibrations(self) -> list[dict]:
+        return self._get(
+            f'calibrations?user_id=eq.{self.user_id}&order=created_at.asc&select=*'
+        )
+
+    def push_calibration_metadata(self, calibration: dict) -> str:
+        """Upsert calibration metadata row. Returns cloud row id."""
+        payload = _calibration_sync_payload(calibration)
+        calibration_uuid = str(payload.get('calibration_uuid') or '').strip()
+        if not calibration_uuid:
+            raise CloudSyncError('Missing calibration UUID')
+        if not payload.get('objective_key'):
+            raise CloudSyncError('Missing objective key')
+        if payload.get('calibration_date') is None:
+            raise CloudSyncError('Missing calibration date')
+        if payload.get('microns_per_pixel') is None:
+            raise CloudSyncError('Missing microns per pixel')
+
+        payload['user_id'] = self.user_id
+        payload['calibration_uuid'] = calibration_uuid
+
+        existing_row = self.find_remote_calibration(calibration_uuid)
+        if existing_row:
+            if _calibration_payloads_match(payload, existing_row):
+                return str(existing_row.get('id') or '').strip() or calibration_uuid
+            raise CloudSyncError(
+                'Skipped cloud update because the same UUID has different metadata'
+            )
+
+        try:
+            rows = self._post('calibrations', payload)
+        except CloudSyncError:
+            existing_row = self.find_remote_calibration(calibration_uuid)
+            if existing_row and _calibration_payloads_match(payload, existing_row):
+                return str(existing_row.get('id') or '').strip() or calibration_uuid
+            raise
+
+        return str(rows[0]['id'])
+
     def push_observation(self, obs: dict) -> str:
         """Upsert observation to cloud. Returns cloud UUID."""
         payload = {col: obs.get(col) for col in _OBS_PUSH_COLS}
@@ -3522,6 +3993,7 @@ def push_all(
     prepare_images_cb: PreparedImagesCallback | None = None,
     progress_state: dict | None = None,
     remote_obs: list[dict] | None = None,
+    sync_calibrations: bool = True,
 ) -> dict:
     """Push all unsynced / dirty observations (and optionally images) to cloud.
 
@@ -3533,6 +4005,14 @@ def push_all(
 
     _mark_cloud_observations_dirty_for_media_changes()
 
+    calibration_result = {'pushed': 0, 'total': 0, 'errors': []}
+    if sync_calibrations:
+        calibration_result = push_calibrations(
+            client,
+            progress_cb=progress_cb,
+            progress_state=progress_state,
+        )
+
     cursor.execute(
         "SELECT * FROM observations WHERE cloud_id IS NULL OR sync_status = 'dirty' ORDER BY date DESC"
     )
@@ -3541,7 +4021,7 @@ def push_all(
 
     total = len(observations)
     pushed = 0
-    errors = []
+    errors = list(calibration_result.get('errors') or [])
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     progress_state['done'] = _progress_done(progress_state)
     progress_state['total'] = _progress_total(progress_state) + total
@@ -3685,7 +4165,13 @@ def push_all(
                 progress_state,
             )
 
-    return {'pushed': pushed, 'total': total, 'errors': errors}
+    return {
+        'pushed': pushed,
+        'total': total,
+        'calibrations_pushed': calibration_result.get('pushed', 0),
+        'calibrations_total': calibration_result.get('total', 0),
+        'errors': errors,
+    }
 
 
 def _push_images_for_observation(
@@ -4054,7 +4540,14 @@ def _backfill_missing_exif_on_cloud_images() -> None:
             if obs_id <= 0:
                 continue
             lat, lon, altitude, gps_acc, date_str = _load_obs_exif_fallback(obs_id)
-            _inject_obs_exif_into_field_image(p, lat, lon, altitude, date_str, gps_accuracy=gps_acc)
+            _inject_obs_exif_into_field_image(
+                p,
+                lat,
+                lon,
+                altitude,
+                date_str,
+                gps_accuracy=gps_acc,
+            )
     except Exception as exc:
         print(f'[cloud_sync] EXIF backfill skipped: {exc}')
 
@@ -4064,12 +4557,20 @@ def pull_all(
     progress_cb: ProgressCallback | None = None,
     progress_state: dict | None = None,
     remote_obs: list[dict] | None = None,
+    sync_calibrations: bool = True,
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows."""
     _backfill_missing_exif_on_cloud_images()
     remote_obs = list(remote_obs or client.list_remote_observations())
+    calibration_result = {'pulled': 0, 'total': 0, 'errors': []}
+    if sync_calibrations:
+        calibration_result = pull_calibrations(
+            client,
+            progress_cb=progress_cb,
+            progress_state=progress_state,
+        )
     pulled = 0
-    errors = []
+    errors = list(calibration_result.get('errors') or [])
     imported_local_ids: list[int] = []
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     local_by_cloud_id, local_by_id = _load_local_observation_lookup()
@@ -4297,6 +4798,8 @@ def pull_all(
     return {
         'pulled': pulled,
         'total': total,
+        'calibrations_pulled': calibration_result.get('pulled', 0),
+        'calibrations_total': calibration_result.get('total', 0),
         'errors': errors,
         'deleted_remote': _detect_deleted_remote_observations(remote_obs),
     }

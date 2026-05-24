@@ -41,16 +41,26 @@ def test_backfill_missing_exif_uses_observation_fallback(monkeypatch, tmp_path):
             "gps_latitude": "59.9",
             "gps_longitude": "10.75",
             "gps_altitude": "12.5",
+            "gps_accuracy": "7.5",
             "date": "2026-04-30",
         },
     )
     calls = []
+
+    def fake_inject(*args, **kwargs):
+        calls.append((args, kwargs))
+
     monkeypatch.setattr(
         cloud_sync,
         "_inject_obs_exif_into_field_image",
-        lambda *args: calls.append(args),
+        fake_inject,
     )
 
     cloud_sync._backfill_missing_exif_on_cloud_images()
 
-    assert calls == [(image_path, 59.9, 10.75, 12.5, "2026-04-30")]
+    assert calls == [
+        (
+            (image_path, 59.9, 10.75, 12.5, "2026-04-30"),
+            {"gps_accuracy": 7.5},
+        )
+    ]
