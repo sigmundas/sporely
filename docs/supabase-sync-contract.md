@@ -110,7 +110,7 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 | `observations` | `public.observations` | `sync-required` | Core observation record. Local `id` maps to cloud `desktop_id`. |
 | `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path` and derivative bookkeeping. |
 | `spore_measurements` | `public.spore_measurements` | `sync-required` | Measurement points and values must round-trip. |
-| `calibrations` | `public.calibrations` | `future cloud feature` | Needed to fully reproduce measurements, but not yet in the active contract. |
+| `calibrations` | `public.calibrations` | `sync-required, staged implementation` | Fields already mostly exist on both sides, but stable sync identity and implementation wiring are not done yet. |
 | `spore_annotations` | `public.spore_annotations` | `future cloud feature` | Useful for overlays and ML, but not part of the current sync path. |
 | `reference_values.db` / `reference_values` | `public.reference_values` | `generated/reference-only` now, future shared model later | Desktop reference data is local cache / bundled data today. Cloud reference stats are lookup data, not yet a full shared dataset model. |
 | `taxon_min`, `vernacular_min`, `scientific_name_min`, `taxon_external_id_min` | `public.taxa`, `public.taxa_vernacular` | `generated/reference-only` | Lookup taxonomy mirrors, not user content. |
@@ -236,9 +236,9 @@ Cloud derivative rule:
 - Spore thumbnails are generated artifacts, not the only source of truth.
 - Large microscope originals may remain local-only unless the user explicitly opts into full-resolution
   cloud storage later.
-- Full measurement reproducibility is incomplete until calibration sync is designed. Measurement
-  geometry can sync now, but calibration data must eventually become part of the shared model if
-  cloud data is expected to recreate measurements from scratch.
+- Full measurement reproducibility is incomplete until calibration sync implementation lands.
+  Measurement geometry can sync now, but calibration data are part of the shared contract even
+  though the implementation is staged.
 
 `sync-required` measurement fields:
 
@@ -257,7 +257,7 @@ Cloud derivative rule:
 - `image_key`
 - `thumb_key`
 
-`future cloud feature` calibration fields:
+`sync-required, staged calibration fields`:
 
 - `objective_key`
 - `calibration_date`
@@ -277,8 +277,34 @@ Cloud derivative rule:
 - `calibration_image_height`
 - `notes`
 - `is_active`
-- Warning: these calibration fields are not yet part of the active sync contract, so cloud-side
-  measurement recreation remains incomplete until calibration sharing is designed.
+- These calibration fields are part of the shared contract, but sync implementation is staged.
+
+### Calibration Identity
+
+- Do not use `objective_key + date` as identity.
+- Do not use plain `desktop_id` as the cross-machine identity.
+- Preferred direction: a stable calibration UUID or sync key scoped by `user_id`.
+- `objective_key` is grouping and display metadata, not identity.
+- Two similar calibrations for the same objective should remain separate unless they share the
+  same stable identity.
+
+### Calibration Photos
+
+- Numeric calibration can sync without the original photo.
+- Visual inspection or reproduction needs the calibration photo or reference image and
+  `measurements_json`.
+- Local calibration photos remain authoritative when present.
+- Cloud-hydrated calibration photos should be marked derived, cache, or recovery data.
+- Do not overwrite higher-quality local calibration photos.
+
+### Calibration Implementation Stages
+
+- Define stable calibration identity and payload shape.
+- Metadata-only calibration sync.
+- Calibration photo or reference sync.
+- Image-calibration linkage and reconciliation.
+- Only later decide whether hidden `measurement_type = "calibration"` rows need cloud
+  representation.
 
 ### Country, Redlist, and Locality
 
