@@ -37,6 +37,7 @@ from database.models import (
     SettingsDB,
     MeasurementDB,
     CalibrationDB,
+    _upsert_image_tombstone,
     get_image_tombstones_by_deleted_cloud_id,
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
@@ -1337,6 +1338,97 @@ def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int |
 def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ...] | set[str] | None = None) -> set[str]:
     tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_image_ids)
     return set(tombstones.keys())
+
+
+def _record_remote_image_tombstones(
+    remote_images,
+    *,
+    local_observation_id: int | None = None,
+    cloud_observation_id: str | None = None,
+) -> set[str]:
+    rows = [dict(row or {}) for row in (remote_images or [])]
+    if not rows:
+        return set()
+
+    deleted_cloud_ids: set[str] = set()
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            cursor.execute("PRAGMA table_info(images)")
+            image_columns = {str(row[1] or "") for row in cursor.fetchall()}
+        except Exception:
+            image_columns = set()
+
+        has_cloud_id = "cloud_id" in image_columns
+        select_columns = ["id"]
+        for column in ("observation_id", "image_type", "filepath", "original_filepath"):
+            if column in image_columns:
+                select_columns.append(column)
+
+        local_image_sql = (
+            f"SELECT {', '.join(select_columns)} FROM images WHERE cloud_id = ? LIMIT 1"
+            if has_cloud_id
+            else None
+        )
+
+        for remote_image in rows:
+            cloud_image_id = str(remote_image.get("id") or "").strip()
+            deleted_at = str(remote_image.get("deleted_at") or "").strip()
+            if not cloud_image_id or not deleted_at:
+                continue
+
+            local_image_row = None
+            if local_image_sql:
+                local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
+
+            resolved_local_observation_id = None
+            local_image_id = None
+            image_type = None
+            filepath = None
+            original_filepath = None
+            if local_image_row:
+                local_image_data = dict(local_image_row)
+                local_image_id_value = _safe_int(local_image_data.get("id"))
+                if local_image_id_value > 0:
+                    local_image_id = local_image_id_value
+                if local_observation_id is not None:
+                    local_observation_id_value = _safe_int(local_observation_id)
+                    if local_observation_id_value > 0:
+                        resolved_local_observation_id = local_observation_id_value
+                if resolved_local_observation_id is None and "observation_id" in local_image_data:
+                    local_observation_id_value = _safe_int(local_image_data.get("observation_id"))
+                    if local_observation_id_value > 0:
+                        resolved_local_observation_id = local_observation_id_value
+                image_type = str(local_image_data.get("image_type") or "").strip() or None
+                filepath = str(local_image_data.get("filepath") or "").strip() or None
+                original_filepath = str(local_image_data.get("original_filepath") or "").strip() or None
+
+            _upsert_image_tombstone(
+                cursor,
+                deleted_cloud_id=cloud_image_id,
+                deleted_at=deleted_at,
+                deleted_storage_path=_normalize_cloud_media_key(remote_image.get("storage_path")) or None,
+                deleted_observation_cloud_id=(
+                    str(cloud_observation_id or remote_image.get("observation_id") or "").strip() or None
+                ),
+                local_observation_id=resolved_local_observation_id,
+                local_image_id=local_image_id,
+                image_type=image_type,
+                filepath=filepath,
+                original_filepath=original_filepath,
+            )
+            deleted_cloud_ids.add(cloud_image_id)
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return deleted_cloud_ids
 
 
 def _tombstoned_cloud_image_warning(local_id: int | None, cloud_image_id: str) -> str:

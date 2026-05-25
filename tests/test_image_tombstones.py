@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from database import models, schema
+from utils import cloud_sync
 
 
 def _create_image_tombstone_test_db(conn: sqlite3.Connection) -> None:
@@ -253,6 +254,154 @@ def test_mark_image_tombstone_synced_sets_delete_synced_at(monkeypatch, tmp_path
 
     assert updated is True
     assert delete_synced_at is not None
+
+
+def test_record_remote_image_tombstones_ignores_active_rows_and_writes_deleted_remote_rows(
+    monkeypatch,
+    tmp_path,
+):
+    db_path = tmp_path / "remote_tombstones.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, updated_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", "2026-05-01 10:00:00"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    recorded = cloud_sync._record_remote_image_tombstones(
+        [
+            {
+                "id": "cloud-image-1",
+                "observation_id": "cloud-obs-1",
+                "deleted_at": "2026-05-01 10:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
+            },
+            {
+                "id": "cloud-image-2",
+                "observation_id": "cloud-obs-1",
+                "deleted_at": None,
+                "storage_path": "user/cloud-obs-1/cloud-image-2.jpg",
+            },
+        ],
+        cloud_observation_id="cloud-obs-1",
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tombstones = conn.execute(
+            """
+            SELECT deleted_cloud_id, deleted_at, delete_synced_at, deleted_storage_path,
+                   deleted_observation_cloud_id, local_observation_id, local_image_id,
+                   image_type, filepath, original_filepath
+            FROM image_tombstones
+            ORDER BY id
+            """
+        ).fetchall()
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert recorded == {"cloud-image-1"}
+    assert len(tombstones) == 1
+    deleted_cloud_id, deleted_at, delete_synced_at, deleted_storage_path, deleted_observation_cloud_id, local_observation_id, local_image_id, image_type, filepath, original_filepath = tombstones[0]
+    assert deleted_cloud_id == "cloud-image-1"
+    assert deleted_at == "2026-05-01 10:00:00"
+    assert delete_synced_at is None
+    assert deleted_storage_path == "user/cloud-obs-1/cloud-image-1.jpg"
+    assert deleted_observation_cloud_id == "cloud-obs-1"
+    assert local_observation_id is None
+    assert local_image_id is None
+    assert image_type is None
+    assert filepath is None
+    assert original_filepath is None
+    assert image_count == 0
+
+
+def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
+    monkeypatch,
+    tmp_path,
+):
+    db_path = tmp_path / "remote_tombstone_match.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+        images_root = db_path.parent / "images"
+        image_path = images_root / "observation-1" / "image.jpg"
+        original_path = images_root / "observation-1" / "originals" / "image-original.jpg"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("image", encoding="utf-8")
+        original_path.write_text("original", encoding="utf-8")
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, updated_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", "2026-05-01 10:00:00"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath, image_type
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (11, 1, "cloud-image-1", str(image_path), str(original_path), "field"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync._record_remote_image_tombstones(
+        [
+            {
+                "id": "cloud-image-1",
+                "observation_id": "cloud-obs-1",
+                "deleted_at": "2026-05-01 10:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
+            }
+        ],
+        local_observation_id=1,
+        cloud_observation_id="cloud-obs-1",
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tombstone = conn.execute(
+            """
+            SELECT deleted_cloud_id, deleted_at, delete_synced_at, deleted_storage_path,
+                   deleted_observation_cloud_id, local_observation_id, local_image_id,
+                   image_type, filepath, original_filepath
+            FROM image_tombstones
+            WHERE deleted_cloud_id = ?
+            """,
+            ("cloud-image-1",),
+        ).fetchone()
+        image_row = conn.execute(
+            "SELECT COUNT(*) FROM images WHERE id = ?",
+            (11,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert tombstone is not None
+    assert tombstone[0] == "cloud-image-1"
+    assert tombstone[1] == "2026-05-01 10:00:00"
+    assert tombstone[2] is None
+    assert tombstone[3] == "user/cloud-obs-1/cloud-image-1.jpg"
+    assert tombstone[4] == "cloud-obs-1"
+    assert tombstone[5] == 1
+    assert tombstone[6] == 11
+    assert tombstone[7] == "field"
+    assert tombstone[8] == str(image_path)
+    assert tombstone[9] == str(original_path)
+    assert image_row == 1
+    assert image_path.exists()
+    assert original_path.exists()
 
 
 def test_delete_synced_image_writes_tombstone_before_hard_delete_and_marks_observation_dirty(
