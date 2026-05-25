@@ -202,6 +202,18 @@ def test_suggest_common_names_can_be_constrained_by_genus(tmp_path: Path, monkey
     _assert_no_redlist(values[0])
 
 
+def test_suggest_common_names_without_prefix_can_use_taxon_constraints(tmp_path: Path, monkeypatch) -> None:
+    service = _make_service(tmp_path, monkeypatch)
+
+    values = service.suggest_common_names(prefix="", genus="Agaricus")
+
+    assert [choice.common_name for choice in values] == ["Button mushroom", "Cultivated mushroom"]
+    assert [choice.genus for choice in values] == ["Agaricus", "Agaricus"]
+    assert [choice.species for choice in values] == ["bisporus", "bisporus"]
+    assert all(choice.source == "taxonomy" for choice in values)
+    _assert_no_redlist(values[0])
+
+
 def test_resolve_scientific_returns_taxonchoice_with_common_name_and_family(
     tmp_path: Path,
     monkeypatch,

@@ -418,9 +418,9 @@ class TaxonLookupService:
         limit: int = 50,
     ) -> list[TaxonChoice]:
         prefix = _normalize_text(prefix)
-        if not prefix:
+        if not prefix and genus is None and species is None:
             return []
-        rows = self._local_common_name_rows(prefix=prefix, genus=genus, species=species, limit=limit)
+        rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit)
         return [self._row_to_choice(row, "taxonomy") for row in rows[: max(0, int(limit))]]
 
     def resolve_scientific(self, genus: str, species: str) -> TaxonChoice | None:
