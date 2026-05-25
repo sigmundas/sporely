@@ -258,6 +258,69 @@ def test_best_common_name_for_taxon_prefers_preferred_name(tmp_path: Path, monke
     _assert_no_redlist(choice)
 
 
+def test_best_common_name_for_taxon_returns_none_when_choice_is_ambiguous(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "ambiguous-taxonomy.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE taxon_min (
+                taxon_id INTEGER PRIMARY KEY,
+                genus TEXT,
+                specific_epithet TEXT,
+                family TEXT,
+                canonical_scientific_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vernacular_min (
+                taxon_id INTEGER,
+                vernacular_name TEXT,
+                is_preferred_name INTEGER,
+                language_code TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scientific_name_min (
+                taxon_id INTEGER,
+                scientific_name TEXT,
+                is_preferred_name INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO taxon_min (taxon_id, genus, specific_epithet, family, canonical_scientific_name)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (1, "Agaricus", "bisporus", "Agaricaceae", "Agaricus bisporus"),
+        )
+        conn.executemany(
+            """
+            INSERT INTO vernacular_min (taxon_id, vernacular_name, is_preferred_name, language_code)
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (1, "Button mushroom", 1, "en"),
+                (1, "Cultivated mushroom", 1, "en"),
+            ],
+        )
+        conn.execute(
+            """
+            INSERT INTO scientific_name_min (taxon_id, scientific_name, is_preferred_name)
+            VALUES (?, ?, ?)
+            """,
+            (1, "Agaricus bisporus", 1),
+        )
+    vernacular_db = VernacularDB(db_path, language_code="en")
+    service = TaxonLookupService(vernacular_db=vernacular_db, language_code="en")
+
+    assert service.best_common_name_for_taxon("Agaricus", "bisporus") is None
+
+
 def test_service_is_safe_without_vernacular_db(tmp_path: Path, monkeypatch) -> None:
     ref_db = tmp_path / "reference-only.sqlite"
     _seed_reference_db(ref_db)

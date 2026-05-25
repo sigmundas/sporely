@@ -461,8 +461,19 @@ class TaxonLookupService:
         return [self._row_to_choice(row, "taxonomy") for row in rows[: max(0, int(limit))]]
 
     def best_common_name_for_taxon(self, genus: str, species: str) -> TaxonChoice | None:
-        names = self.common_names_for_taxon(genus, species, limit=1)
-        return names[0] if names else None
+        rows = self._local_common_name_rows(genus=genus, species=species, limit=2)
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return self._row_to_choice(rows[0], "taxonomy")
+
+        first = rows[0]
+        second = rows[1]
+        first_preferred = bool(first["is_preferred_name"])
+        second_preferred = bool(second["is_preferred_name"])
+        if first_preferred and not second_preferred:
+            return self._row_to_choice(first, "taxonomy")
+        return None
 
 
 __all__ = ["TaxonChoice", "TaxonLookupService"]
