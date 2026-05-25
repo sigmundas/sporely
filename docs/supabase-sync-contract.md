@@ -402,6 +402,9 @@ These stay `desktop-only`:
 - Local `calibration_id` on images does not yet have a full cloud sync story.
 - `spore_annotations` exists on both sides, but the contract should treat it as a future shared
   annotation feature, not as current sync state.
+- Cloud image tombstones should be recorded locally and used to block reupload or recreation, but
+  the desktop active image row stays visible for now. Files, measurements, and annotations remain
+  intact, and any UI hiding or explicit delete confirmation is deferred.
 - `scale_bar_*` exists on both sides but is currently shared-but-ignored.
 - Current cloud `reference_values` is too flat for shared provenance and usage tracking.
 
