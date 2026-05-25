@@ -4049,10 +4049,25 @@ class SporelyCloudClient:
         """Write the local SQLite ID back to the cloud row for future dedup."""
         self._patch(f'observations?id=eq.{cloud_id}', {'desktop_id': desktop_id})
 
-    def pull_image_metadata(self, obs_cloud_id: str) -> list[dict]:
-        return self._get(
-            f'observation_images?observation_id=eq.{obs_cloud_id}&select=*'
-        )
+    def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
+        cloud_value = str(obs_cloud_id or '').strip()
+        if not cloud_value:
+            return []
+
+        path = f'observation_images?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}'
+        if not include_deleted_for_sync:
+            path += '&deleted_at=is.null'
+        path += '&select=*'
+
+        rows = self._get(path)
+        image_rows = [dict(row or {}) for row in (rows or [])]
+        if include_deleted_for_sync:
+            return image_rows
+        return [
+            row
+            for row in image_rows
+            if not str(row.get('deleted_at') or '').strip()
+        ]
 
     def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
         """Write the local SQLite measurement ID back to the cloud row for future dedup."""

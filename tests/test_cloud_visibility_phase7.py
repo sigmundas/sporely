@@ -178,6 +178,92 @@ def test_soft_delete_image_scopes_patch_to_user(monkeypatch):
     ]
 
 
+def test_pull_image_metadata_filters_deleted_rows_by_default(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    fetched_paths = []
+
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path: fetched_paths.append(path) or [
+            {"id": "cloud-img-1", "deleted_at": None, "storage_path": "user/cloud-obs-1/cloud-img-1.jpg"},
+            {
+                "id": "cloud-img-2",
+                "deleted_at": "2026-05-01 10:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-img-2.jpg",
+            },
+        ],
+    )
+
+    rows = client.pull_image_metadata("cloud-obs-1")
+
+    assert fetched_paths == [
+        "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&deleted_at=is.null&select=*"
+    ]
+    assert [row["id"] for row in rows] == ["cloud-img-1"]
+    assert rows[0]["deleted_at"] is None
+
+
+def test_pull_image_metadata_include_deleted_for_sync_returns_deleted_rows(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    fetched_paths = []
+
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path: fetched_paths.append(path) or [
+            {"id": "cloud-img-1", "deleted_at": None, "storage_path": "user/cloud-obs-1/cloud-img-1.jpg"},
+            {
+                "id": "cloud-img-2",
+                "deleted_at": "2026-05-01 10:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-img-2.jpg",
+            },
+        ],
+    )
+
+    rows = client.pull_image_metadata("cloud-obs-1", include_deleted_for_sync=True)
+
+    assert fetched_paths == [
+        "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&select=*"
+    ]
+    assert [row["id"] for row in rows] == ["cloud-img-1", "cloud-img-2"]
+    assert rows[1]["deleted_at"] == "2026-05-01 10:00:00"
+
+
+def test_pull_image_metadata_does_not_change_local_db_rows(monkeypatch, tmp_path):
+    db_path = tmp_path / "local.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE images (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
+        conn.execute("INSERT INTO images (name) VALUES (?)", ("kept",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path: [
+            {"id": "cloud-img-1", "deleted_at": None, "storage_path": "user/cloud-obs-1/cloud-img-1.jpg"}
+        ],
+    )
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: pytest.fail("unexpected local DB access"))
+
+    rows = client.pull_image_metadata("cloud-obs-1", include_deleted_for_sync=True)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        local_rows = conn.execute("SELECT id, name FROM images ORDER BY id").fetchall()
+    finally:
+        conn.close()
+
+    assert rows == [
+        {"id": "cloud-img-1", "deleted_at": None, "storage_path": "user/cloud-obs-1/cloud-img-1.jpg"}
+    ]
+    assert local_rows == [(1, "kept")]
+
+
 def test_push_pending_image_tombstones_marks_delete_synced_at(monkeypatch, tmp_path):
     db_path = _init_tombstone_sync_db(tmp_path)
     conn = sqlite3.connect(db_path)
