@@ -4878,6 +4878,23 @@ class ObservationsTab(QWidget):
         # Emit signal to set as active observation
         self.observation_selected.emit(obs_id, display_name, switch_tab)
 
+    def _refresh_active_observation_after_edit(
+        self,
+        refresh_reference_species_availability: bool = False,
+    ) -> None:
+        """Refresh the active observation state after a successful edit save."""
+        host = self.window()
+        if host is None:
+            host = self.parent()
+        if refresh_reference_species_availability and host is not None and hasattr(
+            host, "_refresh_reference_species_availability"
+        ):
+            try:
+                host._refresh_reference_species_availability(force_refresh=True)
+            except Exception:
+                pass
+        self.set_selected_as_active(switch_tab=False)
+
     def get_selected_observation(self):
         """Return (observation_id, display_name) for current selection."""
         selected_rows = self.table.selectionModel().selectedRows()
@@ -7321,6 +7338,10 @@ class ObservationsTab(QWidget):
                 ai_state = dialog.get_ai_state()
                 self._ai_suggestions_cache[obs_id] = ai_state
                 data = dialog.get_data()
+                taxonomy_changed = (
+                    str(data.get("genus") or "").strip() != str(observation.get("genus") or "").strip()
+                    or str(data.get("species") or "").strip() != str(observation.get("species") or "").strip()
+                )
                 self._observation_edit_draft_cache.pop(obs_id, None)
                 ObservationDB.update_observation(
                     obs_id,
@@ -7372,6 +7393,9 @@ class ObservationsTab(QWidget):
                         self.table.selectRow(row)
                         self.selected_observation_id = obs_id
                         self.on_selection_changed()
+                        self._refresh_active_observation_after_edit(
+                            refresh_reference_species_availability=taxonomy_changed
+                        )
                         break
                 pending_status = self._upload_pending_artsobs_web_images()
                 if pending_status == "none":

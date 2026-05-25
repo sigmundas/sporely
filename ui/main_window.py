@@ -16743,6 +16743,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "ref_species_input"):
             self.ref_species_input.setText(species or "")
         if hasattr(self, "ref_source_input"):
+            self.ref_source_input.blockSignals(True)
+            self.ref_source_input.setCurrentText("")
+            self.ref_source_input.blockSignals(False)
+        if hasattr(self, "ref_vernacular_input"):
+            self.ref_vernacular_input.blockSignals(True)
+            self.ref_vernacular_input.setText("")
+            self.ref_vernacular_input.blockSignals(False)
+        if hasattr(self, "ref_source_input"):
             self._populate_reference_panel_sources()
             source = self.reference_values.get("source") if self.reference_values else None
             if source:
