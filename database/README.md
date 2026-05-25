@@ -27,22 +27,46 @@ This folder contains the desktop app's SQLite runtime schema, migration helpers,
 
 
 ## ongoing
-Stage A — sporely-py local calibration UUID
-  Add calibration_uuid to local SQLite calibrations.
-  Backfill local rows.
-  Generate UUIDs for new calibrations.
-  Preserve UUIDs in export/import.
+Stage A — DONE
+Stage B — DONE
+Stage C — DONE
+Stage D1 — DONE
+Stage D2 — DONE
 
-Stage B — sporely-web / Supabase calibration UUID
-  Add calibration_uuid to public.calibrations in Supabase.
-  Use native uuid.
-  Backfill existing cloud rows.
-  Set default gen_random_uuid().
-  Set NOT NULL.
-  Add uniqueness on (user_id, calibration_uuid).
-  Do not add desktop_id yet.
+Stage E1 — Tombstone deletion model — DONE
+  Local + cloud tombstones exist and sync both ways.
+  Deleted images do not reappear from cloud/other desktop.
+  Local originals/measurements are not automatically destroyed by cloud tombstones.
 
-Stage C — metadata-only calibration push/pull
-Stage D — calibration photo/reference-image sync
-Stage E — image-calibration linkage/reconciliation
+Stage E2 — Image provenance/source tags — NEXT
+  Add/define DB concepts for:
+  imported source, converted local working image, local canonical image,
+  cloud derivative, cloud recovery/cache, generated thumbnail/plot/artifact.
+
+
+Stage E — image provenance tags and tombstone deletion model
+  Add clear DB concepts for image roles/source types before deeper file sync.
+  Distinguish imported source, local canonical image, cloud derivative, cloud recovery/cache, generated artifacts.
+  Add deletion/tombstone behavior so deleted images do not reappear from cloud or another device.
+  Cover local deletion, cloud deletion/soft-delete, dependent measurements, and cross-device refresh.
+
+Stage F — calibration photo recovery/download cache
+  Download cloud calibration derivative to a cache/recovery location when local photo is missing.
+  Mark it cloud-derived.
+  Do not overwrite local originals.
+  Do not write recovery paths into canonical local provenance fields unless explicitly designed.
+
+Stage G — image-calibration linkage/reconciliation
+  Link synced calibration records to images/calibration_id safely.
+  Reconcile scale fields, objective names, and calibration_uuid.
+  Avoid automatic rescaling unless conflicts are clear.
+
+Stage H — multi-asset calibration provenance
+  Add a dedicated calibration_assets-style model/table if needed.
+  Support multiple calibration photos, crops, overlays, role labels, hashes, derived artifacts, and provenance.
+  Do not overload public.calibrations with many path columns.
+
+Stage I — optional full-resolution original sync
+  Only after provenance, quotas, and user settings are clear.
+  Never replace better local originals with cloud copies.
   

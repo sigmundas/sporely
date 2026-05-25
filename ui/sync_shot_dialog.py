@@ -40,10 +40,9 @@ class SyncShotDialog(QDialog):
 
         intro_label = QLabel(
             self.tr(
-                "Photograph this screen with your camera, then close this dialog. When you "
-                "scan an import folder, Sporely will auto-check the first and last image from "
-                "each folder for this QR and use it to calibrate the batch clock offset. "
-                "You can still use 'Use image...' if needed."
+                "Photograph this screen with your camera, then close this dialog. In Ingestion Hub, "
+                "you can use 'Choose QR image...' to calibrate from any photographed Sync Shot QR, "
+                "even before you scan an import folder."
             )
         )
         intro_label.setWordWrap(True)

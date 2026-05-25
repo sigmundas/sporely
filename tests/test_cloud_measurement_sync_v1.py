@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from database import models
+from database import models, schema
 from utils import cloud_sync
 
 
@@ -66,6 +66,7 @@ def _init_measurement_sync_db(tmp_path):
         );
         """
     )
+    schema._ensure_image_tombstones_table(conn.cursor())
     conn.commit()
     conn.close()
     return db_path
@@ -289,6 +290,105 @@ def test_import_remote_measurements_skips_when_image_missing_and_cannot_material
     assert result["conflict"] is False
     assert measurement_count == 0
     assert any("could not be materialized" in warning for warning in warnings)
+
+
+def test_import_remote_measurements_skips_tombstoned_image_and_keeps_unrelated_measurements(
+    monkeypatch,
+    tmp_path,
+):
+    db_path = _init_measurement_sync_db(tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", None),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-01 10:00:00", 1, 7),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _patch_test_db_connections(monkeypatch, db_path)
+    _insert_image(
+        db_path,
+        id=11,
+        observation_id=1,
+        cloud_id="cloud-image-2",
+        filepath="/local/image-2.jpg",
+        image_type="field",
+        sort_order=0,
+        created_at="2026-05-02T09:00:00Z",
+        scale_microns_per_pixel=0.5,
+    )
+
+    class DummyClient:
+        def pull_measurements_for_images(self, image_cloud_ids):
+            raise AssertionError("remote measurements should be supplied directly in this test")
+
+        def set_measurement_desktop_id(self, *args, **kwargs):
+            pass
+
+    remote_images = [
+        {
+            "id": "cloud-image-1",
+            "observation_id": "cloud-obs-1",
+            "image_type": "field",
+            "sort_order": 0,
+        },
+        {
+            "id": "cloud-image-2",
+            "observation_id": "cloud-obs-1",
+            "image_type": "field",
+            "sort_order": 1,
+        },
+    ]
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-1",
+            "image_id": "cloud-image-1",
+            "length_um": 9.0,
+            "width_um": 4.5,
+            "measurement_type": "manual",
+            "measured_at": "2026-05-01T12:00:00Z",
+        },
+        {
+            "id": "cloud-measurement-2",
+            "image_id": "cloud-image-2",
+            "length_um": 13.0,
+            "width_um": 6.5,
+            "measurement_type": "manual",
+            "measured_at": "2026-05-02T12:00:00Z",
+        },
+    ]
+
+    result = cloud_sync._import_remote_measurements_for_observation(
+        DummyClient(),
+        local_id=1,
+        cloud_id="cloud-obs-1",
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        measurement_rows = conn.execute(
+            "SELECT image_id, cloud_id, length_um FROM spore_measurements ORDER BY id",
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert result["imported"] == 1
+    assert result["conflict"] is False
+    assert measurement_rows == [(11, "cloud-measurement-2", 13.0)]
+    assert any("local tombstone" in warning for warning in result["warnings"])
 
 
 def test_import_remote_measurements_does_not_anchor_to_unrelated_local_image_id(monkeypatch, tmp_path):
@@ -624,3 +724,118 @@ def test_import_remote_measurements_skips_microscope_image(monkeypatch, tmp_path
     assert result["imported"] == 0
     assert measurement_count == 0
     assert any("excluded image" in warning for warning in result["warnings"])
+
+
+def test_push_measurements_for_observation_skips_tombstoned_image_measurements(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    db_path = _init_measurement_sync_db(tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", None),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-01 10:00:00", 1, 11),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _patch_test_db_connections(monkeypatch, db_path)
+    _insert_image(
+        db_path,
+        id=11,
+        observation_id=1,
+        cloud_id="cloud-image-1",
+        filepath="/local/micro-image-1.jpg",
+        image_type="microscope",
+        sort_order=0,
+        created_at="2026-05-01T10:00:00Z",
+        scale_microns_per_pixel=0.5,
+    )
+    _insert_image(
+        db_path,
+        id=12,
+        observation_id=1,
+        cloud_id="cloud-image-2",
+        filepath="/local/micro-image-2.jpg",
+        image_type="microscope",
+        sort_order=1,
+        created_at="2026-05-02T10:00:00Z",
+        scale_microns_per_pixel=0.5,
+    )
+    _insert_measurement(
+        db_path,
+        id=21,
+        image_id=11,
+        cloud_id="cloud-measurement-1",
+        desktop_id=21,
+        length_um=10.0,
+        width_um=5.0,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T12:00:00Z",
+    )
+    _insert_measurement(
+        db_path,
+        id=22,
+        image_id=12,
+        cloud_id="cloud-measurement-2",
+        desktop_id=22,
+        length_um=11.0,
+        width_um=5.5,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-02T12:00:00Z",
+    )
+
+    pushed_calls: list[tuple[int, str]] = []
+
+    class DummyClient:
+        def push_measurement(self, meas, cloud_image_id):
+            pushed_calls.append((int(meas["id"]), str(cloud_image_id)))
+            return f"cloud-measurement-{int(meas['id'])}"
+
+    cloud_sync._push_measurements_for_observation(DummyClient(), 1)
+    output = capsys.readouterr().out
+
+    conn = sqlite3.connect(db_path)
+    try:
+        measurement_rows = conn.execute(
+            "SELECT id, image_id, cloud_id FROM spore_measurements ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert pushed_calls == [(22, "cloud-image-2")]
+    assert measurement_rows == [
+        (21, 11, "cloud-measurement-1"),
+        (22, 12, "cloud-measurement-22"),
+    ]
+    assert "skipped cloud measurement 21 because cloud image cloud-image-1 has a local tombstone" in output

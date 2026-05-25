@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -31,10 +30,11 @@ from PySide6.QtWidgets import (
 from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
+from utils.exif_reader import get_image_datetime
 from utils.heic_converter import maybe_convert_heic
 from utils.image_utils import cleanup_import_temp_file
 from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
-from utils.temporal_matcher import TemporalMatcher
+from utils.temporal_matcher import TemporalMatcher, normalize_timestamp
 from utils.thumbnail_generator import generate_all_sizes
 
 from .hint_status import HintBar, HintStatusController, style_progress_widgets
@@ -86,8 +86,9 @@ class IngestionHubTab(QWidget):
         self._set_hint(
             self.tr(
                 "Scan a folder with field and microscope images, optionally create a Sync Shot QR, "
-                "then let Sporely auto-check the first and last image from each folder before matching "
-                "field photos to nearby observation times and microscope photos to retrospective sessions."
+                "then choose a photographed QR image to calibrate the batch clock offset before "
+                "matching field photos to nearby observation times and microscope photos to "
+                "retrospective sessions."
             )
         )
 
@@ -163,9 +164,9 @@ class IngestionHubTab(QWidget):
         self.new_sync_shot_btn = QPushButton(self.tr("New Sync Shot"))
         self.new_sync_shot_btn.clicked.connect(self._create_sync_shot)
         sync_button_row.addWidget(self.new_sync_shot_btn)
-        self.apply_sync_shot_btn = QPushButton(self.tr("Use image..."))
-        self.apply_sync_shot_btn.clicked.connect(self._apply_sync_shot_from_batch_image)
-        sync_button_row.addWidget(self.apply_sync_shot_btn)
+        self.choose_sync_shot_image_btn = QPushButton(self.tr("Choose QR image..."))
+        self.choose_sync_shot_image_btn.clicked.connect(self._choose_sync_shot_image)
+        sync_button_row.addWidget(self.choose_sync_shot_image_btn)
         self.clear_sync_shot_btn = QPushButton(self.tr("Clear"))
         self.clear_sync_shot_btn.clicked.connect(self._clear_sync_shot)
         sync_button_row.addWidget(self.clear_sync_shot_btn)
@@ -560,6 +561,7 @@ class IngestionHubTab(QWidget):
         total_files = len(files)
         show_progress = total_files > 1
         prepared_rows: list[dict] = []
+        clock_offset_applied = False
         if show_progress:
             self._set_hint_progress_visible(True)
             self._set_hint_progress(self.tr("Scanning import folder..."), 0)
@@ -584,18 +586,16 @@ class IngestionHubTab(QWidget):
             self._batch_images = prepared_rows
             if show_progress:
                 self._set_hint_progress(self.tr("Matching scanned images..."), 75)
-            self._excluded_paths = {
-                path for path in self._excluded_paths if any(row.get("filepath") == path for row in self._batch_images)
+            batch_paths = {
+                str(row.get("filepath") or "").strip()
+                for row in self._batch_images
+                if str(row.get("filepath") or "").strip()
             }
-            if self._sync_shot_image_path and self._sync_shot_image_path not in self._excluded_paths:
-                self._sync_shot_image_path = None
+            self._excluded_paths = {path for path in self._excluded_paths if path in batch_paths}
+            if self._sync_shot_image_path and self._sync_shot_image_path in batch_paths:
+                self._excluded_paths.add(self._sync_shot_image_path)
             self._recompute_matches()
-            if show_progress:
-                self._set_hint_progress(self.tr("Checking Sync Shot QR..."), 88)
-            auto_applied = self._attempt_auto_apply_sync_shot()
-            clock_offset_applied = False
-            if not auto_applied:
-                clock_offset_applied = self._auto_apply_clock_offset_if_helpful()
+            clock_offset_applied = self._auto_apply_clock_offset_if_helpful()
             if show_progress:
                 self._set_hint_progress(self.tr("Scan complete."), 100)
         finally:
@@ -605,11 +605,7 @@ class IngestionHubTab(QWidget):
         status_text = self.tr("Scanned {count} image(s) from the import folder.").format(
             count=len(self._batch_images)
         )
-        if auto_applied:
-            status_text = self.tr(
-                "Scanned {count} image(s) from the import folder and auto-detected the Sync Shot."
-            ).format(count=len(self._batch_images))
-        elif clock_offset_applied:
+        if clock_offset_applied:
             status_text = self.tr(
                 "Scanned {count} image(s) from the import folder and restored a likely camera clock offset."
             ).format(count=len(self._batch_images))
@@ -1058,8 +1054,8 @@ class IngestionHubTab(QWidget):
             return
         self._show_status(
             self.tr(
-                "Sync Shot created. Photograph it, close the dialog, then scan the import folder. "
-                "Sporely will auto-check the first and last image from each folder."
+                "Sync Shot created. Photograph it, then use 'Choose QR image...' in Ingestion Hub "
+                "to calibrate from the photographed QR image."
             ),
             tone="success",
             timeout_ms=5000,
@@ -1100,14 +1096,61 @@ class IngestionHubTab(QWidget):
     def _apply_sync_shot_row(self, row: dict, *, show_status: bool = True) -> bool:
         if not row:
             return False
-        captured_at = row.get("captured_at")
-        if not isinstance(captured_at, datetime):
-            return False
         filepath = str(row.get("filepath") or "").strip()
         if not filepath:
             return False
+        captured_at = normalize_timestamp(row.get("captured_at"))
+        return self._apply_sync_shot_path(
+            filepath,
+            captured_at=captured_at,
+            display_name=str(row.get("filename") or Path(filepath).name),
+            show_status=show_status,
+            show_missing_qr_warning=False,
+        )
+
+    def _choose_sync_shot_image(self) -> None:
+        current = str(self.scan_dir_input.text() or "").strip()
+        start_dir = current if current and Path(current).exists() else str(Path.home())
+        chosen_path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            self.tr("Choose QR image"),
+            start_dir,
+            self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif *.orf *.nef);;All files (*.*)"),
+        )
+        if not chosen_path:
+            return
+        self._apply_sync_shot_path(
+            chosen_path,
+            show_status=True,
+            show_missing_qr_warning=True,
+        )
+
+    def _apply_sync_shot_path(
+        self,
+        filepath: str,
+        *,
+        captured_at: datetime | None = None,
+        display_name: str | None = None,
+        show_status: bool = True,
+        show_missing_qr_warning: bool = False,
+    ) -> bool:
+        filepath = str(filepath or "").strip()
+        if not filepath:
+            return False
+        normalized_path = str(Path(filepath).expanduser().resolve())
+        captured_at = normalize_timestamp(
+            captured_at if captured_at is not None else get_image_datetime(normalized_path)
+        )
+        if not isinstance(captured_at, datetime):
+            if show_status:
+                self._show_status(
+                    self.tr("The chosen image does not have a capture timestamp in EXIF."),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+            return False
         try:
-            decode_result = decode_sync_shot_qr(filepath)
+            decode_result = decode_sync_shot_qr(normalized_path)
         except ImportError:
             if show_status:
                 self._show_status(
@@ -1131,6 +1174,12 @@ class IngestionHubTab(QWidget):
                     self.tr("Multiple Sync Shot QR timestamps were detected. Choose a clearer image."),
                     tone="warning",
                     timeout_ms=6000,
+                )
+            elif show_status and show_missing_qr_warning:
+                self._show_status(
+                    self.tr("No Sync Shot QR code was found in the chosen image."),
+                    tone="warning",
+                    timeout_ms=5000,
                 )
             return False
         parsed = matches[0]
@@ -1158,14 +1207,20 @@ class IngestionHubTab(QWidget):
         SettingsDB.set_setting(self.SETTING_OFFSET_SECONDS, chosen_offset)
         if self._sync_shot_image_path:
             self._excluded_paths.discard(self._sync_shot_image_path)
-        self._sync_shot_image_path = filepath
-        self._excluded_paths.add(filepath)
+        self._sync_shot_image_path = normalized_path
+        batch_paths = {
+            str(row.get("filepath") or "").strip()
+            for row in self._batch_images
+            if str(row.get("filepath") or "").strip()
+        }
+        if normalized_path in batch_paths:
+            self._excluded_paths.add(normalized_path)
         self._recompute_matches()
         self._update_sync_shot_summary()
         if show_status:
             self._show_status(
                 self.tr("Applied Sync Shot offset from {name} using QR time {time} and the {basis}.").format(
-                    name=str(row.get("filename") or Path(filepath).name),
+                    name=display_name or Path(normalized_path).name,
                     time=str(parsed.get("utc_text") or ""),
                     basis=basis,
                 ),
@@ -1173,63 +1228,6 @@ class IngestionHubTab(QWidget):
                 timeout_ms=5000,
             )
         return True
-
-    def _apply_sync_shot_from_batch_image(self) -> None:
-        if not self._batch_images:
-            self._show_status(
-                self.tr("Scan an import folder before choosing the photographed Sync Shot image."),
-                tone="warning",
-                timeout_ms=5000,
-            )
-            return
-        choices: list[str] = []
-        choice_map: dict[str, dict] = {}
-        for row in self._batch_images:
-            filepath = str(row.get("filepath") or "").strip()
-            if not filepath:
-                continue
-            filename = str(row.get("filename") or Path(filepath).name)
-            captured_at = row.get("captured_at")
-            if isinstance(captured_at, datetime):
-                label = f"{filename} — {captured_at.strftime('%Y-%m-%d %H:%M:%S')}"
-            else:
-                label = f"{filename} — {self.tr('No capture time')}"
-            choices.append(label)
-            choice_map[label] = row
-        if not choices:
-            self._show_status(
-                self.tr("No batch images are available for Sync Shot calibration."),
-                tone="warning",
-                timeout_ms=4000,
-            )
-            return
-        selected_label, accepted = QInputDialog.getItem(
-            self,
-            self.tr("Choose Sync Shot image"),
-            self.tr("Photographed Sync Shot image:"),
-            choices,
-            0,
-            False,
-        )
-        if not accepted or not selected_label:
-            return
-        row = choice_map.get(str(selected_label))
-        if not row:
-            return
-        if self._apply_sync_shot_row(row, show_status=True):
-            return
-        if not isinstance(row.get("captured_at"), datetime):
-            self._show_status(
-                self.tr("The chosen image does not have a capture timestamp in EXIF."),
-                tone="warning",
-                timeout_ms=5000,
-            )
-            return
-        self._show_status(
-            self.tr("No Sync Shot QR code was found in the chosen image."),
-            tone="warning",
-            timeout_ms=5000,
-        )
 
     def _clear_sync_shot(self) -> None:
         if self._sync_shot_image_path:
@@ -1502,5 +1500,5 @@ class IngestionHubTab(QWidget):
         self.refresh_matches_btn.setEnabled(has_batch)
         self.commit_matches_btn.setEnabled(has_selection and has_addable_matches)
         self.add_all_images_btn.setEnabled(has_selection and has_addable_matches)
-        self.apply_sync_shot_btn.setEnabled(has_batch)
+        self.choose_sync_shot_image_btn.setEnabled(True)
         self.clear_sync_shot_btn.setEnabled(bool(self._sync_shot_record or self._sync_shot_image_path))

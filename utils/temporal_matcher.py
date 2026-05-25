@@ -32,9 +32,25 @@ def _normalize_path(path: str | Path | None) -> str:
         return str(path)
 
 
+def _normalize_local_naive_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    try:
+        if value.utcoffset() is None:
+            return value.replace(tzinfo=None)
+    except Exception:
+        return value.replace(tzinfo=None)
+    try:
+        return value.astimezone().replace(tzinfo=None)
+    except Exception:
+        return value.replace(tzinfo=None)
+
+
 def _parse_timestamp(value) -> datetime | None:
     if isinstance(value, datetime):
-        return value
+        return _normalize_local_naive_datetime(value)
     text = str(value or "").strip()
     if not text:
         return None
@@ -45,13 +61,20 @@ def _parse_timestamp(value) -> datetime | None:
         "%Y-%m-%d %H:%M",
     ):
         try:
-            return datetime.strptime(text, fmt)
+            return _normalize_local_naive_datetime(datetime.strptime(text, fmt))
         except ValueError:
             continue
+    if text.endswith(("Z", "z")):
+        text = f"{text[:-1]}+00:00"
     try:
-        return datetime.fromisoformat(text)
+        return _normalize_local_naive_datetime(datetime.fromisoformat(text))
     except Exception:
         return None
+
+
+def normalize_timestamp(value) -> datetime | None:
+    """Normalize a timestamp using TemporalMatcher's parsing rules."""
+    return _parse_timestamp(value)
 
 
 @dataclass
@@ -237,7 +260,7 @@ class TemporalMatcher:
                 continue
             if path_obj.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
                 continue
-            captured_at = get_image_datetime(filepath)
+            captured_at = normalize_timestamp(get_image_datetime(filepath))
             rows.append(
                 {
                     "filepath": filepath,
@@ -352,7 +375,7 @@ class TemporalMatcher:
                 filepath = _normalize_path((row or {}).get("filepath"))
                 if not filepath:
                     continue
-                captured_at = get_image_datetime(filepath)
+                captured_at = normalize_timestamp(get_image_datetime(filepath))
                 if captured_at is not None:
                     try:
                         ImageDB.set_image_captured_at(int((row or {}).get("id") or 0), captured_at)
@@ -407,13 +430,15 @@ class TemporalMatcher:
             filepath = _normalize_path(row.get("filepath"))
             if not filepath or filepath in exclude:
                 continue
-            captured_at = _parse_timestamp(row.get("captured_at"))
+            captured_at = normalize_timestamp(row.get("captured_at"))
             prepared = dict(row)
             prepared["filepath"] = filepath
             prepared["filename"] = str(prepared.get("filename") or Path(filepath).name)
             prepared["captured_at"] = captured_at
             prepared["adjusted_at"] = (
-                captured_at + timedelta(seconds=offset_value) if captured_at is not None else None
+                normalize_timestamp(captured_at + timedelta(seconds=offset_value))
+                if captured_at is not None
+                else None
             )
             prepared["offset_seconds"] = offset_value
             prepared_rows.append(prepared)

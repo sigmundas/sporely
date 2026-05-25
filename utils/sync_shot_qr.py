@@ -16,6 +16,20 @@ _SYNC_SHOT_PREFIX = "SPORELY_SYNC_SHOT"
 _SYNC_SHOT_VERSION = "v1"
 
 
+def _local_naive_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    try:
+        if value.utcoffset() is None:
+            return value.replace(tzinfo=None)
+    except Exception:
+        return value.replace(tzinfo=None)
+    try:
+        return value.astimezone().replace(tzinfo=None)
+    except Exception:
+        return value.replace(tzinfo=None)
+
+
 def current_sync_shot_utc() -> datetime:
     """Return the current UTC time rounded to whole seconds."""
     return datetime.now(timezone.utc).replace(microsecond=0)
@@ -159,6 +173,11 @@ def decode_sync_shot_qr(filepath: str | Path) -> dict:
 
 def choose_sync_shot_offset(captured_at: datetime, qr_utc_dt: datetime) -> dict:
     """Choose the most plausible EXIF basis for a QR-calibrated capture time."""
+    captured_at = _local_naive_datetime(captured_at)
+    if qr_utc_dt.tzinfo is None or qr_utc_dt.utcoffset() is None:
+        qr_utc_dt = qr_utc_dt.replace(tzinfo=timezone.utc)
+    else:
+        qr_utc_dt = qr_utc_dt.astimezone(timezone.utc)
     local_dt = qr_utc_dt.astimezone().replace(tzinfo=None)
     utc_dt = qr_utc_dt.astimezone(timezone.utc).replace(tzinfo=None)
     local_offset = (local_dt - captured_at).total_seconds()
