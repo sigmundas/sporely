@@ -128,6 +128,7 @@ import re
 from PIL import Image, ExifTags
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
 from database.models import SpeciesDataAvailability
+from database.taxon_lookup import TaxonChoice, TaxonLookupService
 from database.vernacular_db import VernacularDB
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -2945,6 +2946,7 @@ class ReferenceValuesDialog(QDialog):
 
     plot_requested = Signal(dict)
     save_requested = Signal(dict)
+    _ROLE_TAXON_CHOICE = Qt.UserRole + 4
 
     def __init__(self, genus, species, ref_values=None, parent=None):
         super().__init__(parent)
@@ -2997,16 +2999,19 @@ class ReferenceValuesDialog(QDialog):
         self.species_input.installEventFilter(self)
 
         self.vernacular_db = None
+        self._taxon_lookup = None
         lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
-        self._vernacular_model = QStringListModel()
+        self._ensure_taxon_lookup()
+        self._vernacular_model = QStandardItemModel(self)
         self._vernacular_completer = QCompleter(self._vernacular_model, self)
         self._vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
         self._vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._vernacular_completer.setCompletionRole(Qt.DisplayRole)
         self.vernacular_input.setCompleter(self._vernacular_completer)
-        self._vernacular_completer.activated.connect(self._on_vernacular_selected)
+        self._vernacular_completer.activated[QModelIndex].connect(self._on_vernacular_selected)
         self.vernacular_input.textChanged.connect(self._on_vernacular_text_changed)
         self.vernacular_input.editingFinished.connect(self._on_vernacular_editing_finished)
         self.vernacular_input.installEventFilter(self)
@@ -3091,6 +3096,68 @@ class ReferenceValuesDialog(QDialog):
         base = self.tr("Common name")
         return f"{common_name_display_label(lang, base)}:"
 
+    def _ensure_taxon_lookup(self) -> TaxonLookupService:
+        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        vernacular_db = getattr(self, "vernacular_db", None)
+        lookup = getattr(self, "_taxon_lookup", None)
+        if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
+            try:
+                lookup.language_code = lang
+            except Exception:
+                pass
+            if vernacular_db is not None:
+                try:
+                    vernacular_db.language_code = lang
+                except Exception:
+                    pass
+            return lookup
+        lookup = TaxonLookupService(
+            vernacular_db=vernacular_db,
+            language_code=lang,
+            include_reference_data=True,
+        )
+        self._taxon_lookup = lookup
+        return lookup
+
+    def _clear_vernacular_suggestions(self) -> None:
+        if hasattr(self, "_vernacular_model") and self._vernacular_model is not None:
+            self._vernacular_model.clear()
+        if hasattr(self, "_vernacular_completer") and self._vernacular_completer is not None:
+            try:
+                self._vernacular_completer.setCompletionPrefix("")
+            except Exception:
+                pass
+            popup = self._vernacular_completer.popup()
+            if popup:
+                popup.hide()
+        self._set_vernacular_placeholder_from_suggestions([])
+
+    def _populate_vernacular_model(self, suggestions: list[TaxonChoice]) -> None:
+        self._vernacular_model.clear()
+        for choice in suggestions or []:
+            name = str(choice.common_name or "").strip()
+            if not name:
+                continue
+            item = QStandardItem(name)
+            item.setData(name, Qt.UserRole)
+            item.setData(str(choice.genus or "").strip(), Qt.UserRole + 1)
+            item.setData(str(choice.species or "").strip(), Qt.UserRole + 2)
+            item.setData(choice, self._ROLE_TAXON_CHOICE)
+            self._vernacular_model.appendRow(item)
+
+    def _vernacular_choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
+        if not index.isValid():
+            return None
+        choice = index.data(self._ROLE_TAXON_CHOICE)
+        if isinstance(choice, TaxonChoice):
+            return choice
+        common_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
+        genus = str(index.data(Qt.UserRole + 1) or "").strip()
+        species = str(index.data(Qt.UserRole + 2) or "").strip() or None
+        if not common_name and not genus and not species:
+            return None
+        return TaxonChoice(genus=genus, species=species, common_name=common_name or None)
+
     def apply_vernacular_language_change(self) -> None:
         if hasattr(self, "vernacular_label"):
             self.vernacular_label.setText(self._vernacular_label())
@@ -3102,6 +3169,7 @@ class ReferenceValuesDialog(QDialog):
             self.vernacular_db.language_code = lang
         else:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
+        self._ensure_taxon_lookup()
         self._maybe_set_vernacular_from_taxon()
 
     def _cell_value(self, row, col):
@@ -3241,7 +3309,7 @@ class ReferenceValuesDialog(QDialog):
                     if self._vernacular_completer:
                         self._vernacular_completer.setCompletionPrefix("")
                     self._update_vernacular_suggestions_for_taxon()
-                    if self._vernacular_model.stringList():
+                    if self._vernacular_model.rowCount() > 0:
                         self._vernacular_completer.complete()
             elif obj == self.genus_input:
                 text = self.genus_input.text().strip()
@@ -3345,7 +3413,9 @@ class ReferenceValuesDialog(QDialog):
         self._maybe_load_reference()
 
     def _on_vernacular_text_changed(self, text):
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
+            self._clear_vernacular_suggestions()
             return
         if self._suppress_taxon_autofill:
             return
@@ -3354,69 +3424,111 @@ class ReferenceValuesDialog(QDialog):
             return
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
-        suggestions = self.vernacular_db.suggest_vernacular(text, genus=genus, species=species)
-        
-        # If text exactly matches any suggestion, clear the model to prevent popup
+        suggestions = lookup.suggest_common_names(prefix=text, genus=genus, species=species)
         text_lower = text.strip().lower()
-        if any(s.lower() == text_lower for s in suggestions):
-            self._vernacular_model.setStringList([])
-            if self._vernacular_completer:
-                self._vernacular_completer.popup().hide()
+        if any(str(choice.common_name or "").strip().lower() == text_lower for choice in suggestions):
+            self._clear_vernacular_suggestions()
         else:
-            self._vernacular_model.setStringList(suggestions)
+            self._populate_vernacular_model(suggestions)
 
     def _update_vernacular_suggestions_for_taxon(self):
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
+            self._clear_vernacular_suggestions()
             return
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
         if not genus and not species:
-            self._vernacular_model.setStringList([])
-            self._set_vernacular_placeholder_from_suggestions([])
+            self._clear_vernacular_suggestions()
             return
-        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        self._vernacular_model.setStringList(suggestions)
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        self._populate_vernacular_model(suggestions)
         self._set_vernacular_placeholder_from_suggestions(suggestions)
 
-    def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+    def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | str]) -> None:
         if not hasattr(self, "vernacular_input"):
             return
-        if not suggestions:
+        cleaned: list[str] = []
+        for suggestion in suggestions or []:
+            if isinstance(suggestion, TaxonChoice):
+                label = str(suggestion.common_name or "").strip()
+                if not label:
+                    label = f"{suggestion.genus} {suggestion.species}".strip()
+            else:
+                label = str(suggestion or "").strip()
+            if label:
+                cleaned.append(label)
+        if not cleaned:
             self.vernacular_input.setPlaceholderText("")
             return
-        preview = "; ".join(suggestions[:4])
+        preview = "; ".join(cleaned[:4])
         self.vernacular_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
 
-    def _on_vernacular_selected(self, name):
-        # Hide the popup after selection
+    def _on_vernacular_selected(self, index: QModelIndex):
         if self._vernacular_completer:
-            self._vernacular_completer.popup().hide()
-        
-        if not self.vernacular_db:
+            popup = self._vernacular_completer.popup()
+            if popup:
+                popup.hide()
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup:
             return
-        taxon = self.vernacular_db.taxon_from_vernacular(name)
-        if taxon:
-            genus, species, _family = taxon
-            self._suppress_taxon_autofill = True
-            self.genus_input.setText(genus)
-            self.species_input.setText(species)
+        choice = self._vernacular_choice_from_index(index)
+        if choice is None:
+            name = (self.vernacular_input.text() or "").strip()
+            matches = lookup.resolve_common_name(name) if name else []
+            if len(matches) != 1:
+                return
+            choice = matches[0]
+        vernacular_text = str(choice.common_name or self.vernacular_input.text() or "").strip()
+        if vernacular_text:
+            old_block = self.vernacular_input.blockSignals(True)
+            try:
+                self.vernacular_input.setText(vernacular_text)
+            finally:
+                self.vernacular_input.blockSignals(old_block)
+        current_genus = self.genus_input.text().strip()
+        current_species = self.species_input.text().strip()
+        self._suppress_taxon_autofill = True
+        try:
+            if choice.genus and not current_genus:
+                self.genus_input.setText(choice.genus)
+            if choice.species and not current_species:
+                self.species_input.setText(choice.species)
+        finally:
             self._suppress_taxon_autofill = False
-            self._sync_taxon_cache()
+        self._clear_vernacular_suggestions()
+        self._sync_taxon_cache()
 
     def _on_vernacular_editing_finished(self):
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
             return
         name = self.vernacular_input.text().strip()
         if not name:
             return
-        taxon = self.vernacular_db.taxon_from_vernacular(name)
-        if taxon:
-            genus, species, _family = taxon
-            self._suppress_taxon_autofill = True
-            self.genus_input.setText(genus)
-            self.species_input.setText(species)
+        current_genus = self.genus_input.text().strip() or None
+        current_species = self.species_input.text().strip() or None
+        matches = lookup.resolve_common_name(name, genus=current_genus, species=current_species)
+        if len(matches) != 1:
+            return
+        choice = matches[0]
+        vernacular_text = str(choice.common_name or self.vernacular_input.text() or "").strip()
+        if vernacular_text and vernacular_text != self.vernacular_input.text().strip():
+            old_block = self.vernacular_input.blockSignals(True)
+            try:
+                self.vernacular_input.setText(vernacular_text)
+            finally:
+                self.vernacular_input.blockSignals(old_block)
+        self._suppress_taxon_autofill = True
+        try:
+            if choice.genus and choice.genus != current_genus:
+                self.genus_input.setText(choice.genus)
+            if choice.species and choice.species != current_species:
+                self.species_input.setText(choice.species)
+        finally:
             self._suppress_taxon_autofill = False
-            self._sync_taxon_cache()
+        self._clear_vernacular_suggestions()
+        self._sync_taxon_cache()
 
     def _on_genus_selected(self, genus):
         """Handle genus selection from completer."""
@@ -3468,33 +3580,37 @@ class ReferenceValuesDialog(QDialog):
         self._last_species = self.species_input.text().strip()
 
     def _maybe_set_vernacular_from_taxon(self):
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
+            self._clear_vernacular_suggestions()
             return
         if self.vernacular_input.text().strip():
             return
         genus = self.genus_input.text().strip()
         species = self.species_input.text().strip()
         if not genus or not species:
+            self._clear_vernacular_suggestions()
             return
-        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
         if not suggestions:
-            self._set_vernacular_placeholder_from_suggestions([])
+            self._clear_vernacular_suggestions()
             return
-        if len(suggestions) == 1:
+        self._populate_vernacular_model(suggestions)
+        best_choice = lookup.best_common_name_for_taxon(genus, species)
+        if best_choice and best_choice.common_name:
             self._suppress_taxon_autofill = True
-            self.vernacular_input.setText(suggestions[0])
-            self._suppress_taxon_autofill = False
+            try:
+                self.vernacular_input.setText(best_choice.common_name)
+            finally:
+                self._suppress_taxon_autofill = False
             self._set_vernacular_placeholder_from_suggestions([])
         else:
             self._set_vernacular_placeholder_from_suggestions(suggestions)
 
     def _update_genus_suggestions(self, text):
-        if self.vernacular_db:
-            values = self.vernacular_db.suggest_genus(text)
-        else:
-            values = ReferenceDB.list_genera(text or "")
-        
-        # If text exactly matches a single suggestion, clear the model to prevent popup
+        lookup = getattr(self, "_taxon_lookup", None)
+        prefix = (text or "").strip()
+        values = lookup.suggest_genera(prefix) if lookup and prefix else []
         text_stripped = text.strip()
         if len(values) == 1 and values[0].lower() == text_stripped.lower():
             self._genus_model.setStringList([])
@@ -3504,12 +3620,11 @@ class ReferenceValuesDialog(QDialog):
             self._genus_model.setStringList(values)
 
     def _update_species_suggestions(self, genus, text):
-        if self.vernacular_db:
-            values = self.vernacular_db.suggest_species(genus, text)
-        else:
-            values = ReferenceDB.list_species(genus or "", text or "")
-        
-        # Hide popup when text exactly matches any suggestion (covers multi-result cases)
+        lookup = getattr(self, "_taxon_lookup", None)
+        values: list[str] = []
+        if lookup:
+            choices = lookup.suggest_species(genus, text)
+            values = [choice.species for choice in choices if choice.species]
         text_stripped = (text or "").strip()
         if text_stripped and any(v.lower() == text_stripped.lower() for v in values):
             self._species_model.setStringList([])
