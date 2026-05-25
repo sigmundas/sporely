@@ -1347,7 +1347,12 @@ def _record_remote_image_tombstones(
     cloud_observation_id: str | None = None,
 ) -> set[str]:
     rows = [dict(row or {}) for row in (remote_images or [])]
-    if not rows:
+    tombstone_rows = [
+        row
+        for row in rows
+        if str(row.get("id") or "").strip() and str(row.get("deleted_at") or "").strip()
+    ]
+    if not tombstone_rows:
         return set()
 
     deleted_cloud_ids: set[str] = set()
@@ -1373,12 +1378,9 @@ def _record_remote_image_tombstones(
             else None
         )
 
-        for remote_image in rows:
+        for remote_image in tombstone_rows:
             cloud_image_id = str(remote_image.get("id") or "").strip()
             deleted_at = str(remote_image.get("deleted_at") or "").strip()
-            if not cloud_image_id or not deleted_at:
-                continue
-
             local_image_row = None
             if local_image_sql:
                 local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
@@ -5359,9 +5361,23 @@ def _import_remote_images(
     if client is None:
         return
     
-    # Ensure we only pull what is relevant for desktop
-    remote_images_raw = list(remote_images or client.pull_image_metadata(cloud_id) or [])
-    images_to_pull = [dict(row or {}) for row in remote_images_raw if should_pull_cloud_image_to_desktop(row)]
+    remote_images_raw = (
+        [dict(row or {}) for row in remote_images]
+        if remote_images is not None
+        else [dict(row or {}) for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])]
+    )
+    _record_remote_image_tombstones(
+        remote_images_raw,
+        local_observation_id=local_id,
+        cloud_observation_id=cloud_id,
+    )
+
+    # Keep only active rows for the existing image import path.
+    images_to_pull = [
+        dict(row or {})
+        for row in remote_images_raw
+        if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
+    ]
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [str(row.get('id') or '').strip() for row in images_to_pull if str(row.get('id') or '').strip()]
     )

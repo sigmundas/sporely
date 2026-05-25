@@ -758,6 +758,147 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     )
 
 
+def test_import_remote_images_records_deleted_rows_and_imports_only_active_rows(
+    monkeypatch,
+    tmp_path,
+):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    temp_root = tmp_path / "sync-tombstones"
+    temp_root.mkdir()
+    download_calls: list[str] = []
+    fetched_calls: list[tuple[str, bool]] = []
+    add_calls: list[dict] = []
+
+    images_root = tmp_path / "images"
+    image_path = images_root / "observation-1" / "image.jpg"
+    original_path = images_root / "observation-1" / "originals" / "image-original.jpg"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    original_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_text("image", encoding="utf-8")
+    original_path.write_text("original", encoding="utf-8")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (1, "cloud-obs-1", "synced"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath, image_type
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (11, 1, "cloud-image-1", str(image_path), str(original_path), "field"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    class DummyClient:
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            fetched_calls.append((cloud_id, include_deleted_for_sync))
+            return [
+                {
+                    "id": "cloud-image-1",
+                    "observation_id": "cloud-obs-1",
+                    "deleted_at": "2026-05-01 10:00:00",
+                    "storage_path": "user/cloud-obs-1/cloud-image-1_deleted.jpg",
+                    "original_filename": "deleted.jpg",
+                    "image_type": "field",
+                },
+                {
+                    "id": "cloud-image-2",
+                    "observation_id": "cloud-obs-1",
+                    "deleted_at": None,
+                    "storage_path": "user/cloud-obs-1/cloud-image-2_kept.jpg",
+                    "original_filename": "kept.jpg",
+                    "image_type": "field",
+                },
+            ]
+
+        def download_image_file(self, storage_path, dest_path):
+            download_calls.append(storage_path)
+            dest = Path(dest_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"cloud image bytes")
+
+        def set_image_desktop_id(self, *args, **kwargs):
+            pass
+
+    def fake_add_image(**kwargs):
+        add_calls.append(dict(kwargs))
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO images (observation_id, filepath, image_type, sort_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    kwargs["observation_id"],
+                    kwargs["filepath"],
+                    kwargs["image_type"],
+                    kwargs.get("sort_order"),
+                ),
+            )
+            local_id = cursor.lastrowid
+            conn.commit()
+            return local_id
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_rename_to_detected_image_extension", lambda path: Path(path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync.tempfile, "mkdtemp", lambda prefix=None: str(temp_root))
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+
+    cloud_sync._import_remote_images(
+        {"id": "cloud-obs-1", "genus": "Flammulina", "species": "velutipes"},
+        1,
+        "cloud-obs-1",
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tombstone = conn.execute(
+            """
+            SELECT deleted_cloud_id, deleted_at, deleted_storage_path,
+                   deleted_observation_cloud_id, local_observation_id, local_image_id
+            FROM image_tombstones
+            WHERE deleted_cloud_id = ?
+            """,
+            ("cloud-image-1",),
+        ).fetchone()
+        image_rows = conn.execute(
+            "SELECT id, cloud_id FROM images ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert fetched_calls == [("cloud-obs-1", True)]
+    assert len(add_calls) == 1
+    assert download_calls == ["user/cloud-obs-1/cloud-image-2_kept.jpg"]
+    assert tombstone == (
+        "cloud-image-1",
+        "2026-05-01 10:00:00",
+        "user/cloud-obs-1/cloud-image-1_deleted.jpg",
+        "cloud-obs-1",
+        1,
+        11,
+    )
+    assert image_rows == [
+        (11, "cloud-image-1"),
+        (12, "cloud-image-2"),
+    ]
+    assert image_path.exists()
+    assert original_path.exists()
+
+
 def test_import_remote_images_skips_tombstoned_cloud_image_and_keeps_unrelated_imports(
     monkeypatch,
     tmp_path,
