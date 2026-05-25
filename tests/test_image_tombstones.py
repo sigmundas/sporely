@@ -156,6 +156,105 @@ def test_image_tombstones_helper_creates_table_and_indexes(tmp_path):
         conn.close()
 
 
+def test_get_image_tombstones_by_deleted_cloud_id_filters_matching_ids(monkeypatch, tmp_path):
+    db_path = tmp_path / "tombstones.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        schema._ensure_image_tombstones_table(conn.cursor())
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, deleted_observation_cloud_id, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-01 10:00:00", "cloud-obs-1", 1, 11),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, deleted_observation_cloud_id, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            ("cloud-image-2", "2026-05-02 10:00:00", "cloud-obs-2", 2, 12),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    tombstones = models.get_image_tombstones_by_deleted_cloud_id(
+        ["cloud-image-1", "unrelated", "cloud-image-1"]
+    )
+
+    assert set(tombstones) == {"cloud-image-1"}
+    assert tombstones["cloud-image-1"]["deleted_at"] == "2026-05-01 10:00:00"
+    assert tombstones["cloud-image-1"]["deleted_observation_cloud_id"] == "cloud-obs-1"
+
+
+def test_list_pending_image_tombstones_returns_unsynced_rows(monkeypatch, tmp_path):
+    db_path = tmp_path / "pending_tombstones.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        schema._ensure_image_tombstones_table(conn.cursor())
+        conn.executemany(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, delete_synced_at, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("cloud-image-2", "2026-05-02 10:00:00", None, 2, 12),
+                ("cloud-image-1", "2026-05-01 10:00:00", "2026-05-03 10:00:00", 1, 11),
+                ("cloud-image-3", "2026-05-03 10:00:00", None, 3, 13),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    pending = models.list_pending_image_tombstones()
+
+    assert [row["deleted_cloud_id"] for row in pending] == ["cloud-image-2", "cloud-image-3"]
+    assert all(row["delete_synced_at"] is None for row in pending)
+
+
+def test_mark_image_tombstone_synced_sets_delete_synced_at(monkeypatch, tmp_path):
+    db_path = tmp_path / "mark_synced.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        schema._ensure_image_tombstones_table(conn.cursor())
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-01 10:00:00", 1, 11),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    updated = models.mark_image_tombstone_synced("cloud-image-1")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        delete_synced_at = conn.execute(
+            "SELECT delete_synced_at FROM image_tombstones WHERE deleted_cloud_id = ?",
+            ("cloud-image-1",),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert updated is True
+    assert delete_synced_at is not None
+
+
 def test_delete_synced_image_writes_tombstone_before_hard_delete_and_marks_observation_dirty(
     monkeypatch,
     tmp_path,

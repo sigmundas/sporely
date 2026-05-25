@@ -31,7 +31,16 @@ from PIL import Image, ImageOps, features
 
 from app_identity import runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
-from database.models import ObservationDB, ImageDB, SettingsDB, MeasurementDB, CalibrationDB
+from database.models import (
+    ObservationDB,
+    ImageDB,
+    SettingsDB,
+    MeasurementDB,
+    CalibrationDB,
+    get_image_tombstones_by_deleted_cloud_id,
+    list_pending_image_tombstones,
+    mark_image_tombstone_synced,
+)
 from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
 
@@ -1325,6 +1334,44 @@ def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int |
     SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
 
 
+def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ...] | set[str] | None = None) -> set[str]:
+    tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_image_ids)
+    return set(tombstones.keys())
+
+
+def _tombstoned_cloud_image_warning(local_id: int | None, cloud_image_id: str) -> str:
+    return f"obs {int(local_id or 0)}: skipped cloud image {cloud_image_id} because it has a local tombstone"
+
+
+def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
+    warnings: list[str] = []
+    for tombstone in list_pending_image_tombstones():
+        cloud_image_id = str(tombstone.get('deleted_cloud_id') or '').strip()
+        if not cloud_image_id:
+            continue
+        deleted_at = str(tombstone.get('deleted_at') or '').strip() or datetime.now(timezone.utc).isoformat()
+        try:
+            client.soft_delete_image(cloud_image_id, deleted_at)
+        except Exception as exc:
+            warning = (
+                f"obs {int(tombstone.get('local_observation_id') or 0)}: "
+                f"could not sync cloud image tombstone {cloud_image_id}: {exc}"
+            )
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
+            continue
+        try:
+            mark_image_tombstone_synced(cloud_image_id)
+        except Exception as exc:
+            warning = (
+                f"obs {int(tombstone.get('local_observation_id') or 0)}: "
+                f"synced cloud image tombstone {cloud_image_id} but could not mark it locally: {exc}"
+            )
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
+    return warnings
+
+
 def _load_local_cloud_media_signature(observation_id: int | str) -> str:
     return str(SettingsDB.get_setting(_cloud_local_media_signature_key(observation_id), '') or '').strip()
 
@@ -1961,6 +2008,15 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
             (obs_id,),
         )
         image_rows = [dict(row) for row in cursor.fetchall()]
+        tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
+            [str(row.get('cloud_id') or '').strip() for row in image_rows if str(row.get('cloud_id') or '').strip()]
+        )
+        if tombstoned_cloud_ids:
+            image_rows = [
+                row
+                for row in image_rows
+                if str(row.get('cloud_id') or '').strip() not in tombstoned_cloud_ids
+            ]
         cursor.execute(
             '''
             SELECT
@@ -2932,8 +2988,14 @@ def _apply_remote_images_to_local(
         if should_pull_cloud_image_to_desktop(img)
         if str(img.get('id') or '').strip()
     }
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(remote_map.keys())
 
     for cloud_image_id, remote_image in remote_map.items():
+        if cloud_image_id in tombstoned_cloud_ids:
+            warning = _tombstoned_cloud_image_warning(local_id, cloud_image_id)
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
+            continue
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image:
             try:
@@ -4080,6 +4142,22 @@ class SporelyCloudClient:
             {'desktop_id': desktop_id},
         )
 
+    def soft_delete_image(self, cloud_image_id: str, deleted_at: str | None) -> None:
+        """Mark one cloud image row as deleted without removing storage objects."""
+        normalized_id = str(cloud_image_id or '').strip()
+        if not normalized_id:
+            raise CloudSyncError('Missing cloud image id')
+        deleted_at_text = str(deleted_at or '').strip() or datetime.now(timezone.utc).isoformat()
+        rows = self._get(
+            f'observation_images?id=eq.{normalized_id}&user_id=eq.{self.user_id}&select=id,deleted_at&limit=1'
+        )
+        if not rows:
+            raise CloudSyncError(f'Cloud image {normalized_id} not found')
+        self._patch(
+            f'observation_images?id=eq.{normalized_id}&user_id=eq.{self.user_id}',
+            {'deleted_at': deleted_at_text},
+        )
+
     def push_measurement(self, meas: dict, cloud_image_id: str) -> str:
         """Upsert one spore measurement row. Returns cloud UUID."""
         payload = {col: meas.get(col) for col in _MEAS_PUSH_COLS}
@@ -4406,9 +4484,10 @@ def _push_images_for_observation(
     observation_total: int | None = None,
 ) -> bool:
     """Push selected observation images for one observation."""
+    warnings: list[str] = []
+    warnings.extend(_push_pending_image_tombstones(client))
     prepared_items: list[dict] = []
     cleanup = None
-    warnings: list[str] = []
     preparation_failed = False
     observation_name = _observation_display_name(obs)
     if callable(prepare_images_cb):
@@ -4416,12 +4495,13 @@ def _push_images_for_observation(
             def prepare_progress(message: str, _current: int | None = None, _total: int | None = None) -> None:
                 _emit_progress(progress_cb, message, progress_state)
 
-            prepared_items, cleanup, warnings = prepare_images_cb(obs, prepare_progress)
+            prepared_items, cleanup, prep_warnings = prepare_images_cb(obs, prepare_progress)
+            warnings.extend(prep_warnings or [])
         except Exception as e:
             print(f'[cloud_sync] Observation {obs["id"]} image preparation failed: {e}')
             prepared_items = []
             cleanup = None
-            warnings = [str(e)]
+            warnings.append(str(e))
             preparation_failed = True
     else:
         images = ImageDB.get_images_for_observation(obs['id'])
@@ -4435,6 +4515,26 @@ def _push_images_for_observation(
 
     for warning in warnings:
         print(f'[cloud_sync] Observation {obs["id"]}: {warning}')
+
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
+        [
+            str(dict(item.get('image_row') or {}).get('cloud_id') or '').strip()
+            for item in prepared_items
+            if str(dict(item.get('image_row') or {}).get('cloud_id') or '').strip()
+        ]
+    )
+    if tombstoned_cloud_ids:
+        filtered_items: list[dict] = []
+        for item in prepared_items:
+            img = dict(item.get('image_row') or {})
+            cloud_image_id = str(img.get('cloud_id') or '').strip()
+            if cloud_image_id and cloud_image_id in tombstoned_cloud_ids:
+                warning = _tombstoned_cloud_image_warning(obs.get('id'), cloud_image_id)
+                warnings.append(warning)
+                print(f'[cloud_sync] Warning: {warning}')
+                continue
+            filtered_items.append(item)
+        prepared_items = filtered_items
 
     if prepared_items:
         _extend_progress_total(progress_state, len(prepared_items))
@@ -4691,6 +4791,26 @@ def _push_measurements_for_observation(
         measurements = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
+
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
+        [
+            str(row.get('image_cloud_id') or '').strip()
+            for row in measurements
+            if str(row.get('image_cloud_id') or '').strip()
+        ]
+    )
+    if tombstoned_cloud_ids:
+        filtered_measurements: list[dict] = []
+        for meas in measurements:
+            cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
+            if cloud_image_id and cloud_image_id in tombstoned_cloud_ids:
+                print(
+                    f'[cloud_sync] Warning: obs {int(obs_local_id)}: skipped cloud measurement '
+                    f'{meas["id"]} because cloud image {cloud_image_id} has a local tombstone'
+                )
+                continue
+            filtered_measurements.append(meas)
+        measurements = filtered_measurements
 
     pushed_cloud_ids: set[str] = set()
     for meas in measurements:
@@ -5135,6 +5255,9 @@ def _import_remote_images(
     # Ensure we only pull what is relevant for desktop
     remote_images_raw = list(remote_images or client.pull_image_metadata(cloud_id) or [])
     images_to_pull = [dict(row or {}) for row in remote_images_raw if should_pull_cloud_image_to_desktop(row)]
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
+        [str(row.get('id') or '').strip() for row in images_to_pull if str(row.get('id') or '').strip()]
+    )
     
     if not images_to_pull:
         return
@@ -5147,6 +5270,11 @@ def _import_remote_images(
     try:
         for idx, image_row in enumerate(images_to_pull, start=1):
             try:
+                cloud_image_id = str(image_row.get('id') or '').strip()
+                if cloud_image_id and cloud_image_id in tombstoned_cloud_ids:
+                    warning = _tombstoned_cloud_image_warning(local_id, cloud_image_id)
+                    print(f'[cloud_sync] Warning: {warning}')
+                    continue
                 if remote_index and remote_total:
                     _emit_progress(progress_cb, f"Importing image {idx}/{len(images_to_pull)}: {observation_name}…", progress_state)
                 
@@ -5240,6 +5368,7 @@ def _import_remote_measurements_for_observation(
         for row in remote_images_raw
         if str(row.get('id') or '').strip()
     }
+    tombstoned_remote_image_ids = _local_tombstoned_cloud_image_ids(remote_image_lookup.keys())
     measurement_rows_source = (
         [dict(row or {}) for row in (remote_measurements or [])]
         if remote_measurements is not None
@@ -5311,6 +5440,12 @@ def _import_remote_measurements_for_observation(
                 warnings.append(
                     f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
                     f"on excluded image {remote_image_id or '?'}"
+                )
+                continue
+            if remote_image_id in tombstoned_remote_image_ids:
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"because cloud image {remote_image_id} has a local tombstone"
                 )
                 continue
 

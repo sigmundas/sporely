@@ -289,6 +289,110 @@ def _upsert_image_tombstone(
     )
 
 
+def get_image_tombstones_by_deleted_cloud_id(
+    deleted_cloud_ids: list[str] | tuple[str, ...] | set[str] | None = None,
+) -> dict[str, dict]:
+    """Return local image tombstones keyed by deleted cloud image id.
+
+    When `deleted_cloud_ids` is provided, the lookup is limited to those ids.
+    Missing tombstone tables are treated as empty so callers can use this during
+    older test setups and partially migrated databases.
+    """
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        normalized_ids: list[str] = []
+        seen: set[str] = set()
+        if isinstance(deleted_cloud_ids, (str, bytes)):
+            deleted_iterable = [deleted_cloud_ids]
+        else:
+            deleted_iterable = deleted_cloud_ids or []
+        for value in deleted_iterable:
+            cloud_id = str(value or "").strip()
+            if not cloud_id or cloud_id in seen:
+                continue
+            seen.add(cloud_id)
+            normalized_ids.append(cloud_id)
+
+        try:
+            if normalized_ids:
+                placeholders = ", ".join("?" for _ in normalized_ids)
+                cursor.execute(
+                    f"""
+                    SELECT *
+                    FROM image_tombstones
+                    WHERE deleted_cloud_id IN ({placeholders})
+                    """,
+                    normalized_ids,
+                )
+            else:
+                cursor.execute("SELECT * FROM image_tombstones")
+        except sqlite3.OperationalError:
+            return {}
+
+        rows = cursor.fetchall()
+        return {
+            str(row["deleted_cloud_id"] or "").strip(): dict(row)
+            for row in rows
+            if str(row["deleted_cloud_id"] or "").strip()
+        }
+    finally:
+        conn.close()
+
+
+def list_pending_image_tombstones() -> list[dict]:
+    """Return local image tombstones that still need to be synced to cloud."""
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT *
+                FROM image_tombstones
+                WHERE delete_synced_at IS NULL
+                ORDER BY deleted_at ASC, id ASC
+                """
+            )
+        except sqlite3.OperationalError:
+            return []
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def mark_image_tombstone_synced(
+    deleted_cloud_id: str,
+    delete_synced_at: str | None = None,
+) -> bool:
+    """Mark one image tombstone as synced to the cloud."""
+    cloud_id = str(deleted_cloud_id or "").strip()
+    if not cloud_id:
+        return False
+    synced_at = str(delete_synced_at or "").strip() or _sqlite_now_text()
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE image_tombstones
+            SET delete_synced_at = COALESCE(delete_synced_at, ?)
+            WHERE deleted_cloud_id = ?
+            """,
+            (synced_at, cloud_id),
+        )
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _normalize_taxon_key(genus: str | None, species: str | None) -> tuple[str, str] | None:
     if not genus or not species:
         return None
