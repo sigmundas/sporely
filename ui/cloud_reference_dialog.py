@@ -35,10 +35,10 @@ from utils.vernacular_utils import (
     normalize_vernacular_language,
     resolve_vernacular_db_path,
 )
+from database.vernacular_db import VernacularDB
 
 from .delegates import SpeciesItemDelegate
 from .dialog_helpers import make_github_help_button
-from .observations_tab import VernacularDB
 
 
 class _CloudSearchWorker(QThread):
