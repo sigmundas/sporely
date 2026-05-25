@@ -350,6 +350,17 @@ def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
             """,
             (11, 1, "cloud-image-1", str(image_path), str(original_path), "field"),
         )
+        conn.execute(
+            "INSERT INTO spore_measurements (id, image_id, notes) VALUES (?, ?, ?)",
+            (21, 11, "measurement"),
+        )
+        conn.executemany(
+            "INSERT INTO spore_annotations (id, image_id, measurement_id) VALUES (?, ?, ?)",
+            [
+                (31, 11, None),
+                (32, 11, 21),
+            ],
+        )
         conn.commit()
     finally:
         conn.close()
@@ -385,6 +396,14 @@ def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
             "SELECT COUNT(*) FROM images WHERE id = ?",
             (11,),
         ).fetchone()[0]
+        measurement_row = conn.execute(
+            "SELECT COUNT(*) FROM spore_measurements WHERE id = ?",
+            (21,),
+        ).fetchone()[0]
+        annotation_rows = conn.execute(
+            "SELECT COUNT(*) FROM spore_annotations WHERE image_id = ? OR measurement_id = ?",
+            (11, 21),
+        ).fetchone()[0]
     finally:
         conn.close()
 
@@ -400,6 +419,8 @@ def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
     assert tombstone[8] == str(image_path)
     assert tombstone[9] == str(original_path)
     assert image_row == 1
+    assert measurement_row == 1
+    assert annotation_rows == 2
     assert image_path.exists()
     assert original_path.exists()
 

@@ -1340,12 +1340,26 @@ def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ..
     return set(tombstones.keys())
 
 
+def _pull_remote_images_for_sync(client: "SporelyCloudClient", cloud_id: str) -> list[dict]:
+    """Fetch cloud image rows including deleted ones so tombstones can be recorded."""
+    cloud_value = str(cloud_id or '').strip()
+    if not cloud_value:
+        return []
+    return [
+        dict(row or {})
+        for row in (client.pull_image_metadata(cloud_value, include_deleted_for_sync=True) or [])
+    ]
+
+
 def _record_remote_image_tombstones(
     remote_images,
     *,
     local_observation_id: int | None = None,
     cloud_observation_id: str | None = None,
 ) -> set[str]:
+    # Option A: keep the local active image row visible for now.
+    # Recording the tombstone is enough to block reupload/recreation; local
+    # hiding/deletion and any explicit confirmation flow stay deferred.
     rows = [dict(row or {}) for row in (remote_images or [])]
     tombstone_rows = [
         row
@@ -3319,14 +3333,23 @@ def resolve_conflict_keep_local(
             current_local_media_signature,
         )
 
+    remote_images_raw = _pull_remote_images_for_sync(client, cloud_id) if cloud_id else []
+    if remote_images_raw:
+        _record_remote_image_tombstones(
+            remote_images_raw,
+            local_observation_id=int(local_id),
+            cloud_observation_id=cloud_id,
+        )
+
     if should_push_images and cloud_id:
         stored_snapshot = _load_cloud_observation_snapshot(cloud_id)
         if stored_snapshot:
             baseline_images = [dict(row or {}) for row in (_parse_cloud_observation_snapshot(stored_snapshot).get('images') or [])]
             remote_images = [
                 dict(row or {})
-                for row in (client.pull_image_metadata(cloud_id) or [])
+                for row in remote_images_raw
                 if should_pull_cloud_image_to_desktop(row)
+                and not str(row.get('deleted_at') or '').strip()
             ]
             remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
             remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
@@ -3373,10 +3396,17 @@ def resolve_conflict_keep_cloud(
     remote_obs = client.get_observation(resolved_cloud_id)
     if not remote_obs:
         raise CloudSyncError(f'Cloud observation {resolved_cloud_id} not found')
+    remote_images_raw = _pull_remote_images_for_sync(client, resolved_cloud_id)
+    _record_remote_image_tombstones(
+        remote_images_raw,
+        local_observation_id=int(local_id),
+        cloud_observation_id=resolved_cloud_id,
+    )
     remote_images = [
         dict(row or {})
-        for row in (client.pull_image_metadata(resolved_cloud_id) or [])
+        for row in remote_images_raw
         if should_pull_cloud_image_to_desktop(row)
+        and not str(row.get('deleted_at') or '').strip()
     ]
 
     _apply_remote_observation_fields(int(local_id), remote_obs)
@@ -3405,10 +3435,17 @@ def resolve_conflict_merge(
     # First, pull any new images from cloud and add to local
     remote_obs = client.get_observation(resolved_cloud_id)
     if remote_obs:
+        remote_images_raw = _pull_remote_images_for_sync(client, resolved_cloud_id)
+        _record_remote_image_tombstones(
+            remote_images_raw,
+            local_observation_id=int(local_id),
+            cloud_observation_id=resolved_cloud_id,
+        )
         remote_images = [
             dict(row or {})
-            for row in (client.pull_image_metadata(resolved_cloud_id) or [])
+            for row in remote_images_raw
             if should_pull_cloud_image_to_desktop(row)
+            and not str(row.get('deleted_at') or '').strip()
         ]
         warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=False)
     else:
