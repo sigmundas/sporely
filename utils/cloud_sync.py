@@ -1381,11 +1381,15 @@ def _record_remote_image_tombstones(
         for remote_image in tombstone_rows:
             cloud_image_id = str(remote_image.get("id") or "").strip()
             deleted_at = str(remote_image.get("deleted_at") or "").strip()
+            resolved_local_observation_id = None
+            if local_observation_id is not None:
+                local_observation_id_value = _safe_int(local_observation_id)
+                if local_observation_id_value > 0:
+                    resolved_local_observation_id = local_observation_id_value
             local_image_row = None
             if local_image_sql:
                 local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
 
-            resolved_local_observation_id = None
             local_image_id = None
             image_type = None
             filepath = None
@@ -1395,10 +1399,6 @@ def _record_remote_image_tombstones(
                 local_image_id_value = _safe_int(local_image_data.get("id"))
                 if local_image_id_value > 0:
                     local_image_id = local_image_id_value
-                if local_observation_id is not None:
-                    local_observation_id_value = _safe_int(local_observation_id)
-                    if local_observation_id_value > 0:
-                        resolved_local_observation_id = local_observation_id_value
                 if resolved_local_observation_id is None and "observation_id" in local_image_data:
                     local_observation_id_value = _safe_int(local_image_data.get("observation_id"))
                     if local_observation_id_value > 0:
@@ -5103,6 +5103,20 @@ def pull_all(
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs
                     local_dirty = False
+                remote_images_raw = [
+                    dict(row or {})
+                    for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])
+                ] if cloud_id else []
+                _record_remote_image_tombstones(
+                    remote_images_raw,
+                    local_observation_id=local_id,
+                    cloud_observation_id=cloud_id,
+                )
+                remote_images = [
+                    dict(row or {})
+                    for row in remote_images_raw
+                    if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
+                ]
                 remote_changed = (not stored_snapshot) or _remote_snapshot_has_meaningful_changes(
                     remote,
                     remote_images,
