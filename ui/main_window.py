@@ -4137,6 +4137,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
 
     _geometry_key = "MainWindow"
+    _ROLE_TAXON_CHOICE = Qt.UserRole + 4
     SETTING_MEASURE_SHOW_LABELS = "measure_view_show_labels"
     SETTING_MEASURE_SHOW_OVERLAYS = "measure_view_show_overlays"
     SETTING_MEASURE_SHOW_SCALE_BAR = "measure_view_show_scale_bar"
@@ -4259,6 +4260,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.species_availability = SpeciesDataAvailability()
         self._ref_completer_suppress = False
         self._ref_taxon_fill_from_vernacular = False
+        self._reference_taxon_lookup = None
         self._ref_genus_summary_cache_key = None
         self._ref_genus_summary_cache = {}
         self.reference_series = []
@@ -6562,10 +6564,42 @@ class MainWindow(GeometryMixin, QMainWindow):
         }
         return f"e.g., {examples.get(lang, 'Chanterelle')}"
 
-    def _set_ref_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+    def _ensure_reference_taxon_lookup(self) -> TaxonLookupService:
+        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        vernacular_db = getattr(self, "ref_vernacular_db", None)
+        lookup = getattr(self, "_reference_taxon_lookup", None)
+        if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
+            try:
+                lookup.language_code = lang
+            except Exception:
+                pass
+            if vernacular_db is not None:
+                try:
+                    vernacular_db.language_code = lang
+                except Exception:
+                    pass
+            return lookup
+        lookup = TaxonLookupService(
+            vernacular_db=vernacular_db,
+            language_code=lang,
+            include_reference_data=True,
+        )
+        self._reference_taxon_lookup = lookup
+        return lookup
+
+    def _set_ref_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | str]) -> None:
         if not hasattr(self, "ref_vernacular_input"):
             return
-        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
+        cleaned: list[str] = []
+        for suggestion in suggestions or []:
+            if isinstance(suggestion, TaxonChoice):
+                label = str(suggestion.common_name or "").strip()
+                if not label:
+                    label = f"{suggestion.genus} {suggestion.species}".strip()
+            else:
+                label = str(suggestion or "").strip()
+            if label:
+                cleaned.append(label)
         if not cleaned:
             self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
             return
@@ -6582,32 +6616,56 @@ class MainWindow(GeometryMixin, QMainWindow):
         preview = "; ".join(cleaned[:4])
         self.ref_species_input.setPlaceholderText(f"e.g., {preview}")
 
-    def _populate_ref_vernacular_model(self, suggestions: list[str]) -> None:
+    def _ref_vernacular_choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
+        if not isinstance(index, QModelIndex) or not index.isValid():
+            return None
+        choice = index.data(self._ROLE_TAXON_CHOICE)
+        if isinstance(choice, TaxonChoice):
+            return choice
+        common_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
+        genus = str(index.data(Qt.UserRole + 1) or "").strip()
+        species = str(index.data(Qt.UserRole + 2) or "").strip() or None
+        if not common_name and not genus and not species:
+            return None
+        return TaxonChoice(genus=genus, species=species, common_name=common_name or None)
+
+    def _populate_ref_vernacular_model(self, suggestions: list[TaxonChoice | str]) -> None:
         self._ref_vernacular_model.clear()
-        if not self.ref_vernacular_db:
-            return
+        lookup = self._ensure_reference_taxon_lookup()
         exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        for name in suggestions:
+        for suggestion in suggestions or []:
+            if isinstance(suggestion, TaxonChoice):
+                choice = suggestion
+            else:
+                name = str(suggestion or "").strip()
+                if not name:
+                    continue
+                matches = lookup.resolve_common_name(name)
+                choice = matches[0] if len(matches) == 1 else TaxonChoice(genus="", common_name=name)
+            name = str(choice.common_name or "").strip()
+            if not name:
+                continue
             display = name
             emojis = []
-            if self.species_availability and name:
-                taxon = self.ref_vernacular_db.taxon_from_vernacular(name)
-                if taxon:
-                    tax_genus, tax_species, _family = taxon
-                    info = self._reference_species_info_case_insensitive(
-                        tax_genus,
-                        tax_species,
-                        exclude_observation_id=exclude_id,
-                    )
-                    emojis.extend(self._reference_availability_emojis(info))
+            if self.species_availability and choice.genus and choice.species:
+                info = self._reference_species_info_case_insensitive(
+                    choice.genus,
+                    choice.species,
+                    exclude_observation_id=exclude_id,
+                )
+                emojis.extend(self._reference_availability_emojis(info))
             if emojis:
                 display = f"{name} {' '.join(emojis)}"
             item = QStandardItem(display)
             item.setData(name, Qt.UserRole)
+            item.setData(str(choice.genus or "").strip(), Qt.UserRole + 1)
+            item.setData(str(choice.species or "").strip(), Qt.UserRole + 2)
+            item.setData(choice, self._ROLE_TAXON_CHOICE)
             self._ref_vernacular_model.appendRow(item)
 
     def _update_ref_vernacular_suggestions_for_taxon(self) -> None:
-        if not self.ref_vernacular_db:
+        lookup = self._ensure_reference_taxon_lookup()
+        if not lookup or not lookup.vernacular_db:
             self._ref_vernacular_model.clear()
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
@@ -6617,7 +6675,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._ref_vernacular_model.clear()
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
-        suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
         self._populate_ref_vernacular_model(suggestions)
         self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
@@ -7398,10 +7456,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_vernacular_input.editingFinished.connect(self._on_ref_vernacular_editing_finished)
 
     def _update_ref_genus_suggestions(self, text, hide_on_exact: bool = False):
-        values = ReferenceDB.list_genera(text or "")
-        if getattr(self, "ref_vernacular_db", None):
-            values.extend(self.ref_vernacular_db.suggest_genus(text or ""))
-        values = sorted({value for value in values if value})
+        lookup = self._ensure_reference_taxon_lookup()
+        values = list(lookup.suggest_genera(text or "")) if lookup else []
         exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
         genus_info_map = self._reference_genus_availability_summary(exclude_observation_id=exclude_id)
         display_values = []
@@ -7423,9 +7479,8 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _update_ref_species_suggestions(self, genus, text, hide_on_exact: bool = False):
         genus = (genus or "").strip()
         prefix = (text or "").strip()
-        values = ReferenceDB.list_species(genus, prefix)
-        if getattr(self, "ref_vernacular_db", None):
-            values.extend(self.ref_vernacular_db.suggest_species(genus, prefix))
+        lookup = self._ensure_reference_taxon_lookup()
+        values = [choice.species for choice in lookup.suggest_species(genus, prefix)] if lookup else []
         exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
         if hasattr(self, "species_availability"):
             cache = self.species_availability.get_cache()
@@ -7610,16 +7665,40 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self._ref_completer_suppress:
             return
         self._suppress_ref_completer_updates()
-        value = ""
-        if isinstance(index, QModelIndex) and index.isValid():
-            value = (index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
-        if not value:
+        lookup = self._ensure_reference_taxon_lookup()
+        choice = self._ref_vernacular_choice_from_index(index)
+        if choice is None:
             value = (self.ref_vernacular_input.text() or "").strip()
+            if not value or not lookup:
+                return
+            matches = lookup.resolve_common_name(value)
+            if len(matches) != 1:
+                return
+            choice = matches[0]
+        value = str(choice.common_name or self.ref_vernacular_input.text() or "").strip()
         if not value:
             return
         self.ref_vernacular_input.blockSignals(True)
         self.ref_vernacular_input.setText(value)
         self.ref_vernacular_input.blockSignals(False)
+        current_genus = self._clean_ref_genus_text(self.ref_genus_input.text())
+        current_species = self._clean_ref_species_text(self.ref_species_input.text())
+        self._ref_taxon_fill_from_vernacular = True
+        try:
+            if choice.genus and not current_genus:
+                self.ref_genus_input.setText(choice.genus)
+            if choice.species and not current_species:
+                self.ref_species_input.setText(choice.species)
+        finally:
+            self._ref_taxon_fill_from_vernacular = False
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
+        species_text = self._clean_ref_species_text(self.ref_species_input.text())
+        self._update_ref_genus_suggestions(genus)
+        species_suggestions = self._update_ref_species_suggestions(genus, species_text)
+        if not species_text:
+            self._set_ref_species_placeholder_from_suggestions(species_suggestions)
+        self._populate_reference_panel_sources()
+        self._update_reference_add_state()
         if self._ref_vernacular_completer.popup():
             self._ref_vernacular_completer.popup().hide()
         self._ref_vernacular_model.clear()
@@ -7672,14 +7751,15 @@ class MainWindow(GeometryMixin, QMainWindow):
                 did_clear_dependencies = True
             if did_clear_dependencies:
                 self._populate_reference_panel_sources(auto_select_single=False)
-        if not self.ref_vernacular_db:
+        lookup = self._ensure_reference_taxon_lookup()
+        if not lookup or not lookup.vernacular_db:
             self._ref_vernacular_model.clear()
             return
         genus = self._clean_ref_genus_text(self.ref_genus_input.text()) or None
         species = self.ref_species_input.text().strip() or None
-        suggestions = self.ref_vernacular_db.suggest_vernacular(text, genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix=text, genus=genus, species=species)
         text_lower = text.strip().lower()
-        if text_lower and any(name.lower() == text_lower for name in suggestions):
+        if text_lower and any(str(choice.common_name or "").strip().lower() == text_lower for choice in suggestions):
             self._ref_vernacular_model.clear()
             if self._ref_vernacular_completer:
                 self._ref_vernacular_completer.popup().hide()
@@ -7689,24 +7769,30 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
     def _on_ref_vernacular_editing_finished(self):
-        if not self.ref_vernacular_db:
+        lookup = self._ensure_reference_taxon_lookup()
+        if not lookup or not lookup.vernacular_db:
             return
         name = self.ref_vernacular_input.text().strip()
         if not name:
             return
-        taxon = self.ref_vernacular_db.taxon_from_vernacular(name)
-        if taxon:
-            genus, species, _family = taxon
-            self._ref_taxon_fill_from_vernacular = True
-            try:
-                self.ref_genus_input.setText(genus)
-                self.ref_species_input.setText(species)
-                self._populate_reference_panel_sources()
-            finally:
-                self._ref_taxon_fill_from_vernacular = False
+        current_genus = self._clean_ref_genus_text(self.ref_genus_input.text()) or None
+        current_species = self._clean_ref_species_text(self.ref_species_input.text()) or None
+        matches = lookup.resolve_common_name(name, genus=current_genus, species=current_species)
+        if len(matches) != 1:
+            return
+        choice = matches[0]
+        self._ref_taxon_fill_from_vernacular = True
+        try:
+            if choice.genus and choice.genus != current_genus:
+                self.ref_genus_input.setText(choice.genus)
+            if choice.species and choice.species != current_species:
+                self.ref_species_input.setText(choice.species)
+        finally:
+            self._ref_taxon_fill_from_vernacular = False
 
     def _maybe_set_ref_vernacular_from_taxon(self):
-        if not self.ref_vernacular_db:
+        lookup = self._ensure_reference_taxon_lookup()
+        if not lookup or not lookup.vernacular_db:
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         if self.ref_vernacular_input.text().strip():
@@ -7716,18 +7802,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not genus or not species:
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
-        suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
         if not suggestions:
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         if len(suggestions) == 1:
-            self.ref_vernacular_input.setText(suggestions[0])
+            self.ref_vernacular_input.setText(suggestions[0].common_name or "")
             self._set_ref_vernacular_placeholder_from_suggestions([])
         else:
             self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
 
     def _sync_ref_vernacular_from_taxon(self) -> None:
-        if not self.ref_vernacular_db:
+        lookup = self._ensure_reference_taxon_lookup()
+        if not lookup or not lookup.vernacular_db:
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
@@ -7741,18 +7828,19 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
 
-        suggestions = self.ref_vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        current_taxon = self.ref_vernacular_db.taxon_from_vernacular(current) if current else None
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        current_choice_matches = lookup.resolve_common_name(current) if current else []
         current_matches = bool(
-            current_taxon
-            and str(current_taxon[0] or "").strip().lower() == genus.lower()
-            and str(current_taxon[1] or "").strip().lower() == species.lower()
+            current
+            and len(current_choice_matches) == 1
+            and str(current_choice_matches[0].genus or "").strip().lower() == genus.lower()
+            and str(current_choice_matches[0].species or "").strip().lower() == species.lower()
         )
         if current_matches:
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
 
-        new_value = suggestions[0] if suggestions else ""
+        new_value = suggestions[0].common_name if suggestions else ""
         if current != new_value:
             self.ref_vernacular_input.blockSignals(True)
             self.ref_vernacular_input.setText(new_value)
@@ -15456,6 +15544,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             db_path = resolve_vernacular_db_path(lang)
             if db_path:
                 self.ref_vernacular_db = VernacularDB(db_path, language_code=lang)
+            self._ensure_reference_taxon_lookup()
             if not self.ref_vernacular_input.text().strip():
                 self._set_ref_vernacular_placeholder_from_suggestions([])
                 self._update_ref_vernacular_suggestions_for_taxon()
