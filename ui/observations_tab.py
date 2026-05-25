@@ -12674,6 +12674,29 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return self.tr("e.g., Gallinaccio")
         return self.tr("e.g., Chanterelle")
 
+    def _ensure_taxon_lookup(self) -> TaxonLookupService:
+        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        vernacular_db = getattr(self, "vernacular_db", None)
+        lookup = getattr(self, "_taxon_lookup", None)
+        if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
+            try:
+                lookup.language_code = lang
+            except Exception:
+                pass
+            if vernacular_db is not None:
+                try:
+                    vernacular_db.language_code = lang
+                except Exception:
+                    pass
+            return lookup
+        lookup = TaxonLookupService(
+            vernacular_db=vernacular_db,
+            language_code=lang,
+            include_reference_data=True,
+        )
+        self._taxon_lookup = lookup
+        return lookup
+
     def apply_vernacular_language_change(self) -> None:
         if hasattr(self, "vernacular_label"):
             self.vernacular_label.setText(self._vernacular_label())
@@ -12694,11 +12717,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self.vernacular_db = VernacularDB(db_path, language_code=lang)
         elif current_db:
             current_db.language_code = lang
-        self._taxon_lookup = TaxonLookupService(
-            vernacular_db=getattr(self, "vernacular_db", None),
-            language_code=lang,
-            include_reference_data=True,
-        )
+        self._ensure_taxon_lookup()
         if not db_path:
             return
         self._refresh_vernacular_for_current_taxon()
@@ -12758,11 +12777,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
-        self._taxon_lookup = TaxonLookupService(
-            vernacular_db=getattr(self, "vernacular_db", None),
-            language_code=lang,
-            include_reference_data=True,
-        )
+        self._ensure_taxon_lookup()
         if not db_path:
             return
         self._vernacular_model = QStringListModel()
@@ -12807,7 +12822,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
-        if not self.vernacular_db:
+        lookup = self._ensure_taxon_lookup()
+        if not lookup.vernacular_db:
             return
         if (
             not hasattr(self, "host_genus_input")
@@ -12856,26 +12872,60 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.host_vernacular_input.installEventFilter(self)
 
     def _on_host_genus_text_changed(self, text: str) -> None:
-        if not self.vernacular_db or self._host_suppress_taxon_autofill:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or self._host_suppress_taxon_autofill:
             return
         value = (text or "").strip()
-        suggestions = self.vernacular_db.suggest_genus(value)
-        self._host_genus_model.setStringList(suggestions[:30])
+        suggestions = lookup.suggest_genera(value)
+        if len(suggestions) == 1 and suggestions[0].casefold() == value.casefold():
+            self._host_genus_model.setStringList([])
+            if self._host_genus_completer:
+                self._host_genus_completer.popup().hide()
+        else:
+            self._host_genus_model.setStringList(suggestions[:30])
         if not value:
             self._host_suppress_taxon_autofill = True
-            self.host_species_input.clear()
-            self.host_vernacular_input.clear()
-            self._host_suppress_taxon_autofill = False
+            try:
+                self.host_species_input.clear()
+                self.host_vernacular_input.clear()
+            finally:
+                self._host_suppress_taxon_autofill = False
+            self._host_species_model.setStringList([])
+            if self._host_species_completer:
+                self._host_species_completer.setCompletionPrefix("")
+                self._host_species_completer.popup().hide()
+            self._set_host_species_placeholder_from_suggestions([])
+            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
+            if self._host_vernacular_completer:
+                self._host_vernacular_completer.setCompletionPrefix("")
+                self._host_vernacular_completer.popup().hide()
+            self._set_host_vernacular_placeholder_from_suggestions([])
+            return
+        if self._host_species_completer and not self.host_species_input.hasFocus():
+            self._host_species_completer.setCompletionPrefix("")
+        if not self.host_species_input.text().strip():
+            species_suggestions = lookup.suggest_species(value, "")
+            self._set_host_species_placeholder_from_suggestions(
+                [choice.species for choice in species_suggestions if choice.species]
+            )
+        if not self.host_vernacular_input.text().strip():
+            self._update_host_vernacular_suggestions_for_taxon()
 
     def _on_host_genus_selected(self, genus: str) -> None:
         if self._host_genus_completer:
             self._host_genus_completer.popup().hide()
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup:
             return
         if self.host_species_input.text().strip():
             return
-        suggestions = self.vernacular_db.suggest_species(str(genus).strip(), "")
-        self._host_species_model.setStringList(suggestions[:30])
+        suggestions = lookup.suggest_species(str(genus).strip(), "")
+        self._host_species_model.setStringList([choice.species for choice in suggestions if choice.species][:30])
+        self._set_host_species_placeholder_from_suggestions(
+            [choice.species for choice in suggestions if choice.species]
+        )
+        if not self.host_vernacular_input.text().strip():
+            self._update_host_vernacular_suggestions_for_taxon()
 
     def _on_host_genus_editing_finished(self) -> None:
         if self._host_genus_completer and self._host_genus_completer.popup().isVisible():
@@ -12883,30 +12933,36 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self._host_suppress_taxon_autofill:
             return
         self._resolve_current_taxon_to_accepted(host=True)
-        self._update_host_vernacular_suggestions_for_taxon()
-        self._maybe_set_host_vernacular_from_taxon()
+        self._refresh_host_vernacular_for_current_taxon()
 
     def _on_host_species_text_changed(self, text: str) -> None:
         if self._host_suppress_taxon_autofill:
             return
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup:
+            return
         genus = self.host_genus_input.text().strip()
         if not genus:
             self._host_species_model.setStringList([])
+            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
+            if self._host_vernacular_completer:
+                self._host_vernacular_completer.popup().hide()
             self._set_host_vernacular_placeholder_from_suggestions([])
             return
         prefix = (text or "").strip()
-        suggestions = self.vernacular_db.suggest_species(genus, prefix) if self.vernacular_db else []
-        if prefix and any(s.lower() == prefix.lower() for s in suggestions):
+        suggestions = lookup.suggest_species(genus, prefix)
+        species_values = [choice.species for choice in suggestions if choice.species]
+        if prefix and any(s.lower() == prefix.lower() for s in species_values):
             self._host_species_model.setStringList([])
             if self._host_species_completer:
                 self._host_species_completer.popup().hide()
         else:
-            self._host_species_model.setStringList(suggestions[:30])
+            self._host_species_model.setStringList(species_values[:30])
             if self._host_species_model.stringList() and self._host_species_completer:
                 self._host_species_completer.setCompletionPrefix(prefix)
                 self._host_species_completer.complete()
+        self._update_host_vernacular_suggestions_for_taxon()
         if prefix:
-            self._update_host_vernacular_suggestions_for_taxon()
             self._maybe_set_host_vernacular_from_taxon()
 
     def _on_host_species_selected(self, species: str) -> None:
@@ -12914,8 +12970,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._host_species_completer.popup().hide()
         _ = species
         self._resolve_current_taxon_to_accepted(host=True)
-        self._update_host_vernacular_suggestions_for_taxon()
-        self._maybe_set_host_vernacular_from_taxon()
+        self._refresh_host_vernacular_for_current_taxon()
 
     def _on_host_species_editing_finished(self) -> None:
         if self._host_species_completer and self._host_species_completer.popup().isVisible():
@@ -12923,11 +12978,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self._host_suppress_taxon_autofill:
             return
         self._resolve_current_taxon_to_accepted(host=True)
-        self._update_host_vernacular_suggestions_for_taxon()
-        self._maybe_set_host_vernacular_from_taxon()
+        self._refresh_host_vernacular_for_current_taxon()
 
     def _on_host_vernacular_text_changed(self, text: str) -> None:
-        if not self.vernacular_db or not hasattr(self, "_host_vernacular_model"):
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db or not hasattr(self, "_host_vernacular_model"):
             return
         if self._host_suppress_taxon_autofill:
             return
@@ -12937,7 +12992,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.host_genus_input.text().strip() or None
         species = self.host_species_input.text().strip() or None
-        entries = self.vernacular_db.suggest_vernacular_entries(value, genus=genus, species=species)
+        entries = lookup.suggest_common_names(prefix=value, genus=genus, species=species)
         text_label = self._format_vernacular_suggestion_label(
             {"vernacular_name": value, "genus": genus, "species": species}
         )
@@ -12955,37 +13010,44 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._set_host_taxon_from_vernacular(self.host_vernacular_input.text())
 
     def _set_host_taxon_from_vernacular(self, name: str) -> None:
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
             return
         value = (name or "").strip()
         if not value:
             return
         entry = self._lookup_vernacular_entry(value, host=True)
-        if entry:
-            self._host_suppress_taxon_autofill = True
-            try:
-                self.host_vernacular_input.setText(str(entry.get("vernacular_name") or "").strip())
-            finally:
-                self._host_suppress_taxon_autofill = False
-            taxon = (entry.get("genus"), entry.get("species"), entry.get("family"))
-        else:
-            taxon = self.vernacular_db.taxon_from_vernacular(value)
-        if not taxon:
-            return
-        genus, species, _family = taxon
+        choice = self._vernacular_entry_to_choice(entry)
+        if choice is None:
+            current_genus = self.host_genus_input.text().strip() or None
+            current_species = self.host_species_input.text().strip() or None
+            matches = lookup.resolve_common_name(value, genus=current_genus, species=current_species)
+            if len(matches) != 1:
+                return
+            choice = matches[0]
         current_genus = self.host_genus_input.text().strip()
         current_species = self.host_species_input.text().strip()
-        if current_genus and current_species:
-            return
         self._host_suppress_taxon_autofill = True
-        if not current_genus:
-            self.host_genus_input.setText(genus)
-        if not current_species:
-            self.host_species_input.setText(species)
-        self._host_suppress_taxon_autofill = False
+        try:
+            vernacular_text = str(choice.common_name or value or "").strip()
+            if vernacular_text:
+                self.host_vernacular_input.setText(vernacular_text)
+            if choice.genus and not current_genus:
+                self.host_genus_input.setText(choice.genus)
+            if choice.species and not current_species:
+                self.host_species_input.setText(choice.species)
+        finally:
+            self._host_suppress_taxon_autofill = False
+        if choice.species:
+            self._resolve_current_taxon_to_accepted(host=True)
+            self._refresh_host_vernacular_for_current_taxon()
+        else:
+            self._update_host_vernacular_suggestions_for_taxon()
+            self._set_host_vernacular_placeholder_from_suggestions([])
 
     def _maybe_set_host_vernacular_from_taxon(self) -> None:
-        if not self.vernacular_db:
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
             return
         if self.host_vernacular_input.text().strip():
             return
@@ -12993,20 +13055,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species = self.host_species_input.text().strip()
         if not genus or not species:
             return
-        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        if not suggestions:
-            self._set_host_vernacular_placeholder_from_suggestions([])
-            return
-        if len(suggestions) == 1:
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        choice = lookup.best_common_name_for_taxon(genus, species)
+        if choice and choice.common_name:
             self._host_suppress_taxon_autofill = True
-            self.host_vernacular_input.setText(suggestions[0])
-            self._host_suppress_taxon_autofill = False
+            try:
+                self.host_vernacular_input.setText(choice.common_name)
+            finally:
+                self._host_suppress_taxon_autofill = False
             self._set_host_vernacular_placeholder_from_suggestions([])
         else:
             self._set_host_vernacular_placeholder_from_suggestions(suggestions)
 
     def _update_host_vernacular_suggestions_for_taxon(self) -> None:
-        if not self.vernacular_db or not hasattr(self, "_host_vernacular_model"):
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db or not hasattr(self, "_host_vernacular_model"):
             return
         genus = self.host_genus_input.text().strip() or None
         species = self.host_species_input.text().strip() or None
@@ -13014,19 +13077,42 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
             self._set_host_vernacular_placeholder_from_suggestions([])
             return
-        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        entries = [{"vernacular_name": suggestion, "genus": genus, "species": species} for suggestion in suggestions]
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        entries = list(suggestions)
         self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=20)
         self._set_host_vernacular_placeholder_from_suggestions(suggestions)
 
-    def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+    def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | dict | str]) -> None:
         if not hasattr(self, "host_vernacular_input"):
             return
-        if not suggestions:
+        preview_items: list[str] = []
+        for suggestion in suggestions:
+            if isinstance(suggestion, TaxonChoice):
+                label = str(suggestion.common_name or "").strip()
+                if not label:
+                    label = self._format_vernacular_suggestion_label(suggestion)
+            elif isinstance(suggestion, dict):
+                label = str(suggestion.get("vernacular_name") or suggestion.get("common_name") or "").strip()
+                if not label:
+                    label = self._format_vernacular_suggestion_label(suggestion)
+            else:
+                label = str(suggestion or "").strip()
+            if label:
+                preview_items.append(label)
+        if not preview_items:
             self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
             return
-        preview = "; ".join(suggestions[:4])
+        preview = "; ".join(preview_items[:4])
         self.host_vernacular_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
+
+    def _set_host_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
+        if not hasattr(self, "host_species_input"):
+            return
+        if not suggestions:
+            self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
+            return
+        preview = "; ".join(suggestions[:4])
+        self.host_species_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
 
     def _style_dropdown_popup_readability(self, popup, font_source=None):
         """Make popup rows slightly looser while matching the input font."""
@@ -13111,7 +13197,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _resolve_current_taxon_to_accepted(self, *, host: bool = False) -> bool:
         if host:
-            if not self.vernacular_db:
+            lookup = getattr(self, "_taxon_lookup", None)
+            if not lookup:
                 return False
             genus_widget = getattr(self, "host_genus_input", None)
             species_widget = getattr(self, "host_species_input", None)
@@ -13130,8 +13217,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not genus or not species:
             return False
         if host:
-            resolved = self.vernacular_db.taxon_from_scientific(genus, species)
-            accepted_genus, accepted_species, _family = resolved if resolved else (None, None, None)
+            resolved_choice = lookup.resolve_scientific(genus, species) if lookup else None
+            if not resolved_choice:
+                return False
+            accepted_genus = resolved_choice.genus
+            accepted_species = resolved_choice.species or species
         else:
             resolved_choice = lookup.resolve_scientific(genus, species) if lookup else None
             if not resolved_choice:
@@ -13478,17 +13568,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                         self._species_completer.complete()
             elif obj == self.host_genus_input:
                 text = self.host_genus_input.text().strip()
-                suggestions = self.vernacular_db.suggest_genus(text)
-                self._host_genus_model.setStringList(suggestions[:30])
+                suggestions = lookup.suggest_genera(text)
+                if len(suggestions) == 1 and suggestions[0].casefold() == text.casefold():
+                    self._host_genus_model.setStringList([])
+                    if self._host_genus_completer:
+                        self._host_genus_completer.popup().hide()
+                else:
+                    self._host_genus_model.setStringList(suggestions[:30])
                 if suggestions:
                     self._host_genus_completer.complete()
             elif obj == self.host_species_input:
                 genus = self.host_genus_input.text().strip()
                 if genus:
                     text = self.host_species_input.text().strip()
-                    suggestions = self.vernacular_db.suggest_species(genus, text)
-                    self._host_species_model.setStringList(suggestions[:30])
-                    if suggestions:
+                    suggestions = lookup.suggest_species(genus, text)
+                    species_values = [choice.species for choice in suggestions if choice.species]
+                    self._host_species_model.setStringList(species_values[:30])
+                    if species_values:
                         self._host_species_completer.complete()
             elif obj == self.host_vernacular_input:
                 if not self.host_vernacular_input.text().strip():
@@ -13555,20 +13651,51 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._set_vernacular_placeholder_from_suggestions([] if best_choice and best_choice.common_name else suggestions)
 
     def _refresh_host_vernacular_for_current_taxon(self) -> None:
-        if not self.vernacular_db or not hasattr(self, "host_genus_input") or not hasattr(self, "host_species_input") or not hasattr(self, "host_vernacular_input"):
+        lookup = getattr(self, "_taxon_lookup", None)
+        if not lookup or not lookup.vernacular_db:
+            return
+        if (
+            not hasattr(self, "host_genus_input")
+            or not hasattr(self, "host_species_input")
+            or not hasattr(self, "host_vernacular_input")
+            or not hasattr(self, "_host_vernacular_model")
+        ):
             return
         genus = self.host_genus_input.text().strip()
         species = self.host_species_input.text().strip()
-        if not genus or not species:
+        if not genus and not species:
+            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
+            if self.host_vernacular_input.text().strip():
+                old_block = self.host_vernacular_input.blockSignals(True)
+                try:
+                    self._host_suppress_taxon_autofill = True
+                    self.host_vernacular_input.clear()
+                finally:
+                    self._host_suppress_taxon_autofill = False
+                    self.host_vernacular_input.blockSignals(old_block)
+            self._set_host_vernacular_placeholder_from_suggestions([])
             return
-        suggestions = self.vernacular_db.suggest_vernacular_for_taxon(genus=genus, species=species)
-        if not suggestions:
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        self._set_vernacular_entries(self._host_vernacular_model, suggestions, host=True, limit=20)
+        current_common = self.host_vernacular_input.text().strip()
+        resolved = lookup.resolve_common_name(current_common, genus=genus, species=species) if current_common else []
+        if current_common and resolved:
+            self._set_host_vernacular_placeholder_from_suggestions(suggestions)
             return
+        best_choice = lookup.best_common_name_for_taxon(genus, species) if genus and species else None
         old_block = self.host_vernacular_input.blockSignals(True)
         try:
-            self.host_vernacular_input.setText(suggestions[0])
+            self._host_suppress_taxon_autofill = True
+            if best_choice and best_choice.common_name:
+                self.host_vernacular_input.setText(best_choice.common_name)
+            else:
+                self.host_vernacular_input.clear()
         finally:
+            self._host_suppress_taxon_autofill = False
             self.host_vernacular_input.blockSignals(old_block)
+        self._set_host_vernacular_placeholder_from_suggestions(
+            [] if best_choice and best_choice.common_name else suggestions
+        )
 
     def get_files(self):
         """Return selected image files."""

@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QLineEdit
+from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QLabel
 
 from database.taxon_lookup import TaxonChoice
 import ui.observations_tab as observations_tab
@@ -73,6 +73,7 @@ def _seed_taxonomy_db(db_path: Path) -> None:
                 (1, "Agaricus", "bisporus", "Agaricaceae", "Agaricus bisporus"),
                 (2, "Entoloma", "sericeum", "Entolomataceae", "Entoloma sericeum"),
                 (3, "Amanita", "muscaria", "Amanitaceae", "Amanita muscaria"),
+                (4, "Coprinus", "comatus", "Agaricaceae", "Coprinus comatus"),
             ],
         )
         conn.executemany(
@@ -85,6 +86,8 @@ def _seed_taxonomy_db(db_path: Path) -> None:
                 (1, "Cultivated mushroom", 0, "en"),
                 (2, "Silky entoloma", 1, "en"),
                 (3, "Fly agaric", 1, "en"),
+                (4, "Shaggy mane", 1, "en"),
+                (4, "Lawyer's wig", 1, "en"),
             ],
         )
         conn.executemany(
@@ -96,6 +99,7 @@ def _seed_taxonomy_db(db_path: Path) -> None:
                 (1, "Agaricus bisporus", 1),
                 (2, "Entoloma sericeum", 1),
                 (3, "Amanita muscaria", 1),
+                (4, "Coprinus comatus", 1),
             ],
         )
 
@@ -114,6 +118,10 @@ def _build_dialog() -> _MinimalObservationDetailsDialog:
     dialog.vernacular_input = QLineEdit(dialog)
     dialog.genus_input = QLineEdit(dialog)
     dialog.species_input = QLineEdit(dialog)
+    dialog.host_genus_input = QLineEdit(dialog)
+    dialog.host_species_input = QLineEdit(dialog)
+    dialog.host_vernacular_input = QLineEdit(dialog)
+    dialog.host_vernacular_label = QLabel(dialog)
     return dialog
 
 
@@ -123,6 +131,7 @@ def _seeded_dialog(tmp_path: Path, monkeypatch) -> _MinimalObservationDetailsDia
     _configure_dialog_environment(monkeypatch, db_path)
     dialog = _build_dialog()
     dialog._setup_vernacular_autocomplete()
+    dialog._setup_host_autocomplete()
     return dialog
 
 
@@ -145,6 +154,71 @@ def test_main_taxon_lookup_wires_service_and_constrains_species_and_common_names
     dialog.vernacular_input.setText("")
     ObservationDetailsDialog._on_vernacular_text_changed(dialog, "sil")
     assert dialog._vernacular_model.stringList() == ["Silky entoloma (Entoloma sericeum)"]
+
+    dialog.deleteLater()
+
+
+def test_host_taxon_lookup_wires_service_and_constrains_species_and_common_names(
+    tmp_path: Path,
+    monkeypatch,
+    qapp,
+) -> None:
+    dialog = _seeded_dialog(tmp_path, monkeypatch)
+
+    assert dialog._taxon_lookup is not None
+    assert dialog._host_genus_model is not None
+
+    monkeypatch.setattr(dialog.vernacular_db, "suggest_genus", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host genus should use TaxonLookupService")))
+    monkeypatch.setattr(dialog.vernacular_db, "suggest_species", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host species should use TaxonLookupService")))
+    monkeypatch.setattr(dialog.vernacular_db, "suggest_vernacular_entries", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host common-name suggestions should use TaxonLookupService")))
+    monkeypatch.setattr(dialog.vernacular_db, "taxon_from_vernacular", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host common-name resolution should use TaxonLookupService")))
+    monkeypatch.setattr(dialog.vernacular_db, "taxon_from_scientific", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host scientific resolution should use TaxonLookupService")))
+
+    monkeypatch.setattr(dialog._taxon_lookup, "suggest_genera", lambda prefix: ["Entoloma"])
+    monkeypatch.setattr(
+        dialog._taxon_lookup,
+        "suggest_species",
+        lambda genus, prefix, limit=50: [TaxonChoice(genus="Entoloma", species="sericeum", common_name="Silky entoloma")],
+    )
+    monkeypatch.setattr(
+        dialog._taxon_lookup,
+        "suggest_common_names",
+        lambda prefix="", genus=None, species=None, limit=50: [
+            TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")
+        ],
+    )
+    monkeypatch.setattr(
+        dialog._taxon_lookup,
+        "resolve_common_name",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host selection should use hidden taxon payload")),
+    )
+
+    dialog.host_genus_input.blockSignals(True)
+    dialog.host_genus_input.setText("Ent")
+    dialog.host_genus_input.blockSignals(False)
+    ObservationDetailsDialog._on_host_genus_text_changed(dialog, "Ent")
+    assert dialog._host_genus_model.stringList() == ["Entoloma"]
+
+    ObservationDetailsDialog._on_host_genus_selected(dialog, "Entoloma")
+    assert dialog._host_species_model.stringList() == ["sericeum"]
+
+    dialog.host_genus_input.blockSignals(True)
+    dialog.host_genus_input.setText("Agaricus")
+    dialog.host_genus_input.blockSignals(False)
+    dialog.host_species_input.blockSignals(True)
+    dialog.host_species_input.setText("bisporus")
+    dialog.host_species_input.blockSignals(False)
+    dialog.host_vernacular_input.setText("")
+    ObservationDetailsDialog._on_host_vernacular_text_changed(dialog, "But")
+    assert dialog._host_vernacular_model.stringList() == ["Button mushroom (Agaricus bisporus)"]
+
+    label = dialog._host_vernacular_model.stringList()[0]
+    monkeypatch.setattr(dialog, "_refresh_host_vernacular_for_current_taxon", lambda: None)
+    ObservationDetailsDialog._on_host_vernacular_selected(dialog, label)
+
+    assert dialog.host_vernacular_input.text() == "Button mushroom"
+    assert dialog.host_genus_input.text() == "Agaricus"
+    assert dialog.host_species_input.text() == "bisporus"
 
     dialog.deleteLater()
 
@@ -194,6 +268,32 @@ def test_common_name_selection_handles_choice_without_species(tmp_path: Path, mo
     dialog.deleteLater()
 
 
+def test_host_common_name_selection_handles_choice_without_species(
+    tmp_path: Path,
+    monkeypatch,
+    qapp,
+) -> None:
+    dialog = _seeded_dialog(tmp_path, monkeypatch)
+
+    dialog._host_vernacular_entry_map = {
+        "button mushroom": TaxonChoice(genus="Agaricus", species=None, common_name="Button mushroom")
+    }
+    dialog.host_genus_input.blockSignals(True)
+    dialog.host_genus_input.setText("")
+    dialog.host_genus_input.blockSignals(False)
+    dialog.host_species_input.blockSignals(True)
+    dialog.host_species_input.setText("preserve me")
+    dialog.host_species_input.blockSignals(False)
+
+    ObservationDetailsDialog._set_host_taxon_from_vernacular(dialog, "Button mushroom")
+
+    assert dialog.host_vernacular_input.text() == "Button mushroom"
+    assert dialog.host_genus_input.text() == "Agaricus"
+    assert dialog.host_species_input.text() == "preserve me"
+
+    dialog.deleteLater()
+
+
 def test_common_name_autofills_and_refreshes_when_taxon_changes(
     tmp_path: Path,
     monkeypatch,
@@ -222,11 +322,38 @@ def test_common_name_autofills_and_refreshes_when_taxon_changes(
     dialog.deleteLater()
 
 
+def test_host_common_name_autofill_is_safe_when_multiple_names(
+    tmp_path: Path,
+    monkeypatch,
+    qapp,
+) -> None:
+    dialog = _seeded_dialog(tmp_path, monkeypatch)
+
+    dialog.host_genus_input.blockSignals(True)
+    dialog.host_genus_input.setText("Coprinus")
+    dialog.host_genus_input.blockSignals(False)
+    dialog.host_species_input.blockSignals(True)
+    dialog.host_species_input.setText("comatus")
+    dialog.host_species_input.blockSignals(False)
+    dialog.host_vernacular_input.setText("")
+
+    ObservationDetailsDialog._refresh_host_vernacular_for_current_taxon(dialog)
+
+    assert dialog.host_vernacular_input.text() == ""
+    assert dialog._host_vernacular_model.stringList() == [
+        "Lawyer's wig (Coprinus comatus)",
+        "Shaggy mane (Coprinus comatus)",
+    ]
+
+    dialog.deleteLater()
+
+
 def test_setup_is_safe_without_vernacular_db(tmp_path: Path, monkeypatch, qapp) -> None:
     _configure_dialog_environment(monkeypatch, None)
     dialog = _build_dialog()
 
     dialog._setup_vernacular_autocomplete()
+    dialog._setup_host_autocomplete()
 
     assert dialog._taxon_lookup is not None
     assert dialog._taxon_lookup.vernacular_db is None
