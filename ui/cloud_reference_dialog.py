@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from PySide6.QtCore import QEvent, QModelIndex, QStringListModel, QThread, Qt, Signal
+from PySide6.QtCore import QEvent, QModelIndex, QStringListModel, QThread, Qt, QTimer, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -35,11 +35,22 @@ from utils.cloud_sync import CloudSyncError, SporelyCloudClient
 from utils.vernacular_utils import (
     common_name_display_label,
     normalize_vernacular_language,
+    resolve_available_vernacular_language,
     resolve_vernacular_db_path,
 )
 
 from .delegates import SpeciesItemDelegate
 from .dialog_helpers import make_github_help_button
+
+
+def _should_select_all_on_focus(event) -> bool:
+    reason_getter = getattr(event, "reason", None)
+    if callable(reason_getter):
+        try:
+            return reason_getter() != Qt.PopupFocusReason
+        except Exception:
+            return True
+    return True
 
 
 class _CloudSearchWorker(QThread):
@@ -368,12 +379,14 @@ class CloudReferenceDialog(QDialog):
         return dict(self._accepted_data or {}) if isinstance(self._accepted_data, dict) else None
 
     def _vernacular_label(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         base = self.tr("Common name")
         return f"{common_name_display_label(lang, base)}:"
 
     def _vernacular_placeholder(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         examples = {
             "no": "Kantarell",
             "de": "Pfifferling",
@@ -485,10 +498,13 @@ class CloudReferenceDialog(QDialog):
         )
         self._species_completer.activated[QModelIndex].connect(self._on_species_selected)
 
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self._vernacular_db = VernacularDB(db_path, language_code=lang)
+        else:
+            self._vernacular_db = None
         self._taxon_lookup = TaxonLookupService(
             vernacular_db=self._vernacular_db,
             language_code=lang,
@@ -524,10 +540,14 @@ class CloudReferenceDialog(QDialog):
                 self._update_vernacular_suggestions_for_taxon()
                 if self._vernacular_model.rowCount() > 0:
                     self._vernacular_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.genus_input:
                 self._update_genus_suggestions(self.genus_input.text())
                 if self._genus_model.stringList():
                     self._genus_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.species_input:
                 genus = self._clean_genus_text(self.genus_input.text())
                 if genus:
@@ -535,6 +555,8 @@ class CloudReferenceDialog(QDialog):
                     if self._species_model.rowCount() > 0:
                         self._species_completer.setCompletionPrefix(self._clean_species_text(self.species_input.text()))
                         self._species_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
         return super().eventFilter(obj, event)
 
     def _update_genus_suggestions(self, text: str, hide_on_exact: bool = False) -> list[str]:

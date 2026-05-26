@@ -77,19 +77,52 @@ class TaxonLookupService:
     ):
         self.vernacular_db = vernacular_db
         self.include_reference_data = bool(include_reference_data)
-        self.language_code = normalize_vernacular_language(language_code) if language_code else None
-        if self.vernacular_db is not None:
-            existing_language = normalize_vernacular_language(getattr(self.vernacular_db, "language_code", None))
-            if self.language_code:
-                try:
-                    self.vernacular_db.language_code = self.language_code
-                except Exception:
-                    pass
-            elif existing_language:
-                self.language_code = existing_language
+        self._language_code: str | None = None
         self._reference_provider = _coerce_reference_provider(reference_db_factory)
         self._local_table_names_cache: set[str] | None = None
         self._local_column_cache: dict[str, set[str]] = {}
+        self._suggest_genera_cache: dict[tuple[str, int], tuple[str, ...]] = {}
+        self._suggest_species_cache: dict[tuple[str, str, int], tuple[TaxonChoice, ...]] = {}
+        self._suggest_common_names_cache: dict[tuple[str, str | None, str | None, int], tuple[TaxonChoice, ...]] = {}
+        self._resolve_common_name_cache: dict[tuple[str, str | None, str | None], tuple[TaxonChoice, ...]] = {}
+        self._resolve_scientific_cache: dict[tuple[str, str], TaxonChoice | None] = {}
+        self._best_common_name_cache: dict[tuple[str, str], TaxonChoice | None] = {}
+        self._common_names_for_taxon_cache: dict[tuple[str, str, int], tuple[TaxonChoice, ...]] = {}
+
+        initial_language = normalize_vernacular_language(language_code) if language_code else None
+        if self.vernacular_db is not None:
+            existing_language = normalize_vernacular_language(getattr(self.vernacular_db, "language_code", None))
+            if initial_language:
+                pass
+            elif existing_language:
+                initial_language = existing_language
+        self.language_code = initial_language
+
+    @property
+    def language_code(self) -> str | None:
+        return self._language_code
+
+    @language_code.setter
+    def language_code(self, value: str | None) -> None:
+        new_language = normalize_vernacular_language(value) if value else None
+        if new_language == self._language_code:
+            return
+        self._language_code = new_language
+        if self.vernacular_db is not None:
+            try:
+                self.vernacular_db.language_code = self._language_code
+            except Exception:
+                pass
+        self.clear_cache()
+
+    def clear_cache(self) -> None:
+        self._suggest_genera_cache.clear()
+        self._suggest_species_cache.clear()
+        self._suggest_common_names_cache.clear()
+        self._resolve_common_name_cache.clear()
+        self._resolve_scientific_cache.clear()
+        self._best_common_name_cache.clear()
+        self._common_names_for_taxon_cache.clear()
 
     @contextmanager
     def _local_connection(self):
@@ -178,6 +211,37 @@ class TaxonLookupService:
     def _local_suggest_genera(self, prefix: str) -> list[str]:
         if not self.vernacular_db:
             return []
+        prefix = _normalize_text(prefix)
+        if not prefix:
+            seen: dict[str, str] = {}
+            if self._has_local_table("taxon_min") and self._has_local_column("taxon_min", "genus"):
+                rows = self._fetch_local_rows(
+                    """
+                    SELECT DISTINCT genus
+                    FROM taxon_min
+                    WHERE genus IS NOT NULL AND genus != ''
+                    ORDER BY genus
+                    """
+                )
+                for row in rows:
+                    genus = _normalize_genus_display(row[0])
+                    if genus:
+                        seen.setdefault(genus.casefold(), genus)
+            if self._has_local_table("scientific_name_min") and self._has_local_column("scientific_name_min", "scientific_name"):
+                rows = self._fetch_local_rows(
+                    """
+                    SELECT DISTINCT scientific_name
+                    FROM scientific_name_min
+                    WHERE scientific_name IS NOT NULL AND scientific_name != ''
+                    ORDER BY scientific_name
+                    """
+                )
+                for row in rows:
+                    scientific_name = str(row[0] or "").strip()
+                    genus = _normalize_genus_display(scientific_name.split(" ", 1)[0] if scientific_name else "")
+                    if genus:
+                        seen.setdefault(genus.casefold(), genus)
+            return sorted(seen.values(), key=str.casefold)
         try:
             return list(self.vernacular_db.suggest_genus(prefix) or [])
         except Exception:
@@ -186,10 +250,50 @@ class TaxonLookupService:
     def _local_suggest_species(self, genus: str, prefix: str) -> list[str]:
         if not self.vernacular_db:
             return []
-        try:
-            return list(self.vernacular_db.suggest_species(genus, prefix) or [])
-        except Exception:
+        genus = _normalize_genus_display(genus)
+        prefix = _normalize_species_display(prefix)
+        if not genus:
             return []
+        if prefix:
+            try:
+                return list(self.vernacular_db.suggest_species(genus, prefix) or [])
+            except Exception:
+                return []
+        seen: dict[str, str] = {}
+        if self._has_local_table("taxon_min") and self._has_local_column("taxon_min", "specific_epithet"):
+            rows = self._fetch_local_rows(
+                """
+                SELECT DISTINCT specific_epithet
+                FROM taxon_min
+                WHERE genus = ? COLLATE NOCASE
+                  AND specific_epithet IS NOT NULL AND specific_epithet != ''
+                ORDER BY specific_epithet
+                """,
+                (genus,),
+            )
+            for row in rows:
+                species = _normalize_species_display(row[0])
+                if species:
+                    seen.setdefault(species.casefold(), species)
+        if self._has_local_table("scientific_name_min") and self._has_local_column("scientific_name_min", "scientific_name"):
+            rows = self._fetch_local_rows(
+                """
+                SELECT DISTINCT scientific_name
+                FROM scientific_name_min
+                WHERE scientific_name LIKE ? || ' %'
+                ORDER BY scientific_name
+                """,
+                (genus,),
+            )
+            for row in rows:
+                scientific_name = str(row[0] or "").strip()
+                parts = scientific_name.split()
+                if len(parts) < 2 or parts[0].casefold() != genus.casefold():
+                    continue
+                species = _normalize_species_display(parts[1])
+                if species:
+                    seen.setdefault(species.casefold(), species)
+        return sorted(seen.values(), key=str.casefold)
 
     def _local_taxon_record(self, genus: str, species: str) -> dict[str, Any] | None:
         genus = _normalize_genus_display(genus)
@@ -356,6 +460,11 @@ class TaxonLookupService:
 
     def suggest_genera(self, prefix: str = "", limit: int = 50) -> list[str]:
         prefix = _normalize_text(prefix)
+        limit_value = max(0, int(limit))
+        cache_key = (prefix.casefold(), limit_value)
+        cached = self._suggest_genera_cache.get(cache_key)
+        if cached is not None:
+            return list(cached[:limit_value])
         seen: dict[str, str] = {}
 
         for value in self._local_suggest_genera(prefix):
@@ -368,13 +477,20 @@ class TaxonLookupService:
             if genus:
                 seen.setdefault(genus.casefold(), genus)
 
-        return sorted(seen.values(), key=str.casefold)[: max(0, int(limit))]
+        values = tuple(sorted(seen.values(), key=str.casefold)[:limit_value])
+        self._suggest_genera_cache[cache_key] = values
+        return list(values)
 
     def suggest_species(self, genus: str, prefix: str = "", limit: int = 50) -> list[TaxonChoice]:
         genus = _normalize_genus_display(genus)
         prefix = _normalize_species_display(prefix)
         if not genus:
             return []
+        limit_value = max(0, int(limit))
+        cache_key = (genus.casefold(), prefix.casefold(), limit_value)
+        cached = self._suggest_species_cache.get(cache_key)
+        if cached is not None:
+            return list(cached[:limit_value])
 
         local_species = {_normalize_species_display(value) for value in self._local_suggest_species(genus, prefix) if _normalize_species_display(value)}
         reference_species = {
@@ -385,7 +501,7 @@ class TaxonLookupService:
 
         ordered_species = sorted(local_species | reference_species, key=str.casefold)
         choices: list[TaxonChoice] = []
-        for species in ordered_species[: max(0, int(limit))]:
+        for species in ordered_species[:limit_value]:
             source = "taxonomy" if species in local_species else "reference"
             if species in local_species and species in reference_species:
                 source = "both"
@@ -408,6 +524,7 @@ class TaxonLookupService:
             else:
                 choice = TaxonChoice(genus=genus, species=species, source=source)
             choices.append(choice)
+        self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
 
     def suggest_common_names(
@@ -420,15 +537,31 @@ class TaxonLookupService:
         prefix = _normalize_text(prefix)
         if not prefix and genus is None and species is None:
             return []
+        limit_value = max(0, int(limit))
+        cache_key = (
+            prefix.casefold(),
+            _normalize_genus_display(genus) if genus is not None else None,
+            _normalize_species_display(species) if species is not None else None,
+            limit_value,
+        )
+        cached = self._suggest_common_names_cache.get(cache_key)
+        if cached is not None:
+            return list(cached[:limit_value])
         rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit)
-        return [self._row_to_choice(row, "taxonomy") for row in rows[: max(0, int(limit))]]
+        values = tuple(self._row_to_choice(row, "taxonomy") for row in rows[:limit_value])
+        self._suggest_common_names_cache[cache_key] = values
+        return list(values)
 
     def resolve_scientific(self, genus: str, species: str) -> TaxonChoice | None:
+        key = (_normalize_genus_display(genus).casefold(), _normalize_species_display(species).casefold())
+        if key in self._resolve_scientific_cache:
+            return self._resolve_scientific_cache[key]
         record = self._local_taxon_record(genus, species)
         if not record:
+            self._resolve_scientific_cache[key] = None
             return None
         best_common_name = self.best_common_name_for_taxon(record["genus"], record["species"])
-        return TaxonChoice(
+        choice = TaxonChoice(
             genus=record["genus"],
             species=record["species"],
             common_name=best_common_name.common_name if best_common_name else None,
@@ -439,6 +572,8 @@ class TaxonLookupService:
             red_list_category=None,
             red_list_source=None,
         )
+        self._resolve_scientific_cache[key] = choice
+        return choice
 
     def resolve_common_name(
         self,
@@ -449,30 +584,41 @@ class TaxonLookupService:
         name = _normalize_text(name)
         if not name:
             return []
+        cache_key = (
+            name.casefold(),
+            _normalize_genus_display(genus) if genus is not None else None,
+            _normalize_species_display(species) if species is not None else None,
+        )
+        cached = self._resolve_common_name_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
         rows = self._local_common_name_rows(name=name, genus=genus, species=species)
-        return [self._row_to_choice(row, "taxonomy") for row in rows]
+        values = tuple(self._row_to_choice(row, "taxonomy") for row in rows)
+        self._resolve_common_name_cache[cache_key] = values
+        return list(values)
 
     def common_names_for_taxon(self, genus: str, species: str, limit: int = 20) -> list[TaxonChoice]:
-        genus = _normalize_genus_display(genus)
-        species = _normalize_species_display(species)
-        if not genus or not species:
-            return []
-        rows = self._local_common_name_rows(genus=genus, species=species, limit=limit)
-        return [self._row_to_choice(row, "taxonomy") for row in rows[: max(0, int(limit))]]
+        return self.suggest_common_names(prefix="", genus=genus, species=species, limit=limit)
 
     def best_common_name_for_taxon(self, genus: str, species: str) -> TaxonChoice | None:
-        rows = self._local_common_name_rows(genus=genus, species=species, limit=2)
+        key = (_normalize_genus_display(genus).casefold(), _normalize_species_display(species).casefold())
+        if key in self._best_common_name_cache:
+            return self._best_common_name_cache[key]
+        rows = self._local_common_name_rows(genus=genus, species=species)
         if not rows:
+            self._best_common_name_cache[key] = None
             return None
         if len(rows) == 1:
-            return self._row_to_choice(rows[0], "taxonomy")
+            choice = self._row_to_choice(rows[0], "taxonomy")
+            self._best_common_name_cache[key] = choice
+            return choice
 
-        first = rows[0]
-        second = rows[1]
-        first_preferred = bool(first["is_preferred_name"])
-        second_preferred = bool(second["is_preferred_name"])
-        if first_preferred and not second_preferred:
-            return self._row_to_choice(first, "taxonomy")
+        preferred_rows = [row for row in rows if bool(row["is_preferred_name"])]
+        if len(preferred_rows) == 1:
+            choice = self._row_to_choice(preferred_rows[0], "taxonomy")
+            self._best_common_name_cache[key] = choice
+            return choice
+        self._best_common_name_cache[key] = None
         return None
 
 

@@ -149,6 +149,12 @@ def test_suggest_genera_returns_local_genera(tmp_path: Path, monkeypatch) -> Non
     assert service.suggest_genera("en") == ["Entoloma"]
 
 
+def test_suggest_genera_without_prefix_returns_local_genera(tmp_path: Path, monkeypatch) -> None:
+    service = _make_service(tmp_path, monkeypatch)
+
+    assert service.suggest_genera("") == ["Agaricus", "Amanita", "Coprinus", "Entoloma"]
+
+
 def test_suggest_species_returns_species_constrained_by_genus(tmp_path: Path, monkeypatch) -> None:
     service = _make_service(tmp_path, monkeypatch)
 
@@ -171,6 +177,17 @@ def test_suggest_species_includes_reference_only_species(tmp_path: Path, monkeyp
     assert values[0].species == "comatus"
     assert values[0].source == "reference"
     assert values[0].common_name is None
+    _assert_no_redlist(values[0])
+
+
+def test_suggest_species_without_prefix_returns_species_for_genus(tmp_path: Path, monkeypatch) -> None:
+    service = _make_service(tmp_path, monkeypatch)
+
+    values = service.suggest_species("Entoloma", "")
+
+    assert [choice.genus for choice in values] == ["Entoloma"]
+    assert [choice.species for choice in values] == ["sericeum"]
+    assert values[0].source == "taxonomy"
     _assert_no_redlist(values[0])
 
 
@@ -206,6 +223,18 @@ def test_suggest_common_names_without_prefix_can_use_taxon_constraints(tmp_path:
     service = _make_service(tmp_path, monkeypatch)
 
     values = service.suggest_common_names(prefix="", genus="Agaricus")
+
+    assert [choice.common_name for choice in values] == ["Button mushroom", "Cultivated mushroom"]
+    assert [choice.genus for choice in values] == ["Agaricus", "Agaricus"]
+    assert [choice.species for choice in values] == ["bisporus", "bisporus"]
+    assert all(choice.source == "taxonomy" for choice in values)
+    _assert_no_redlist(values[0])
+
+
+def test_suggest_common_names_without_prefix_can_use_exact_taxon_constraints(tmp_path: Path, monkeypatch) -> None:
+    service = _make_service(tmp_path, monkeypatch)
+
+    values = service.suggest_common_names(prefix="", genus="Agaricus", species="bisporus")
 
     assert [choice.common_name for choice in values] == ["Button mushroom", "Cultivated mushroom"]
     assert [choice.genus for choice in values] == ["Agaricus", "Agaricus"]
@@ -253,6 +282,18 @@ def test_best_common_name_for_taxon_prefers_preferred_name(tmp_path: Path, monke
 
     assert choice is not None
     assert choice.common_name == "Button mushroom"
+    assert choice.language_code == "en"
+    assert choice.source == "taxonomy"
+    _assert_no_redlist(choice)
+
+
+def test_best_common_name_for_taxon_returns_single_name_when_unambiguous(tmp_path: Path, monkeypatch) -> None:
+    service = _make_service(tmp_path, monkeypatch)
+
+    choice = service.best_common_name_for_taxon("Entoloma", "sericeum")
+
+    assert choice is not None
+    assert choice.common_name == "Silky entoloma"
     assert choice.language_code == "en"
     assert choice.source == "taxonomy"
     _assert_no_redlist(choice)

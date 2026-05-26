@@ -69,6 +69,7 @@ import requests
 from urllib.parse import urlparse, parse_qs, unquote_plus
 from utils.vernacular_utils import (
     normalize_vernacular_language,
+    resolve_available_vernacular_language,
     resolve_vernacular_db_path,
     vernacular_language_label,
     list_available_vernacular_languages,
@@ -122,6 +123,16 @@ from .styles import (
     get_button_icon_color,
     get_design_tokens,
 )
+
+
+def _should_select_all_on_focus(event) -> bool:
+    reason_getter = getattr(event, "reason", None)
+    if callable(reason_getter):
+        try:
+            return reason_getter() != Qt.PopupFocusReason
+        except Exception:
+            return True
+    return True
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
@@ -3928,7 +3939,8 @@ class ObservationsTab(QWidget):
         )
 
     def _get_vernacular_db_for_active_language(self):
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
         if not db_path:
             return None
@@ -4398,7 +4410,8 @@ class ObservationsTab(QWidget):
         return " ".join(text.split())
 
     def _common_name_column_title(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         if lang in {"no", "nb", "nn"}:
             return self.tr("Navn")
         return self.tr("Name")
@@ -11335,7 +11348,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _preferred_vernacular_from_taxon(self, taxon: dict) -> str | None:
         if not isinstance(taxon, dict):
             return None
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         vernacular_names = taxon.get("vernacularNames") or {}
         if isinstance(vernacular_names, dict):
             if lang:
@@ -12667,7 +12681,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return self.tr("Livsmedium") if ui_lang.startswith("no") else self.tr("Grows on")
 
     def _vernacular_label(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         if lang == "no":
             return self.tr("Namn:")
         if lang in {"en", "de"}:
@@ -12675,7 +12690,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return self.tr("Name:")
 
     def _vernacular_placeholder(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         if lang == "no":
             return self.tr("e.g., Kantarell")
         if lang == "de":
@@ -12699,7 +12715,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return self.tr("e.g., Chanterelle")
 
     def _ensure_taxon_lookup(self) -> TaxonLookupService:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         vernacular_db = getattr(self, "vernacular_db", None)
         lookup = getattr(self, "_taxon_lookup", None)
         if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
@@ -12731,16 +12748,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if hasattr(self, "host_vernacular_input"):
             self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self._populate_vernacular_language_menu()
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
-        current_db = getattr(self, "vernacular_db", None)
         if db_path:
+            current_db = getattr(self, "vernacular_db", None)
             if current_db and current_db.db_path == db_path:
                 current_db.language_code = lang
             else:
                 self.vernacular_db = VernacularDB(db_path, language_code=lang)
-        elif current_db:
-            current_db.language_code = lang
+        else:
+            self.vernacular_db = None
         self._ensure_taxon_lookup()
         if not db_path:
             return
@@ -12754,7 +12772,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if button is None or menu is None:
             return
         menu.clear()
-        current = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        current = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         language_group = QActionGroup(menu)
         language_group.setExclusive(True)
         for code in list_available_vernacular_languages():
@@ -12781,7 +12800,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not checked:
             return
         selected = normalize_vernacular_language(code)
-        current = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        current = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         if not selected or selected == current:
             return
         SettingsDB.set_setting("vernacular_language", selected)
@@ -12797,13 +12817,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         """Wire vernacular lookup/completion if taxonomy DB is available."""
         if not hasattr(self, "vernacular_input"):
             return
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
+        else:
+            self.vernacular_db = None
         self._ensure_taxon_lookup()
-        if not db_path:
-            return
         self._vernacular_model = QStringListModel()
         self._vernacular_completer = QCompleter(self._vernacular_model, self)
         self._vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -12847,8 +12868,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
         lookup = self._ensure_taxon_lookup()
-        if not lookup.vernacular_db:
-            return
         if (
             not hasattr(self, "host_genus_input")
             or not hasattr(self, "host_species_input")
@@ -13575,12 +13594,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._update_vernacular_suggestions_for_taxon()
                     if self._vernacular_model.stringList():
                         self._vernacular_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.genus_input:
                 text = self.genus_input.text().strip()
                 suggestions = lookup.suggest_genera(text)
                 self._genus_model.setStringList(suggestions)
                 if suggestions:
                     self._genus_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.species_input:
                 genus = self.genus_input.text().strip()
                 if genus:
@@ -13590,6 +13613,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._species_model.setStringList(species_values)
                     if species_values:
                         self._species_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.host_genus_input:
                 text = self.host_genus_input.text().strip()
                 suggestions = lookup.suggest_genera(text)
@@ -13601,6 +13626,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._host_genus_model.setStringList(suggestions[:30])
                 if suggestions:
                     self._host_genus_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.host_species_input:
                 genus = self.host_genus_input.text().strip()
                 if genus:
@@ -13610,6 +13637,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._host_species_model.setStringList(species_values[:30])
                     if species_values:
                         self._host_species_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.host_vernacular_input:
                 if not self.host_vernacular_input.text().strip():
                     if self._host_vernacular_completer:
@@ -13617,6 +13646,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._update_host_vernacular_suggestions_for_taxon()
                     if self._host_vernacular_model.stringList():
                         self._host_vernacular_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
         return super().eventFilter(obj, event)
 
     def _maybe_set_vernacular_from_taxon(self):

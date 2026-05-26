@@ -7,6 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 import database.models as models
@@ -229,16 +230,53 @@ def test_reference_values_dialog_uses_taxon_lookup_for_suggestions_and_hidden_co
     assert dialog._taxon_lookup.vernacular_db is not None
 
     dialog.vernacular_db = _FailingVernacularDB()
+    complete_calls: list[str] = []
+    monkeypatch.setattr(dialog._genus_completer, "complete", lambda *args, **kwargs: complete_calls.append("genus"))
+    monkeypatch.setattr(dialog._species_completer, "complete", lambda *args, **kwargs: complete_calls.append("species"))
+    monkeypatch.setattr(dialog._vernacular_completer, "complete", lambda *args, **kwargs: complete_calls.append("vernacular"))
+
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.genus_input.blockSignals(True)
+    dialog.genus_input.setText("Aga")
+    dialog.genus_input.blockSignals(False)
+    dialog.genus_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.genus_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert "genus" in complete_calls
+    assert dialog.genus_input.selectedText() == "Aga"
 
     dialog.genus_input.blockSignals(True)
     dialog.genus_input.setText("Agaricus")
     dialog.genus_input.blockSignals(False)
+
+    dialog.species_input.blockSignals(True)
+    dialog.species_input.setText("bi")
+    dialog.species_input.blockSignals(False)
+    dialog.species_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.species_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert dialog.species_input.selectedText() == "bi"
+
     dialog.species_input.blockSignals(True)
     dialog.species_input.setText("bisporus")
     dialog.species_input.blockSignals(False)
 
     dialog._maybe_set_vernacular_from_taxon()
     assert dialog.vernacular_input.text() == "Button mushroom"
+    assert "species" in complete_calls
+
+    dialog.vernacular_input.blockSignals(True)
+    dialog.vernacular_input.setText("Button mushroom")
+    dialog.vernacular_input.blockSignals(False)
+    dialog.vernacular_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.vernacular_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert dialog.vernacular_input.selectedText() == "Button mushroom"
 
     dialog.vernacular_input.blockSignals(True)
     dialog.vernacular_input.clear()
@@ -247,7 +285,7 @@ def test_reference_values_dialog_uses_taxon_lookup_for_suggestions_and_hidden_co
     dialog.genus_input.clear()
     dialog.genus_input.blockSignals(False)
     dialog.species_input.blockSignals(True)
-    dialog.species_input.clear()
+    dialog.species_input.setText("bisporus")
     dialog.species_input.blockSignals(False)
     dialog._clear_vernacular_suggestions()
 

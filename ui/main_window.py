@@ -92,6 +92,16 @@ except Exception:
     </svg>"""
 
 
+def _should_select_all_on_focus(event) -> bool:
+    reason_getter = getattr(event, "reason", None)
+    if callable(reason_getter):
+        try:
+            return reason_getter() != Qt.PopupFocusReason
+        except Exception:
+            return True
+    return True
+
+
 def _make_svg_icon(svg_bytes: bytes, color: str = "#c1c8c4") -> QIcon:
     """Render an SVG bytes payload into a QIcon at 64×64 px.
 
@@ -151,6 +161,7 @@ from utils.heic_converter import maybe_convert_heic
 from .delegates import SpeciesItemDelegate
 from utils.vernacular_utils import (
     normalize_vernacular_language,
+    resolve_available_vernacular_language,
     vernacular_language_label,
     common_name_display_label,
     resolve_vernacular_db_path,
@@ -862,7 +873,8 @@ class LanguageSettingsDialog(QDialog):
             current_ui = "sv_SE"
         else:
             current_ui = "en"
-        current_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        current_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
         ui_index = self.ui_combo.findData(current_ui)
         if ui_index >= 0:
             self.ui_combo.setCurrentIndex(ui_index)
@@ -874,7 +886,8 @@ class LanguageSettingsDialog(QDialog):
 
     def _save(self):
         old_ui = SettingsDB.get_setting("ui_language", "en")
-        old_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        old_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
 
         new_ui = self.ui_combo.currentData()
         new_vern = normalize_vernacular_language(self.vernacular_combo.currentData())
@@ -1442,13 +1455,15 @@ class SettingsHubDialog(QDialog):
         idx = self._lang_ui_combo.findData(current_ui)
         if idx >= 0: self._lang_ui_combo.setCurrentIndex(idx)
 
-        current_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        current_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
         idx = self._lang_vern_combo.findData(current_vern)
         if idx >= 0: self._lang_vern_combo.setCurrentIndex(idx)
 
     def _save_language(self):
         old_ui   = SettingsDB.get_setting("ui_language", "en")
-        old_vern = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        old_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
         new_ui   = self._lang_ui_combo.currentData()
         new_vern = normalize_vernacular_language(self._lang_vern_combo.currentData())
         if new_ui and new_ui != old_ui:
@@ -3000,10 +3015,13 @@ class ReferenceValuesDialog(QDialog):
 
         self.vernacular_db = None
         self._taxon_lookup = None
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self.vernacular_db = VernacularDB(db_path, language_code=lang)
+        else:
+            self.vernacular_db = None
         self._ensure_taxon_lookup()
         self._vernacular_model = QStandardItemModel(self)
         self._vernacular_completer = QCompleter(self._vernacular_model, self)
@@ -3092,12 +3110,14 @@ class ReferenceValuesDialog(QDialog):
         self.stain_input.textChanged.connect(self._on_stain_changed)
 
     def _vernacular_label(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         base = self.tr("Common name")
         return f"{common_name_display_label(lang, base)}:"
 
     def _ensure_taxon_lookup(self) -> TaxonLookupService:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         vernacular_db = getattr(self, "vernacular_db", None)
         lookup = getattr(self, "_taxon_lookup", None)
         if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
@@ -3161,9 +3181,12 @@ class ReferenceValuesDialog(QDialog):
     def apply_vernacular_language_change(self) -> None:
         if hasattr(self, "vernacular_label"):
             self.vernacular_label.setText(self._vernacular_label())
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
         if not db_path:
+            self.vernacular_db = None
+            self._ensure_taxon_lookup()
             return
         if self.vernacular_db and self.vernacular_db.db_path == db_path:
             self.vernacular_db.language_code = lang
@@ -3311,11 +3334,15 @@ class ReferenceValuesDialog(QDialog):
                     self._update_vernacular_suggestions_for_taxon()
                     if self._vernacular_model.rowCount() > 0:
                         self._vernacular_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.genus_input:
                 text = self.genus_input.text().strip()
                 self._update_genus_suggestions(text)
                 if self._genus_model.stringList():
                     self._genus_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.species_input:
                 genus = self.genus_input.text().strip()
                 if genus:
@@ -3323,6 +3350,8 @@ class ReferenceValuesDialog(QDialog):
                     self._update_species_suggestions(genus, text)
                     if self._species_model.stringList():
                         self._species_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
         return super().eventFilter(obj, event)
 
     def _load_reference(self, genus, species, source, mount_medium=None, stain=None):
@@ -4328,6 +4357,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._update_ref_genus_suggestions(text)
                 if self._ref_genus_model.stringList():
                     self._ref_genus_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == getattr(self, "ref_species_input", None):
                 genus = self._clean_ref_genus_text(self.ref_genus_input.text())
                 if genus:
@@ -4336,12 +4367,16 @@ class MainWindow(GeometryMixin, QMainWindow):
                     if self._ref_species_model.rowCount() > 0:
                         self._ref_species_completer.setCompletionPrefix(text)
                         self._ref_species_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == getattr(self, "ref_vernacular_input", None):
                 if not self.ref_vernacular_input.text().strip():
                     self._ref_vernacular_completer.setCompletionPrefix("")
                     self._update_ref_vernacular_suggestions_for_taxon()
                     if self._ref_vernacular_model.rowCount() > 0:
                         self._ref_vernacular_completer.complete()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
         if event.type() == QEvent.MouseButtonPress:
             if obj == getattr(self, "ref_source_input", None):
                 if self.ref_source_input.count() > 1:
@@ -6497,11 +6532,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         _add_section_divider()
 
         self.ref_series_table = QTableWidget(0, 4)
+        self.ref_series_table.setObjectName("referenceSeriesTable")
         self.ref_series_table.setFocusPolicy(Qt.NoFocus)
+        self.ref_series_table.setWordWrap(False)
+        self.ref_series_table.setTextElideMode(Qt.ElideRight)
         self.ref_series_table.setHorizontalHeaderLabels(
             [self.tr("Plot"), "", self.tr("Data set"), self.tr("Color")]
         )
         self.ref_series_table.verticalHeader().setVisible(False)
+        self.ref_series_table.verticalHeader().setDefaultSectionSize(34)
+        self.ref_series_table.verticalHeader().setMinimumSectionSize(28)
         self.ref_series_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.ref_series_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.ref_series_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6544,12 +6584,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
 
     def _reference_vernacular_label(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         base = self.tr("Common name")
         return f"{common_name_display_label(lang, base)}:"
 
     def _reference_vernacular_placeholder(self) -> str:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         examples = {
             "no": "Kantarell",
             "de": "Pfifferling",
@@ -6565,7 +6607,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         return f"e.g., {examples.get(lang, 'Chanterelle')}"
 
     def _ensure_reference_taxon_lookup(self) -> TaxonLookupService:
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         vernacular_db = getattr(self, "ref_vernacular_db", None)
         lookup = getattr(self, "_reference_taxon_lookup", None)
         if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
@@ -7075,6 +7118,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.ref_series_table.setRowCount(0)
         self._ref_series_row_entries = []
+        row_height = max(
+            34,
+            int(self.ref_series_table.fontMetrics().height()) + 14,
+            int(self.ref_series_table.verticalHeader().defaultSectionSize()),
+        )
         for entry in self._resolved_reference_series_entries(self._is_dark_theme()):
             data = entry.get("data", {})
             key = entry.get("key")
@@ -7083,20 +7131,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.ref_series_table.insertRow(row)
 
             toggle_holder = QWidget()
+            toggle_holder.setMinimumHeight(row_height)
+            toggle_holder.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             toggle_layout = QHBoxLayout(toggle_holder)
             toggle_layout.setContentsMargins(0, 0, 0, 0)
             toggle_layout.setAlignment(Qt.AlignCenter)
             toggle_checkbox = QCheckBox(toggle_holder)
             toggle_checkbox.setChecked(bool(entry.get("enabled", True)))
+            toggle_checkbox.setCursor(Qt.PointingHandCursor)
             toggle_checkbox.toggled.connect(lambda checked, k=key: self._set_reference_series_enabled(k, checked))
             toggle_layout.addWidget(toggle_checkbox)
             self._register_gallery_hint_widget(toggle_checkbox, self.tr("Show or hide this reference plot"))
             self.ref_series_table.setCellWidget(row, 0, toggle_holder)
 
             remove_btn = QToolButton()
-            remove_btn.setText("X")
+            remove_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton))
+            remove_btn.setIconSize(QSize(12, 12))
+            remove_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
             remove_btn.setAutoRaise(True)
-            remove_btn.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(11)}pt;")
+            remove_btn.setFixedSize(24, 24)
             remove_btn.clicked.connect(lambda _checked=False, k=key: self._remove_reference_series_key(k))
             self._register_gallery_hint_widget(remove_btn, self.tr("Remove this plot"))
             self.ref_series_table.setCellWidget(row, 1, remove_btn)
@@ -7119,7 +7172,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._register_gallery_hint_widget(color_btn, self.tr("Change the plot color"))
             self.ref_series_table.setCellWidget(row, 3, color_btn)
 
-            self.ref_series_table.setRowHeight(row, 28)
+            self.ref_series_table.setRowHeight(row, row_height)
             self._ref_series_row_entries.append(entry)
         self.ref_series_table.resizeColumnToContents(0)
         self.ref_series_table.resizeColumnToContents(1)
@@ -7440,10 +7493,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.ref_source_input.lineEdit().installEventFilter(self)
 
         self.ref_vernacular_db = None
-        lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
         db_path = resolve_vernacular_db_path(lang)
         if db_path:
             self.ref_vernacular_db = VernacularDB(db_path, language_code=lang)
+        else:
+            self.ref_vernacular_db = None
         self._ref_vernacular_model = QStandardItemModel()
         self._ref_vernacular_completer = QCompleter(self._ref_vernacular_model, self)
         self._ref_vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -7803,11 +7859,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
         suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        if not suggestions:
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        if len(suggestions) == 1:
-            self.ref_vernacular_input.setText(suggestions[0].common_name or "")
+        choice = lookup.best_common_name_for_taxon(genus, species)
+        if choice and choice.common_name:
+            self.ref_vernacular_input.setText(choice.common_name)
             self._set_ref_vernacular_placeholder_from_suggestions([])
         else:
             self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
@@ -7840,7 +7894,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_ref_vernacular_placeholder_from_suggestions([])
             return
 
-        new_value = suggestions[0].common_name if suggestions else ""
+        best_choice = lookup.best_common_name_for_taxon(genus, species) if genus and species else None
+        new_value = best_choice.common_name if best_choice and best_choice.common_name else ""
         if current != new_value:
             self.ref_vernacular_input.blockSignals(True)
             self.ref_vernacular_input.setText(new_value)
@@ -11240,7 +11295,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 date = obs.get("date") or ""
                 vernacular = (obs.get("common_name") or "").strip()
                 if not vernacular and genus and species:
-                    lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+                    stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+                    lang = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
                     db_path = resolve_vernacular_db_path(lang)
                     if db_path and Path(db_path).exists():
                         vernacular_db = VernacularDB(db_path, language_code=lang)
@@ -15540,10 +15596,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "ref_vernacular_label"):
             self.ref_vernacular_label.setText(self._reference_vernacular_label())
         if hasattr(self, "ref_vernacular_input"):
-            lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
+            stored_vern = SettingsDB.get_setting("vernacular_language", "no")
+            lang = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
             db_path = resolve_vernacular_db_path(lang)
             if db_path:
                 self.ref_vernacular_db = VernacularDB(db_path, language_code=lang)
+            else:
+                self.ref_vernacular_db = None
             self._ensure_reference_taxon_lookup()
             if not self.ref_vernacular_input.text().strip():
                 self._set_ref_vernacular_placeholder_from_suggestions([])

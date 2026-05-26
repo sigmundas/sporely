@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QStandardItem
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -166,6 +166,86 @@ def test_cloud_reference_dialog_species_rows_use_taxon_lookup_service(tmp_path: 
     assert item.data(Qt.UserRole) == "bisporus"
     assert item.data(Qt.UserRole + 1) == "Agaricus"
     assert item.data(Qt.UserRole + 2) == "bisporus"
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_cloud_reference_dialog_focus_populates_blank_prefix_species_and_common_name_models(
+    tmp_path: Path,
+    monkeypatch,
+    qapp,
+) -> None:
+    vernacular_db_path = tmp_path / "vernacular.sqlite"
+    dialog, parent = _build_dialog(
+        tmp_path,
+        monkeypatch,
+        vernacular_db_path=vernacular_db_path,
+        genus="Agaricus",
+        species="",
+    )
+
+    species_calls: list[tuple[str, str, int]] = []
+    common_calls: list[tuple[str, str | None, str | None, int]] = []
+
+    def _suggest_species(genus: str, prefix: str, limit: int = 50) -> list[TaxonChoice]:
+        species_calls.append((genus, prefix, limit))
+        assert prefix in ("", "bi")
+        return [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")]
+
+    def _suggest_common_names(
+        prefix: str = "",
+        genus: str | None = None,
+        species: str | None = None,
+        limit: int = 50,
+    ) -> list[TaxonChoice]:
+        common_calls.append((prefix, genus, species, limit))
+        assert prefix == ""
+        return [
+            TaxonChoice(genus="Agaricus", species="bisporus", common_name="Cultivated mushroom"),
+            TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom"),
+        ]
+
+    monkeypatch.setattr(dialog._taxon_lookup, "suggest_species", _suggest_species)
+    monkeypatch.setattr(dialog._taxon_lookup, "suggest_common_names", _suggest_common_names)
+    monkeypatch.setattr(dialog._species_completer, "complete", lambda *args, **kwargs: None)
+    monkeypatch.setattr(dialog._vernacular_completer, "complete", lambda *args, **kwargs: None)
+
+    dialog.genus_input.blockSignals(True)
+    dialog.genus_input.setText("Agaricus")
+    dialog.genus_input.blockSignals(False)
+    dialog.genus_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.genus_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert dialog.genus_input.selectedText() == "Agaricus"
+
+    dialog.species_input.blockSignals(True)
+    dialog.species_input.setText("bi")
+    dialog.species_input.blockSignals(False)
+    dialog.species_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.species_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert species_calls == [("Agaricus", "bi", 50)]
+    assert dialog._species_model.rowCount() == 1
+    assert dialog._species_model.item(0).data(Qt.UserRole) == "bisporus"
+    assert dialog.species_input.selectedText() == "bi"
+
+    dialog.eventFilter(dialog.vernacular_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert common_calls == [("", "Agaricus", "bi", 50)]
+    assert dialog._vernacular_model.rowCount() == 2
+    assert dialog._vernacular_model.item(0).data(dialog._ROLE_TAXON_CHOICE).common_name == "Cultivated mushroom"
+    assert dialog._vernacular_model.item(1).data(dialog._ROLE_TAXON_CHOICE).common_name == "Button mushroom"
+
+    dialog.vernacular_input.blockSignals(True)
+    dialog.vernacular_input.setText("Button mushroom")
+    dialog.vernacular_input.blockSignals(False)
+    dialog.vernacular_input.setFocus()
+    qapp.processEvents()
+    dialog.eventFilter(dialog.vernacular_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
 
     dialog.deleteLater()
     parent.deleteLater()

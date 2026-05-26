@@ -1,9 +1,12 @@
 """Helpers for vernacular language handling and DB discovery."""
 from __future__ import annotations
 
+from functools import lru_cache
 import sqlite3
 from pathlib import Path
 from typing import Iterable
+
+from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
 
 # Canonical labels for language codes used in vernacular DBs.
 VERNACULAR_LANGUAGE_LABELS = {
@@ -83,17 +86,53 @@ def _order_vernacular_languages(languages: Iterable[str]) -> list[str]:
 def _candidate_roots() -> tuple[Path, ...]:
     cwd = Path.cwd()
     app_root = Path(__file__).resolve().parent.parent
-    return (cwd / "database", cwd, app_root / "database", app_root)
+    return (cwd / "database", cwd, app_root / "database", app_root, REFERENCE_DATA_GENERATED_DIR)
 
 
-def resolve_multilang_db_path() -> Path | None:
-    """Locate a multi-language vernacular DB, if present."""
+def _vernacular_discovery_signature() -> tuple[int, str]:
+    return id(resolve_multilang_db_path), str(Path.cwd())
+
+
+@lru_cache(maxsize=8)
+def _cached_resolve_multilang_db_path(_resolver_id: int, _cwd: str) -> Path | None:
+    """Resolve the bundled multilingual DB path with a cache key that tracks monkeypatches."""
     for base in _candidate_roots():
         for name in MULTILANG_DB_NAMES:
             path = base / name
             if path.exists():
                 return path
     return None
+
+
+def resolve_multilang_db_path() -> Path | None:
+    """Locate a multi-language vernacular DB, if present."""
+    resolver_id, cwd = _vernacular_discovery_signature()
+    return _cached_resolve_multilang_db_path(resolver_id, cwd)
+
+
+@lru_cache(maxsize=16)
+def _cached_list_available_vernacular_languages(_resolver_id: int, _cwd: str) -> tuple[str, ...]:
+    """Discover available vernacular languages with cache invalidation on resolver changes."""
+    multi = resolve_multilang_db_path()
+    if multi:
+        try:
+            from database.vernacular_db import VernacularDB
+
+            languages = VernacularDB(multi).list_languages()
+            if languages:
+                return tuple(_order_vernacular_languages(languages))
+        except Exception:
+            pass
+
+    found = set()
+    for base in _candidate_roots():
+        for path in base.glob("taxonomy_*.sqlite3"):
+            parts = path.stem.split("_", 1)
+            if len(parts) == 2:
+                found.add(normalize_vernacular_language(parts[1]))
+    if not found:
+        found.add("no")
+    return tuple(_order_vernacular_languages(found))
 
 
 def resolve_vernacular_db_path(lang_code: str | None = None) -> Path | None:
@@ -117,33 +156,18 @@ def _has_language_column(conn: sqlite3.Connection) -> bool:
 
 def list_available_vernacular_languages() -> list[str]:
     """Return available vernacular languages from the DB or file discovery."""
-    multi = resolve_multilang_db_path()
-    if multi:
-        try:
-            conn = sqlite3.connect(multi)
-            try:
-                if not _has_language_column(conn):
-                    return []
-                rows = conn.execute(
-                    """
-                    SELECT DISTINCT language_code
-                    FROM vernacular_min
-                    WHERE language_code IS NOT NULL AND language_code != ''
-                    ORDER BY language_code
-                    """
-                ).fetchall()
-                return _order_vernacular_languages([row[0] for row in rows if row and row[0]])
-            finally:
-                conn.close()
-        except Exception:
-            return VERNACULAR_LANGUAGE_ORDER[:]
+    resolver_id, cwd = _vernacular_discovery_signature()
+    return list(_cached_list_available_vernacular_languages(resolver_id, cwd))
 
-    found = set()
-    for base in _candidate_roots():
-        for path in base.glob("taxonomy_*.sqlite3"):
-            parts = path.stem.split("_", 1)
-            if len(parts) == 2:
-                found.add(normalize_vernacular_language(parts[1]))
-    if not found:
-        found.add("no")
-    return _order_vernacular_languages(found)
+
+def resolve_available_vernacular_language(preferred: str | None = None) -> str | None:
+    """Return the preferred language if available, otherwise a runtime fallback."""
+    available = list_available_vernacular_languages()
+    if not available:
+        return None
+    preferred_lang = normalize_vernacular_language(preferred) if preferred else None
+    if preferred_lang and preferred_lang in available:
+        return preferred_lang
+    if "no" in available:
+        return "no"
+    return available[0]

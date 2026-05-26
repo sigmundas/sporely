@@ -7,9 +7,20 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt, QStringListModel
+from PySide6.QtCore import Qt, QEvent, QStringListModel
 from PySide6.QtGui import QStandardItemModel
-from PySide6.QtWidgets import QApplication, QComboBox, QCompleter, QLabel, QLineEdit, QTableWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractItemView,
+    QComboBox,
+    QCompleter,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QSizePolicy,
+    QTableWidget,
+    QToolButton,
+)
 
 import ui.main_window as main_window
 from database.taxon_lookup import TaxonChoice
@@ -143,6 +154,11 @@ def _build_minimal_window(
     window._reference_taxon_lookup = None
     window._ref_genus_summary_cache_key = None
     window._ref_genus_summary_cache = {}
+    window._gallery_hint_controller = None
+    window._pending_gallery_hint_widgets = []
+    window.reference_series = []
+    window.reference_values = {}
+    window.gallery_plot_settings = {}
     window.species_availability = _EmptySpeciesAvailability()
     window.active_observation_id = None
     window._populate_reference_panel_sources = lambda auto_select_single=True: None
@@ -235,6 +251,55 @@ def test_reference_panel_ensure_lookup_reuses_cached_service(tmp_path: Path, mon
     assert window.ref_vernacular_db.language_code == "no"
 
 
+def test_reference_series_table_shows_row_controls_and_respects_row_height(
+    monkeypatch,
+    qapp,
+) -> None:
+    window = _build_minimal_window(monkeypatch, qapp)
+    window.ref_series_table = QTableWidget(0, 4)
+    window.ref_series_table.setObjectName("referenceSeriesTable")
+    window.ref_series_table.setFocusPolicy(Qt.NoFocus)
+    window.ref_series_table.setWordWrap(False)
+    window.ref_series_table.setTextElideMode(Qt.ElideRight)
+    window.ref_series_table.setHorizontalHeaderLabels(
+        [window.tr("Plot"), "", window.tr("Data set"), window.tr("Color")]
+    )
+    window.ref_series_table.verticalHeader().setVisible(False)
+    window.ref_series_table.verticalHeader().setDefaultSectionSize(34)
+    window.ref_series_table.verticalHeader().setMinimumSectionSize(28)
+    window.ref_series_table.setSelectionMode(QAbstractItemView.SingleSelection)
+    window.ref_series_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+    window.ref_series_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    window.ref_series_table.horizontalHeader().setStretchLastSection(False)
+    window.ref_series_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+    window.ref_series_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+    window.ref_series_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+    window.ref_series_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+    window.ref_series_table.setShowGrid(False)
+    window.ref_series_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    window.reference_series = [
+        {
+            "data": {
+                "genus": "Agaricus",
+                "species": "bisporus",
+                "source": "Reference sheet",
+                "source_kind": "reference",
+            },
+            "enabled": True,
+        }
+    ]
+
+    window._refresh_reference_series_table()
+
+    assert window.ref_series_table.rowCount() == 1
+    assert window.ref_series_table.rowHeight(0) >= 34
+    assert window.ref_series_table.cellWidget(0, 0) is not None
+    assert isinstance(window.ref_series_table.cellWidget(0, 1), QToolButton)
+    assert window.ref_series_table.item(0, 2).text() == "A. bisporus (Reference sheet)"
+    assert window.ref_series_table.cellWidget(0, 3) is not None
+
+
 def test_reference_panel_taxon_lookup_suggestions_and_hidden_choice_selection(
     monkeypatch,
     qapp,
@@ -313,6 +378,160 @@ def test_reference_panel_taxon_lookup_suggestions_and_hidden_choice_selection(
     assert window.ref_vernacular_input.text() == "Button mushroom"
     assert window.ref_genus_input.text() == "Agaricus"
     assert window.ref_species_input.text() == "bisporus"
+
+
+def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_models(
+    monkeypatch,
+    qapp,
+) -> None:
+    window = _build_minimal_window(monkeypatch, qapp)
+    window.ref_vernacular_db = _FailingVernacularDB()
+
+    lookup = _ReferenceLookupStub(
+        genera=["Agaricus"],
+        species=[
+            TaxonChoice(
+                genus="Agaricus",
+                species="bisporus",
+                common_name="Button mushroom",
+                family="Agaricaceae",
+            )
+        ],
+        common_names=[
+            TaxonChoice(
+                genus="Agaricus",
+                species="bisporus",
+                common_name="Cultivated mushroom",
+                family="Agaricaceae",
+            ),
+            TaxonChoice(
+                genus="Agaricus",
+                species="bisporus",
+                common_name="Button mushroom",
+                family="Agaricaceae",
+            ),
+        ],
+    )
+    lookup.best_common_name_for_taxon = lambda genus, species: TaxonChoice(
+        genus=genus,
+        species=species,
+        common_name="Button mushroom",
+        family="Agaricaceae",
+    )
+    window._ensure_reference_taxon_lookup = lambda: lookup
+    complete_calls: list[str] = []
+    monkeypatch.setattr(window._ref_genus_completer, "complete", lambda *args, **kwargs: complete_calls.append("genus"))
+    monkeypatch.setattr(window._ref_species_completer, "complete", lambda *args, **kwargs: complete_calls.append("species"))
+    monkeypatch.setattr(window._ref_vernacular_completer, "complete", lambda *args, **kwargs: complete_calls.append("vernacular"))
+
+    window.show()
+    qapp.processEvents()
+
+    window.ref_genus_input.blockSignals(True)
+    window.ref_genus_input.setText("Aga")
+    window.ref_genus_input.blockSignals(False)
+    window.ref_genus_input.setFocus()
+    qapp.processEvents()
+    window.eventFilter(window.ref_genus_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert ("suggest_genera", "Aga", 50) in lookup.calls
+    assert "genus" in complete_calls
+    assert window.ref_genus_input.selectedText() == "Aga"
+
+    window.ref_genus_input.blockSignals(True)
+    window.ref_genus_input.setText("Agaricus")
+    window.ref_genus_input.blockSignals(False)
+    window.ref_species_input.blockSignals(True)
+    window.ref_species_input.setText("bi")
+    window.ref_species_input.blockSignals(False)
+    window.ref_species_input.setFocus()
+    qapp.processEvents()
+    window.eventFilter(window.ref_species_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+
+    assert ("suggest_species", "Agaricus", "bi", 50) in lookup.calls
+    assert window._ref_species_model.rowCount() == 1
+    assert window._ref_species_model.item(0).data(Qt.UserRole) == "bisporus"
+    assert "species" in complete_calls
+    assert window.ref_species_input.selectedText() == "bi"
+
+    window.ref_species_input.blockSignals(True)
+    window.ref_species_input.setText("bisporus")
+    window.ref_species_input.blockSignals(False)
+    window.eventFilter(window.ref_vernacular_input, QEvent(QEvent.FocusIn))
+
+    assert ("suggest_common_names", "", "Agaricus", "bisporus", 50) in lookup.calls
+    assert window._ref_vernacular_model.rowCount() == 2
+    assert window._ref_vernacular_model.item(0).data(Qt.UserRole) == "Cultivated mushroom"
+    assert window._ref_vernacular_model.item(1).data(Qt.UserRole) == "Button mushroom"
+    assert "vernacular" in complete_calls
+
+    window.ref_vernacular_input.blockSignals(True)
+    window.ref_vernacular_input.setText("Button mushroom")
+    window.ref_vernacular_input.blockSignals(False)
+    window.ref_vernacular_input.setFocus()
+    qapp.processEvents()
+    window.eventFilter(window.ref_vernacular_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert window.ref_vernacular_input.selectedText() == "Button mushroom"
+
+    window.ref_vernacular_input.blockSignals(True)
+    window.ref_vernacular_input.setText("")
+    window.ref_vernacular_input.blockSignals(False)
+    window._sync_ref_vernacular_from_taxon()
+
+    assert window.ref_vernacular_input.text() == "Button mushroom"
+
+
+def test_language_settings_dialog_lists_available_languages_and_falls_back(
+    monkeypatch,
+    qapp,
+) -> None:
+    monkeypatch.setattr(
+        main_window.SettingsDB,
+        "get_setting",
+        lambda key, default=None: "en" if key == "vernacular_language" else default,
+    )
+    monkeypatch.setattr(
+        main_window,
+        "list_available_vernacular_languages",
+        lambda: ["en", "de", "no"],
+    )
+
+    dialog = main_window.LanguageSettingsDialog()
+    dialog.show()
+    qapp.processEvents()
+
+    assert [dialog.vernacular_combo.itemData(i) for i in range(dialog.vernacular_combo.count())] == ["en", "de", "no"]
+    assert dialog.vernacular_combo.currentData() == "en"
+
+    dialog.deleteLater()
+
+
+def test_language_settings_dialog_falls_back_to_norwegian_when_only_that_language_is_available(
+    monkeypatch,
+    qapp,
+) -> None:
+    monkeypatch.setattr(
+        main_window.SettingsDB,
+        "get_setting",
+        lambda key, default=None: "en" if key == "vernacular_language" else default,
+    )
+    monkeypatch.setattr(
+        main_window,
+        "list_available_vernacular_languages",
+        lambda: ["no"],
+    )
+
+    dialog = main_window.LanguageSettingsDialog()
+    dialog.show()
+    qapp.processEvents()
+
+    assert dialog.vernacular_combo.count() == 1
+    assert dialog.vernacular_combo.itemData(0) == "no"
+    assert dialog.vernacular_combo.currentData() == "no"
+
+    dialog.deleteLater()
 
 
 def test_reference_panel_ambiguous_common_name_does_not_autofill(

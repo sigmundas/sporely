@@ -827,6 +827,16 @@ QTableWidget::item {{
     padding: 16px 12px;
 }}
 
+QTableView#referenceSeriesTable::item,
+QTableWidget#referenceSeriesTable::item {{
+    padding: 4px 8px;
+}}
+
+QTableView#referenceSeriesTable QHeaderView::section,
+QTableWidget#referenceSeriesTable QHeaderView::section {{
+    padding: 4px 8px;
+}}
+
 /* Remove the focus rectangle Qt draws around the active cell. */
 QTableView::item:focus,
 QTableWidget::item:focus {{
