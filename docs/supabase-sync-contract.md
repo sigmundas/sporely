@@ -181,6 +181,103 @@ Separate the AI model into four layers:
 
 ### Images and Originals
 
+This section defines a planned local-only provenance vocabulary for image files. It is additive: it
+does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload bookkeeping.
+
+- `filepath` is the local working file path.
+- `original_filepath` is the preserved source/import path when the source file is kept.
+- `storage_path`, `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`,
+  and `stored_bytes` stay cloud bookkeeping, not provenance.
+- `notes` should not be used as a hidden file-role flag.
+- `source_role` and `file_purpose` are planned local-only columns; they are not in the current
+  schema yet.
+
+#### `source_role`
+
+`source_role` describes where the file came from and whether it is the durable working copy.
+
+| Role | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
+| --- | --- | --- | --- | --- | --- |
+| `import_source` | Raw file selected or ingested before conversion | No | Yes, once a durable working copy exists | No | No |
+| `local_canonical` | Durable local original/working copy used for analysis | Yes | No | Metadata only | Yes, locally |
+| `converted_local` | Local decoded/conversion result from an import source | Yes, when it is the durable working copy | Conditional | Metadata only | Yes, locally |
+| `cloud_derivative` | Web-friendly derivative created from decoded pixels or a cloud asset | No | Yes | Yes, cloud-side | Yes, public/browser |
+| `cloud_recovery_cache` | Local cache downloaded from cloud to recover a missing file | No | Yes | No | Owner-only |
+| `generated_artifact` | Derived output such as a plot, thumbnail, spore crop, or export | No | Yes | Deferred / optional publish-only | Only if intentionally published |
+
+- `converted_local` is intentionally not a disposable-only label. If it is the durable working copy,
+  it can still be authoritative for analysis.
+- `cloud_derivative` and `cloud_recovery_cache` are both derived, but only the derivative is a cloud
+  sync asset. The recovery cache is a local-only fallback copy.
+- `generated_artifact` covers assets that should not be mistaken for canonical scientific originals.
+  If they need persistence, they should likely move to a later artifact table/model rather than the
+  main `images` table.
+
+#### `file_purpose`
+
+`file_purpose` describes what the file is for. It does not by itself decide whether the bytes are
+authoritative; that comes from `source_role`.
+
+| Purpose | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
+| --- | --- | --- | --- | --- | --- |
+| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
+| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
+| `calibration` | Original calibration capture | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Usually local-only |
+| `reference` | Calibration reference derivative or other compact reference asset | No | Yes | Yes, as a derivative asset | Yes |
+| `plot` | Generated comparison or measurement plot | No | Yes | Publish-only, later if needed | Yes, if published |
+| `thumbnail` | UI preview or gallery thumbnail | No | Yes | Usually no | Yes |
+| `spore_crop` | Generated crop around a measured spore or evidence point | No | Yes | Deferred / optional publish-only | Only if intentionally published |
+| `cache` | Recovery or temporary cache file | No | Yes | No | Owner-only |
+
+- `field`, `microscope`, and `calibration` are the only purposes that should normally carry analysis
+  authority, and only when the source role is durable.
+- `reference` is explicitly a derivative classification for calibration-side images, not a scientific
+  original.
+
+HEIC/import behavior:
+
+- Treat HEIC as an import source, not as a durable working format.
+- If a HEIC is decoded to JPEG/PNG for local work, that converted file can become `converted_local`
+  and may still be the authoritative working copy.
+- If the original HEIC is preserved, remember it separately through `original_filepath` and/or the
+  planned provenance fields instead of overloading `filepath`.
+- Cloud uploads should prefer decoded pixels when available so we avoid HEIC -> JPEG -> WebP double
+  compression.
+- WebP should not become the default durable desktop working format unless it is explicitly tested.
+
+Local canonical vs converted local:
+
+- `local_canonical` is the durable local source of truth.
+- `converted_local` is the local decoded/converted file that may become the source of truth when it is
+  the only durable working copy.
+- Neither label should be inferred from `notes`, cloud `storage_path`, or upload metadata.
+
+Cloud derivative vs cloud recovery cache:
+
+- `cloud_derivative` is a cloud-side display/recovery asset, typically WebP or JPEG.
+- `cloud_recovery_cache` is a local-only file restored from cloud storage when the local source is
+  missing.
+- A cloud recovery cache must never replace a higher-quality local canonical source.
+- If both exist, the local canonical or durable converted local copy wins for analysis, measurement,
+  export, and re-upload decisions.
+
+Tombstone interaction:
+
+- Tombstones are deletion state.
+- `source_role` and `file_purpose` are provenance state.
+- A tombstone should not be treated as a provenance label.
+- Cloud recovery/cache files should not create tombstones; they are disposable fallback copies, not
+  user-deleted canonical files.
+- Tombstones may optionally snapshot provenance later, but that is additive and not required by this
+  contract.
+
+Deferred items:
+
+- Cloud provenance fields on `public.observation_images`.
+- Full-resolution original sync.
+- A generated-artifact table/model for plots, thumbnails, and spore crops.
+- Calibration multi-asset provenance beyond the representative derivative path.
+
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
   `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
   `contrast`, `measure_color`, `crop_mode`, `notes`, `gps_source`, `ai_crop_*`.

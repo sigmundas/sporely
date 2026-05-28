@@ -1,152 +1,334 @@
-# Sporely Development Plan (Merged Desktop & Web)
+# Sporely Development Plan
 
-## Refactor & Audit Tasks
-- [ ] **Make room for text on measure type radio buttons** — Currently, Multi-line text is cut off. Same with Square, choice for Reference shape on Analysis tab. Perhaps rename to Shape instead of Reference shape.
-- [ ] **Table highlight*** — There are some lines appearing inside the table cells when selected. Like the AI suggestions table: clicking it make a light-gray ine appear over the text. Possibly some cell frame that has collapsed into a line. Observations table shows a grey rectangle in the cell that is clicked - it appears to have a grey gradient fill. No need for this. The highlight in Measurements on Measure tab appears good. Use the same style for highlight on other tables: define that color in css. Apply same in all other tables.
+This file tracks current implementation priorities. Detailed design decisions belong in `docs/supabase-sync-contract.md`; completed work belongs in `HISTORY.md`.
 
-## Cloud Sync Follow-Up
-- [ ] **Run live cloud-lock QA:** Use two disposable Sporely Cloud accounts to verify the implemented account lock, login-time mismatch block, mismatch dialog, Reset Cloud Link flow, R2 ownership paths, and web Profile deletion cleanup against the real Supabase/R2 environment.
-- [ ] **Account migration guardrail:** Design a safer user-facing migration flow before encouraging users to delete/recreate accounts. Resetting the local cloud link must remain explicit, should not delete remote data, and should explain duplicate-risk versus data-loss-risk clearly.
-- [ ] **Profile parity QA:** Verify desktop Profile & Cloud saves `username`, `display_name`, `bio`, and `avatar_url` to Supabase `profiles`, and that the web Profile shows the same values. Confirm local `profile_email` follows the cloud auth email when signed in.
-- [ ] **Add export coverage test:** Add a focused test that documents the current app export contract: observation/image/measurement/calibration/reference data and image files are included, but `app_settings.json` and full profile state are intentionally not part of the share/import bundle.
-- [ ] **Local DB as metadata source of truth:** Prioritize local SQLite DB values (`captured_at`, `gps_latitude`, `gps_longitude`) over file EXIF in the "Prepare Images" dialog and "Measure" tab Info box, since web-uploaded `.webp` files lack EXIF.
-- [ ] **Fix cloud-synced image warning:** Ensure the warning overlay indicating an image is cloud-synced (and thus lacks EXIF) displays correctly in the "Prepare Images" dialog (currently the warning still does not show up).
+## Current Focus — Desktop ↔ Cloud Sync Foundation
 
-## New Shared Priority: AI Crop Sync Between Web, Supabase, and Desktop
-*Goal: implement a single AI crop model for Artsorakel across `sporely-web`, Supabase, and `sporely-py`, using the desktop crop schema as the canonical shape.*
+Goal: make `sporely-py`, `sporely-web`, Supabase, and R2 agree on image/calibration identity, deletion state, and file provenance before adding deeper recovery, multi-asset sync, or full-resolution cloud storage.
 
-### Recommended rollout order
-1. **Supabase migration**
-   add AI crop fields to `public.observation_images`
-2. **Web crop utility**
-   extract the reusable crop math/gesture code
-3. **Import review crop editor**
-   add per-image editing for imported photos
-4. **Artsorakel uses cropped blobs**
-   apply crop data only for AI requests
-5. **Capture overlay**
-   add the live default crop rectangle on the web camera screen
-6. **Normal review crop editor**
-   allow captured photos to be adjusted after shooting
-7. **Desktop sync**
-   push/pull crop data between Supabase and local SQLite
-8. **Cross-platform QA**
-   verify the same image’s crop can be edited on web and seen on desktop, and vice versa
+### Stage A — sporely-py local calibration UUID
 
-### Explicit non-goals for the first pass
-- [ ] **Do not crop R2 originals**
-- [ ] **Do not make gallery display depend on AI crop**
-- [ ] **Do not add a separate AI-crop table in Supabase**
-- [ ] **Do not rely on browser camera preview geometry as the only crop source**
+Status: Done.
 
-### R2 Migration Status
-- [ ] **Deploy Upload Worker** — Cloudflare Worker code is in the repo, but still needs deployment, route setup, and R2 binding.
-- [ ] **Run R2 SQL Migration in Supabase** — Apply `../sporely-web/supabase/migrations/supabase_r2_media_migration.sql` against the live project.
-- [ ] **Run Initial Local Media Migration** — Execute the one-time bulk uploader against the full local image library.
-- [ ] **Switch Desktop to Worker Uploads** — Optional follow-up if you want desktop uploads to go through the same authenticated Worker instead of direct R2 credentials.
+- Added `calibration_uuid` to local SQLite calibrations.
+- Backfilled existing rows.
+- Generated UUIDs for new calibrations.
+- Preserved UUIDs in export/import.
+- Validated UUIDs as canonical UUID text.
+
+### Stage B — Supabase calibration UUID
+
+Status: Done.
+
+- Added `calibration_uuid uuid` to `public.calibrations`.
+- Backfilled existing cloud rows.
+- Added default `gen_random_uuid()`.
+- Set `NOT NULL`.
+- Added uniqueness on `(user_id, calibration_uuid)`.
+- Did not add `desktop_id`.
+
+### Stage C — Metadata-only calibration sync
+
+Status: Done.
+
+- Sync calibration metadata by `calibration_uuid`.
+- Do not match by objective/date.
+- Do not silently overwrite same-UUID conflicts.
+- Keep local `image_filepath` out of cloud payloads.
+- Keep cloud `image_storage_path` out of local canonical paths.
+
+### Stage D1 — Calibration photo/reference-image design
+
+Status: Done.
+
+- Representative asset rule decided.
+- Local original vs cloud derivative rules decided.
+- Recovery/cache semantics deferred.
+
+### Stage D2 — Representative calibration derivative sync
+
+Status: Done.
+
+- Upload one web-friendly derivative/reference image per calibration.
+- Prefer `image_filepath`, then first readable `measurements_json.images[].path`.
+- Store relative cloud key in `public.calibrations.image_storage_path`.
+- Do not upload full-resolution originals.
+- Do not write cloud paths into local `image_filepath` or `measurements_json`.
+- Metadata sync still works when photo is missing.
+
+### Stage E1 — Image tombstone deletion model
+
+Status: Done / verified.
+
+- Added local `image_tombstones`.
+- Synced local image delete writes tombstone before hard-deleting the local row.
+- Local tombstones block reimport/reupload.
+- Added cloud `public.observation_images.deleted_at`.
+- Browser/public/community reads hide tombstoned images.
+- Owner/sync reads can see tombstoned rows.
+- Local tombstones push cloud `deleted_at`.
+- Cloud `deleted_at` records local tombstones.
+- Option A is current policy:
+  - record tombstone
+  - block reupload/recreation
+  - keep local active row visible for now
+  - do not delete local files
+  - do not delete measurements/annotations
+
+### Stage E2 — Image provenance/source tags
+
+Status: Next.
+
+Purpose: define explicit provenance roles so the app does not confuse import sources, local working files, cloud derivatives, cloud recovery/cache files, and generated artifacts.
+
+Planned slices:
+
+- E2a: document provenance vocabulary and rules.
+- E2b: add local-only image provenance columns.
+- E2c: tag new imports/conversions.
+- E2d: tag cloud recovery/cache files.
+- E2e: define generated artifact/spore crop model.
+- E2f: optional cloud provenance fields.
+
+Initial local fields under consideration:
+
+- `source_role`
+- `file_purpose`
+- `original_mime_type`
+- `working_mime_type`
+
+Accepted vocabulary draft:
+
+`source_role`:
+- `import_source`
+- `local_canonical`
+- `converted_local`
+- `cloud_derivative`
+- `cloud_recovery_cache`
+- `generated_artifact`
+
+`file_purpose`:
+- `field`
+- `microscope`
+- `calibration`
+- `reference`
+- `plot`
+- `thumbnail`
+- `spore_crop`
+- `cache`
+
+Important rules:
+
+- HEIC is an import source.
+- `sporely-py` may convert HEIC to JPEG/PNG for local work.
+- `converted_local` can still be analysis-authoritative when it is the durable working copy.
+- Cloud WebP/JPEG files are derivatives/cache, not scientific originals.
+- Generated artifacts are vocabulary-only for now; implementation may need a later artifact table/model.
+
+Deferred:
+- cloud provenance fields
+- full-resolution original sync
+- generated artifact table
+- multi-asset calibration provenance
+
+### Stage F — Calibration photo recovery/download cache
+
+Status: Not started.
+
+- Download cloud calibration derivative to cache/recovery when local photo is missing.
+- Mark as cloud-derived.
+- Do not overwrite local originals.
+- Do not write recovery paths into canonical local provenance fields unless explicitly designed.
+
+### Stage G — Image-calibration linkage/reconciliation
+
+Status: Not started.
+
+- Link synced calibration records to images/calibration_id safely.
+- Reconcile scale fields, objective names, and `calibration_uuid`.
+- Avoid automatic rescaling unless conflicts are clear.
+
+### Stage H — Multi-asset calibration provenance
+
+Status: Not started.
+
+- Add a dedicated `calibration_assets`-style model/table if needed.
+- Support multiple calibration photos, crops, overlays, role labels, hashes, derived artifacts, and provenance.
+- Do not overload `public.calibrations` with many path columns.
+
+### Stage I — Optional full-resolution original sync
+
+Status: Not started.
+
+- Only after provenance, quotas, and user settings are clear.
+- Never replace better local originals with cloud copies.
 
 ---
 
-## Active Tasks (TODO) - Web & Infrastructure
-- [ ] **Deploy Worker Secrets and Route** — Configure `SUPABASE_URL`, optional JWT issuer/audience overrides, `MEDIA_PUBLIC_BASE_URL`, and bind `sporely-media` as the Worker bucket.
-- [ ] **Offline Queue** — Wrap R2-bound upload failures in IndexedDB so photos aren't lost when in the field.
-- [ ] **Unique Constraints** — Run `../sporely-web/supabase/migrations/supabase_unique_constraints.sql` to support high-performance upserts during desktop-to-cloud sync.
-- [ ] **Optional cloud summary RPC/view** — Add a Supabase-side per-observation change summary for `observations` + `observation_images` so desktop sync can skip most client-side deep comparison work entirely.
+## Active QA / Verification
 
-
-## Active Tasks (TODO) - Automated Testing & Auditing
-*Goal: Build an automated safety net to replace the manual 10-point audit checklist and prevent sync regressions.*
-- [ ] **Static Analysis** — Introduce `Ruff` and `mypy` for automated linting, formatting, and type-checking. Configure them to fail on dead code, missing variables, and unused imports.
-- [ ] **Broaden pytest coverage** — Keep expanding the existing pytest suite around cloud sync conflict resolution, local media signatures, image crop math, and `utils/r2_storage.py`.
-- [ ] **Database Tests** — Create automated tests for local SQLite migrations and CRUD operations in `database/models.py`.
-- [ ] **Test metadata auto-merge:** Verify that concurrent image metadata changes (e.g., desktop adds measurements, cloud updates image sizing) auto-merge smoothly in favor of the desktop without showing the conflict dialog.
-- [ ] **Test true conflict dialog triggers:** Verify that overlapping edits to the same observation text fields (e.g., Notes, Species) correctly trigger the conflict dialog.
-- [ ] **Test cloud deletion conflict:** Verify that if an image is deleted on Sporely Cloud but still exists locally, the sync engine pauses and prompts the user for review.
-
-## Active Tasks (TODO) - UI
-- Intestion tab: change name to Camera import
-- Sync shot: rename to Camera time offset
-- Microscope sessions: rename to Live lab sessions
-- Change the order of groups in the left tab on Camera import tab: Import folder at the top, Camera time offset, Live lab sessions, then Actions.
-- Hint text for buttons:
-   * Browse: Select folder with camera images 
-   * Scan folder: Find images that match Live Lab sessions or observation time stamps
-   * New Sync shot: Calculate camera time offset to match images by date stamp
-   * Use image: Manually select Sync Shot
-   * Clear: Clear current Sync Shot settings and image data
-   * Refresh matches: Refresh against sync data
-   * Add selected images: Add to matched observaiont. Select a thumbnail or multi-select (shift+click for range, ctrl+click for single pick)
-   * Add all images: Add all images to matched observation(s)
-- [ ] **Implement fine-tue for multi-line segments** — Currently, multi-line does not appear in the preview window. Implement feature to drag each segment node. Show nodes as small dots that highlight with mouse over.
-- [ ] **Add hint bar at the bottom of the Measure tab** — Current messages that appear below the Start measuring button should go in the hint bar, same as other tabs. Hint bar should span the whole width of the window.
-- [ ] **Height of thumbnail image galleries** — These change sometimes when code changes, and I don't know why. They should all be user adjustable, and the thumbnails should reduce in size down to a reasonable small view, say 100px. Currently, the Prepare Images dialog has a gallery that is too small verticaly, and the thumbnails are cropped so 60% is hidden. User cannot resize.
-
-## Active Tasks (TODO) - image handling
-- [ ] **Image rotation** — Fix image import of jpg from the android app: thumbnails in sporely-py shows up rotated 90 deg. counter-clockwise when photo is in portrait mode. Image is rotated correctly when viewed in Prepare images dialog. Rotated 90 dg. cc in Measure tab.
-
-## Phase 2: Web-Native Analysis (app.sporely.no)
-*Goal: Replicate core analysis insights in a responsive browser environment.*
-
-### A. Data Visualization & QC
-- [ ] **Responsive Plotting** — Integrate **Plotly.js** for L × W scatter plots.
-- [ ] **Outlier Verification UI** — Link Plotly "click" events to display the R2-hosted 200px thumbnail instantly for QC.
-- [ ] **Device Layouts** — Use CSS breakpoints to toggle between "Mobile Gallery" and "Desktop Analysis" views.
-
-### C. Community & Reference Data
-- [ ] **Public Dataset Explorer** — Build search interface for public measurements using existing Supabase RPCs.
-- [ ] **Taxon Summaries** — Display aggregated statistics (min/max/mean/n) across all public datasets.
-- [ ] **Reference Entry** — UI for entering Parmasto-type statistics from literature to overlay on user plots.
+- [ ] Run live cloud-lock QA with two disposable Sporely Cloud accounts.
+- [ ] Verify account mismatch blocking and Reset Cloud Link flow.
+- [ ] Verify Profile parity between desktop and web:
+  - `username`
+  - `display_name`
+  - `bio`
+  - `avatar_url`
+  - `profile_email`
+- [ ] Add export coverage test:
+  - observations/images/measurements/calibrations/reference data and image files included
+  - `app_settings.json` and full profile state intentionally excluded
+- [ ] Verify local DB values are prioritized over file EXIF in Prepare Images and Measure tab Info box.
+- [ ] Fix cloud-synced image warning overlay in Prepare Images dialog.
 
 ---
 
-## Analysis Tab — Desktop Interaction logic
-*Status: In Progress*
+## Active Testing Backlog
 
-- [ ] **Multi-select Logic** — Implement Cmd/Ctrl + click for additive selection in `main_window.py` (see internal implementation notes for matplotlib pick_event).
-- [ ] **Histogram Additive Selection** — Resolve IDs in bins to allow compound filtering.
-
----
-
-## Community Spore Data (Supabase/Desktop Sync)
-*Status: Active*
-
-- [ ] **Remaining:** Return QC metadata in RPC responses.
-- [ ] **Remaining:** Add stronger visual distinction for cloud-origin imported sources in the reference panel.
-
----
-
-## Desktop Ingestion Hub
-*Status: Active*
-
-- [ ] **Remaining:** Persist original capture time through more cloud import/export paths if we later want exact cross-device time-window matching without local file reads.
-- [ ] **Remaining:** Add richer manual reassignment tools for unmatched images across multiple candidate observations.
+- [ ] Introduce Ruff.
+- [ ] Consider mypy only after the codebase is stable enough for useful annotations.
+- [ ] Broaden pytest coverage around:
+  - cloud sync conflict resolution
+  - local media signatures
+  - image crop math
+  - `utils/r2_storage.py`
+  - SQLite migrations
+  - `database/models.py`
+- [ ] Test metadata auto-merge.
+- [ ] Test true conflict dialog triggers.
+- [ ] Update old “cloud deletion conflict” tests to reflect tombstone behavior.
 
 ---
 
-## Design System Migration — "Slate Lab / Clinical Nocturne"
-*Goal: Replace the generic blue-accent Material-adjacent UI with an editorial, scientific design system using organic slate-green tones, editorial typography (Inter + Manrope), tonal surface hierarchy, and no hard borders.*
+## Image Handling Backlog
 
-### Remaining
-- [ ] **Phase 6 — Remaining tabs and dialogs** — Apply surface/typography/component patterns to `ui/live_lab_tab.py`, `ui/ingestion_hub_tab.py`, `ui/calibration_dialog.py`, and all other dialogs. Consolidate remaining inline `setStyleSheet()` calls into `styles.py`.
+- [ ] Fix Android-imported JPG portrait rotation in thumbnails / Measure tab.
+- [ ] Define HEIC import behavior clearly:
+  - HEIC as import source
+  - JPEG/PNG as local working/canonical file
+  - cloud derivative generated from best available decoded pixels when practical
+- [ ] Replace generated-media heuristics with explicit provenance tags after E2.
+
+---
+
+## AI Photo ID / AI Crop Backlog
+
+Status: review before acting; some earlier items may already be done.
+
+- [ ] Verify Supabase has current AI crop fields on `public.observation_images`.
+- [ ] Verify crop sync between web and desktop.
+- [ ] Verify Artsorakel/iNaturalist result persistence and dropdown behavior.
+- [ ] Verify Review, Import Review, and Find Detail all use the same AI Photo ID state model.
+- [ ] Confirm AI crop is used only for AI requests, not gallery display or R2 originals.
+
+Non-goals:
+- Do not crop R2 originals.
+- Do not make gallery display depend on AI crop.
+- Do not add a separate AI crop table unless the current model breaks.
 
 ---
 
+## Web / Infrastructure Backlog
+
+- [ ] Deploy Worker secrets and route.
+- [ ] Configure:
+  - `SUPABASE_URL`
+  - optional JWT issuer/audience overrides
+  - `MEDIA_PUBLIC_BASE_URL`
+  - `sporely-media` R2 binding
+- [ ] Add offline queue for upload failures in field conditions.
+- [ ] Re-check whether old R2 migration notes are obsolete after the Supabase baseline reset.
+- [ ] Optional cloud summary RPC/view for observation/image change summaries.
+
 ---
 
-## Long-Term Goals (Phase 3)
-- [ ] **In-Browser Measurement** — Replicate manual spore clicking and calibration using HTML5 Canvas.
-- [ ] **Pyodide Integration** — Run existing Python/Numpy measurement logic in-browser to ensure 1:1 math consistency between desktop and web.
+## UI Backlog
+
+### General UI
+
+- [ ] Fix table highlight artifacts in AI suggestions and Observations table.
+- [ ] Use the same clean selection style as the Measurements table.
+- [ ] Make room for text on measure-type radio buttons.
+- [ ] Consider renaming “Reference shape” to “Shape”.
+
+### Camera Import / Ingestion
+
+- [ ] Rename “Intestion tab” to “Camera import”.
+- [ ] Rename “Sync shot” to “Camera time offset”.
+- [ ] Rename “Microscope sessions” to “Live lab sessions”.
+- [ ] Reorder groups:
+  - Import folder
+  - Camera time offset
+  - Live lab sessions
+  - Actions
+- [ ] Update hint text for Camera Import buttons.
+- [ ] Add richer manual reassignment tools for unmatched images.
+
+### Measure / Analysis
+
+- [ ] Implement fine-tune for multi-line segments.
+- [ ] Add hint bar at bottom of Measure tab.
+- [ ] Implement Cmd/Ctrl-click additive selection in Analysis tab.
+- [ ] Implement histogram additive selection.
+
+### Galleries
+
+- [ ] Make thumbnail gallery height user-adjustable.
+- [ ] Prevent cropped/hidden thumbnails in Prepare Images dialog.
+- [ ] Allow thumbnails to shrink to around 100 px.
 
 ---
-# Phase 7: Privacy, Social Feeds, and Costs
 
-## Phase 7: Privacy, Social Feeds, and Costs
+## Web-Native Analysis — app.sporely.no
 
-### Active Implementation Tasks
-- [ ] **Apply current Supabase delta in staging/live:** Run the latest `../sporely-web/supabase/migrations/supabase_phase7_transparency_social_trails.sql` after the already-applied base SQL, then verify it against current production tables and policies.
-- [ ] **Verify live RLS/feed behavior:** Test owner, accepted friend, stranger, blocked user, banned profile, and non-public limit paths with disposable accounts.
-- [ ] **Strip GPS EXIF from public media serving path:** Ensure the Cloudflare public image path cannot leak embedded GPS metadata.
+Status: future.
 
-### Growth Features
-- [ ] Implement "Export to iNaturalist" with the `sporely.no` deep link.
-- [ ] Implement Bluesky "Share Card" generator.
+- [ ] Responsive Plotly.js L × W scatter plots.
+- [ ] Outlier verification UI linked to thumbnails.
+- [ ] Mobile/desktop analysis layouts.
+- [ ] Public dataset explorer.
+- [ ] Taxon summaries.
+- [ ] Reference-entry UI for literature statistics.
+- [ ] In-browser measurement using Canvas.
+- [ ] Pyodide integration for shared Python/Numpy logic.
+
+---
+
+## Community Spore Data
+
+Status: active but secondary to sync foundation.
+
+- [ ] Return QC metadata in RPC responses.
+- [ ] Add stronger visual distinction for cloud-origin imported sources in the reference panel.
+- [ ] Implement public reference dataset model before publishing comparison plots broadly.
+
+---
+
+## Design System Migration — Slate Lab / Clinical Nocturne
+
+Status: ongoing.
+
+- [ ] Apply surface/typography/component patterns to:
+  - `ui/live_lab_tab.py`
+  - `ui/ingestion_hub_tab.py`
+  - `ui/calibration_dialog.py`
+  - remaining dialogs
+- [ ] Consolidate remaining inline `setStyleSheet()` calls into `styles.py`.
+
+---
+
+## Privacy, Social Feeds, and Costs
+
+Status: paused / verify before continuing.
+
+- [ ] Verify whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
+- [ ] Verify live RLS/feed behavior:
+  - owner
+  - accepted friend
+  - stranger
+  - blocked user
+  - banned profile
+  - non-public limit paths
+- [ ] Strip GPS EXIF from public media serving path.
+- [ ] Implement iNaturalist export with `sporely.no` deep link.
+- [ ] Implement Bluesky share-card generator.
