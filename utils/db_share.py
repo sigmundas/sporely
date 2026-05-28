@@ -19,6 +19,7 @@ from database.schema import (
     load_objectives,
     save_objectives,
 )
+from utils.heic_converter import build_local_image_provenance
 
 
 def _safe_copy(src: Path, dest: Path) -> Path:
@@ -148,6 +149,40 @@ def _restore_archive_asset(
     if copy_file:
         _safe_copy(src_path, dest_path)
     return str(dest_path)
+
+
+def _backfill_imported_image_provenance(
+    data: dict,
+    image_table_columns: set[str],
+) -> None:
+    """Fill missing provenance fields when importing legacy image rows."""
+    if not image_table_columns:
+        return
+
+    provenance_columns = {
+        "source_role",
+        "file_purpose",
+        "original_mime_type",
+        "working_mime_type",
+    }
+    if not provenance_columns.intersection(image_table_columns):
+        return
+
+    source_path = str(data.get("original_filepath") or data.get("filepath") or "").strip()
+    working_path = str(data.get("filepath") or source_path or "").strip()
+    if not source_path and not working_path:
+        return
+
+    provenance = build_local_image_provenance(
+        source_path,
+        working_path,
+        image_type=data.get("image_type"),
+    )
+    for column_name, column_value in provenance.items():
+        if column_name not in image_table_columns:
+            continue
+        if not str(data.get(column_name) or "").strip():
+            data[column_name] = column_value
 
 
 def _copy_table_schema(src_conn: sqlite3.Connection, dest_conn: sqlite3.Connection, table: str) -> None:
@@ -407,8 +442,20 @@ def import_database_bundle(
         imported_refs = 0
         imported_objectives = 0
         fallback_objectives: dict[str, dict] = {}
+        image_table_columns: set[str] = set()
         calibration_table_columns: set[str] = set()
         existing_calibration_uuids: set[str] = set()
+
+        if (include_images or include_measurements) and src_cur is not None:
+            try:
+                dest_cur.execute("PRAGMA table_info(images)")
+                image_table_columns = {
+                    str(row[1] or "").strip()
+                    for row in dest_cur.fetchall()
+                    if str(row[1] or "").strip()
+                }
+            except sqlite3.OperationalError:
+                image_table_columns = set()
 
         if include_calibrations and src_cur is not None:
             try:
@@ -483,6 +530,8 @@ def import_database_bundle(
                 )
                 if restored_original is not None:
                     data["original_filepath"] = restored_original
+
+                _backfill_imported_image_provenance(data, image_table_columns)
 
                 columns = [k for k in data.keys()]
                 values = [data[k] for k in columns]
