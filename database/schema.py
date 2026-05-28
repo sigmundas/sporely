@@ -966,6 +966,20 @@ def _migrate_image_sort_order(cursor: sqlite3.Cursor) -> None:
             )
 
 
+def ensure_image_provenance_columns(cursor: sqlite3.Cursor) -> None:
+    """Ensure local-only image provenance columns exist."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
+    if not cursor.fetchone():
+        return
+
+    cursor.execute("PRAGMA table_info(images)")
+    columns = {str(row[1] or "") for row in cursor.fetchall()}
+    for column_name in ("source_role", "file_purpose", "original_mime_type", "working_mime_type"):
+        if column_name in columns:
+            continue
+        cursor.execute(f"ALTER TABLE images ADD COLUMN {column_name} TEXT")
+
+
 def ensure_calibration_uuid_column(cursor: sqlite3.Cursor) -> None:
     """Ensure calibrations have a stable local UUID identity."""
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
@@ -1336,6 +1350,10 @@ def init_database():
             scale_bar_x2 REAL,
             scale_bar_y2 REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            source_role TEXT,
+            file_purpose TEXT,
+            original_mime_type TEXT,
+            working_mime_type TEXT,
             FOREIGN KEY (observation_id) REFERENCES observations(id)
         )
     ''')
@@ -1482,6 +1500,8 @@ def init_database():
         cursor.execute('ALTER TABLE images ADD COLUMN scale_bar_y2 REAL')
     except sqlite3.OperationalError:
         pass
+
+    ensure_image_provenance_columns(cursor)
 
     # Session logs for Live Lab / retrospective ingestion workflows
     cursor.execute('''

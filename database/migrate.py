@@ -4,6 +4,7 @@ import sqlite3
 import shutil
 from database.schema import (
     ensure_calibration_uuid_column,
+    ensure_image_provenance_columns,
     get_database_path,
     load_objectives,
     resolve_objective_key,
@@ -433,6 +434,7 @@ def migrate_database():
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y1 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_x2 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y2 REAL")
+        ensure_image_provenance_columns(cursor)
         cursor.execute("SELECT id, mount_medium, stain FROM images")
         for image_id, mount_medium, stain in cursor.fetchall():
             if str(stain or "").strip():

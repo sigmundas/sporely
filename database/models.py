@@ -1507,7 +1507,11 @@ class ImageDB:
                   original_filepath: str | None = None,
                   lab_metadata: dict | str | None = None,
                   copy_to_folder: bool = True,
-                  mark_observation_dirty: bool = True) -> int:
+                  mark_observation_dirty: bool = True,
+                  source_role: str | None = None,
+                  file_purpose: str | None = None,
+                  original_mime_type: str | None = None,
+                  working_mime_type: str | None = None) -> int:
         """Add an image and return its ID.
 
         Args:
@@ -1640,20 +1644,85 @@ class ImageDB:
         gps_source_value = None if gps_source is None else (1 if gps_source else 0)
         ai_crop_is_custom_value = 1 if ai_crop_is_custom else 0
         lab_metadata_json = _serialize_json_object(lab_metadata)
+        image_columns = _table_columns(cursor, "images")
+        insert_columns = [
+            "observation_id",
+            "filepath",
+            "image_type",
+            "micro_category",
+            "objective_name",
+            "scale_microns_per_pixel",
+            "resample_scale_factor",
+            "mount_medium",
+            "stain",
+            "sample_type",
+            "contrast",
+            "measure_color",
+            "notes",
+            "lab_metadata",
+            "calibration_id",
+            "captured_at",
+            "ai_crop_x1",
+            "ai_crop_y1",
+            "ai_crop_x2",
+            "ai_crop_y2",
+            "ai_crop_source_w",
+            "ai_crop_source_h",
+            "ai_crop_is_custom",
+            "crop_mode",
+            "gps_source",
+            "original_filepath",
+            "sort_order",
+            "artsobs_web_unpublished",
+        ]
+        insert_values = [
+            observation_id,
+            final_filepath,
+            image_type,
+            micro_category,
+            objective_name,
+            scale,
+            resample_scale_factor,
+            mount_medium,
+            stain,
+            sample_type,
+            contrast,
+            measure_color,
+            notes,
+            lab_metadata_json,
+            calibration_id,
+            captured_at_text,
+            crop_x1,
+            crop_y1,
+            crop_x2,
+            crop_y2,
+            crop_w,
+            crop_h,
+            ai_crop_is_custom_value,
+            crop_mode,
+            gps_source_value,
+            final_original_filepath,
+            sort_order,
+            artsobs_web_unpublished,
+        ]
+        for column_name, column_value in (
+            ("source_role", source_role),
+            ("file_purpose", file_purpose),
+            ("original_mime_type", original_mime_type),
+            ("working_mime_type", working_mime_type),
+        ):
+            if column_name not in image_columns:
+                continue
+            insert_columns.append(column_name)
+            insert_values.append(column_value)
 
         cursor.execute('''
-            INSERT INTO images (observation_id, filepath, image_type, micro_category,
-                              objective_name, scale_microns_per_pixel, resample_scale_factor,
-                              mount_medium, stain, sample_type, contrast, measure_color, notes, lab_metadata, calibration_id,
-                              captured_at,
-                              ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
-                              ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom, crop_mode, gps_source, original_filepath, sort_order,
-                              artsobs_web_unpublished)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (observation_id, final_filepath, image_type, micro_category,
-              objective_name, scale, resample_scale_factor, mount_medium, stain, sample_type, contrast, measure_color, notes,
-              lab_metadata_json, calibration_id, captured_at_text, crop_x1, crop_y1, crop_x2, crop_y2, crop_w, crop_h, ai_crop_is_custom_value, crop_mode, gps_source_value,
-              final_original_filepath, sort_order, artsobs_web_unpublished))
+            INSERT INTO images ({})
+            VALUES ({})
+        '''.format(
+            ", ".join(insert_columns),
+            ", ".join("?" for _ in insert_columns),
+        ), insert_values)
 
         img_id = cursor.lastrowid
         if mark_observation_dirty and observation_id:
