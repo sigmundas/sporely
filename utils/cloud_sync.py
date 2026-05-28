@@ -42,6 +42,7 @@ from database.models import (
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
 )
+from utils.heic_converter import guess_local_image_mime_type
 from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
 
@@ -3175,6 +3176,10 @@ def _apply_remote_images_to_local(
                 captured_at=remote_image.get('captured_at'),
                 copy_to_folder=True,
                 mark_observation_dirty=False,
+                source_role='cloud_recovery_cache',
+                file_purpose=new_image_type if new_image_type in {'field', 'microscope'} else None,
+                original_mime_type=None,
+                working_mime_type=guess_local_image_mime_type(download_path),
             )
             conn = get_connection()
             try:
@@ -5460,6 +5465,7 @@ def _import_remote_images(
                 download_path = image_temp_dir / (Path(str(image_row.get('original_filename') or '')).name or 'img.jpg')
                 client.download_image_file(storage_path, download_path)
                 download_path = _rename_to_detected_image_extension(download_path)
+                new_image_type = str(image_row.get('image_type') or 'field').strip().lower()
 
                 local_image_id = ImageDB.add_image(
                     observation_id=int(local_id),
@@ -5483,7 +5489,11 @@ def _import_remote_images(
                     ai_crop_is_custom=_remote_ai_crop_is_custom(image_row),
                     captured_at=image_row.get('captured_at'),
                     copy_to_folder=True,
-                    mark_observation_dirty=False
+                    mark_observation_dirty=False,
+                    source_role='cloud_recovery_cache',
+                    file_purpose=new_image_type if new_image_type in {'field', 'microscope'} else None,
+                    original_mime_type=None,
+                    working_mime_type=guess_local_image_mime_type(download_path),
                 )
                 cloud_image_id = str(image_row.get('id') or '').strip()
 

@@ -772,6 +772,10 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     assert captured["captured_at"] == "2026-05-01T12:34:56Z"
     assert captured["copy_to_folder"] is True
     assert captured["mark_observation_dirty"] is False
+    assert captured["source_role"] == "cloud_recovery_cache"
+    assert captured["file_purpose"] == "field"
+    assert captured["original_mime_type"] is None
+    assert captured["working_mime_type"] == "image/jpeg"
     assert desktop_id_calls == [("cloud-img-1", 23)]
     assert any(
         sql == "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?"
@@ -779,6 +783,65 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
         and params[2] == 23
         for sql, params in conn_statements
     )
+
+
+def test_import_remote_images_leaves_working_mime_type_null_for_unknown_extension(monkeypatch, tmp_path):
+    temp_root = tmp_path / "sync-unknown-mime"
+    temp_root.mkdir()
+    captured = {}
+    desktop_id_calls = []
+
+    class DummyClient:
+        def download_image_file(self, storage_path, dest_path):
+            dest = Path(dest_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"cloud image bytes")
+
+        def set_image_desktop_id(self, cloud_image_id, desktop_id):
+            desktop_id_calls.append((cloud_image_id, desktop_id))
+
+    class DummyConn:
+        def execute(self, *args, **kwargs):
+            return self
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    def fake_add_image(**kwargs):
+        captured.update(kwargs)
+        return 24
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_rename_to_detected_image_extension", lambda path: Path(path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: DummyConn())
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(":memory:"))
+    monkeypatch.setattr(cloud_sync.tempfile, "mkdtemp", lambda prefix=None: str(temp_root))
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+
+    cloud_sync._import_remote_images(
+        {"id": "cloud-obs-1", "genus": "Flammulina", "species": "velutipes"},
+        1,
+        "cloud-obs-1",
+        remote_images=[
+            {
+                "id": "cloud-img-2",
+                "storage_path": "user/cloud-obs-1/cloud-img-2_cloud_1.unknown",
+                "original_filename": "cloud_1.unknown",
+                "image_type": "field",
+            }
+        ],
+    )
+
+    assert captured["source_role"] == "cloud_recovery_cache"
+    assert captured["file_purpose"] == "field"
+    assert captured["original_mime_type"] is None
+    assert captured["working_mime_type"] is None
+    assert desktop_id_calls == [("cloud-img-2", 24)]
 
 
 def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, tmp_path):
@@ -928,6 +991,10 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
     assert fetched_calls == [("cloud-obs-1", True)]
     assert download_calls == ["user/cloud-obs-1/cloud-image-active.jpg"]
     assert len(add_calls) == 1
+    assert add_calls[0]["source_role"] == "cloud_recovery_cache"
+    assert add_calls[0]["file_purpose"] == "field"
+    assert add_calls[0]["original_mime_type"] is None
+    assert add_calls[0]["working_mime_type"] == "image/jpeg"
     assert len(images) == 2
     assert tombstone == (
         "cloud-image-deleted",
