@@ -170,6 +170,7 @@ class ImageImportResult:
     resize_to_optimal: bool = False
     store_original: bool = False
     original_filepath: Optional[str] = None
+    source_filepath: Optional[str] = None
     scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
     scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
 
@@ -3194,6 +3195,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             QCoreApplication.processEvents()
         processed = 0
         for path in paths:
+            source_path = path
             if not path:
                 continue
             converted_path = maybe_convert_heic(path, import_dir)
@@ -3233,6 +3235,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 resize_to_optimal=self.resize_to_optimal_default,
                 store_original=self.store_original_default,
                 original_filepath=path,
+                source_filepath=source_path,
             )
             self.import_results.append(result)
             if show_progress:

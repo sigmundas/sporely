@@ -157,7 +157,7 @@ from database.schema import (
 from utils.annotation_capture import save_spore_annotation
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
-from utils.heic_converter import maybe_convert_heic
+from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
 from .delegates import SpeciesItemDelegate
 from utils.vernacular_utils import (
     normalize_vernacular_language,
@@ -9229,7 +9229,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             QMessageBox.warning(
                 self,
                 "HEIC Conversion Failed",
-                f"Could not convert {Path(original_path).name} to WebP."
+                f"Could not convert {Path(original_path).name} to a JPEG working copy."
             )
             return
 
@@ -9676,7 +9676,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 QMessageBox.warning(
                     self,
                     "HEIC Conversion Failed",
-                    f"Could not convert {Path(path).name} to WebP."
+                    f"Could not convert {Path(path).name} to a JPEG working copy."
                 )
                 continue
 
@@ -9695,6 +9695,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
             if not contrast_value:
                 contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
+            provenance_kwargs = build_local_image_provenance(
+                path,
+                converted_path,
+                image_type="microscope",
+            )
             image_id = ImageDB.add_image(
                 observation_id=self.active_observation_id,
                 filepath=converted_path,
@@ -9704,6 +9709,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 contrast=contrast_value,
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
+                **provenance_kwargs,
             )
 
             image_data = ImageDB.get_image(image_id)
@@ -16948,7 +16954,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 QMessageBox.warning(
                     self,
                     "HEIC Conversion Failed",
-                    f"Could not convert {Path(path).name} to WebP."
+                    f"Could not convert {Path(path).name} to a JPEG working copy."
                 )
                 continue
 
@@ -16967,6 +16973,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
             if not contrast_value:
                 contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
+            provenance_kwargs = build_local_image_provenance(
+                path,
+                converted_path,
+                image_type="microscope",
+            )
             image_id = ImageDB.add_image(
                 observation_id=self.active_observation_id,
                 filepath=converted_path,
@@ -16976,6 +16987,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 contrast=contrast_value,
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
+                **provenance_kwargs,
             )
 
             image_data = ImageDB.get_image(image_id)

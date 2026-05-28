@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from database import migrate, models, schema
+from utils.heic_converter import build_local_image_provenance
 
 
 def _table_columns(db_path: Path) -> list[str]:
@@ -98,10 +99,12 @@ def test_add_image_works_without_provenance_arguments(tmp_path, monkeypatch):
     assert image["working_mime_type"] is None
 
 
-def test_add_image_round_trips_provenance_arguments(tmp_path, monkeypatch):
+def test_add_image_round_trips_field_import_provenance(tmp_path, monkeypatch):
     db_path = _init_fresh_database(tmp_path, monkeypatch)
-    source_path = tmp_path / "source.heic"
+    source_path = tmp_path / "source.jpg"
+    working_path = tmp_path / "working.jpg"
     source_path.write_text("source", encoding="utf-8")
+    working_path.write_text("working", encoding="utf-8")
 
     with sqlite3.connect(db_path) as conn:
         conn.execute("INSERT INTO observations (id, date) VALUES (?, ?)", (1, "2026-05-01"))
@@ -109,16 +112,76 @@ def test_add_image_round_trips_provenance_arguments(tmp_path, monkeypatch):
 
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
 
+    provenance = build_local_image_provenance(source_path, working_path, image_type="field")
     image_id = models.ImageDB.add_image(
         observation_id=1,
-        filepath=str(source_path),
+        filepath=str(working_path),
+        image_type="field",
+        captured_at="2026-05-01 10:00:00",
+        copy_to_folder=False,
+        **provenance,
+    )
+    image = models.ImageDB.get_image(image_id)
+
+    assert image is not None
+    assert image["source_role"] == "local_canonical"
+    assert image["file_purpose"] == "field"
+    assert image["original_mime_type"] == "image/jpeg"
+    assert image["working_mime_type"] == "image/jpeg"
+
+
+def test_add_image_round_trips_microscope_import_provenance(tmp_path, monkeypatch):
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    source_path = tmp_path / "source.jpg"
+    working_path = tmp_path / "working.jpg"
+    source_path.write_text("source", encoding="utf-8")
+    working_path.write_text("working", encoding="utf-8")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO observations (id, date) VALUES (?, ?)", (1, "2026-05-01"))
+        conn.commit()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    provenance = build_local_image_provenance(source_path, working_path, image_type="microscope")
+    image_id = models.ImageDB.add_image(
+        observation_id=1,
+        filepath=str(working_path),
         image_type="microscope",
         captured_at="2026-05-01 10:00:00",
         copy_to_folder=False,
-        source_role="converted_local",
-        file_purpose="microscope",
-        original_mime_type="image/heic",
-        working_mime_type="image/jpeg",
+        **provenance,
+    )
+    image = models.ImageDB.get_image(image_id)
+
+    assert image is not None
+    assert image["source_role"] == "local_canonical"
+    assert image["file_purpose"] == "microscope"
+    assert image["original_mime_type"] == "image/jpeg"
+    assert image["working_mime_type"] == "image/jpeg"
+
+
+def test_add_image_round_trips_heic_conversion_provenance(tmp_path, monkeypatch):
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    source_path = tmp_path / "source.heic"
+    working_path = tmp_path / "working.jpg"
+    source_path.write_text("source", encoding="utf-8")
+    working_path.write_text("working", encoding="utf-8")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO observations (id, date) VALUES (?, ?)", (1, "2026-05-01"))
+        conn.commit()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    provenance = build_local_image_provenance(source_path, working_path, image_type="microscope")
+    image_id = models.ImageDB.add_image(
+        observation_id=1,
+        filepath=str(working_path),
+        image_type="microscope",
+        captured_at="2026-05-01 10:00:00",
+        copy_to_folder=False,
+        **provenance,
     )
     image = models.ImageDB.get_image(image_id)
 
@@ -127,3 +190,34 @@ def test_add_image_round_trips_provenance_arguments(tmp_path, monkeypatch):
     assert image["file_purpose"] == "microscope"
     assert image["original_mime_type"] == "image/heic"
     assert image["working_mime_type"] == "image/jpeg"
+
+
+def test_add_image_handles_mime_detection_failure(tmp_path, monkeypatch):
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    source_path = tmp_path / "source.unknown"
+    working_path = tmp_path / "working.unknown"
+    source_path.write_text("source", encoding="utf-8")
+    working_path.write_text("working", encoding="utf-8")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO observations (id, date) VALUES (?, ?)", (1, "2026-05-01"))
+        conn.commit()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    provenance = build_local_image_provenance(source_path, working_path, image_type="field")
+    image_id = models.ImageDB.add_image(
+        observation_id=1,
+        filepath=str(working_path),
+        image_type="field",
+        captured_at="2026-05-01 10:00:00",
+        copy_to_folder=False,
+        **provenance,
+    )
+    image = models.ImageDB.get_image(image_id)
+
+    assert image is not None
+    assert image["source_role"] == "local_canonical"
+    assert image["file_purpose"] == "field"
+    assert image["original_mime_type"] is None
+    assert image["working_mime_type"] is None

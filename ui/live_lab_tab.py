@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, objective_sort_value
-from utils.heic_converter import maybe_convert_heic
+from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
 from utils.image_utils import cleanup_import_temp_file
 from utils.lab_watcher import LabWatcherWorker
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
@@ -1066,6 +1066,11 @@ class LiveLabTab(QWidget):
             calibration_id=calibration_id,
             resample_scale_factor=1.0,
             lab_metadata=self._current_lab_metadata(),
+            **build_local_image_provenance(
+                source_path,
+                converted_path,
+                image_type="microscope",
+            ),
         )
 
         image_data = ImageDB.get_image(image_id)

@@ -61,7 +61,7 @@ from database.schema import (
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
-from utils.heic_converter import maybe_convert_heic, save_image_as_webp
+from utils.heic_converter import build_local_image_provenance, maybe_convert_heic, save_image_as_webp
 from utils.ml_export import export_coco_format, get_export_summary
 from datetime import datetime
 import re
@@ -9073,6 +9073,14 @@ class ObservationsTab(QWidget):
                 and resample_factor < 0.999
             ):
                 original_to_store = result.original_filepath or final_path
+            provenance_kwargs = {}
+            source_path = getattr(result, "source_filepath", None)
+            if source_path:
+                provenance_kwargs = build_local_image_provenance(
+                    source_path,
+                    resampled_path,
+                    image_type=image_type,
+                )
             image_id = ImageDB.add_image(
                 observation_id=obs_id,
                 filepath=resampled_path,
@@ -9093,6 +9101,7 @@ class ObservationsTab(QWidget):
                 gps_source=result.gps_source,
                 resample_scale_factor=resample_factor,
                 original_filepath=original_to_store,
+                **provenance_kwargs,
             )
             stored_scale_bar_selection = self._scale_scale_bar_selection(
                 getattr(result, "scale_bar_selection", None),

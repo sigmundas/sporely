@@ -31,7 +31,7 @@ from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
 from utils.exif_reader import get_image_datetime
-from utils.heic_converter import maybe_convert_heic
+from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
 from utils.image_utils import cleanup_import_temp_file
 from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
 from utils.temporal_matcher import TemporalMatcher, normalize_timestamp
@@ -1445,6 +1445,11 @@ class IngestionHubTab(QWidget):
             calibration_id=calibration_id if matched_image_type == "microscope" else None,
             resample_scale_factor=1.0,
             lab_metadata=lab_metadata,
+            **build_local_image_provenance(
+                source_path,
+                converted_path,
+                image_type="microscope" if matched_image_type == "microscope" else "field",
+            ),
         )
         image_data = ImageDB.get_image(image_id)
         stored_path = str((image_data or {}).get("filepath") or converted_path)
