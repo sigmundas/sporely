@@ -275,7 +275,9 @@ Deferred items:
 
 - Cloud provenance fields on `public.observation_images`.
 - Full-resolution original sync.
-- A generated-artifact table/model for plots, thumbnails, and spore crops.
+- A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
+  spore crops, analysis/export plates, and calibration/reference overlays. Keep image thumbnails
+  in `thumbnails`.
 - Calibration multi-asset provenance beyond the representative derivative path.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
@@ -375,6 +377,51 @@ Cloud derivative rule:
 - `notes`
 - `is_active`
 - These calibration fields are part of the shared contract, but sync implementation is staged.
+
+### Generated Artifacts and Spore Evidence Crops
+
+Generated artifacts are derived render outputs or evidence views. They are useful, but they are not
+canonical source images.
+
+Artifact categories:
+
+- `thumbnail`: image-level preview for gallery and browsing
+- `spore_crop`: evidence crop around a measured spore
+- `plot`: measurement or comparison plot
+- `analysis/export plates`: composite exports or review plates
+- `calibration/reference overlays`: visualization derived from calibration or reference data
+
+Spore evidence crop rules:
+
+- They are derived evidence, not replacements for the original microscope image.
+- They are generated from source image pixels, measurement geometry, and calibration context.
+- When available, they should reference the source image id/cloud id and measurement id/cloud id.
+- If persisted later, they should preserve crop rectangle, measurement geometry, scale/calibration,
+  orientation, generation version, MIME type, pixel dimensions, and `generated_at`.
+- They should be safe to regenerate whenever the source image still exists.
+
+Model decision:
+
+- Keep `thumbnails` for image-level previews.
+- Keep `images` for source, working, and recovery image files.
+- Do not store spore crops in `images`.
+- If persistent artifacts are needed, add a dedicated `measurement_artifacts` /
+  `spore_measurement_artifacts` table later.
+
+Source image missing:
+
+- Evidence crops may still preserve useful audit context.
+- They do not replace the original microscope image.
+- UI/web should mark them as "derived evidence only" when the source image is missing.
+- Measurements may remain publishable if geometry and calibration context are intact, but
+  reproducibility is reduced.
+
+Deletion behavior:
+
+- Current image deletion cascades to measurements, annotations, and thumbnails for that image.
+- Future measured-image deletion should warn before destroying source-linked data.
+- A later workflow may offer preserve-vs-purge derived evidence.
+- Artifact tombstones and artifact lifecycle should stay separate from source image tombstones.
 
 ### Calibration Identity
 
@@ -560,7 +607,7 @@ Rules for this model:
 | Field ownership and ID mapping | Sync contract | This document is the contract for what syncs and how. |
 | Taxonomy and lookup generation | Taxonomy/reference generation scripts | Bundled lookup DBs and import scripts remain generated artifacts. |
 | Shared reference datasets | Future cloud reference-dataset tables | Until then, local `reference_values` remains the working store. |
-| Plot artifacts and thumbnails | Generated artifacts | Rebuild from source data and render parameters whenever possible. |
+| Plot artifacts, evidence crops, and thumbnails | Generated artifacts | Rebuild from source data and render parameters whenever possible; keep image thumbnails separate from source images. |
 
 ## First Implementation Step
 
