@@ -73,3 +73,7 @@ SporeApp.code-workspace
 utils/alt_calibration/
 utils/slide_calibration_feb7.py
 utils/slide_calibration_feb9.py
+
+# Local generated data
+logs/
+database/reference_data/backups/
