@@ -58,6 +58,12 @@ def _patch_connections(monkeypatch, db_path):
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
 
 
+def _patch_app_data_dir(monkeypatch, tmp_path):
+    app_root = tmp_path / "appdata"
+    monkeypatch.setattr(cloud_sync, "app_data_dir", lambda: app_root)
+    return app_root
+
+
 def _fetch_rows(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -665,3 +671,203 @@ def test_pull_calibrations_keeps_same_objective_date_separate_and_only_one_activ
     assert sum(1 for row in rows if row["is_active"] == 1) == 1
     active_row = next(row for row in rows if row["is_active"] == 1)
     assert active_row["calibration_uuid"] == second_uuid
+
+
+def test_calibration_reference_cache_path_uses_calibration_uuid_and_cloud_cache_root(monkeypatch, tmp_path):
+    app_root = _patch_app_data_dir(monkeypatch, tmp_path)
+    calibration_uuid = str(uuid.uuid4())
+
+    path = cloud_sync._calibration_recovery_cache_path(
+        calibration_uuid,
+        "user-123/100X/reference.webp",
+    )
+
+    assert path == app_root / "cloud_cache" / "calibrations" / calibration_uuid / "reference.webp"
+    assert path.parts[-4] == "cloud_cache"
+    assert path.parts[-3] == "calibrations"
+    assert path.parts[-2] == calibration_uuid
+    assert "100X" not in str(path)
+
+
+def test_calibration_reference_recovery_state_distinguishes_existing_and_missing_local_photo(tmp_path):
+    existing = _write_test_image(tmp_path / "existing.jpg", size=(800, 600))
+    calibration_uuid = str(uuid.uuid4())
+    base = {
+        "calibration_uuid": calibration_uuid,
+        "image_storage_path": f"user-123/{calibration_uuid}/reference.jpg",
+    }
+
+    existing_state = cloud_sync._calibration_reference_recovery_state(
+        {
+            **base,
+            "image_filepath": str(existing),
+            "measurements_json": {"images": [{"path": str(tmp_path / "unused.jpg")}]},
+        }
+    )
+    missing_state = cloud_sync._calibration_reference_recovery_state(
+        {
+            **base,
+            "image_filepath": str(tmp_path / "missing.jpg"),
+            "measurements_json": {"images": [{"path": str(existing)}]},
+        }
+    )
+    unavailable_state = cloud_sync._calibration_reference_recovery_state(
+        {
+            "calibration_uuid": calibration_uuid,
+            "image_filepath": str(tmp_path / "missing-again.jpg"),
+            "image_storage_path": "",
+        }
+    )
+
+    assert existing_state["local_original_exists"] is True
+    assert existing_state["recovery_available"] is False
+    assert existing_state["local_original_missing"] is False
+
+    assert missing_state["local_original_exists"] is False
+    assert missing_state["recovery_available"] is True
+    assert missing_state["local_original_missing"] is True
+
+    assert unavailable_state["recovery_available"] is False
+    assert unavailable_state["image_storage_path"] is None
+
+
+def test_download_calibration_reference_to_cache_skips_existing_local_original(monkeypatch, tmp_path):
+    _patch_app_data_dir(monkeypatch, tmp_path)
+    local_original = _write_test_image(tmp_path / "original.jpg", size=(1024, 768))
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "image_filepath": str(local_original),
+        "image_storage_path": f"user-123/{calibration_uuid}/reference.webp",
+        "measurements_json": {"images": [{"id": 1, "path": str(tmp_path / "other.jpg")}]},
+    }
+    original = copy.deepcopy(calibration)
+
+    class DummyClient:
+        def __init__(self):
+            self.calls = []
+
+        def download_image_file(self, storage_path, dest_path):
+            self.calls.append((storage_path, dest_path))
+            raise AssertionError("download_image_file should not be called when the local original exists")
+
+    client = DummyClient()
+    result = cloud_sync.download_calibration_reference_to_cache(client, calibration)
+
+    assert result["status"] == "skipped_local_original_exists"
+    assert result["downloaded"] is False
+    assert result["cache_path"] is None
+    assert result["recovery_available"] is False
+    assert client.calls == []
+    assert calibration == original
+
+
+def test_download_calibration_reference_to_cache_downloads_missing_local_photo_without_mutating_input(monkeypatch, tmp_path):
+    app_root = _patch_app_data_dir(monkeypatch, tmp_path)
+    source = _write_test_image(tmp_path / "download_source.png", size=(640, 480))
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "image_filepath": str(tmp_path / "missing-original.jpg"),
+        "image_storage_path": f"user-123/{calibration_uuid}/reference",
+        "measurements_json": {"images": [{"id": 1, "path": str(tmp_path / "other.jpg")}], "meta": {"note": "keep me"}},
+    }
+    original = copy.deepcopy(calibration)
+
+    class DummyClient:
+        def __init__(self):
+            self.calls = []
+
+        def download_image_file(self, storage_path, dest_path):
+            self.calls.append((storage_path, dest_path))
+            dest_path.write_bytes(source.read_bytes())
+            return dest_path
+
+    client = DummyClient()
+    result = cloud_sync.download_calibration_reference_to_cache(client, calibration)
+
+    cache_path = result["cache_path"]
+    assert result["recovery_available"] is True
+    assert result["status"] == "downloaded_to_cache"
+    assert result["downloaded"] is True
+    assert result["warning"] is None
+    assert len(client.calls) == 1
+    assert client.calls[0][0] == f"user-123/{calibration_uuid}/reference"
+    assert calibration == original
+    assert cache_path is not None
+    assert isinstance(cache_path, Path)
+    assert cache_path.exists()
+    assert cache_path.suffix == ".png"
+    assert cache_path.parent.parent.name == "calibrations"
+    assert cache_path.parent.name == calibration_uuid
+    assert "100X" not in str(cache_path)
+    assert calibration["image_filepath"] == original["image_filepath"]
+    assert calibration["measurements_json"] == original["measurements_json"]
+    assert cache_path.parent.parent.parent == app_root / "cloud_cache"
+
+
+@pytest.mark.parametrize("storage_path", [None, ""])
+def test_download_calibration_reference_to_cache_returns_unavailable_without_storage_path(monkeypatch, tmp_path, storage_path):
+    _patch_app_data_dir(monkeypatch, tmp_path)
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "image_filepath": str(tmp_path / "missing-original.jpg"),
+        "image_storage_path": storage_path,
+        "measurements_json": {"images": []},
+    }
+
+    class DummyClient:
+        def download_image_file(self, storage_path, dest_path):
+            raise AssertionError("download_image_file should not be called without a storage path")
+
+    result = cloud_sync.download_calibration_reference_to_cache(DummyClient(), calibration)
+
+    assert result["status"] == "unavailable_missing_storage_path"
+    assert result["downloaded"] is False
+    assert result["cache_path"] is None
+    assert result["warning"]
+
+
+def test_download_calibration_reference_to_cache_reports_failed_download_without_db_mutation(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    _patch_app_data_dir(monkeypatch, tmp_path)
+
+    calibration_uuid = str(uuid.uuid4())
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.0315,
+        calibration_date="2026-05-08 08:30:00",
+        measurements_json=json.dumps({"images": [{"id": 1}], "meta": {"note": "keep me"}}),
+        image_filepath=str(tmp_path / "missing-original.jpg"),
+        notes="local note",
+        set_active=False,
+        calibration_uuid=calibration_uuid,
+    )
+    row_before = _fetch_rows(db_path)[0]
+    calibration = dict(row_before)
+    original = copy.deepcopy(calibration)
+
+    class DummyClient:
+        def download_image_file(self, storage_path, dest_path):
+            raise RuntimeError("network exploded")
+
+    result = cloud_sync.download_calibration_reference_to_cache(
+        DummyClient(),
+        {
+            **calibration,
+            "image_storage_path": f"user-123/{calibration_uuid}/reference.jpg",
+        },
+    )
+
+    row_after = _fetch_rows(db_path)[0]
+
+    assert result["status"] == "download_failed"
+    assert result["downloaded"] is False
+    assert "network exploded" in result["warning"]
+    assert calibration == original
+    assert row_after == row_before

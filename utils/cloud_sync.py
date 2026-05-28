@@ -29,7 +29,7 @@ from urllib.parse import quote
 import requests
 from PIL import Image, ImageOps, features
 
-from app_identity import runtime_profile_scope, using_isolated_profile
+from app_identity import app_data_dir, runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
 from database.models import (
     ObservationDB,
@@ -450,6 +450,145 @@ def _calibration_reference_image_bytes(path: Path) -> tuple[bytes, str, str]:
 def _calibration_reference_storage_key(user_id: str, calibration_uuid: str, extension: str) -> str:
     key = f"{str(user_id).strip()}/{str(calibration_uuid).strip()}/reference{extension}"
     return _normalize_cloud_media_key(key)
+
+
+def _sanitize_calibration_cache_component(value: str | None, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(text).name).strip("._")
+    return cleaned or fallback
+
+
+def _normalize_calibration_cache_extension(value: str | None, fallback: str = ".jpg") -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return fallback
+    if not text.startswith("."):
+        text = f".{text}"
+    cleaned = re.sub(r"[^a-z0-9.]+", "", text)
+    if not cleaned:
+        return fallback
+    if not cleaned.startswith("."):
+        cleaned = f".{cleaned.lstrip('.')}"
+    return cleaned if cleaned != "." else fallback
+
+
+def _calibration_recovery_cache_root() -> Path:
+    return app_data_dir() / "cloud_cache" / "calibrations"
+
+
+def _calibration_recovery_cache_path(
+    calibration_uuid: str | None,
+    cloud_key: str | None = None,
+    desired_extension: str | None = None,
+) -> Path:
+    uuid_value = _normalize_calibration_uuid(calibration_uuid)
+    folder_name = uuid_value or _sanitize_calibration_cache_component(calibration_uuid, "unknown_calibration")
+    normalized_key = _normalize_cloud_media_key(cloud_key)
+    inferred_extension = Path(normalized_key).suffix if normalized_key else ""
+    extension = _normalize_calibration_cache_extension(desired_extension or inferred_extension, ".jpg")
+    return _calibration_recovery_cache_root() / folder_name / f"reference{extension}"
+
+
+def _calibration_reference_recovery_state(calibration: dict | None) -> dict[str, object]:
+    record = dict(calibration or {})
+    image_filepath = str(record.get("image_filepath") or "").strip() or None
+    image_storage_path = _normalize_cloud_media_key(record.get("image_storage_path")) or None
+    calibration_uuid = _normalize_calibration_uuid(record.get("calibration_uuid"))
+    local_original_path = _resolve_local_calibration_asset_path(image_filepath)
+    local_original_exists = local_original_path is not None
+    return {
+        "calibration_uuid": calibration_uuid,
+        "image_filepath": image_filepath,
+        "image_storage_path": image_storage_path,
+        "local_original_exists": local_original_exists,
+        "local_original_missing": bool(image_filepath and not local_original_exists),
+        "local_original_path": local_original_path,
+        "recovery_available": bool(calibration_uuid and image_storage_path and not local_original_exists),
+    }
+
+
+def download_calibration_reference_to_cache(
+    client: "SporelyCloudClient",
+    calibration: dict | None,
+) -> dict[str, object]:
+    """Download a cloud calibration reference image into the local cache.
+
+    This helper is intentionally soft-failing and does not mutate the input
+    calibration row or any database records.
+    """
+    state = _calibration_reference_recovery_state(calibration)
+    result = dict(state)
+    result.update(
+        {
+            "status": "skipped",
+            "warning": None,
+            "cache_path": None,
+            "downloaded": False,
+        }
+    )
+
+    calibration_uuid = state.get("calibration_uuid")
+    image_storage_path = state.get("image_storage_path")
+    if not calibration_uuid:
+        result["status"] = "skipped_invalid_calibration_uuid"
+        result["warning"] = "calibration ?: skipped recovery because calibration_uuid is missing or invalid"
+        return result
+
+    if state.get("local_original_exists"):
+        result["status"] = "skipped_local_original_exists"
+        return result
+
+    if not image_storage_path:
+        result["status"] = "unavailable_missing_storage_path"
+        result["warning"] = (
+            f"calibration {calibration_uuid}: skipped recovery because image_storage_path is missing"
+        )
+        return result
+
+    cache_root = _calibration_recovery_cache_root() / str(calibration_uuid)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    initial_extension = _normalize_calibration_cache_extension(Path(str(image_storage_path)).suffix or ".jpg")
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=cache_root,
+            prefix="reference_",
+            suffix=initial_extension,
+            delete=False,
+        ) as tmp:
+            temp_path = Path(tmp.name)
+
+        downloaded_path = Path(client.download_image_file(str(image_storage_path), temp_path))
+        if not downloaded_path.exists():
+            raise RuntimeError("downloaded calibration reference image was not written")
+
+        detected_extension = _detected_image_extension(downloaded_path)
+        final_path = _calibration_recovery_cache_path(
+            calibration_uuid,
+            str(image_storage_path),
+            detected_extension,
+        )
+        if downloaded_path != final_path:
+            downloaded_path.replace(final_path)
+            downloaded_path = final_path
+
+        result["status"] = "downloaded_to_cache"
+        result["downloaded"] = True
+        result["cache_path"] = downloaded_path
+        return result
+    except Exception as exc:
+        detail = str(exc or "").strip() or exc.__class__.__name__
+        result["status"] = "download_failed"
+        result["warning"] = f"calibration {calibration_uuid}: skipped recovery download ({detail})"
+        return result
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
 
 
 _IMG_PUSH_COLS = [
