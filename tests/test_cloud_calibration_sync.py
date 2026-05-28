@@ -731,6 +731,24 @@ def test_calibration_reference_recovery_state_distinguishes_existing_and_missing
     assert unavailable_state["image_storage_path"] is None
 
 
+def test_calibration_reference_recovery_state_treats_existing_empty_local_file_as_authoritative(tmp_path):
+    empty_file = tmp_path / "empty.jpg"
+    empty_file.write_bytes(b"")
+    calibration_uuid = str(uuid.uuid4())
+
+    state = cloud_sync._calibration_reference_recovery_state(
+        {
+            "calibration_uuid": calibration_uuid,
+            "image_filepath": str(empty_file),
+            "image_storage_path": f"user-123/{calibration_uuid}/reference.jpg",
+        }
+    )
+
+    assert state["local_original_exists"] is True
+    assert state["recovery_available"] is False
+    assert state["local_original_path"] == empty_file
+
+
 def test_download_calibration_reference_to_cache_skips_existing_local_original(monkeypatch, tmp_path):
     _patch_app_data_dir(monkeypatch, tmp_path)
     local_original = _write_test_image(tmp_path / "original.jpg", size=(1024, 768))

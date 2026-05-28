@@ -394,6 +394,42 @@ def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None
     return None
 
 
+def _resolve_existing_local_calibration_asset_path(path_value: str | None) -> Path | None:
+    text = str(path_value or '').strip()
+    if not text:
+        return None
+    try:
+        raw_path = Path(text).expanduser()
+    except Exception:
+        return None
+
+    candidates: list[Path] = []
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+        remapped = _remap_known_local_calibration_path(raw_path)
+        if remapped != raw_path:
+            candidates.append(remapped)
+    else:
+        images_dir = get_images_dir()
+        if raw_path.parts and raw_path.parts[0] == images_dir.name:
+            candidates.append(images_dir.parent / raw_path)
+        candidates.append(images_dir / raw_path)
+        candidates.append(raw_path)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def _select_representative_calibration_image_path(calibration: dict | None) -> Path | None:
     record = dict(calibration or {})
     local_image = _resolve_local_calibration_asset_path(record.get('image_filepath'))
@@ -496,7 +532,7 @@ def _calibration_reference_recovery_state(calibration: dict | None) -> dict[str,
     image_filepath = str(record.get("image_filepath") or "").strip() or None
     image_storage_path = _normalize_cloud_media_key(record.get("image_storage_path")) or None
     calibration_uuid = _normalize_calibration_uuid(record.get("calibration_uuid"))
-    local_original_path = _resolve_local_calibration_asset_path(image_filepath)
+    local_original_path = _resolve_existing_local_calibration_asset_path(image_filepath)
     local_original_exists = local_original_path is not None
     return {
         "calibration_uuid": calibration_uuid,
