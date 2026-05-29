@@ -141,6 +141,18 @@ Planned policy:
 - Do not delete `observation_images` rows when purging bucket objects; keep tombstone identity for sync/reupload blocking.
 - Do not purge full-resolution originals unless full-original sync is explicitly implemented and the user chose permanent deletion.
 
+### AI identification retention
+
+Status: deferred cleanup.
+
+- Current behavior may retain historical/stale AI identification runs.
+- UI should only replay rows matching the current active image/crop fingerprint.
+- Tombstoned-image AI rows must not be replayed as current suggestions.
+- Keep stale rows temporarily for debugging, but add retention cleanup before production:
+  - delete stale rows older than 30 days, or
+  - keep at most 2–3 stale rows per observation/service.
+- Long-term: prefer one current row per `(observation_id, service)` plus optional short-lived debug history.
+
 ### Stage F — Calibration photo recovery/download cache
 
 Status: Not started.
@@ -174,6 +186,15 @@ Status: Not started.
 - Never replace better local originals with cloud copies.
 
 ---
+
+## UI backlog
+PASS: desktop blocks login/sync with account B when the local DB is already linked to account A.
+PASS: no cross-account sync should occur.
+TODO/UI: Reset Cloud Sync is referenced in the error text, but no visible Reset Cloud Sync tool exists.
+TODO/UI: “Unable to save cloud login” is misleading; this is an account-link protection error, not really a credential-save failure.
+
+Add a real Reset Cloud Sync / Reset Cloud Link tool, or remove that instruction from the account-mismatch message until the tool exists.
+
 
 ## Taxonomy Lookup / Local Species DB
 
