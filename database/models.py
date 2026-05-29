@@ -341,6 +341,71 @@ def get_image_tombstones_by_deleted_cloud_id(
         conn.close()
 
 
+def get_image_tombstones_by_local_image_id(
+    local_image_ids: list[int] | tuple[int, ...] | set[int] | None = None,
+) -> dict[int, dict]:
+    """Return local image tombstones keyed by deleted local image id."""
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        normalized_ids: list[int] = []
+        seen: set[int] = set()
+        if isinstance(local_image_ids, (str, bytes)):
+            local_iterable = [local_image_ids]
+        else:
+            local_iterable = local_image_ids or []
+        for value in local_iterable:
+            try:
+                image_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen:
+                continue
+            seen.add(image_id)
+            normalized_ids.append(image_id)
+
+        try:
+            if normalized_ids:
+                placeholders = ", ".join("?" for _ in normalized_ids)
+                cursor.execute(
+                    f"""
+                    SELECT *
+                    FROM image_tombstones
+                    WHERE local_image_id IN ({placeholders})
+                    """,
+                    normalized_ids,
+                )
+            else:
+                cursor.execute("SELECT * FROM image_tombstones")
+        except sqlite3.OperationalError:
+            return {}
+
+        rows = cursor.fetchall()
+        return {
+            int(row["local_image_id"]): dict(row)
+            for row in rows
+            if row["local_image_id"] is not None
+        }
+    finally:
+        conn.close()
+
+
+def _filter_tombstoned_image_rows(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+    image_ids: list[int] = []
+    for row in rows or []:
+        try:
+            image_id = int(row["id"])
+        except Exception:
+            continue
+        if image_id > 0:
+            image_ids.append(image_id)
+    tombstoned_ids = set(get_image_tombstones_by_local_image_id(image_ids))
+    if not tombstoned_ids:
+        return rows
+    return [row for row in rows if int(row["id"]) not in tombstoned_ids]
+
+
 def list_pending_image_tombstones() -> list[dict]:
     """Return local image tombstones that still need to be synced to cloud."""
     conn = get_connection()
@@ -1742,6 +1807,10 @@ class ImageDB:
         row = cursor.fetchone()
         conn.close()
 
+        if row is None:
+            return None
+        if get_image_tombstones_by_local_image_id([image_id]):
+            return None
         return _hydrate_image_row(row)
 
     @staticmethod
@@ -1765,7 +1834,7 @@ class ImageDB:
 
         rows = cursor.fetchall()
         conn.close()
-        return [_hydrate_image_row(row) for row in rows]
+        return [_hydrate_image_row(row) for row in _filter_tombstoned_image_rows(rows)]
 
     @staticmethod
     def get_images_by_type(observation_id: int, image_type: str) -> List[dict]:
@@ -1787,7 +1856,7 @@ class ImageDB:
 
         rows = cursor.fetchall()
         conn.close()
-        return [_hydrate_image_row(row) for row in rows]
+        return [_hydrate_image_row(row) for row in _filter_tombstoned_image_rows(rows)]
 
     @staticmethod
     def get_pending_artsobs_web_uploads() -> List[dict]:

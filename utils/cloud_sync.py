@@ -39,6 +39,7 @@ from database.models import (
     CalibrationDB,
     _upsert_image_tombstone,
     get_image_tombstones_by_deleted_cloud_id,
+    get_image_tombstones_by_local_image_id,
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
 )
@@ -1044,6 +1045,27 @@ def _image_compare_key(image_row: dict | None) -> str:
     return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
+def _image_identity_keys(image_row: dict | None) -> set[str]:
+    row = dict(image_row or {})
+    keys: set[str] = set()
+    cloud_id = str(row.get('id') or '').strip()
+    desktop_id = str(row.get('desktop_id') or '').strip()
+    if cloud_id:
+        keys.add(f'cloud:{cloud_id}')
+    if desktop_id:
+        keys.add(f'desktop:{desktop_id}')
+    return keys
+
+
+def _deleted_remote_image_identity_keys(remote_images: list[dict] | None) -> set[str]:
+    keys: set[str] = set()
+    for row in (remote_images or []):
+        if not str((row or {}).get('deleted_at') or '').strip():
+            continue
+        keys.update(_image_identity_keys(_remote_image_payload(row)))
+    return keys
+
+
 def _image_label(image_row: dict | None) -> str:
     row = dict(image_row or {})
     filename = str(row.get('original_filename') or '').strip()
@@ -1094,17 +1116,23 @@ def _format_image_metadata_field_label(field: str) -> str:
     return labels.get(field, field.replace('_', ' '))
 
 
-def _summarize_image_changes(current_images: list[dict], baseline_images: list[dict]) -> list[str]:
+def _summarize_image_changes(
+    current_images: list[dict],
+    baseline_images: list[dict],
+    *,
+    ignored_keys: set[str] | None = None,
+) -> list[str]:
     current = [dict(row or {}) for row in (current_images or [])]
     baseline = [dict(row or {}) for row in (baseline_images or [])]
+    ignored = {str(key or '').strip() for key in (ignored_keys or set()) if str(key or '').strip()}
     current_keys = [_image_compare_key(row) for row in current]
     baseline_keys = [_image_compare_key(row) for row in baseline]
     current_map = {_image_compare_key(row): row for row in current}
     baseline_map = {_image_compare_key(row): row for row in baseline}
 
-    added = [current_map[key] for key in current_keys if key not in baseline_map]
-    removed = [baseline_map[key] for key in baseline_keys if key not in current_map]
-    shared_keys = [key for key in current_keys if key in baseline_map]
+    added = [current_map[key] for key in current_keys if key not in baseline_map and key not in ignored]
+    removed = [baseline_map[key] for key in baseline_keys if key not in current_map and key not in ignored]
+    shared_keys = [key for key in current_keys if key in baseline_map and key not in ignored]
 
     lines: list[str] = []
 
@@ -1133,7 +1161,7 @@ def _summarize_image_changes(current_images: list[dict], baseline_images: list[d
             lines.append(mc)
         if len(metadata_changes) > 5:
             lines.append(f"...and {len(metadata_changes) - 5} more metadata changes")
-    if not lines and len(current) != len(baseline):
+    if not lines and len(current) != len(baseline) and not ignored:
         lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
     return lines
 
@@ -1176,17 +1204,23 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
     }
 
 
-def _analyze_image_changes(current_images: list[dict], baseline_images: list[dict]) -> dict:
+def _analyze_image_changes(
+    current_images: list[dict],
+    baseline_images: list[dict],
+    *,
+    ignored_keys: set[str] | None = None,
+) -> dict:
     current = [dict(row or {}) for row in (current_images or [])]
     baseline = [dict(row or {}) for row in (baseline_images or [])]
+    ignored = {str(key or '').strip() for key in (ignored_keys or set()) if str(key or '').strip()}
     current_keys = [_image_compare_key(row) for row in current]
     baseline_keys = [_image_compare_key(row) for row in baseline]
     current_map = {_image_compare_key(row): row for row in current}
     baseline_map = {_image_compare_key(row): row for row in baseline}
 
-    added_keys = [key for key in current_keys if key not in baseline_map]
-    removed_keys = [key for key in baseline_keys if key not in current_map]
-    shared_keys = [key for key in current_keys if key in baseline_map]
+    added_keys = [key for key in current_keys if key not in baseline_map and key not in ignored]
+    removed_keys = [key for key in baseline_keys if key not in current_map and key not in ignored]
+    shared_keys = [key for key in current_keys if key in baseline_map and key not in ignored]
     metadata_changed_keys = [
         key
         for key in shared_keys
@@ -1516,6 +1550,11 @@ def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ..
     return set(tombstones.keys())
 
 
+def _local_tombstoned_local_image_ids(local_image_ids: list[int] | tuple[int, ...] | set[int] | None = None) -> set[int]:
+    tombstones = get_image_tombstones_by_local_image_id(local_image_ids)
+    return set(tombstones.keys())
+
+
 def _pull_remote_images_for_sync(client: "SporelyCloudClient", cloud_id: str) -> list[dict]:
     """Fetch cloud image rows including deleted ones so tombstones can be recorded."""
     cloud_value = str(cloud_id or '').strip()
@@ -1567,6 +1606,9 @@ def _record_remote_image_tombstones(
             if has_cloud_id
             else None
         )
+        local_desktop_image_sql = (
+            f"SELECT {', '.join(select_columns)} FROM images WHERE id = ? LIMIT 1"
+        )
 
         for remote_image in tombstone_rows:
             cloud_image_id = str(remote_image.get("id") or "").strip()
@@ -1579,6 +1621,13 @@ def _record_remote_image_tombstones(
             local_image_row = None
             if local_image_sql:
                 local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
+            if local_image_row is None:
+                desktop_image_id = _safe_int(remote_image.get("desktop_id"))
+                if desktop_image_id > 0:
+                    local_image_row = cursor.execute(
+                        local_desktop_image_sql,
+                        (desktop_image_id,),
+                    ).fetchone()
 
             local_image_id = None
             image_type = None
@@ -3520,6 +3569,7 @@ def resolve_conflict_keep_local(
             local_observation_id=int(local_id),
             cloud_observation_id=cloud_id,
         )
+        tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
 
     if should_push_images and cloud_id:
         stored_snapshot = _load_cloud_observation_snapshot(cloud_id)
@@ -3532,7 +3582,11 @@ def resolve_conflict_keep_local(
                 and not str(row.get('deleted_at') or '').strip()
             ]
             remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
-            remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
+            remote_image_changes = _analyze_image_changes(
+                remote_image_payloads,
+                baseline_images,
+                ignored_keys=tombstoned_remote_image_keys,
+            )
             should_push_images = bool(
                 local_media_changed
                 or remote_image_changes.get('added_keys')
@@ -4559,11 +4613,17 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
 
     resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
     remote_obs = client.get_observation(resolved_cloud_id)
-    
-    remote_images = client.pull_image_metadata(resolved_cloud_id) or []
+
+    remote_images_raw = client.pull_image_metadata(resolved_cloud_id, include_deleted_for_sync=True) or []
     snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(resolved_cloud_id))
     baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
+    tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
+    remote_images = [
+        dict(row or {})
+        for row in remote_images_raw
+        if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
+    ]
 
     # 1. Field Comparisons
     local_payload = _observation_compare_payload(local_obs, local=True)
@@ -4589,6 +4649,8 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     remote_map = {_image_compare_key(img): img for img in remote_image_payloads}
 
     for key in sorted(set(local_map.keys()) | set(remote_map.keys())):
+        if key in tombstoned_remote_image_keys:
+            continue
         l_img, r_img = local_map.get(key), remote_map.get(key)
         if l_img and r_img:
             continue
@@ -4605,8 +4667,16 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         'title': _observation_display_name(local_obs),
         'field_rows': field_rows,
         'image_mismatches': image_mismatches,
-        'local_image_changes': _summarize_image_changes(local_image_payloads, baseline_images),
-        'remote_image_changes': _summarize_image_changes(remote_image_payloads, baseline_images),
+        'local_image_changes': _summarize_image_changes(
+            local_image_payloads,
+            baseline_images,
+            ignored_keys=tombstoned_remote_image_keys,
+        ),
+        'remote_image_changes': _summarize_image_changes(
+            remote_image_payloads,
+            baseline_images,
+            ignored_keys=tombstoned_remote_image_keys,
+        ),
         'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
     }
 # ── High-level sync entry points ──────────────────────────────────────────────
@@ -4849,6 +4919,13 @@ def _push_images_for_observation(
             if str(dict(item.get('image_row') or {}).get('cloud_id') or '').strip()
         ]
     )
+    tombstoned_local_image_ids = _local_tombstoned_local_image_ids(
+        [
+            _safe_int(dict(item.get('image_row') or {}).get('id'))
+            for item in prepared_items
+            if _safe_int(dict(item.get('image_row') or {}).get('id')) > 0
+        ]
+    )
     if tombstoned_cloud_ids:
         filtered_items: list[dict] = []
         for item in prepared_items:
@@ -4856,6 +4933,18 @@ def _push_images_for_observation(
             cloud_image_id = str(img.get('cloud_id') or '').strip()
             if cloud_image_id and cloud_image_id in tombstoned_cloud_ids:
                 warning = _tombstoned_cloud_image_warning(obs.get('id'), cloud_image_id)
+                warnings.append(warning)
+                print(f'[cloud_sync] Warning: {warning}')
+                continue
+            filtered_items.append(item)
+        prepared_items = filtered_items
+    if tombstoned_local_image_ids:
+        filtered_items = []
+        for item in prepared_items:
+            img = dict(item.get('image_row') or {})
+            local_image_id = _safe_int(img.get('id'))
+            if local_image_id > 0 and local_image_id in tombstoned_local_image_ids:
+                warning = f"obs {obs.get('id')}: skipped local image {local_image_id} because it has a local tombstone"
                 warnings.append(warning)
                 print(f'[cloud_sync] Warning: {warning}')
                 continue
@@ -5329,6 +5418,7 @@ def pull_all(
                     local_observation_id=local_id,
                     cloud_observation_id=cloud_id,
                 )
+                tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
                 remote_images = [
                     dict(row or {})
                     for row in remote_images_raw
@@ -5377,7 +5467,11 @@ def pull_all(
                     baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
                     field_changes = _analyze_observation_field_changes(local_obs, remote, baseline_obs)
                     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
-                    remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
+                    remote_image_changes = _analyze_image_changes(
+                        remote_image_payloads,
+                        baseline_images,
+                        ignored_keys=tombstoned_remote_image_keys,
+                    )
                     remote_raw_map = {_image_compare_key(row): row for row in remote_images}
                     stored_local_media_signature = _load_local_cloud_media_signature(local_id)
                     current_local_media_signature = _local_cloud_media_signature(local_id)
