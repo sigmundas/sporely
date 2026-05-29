@@ -2273,8 +2273,20 @@ class ObservationsTab(QWidget):
         other_count = int(issue_summary.get("other_count", 0) or 0)
         deleted_count = len(deleted_remote)
         if errors:
-            for error in errors:
-                print(f"[cloud_sync] {error}")
+            print(
+                "[cloud_sync] Cloud sync finished with "
+                f"{int(issue_summary.get('display_count', 0) or 0)} issue(s)."
+            )
+            for idx, conflict in enumerate(conflicts, 1):
+                print(
+                    "[cloud_sync] conflict "
+                    f"{idx}: local_id={conflict.get('local_id')} "
+                    f"cloud_id={conflict.get('cloud_id')} "
+                    f"push_skipped={bool(conflict.get('push_skipped'))} "
+                    f"pull_skipped={bool(conflict.get('pull_skipped'))}"
+                )
+            for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
+                print(f"[cloud_sync] other issue {idx}: {error}")
         if result.get("skipped"):
             return
         if pushed or pulled:
