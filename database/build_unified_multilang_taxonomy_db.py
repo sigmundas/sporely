@@ -646,6 +646,42 @@ def _swedish_id_is_available(conn: sqlite3.Connection, taxon_id: int, swedish_ta
     ).fetchone()
     return row is None or row[0] == taxon_id
 
+def _dedupe_case_insensitive_vernaculars(conn: sqlite3.Connection) -> int:
+    before = conn.execute("SELECT COUNT(*) FROM vernacular_min").fetchone()[0]
+
+    conn.execute(
+        """
+        DELETE FROM vernacular_min
+        WHERE vernacular_id IN (
+          WITH ranked AS (
+            SELECT
+              vernacular_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY taxon_id, language_code, lower(vernacular_name)
+                ORDER BY
+                  CASE
+                    WHEN language_code = 'sv' AND COALESCE(source, '') = 'artportalen' THEN 0
+                    WHEN language_code = 'no' AND COALESCE(source, '') = 'artsdatabanken' THEN 0
+                    WHEN COALESCE(source, '') = 'artportalen' THEN 1
+                    WHEN COALESCE(source, '') = 'artsdatabanken' THEN 1
+                    WHEN COALESCE(source, '') = 'inat_csv' THEN 2
+                    ELSE 9
+                  END,
+                  is_preferred_name DESC,
+                  length(vernacular_name) ASC,
+                  vernacular_id ASC
+              ) AS rn
+            FROM vernacular_min
+          )
+          SELECT vernacular_id
+          FROM ranked
+          WHERE rn > 1
+        )
+        """
+    )
+
+    after = conn.execute("SELECT COUNT(*) FROM vernacular_min").fetchone()[0]
+    return int(before - after)
 
 def _create_extended_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -690,7 +726,7 @@ def _create_extended_schema(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX idx_taxon_sv_id
             ON taxon_min(swedish_taxon_id)
             WHERE swedish_taxon_id IS NOT NULL;
-        CREATE UNIQUE INDEX idx_taxon_inat_id
+        CREATE INDEX idx_taxon_inat_id
             ON taxon_min(inaturalist_taxon_id)
             WHERE inaturalist_taxon_id IS NOT NULL;
         CREATE INDEX idx_taxon_canonical_name
@@ -1471,6 +1507,9 @@ def build_unified_db(
             preferred_sv_scientific,
             preferred_sv_vernacular,
         )
+        print("Final cleanup: deduplicating case-insensitive vernacular names")
+        removed_vernacular_dupes = _dedupe_case_insensitive_vernaculars(conn)
+        print(f"  removed case-insensitive vernacular duplicates: {removed_vernacular_dupes}")
         conn.commit()
 
         conn.execute("VACUUM;")
