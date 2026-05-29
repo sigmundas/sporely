@@ -30,6 +30,7 @@ from database.schema import (
 )
 from database.models import CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
+import utils.cloud_sync as cloud_sync
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .section_card import create_section_card
@@ -203,6 +204,69 @@ def format_resolution_summary(pixels_per_micron, numerical_aperture, wavelength_
     if result["downsample_advice"]:
         summary += f"\n{result['downsample_advice']}"
     return summary
+
+
+def _find_cached_calibration_reference_path(calibration_uuid: str | None) -> Path | None:
+    uuid_value = cloud_sync._normalize_calibration_uuid(calibration_uuid)
+    if not uuid_value:
+        return None
+
+    cache_root = cloud_sync._calibration_recovery_cache_root() / uuid_value
+    if not cache_root.exists():
+        return None
+
+    matches = [path for path in cache_root.glob("reference.*") if path.is_file()]
+    if not matches:
+        return None
+
+    try:
+        return max(matches, key=lambda path: path.stat().st_mtime)
+    except Exception:
+        return sorted(matches)[0]
+
+
+def _calibration_reference_ui_state(
+    recovery_state: dict | None,
+    *,
+    cache_path: Path | None = None,
+) -> dict[str, object]:
+    state = dict(recovery_state or {})
+    local_original_exists = bool(state.get("local_original_exists"))
+    cache_path = Path(cache_path) if cache_path else None
+    cache_exists = bool(cache_path and cache_path.exists())
+    recovery_available = bool(state.get("recovery_available"))
+
+    if local_original_exists:
+        return {
+            "status_text": "Local reference image available",
+            "status_tone": "success",
+            "show_download_button": False,
+            "download_button_text": "Download cloud reference image",
+            "download_button_enabled": False,
+            "preview_path": None,
+            "source_role": "local_original",
+        }
+
+    if cache_exists:
+        return {
+            "status_text": "Cloud-derived reference only",
+            "status_tone": "tip",
+            "show_download_button": bool(recovery_available),
+            "download_button_text": "Download cloud reference image",
+            "download_button_enabled": bool(recovery_available),
+            "preview_path": cache_path,
+            "source_role": "cloud_recovery_cache",
+        }
+
+    return {
+        "status_text": "Calibration usable; photo missing",
+        "status_tone": "warning",
+        "show_download_button": bool(recovery_available),
+        "download_button_text": "Download cloud reference image",
+        "download_button_enabled": bool(recovery_available),
+        "preview_path": None,
+        "source_role": None,
+    }
 
 
 class NewObjectiveDialog(QDialog):
@@ -987,6 +1051,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.calibration_images: list[dict] = []  # [{path, pixmap, measurements}]
         self.current_image_index: int = -1
         self._preserve_image_zoom = False
+        self._viewing_calibration_record: dict | None = None
+        self._cloud_reference_preview_path: Path | None = None
+        self._cloud_reference_state: dict[str, object] | None = None
         self.measurement_points: list[QPointF] = []  # Points being drawn
         self.is_measuring = False
         self._modified = False  # Track if user made changes
@@ -1288,6 +1355,29 @@ class CalibrationDialog(GeometryMixin, QDialog):
         image_layout.addWidget(self.zoom_1to1_btn, 0, 0, alignment=Qt.AlignTop | Qt.AlignRight)
 
         left_layout.addWidget(image_container, 1)
+
+        self.cloud_reference_status_label = QLabel("")
+        self.cloud_reference_status_label.setWordWrap(True)
+        self.cloud_reference_status_label.setVisible(False)
+        self.cloud_reference_status_label.setStyleSheet("color: #7f8c8d;")
+
+        self.cloud_reference_download_btn = QPushButton(self.tr("Download cloud reference image"))
+        self.cloud_reference_download_btn.clicked.connect(self._on_download_cloud_reference_image)
+        self.cloud_reference_download_btn.setVisible(False)
+        self._register_hint_widget(
+            self.cloud_reference_download_btn,
+            self.tr(
+                "Download the cloud-side calibration reference into the local cache "
+                "without changing the canonical calibration path."
+            ),
+        )
+
+        cloud_reference_row = QHBoxLayout()
+        cloud_reference_row.setContentsMargins(0, 0, 0, 0)
+        cloud_reference_row.setSpacing(8)
+        cloud_reference_row.addWidget(self.cloud_reference_status_label, 1)
+        cloud_reference_row.addWidget(self.cloud_reference_download_btn, 0)
+        left_layout.addLayout(cloud_reference_row)
 
         # Gallery for loaded calibration images (fixed height, just above thumbnail size)
         self.image_gallery = ImageGalleryWidget(
@@ -1775,12 +1865,12 @@ class CalibrationDialog(GeometryMixin, QDialog):
             if hasattr(self, "auto_spread_label"):
                 self.auto_spread_label.setText("--")
                 self.auto_spread_label.setStyleSheet("")
-            if hasattr(self, "sampling_status_label"):
-                self.sampling_status_label.setText("--")
-                self._set_hint_for_label_widget(getattr(self, "sampling_status_title", None), "")
             if hasattr(self, "auto_scale_current_title"):
                 self.auto_scale_current_title.setVisible(False)
                 self.auto_scale_current_label.setVisible(False)
+            if hasattr(self, "sampling_status_label"):
+                self.sampling_status_label.setText("--")
+                self._set_hint_for_label_widget(getattr(self, "sampling_status_title", None), "")
             return
         if len(values) == 1:
             self.auto_scale_title.setText(self.tr("Scale (this image):"))
@@ -1917,6 +2007,205 @@ class CalibrationDialog(GeometryMixin, QDialog):
             tip = (widget.toolTip() or "").strip()
             if tip:
                 self._register_hint_widget(widget, tip)
+
+    def _set_cloud_reference_status(self, text: str | None, tone: str = "info") -> None:
+        if not hasattr(self, "cloud_reference_status_label"):
+            return
+        message = " ".join((text or "").split())
+        self.cloud_reference_status_label.setText(message)
+        self.cloud_reference_status_label.setVisible(bool(message))
+        tone_key = (tone or "info").strip().lower()
+        color_map = {
+            "success": "#27ae60",
+            "warning": "#c0392b",
+            "tip": "#7f8c8d",
+            "info": "#7f8c8d",
+        }
+        self.cloud_reference_status_label.setStyleSheet(f"color: {color_map.get(tone_key, '#7f8c8d')};")
+
+    def _clear_cloud_reference_preview(self) -> None:
+        self._cloud_reference_preview_path = None
+        if hasattr(self, "image_viewer"):
+            try:
+                self.image_viewer.set_corner_tag("")
+            except Exception:
+                pass
+
+    def _show_cloud_reference_preview(self, cache_path: Path | str | None) -> bool:
+        path = Path(cache_path) if cache_path else None
+        if not path or not path.exists():
+            return False
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return False
+
+        self._cloud_reference_preview_path = path
+        self.current_image_index = -1
+        self.is_measuring = False
+        self.measurement_points = []
+        if hasattr(self, "add_measurement_btn"):
+            self.add_measurement_btn.setText(self.tr("Add Measurement"))
+            self.add_measurement_btn.setEnabled(False)
+        if hasattr(self, "image_gallery"):
+            try:
+                self.image_gallery.select_paths([])
+            except Exception:
+                pass
+        self.image_viewer.clear_preview_line()
+        self.image_viewer.set_measurement_lines([])
+        self.image_viewer.set_debug_lines([])
+        self.image_viewer.set_crop_box(None)
+        self.image_viewer.set_image(pixmap, preserve_view=False)
+        self.image_viewer.set_corner_tag(self.tr("Cloud-derived reference only"), "#c57a1d")
+        self.image_viewer.setCursor(Qt.ArrowCursor)
+        self._preserve_image_zoom = False
+        self._update_resize_info()
+        return True
+
+    def _resolve_cloud_reference_state(self, calibration: dict | None) -> dict[str, object]:
+        state = cloud_sync._calibration_reference_recovery_state(calibration)
+        calibration_uuid = state.get("calibration_uuid")
+        image_filepath = str(state.get("image_filepath") or "").strip()
+
+        state["cache_path"] = None
+        if not image_filepath or state.get("local_original_exists"):
+            return state
+
+        cache_path = _find_cached_calibration_reference_path(calibration_uuid)
+
+        remote_storage_path = None
+        try:
+            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+
+        if client and calibration_uuid:
+            try:
+                remote = client.find_remote_calibration(str(calibration_uuid))
+            except Exception:
+                remote = None
+            if isinstance(remote, dict) and remote:
+                remote_storage_path = str(remote.get("image_storage_path") or "").strip() or None
+
+        if remote_storage_path:
+            state["image_storage_path"] = remote_storage_path
+            state["recovery_available"] = bool(calibration_uuid and remote_storage_path and not state.get("local_original_exists"))
+            if cache_path is None:
+                cache_path = cloud_sync._calibration_recovery_cache_path(
+                    calibration_uuid,
+                    remote_storage_path,
+                )
+
+        state["cache_path"] = cache_path
+        return state
+
+    def _refresh_cloud_reference_controls(self, calibration: dict | None) -> None:
+        self._viewing_calibration_record = dict(calibration or {}) if calibration else None
+        state = self._resolve_cloud_reference_state(calibration)
+        self._cloud_reference_state = state
+        ui_state = _calibration_reference_ui_state(state, cache_path=state.get("cache_path"))
+
+        self._set_cloud_reference_status(
+            str(ui_state.get("status_text") or ""),
+            str(ui_state.get("status_tone") or "info"),
+        )
+
+        button_visible = bool(ui_state.get("show_download_button"))
+        self.cloud_reference_download_btn.setVisible(button_visible)
+        self.cloud_reference_download_btn.setEnabled(bool(ui_state.get("download_button_enabled")))
+        self.cloud_reference_download_btn.setText(self.tr(str(ui_state.get("download_button_text") or "Download cloud reference image")))
+
+        preview_path = ui_state.get("preview_path")
+        if preview_path:
+            self._show_cloud_reference_preview(preview_path)
+        else:
+            self._clear_cloud_reference_preview()
+            if self.current_image_index < 0:
+                self.image_viewer.set_image(None)
+                self.image_viewer.set_measurement_lines([])
+                self.image_viewer.set_debug_lines([])
+                self.image_viewer.set_crop_box(None)
+                self.image_viewer.setCursor(Qt.ArrowCursor)
+                if hasattr(self, "add_measurement_btn"):
+                    self.add_measurement_btn.setEnabled(False)
+
+    def _on_download_cloud_reference_image(self) -> None:
+        calibration = dict(self._viewing_calibration_record or {})
+        state = dict(self._cloud_reference_state or {})
+        calibration_uuid = str(state.get("calibration_uuid") or calibration.get("calibration_uuid") or "").strip()
+        image_storage_path = str(state.get("image_storage_path") or "").strip() or None
+        if not calibration_uuid:
+            self._set_cloud_reference_status(
+                self.tr("Calibration usable; photo missing"),
+                "warning",
+            )
+            self.set_status(
+                self.tr("Cloud reference download skipped: calibration UUID is missing."),
+                tone="warning",
+            )
+            return
+
+        if not image_storage_path:
+            try:
+                client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+            except Exception:
+                client = None
+            if client:
+                try:
+                    remote = client.find_remote_calibration(calibration_uuid)
+                except Exception:
+                    remote = None
+                if isinstance(remote, dict) and remote:
+                    image_storage_path = str(remote.get("image_storage_path") or "").strip() or None
+
+        if not image_storage_path:
+            self._set_cloud_reference_status(
+                self.tr("Calibration usable; photo missing"),
+                "warning",
+            )
+            self.set_status(
+                self.tr("Cloud reference download skipped: image_storage_path is missing."),
+                tone="warning",
+            )
+            return
+
+        client = None
+        try:
+            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+        if not client:
+            self._set_cloud_reference_status(
+                self.tr("Calibration usable; photo missing"),
+                "warning",
+            )
+            self.set_status(
+                self.tr("Sign in to Sporely Cloud to download the calibration reference image."),
+                tone="warning",
+            )
+            return
+
+        payload = dict(calibration)
+        payload["image_storage_path"] = image_storage_path
+        result = cloud_sync.download_calibration_reference_to_cache(client, payload)
+        cache_path = result.get("cache_path")
+        if result.get("downloaded") and cache_path:
+            self._cloud_reference_state = dict(state)
+            self._cloud_reference_state["image_storage_path"] = image_storage_path
+            self._cloud_reference_state["cache_path"] = Path(cache_path)
+            self._cloud_reference_state["recovery_available"] = True
+            self._cloud_reference_preview_path = Path(cache_path)
+            self._show_cloud_reference_preview(cache_path)
+            self._set_cloud_reference_status(self.tr("Cloud-derived reference only"), "tip")
+            self.set_status(
+                self.tr("Downloaded cloud reference image to local cache."),
+                tone="success",
+            )
+            return
+
+        warning = str(result.get("warning") or self.tr("Cloud reference download failed."))
+        self._set_cloud_reference_status(warning, "warning")
+        self.set_status(warning, tone="warning")
 
     def _on_auto_division_changed(self, _index: int) -> None:
         if not hasattr(self, "auto_division_input"):
@@ -2072,6 +2361,21 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if not hasattr(self, "current_resolution_label") or not hasattr(self, "target_resolution_label"):
             return
         if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
+            preview_path = self._cloud_reference_preview_path
+            if preview_path and preview_path.exists():
+                try:
+                    with Image.open(preview_path) as img:
+                        width = img.width
+                        height = img.height
+                except Exception:
+                    self.current_resolution_label.setText("--")
+                    self.target_resolution_label.setText("--")
+                    return
+                if width > 0 and height > 0:
+                    mp = (width * height) / 1_000_000.0
+                    self.current_resolution_label.setText(f"{mp:.1f} MP ({width} × {height})")
+                    self.target_resolution_label.setText("--")
+                    return
             self.current_resolution_label.setText("--")
             self.target_resolution_label.setText("--")
             return
@@ -2203,6 +2507,170 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.auto_angle_label.setText(f"{result.angle_deg:.3f} deg")
 
         self._update_auto_summary()
+
+    def _stored_auto_calibration_state(self, loaded_data: dict | None) -> dict | None:
+        if not isinstance(loaded_data, dict):
+            return None
+
+        auto_images = [dict(info or {}) for info in loaded_data.get("auto_images", []) if isinstance(info, dict)]
+        if not auto_images:
+            auto_data = loaded_data.get("auto")
+            if isinstance(auto_data, dict):
+                auto_result = auto_data.get("result")
+                if not isinstance(auto_result, dict):
+                    auto_result = auto_data if isinstance(auto_data, dict) else None
+                if isinstance(auto_result, dict):
+                    auto_entry = dict(auto_data)
+                    auto_entry["result"] = dict(auto_result)
+                    auto_images = [auto_entry]
+        result_entries: list[tuple[dict, slide_calibration.CalibrationResult]] = []
+        for info in auto_images:
+            result_dict = info.get("result")
+            if not isinstance(result_dict, dict):
+                continue
+            try:
+                result_entries.append((info, self._result_from_dict(result_dict)))
+            except Exception:
+                continue
+        if not result_entries:
+            return None
+
+        values: list[float] = []
+        mad_values: list[float] = []
+        iqr_values: list[float] = []
+        residual_values: list[float] = []
+        drift_values: list[float] = []
+        angle_values: list[float] = []
+        for _info, result in result_entries:
+            value = result.nm_per_px_edges if self._auto_use_edges() else result.nm_per_px
+            if isinstance(value, (int, float)) and np.isfinite(value) and value > 0:
+                values.append(float(value))
+            if isinstance(result.rel_scatter_mad_pct, (int, float)) and np.isfinite(result.rel_scatter_mad_pct):
+                mad_values.append(float(result.rel_scatter_mad_pct))
+            if isinstance(result.rel_scatter_iqr_pct, (int, float)) and np.isfinite(result.rel_scatter_iqr_pct):
+                iqr_values.append(float(result.rel_scatter_iqr_pct))
+            if isinstance(result.residual_slope_deg, (int, float)) and np.isfinite(result.residual_slope_deg):
+                residual_values.append(abs(float(result.residual_slope_deg)))
+            if isinstance(result.drift_slope, (int, float)) and np.isfinite(result.drift_slope):
+                drift_values.append(float(result.drift_slope))
+            if isinstance(result.angle_deg, (int, float)) and np.isfinite(result.angle_deg):
+                angle_values.append(float(result.angle_deg))
+
+        summary = loaded_data.get("auto_summary")
+        summary = dict(summary) if isinstance(summary, dict) else {}
+        average_nm_per_px = summary.get("average_nm_per_px")
+        if not isinstance(average_nm_per_px, (int, float)) or not np.isfinite(average_nm_per_px) or average_nm_per_px <= 0:
+            average_nm_per_px = float(np.mean(values)) if values else None
+        max_deviation_nm_per_px = summary.get("max_deviation_nm_per_px")
+        if (
+            not isinstance(max_deviation_nm_per_px, (int, float))
+            or not np.isfinite(max_deviation_nm_per_px)
+            or max_deviation_nm_per_px < 0
+        ):
+            if values and isinstance(average_nm_per_px, (int, float)) and average_nm_per_px > 0:
+                max_deviation_nm_per_px = float(np.max(np.abs(np.array(values) - float(average_nm_per_px))))
+            else:
+                max_deviation_nm_per_px = None
+
+        n_images = summary.get("n_images")
+        if not isinstance(n_images, int) or n_images <= 0:
+            n_images = len(values) or len(result_entries)
+
+        return {
+            "n_images": n_images,
+            "average_nm_per_px": average_nm_per_px,
+            "max_deviation_nm_per_px": max_deviation_nm_per_px,
+            "mad_pct": float(np.mean(mad_values)) if mad_values else None,
+            "iqr_pct": float(np.mean(iqr_values)) if iqr_values else None,
+            "residual_deg": float(np.mean(residual_values)) if residual_values else None,
+            "drift_px_per_px": float(np.mean(drift_values)) if drift_values else None,
+            "angle_deg": float(np.mean(angle_values)) if angle_values else None,
+        }
+
+    def _show_stored_auto_calibration_results(self, calibration: dict | None, loaded_data: dict | None) -> bool:
+        state = self._stored_auto_calibration_state(loaded_data)
+        if not state:
+            return False
+
+        if hasattr(self, "tab_widget"):
+            self.tab_widget.setCurrentIndex(0)
+        if hasattr(self, "image_mode_tabs"):
+            self.image_mode_tabs.setCurrentIndex(0)
+
+        average_nm = state.get("average_nm_per_px")
+        max_dev = state.get("max_deviation_nm_per_px")
+        n_images = int(state.get("n_images") or 0)
+        if n_images > 1:
+            self.auto_scale_title.setText(self.tr("Scale (average):"))
+        else:
+            self.auto_scale_title.setText(self.tr("Scale (this image):"))
+        self.auto_scale_label.setText(f"{float(average_nm):.2f} nm/px" if isinstance(average_nm, (int, float)) and average_nm > 0 else "--")
+        self.auto_scale_current_title.setVisible(False)
+        self.auto_scale_current_label.setVisible(False)
+
+        if isinstance(max_dev, (int, float)) and max_dev >= 0 and isinstance(average_nm, (int, float)) and average_nm > 0 and n_images > 1:
+            self.auto_dev_label.setText(f"+/-{float(max_dev):.2f} nm/px")
+            spread_pct = 100.0 * (float(max_dev) / float(average_nm)) if average_nm > 0 else 0.0
+            self.auto_spread_label.setText(f"{spread_pct:.2f}%")
+            self.auto_spread_label.setStyleSheet(
+                f"color: {'#27ae60' if spread_pct <= 0.5 else '#c0392b'}; font-weight: bold;"
+            )
+        else:
+            self.auto_dev_label.setText("--")
+            self.auto_spread_label.setText("--")
+            self.auto_spread_label.setStyleSheet("")
+
+        mad_pct = state.get("mad_pct")
+        iqr_pct = state.get("iqr_pct")
+        residual_deg = state.get("residual_deg")
+        drift_px_per_px = state.get("drift_px_per_px")
+        angle_deg = state.get("angle_deg")
+
+        if isinstance(mad_pct, (int, float)) and np.isfinite(mad_pct):
+            self.auto_scatter_mad_label.setText(f"{float(mad_pct):.2f}%")
+            self.auto_scatter_mad_label.setStyleSheet(self._quality_color(float(mad_pct), good=1.0, warn=2.0))
+        else:
+            self.auto_scatter_mad_label.setText("--")
+            self.auto_scatter_mad_label.setStyleSheet("")
+
+        if isinstance(iqr_pct, (int, float)) and np.isfinite(iqr_pct):
+            self.auto_scatter_iqr_label.setText(f"{float(iqr_pct):.2f}%")
+            self.auto_scatter_iqr_label.setStyleSheet(self._quality_color(float(iqr_pct), good=1.0, warn=2.0))
+        else:
+            self.auto_scatter_iqr_label.setText("--")
+            self.auto_scatter_iqr_label.setStyleSheet("")
+
+        if isinstance(residual_deg, (int, float)) and np.isfinite(residual_deg):
+            self.auto_residual_label.setText(f"{float(residual_deg):.3f} deg")
+            self.auto_residual_label.setStyleSheet(self._quality_color_abs(float(residual_deg), good=0.2, warn=0.5))
+        else:
+            self.auto_residual_label.setText("--")
+            self.auto_residual_label.setStyleSheet("")
+
+        if isinstance(drift_px_per_px, (int, float)) and np.isfinite(drift_px_per_px):
+            self.auto_drift_label.setText(f"{float(drift_px_per_px):.4g} px/px")
+            self.auto_drift_label.setStyleSheet(self._quality_color_abs(float(drift_px_per_px), good=0.001, warn=0.003))
+        else:
+            self.auto_drift_label.setText("--")
+            self.auto_drift_label.setStyleSheet("")
+
+        if isinstance(angle_deg, (int, float)) and np.isfinite(angle_deg):
+            self.auto_angle_label.setText(f"{float(angle_deg):.3f} deg")
+        else:
+            self.auto_angle_label.setText("--")
+
+        image_path = str((calibration or {}).get("image_filepath") or "").strip()
+        has_source_image = bool(image_path and Path(image_path).exists())
+        status_text = self.tr("Stored automatic calibration")
+        if not has_source_image:
+            status_text = self.tr("Stored automatic calibration. Photo unavailable.")
+        self.set_status(status_text, tone="warning" if not has_source_image else "info", timeout_ms=8000)
+        if hasattr(self, "current_resolution_label") and hasattr(self, "target_resolution_label"):
+            if not has_source_image:
+                self.current_resolution_label.setText("--")
+                self.target_resolution_label.setText("--")
+
+        return True
 
     def _apply_current_overlay(self):
         """Apply the correct overlay based on the selected tab and method."""
@@ -2500,11 +2968,11 @@ class CalibrationDialog(GeometryMixin, QDialog):
         ])
         # Set column resize modes
         header = self.history_table.horizontalHeader()
-        # Date - fixed width
+        # Date columns need enough room for full timestamp text.
         header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.history_table.setColumnWidth(0, 120)
+        self.history_table.setColumnWidth(0, 180)
         header.setSectionResizeMode(1, QHeaderView.Fixed)
-        self.history_table.setColumnWidth(1, 120)
+        self.history_table.setColumnWidth(1, 180)
         # Data columns - resize to contents
         for col in range(2, 12):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
@@ -3594,7 +4062,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 self.current_image_index = i
                 self._show_current_image()
                 return
-            self._show_current_image()
+        self._show_current_image()
 
     def _on_gallery_image_deleted(self, image_id):
         """Handle deletion of an image from the gallery."""
@@ -3615,9 +4083,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 if self.current_image_index >= 0:
                     self._show_current_image()
                 else:
-                    self.image_viewer.set_image(None)
-                    self.image_viewer.set_measurement_lines([])
-                    self._preserve_image_zoom = False
+                    self._show_current_image()
                 self._update_measurement_list()
                 self._update_results()
                 self._update_auto_summary()
@@ -3647,12 +4113,31 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _show_current_image(self):
         """Show the currently selected image."""
         if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
+            preview_path = self._cloud_reference_preview_path
+            if preview_path and preview_path.exists():
+                pixmap = QPixmap(str(preview_path))
+                if not pixmap.isNull():
+                    self.image_viewer.set_image(pixmap, preserve_view=False)
+                    self.image_viewer.set_corner_tag(self.tr("Cloud-derived reference only"), "#c57a1d")
+                    self.image_viewer.setCursor(Qt.ArrowCursor)
+                    self._preserve_image_zoom = False
+                    if hasattr(self, "add_measurement_btn"):
+                        self.add_measurement_btn.setText(self.tr("Add Measurement"))
+                        self.add_measurement_btn.setEnabled(False)
+                    self._update_resize_info()
+                    return
             self.image_viewer.set_image(None)
+            self.image_viewer.set_measurement_lines([])
+            self.image_viewer.set_debug_lines([])
             self._preserve_image_zoom = False
+            if hasattr(self, "add_measurement_btn"):
+                self.add_measurement_btn.setEnabled(False)
             self._update_resize_info()
             return
 
         img_data = self.calibration_images[self.current_image_index]
+        if hasattr(self, "add_measurement_btn") and not self.is_measuring:
+            self.add_measurement_btn.setEnabled(True)
         self.image_viewer.set_image(img_data["pixmap"], preserve_view=self._preserve_image_zoom)
         if not self._preserve_image_zoom:
             self._preserve_image_zoom = True
@@ -3674,7 +4159,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
     def _start_measurement(self):
         """Start a new measurement."""
-        if not self.calibration_images:
+        if not self.calibration_images or self.current_image_index < 0:
             QMessageBox.information(
                 self,
                 self.tr("No Image"),
@@ -4258,16 +4743,24 @@ class CalibrationDialog(GeometryMixin, QDialog):
         """Clear all images and measurements."""
         self.calibration_images = []
         self.current_image_index = -1
+        self._viewing_calibration_record = None
+        self._cloud_reference_state = None
         self.measurement_points = []
         self.is_measuring = False
         self._modified = False  # Reset modified flag
         self._preserve_image_zoom = False
+        self._clear_cloud_reference_preview()
+        self._set_cloud_reference_status("")
+        if hasattr(self, "cloud_reference_download_btn"):
+            self.cloud_reference_download_btn.setVisible(False)
+            self.cloud_reference_download_btn.setEnabled(False)
         self.add_measurement_btn.setText(self.tr("Add Measurement"))
         self.add_measurement_btn.setEnabled(True)
         self.image_viewer.clear_preview_line()
         self.image_viewer.set_measurement_lines([])
         self.image_viewer.set_image(None)
         self.image_viewer.set_crop_box(None)
+        self.image_viewer.set_corner_tag("")
         self._set_auto_crop_active(False)
         self.image_viewer.setCursor(Qt.ArrowCursor)
         self._update_resize_info()
@@ -4336,6 +4829,45 @@ class CalibrationDialog(GeometryMixin, QDialog):
         all_measurements = self._get_all_measurements()
 
         if not all_measurements:
+            view_cal = self._viewing_calibration_record if isinstance(self._viewing_calibration_record, dict) else None
+            if view_cal:
+                scale_um = view_cal.get("microns_per_pixel")
+                if isinstance(scale_um, (int, float)) and float(scale_um) > 0:
+                    scale_nm = um_to_nm(float(scale_um))
+                    self.result_average_label.setText(f"{scale_nm:.2f} nm/px")
+                    std_um = view_cal.get("microns_per_pixel_std")
+                    if isinstance(std_um, (int, float)) and float(std_um) > 0:
+                        self.result_std_label.setText(f"+/-{um_to_nm(float(std_um)):.2f} nm/px")
+                    else:
+                        self.result_std_label.setText("--")
+                    ci_low = view_cal.get("confidence_interval_low")
+                    ci_high = view_cal.get("confidence_interval_high")
+                    if (
+                        isinstance(ci_low, (int, float))
+                        and isinstance(ci_high, (int, float))
+                        and float(ci_low) > 0
+                        and float(ci_high) > 0
+                    ):
+                        self.result_ci_label.setText(
+                            f"[{um_to_nm(float(ci_low)):.2f}, {um_to_nm(float(ci_high)):.2f}]"
+                        )
+                    else:
+                        self.result_ci_label.setText("--")
+                    self.result_count_label.setText(str(int(view_cal.get("num_measurements") or 0)))
+                    if hasattr(self, "sampling_status_label"):
+                        na_value = None
+                        if self.current_objective_key:
+                            obj = self.objectives.get(self.current_objective_key, {})
+                            na_value = obj.get("na")
+                        if na_value:
+                            self._update_sampling_label(self.sampling_status_label, scale_nm)
+                        else:
+                            self.sampling_status_label.setText(self.tr("NA not set") if not na_value else "--")
+                            self._set_hint_for_label_widget(getattr(self, "sampling_status_title", None), "")
+                    self.comparison_label.setText("--")
+                    if hasattr(self, "auto_used_label"):
+                        self.auto_used_label.setText("")
+                    return
             provisional_um = self._current_objective_provisional_scale_um()
             if self._current_objective_is_macro() and provisional_um:
                 provisional_nm = um_to_nm(provisional_um)
@@ -4730,6 +5262,15 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self._update_auto_summary()
             if any("auto" in img for img in self.calibration_images):
                 self.image_mode_tabs.setCurrentIndex(0)
+
+        self._refresh_cloud_reference_controls(cal)
+        stored_auto_shown = self._show_stored_auto_calibration_results(cal, loaded_data)
+        if not stored_auto_shown:
+            if hasattr(self, "tab_widget"):
+                self.tab_widget.setCurrentIndex(0)
+            if hasattr(self, "image_mode_tabs"):
+                self.image_mode_tabs.setCurrentIndex(0 if self.calibration_images and any("auto" in img for img in self.calibration_images) else 1)
+        self._update_results()
 
         # Show notes
         self.notes_input.setText(cal.get("notes", ""))
