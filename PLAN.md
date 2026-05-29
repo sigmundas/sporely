@@ -58,22 +58,17 @@ Status: Done.
 
 ### Stage E1 — Image tombstone deletion model
 
-Status: Done / verified.
+### Stage E1b — Image tombstone sync cleanup
 
-- Added local `image_tombstones`.
-- Synced local image delete writes tombstone before hard-deleting the local row.
-- Local tombstones block reimport/reupload.
-- Added cloud `public.observation_images.deleted_at`.
-- Browser/public/community reads hide tombstoned images.
-- Owner/sync reads can see tombstoned rows.
-- Local tombstones push cloud `deleted_at`.
-- Cloud `deleted_at` records local tombstones.
-- Option A is current policy:
-  - record tombstone
-  - block reupload/recreation
-  - keep local active row visible for now
-  - do not delete local files
-  - do not delete measurements/annotations
+Status: in progress.
+
+- Treat `public.observation_images.deleted_at` as the deletion source of truth.
+- Cloud image tombstones must sync to desktop without opening the conflict dialog when image identity is clear.
+- Web-deleted images must create/update local tombstones and block reupload.
+- Desktop-deleted images must set cloud `deleted_at`.
+- Do not delete local files, local measurements, annotations, or R2 objects in this stage.
+- Do not classify a matched cloud tombstone as both “cloud removed” and “desktop-only copy.”
+- Keep bucket objects as retained cloud derivatives until media garbage collection is designed.
 
 ### Stage E2 — Image provenance/source tags
 
@@ -131,6 +126,21 @@ Deferred:
 - generated artifact table
 - multi-asset calibration provenance
 
+### Stage E3 — Cloud media garbage collection
+
+Status: deferred.
+
+Purpose: clean up R2 objects for tombstoned image rows after sync identity and provenance are stable.
+
+Planned policy:
+
+- Single-image delete immediately sets `observation_images.deleted_at`.
+- R2 objects are retained during a recovery/undo/sync-safety window.
+- A later cleanup job purges R2 `storage_path` and generated variants for tombstoned rows older than the retention period.
+- Add `storage_purged_at` before automatic purging so missing media can be distinguished from intentionally purged media.
+- Do not delete `observation_images` rows when purging bucket objects; keep tombstone identity for sync/reupload blocking.
+- Do not purge full-resolution originals unless full-original sync is explicitly implemented and the user chose permanent deletion.
+
 ### Stage F — Calibration photo recovery/download cache
 
 Status: Not started.
@@ -164,6 +174,19 @@ Status: Not started.
 - Never replace better local originals with cloud copies.
 
 ---
+
+## Taxonomy Lookup / Local Species DB
+
+Status: audit/documentation in progress.
+
+- Current DB rebuilt with iNat IDs and Swedish Artportalen data.
+- Document: `docs/taxonomy-lookup-status.md`
+- Next tasks:
+  - expose iNat/Artportalen IDs through the lookup service if not already exposed
+  - verify case-insensitive vernacular dedupe remains in the builder
+  - add Artsdatabanken red-list on-demand resolver later
+  - verify AI Photo ID result mapping uses local iNat ID before name matching
+  - verify desktop/web use the same taxonomy lookup rules
 
 ## Active QA / Verification
 
