@@ -3578,6 +3578,8 @@ class ObservationsTab(QWidget):
                     image_id = int(row["id"])
                 except (TypeError, ValueError, KeyError):
                     continue
+                if ImageDB.get_image(image_id) is None:
+                    continue
                 if observation_id in thumbnail_map:
                     continue
                 thumb_path = get_thumbnail_path(image_id, "small")
