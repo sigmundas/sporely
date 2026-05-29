@@ -77,3 +77,4 @@ utils/slide_calibration_feb9.py
 # Local generated data
 logs/
 database/reference_data/backups/
+database/reference_data/generated/artportalen_scope.sqlite3
