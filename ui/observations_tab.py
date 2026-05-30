@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
 from pathlib import Path
+import io
 import sqlite3
 import csv
 import shutil
@@ -70,6 +71,13 @@ from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
 from utils.heic_converter import build_local_image_provenance, maybe_convert_heic, save_image_as_webp
 from utils.ml_export import export_coco_format, get_export_summary
+from utils.cloud_media_policy import (
+    IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
+    build_cloud_upload_policy,
+    build_full_image_webp_quality_attempts,
+    normalize_cloud_plan_profile,
+    scale_dimensions_to_max_pixels,
+)
 from datetime import datetime
 import re
 import requests
@@ -2280,6 +2288,11 @@ class ObservationsTab(QWidget):
         conflict_count = int(issue_summary.get("conflict_count", 0) or 0)
         blocked_count = int(issue_summary.get("blocked_count", 0) or 0)
         other_count = int(issue_summary.get("other_count", 0) or 0)
+        blocked_messages: list[str] = []
+        for blocked in issue_summary.get("blocked_errors", []) or []:
+            message = str((blocked or {}).get("message") or "").strip()
+            if message and message not in blocked_messages:
+                blocked_messages.append(message)
         deleted_count = len(deleted_remote)
         if errors:
             print(
@@ -2331,8 +2344,8 @@ class ObservationsTab(QWidget):
                     )
                 if issue_parts:
                     message += " " + ", ".join(issue_parts) + "."
-                if blocked_count:
-                    message += " " + privacy_slot_limit_user_message()
+                if blocked_messages:
+                    message += " " + " ".join(blocked_messages)
             if deleted_count:
                 message += " " + self.tr("{count} cloud deletion(s) to review.").format(count=deleted_count)
                 level = "warning"
@@ -2340,7 +2353,7 @@ class ObservationsTab(QWidget):
         elif errors:
             if blocked_count:
                 self.set_status_message(
-                    privacy_slot_limit_user_message(),
+                    " ".join(blocked_messages) if blocked_messages else privacy_slot_limit_user_message(),
                     level="warning",
                     auto_clear_ms=12000,
                 )
@@ -5037,15 +5050,45 @@ class ObservationsTab(QWidget):
             return True
         return QThread.currentThread() is app.thread()
 
+    def _cloud_sync_remote_profile(self) -> dict:
+        override = self._cloud_sync_debug_plan_override()
+        if override in {"free", "pro"}:
+            return normalize_cloud_plan_profile({
+                "cloud_plan": override,
+                "is_pro": override == "pro",
+            })
+
+        client = None
+        window = self.window() if hasattr(self, "window") else None
+        getter = getattr(window, "_cloud_client", None) if window is not None else None
+        if callable(getter):
+            try:
+                client = getter()
+            except Exception:
+                client = None
+        if client is None:
+            try:
+                client = SporelyCloudClient.from_stored_credentials()
+            except Exception:
+                client = None
+        if client is not None:
+            try:
+                return normalize_cloud_plan_profile(client.fetch_cloud_plan_profile())
+            except Exception as exc:
+                print(f"[cloud_sync] Could not fetch cloud plan profile: {exc}")
+        return normalize_cloud_plan_profile({})
+
+    def _cloud_sync_upload_policy(self) -> dict:
+        return build_cloud_upload_policy(self._cloud_sync_remote_profile(), upload_mode="full")
+
     def _prepare_cloud_sync_image_uploads_threadsafe(
         self,
         observation: dict,
         progress_cb=None,
-        max_pixels: int | None = None,
+        upload_policy: dict | None = None,
     ) -> tuple[list[dict], object | None, list[str]]:
-        if max_pixels is None:
-            max_pixels = self._cloud_sync_image_max_pixels()
-        upload_mode = self._cloud_sync_image_mode()
+        policy = upload_policy or self._cloud_sync_upload_policy()
+        upload_mode = str(policy.get("uploadMode") or "full")
         obs = observation or {}
         observation_id = obs.get("id")
         if not observation_id:
@@ -5081,15 +5124,18 @@ class ObservationsTab(QWidget):
                 )
                 continue
             try:
-                upload_path, source_width, source_height, stored_width, stored_height = (
+                upload_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = (
                     self._prepare_clean_cloud_image_file(
                         source_path=source_path,
                         temp_dir=temp_dir,
                         image_id=int(image_row.get("id") or idx),
-                        max_pixels=max_pixels,
+                        upload_policy=policy,
                     )
                 )
-            except Exception:
+            except Exception as exc:
+                if IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE.lower() in str(exc).lower():
+                    self._cleanup_publish_temp_dir(temp_dir)
+                    raise
                 warnings.append(
                     self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
                 )
@@ -5106,6 +5152,10 @@ class ObservationsTab(QWidget):
                         "stored_width": stored_width or None,
                         "stored_height": stored_height or None,
                         "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
+                        "cloud_plan": policy.get("cloudPlan") or policy.get("cloud_plan") or "free",
+                        "quality_profile": policy.get("qualityProfile") or policy.get("quality_profile") or "standard",
+                        "encoding_quality": encoding_quality,
+                        "encoding_format": encoding_format,
                     },
                 }
             )
@@ -5120,15 +5170,6 @@ class ObservationsTab(QWidget):
             warnings,
         )
 
-    @staticmethod
-    def _cloud_sync_output_format(source_path: str, resized: bool) -> tuple[str, str, dict]:
-        suffix = Path(source_path).suffix.lower()
-        if suffix in {".webp", ".jpg", ".jpeg"} and not resized:
-            return "ORIGINAL", ".webp", {}
-        if features.check("webp"):
-            return "WEBP", ".webp", {"quality": 65, "method": 4}
-        return "JPEG", ".jpg", {"quality": 88}
-
     @classmethod
     def _prepare_clean_cloud_image_file(
         cls,
@@ -5136,18 +5177,20 @@ class ObservationsTab(QWidget):
         source_path: str,
         temp_dir: Path,
         image_id: int,
-        max_pixels: int | None,
-    ) -> tuple[Path, int, int, int, int]:
+        upload_policy: dict | None,
+    ) -> tuple[Path, int, int, int, int, str, int | float | None]:
         source = Path(source_path)
+        policy = dict(upload_policy or {})
+        max_pixels = max(1, int(policy.get("maxPixels") or 20_000_000))
+        quality_profile = str(policy.get("qualityProfile") or policy.get("quality_profile") or "standard").strip().lower() or "standard"
+        byte_cap = int(policy.get("fullImageByteCap") or policy.get("full_image_byte_cap") or 0)
+        webp_qualities = list(build_full_image_webp_quality_attempts(quality_profile))
         with Image.open(source) as img:
             img = ImageOps.exif_transpose(img)
             source_width = int(img.width or 0)
             source_height = int(img.height or 0)
-            current_pixels = max(1, int(img.width) * int(img.height))
-            resized = bool(max_pixels and current_pixels > int(max_pixels))
-            fmt, ext, save_options = cls._cloud_sync_output_format(str(source), resized)
-            if fmt == "ORIGINAL":
-                return source, source_width, source_height, source_width, source_height
+            if not source_width or not source_height:
+                raise RuntimeError("Could not determine image dimensions")
 
             if img.mode in ("RGBA", "LA"):
                 background = Image.new("RGB", img.size, (255, 255, 255))
@@ -5157,37 +5200,55 @@ class ObservationsTab(QWidget):
             elif img.mode != "RGB":
                 img = img.convert("RGB")
 
-            if resized:
-                scale = (float(max_pixels) / float(current_pixels)) ** 0.5
-                target = (
-                    max(1, int(round(float(img.width) * scale))),
-                    max(1, int(round(float(img.height) * scale))),
-                )
-                img = img.resize(target, Image.Resampling.LANCZOS)
+            target = scale_dimensions_to_max_pixels(source_width, source_height, max_pixels)
+            if target["resized"]:
+                img = img.resize((int(target["width"]), int(target["height"])), Image.Resampling.LANCZOS)
 
-            out_path = temp_dir / f"cloud_{int(image_id):04d}{ext}"
-            img.save(out_path, fmt, **save_options)
-            try:
-                source_stat = source.stat()
-                os.utime(out_path, (source_stat.st_atime, source_stat.st_mtime))
-            except Exception:
-                pass
-            return out_path, source_width, source_height, int(img.width or 0), int(img.height or 0)
+            attempts: list[tuple[str, str, dict, int | float | None]] = []
+            if features.check("webp"):
+                for quality in webp_qualities:
+                    attempts.append(("WEBP", ".webp", {"quality": quality, "method": 4}, quality))
+            attempts.append(("JPEG", ".jpg", {"quality": 88}, 88))
+
+            for fmt, ext, save_options, attempt_quality in attempts:
+                buffer = io.BytesIO()
+                img.save(buffer, fmt, **save_options)
+                data = buffer.getvalue()
+                if byte_cap and len(data) > byte_cap:
+                    continue
+                out_path = temp_dir / f"cloud_{int(image_id):04d}{ext}"
+                out_path.write_bytes(data)
+                try:
+                    source_stat = source.stat()
+                    os.utime(out_path, (source_stat.st_atime, source_stat.st_mtime))
+                except Exception:
+                    pass
+                encoding_format = "image/webp" if fmt == "WEBP" else "image/jpeg"
+                return (
+                    out_path,
+                    source_width,
+                    source_height,
+                    int(img.width or 0),
+                    int(img.height or 0),
+                    encoding_format,
+                    attempt_quality,
+                )
+
+            raise RuntimeError(IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
 
     def prepare_cloud_sync_image_uploads(
         self,
         observation: dict,
         progress_cb=None,
-        max_pixels: int | None = None,
+        upload_policy: dict | None = None,
     ) -> tuple[list[dict], object | None, list[str]]:
-        if max_pixels is None:
-            max_pixels = self._cloud_sync_image_max_pixels()
-        upload_mode = self._cloud_sync_image_mode()
+        policy = upload_policy or self._cloud_sync_upload_policy()
+        upload_mode = str(policy.get("uploadMode") or "full")
         if not self._is_main_gui_thread():
             return self._prepare_cloud_sync_image_uploads_threadsafe(
                 observation,
                 progress_cb=progress_cb,
-                max_pixels=max_pixels,
+                upload_policy=policy,
             )
 
         obs = observation or {}
@@ -5227,15 +5288,18 @@ class ObservationsTab(QWidget):
                 )
                 continue
             try:
-                upload_path, source_width, source_height, stored_width, stored_height = (
+                upload_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = (
                     self._prepare_clean_cloud_image_file(
                         source_path=source_path,
                         temp_dir=temp_dir,
                         image_id=int(image_row.get("id") or idx),
-                        max_pixels=max_pixels,
+                        upload_policy=policy,
                     )
                 )
-            except Exception:
+            except Exception as exc:
+                if IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE.lower() in str(exc).lower():
+                    self._cleanup_publish_temp_dir(temp_dir)
+                    raise
                 warnings.append(
                     self.tr("Could not save image {index} for cloud upload.").format(index=idx)
                 )
@@ -5251,6 +5315,10 @@ class ObservationsTab(QWidget):
                         "stored_width": stored_width or None,
                         "stored_height": stored_height or None,
                         "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
+                        "cloud_plan": policy.get("cloudPlan") or policy.get("cloud_plan") or "free",
+                        "quality_profile": policy.get("qualityProfile") or policy.get("quality_profile") or "standard",
+                        "encoding_quality": encoding_quality,
+                        "encoding_format": encoding_format,
                     },
                 }
             )
@@ -5311,16 +5379,11 @@ class ObservationsTab(QWidget):
 
     @staticmethod
     def _cloud_sync_image_mode() -> str:
-        debug_override = ObservationsTab._cloud_sync_debug_plan_override()
-        if debug_override == "free":
-            return "reduced"
-        if debug_override == "pro":
-            return "full"
         return "full"
 
     @staticmethod
     def _cloud_sync_image_max_pixels() -> int:
-        return 0 if ObservationsTab._cloud_sync_image_mode() == "full" else 2_000_000
+        return 20_000_000
 
     @staticmethod
     def _publish_path_key(path: str | None) -> str:

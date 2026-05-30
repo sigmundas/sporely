@@ -15535,6 +15535,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 progress_cb=progress_cb,
             )
         except Exception as exc:
+            if "image too large for plan" in str(exc).lower():
+                raise
             return [], None, [str(exc)]
 
     def open_database_settings_dialog(self):

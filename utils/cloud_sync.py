@@ -46,6 +46,10 @@ from database.models import (
     mark_image_tombstone_synced,
 )
 from utils.heic_converter import guess_local_image_mime_type
+from utils.cloud_media_policy import (
+    IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
+    normalize_cloud_plan_profile,
+)
 from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
 from utils.thumbnail_generator import generate_all_sizes
 
@@ -784,10 +788,17 @@ PRIVACY_SLOT_LIMIT_USER_MESSAGE = (
     "Free accounts can have up to 20 private or fuzzed-location cloud observations. "
     "Make one public, delete one, or upgrade to Pro."
 )
+IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE = (
+    "Image is too large for your plan. Make it smaller or upgrade to Pro."
+)
 _PRIVACY_SLOT_LIMIT_HINTS = (
     "Free Sporely accounts",
     "20 privacy slot",
     "privacy slot observations",
+)
+_IMAGE_TOO_LARGE_FOR_PLAN_HINTS = (
+    "image too large for plan",
+    "too large for your plan",
 )
 
 
@@ -895,6 +906,18 @@ def is_privacy_slot_limit_error(error) -> bool:
     return has_privacy_phrase and has_constraint_code
 
 
+def is_image_too_large_for_plan_error(error) -> bool:
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    has_phrase = any(hint in haystack for hint in _IMAGE_TOO_LARGE_FOR_PLAN_HINTS)
+    has_code = (
+        code.strip().lower() == 'image_too_large_for_plan'
+        or 'image_too_large_for_plan' in haystack
+        or 'payload_too_large' in haystack
+    )
+    return has_phrase or has_code
+
+
 def _normalize_cloud_user_id(value: str | None) -> str:
     return str(value or '').strip()
 
@@ -950,6 +973,12 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
             blocked_errors.append({
                 'error': text,
                 'message': privacy_slot_limit_user_message(),
+            })
+            continue
+        if is_image_too_large_for_plan_error(text):
+            blocked_errors.append({
+                'error': text,
+                'message': IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
             })
             continue
         push_match = _PUSH_CONFLICT_RE.match(text)
@@ -2962,8 +2991,7 @@ def _set_observation_sync_state(local_id: int, cloud_id: str, *, dirty: bool) ->
         conn.close()
 
 
-def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
-    blocked_reason = privacy_slot_limit_user_message()
+def _set_observation_sync_blocked(local_id: int, raw_error: str, blocked_reason: str, *, error_code: str | None = None) -> str:
     code, _ = _collect_sync_error_details(raw_error)
     conn = get_connection()
     try:
@@ -2972,7 +3000,7 @@ def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
             cursor,
             int(local_id),
             sync_status='blocked',
-            sync_error_code=code or None,
+            sync_error_code=error_code or code or None,
             sync_error_message=str(raw_error or '').strip() or None,
             sync_blocked_reason=blocked_reason,
             sync_blocked_at=datetime.now(timezone.utc).isoformat(),
@@ -2981,6 +3009,24 @@ def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
     finally:
         conn.close()
     return blocked_reason
+
+
+def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
+    return _set_observation_sync_blocked(
+        local_id,
+        raw_error,
+        privacy_slot_limit_user_message(),
+        error_code='privacy_slot_limit',
+    )
+
+
+def _set_observation_plan_image_blocked(local_id: int, raw_error: str) -> str:
+    return _set_observation_sync_blocked(
+        local_id,
+        raw_error,
+        IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
+        error_code='image_too_large_for_plan',
+    )
 
 
 def _remote_observation_update_kwargs(remote: dict) -> dict:
@@ -4139,6 +4185,14 @@ class SporelyCloudClient:
         )
         return dict(rows[0] or {}) if rows else {}
 
+    def fetch_cloud_plan_profile(self) -> dict:
+        rows = self._get(
+            f'profiles?id=eq.{self.user_id}&select='
+            'id,cloud_plan,is_pro,full_res_storage_enabled,storage_quota_bytes,'
+            'total_storage_bytes,storage_used_bytes,image_count,is_banned&limit=1'
+        )
+        return normalize_cloud_plan_profile(rows[0] if rows else {})
+
     def update_profile(
         self,
         *,
@@ -4524,6 +4578,7 @@ class SporelyCloudClient:
         obs_cloud_id: str,
         img_cloud_id: str,
         storage_path: str | None = None,
+        upload_meta: dict | None = None,
     ) -> str | None:
         """Upload file to Cloudflare R2. Returns the relative media key or None if missing."""
         path = Path(local_path)
@@ -4536,9 +4591,44 @@ class SporelyCloudClient:
         mime = _content_type_for_path(path)
         cache_control = 'public, max-age=31536000, immutable'
         r2 = self._get_r2()
+        meta = dict(upload_meta or {})
+        quality_profile = str(meta.get('quality_profile') or 'standard').strip().lower() or 'standard'
+        upload_mode = str(meta.get('upload_mode') or 'full').strip().lower() or 'full'
+        encoding_quality = meta.get('encoding_quality')
+        if encoding_quality is None:
+            encoding_quality = meta.get('full_image_webp_quality')
+        encoding_format = str(meta.get('encoding_format') or mime or '').strip().lower() or mime
+        source_width = meta.get('source_width')
+        source_height = meta.get('source_height')
+        stored_width = meta.get('stored_width')
+        stored_height = meta.get('stored_height')
+        stored_bytes = path.stat().st_size
+        common_metadata = {
+            'user_id': self.user_id,
+            'uploaded_at': datetime.now(timezone.utc).isoformat(),
+            'uploaded_by': self.user_id,
+            'upload_mode': upload_mode,
+            'upload_variant': 'full',
+            'cloud_plan': str(meta.get('cloud_plan') or ('pro' if quality_profile == 'high' else 'free')),
+            'quality_profile': quality_profile,
+            'encoding_quality': '' if encoding_quality is None else str(encoding_quality),
+            'encoding_format': encoding_format,
+            'source_width': '' if source_width is None else str(source_width),
+            'source_height': '' if source_height is None else str(source_height),
+            'stored_width': '' if stored_width is None else str(stored_width),
+            'stored_height': '' if stored_height is None else str(stored_height),
+            'stored_bytes': str(stored_bytes),
+        }
 
         try:
-            r2.put_file(path, storage_path, content_type=mime, cache_control=cache_control, timeout=120)
+            r2.put_file(
+                path,
+                storage_path,
+                content_type=mime,
+                cache_control=cache_control,
+                timeout=120,
+                custom_metadata=common_metadata,
+            )
         except Exception as exc:
             raise CloudSyncError(f'R2 upload failed: {exc}') from exc
 
@@ -4566,12 +4656,30 @@ class SporelyCloudClient:
                 buffer = io.BytesIO()
                 thumb_format, thumb_mime, thumb_options = _cloud_thumb_save_format(path)
                 img_resized.save(buffer, format=thumb_format, **thumb_options)
+                thumb_quality = thumb_options.get('quality')
+                thumb_metadata = {
+                    'user_id': self.user_id,
+                    'uploaded_at': common_metadata['uploaded_at'],
+                    'uploaded_by': self.user_id,
+                    'upload_mode': upload_mode,
+                    'upload_variant': 'thumb',
+                    'cloud_plan': common_metadata['cloud_plan'],
+                    'quality_profile': quality_profile,
+                    'encoding_quality': '' if thumb_quality is None else str(thumb_quality),
+                    'encoding_format': thumb_mime,
+                    'source_width': '' if source_width is None else str(source_width),
+                    'source_height': '' if source_height is None else str(source_height),
+                    'stored_width': str(target_w),
+                    'stored_height': str(target_h),
+                    'stored_bytes': str(len(buffer.getvalue())),
+                }
                 r2.put_bytes(
                     buffer.getvalue(),
                     variant_path,
                     content_type=thumb_mime,
                     cache_control=cache_control,
                     timeout=60,
+                    custom_metadata=thumb_metadata,
                 )
         except Exception as e:
             print(f"[cloud_sync] Warning: Could not generate/upload thumbnail for {storage_path}: {e}")
@@ -5045,6 +5153,16 @@ def push_all(
                     ),
                     progress_state,
                 )
+            elif is_image_too_large_for_plan_error(raw_error):
+                _set_observation_plan_image_blocked(int(obs['id']), raw_error)
+                _emit_progress(
+                    progress_cb,
+                    (
+                        f"Observation {i + 1}/{max(1, total)} blocked: "
+                        f"{IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE}"
+                    ),
+                    progress_state,
+                )
             else:
                 _emit_progress(
                     progress_cb,
@@ -5088,6 +5206,8 @@ def _push_images_for_observation(
             prepared_items, cleanup, prep_warnings = prepare_images_cb(obs, prepare_progress)
             warnings.extend(prep_warnings or [])
         except Exception as e:
+            if is_image_too_large_for_plan_error(e):
+                raise
             print(f'[cloud_sync] Observation {obs["id"]} image preparation failed: {e}')
             prepared_items = []
             cleanup = None
@@ -5294,7 +5414,13 @@ def _push_images_for_observation(
                         remote_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                     metadata_matches = True
                 if not file_matches:
-                    client.upload_image_file(upload_path, obs_cloud_id, img_cloud_id, storage_path=storage_path)
+                    client.upload_image_file(
+                        upload_path,
+                        obs_cloud_id,
+                        img_cloud_id,
+                        storage_path=storage_path,
+                        upload_meta=dict(item.get('cloud_upload_meta') or {}),
+                    )
                 kept_cloud_ids.add(str(img_cloud_id or '').strip())
 
                 try:
@@ -5312,6 +5438,8 @@ def _push_images_for_observation(
                 if current_file_sig:
                     _store_cloud_image_file_signature(obs.get('id'), local_image_id, current_file_sig)
             except CloudSyncError as e:
+                if is_image_too_large_for_plan_error(e):
+                    raise
                 had_failures = True
                 print(f'[cloud_sync] Image {img["id"]} push failed: {e}')
             finally:

@@ -148,13 +148,18 @@ class CloudflareR2Client:
         *,
         content_type: str | None = None,
         cache_control: str | None = None,
+        custom_metadata: Mapping[str, object] | None = None,
         timeout: int = 120,
     ) -> None:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(path)
         payload_hash = self._sha256_file(path)
-        extra_headers = self._extra_headers(content_type=content_type, cache_control=cache_control)
+        extra_headers = self._extra_headers(
+            content_type=content_type,
+            cache_control=cache_control,
+            custom_metadata=custom_metadata,
+        )
         with path.open("rb") as handle:
             response = self._request(
                 "PUT",
@@ -173,11 +178,16 @@ class CloudflareR2Client:
         *,
         content_type: str | None = None,
         cache_control: str | None = None,
+        custom_metadata: Mapping[str, object] | None = None,
         timeout: int = 120,
     ) -> None:
         payload = bytes(data)
         payload_hash = hashlib.sha256(payload).hexdigest()
-        extra_headers = self._extra_headers(content_type=content_type, cache_control=cache_control)
+        extra_headers = self._extra_headers(
+            content_type=content_type,
+            cache_control=cache_control,
+            custom_metadata=custom_metadata,
+        )
         response = self._request(
             "PUT",
             key=key,
@@ -230,12 +240,18 @@ class CloudflareR2Client:
         *,
         content_type: str | None = None,
         cache_control: str | None = None,
+        custom_metadata: Mapping[str, object] | None = None,
     ) -> dict[str, str]:
         headers: dict[str, str] = {}
         if content_type:
             headers["Content-Type"] = str(content_type)
         if cache_control:
             headers["Cache-Control"] = str(cache_control)
+        for key, value in dict(custom_metadata or {}).items():
+            meta_key = str(key or "").strip().lower().replace("_", "-")
+            if not meta_key:
+                continue
+            headers[f"x-amz-meta-{meta_key}"] = "" if value is None else str(value)
         return headers
 
     def _request(

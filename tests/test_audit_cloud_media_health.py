@@ -156,7 +156,7 @@ class DummyClient:
         self.uploaded_urls = uploaded_urls
         self.upload_calls: list[dict] = []
 
-    def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None):
+    def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
         self.upload_calls.append(
             {
                 "local_path": str(local_path),

@@ -33,7 +33,6 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     CloudSyncError,
-    privacy_slot_limit_user_message,
     sync_all,
     load_saved_cloud_password,
     summarize_sync_issues,
@@ -420,7 +419,13 @@ class CloudSyncDialog(QDialog):
                 issue_parts.append(f'{other_count} error{"s" if other_count != 1 else ""}')
             summary += f"\n{', '.join(issue_parts)} — check console or Details for raw messages."
             if blocked_count:
-                summary += f"\n{privacy_slot_limit_user_message()}"
+                blocked_messages = []
+                for entry in issue_summary.get('blocked_errors', []) or []:
+                    message = str(entry.get('message') or '').strip()
+                    if message and message not in blocked_messages:
+                        blocked_messages.append(message)
+                if blocked_messages:
+                    summary += '\n' + '\n'.join(blocked_messages)
             for e in errors:
                 print(f'[cloud_sync] {e}')
         elif deleted_count:

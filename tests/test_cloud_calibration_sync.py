@@ -287,13 +287,14 @@ def test_push_calibration_reference_image_uploads_derivative_and_patches_relativ
     patches = []
 
     class DummyR2:
-        def put_bytes(self, data, key, *, content_type=None, cache_control=None, timeout=None):
+        def put_bytes(self, data, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
             uploads.append(
                 {
                     "data": bytes(data),
                     "key": key,
                     "content_type": content_type,
                     "cache_control": cache_control,
+                    "custom_metadata": dict(custom_metadata or {}),
                     "timeout": timeout,
                 }
             )

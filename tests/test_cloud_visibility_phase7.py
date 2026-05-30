@@ -401,7 +401,7 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(client, "pull_image_metadata", lambda obs_cloud_id: order.append("existing_rows") or [])
     monkeypatch.setattr(client, "push_image_metadata", lambda img, obs_cloud_id, storage_path: order.append("push_metadata") or "cloud-image-1")
-    monkeypatch.setattr(client, "upload_image_file", lambda local_path, obs_cloud_id, img_cloud_id, storage_path=None: order.append("upload_file") or storage_path)
+    monkeypatch.setattr(client, "upload_image_file", lambda local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None: order.append("upload_file") or storage_path)
     monkeypatch.setattr(client, "set_image_desktop_id", lambda cloud_image_id, desktop_id: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: order.append("patch_storage"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
@@ -1540,7 +1540,7 @@ def test_push_images_for_observation_skips_tombstoned_local_image_id(monkeypatch
         pushed_ids.append(int(img["id"]))
         return f"cloud-image-{int(img['id'])}"
 
-    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None):
+    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
         uploaded_paths.append(str(local_path))
         return storage_path
 
@@ -2007,7 +2007,7 @@ def test_push_images_for_observation_skips_tombstoned_cloud_image_and_keeps_unre
         pushed_ids.append(int(img["id"]))
         return f"cloud-image-{int(img['id'])}"
 
-    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None):
+    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
         uploaded_paths.append(str(local_path))
         return storage_path
 
@@ -2103,7 +2103,7 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
             push_calls.append(("push_metadata", str(args[0].get("id")), str(args[1])))
             return "cloud-image-1"
 
-        def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None):
+        def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
             uploaded_paths.append(str(local_path))
             return storage_path
 

@@ -44,3 +44,47 @@ def test_download_to_file(monkeypatch, tmp_path):
     
     assert len(requested_urls) == 1
     assert requested_urls[0] == "https://s3.test/sporely-media/user_123/obs_456/photo.avif"
+
+
+def test_put_bytes_sends_custom_metadata_headers(monkeypatch):
+    config = R2Config(
+        access_key_id="test_key",
+        secret_access_key="test_secret",
+        s3_endpoint="https://s3.test",
+        public_base_url="https://media.sporely.no",
+    )
+    client = CloudflareR2Client(config)
+
+    captured = {}
+
+    def mock_request(self, method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = dict(kwargs.get("headers") or {})
+
+        class _Response:
+            ok = True
+            text = ""
+            status_code = 200
+
+        return _Response()
+
+    monkeypatch.setattr("requests.Session.request", mock_request)
+
+    client.put_bytes(
+        b"fake_bytes",
+        "user_123/obs_456/photo.webp",
+        content_type="image/webp",
+        cache_control="public, max-age=31536000, immutable",
+        custom_metadata={
+            "quality_profile": "high",
+            "encoding_quality": 80,
+            "encoding_format": "image/webp",
+        },
+    )
+
+    assert captured["method"] == "PUT"
+    assert captured["url"] == "https://s3.test/sporely-media/user_123/obs_456/photo.webp"
+    assert captured["headers"]["x-amz-meta-quality-profile"] == "high"
+    assert captured["headers"]["x-amz-meta-encoding-quality"] == "80"
+    assert captured["headers"]["x-amz-meta-encoding-format"] == "image/webp"
