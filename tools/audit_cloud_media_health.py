@@ -91,6 +91,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _emit_progress(message: str) -> None:
+    print(message, flush=True)
+
+
 def _sqlite_connect_readonly() -> sqlite3.Connection:
     db_path = get_database_path()
     if not db_path.exists():
@@ -633,8 +637,13 @@ def _repair_rows(
     probe_session: requests.Session,
 ) -> list[dict[str, Any]]:
     repaired_rows: list[dict[str, Any]] = []
-    for row in rows:
+    total_rows = len(rows)
+    for index, row in enumerate(rows, start=1):
         row = dict(row)
+        _emit_progress(
+            f"Repairing {index}/{total_rows} cloud {row.get('cloud_image_id') or '-'} "
+            f"(local {row.get('local_image_id') or '-'})..."
+        )
         if row.get("repairable") != "yes":
             row["repair_status"] = "skipped_not_repairable"
             repaired_rows.append(row)
@@ -710,7 +719,14 @@ def run_audit(
         cloud_rows = _fetch_cloud_rows(client, scope_cloud_ids, args.limit)
 
     probe_session = requests.Session()
-    report_rows = [_prepare_row_report(row, context, probe_session) for row in cloud_rows]
+    report_rows: list[dict[str, Any]] = []
+    total_rows = len(cloud_rows)
+    for index, row in enumerate(cloud_rows, start=1):
+        _emit_progress(
+            f"Probing {index}/{total_rows} cloud {row.get('id') or '-'} "
+            f"(desktop {row.get('desktop_id') or '-'})..."
+        )
+        report_rows.append(_prepare_row_report(row, context, probe_session))
     if args.repair:
         report_rows = _repair_rows(client, report_rows, probe_session)
 
