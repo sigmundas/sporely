@@ -1828,6 +1828,43 @@ def _tombstoned_cloud_image_warning(local_id: int | None, cloud_image_id: str) -
     return f"obs {int(local_id or 0)}: skipped cloud image {cloud_image_id} because it has a local tombstone"
 
 
+def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | None) -> list[dict]:
+    """Return cloud images that should exist locally but are missing or unreadable."""
+    pullable_remote_images = [
+        dict(row or {})
+        for row in (remote_images or [])
+        if should_pull_cloud_image_to_desktop(row)
+        and not str(row.get('deleted_at') or '').strip()
+        and str(row.get('id') or '').strip()
+    ]
+    if not pullable_remote_images:
+        return []
+
+    local_images = ImageDB.get_images_for_observation(int(local_id))
+    local_cloud_map = {
+        str(img.get('cloud_id') or '').strip(): img
+        for img in local_images
+        if should_pull_cloud_image_to_desktop(img)
+        if str(img.get('cloud_id') or '').strip()
+    }
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
+        [str(row.get('id') or '').strip() for row in pullable_remote_images]
+    )
+
+    missing_remote_images: list[dict] = []
+    for remote_image in pullable_remote_images:
+        cloud_image_id = str(remote_image.get('id') or '').strip()
+        if not cloud_image_id or cloud_image_id in tombstoned_cloud_ids:
+            continue
+        local_image = local_cloud_map.get(cloud_image_id)
+        if local_image is None:
+            missing_remote_images.append(remote_image)
+            continue
+        if _resolve_existing_local_image_asset_path(local_image.get('filepath')) is None:
+            missing_remote_images.append(remote_image)
+    return missing_remote_images
+
+
 def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
     warnings: list[str] = []
     for tombstone in list_pending_image_tombstones():
@@ -2060,6 +2097,36 @@ def _refresh_local_cloud_media_signature(observation_id: int | str) -> str:
     if str(signature or '').strip():
         _store_local_cloud_media_signature(observation_id, signature)
     return signature
+
+
+def _resolve_existing_local_image_asset_path(path_value: str | None) -> Path | None:
+    text = str(path_value or '').strip()
+    if not text:
+        return None
+    try:
+        raw_path = Path(text).expanduser()
+    except Exception:
+        return None
+
+    candidates: list[Path] = []
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        images_dir = get_images_dir()
+        if raw_path.parts and raw_path.parts[0] == images_dir.name:
+            candidates.append(images_dir.parent / raw_path)
+        candidates.append(images_dir / raw_path)
+        candidates.append(raw_path)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if _is_readable_local_file(candidate):
+            return candidate
+    return None
 
 
 def _detect_deleted_remote_observations(remote_obs: list[dict] | None) -> list[dict]:
@@ -5753,6 +5820,7 @@ def pull_all(
                     stored_snapshot,
                 )
                 should_store_snapshot = True
+                local_media_changed = False
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
                         progress_cb,
@@ -5874,6 +5942,37 @@ def pull_all(
                     if not local_media_changed:
                         _refresh_local_cloud_media_signature(local_id)
                     pulled += 1
+                if stored_snapshot:
+                    retry_remote_images = _remote_images_missing_locally(local_id, remote_images)
+                    if retry_remote_images:
+                        _emit_progress(
+                            progress_cb,
+                            f"Retrying missing cloud media for local observation {local_id}: {name}…",
+                            progress_state,
+                        )
+                        warnings = _apply_remote_images_to_local(
+                            client,
+                            local_id,
+                            retry_remote_images,
+                            allow_delete=False,
+                        )
+                        errors.extend(warnings)
+                        measurement_result = _import_remote_measurements_for_observation(
+                            client,
+                            local_id,
+                            cloud_id,
+                            remote_images,
+                            remote_measurements,
+                        )
+                        errors.extend(measurement_result.get('warnings') or [])
+                        if measurement_result.get('conflict'):
+                            _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                        else:
+                            _stamp_observation_synced(local_id, cloud_id)
+                        if not local_media_changed:
+                            _refresh_local_cloud_media_signature(local_id)
+                        if not remote_changed:
+                            pulled += 1
                 if cloud_id and should_store_snapshot:
                     # Re-fetch images so the snapshot reflects any desktop_id
                     # values that were written back to the cloud during this pull.

@@ -1,5 +1,14 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Cloud media integrity repair
+
+A media-health tool was added after older active `observation_images` rows were found pointing to missing R2 objects. The tool can dry-run all active cloud image rows, detect missing original/thumb objects, and repair them from matching local desktop files by reuploading to existing keys. It does not create duplicate cloud rows, tombstone rows, or delete R2/local files.
+
+Remaining hardening:
+- prevent active DB rows from being treated as healthy when upload verification fails
+- consider warning during sync if an active cloud image row points to missing media
+- keep R2 garbage collection separate from tombstone sync
+
 ## Phase 7: Transparency, Social Trails, and Privacy Slots
 *Implemented Q2 2026*
 
