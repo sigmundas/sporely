@@ -82,6 +82,9 @@ def normalize_media_key(value: str | None) -> str:
     bucket_prefix = f"{R2_BUCKET_NAME}/"
     if text.startswith(bucket_prefix):
         return text[len(bucket_prefix) :].lstrip("/")
+    for prefix in _SUPABASE_STORAGE_PREFIXES:
+        if text.startswith(prefix):
+            return text[len(prefix) :].lstrip("/")
     return text.lstrip("/")
 
 
