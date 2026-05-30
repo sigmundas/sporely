@@ -490,7 +490,7 @@ def test_create_local_from_remote_preserves_interesting_comment(
     assert captured["interesting_comment"] is expected
 
 
-def test_mark_observation_dirty_only_marks_sync_status(tmp_path, monkeypatch):
+def test_mark_observation_dirty_clears_blocked_sync_state(tmp_path, monkeypatch):
     db_path = tmp_path / "cloud_dirty.sqlite"
     conn = sqlite3.connect(db_path)
     conn.execute(
@@ -499,13 +499,31 @@ def test_mark_observation_dirty_only_marks_sync_status(tmp_path, monkeypatch):
             id INTEGER PRIMARY KEY,
             cloud_id TEXT,
             sync_status TEXT,
-            synced_at TEXT
+            synced_at TEXT,
+            sync_error_code TEXT,
+            sync_error_message TEXT,
+            sync_blocked_reason TEXT,
+            sync_blocked_at TEXT
         )
         """
     )
     conn.execute(
-        "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
-        (1, "cloud-obs-1", "synced", "2026-01-01T00:00:00Z"),
+        """
+        INSERT INTO observations (
+            id, cloud_id, sync_status, synced_at,
+            sync_error_code, sync_error_message, sync_blocked_reason, sync_blocked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            1,
+            "cloud-obs-1",
+            "blocked",
+            "2026-01-01T00:00:00Z",
+            "23514",
+            'POST observations: {"code":"23514","message":"Free Sporely accounts can keep up to 20 privacy slot observations. Publish or use exact public location to continue."}',
+            cloud_sync.privacy_slot_limit_user_message(),
+            "2026-01-01T00:00:01Z",
+        ),
     )
     conn.commit()
     conn.close()
@@ -517,13 +535,129 @@ def test_mark_observation_dirty_only_marks_sync_status(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     try:
         row = conn.execute(
-            "SELECT cloud_id, sync_status, synced_at FROM observations WHERE id = ?",
+            """
+            SELECT
+                cloud_id, sync_status, synced_at,
+                sync_error_code, sync_error_message,
+                sync_blocked_reason, sync_blocked_at
+            FROM observations
+            WHERE id = ?
+            """,
             (1,),
         ).fetchone()
     finally:
         conn.close()
 
-    assert row == ("cloud-obs-1", "dirty", "2026-01-01T00:00:00Z")
+    assert row == (
+        "cloud-obs-1",
+        "dirty",
+        "2026-01-01T00:00:00Z",
+        None,
+        None,
+        None,
+        None,
+    )
+
+
+def test_privacy_slot_limit_error_classifier_matches_supabase_payload():
+    assert cloud_sync.is_privacy_slot_limit_error(
+        {
+            "code": "23514",
+            "message": "Free Sporely accounts can keep up to 20 privacy slot observations. Publish or use exact public location to continue.",
+        }
+    )
+    assert cloud_sync.is_privacy_slot_limit_error(
+        'POST observations: {"code":"23514","message":"Free Sporely accounts can keep up to 20 privacy slot observations. Publish or use exact public location to continue."}'
+    )
+    assert not cloud_sync.is_privacy_slot_limit_error(
+        {
+            "code": "23514",
+            "message": "Some other check constraint failed.",
+        }
+    )
+
+
+def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, monkeypatch):
+    db_path = tmp_path / "push_all_blocked.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE observations (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            cloud_id TEXT,
+            sync_status TEXT,
+            synced_at TEXT,
+            user_id TEXT,
+            visibility TEXT,
+            location_precision TEXT,
+            sync_error_code TEXT,
+            sync_error_message TEXT,
+            sync_blocked_reason TEXT,
+            sync_blocked_at TEXT
+        );
+        INSERT INTO observations (
+            id, date, cloud_id, sync_status, synced_at,
+            user_id, visibility, location_precision
+        ) VALUES
+            (1, '2026-05-02', NULL, 'dirty', NULL, 'user-1', 'private', 'fuzzed'),
+            (2, '2026-05-01', NULL, 'dirty', NULL, 'user-1', 'public', 'exact');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    class DummyClient:
+        def push_observation(self, obs):
+            if int(obs.get("id") or 0) == 1:
+                raise cloud_sync.CloudSyncError(
+                    'POST observations: {"code":"23514","message":"Free Sporely accounts can keep up to 20 privacy slot observations. Publish or use exact public location to continue."}'
+                )
+            return "cloud-obs-2"
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+
+    result = cloud_sync.push_all(
+        DummyClient(),
+        sync_images=False,
+        sync_calibrations=False,
+    )
+
+    summary = cloud_sync.summarize_sync_issues(result["errors"])
+    conn = sqlite3.connect(db_path)
+    try:
+        blocked_row = conn.execute(
+            """
+            SELECT
+                cloud_id, sync_status, sync_error_code, sync_error_message,
+                sync_blocked_reason, sync_blocked_at
+            FROM observations
+            WHERE id = 1
+            """
+        ).fetchone()
+        synced_row = conn.execute(
+            """
+            SELECT cloud_id, sync_status
+            FROM observations
+            WHERE id = 2
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 1
+    assert summary["blocked_count"] == 1
+    assert summary["other_count"] == 0
+    assert blocked_row[0] is None
+    assert blocked_row[1] == "blocked"
+    assert blocked_row[2] == "23514"
+    assert "privacy slot observations" in blocked_row[3]
+    assert blocked_row[4] == cloud_sync.privacy_slot_limit_user_message()
+    assert blocked_row[5] is not None
+    assert synced_row == ("cloud-obs-2", "synced")
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):

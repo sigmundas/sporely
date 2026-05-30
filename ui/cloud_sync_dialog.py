@@ -33,6 +33,7 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     CloudSyncError,
+    privacy_slot_limit_user_message,
     sync_all,
     load_saved_cloud_password,
     summarize_sync_issues,
@@ -398,6 +399,7 @@ class CloudSyncDialog(QDialog):
         issue_summary = summarize_sync_issues(errors)
         conflicts = list(issue_summary.get('conflicts', []) or [])
         conflict_count = int(issue_summary.get('conflict_count', 0) or 0)
+        blocked_count = int(issue_summary.get('blocked_count', 0) or 0)
         other_count = int(issue_summary.get('other_count', 0) or 0)
         deleted_count = len(deleted_remote)
         parts = []
@@ -406,15 +408,19 @@ class CloudSyncDialog(QDialog):
         if pulled:
             parts.append(f'{pulled} observation{"s" if pulled != 1 else ""} pulled')
         if not parts:
-            parts.append('Everything up to date')
+            parts.append('Cloud sync blocked' if blocked_count else 'Everything up to date')
         summary = ', '.join(parts) + '.'
         if errors:
             issue_parts = []
             if conflict_count:
                 issue_parts.append(f'{conflict_count} conflict{"s" if conflict_count != 1 else ""}')
+            if blocked_count:
+                issue_parts.append(f'{blocked_count} blocked')
             if other_count:
                 issue_parts.append(f'{other_count} error{"s" if other_count != 1 else ""}')
             summary += f"\n{', '.join(issue_parts)} — check console or Details for raw messages."
+            if blocked_count:
+                summary += f"\n{privacy_slot_limit_user_message()}"
             for e in errors:
                 print(f'[cloud_sync] {e}')
         elif deleted_count:
@@ -429,12 +435,14 @@ class CloudSyncDialog(QDialog):
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Warning)
             box.setWindowTitle('Sporely Cloud Sync')
-            if conflict_count and not other_count:
+            if blocked_count and not conflict_count and not other_count:
+                box.setText('Cloud sync blocked by the privacy cap.')
+            elif conflict_count and not other_count and not blocked_count:
                 box.setText('Most cloud changes synced automatically, but a few observations still need review.')
             else:
                 box.setText('Cloud sync completed, but some observations or images failed.')
             box.setInformativeText(
-                f'Pushed: {pushed}\nPulled: {pulled}\nNeeds review: {conflict_count}\nOther errors: {other_count}\n\nOpen Details to copy the full error list.'
+                f'Pushed: {pushed}\nPulled: {pulled}\nNeeds review: {conflict_count}\nBlocked: {blocked_count}\nOther errors: {other_count}\n\nOpen Details to copy the full error list.'
             )
             box.setDetailedText('\n'.join(str(err) for err in errors))
             box.exec()

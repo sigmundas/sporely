@@ -63,8 +63,9 @@ class ConflictResolutionWorker(QThread):
                 action = dec['action']
                 self.progress.emit(f"Resolving conflict {i+1} of {total}...", i, total)
                 
+                result = None
                 if action == 'keep_local':
-                    resolve_conflict_keep_local(client, local_id, prepare_images_cb=self.prepare_images_cb)
+                    result = resolve_conflict_keep_local(client, local_id, prepare_images_cb=self.prepare_images_cb)
                 elif action == 'keep_cloud':
                     allow_delete = dec.get('allow_delete', False)
                     def _retryable_cloud_error(exc: Exception) -> bool:
@@ -82,16 +83,20 @@ class ConflictResolutionWorker(QThread):
                             )
                         )
                     try:
-                        resolve_conflict_keep_cloud(client, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
+                        result = resolve_conflict_keep_cloud(client, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
                     except Exception as exc:
                         if not _retryable_cloud_error(exc):
                             raise
                         client_retry = SporelyCloudClient.from_stored_credentials()
                         if client_retry is None:
                             raise CloudSyncError('Not logged in to Sporely Cloud')
-                        resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
+                        result = resolve_conflict_keep_cloud(client_retry, local_id, cloud_id=cloud_id or None, allow_delete=allow_delete)
                 elif action == 'merge':
-                    resolve_conflict_merge(client, local_id, cloud_id=cloud_id or None, prepare_images_cb=self.prepare_images_cb)
+                    result = resolve_conflict_merge(client, local_id, cloud_id=cloud_id or None, prepare_images_cb=self.prepare_images_cb)
+                if isinstance(result, dict) and result.get('blocked'):
+                    blocked_reason = str(result.get('blocked_reason') or '').strip()
+                    if blocked_reason:
+                        self.progress.emit(f"Conflict {i+1} blocked: {blocked_reason}", i + 1, total)
                 resolved_any = True
             
             self.progress.emit("Conflict resolution finished.", total, total)

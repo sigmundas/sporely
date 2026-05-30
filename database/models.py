@@ -115,6 +115,97 @@ def _table_columns(cursor, table_name: str) -> set[str]:
         return set()
 
 
+def update_observation_sync_state(
+    cursor,
+    observation_id: int | None,
+    *,
+    cloud_id: str | object = _UNSET,
+    sync_status: str | object = _UNSET,
+    synced_at: str | object = _UNSET,
+    clear_sync_error_state: bool = False,
+    sync_error_code: str | object = _UNSET,
+    sync_error_message: str | object = _UNSET,
+    sync_blocked_reason: str | object = _UNSET,
+    sync_blocked_at: str | object = _UNSET,
+) -> None:
+    """Update sync metadata fields on one observation when the columns exist."""
+    try:
+        obs_id = int(observation_id or 0)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+
+    columns = _table_columns(cursor, "observations")
+    updates: list[str] = []
+    values: list[object] = []
+
+    if cloud_id is not _UNSET and "cloud_id" in columns:
+        updates.append("cloud_id = ?")
+        values.append(cloud_id)
+    if sync_status is not _UNSET and "sync_status" in columns:
+        updates.append("sync_status = ?")
+        values.append(sync_status)
+    if synced_at is not _UNSET and "synced_at" in columns:
+        updates.append("synced_at = ?")
+        values.append(synced_at)
+
+    error_fields = (
+        ("sync_error_code", sync_error_code),
+        ("sync_error_message", sync_error_message),
+        ("sync_blocked_reason", sync_blocked_reason),
+        ("sync_blocked_at", sync_blocked_at),
+    )
+    for column_name, value in error_fields:
+        if column_name not in columns:
+            continue
+        if clear_sync_error_state:
+            updates.append(f"{column_name} = NULL")
+        elif value is not _UNSET:
+            updates.append(f"{column_name} = ?")
+            values.append(value)
+
+    if not updates:
+        return
+
+    values.append(obs_id)
+    cursor.execute(
+        f"UPDATE observations SET {', '.join(updates)} WHERE id = ?",
+        values,
+    )
+
+
+def mark_observation_sync_dirty(cursor, observation_id: int | None) -> None:
+    """Mark a cloud-linked observation dirty and clear any blocked sync state."""
+    try:
+        obs_id = int(observation_id or 0)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+
+    columns = _table_columns(cursor, "observations")
+    updates: list[str] = []
+
+    if "sync_status" in columns:
+        updates.append(
+            "sync_status = CASE WHEN cloud_id IS NOT NULL OR sync_status = 'blocked' THEN 'dirty' ELSE sync_status END"
+        )
+    for column_name in ("sync_error_code", "sync_error_message", "sync_blocked_reason", "sync_blocked_at"):
+        if column_name in columns:
+            updates.append(
+                f"{column_name} = CASE WHEN cloud_id IS NOT NULL OR sync_status = 'blocked' THEN NULL ELSE {column_name} END"
+            )
+
+    if not updates:
+        return
+
+    cursor.execute(
+        f"UPDATE observations SET {', '.join(updates)} WHERE id = ?",
+        (obs_id,),
+    )
+
+
 def reset_cloud_sync_state() -> dict[str, int]:
     """Remove all local cloud links so the DB can bind to a new account."""
     conn = get_connection()
@@ -134,6 +225,9 @@ def reset_cloud_sync_state() -> dict[str, int]:
             set_parts = ["cloud_id = NULL", "sync_status = 'dirty'"]
             if "synced_at" in observations_cols:
                 set_parts.append("synced_at = NULL")
+            for column_name in ("sync_error_code", "sync_error_message", "sync_blocked_reason", "sync_blocked_at"):
+                if column_name in observations_cols:
+                    set_parts.append(f"{column_name} = NULL")
             cursor.execute(f"UPDATE observations SET {', '.join(set_parts)}")
             observation_count = cursor.rowcount if cursor.rowcount is not None else 0
 
@@ -194,27 +288,12 @@ def _touch_observation(cursor, observation_id: int | None, *, mark_dirty: bool =
             cursor.execute(
                 """
                 UPDATE observations
-                SET updated_at = ?,
-                    sync_status = CASE
-                        WHEN cloud_id IS NOT NULL THEN 'dirty'
-                        ELSE sync_status
-                    END
+                SET updated_at = ?
                 WHERE id = ?
                 """,
                 (_sqlite_now_text(), obs_id),
             )
-        else:
-            cursor.execute(
-                """
-                UPDATE observations
-                SET sync_status = CASE
-                    WHEN cloud_id IS NOT NULL THEN 'dirty'
-                    ELSE sync_status
-                END
-                WHERE id = ?
-                """,
-                (obs_id,),
-            )
+        mark_observation_sync_dirty(cursor, obs_id)
     else:
         if has_updated_at:
             cursor.execute(
@@ -1137,12 +1216,11 @@ class ObservationDB:
                 if _observations_has_updated_at(cursor):
                     updates.append('updated_at = ?')
                     values.append(_sqlite_now_text())
-                if current.get('cloud_id'):
-                    updates.append("sync_status = 'dirty'")
                 values.append(observation_id)
                 cursor.execute(f'''
                     UPDATE observations SET {', '.join(updates)} WHERE id = ?
                 ''', values)
+                mark_observation_sync_dirty(cursor, observation_id)
 
             conn.commit()
             return new_folder_path

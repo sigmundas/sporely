@@ -37,6 +37,8 @@ from database.models import (
     SettingsDB,
     MeasurementDB,
     CalibrationDB,
+    mark_observation_sync_dirty,
+    update_observation_sync_state,
     _upsert_image_tombstone,
     get_image_tombstones_by_deleted_cloud_id,
     get_image_tombstones_by_local_image_id,
@@ -778,6 +780,119 @@ ACCOUNT_MISMATCH_MESSAGE = (
     "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
     "tool in Settings to migrate your data to a new account."
 )
+PRIVACY_SLOT_LIMIT_USER_MESSAGE = (
+    "Free accounts can have up to 20 private or fuzzed-location cloud observations. "
+    "Make one public, delete one, or upgrade to Pro."
+)
+_PRIVACY_SLOT_LIMIT_HINTS = (
+    "Free Sporely accounts",
+    "20 privacy slot",
+    "privacy slot observations",
+)
+
+
+def privacy_slot_limit_user_message() -> str:
+    return PRIVACY_SLOT_LIMIT_USER_MESSAGE
+
+
+def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[str, list[str]]:
+    if seen is None:
+        seen = set()
+    try:
+        marker = id(value)
+    except Exception:
+        marker = None
+    if marker is not None and marker in seen:
+        return '', []
+    if marker is not None:
+        seen.add(marker)
+
+    code = ''
+    texts: list[str] = []
+    if value is None:
+        return code, texts
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return code, texts
+        texts.append(text)
+        if text[:1] in {'{', '['}:
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                return code, texts
+            parsed_code, parsed_texts = _collect_sync_error_details(parsed, seen)
+            if parsed_code and not code:
+                code = parsed_code
+            texts.extend(parsed_texts)
+        if not code:
+            lowered = text.lower()
+            if '23514' in text:
+                code = '23514'
+            elif 'check_violation' in lowered:
+                code = 'check_violation'
+        return code, texts
+
+    if isinstance(value, dict):
+        for key in ('code', 'sqlstate', 'status_code', 'statusCode', 'status'):
+            raw_code = value.get(key)
+            if raw_code not in (None, ''):
+                candidate = str(raw_code).strip()
+                if candidate and not code:
+                    code = candidate
+        for key in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response'):
+            if key not in value:
+                continue
+            sub_code, sub_texts = _collect_sync_error_details(value.get(key), seen)
+            if sub_code and not code:
+                code = sub_code
+            texts.extend(sub_texts)
+        return code, texts
+
+    for attr in ('code', 'sqlstate', 'status_code', 'statusCode', 'status'):
+        try:
+            raw_code = getattr(value, attr)
+        except Exception:
+            raw_code = None
+        if raw_code not in (None, ''):
+            candidate = str(raw_code).strip()
+            if candidate and not code:
+                code = candidate
+    for attr in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response'):
+        try:
+            raw_value = getattr(value, attr)
+        except Exception:
+            raw_value = None
+        if raw_value is None:
+            continue
+        sub_code, sub_texts = _collect_sync_error_details(raw_value, seen)
+        if sub_code and not code:
+            code = sub_code
+        texts.extend(sub_texts)
+    text = str(value).strip()
+    if text:
+        texts.append(text)
+        if not code:
+            lowered = text.lower()
+            if '23514' in text:
+                code = '23514'
+            elif 'check_violation' in lowered:
+                code = 'check_violation'
+    return code, texts
+
+
+def is_privacy_slot_limit_error(error) -> bool:
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    has_privacy_phrase = any(hint.lower() in haystack for hint in _PRIVACY_SLOT_LIMIT_HINTS)
+    has_constraint_code = (
+        code.strip() == '23514'
+        or code.strip().lower() == 'check_violation'
+        or '23514' in haystack
+        or 'check_violation' in haystack
+    )
+    return has_privacy_phrase and has_constraint_code
 
 
 def _normalize_cloud_user_id(value: str | None) -> str:
@@ -824,11 +939,18 @@ def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
 
 def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
     conflict_entries: dict[str, dict] = {}
+    blocked_errors: list[dict] = []
     other_errors: list[str] = []
 
     for raw_error in list(errors or []):
         text = str(raw_error or '').strip()
         if not text:
+            continue
+        if is_privacy_slot_limit_error(text):
+            blocked_errors.append({
+                'error': text,
+                'message': privacy_slot_limit_user_message(),
+            })
             continue
         push_match = _PUSH_CONFLICT_RE.match(text)
         if push_match:
@@ -871,9 +993,11 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
     return {
         'conflicts': conflicts,
         'conflict_count': len(conflicts),
+        'blocked_errors': blocked_errors,
+        'blocked_count': len(blocked_errors),
         'other_errors': other_errors,
         'other_count': len(other_errors),
-        'display_count': len(conflicts) + len(other_errors),
+        'display_count': len(conflicts) + len(blocked_errors) + len(other_errors),
     }
 
 
@@ -1305,13 +1429,12 @@ def _clear_observation_dirty_if_no_real_changes(local_id: int, cloud_id: str) ->
         return False
     conn = get_connection()
     try:
-        conn.execute(
-            """
-            UPDATE observations
-            SET sync_status = 'synced'
-            WHERE id = ?
-            """,
-            (int(local_id),),
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            sync_status='synced',
+            clear_sync_error_state=True,
         )
         conn.commit()
     finally:
@@ -2213,10 +2336,8 @@ def mark_observation_dirty(local_id: int) -> None:
         return
     conn = get_connection()
     try:
-        conn.execute(
-            "UPDATE observations SET sync_status = 'dirty' WHERE id = ?",
-            (obs_id,),
-        )
+        cursor = conn.cursor()
+        mark_observation_sync_dirty(cursor, obs_id)
         conn.commit()
     finally:
         conn.close()
@@ -2827,18 +2948,39 @@ def _stamp_observation_synced(local_id: int, cloud_id: str) -> None:
 def _set_observation_sync_state(local_id: int, cloud_id: str, *, dirty: bool) -> None:
     conn = get_connection()
     try:
-        conn.execute(
-            "UPDATE observations SET cloud_id = ?, sync_status = ?, synced_at = ? WHERE id = ?",
-            (
-                str(cloud_id or '').strip() or None,
-                'dirty' if dirty else 'synced',
-                datetime.now(timezone.utc).isoformat(),
-                int(local_id),
-            ),
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            cloud_id=str(cloud_id or '').strip() or None,
+            sync_status='dirty' if dirty else 'synced',
+            synced_at=datetime.now(timezone.utc).isoformat(),
+            clear_sync_error_state=True,
         )
         conn.commit()
     finally:
         conn.close()
+
+
+def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
+    blocked_reason = privacy_slot_limit_user_message()
+    code, _ = _collect_sync_error_details(raw_error)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            sync_status='blocked',
+            sync_error_code=code or None,
+            sync_error_message=str(raw_error or '').strip() or None,
+            sync_blocked_reason=blocked_reason,
+            sync_blocked_at=datetime.now(timezone.utc).isoformat(),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return blocked_reason
 
 
 def _remote_observation_update_kwargs(remote: dict) -> dict:
@@ -3533,12 +3675,29 @@ def resolve_conflict_keep_local(
     if not local_obs:
         raise CloudSyncError(f'Local observation {local_id} not found')
 
-    cloud_id = client.push_observation(local_obs)
+    try:
+        cloud_id = client.push_observation(local_obs)
+    except Exception as exc:
+        if not is_privacy_slot_limit_error(exc):
+            raise
+        blocked_reason = _set_observation_privacy_blocked(int(local_id), str(exc))
+        return {
+            'local_id': int(local_id),
+            'cloud_id': None,
+            'blocked': True,
+            'blocked_reason': blocked_reason,
+            'raw_error': str(exc),
+        }
     conn = get_connection()
     try:
-        conn.execute(
-            "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
-            (cloud_id, datetime.now(timezone.utc).isoformat(), int(local_id)),
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            cloud_id=cloud_id,
+            sync_status='synced',
+            synced_at=datetime.now(timezone.utc).isoformat(),
+            clear_sync_error_state=True,
         )
         conn.commit()
     finally:
@@ -3686,12 +3845,30 @@ def resolve_conflict_merge(
         warnings = []
 
     # Then push the local observation (which now includes merged images)
-    cloud_id = client.push_observation(local_obs)
+    try:
+        cloud_id = client.push_observation(local_obs)
+    except Exception as exc:
+        if not is_privacy_slot_limit_error(exc):
+            raise
+        blocked_reason = _set_observation_privacy_blocked(int(local_id), str(exc))
+        return {
+            'local_id': int(local_id),
+            'cloud_id': None,
+            'blocked': True,
+            'blocked_reason': blocked_reason,
+            'raw_error': str(exc),
+            'warnings': warnings,
+        }
     conn = get_connection()
     try:
-        conn.execute(
-            "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
-            (cloud_id, datetime.now(timezone.utc).isoformat(), int(local_id)),
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            cloud_id=cloud_id,
+            sync_status='synced',
+            synced_at=datetime.now(timezone.utc).isoformat(),
+            clear_sync_error_state=True,
         )
         conn.commit()
     finally:
@@ -4774,9 +4951,14 @@ def push_all(
 
             # Update local record with cloud_id and sync_status
             conn2 = get_connection()
-            conn2.execute(
-                "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
-                (cloud_id, datetime.now(timezone.utc).isoformat(), obs['id']),
+            cursor2 = conn2.cursor()
+            update_observation_sync_state(
+                cursor2,
+                int(obs['id']),
+                cloud_id=cloud_id,
+                sync_status='synced',
+                synced_at=datetime.now(timezone.utc).isoformat(),
+                clear_sync_error_state=True,
             )
             conn2.commit()
             conn2.close()
@@ -4852,13 +5034,25 @@ def push_all(
 
             pushed += 1
         except CloudSyncError as e:
-            errors.append(f"obs {obs['id']}: {e}")
+            raw_error = f"obs {obs['id']}: {e}"
+            if is_privacy_slot_limit_error(raw_error):
+                _set_observation_privacy_blocked(int(obs['id']), raw_error)
+                _emit_progress(
+                    progress_cb,
+                    (
+                        f"Observation {i + 1}/{max(1, total)} blocked: "
+                        f"{privacy_slot_limit_user_message()}"
+                    ),
+                    progress_state,
+                )
+            else:
+                _emit_progress(
+                    progress_cb,
+                    f"Observation {i + 1}/{max(1, total)} failed: {name}",
+                    progress_state,
+                )
+            errors.append(raw_error)
             _advance_progress(progress_state, 1)
-            _emit_progress(
-                progress_cb,
-                f"Observation {i + 1}/{max(1, total)} failed: {name}",
-                progress_state,
-            )
 
     return {
         'pushed': pushed,
@@ -5638,9 +5832,14 @@ def _create_local_from_remote(
 
     # Stamp the cloud_id and sync_status on the newly created row
     conn = get_connection()
-    conn.execute(
-        "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
-        (remote['id'], datetime.now(timezone.utc).isoformat(), local_id),
+    cursor = conn.cursor()
+    update_observation_sync_state(
+        cursor,
+        int(local_id),
+        cloud_id=remote['id'],
+        sync_status='synced',
+        synced_at=datetime.now(timezone.utc).isoformat(),
+        clear_sync_error_state=True,
     )
     conn.commit()
     conn.close()

@@ -42,7 +42,14 @@ import html
 import json
 import unicodedata
 from queue import SimpleQueue, Empty
-from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, CalibrationDB
+from database.models import (
+    ObservationDB,
+    ImageDB,
+    MeasurementDB,
+    SettingsDB,
+    CalibrationDB,
+    update_observation_sync_state,
+)
 from database.vernacular_db import VernacularDB
 from database.taxon_lookup import TaxonChoice, TaxonLookupService
 from database.reverse_location_lookup import LocationLookupResult, lookup_location_suggestions
@@ -90,6 +97,7 @@ from utils.cloud_sync import (
     SporelyCloudClient,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
+    privacy_slot_limit_user_message,
     summarize_sync_issues,
     sync_all,
     unlink_local_observation_from_cloud,
@@ -2270,6 +2278,7 @@ class ObservationsTab(QWidget):
         issue_summary = summarize_sync_issues(errors)
         conflicts = list(issue_summary.get("conflicts", []) or [])
         conflict_count = int(issue_summary.get("conflict_count", 0) or 0)
+        blocked_count = int(issue_summary.get("blocked_count", 0) or 0)
         other_count = int(issue_summary.get("other_count", 0) or 0)
         deleted_count = len(deleted_remote)
         if errors:
@@ -2284,6 +2293,11 @@ class ObservationsTab(QWidget):
                     f"cloud_id={conflict.get('cloud_id')} "
                     f"push_skipped={bool(conflict.get('push_skipped'))} "
                     f"pull_skipped={bool(conflict.get('pull_skipped'))}"
+                )
+            for idx, blocked in enumerate(issue_summary.get("blocked_errors", []) or [], 1):
+                print(
+                    f"[cloud_sync] blocked issue {idx}: "
+                    f"{blocked.get('error')} | {blocked.get('message')}"
                 )
             for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
                 print(f"[cloud_sync] other issue {idx}: {error}")
@@ -2311,13 +2325,26 @@ class ObservationsTab(QWidget):
                     issue_parts.append(
                         self.tr("{count} other issue(s)").format(count=other_count)
                     )
+                if blocked_count:
+                    issue_parts.append(
+                        self.tr("{count} blocked").format(count=blocked_count)
+                    )
                 if issue_parts:
                     message += " " + ", ".join(issue_parts) + "."
+                if blocked_count:
+                    message += " " + privacy_slot_limit_user_message()
             if deleted_count:
                 message += " " + self.tr("{count} cloud deletion(s) to review.").format(count=deleted_count)
                 level = "warning"
             self.set_status_message(message, level=level, auto_clear_ms=12000)
         elif errors:
+            if blocked_count:
+                self.set_status_message(
+                    privacy_slot_limit_user_message(),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+                return
             self.set_status_message(
                 self.tr("Cloud sync finished with {count} issue(s).").format(
                     count=int(issue_summary.get("display_count", 0) or 0)
@@ -7569,9 +7596,14 @@ class ObservationsTab(QWidget):
         synced_at = datetime.now().isoformat()
         conn = get_connection()
         try:
-            conn.execute(
-                "UPDATE observations SET cloud_id = ?, sync_status = 'synced', synced_at = ? WHERE id = ?",
-                (cloud_id, synced_at, int(local_observation_id)),
+            cursor = conn.cursor()
+            update_observation_sync_state(
+                cursor,
+                int(local_observation_id),
+                cloud_id=cloud_id,
+                sync_status='synced',
+                synced_at=synced_at,
+                clear_sync_error_state=True,
             )
             conn.commit()
         finally:
