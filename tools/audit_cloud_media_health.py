@@ -9,9 +9,12 @@ import json
 import mimetypes
 import sqlite3
 import sys
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 from PIL import Image
@@ -31,6 +34,7 @@ from utils.r2_storage import R2_PUBLIC_BASE_URL, media_variant_key, normalize_me
 MEDIA_PROBE_TIMEOUT = 15
 DEFAULT_PAGE_SIZE = 500
 MISSING_STATUSES = {"missing_404"}
+_MEDIA_CACHE_BUST_PARAM = "sporely_audit"
 REPORT_FIELDS = [
     "cloud_observation_id",
     "local_observation_id",
@@ -162,6 +166,19 @@ def _is_generated_artifact_local_image(image_row: dict) -> bool:
     return False
 
 
+def _cache_busted_media_url(url: str, *, probe_kind: str) -> str:
+    text = _normalize_text(url)
+    if not text:
+        return ""
+    parsed = urlsplit(text)
+    query_items = list(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items.append((
+        _MEDIA_CACHE_BUST_PARAM,
+        f"{probe_kind}_{time.time_ns()}_{uuid.uuid4().hex}",
+    ))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
+
+
 def _probe_public_media_url(url: str, session: requests.Session | None = None) -> dict[str, Any]:
     result = {
         "status": "unknown",
@@ -174,8 +191,19 @@ def _probe_public_media_url(url: str, session: requests.Session | None = None) -
         return result
 
     client = session or requests.Session()
+    probe_url = _cache_busted_media_url(url, probe_kind="existence")
     try:
-        response = client.head(url, timeout=MEDIA_PROBE_TIMEOUT, allow_redirects=True)
+        response = client.get(
+            probe_url,
+            timeout=MEDIA_PROBE_TIMEOUT,
+            allow_redirects=True,
+            headers={
+                "Range": "bytes=0-0",
+                "Cache-Control": "no-cache, no-store, max-age=0",
+                "Pragma": "no-cache",
+            },
+            stream=True,
+        )
     except requests.Timeout as exc:
         result["status"] = "timeout"
         result["detail"] = str(exc or "").strip() or exc.__class__.__name__
@@ -189,16 +217,24 @@ def _probe_public_media_url(url: str, session: requests.Session | None = None) -
         result["detail"] = str(exc or "").strip() or exc.__class__.__name__
         return result
 
-    status_code = int(getattr(response, "status_code", 0) or 0)
-    result["http_status"] = status_code
-    if 200 <= status_code < 300:
-        result["status"] = "exists"
-    elif status_code in {404, 410}:
-        result["status"] = "missing_404"
-    elif status_code:
-        result["status"] = "inaccessible"
-    else:
-        result["status"] = "unknown"
+    try:
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        result["http_status"] = status_code
+        if status_code in {200, 206}:
+            result["status"] = "exists"
+        elif status_code in {404, 410}:
+            result["status"] = "missing_404"
+        elif status_code:
+            result["status"] = "inaccessible"
+        else:
+            result["status"] = "unknown"
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
     return result
 
 
@@ -379,6 +415,13 @@ def _cloud_row_urls(storage_path: str | None) -> tuple[str | None, str | None]:
     return f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{storage_key}", f"{R2_PUBLIC_BASE_URL.rstrip('/')}/{thumb_key}"
 
 
+def _probe_original_and_thumb(storage_path: str | None, session: requests.Session) -> tuple[dict[str, Any], dict[str, Any]]:
+    original_url, thumb_url = _cloud_row_urls(storage_path)
+    original_probe = _probe_public_media_url(original_url or "", session=session)
+    thumb_probe = _probe_public_media_url(thumb_url or "", session=session)
+    return original_probe, thumb_probe
+
+
 def _repairable_reason(
     cloud_row: dict,
     local_candidate: dict[str, Any] | None,
@@ -423,9 +466,7 @@ def _prepare_row_report(
     match_label = match_method or match_reason
     storage_path = normalize_media_key(cloud_row.get("storage_path")) or None
     thumb_key = media_variant_key(storage_path, "thumb") if storage_path else None
-    original_url, thumb_url = _cloud_row_urls(storage_path)
-    original_probe = _probe_public_media_url(original_url or "", session=probe_session)
-    thumb_probe = _probe_public_media_url(thumb_url or "", session=probe_session)
+    original_probe, thumb_probe = _probe_original_and_thumb(storage_path, probe_session)
     repairable, reason = _repairable_reason(
         cloud_row,
         local_candidate,
@@ -620,14 +661,14 @@ def _repair_rows(
             row["repair_status"] = "uploaded"
             row["repair_uploaded_original_key"] = storage_path
             row["repair_uploaded_thumb_key"] = thumb_key
-            original_url, thumb_url = _cloud_row_urls(storage_path)
-            post_original = _probe_public_media_url(original_url or "", session=probe_session)
-            post_thumb = _probe_public_media_url(thumb_url or "", session=probe_session)
+            post_original, post_thumb = _probe_original_and_thumb(storage_path, probe_session)
             row["repair_post_original_status"] = post_original["status"]
             row["repair_post_thumb_status"] = post_thumb["status"]
             if post_original["status"] != "exists" or post_thumb["status"] != "exists":
                 row["repair_status"] = "partial"
                 row["repair_error"] = "one or more repaired objects are still not visible"
+            else:
+                row["repair_status"] = "repaired"
         except Exception as exc:
             row["repair_status"] = "failed"
             row["repair_error"] = str(exc or "").strip() or exc.__class__.__name__
@@ -638,7 +679,7 @@ def _repair_rows(
 def _summarize_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
     repairable = sum(1 for row in rows if row.get("repairable") == "yes")
     healthy = sum(1 for row in rows if row.get("repairable") == "no" and row.get("original_status") == "exists" and row.get("thumb_status") == "exists")
-    repaired = sum(1 for row in rows if row.get("repair_status") == "uploaded")
+    repaired = sum(1 for row in rows if row.get("repair_status") == "repaired")
     partial = sum(1 for row in rows if row.get("repair_status") == "partial")
     failed = sum(1 for row in rows if row.get("repair_status") == "failed")
     return {

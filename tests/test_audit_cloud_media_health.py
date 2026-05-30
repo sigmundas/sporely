@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from PIL import Image
@@ -115,6 +116,38 @@ def _probe_from_uploaded_keys(uploaded_urls: set[str]):
         }
 
     return _probe
+
+
+def test_probe_uses_cache_busted_range_get_and_treats_206_as_exists(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 206
+
+        def close(self):
+            captured["closed"] = True
+
+    class FakeSession:
+        def get(self, url, timeout=None, allow_redirects=None, headers=None, stream=None):
+            captured["url"] = url
+            captured["timeout"] = timeout
+            captured["allow_redirects"] = allow_redirects
+            captured["headers"] = dict(headers or {})
+            captured["stream"] = stream
+            return FakeResponse()
+
+    result = audit._probe_public_media_url("https://media.sporely.no/path/image.webp", session=FakeSession())
+
+    assert result["status"] == "exists"
+    assert result["http_status"] == 206
+    parsed = urlsplit(captured["url"])
+    params = parse_qs(parsed.query)
+    assert audit._MEDIA_CACHE_BUST_PARAM in params
+    assert captured["headers"]["Range"] == "bytes=0-0"
+    assert captured["headers"]["Cache-Control"] == "no-cache, no-store, max-age=0"
+    assert captured["headers"]["Pragma"] == "no-cache"
+    assert captured["stream"] is True
+    assert captured["closed"] is True
 
 
 class DummyClient:
@@ -267,7 +300,7 @@ def test_repair_mode_uploads_to_existing_storage_path_without_inserting_a_new_cl
     repaired = audit._repair_rows(client, [report], None)
 
     repaired_row = repaired[0]
-    assert repaired_row["repair_status"] == "uploaded"
+    assert repaired_row["repair_status"] == "repaired"
     assert repaired_row["repair_uploaded_original_key"] == report["storage_path"]
     assert repaired_row["repair_uploaded_thumb_key"] == report["thumb_key"]
     assert repaired_row["repair_post_original_status"] == "exists"
