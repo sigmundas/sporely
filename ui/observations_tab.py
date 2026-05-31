@@ -103,6 +103,8 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     SporelyCloudClient,
+    cloud_media_materialization_state_for_observation,
+    materialize_cloud_media_for_observation,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
     privacy_slot_limit_user_message,
@@ -280,6 +282,40 @@ class _CloudAutoSyncWorker(QThread):
             if "skipped" not in result:
                 result["skipped"] = False
             self.sync_finished.emit(result)
+        except AccountMismatchError:
+            self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+def _cloud_media_materialization_should_launch(state: dict | None, worker_running: bool = False) -> bool:
+    details = dict(state or {})
+    if worker_running:
+        return False
+    return bool(details.get('can_auto_start')) and (
+        bool(details.get('needs_materialization'))
+        or str(details.get('status') or '').strip() == 'needs_materialization'
+    )
+
+
+class _CloudMediaMaterializationWorker(QThread):
+    progress = Signal(str, int, int)
+    materialization_finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, local_observation_id: int, parent=None):
+        super().__init__(parent)
+        self._local_observation_id = int(local_observation_id)
+
+    def run(self) -> None:
+        try:
+            client = SporelyCloudClient.from_stored_credentials()
+            result = materialize_cloud_media_for_observation(
+                client,
+                self._local_observation_id,
+                progress_cb=lambda message, current, total: self.progress.emit(message, current, total),
+            )
+            self.materialization_finished.emit(result)
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
@@ -9355,6 +9391,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._dialog_temp_preview_paths: set[str] = set()
         self._dialog_preview_path_cache: dict[str, str] = {}
         self._location_lookup_workers: set[QThread] = set()
+        self._cloud_media_worker: QThread | None = None
+        # Guard against duplicate launches for the current detail view.
+        self._cloud_media_auto_start_attempted = False
+        self._cloud_media_state: dict = {}
         self._ai_selected_index: int | None = None
         self._publish_target_manual_override = False
         self._publish_target_sync_in_progress = False
@@ -10092,6 +10132,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.hint_bar = HintBar(self)
         self._hint_controller = HintStatusController(self.hint_bar, self)
         bottom_buttons.addWidget(self.hint_bar, 1)
+        self.download_cloud_media_btn = QPushButton(self.tr("Download media"))
+        self.download_cloud_media_btn.setFixedHeight(35)
+        self.download_cloud_media_btn.setMinimumWidth(120)
+        self.download_cloud_media_btn.setVisible(False)
+        self.download_cloud_media_btn.clicked.connect(self._download_cloud_media_clicked)
+        bottom_buttons.addWidget(self.download_cloud_media_btn, 0)
         bottom_buttons.addWidget(make_github_help_button(self, "observation-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
         _edit_key = "⌘E" if sys.platform == "darwin" else "Alt-E"
         self._edit_key_label = _edit_key
@@ -10298,6 +10344,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             _key = getattr(self, "_edit_key_label", "Alt-E")
             _hint = self.tr("Add or remove images for this observation (E)").replace("(E)", f"({_key})")
             self._register_hint_widget(self.edit_images_btn, _hint)
+        if getattr(self, "download_cloud_media_btn", None):
+            self._register_hint_widget(
+                self.download_cloud_media_btn,
+                self.tr("Download cloud images and measurements for this observation."),
+                allow_when_disabled=True,
+            )
         self._update_ai_button_hints()
 
     def _update_ai_button_hints(self) -> None:
@@ -11329,6 +11381,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._inat_ai_thread.wait(1000)
                 if self._inat_ai_thread.isRunning():
                     self._park_thread_until_finished(self._inat_ai_thread)
+            except Exception:
+                pass
+        if self._cloud_media_worker is not None:
+            try:
+                self._cloud_media_worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                self._cloud_media_worker.wait(1000)
+                if self._cloud_media_worker.isRunning():
+                    self._park_thread_until_finished(self._cloud_media_worker)
             except Exception:
                 pass
 
@@ -12476,6 +12539,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._initial_gallery_refresh_pending = False
             gallery_start = time.perf_counter()
             self._refresh_image_gallery_summary()
+            self._refresh_cloud_media_materialization_controls(show_prompt=True)
             QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
             _debug_import_flow(
                 "deferred gallery refresh complete; "
@@ -12492,6 +12556,292 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 f"ObservationDetailsDialog ready after {time.perf_counter() - created_at:.3f}s"
             )
             self._debug_dialog_created_at = None
+
+    def _cloud_media_materialization_observation_id(self) -> int | None:
+        obs = self.observation if isinstance(self.observation, dict) else None
+        if not obs:
+            return None
+        try:
+            obs_id = int(obs.get("id"))
+        except (TypeError, ValueError):
+            return None
+        return obs_id if obs_id > 0 else None
+
+    def _cloud_media_materialization_state(self) -> dict:
+        obs_id = self._cloud_media_materialization_observation_id()
+        if obs_id is None:
+            state = {
+                'status': 'skipped',
+                'reason': 'no_observation_id',
+                'local_observation_id': None,
+                'cloud_observation_id': None,
+                'snapshot_available': False,
+                'snapshot_has_media': False,
+                'remote_images_considered': 0,
+                'remote_measurements_considered': 0,
+                'local_images_total': 0,
+                'local_images_ready': 0,
+                'local_images_missing_files': 0,
+                'local_measurements_total': 0,
+                'local_measurements_linked': 0,
+                'local_measurements_missing': 0,
+                'needs_materialization': False,
+                'can_auto_start': False,
+                'warnings': [],
+                'worker_running': bool(self._cloud_media_worker and self._cloud_media_worker.isRunning()),
+            }
+        else:
+            state = dict(cloud_media_materialization_state_for_observation(obs_id) or {})
+            state['worker_running'] = bool(self._cloud_media_worker and self._cloud_media_worker.isRunning())
+        self._cloud_media_state = dict(state)
+        return state
+
+    def _set_cloud_media_status(self, message: str, *, level: str = "info", auto_clear_ms: int = 0) -> None:
+        text = str(message or "").strip()
+        controller = getattr(self, "_hint_controller", None)
+        if controller is not None:
+            try:
+                controller.set_status(text, timeout_ms=auto_clear_ms, tone=level)
+                return
+            except Exception:
+                pass
+        self._set_hint(text, tone=level)
+
+    def _refresh_cloud_media_materialization_controls(self, show_prompt: bool = False) -> dict:
+        state = self._cloud_media_materialization_state()
+        worker_running = bool(state.get('worker_running'))
+        if _cloud_media_materialization_should_launch(state, worker_running) and not self._cloud_media_auto_start_attempted:
+            self._cloud_media_auto_start_attempted = True
+            self.download_cloud_media_btn.setVisible(False)
+            self.download_cloud_media_btn.setEnabled(False)
+            self._set_cloud_media_status(
+                self.tr("Cloud media available. Downloading…"),
+                level="info",
+                auto_clear_ms=0,
+            )
+            self._start_cloud_media_materialization(auto_start=True)
+            return state
+
+        if worker_running:
+            self.download_cloud_media_btn.setVisible(False)
+            self.download_cloud_media_btn.setEnabled(False)
+            if show_prompt:
+                self._set_cloud_media_status(
+                    self.tr("Cloud media available. Downloading…"),
+                    level="info",
+                    auto_clear_ms=0,
+                )
+            return state
+
+        needs_materialization = bool(state.get('needs_materialization'))
+        if needs_materialization:
+            self.download_cloud_media_btn.setVisible(True)
+            self.download_cloud_media_btn.setEnabled(True)
+            self.download_cloud_media_btn.setText(self.tr("Download media"))
+            if show_prompt and not bool(state.get('can_auto_start')):
+                self._set_cloud_media_status(
+                    self.tr("Cloud media available on this observation."),
+                    level="info",
+                    auto_clear_ms=0,
+                )
+        else:
+            self.download_cloud_media_btn.setVisible(False)
+            self.download_cloud_media_btn.setEnabled(False)
+        return state
+
+    def _download_cloud_media_clicked(self) -> None:
+        state = self._cloud_media_materialization_state()
+        if not bool(state.get('needs_materialization')):
+            self.download_cloud_media_btn.setVisible(False)
+            self.download_cloud_media_btn.setEnabled(False)
+            return
+        self._start_cloud_media_materialization(auto_start=False)
+
+    def _start_cloud_media_materialization(self, *, auto_start: bool) -> None:
+        obs_id = self._cloud_media_materialization_observation_id()
+        if obs_id is None:
+            self._set_cloud_media_status(
+                self.tr("Cloud media could not be loaded for this observation."),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+            return
+        worker = self._cloud_media_worker
+        if worker is not None and worker.isRunning():
+            return
+        worker = _CloudMediaMaterializationWorker(obs_id, parent=self)
+        self._cloud_media_worker = worker
+        worker.progress.connect(self._on_cloud_media_materialization_progress)
+        worker.materialization_finished.connect(self._on_cloud_media_materialization_finished)
+        worker.error.connect(self._on_cloud_media_materialization_error)
+        worker.finished.connect(self._on_cloud_media_materialization_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        self.download_cloud_media_btn.setVisible(False)
+        self.download_cloud_media_btn.setEnabled(False)
+        self._cloud_media_auto_start_attempted = True
+        self._set_cloud_media_status(
+            self.tr("Cloud media available. Downloading…"),
+            level="info",
+            auto_clear_ms=0,
+        )
+        worker.start()
+
+    def _on_cloud_media_materialization_progress(self, message: str, current: int, total: int) -> None:
+        total_i = max(1, int(total or 0))
+        current_i = max(1, min(total_i, int(current or 0) + 1))
+        progress_message = str(message or "").strip() or self.tr("Downloading cloud media…")
+        self._set_cloud_media_status(
+            self.tr("Downloading cloud media {current}/{total}: {message}").format(
+                current=current_i,
+                total=total_i,
+                message=progress_message,
+            ),
+            level="info",
+            auto_clear_ms=0,
+        )
+
+    def _on_cloud_media_materialization_finished(self, result: dict) -> None:
+        summary = dict(result or {})
+        status = str(summary.get('status') or '').strip().lower()
+        self._reload_observation_images_after_cloud_media_materialization()
+        self._refresh_cloud_media_materialization_controls(show_prompt=False)
+        if status == 'ok':
+            self._set_cloud_media_status(
+                self.tr("Cloud media downloaded."),
+                level="success",
+                auto_clear_ms=6000,
+            )
+        elif status == 'partial':
+            warnings = [str(item or '').strip() for item in (summary.get('warnings') or []) if str(item or '').strip()]
+            warning_text = (
+                warnings[0]
+                if warnings
+                else self.tr("Cloud media downloaded with warnings.")
+            )
+            self._set_cloud_media_status(
+                warning_text,
+                level="warning",
+                auto_clear_ms=12000,
+            )
+        elif status == 'error':
+            errors = [str(item or '').strip() for item in (summary.get('errors') or []) if str(item or '').strip()]
+            error_text = (
+                errors[0]
+                if errors
+                else self.tr("Cloud media download failed.")
+            )
+            self._set_cloud_media_status(
+                error_text,
+                level="warning",
+                auto_clear_ms=12000,
+            )
+
+    def _on_cloud_media_materialization_error(self, message: str) -> None:
+        text = str(message or "").strip()
+        if not text:
+            return
+        self._set_cloud_media_status(
+            self.tr("Cloud media download failed: {message}").format(message=text),
+            level="warning",
+            auto_clear_ms=12000,
+        )
+        self._refresh_cloud_media_materialization_controls(show_prompt=False)
+
+    def _on_cloud_media_materialization_worker_finished(self) -> None:
+        worker = self._cloud_media_worker
+        if worker is not None and worker.isRunning():
+            return
+        self._cloud_media_worker = None
+        self.download_cloud_media_btn.setEnabled(True)
+        self._refresh_cloud_media_materialization_controls(show_prompt=False)
+
+    def _build_materialized_image_results_from_images(self, images: list[dict]) -> list[ImageImportResult]:
+        objectives = load_objectives()
+        resize_preference = bool(SettingsDB.get_setting("resize_to_optimal_sampling", False))
+        store_original = bool(SettingsDB.get_setting("store_original_images", False))
+        results: list[ImageImportResult] = []
+        for img in images:
+            if not img:
+                continue
+            filepath = str(img.get("filepath") or "").strip()
+            if not filepath:
+                continue
+            meta = get_image_metadata(filepath)
+            dt_value = meta.get("datetime")
+            captured_at = QDateTime(dt_value) if dt_value else None
+            exif_has_gps = meta.get("latitude") is not None or meta.get("longitude") is not None
+            image_type = (img.get("image_type") or "field").strip().lower()
+            objective_name = img.get("objective_name")
+            resolved_key = resolve_objective_key(objective_name, objectives)
+            scale_value = img.get("scale_microns_per_pixel")
+            custom_scale = None
+            if scale_value is not None and (objective_name == "Custom" or not resolved_key):
+                try:
+                    custom_scale = float(scale_value)
+                except (TypeError, ValueError):
+                    custom_scale = None
+            resize_to_optimal = resize_preference
+            resample_factor = img.get("resample_scale_factor")
+            if image_type == "microscope":
+                try:
+                    parsed_resample = float(resample_factor) if resample_factor is not None else None
+                except (TypeError, ValueError):
+                    parsed_resample = None
+                if parsed_resample is not None:
+                    resize_to_optimal = 0.0 < parsed_resample < 0.999
+                else:
+                    original_path = str(img.get("original_filepath") or "").strip()
+                    if original_path and original_path != filepath:
+                        resize_to_optimal = True
+            objective_value = resolved_key if resolved_key else (None if objective_name == "Custom" else objective_name)
+            results.append(
+                ImageImportResult(
+                    filepath=filepath,
+                    preview_path=filepath,
+                    image_id=img.get("id"),
+                    image_type=image_type,
+                    objective=objective_value,
+                    custom_scale=custom_scale,
+                    contrast=img.get("contrast"),
+                    mount_medium=img.get("mount_medium"),
+                    stain=img.get("stain"),
+                    sample_type=img.get("sample_type"),
+                    notes=img.get("notes"),
+                    captured_at=captured_at,
+                    exif_has_gps=exif_has_gps,
+                    crop_mode=img.get("crop_mode"),
+                    gps_source=bool(img.get("gps_source")) if img.get("gps_source") is not None else False,
+                    resample_scale_factor=resample_factor,
+                    resize_to_optimal=resize_to_optimal,
+                    store_original=store_original,
+                    original_filepath=str(img.get("original_filepath") or filepath),
+                )
+            )
+        return results
+
+    def _reload_observation_images_after_cloud_media_materialization(self) -> None:
+        obs_id = self._cloud_media_materialization_observation_id()
+        if obs_id is None:
+            return
+        try:
+            images = ImageDB.get_images_for_observation(obs_id)
+        except Exception:
+            images = []
+        selected_paths = list(self.image_gallery.selected_paths()) if hasattr(self, "image_gallery") else []
+        self.image_results = self._build_materialized_image_results_from_images(images)
+        self.primary_index = None if not self.image_results else min(
+            max(0, self.primary_index or 0),
+            len(self.image_results) - 1,
+        )
+        self._gps_source_index = self._resolve_gps_source_index()
+        self._refresh_image_gallery_summary()
+        if selected_paths and hasattr(self, "image_gallery"):
+            existing_paths = {item.filepath for item in self.image_results if item.filepath}
+            self.image_gallery.select_paths([path for path in selected_paths if path in existing_paths])
+        if hasattr(self, "image_gallery") and not self.image_gallery.selected_paths() and self.image_results:
+            self._select_initial_ai_image()
+        self._update_ai_controls_state()
+        self._update_ai_table()
 
     def _resolve_gps_source_index(self) -> int | None:
         source_idx = None
