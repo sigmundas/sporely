@@ -78,3 +78,9 @@ utils/slide_calibration_feb9.py
 logs/
 database/reference_data/backups/
 database/reference_data/generated/artportalen_scope.sqlite3
+
+# Local secrets / environment
+python.env
+.env
+.env.*
+*.env
