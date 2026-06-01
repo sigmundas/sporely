@@ -49,12 +49,14 @@ class _SyncWorker(QThread):
     def __init__(
         self,
         client: SporelyCloudClient,
-        sync_images: bool,
+        push_images: bool,
+        materialize_remote_images: bool,
         prepare_images_cb=None,
     ):
         super().__init__()
-        self._client      = client
-        self._sync_images = sync_images
+        self._client = client
+        self._push_images = push_images
+        self._materialize_remote_images = materialize_remote_images
         self._prepare_images_cb = prepare_images_cb
 
     def run(self) -> None:
@@ -62,7 +64,8 @@ class _SyncWorker(QThread):
             result = sync_all(
                 self._client,
                 progress_cb=lambda msg, cur, tot: self.progress.emit(msg, cur, tot),
-                sync_images=self._sync_images,
+                sync_images=self._push_images,
+                materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images_cb,
             )
             self.sync_finished.emit(result)
@@ -160,9 +163,13 @@ class CloudSyncDialog(QDialog):
         self._account_label = QLabel('Signed in as: …')
         sf.addWidget(self._account_label)
 
-        self._img_check = QCheckBox('Sync selected images (may be slow on first run)')
-        self._img_check.setChecked(True)
-        sf.addWidget(self._img_check)
+        self._push_images_check = QCheckBox('Upload desktop images to cloud')
+        self._push_images_check.setChecked(True)
+        sf.addWidget(self._push_images_check)
+
+        self._pull_images_check = QCheckBox('Download cloud images to this device')
+        self._pull_images_check.setChecked(True)
+        sf.addWidget(self._pull_images_check)
 
         self._status_label = QLabel('Ready to sync.')
         self._status_label.setWordWrap(True)
@@ -291,7 +298,8 @@ class CloudSyncDialog(QDialog):
 
         self._worker = _SyncWorker(
             self._client,
-            self._img_check.isChecked(),
+            self._push_images_check.isChecked(),
+            self._pull_images_check.isChecked(),
             prepare_images_cb=self._prepare_images_cb,
         )
         self._worker.progress.connect(self._on_sync_progress)

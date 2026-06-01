@@ -192,6 +192,7 @@ PASS: desktop blocks login/sync with account B when the local DB is already link
 PASS: no cross-account sync should occur.
 TODO/UI: Reset Cloud Sync is referenced in the error text, but no visible Reset Cloud Sync tool exists.
 TODO/UI: “Unable to save cloud login” is misleading; this is an account-link protection error, not really a credential-save failure.
+TODO/UI: Add a menu link to Pro info/payment on `sporely.no`; do not embed desktop checkout.
 
 Add a real Reset Cloud Sync / Reset Cloud Link tool, or remove that instruction from the account-mismatch message until the tool exists.
 

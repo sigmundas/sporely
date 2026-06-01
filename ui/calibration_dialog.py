@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread, Slot, QLocale
+from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread, Slot, QLocale, QSignalBlocker
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QIntValidator, QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -136,6 +136,9 @@ def um_to_nm(um: float) -> float:
 def nm_to_um(nm: float) -> float:
     """Convert nanometers to micrometers."""
     return nm / 1000
+
+
+DEFAULT_DIVISION_DISTANCE_MM = 0.01
 
 
 def get_resolution_status(pixels_per_micron, numerical_aperture, wavelength_um=0.405):
@@ -1048,7 +1051,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             SettingsDB.get_setting("target_sampling_pct", 120.0)
         )
         self.current_objective_key: str | None = None
-        self.calibration_images: list[dict] = []  # [{path, pixmap, measurements}]
+        self.calibration_images: list[dict] = []  # [{path, pixmap, measurements, division_distance_mm, auto}]
         self.current_image_index: int = -1
         self._preserve_image_zoom = False
         self._viewing_calibration_record: dict | None = None
@@ -1796,6 +1799,57 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _auto_use_edges(self) -> bool:
         return True
 
+    def _image_division_distance_mm(self, img_data: dict | None) -> float:
+        if not isinstance(img_data, dict):
+            return DEFAULT_DIVISION_DISTANCE_MM
+        raw_distance = img_data.get("division_distance_mm")
+        if isinstance(raw_distance, (int, float)) and raw_distance > 0:
+            return float(raw_distance)
+        auto_data = img_data.get("auto")
+        if isinstance(auto_data, dict):
+            spacing_um = auto_data.get("spacing_um")
+            if isinstance(spacing_um, (int, float)) and spacing_um > 0:
+                return float(spacing_um) / 1000.0
+        return DEFAULT_DIVISION_DISTANCE_MM
+
+    def _auto_division_combo_index(self, spacing_mm: float) -> int:
+        if not hasattr(self, "auto_division_input"):
+            return -1
+        try:
+            target = float(spacing_mm)
+        except (TypeError, ValueError):
+            return -1
+        if target <= 0:
+            return -1
+        exact_idx = self.auto_division_input.findData(target)
+        if exact_idx >= 0:
+            return exact_idx
+        best_idx = -1
+        best_diff = float("inf")
+        for idx in range(self.auto_division_input.count()):
+            try:
+                item_value = float(self.auto_division_input.itemData(idx))
+            except (TypeError, ValueError):
+                continue
+            diff = abs(item_value - target)
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = idx
+        return best_idx
+
+    def _sync_auto_division_input_for_current_image(self) -> None:
+        if not hasattr(self, "auto_division_input"):
+            return
+        if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
+            return
+        img_data = self.calibration_images[self.current_image_index]
+        spacing_mm = self._image_division_distance_mm(img_data)
+        idx = self._auto_division_combo_index(spacing_mm)
+        if idx < 0 or self.auto_division_input.currentIndex() == idx:
+            return
+        with QSignalBlocker(self.auto_division_input):
+            self.auto_division_input.setCurrentIndex(idx)
+
     def _current_auto_data(self) -> Optional[dict]:
         if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
             return None
@@ -2210,30 +2264,26 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _on_auto_division_changed(self, _index: int) -> None:
         if not hasattr(self, "auto_division_input"):
             return
+        if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
+            return
         spacing_mm = float(self.auto_division_input.currentData() or 0.0)
         if spacing_mm <= 0:
             return
+        img_data = self.calibration_images[self.current_image_index]
+        img_data["division_distance_mm"] = float(spacing_mm)
         spacing_um = spacing_mm * 1000.0
-        updated = False
-        for img_data in self.calibration_images:
-            auto_data = img_data.get("auto")
-            if not auto_data:
-                continue
+        auto_data = img_data.get("auto")
+        if auto_data:
             result = auto_data.get("result")
-            if not result:
-                continue
-            if hasattr(result, "spacing_median_px") and result.spacing_median_px and result.spacing_median_px > 0:
-                result.nm_per_px = (spacing_um * 1000.0) / float(result.spacing_median_px)
-            if hasattr(result, "spacing_median_edges_px") and result.spacing_median_edges_px and result.spacing_median_edges_px > 0:
-                result.nm_per_px_edges = (spacing_um * 1000.0) / float(result.spacing_median_edges_px)
+            if result:
+                if hasattr(result, "spacing_median_px") and result.spacing_median_px and result.spacing_median_px > 0:
+                    result.nm_per_px = (spacing_um * 1000.0) / float(result.spacing_median_px)
+                if hasattr(result, "spacing_median_edges_px") and result.spacing_median_edges_px and result.spacing_median_edges_px > 0:
+                    result.nm_per_px_edges = (spacing_um * 1000.0) / float(result.spacing_median_edges_px)
             auto_data["spacing_um"] = spacing_um
-            updated = True
-
-        if not updated:
-            return
 
         self._modified = True
-        self._render_auto_results(self._current_auto_data())
+        self._render_auto_results(auto_data)
         self._update_auto_summary()
         self._update_resize_info()
         if hasattr(self, "auto_status_label"):
@@ -2803,6 +2853,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             ),
         }
         img_data["auto"] = auto_data
+        img_data["division_distance_mm"] = float(spacing_um) / 1000.0 if spacing_um > 0 else DEFAULT_DIVISION_DISTANCE_MM
         self._modified = True
         self._render_auto_results(auto_data)
 
@@ -3884,6 +3935,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             "crop_box": None,
             "crop_source_size": None,
             "camera": camera_text,
+            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
         })
         self._modified = True  # User added a new image
         self._refresh_image_gallery()
@@ -4138,6 +4190,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         img_data = self.calibration_images[self.current_image_index]
         if hasattr(self, "add_measurement_btn") and not self.is_measuring:
             self.add_measurement_btn.setEnabled(True)
+        self._sync_auto_division_input_for_current_image()
         self.image_viewer.set_image(img_data["pixmap"], preserve_view=self._preserve_image_zoom)
         if not self._preserve_image_zoom:
             self._preserve_image_zoom = True
@@ -5179,12 +5232,16 @@ class CalibrationDialog(GeometryMixin, QDialog):
                         if img_path and Path(img_path).exists():
                             pixmap = QPixmap(img_path)
                             if not pixmap.isNull():
+                                division_distance_mm = img_info.get("division_distance_mm")
+                                if not isinstance(division_distance_mm, (int, float)) or division_distance_mm <= 0:
+                                    division_distance_mm = DEFAULT_DIVISION_DISTANCE_MM
                                 self.calibration_images.append({
                                     "path": img_path,
                                     "pixmap": pixmap,
                                     "measurements": img_info.get("measurements", []),
                                     "crop_box": img_info.get("crop_box"),
                                     "crop_source_size": img_info.get("crop_source_size"),
+                                    "division_distance_mm": float(division_distance_mm),
                                 })
                 else:
                     # Old format: single image with all measurements
@@ -5199,6 +5256,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                                 "measurements": measurements,
                                 "crop_box": None,
                                 "crop_source_size": None,
+                                "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
                             })
 
             except json.JSONDecodeError:
@@ -5213,6 +5271,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                             "measurements": [],
                             "crop_box": None,
                             "crop_source_size": None,
+                            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
                         })
 
         # Attach auto calibration data if available
@@ -5233,6 +5292,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
                                     break
                     if not target:
                         continue
+                    division_distance_mm = auto_info.get("division_distance_mm")
+                    if not isinstance(division_distance_mm, (int, float)) or division_distance_mm <= 0:
+                        spacing_um = auto_info.get("spacing_um")
+                        if isinstance(spacing_um, (int, float)) and spacing_um > 0:
+                            division_distance_mm = float(spacing_um) / 1000.0
+                    if isinstance(division_distance_mm, (int, float)) and division_distance_mm > 0:
+                        target["division_distance_mm"] = float(division_distance_mm)
                     result_dict = auto_info.get("result", {}) or {}
                     target["auto"] = {
                         "result": self._result_from_dict(result_dict),
@@ -5244,6 +5310,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
             elif "auto" in loaded_data and self.calibration_images:
                 auto_info = loaded_data.get("auto") or {}
                 result_dict = auto_info.get("result", auto_info)
+                division_distance_mm = auto_info.get("division_distance_mm")
+                if not isinstance(division_distance_mm, (int, float)) or division_distance_mm <= 0:
+                    spacing_um = auto_info.get("spacing_um")
+                    if isinstance(spacing_um, (int, float)) and spacing_um > 0:
+                        division_distance_mm = float(spacing_um) / 1000.0
+                if isinstance(division_distance_mm, (int, float)) and division_distance_mm > 0:
+                    self.calibration_images[0]["division_distance_mm"] = float(division_distance_mm)
                 self.calibration_images[0]["auto"] = {
                     "result": self._result_from_dict(result_dict),
                     "spacing_um": auto_info.get("spacing_um"),
@@ -5251,6 +5324,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     "overlay_edges": auto_info.get("overlay_edges", []),
                     "overlay_edges_50": auto_info.get("overlay_edges_50", []),
                 }
+
+        for img_data in self.calibration_images:
+            if not isinstance(img_data.get("division_distance_mm"), (int, float)) or img_data.get("division_distance_mm", 0) <= 0:
+                img_data["division_distance_mm"] = self._image_division_distance_mm(img_data)
 
         # Update UI
         if self.calibration_images:
@@ -5334,6 +5411,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     "measurements": img_data.get("measurements", []),
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),
+                    "division_distance_mm": self._image_division_distance_mm(img_data),
                 })
                 auto_data = img_data.get("auto")
                 if not auto_data:
@@ -5345,6 +5423,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),
                     "spacing_um": auto_data.get("spacing_um"),
+                    "division_distance_mm": self._image_division_distance_mm(img_data),
                     "result": {
                         "axis": result.axis,
                         "angle_deg": result.angle_deg,
@@ -5508,6 +5587,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     "measurements": img_data.get("measurements", []),
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),
+                    "division_distance_mm": self._image_division_distance_mm(img_data),
                 })
 
         # First image filepath for backward compatibility
