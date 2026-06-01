@@ -28,7 +28,7 @@ Reads EXIF GPS and `DateTimeOriginal` from the currently selected image file and
 
 ### Cloud-synced images and EXIF
 
-Images synced from the web app (app.sporely.no) may have no EXIF because the web app's free-tier 2 MP conversion uses the Canvas API, which strips all EXIF. The desktop app mitigates this by writing the observation's stored GPS and date back into the JPEG EXIF when downloading cloud images. This means the button will work for cloud images as long as the observation itself has GPS/date recorded.
+Images synced from the web app (app.sporely.no) may have no EXIF because the cloud pipeline re-encodes uploads in the browser, which strips all EXIF. The public cloud image tier is still described as 20 MP, but the client only downsizes when a source image exceeds `21 MP` or `5300 px` on the longest edge. The desktop app mitigates missing EXIF by writing the observation's stored GPS and date back into the JPEG EXIF when downloading cloud images. This means the button will work for cloud images as long as the observation itself has GPS/date recorded.
 
 If the button is still disabled for a cloud-synced field image, trigger a cloud sync — the backfill runs automatically on each sync pass.
 
@@ -36,7 +36,7 @@ If the button is still disabled for a cloud-synced field image, trigger a cloud 
 
 - The bottom gallery can be resized; thumbnail size follows the gallery height.
 - Scale-bar calibration here is meant for imported images that already contain a visible scale bar.
-- Images imported on desktop are stored at full resolution locally. The cloud copy may be 2 MP (free tier) — the desktop always keeps the larger local file.
+- Images imported on desktop are stored at full resolution locally. The cloud copy may be resized under the public 20 MP tier's internal `>21 MP` / `>5300 px` gate — the desktop always keeps the larger local file.
 
 ## Keyboard shortcuts (within the dialog)
 

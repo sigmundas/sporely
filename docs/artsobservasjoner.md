@@ -49,7 +49,7 @@ The Profile & Cloud page also edits the shared Sporely profile (`username`, disp
 
 Cloud sync does not use the online-publishing overlay options. On desktop:
 - only checked observation-gallery images are uploaded
-- synced images can be sent either at full size or reduced to 2 MP
+- synced images can be sent either at full size or, under the public 20 MP tier, resized only when the source image exceeds `21 MP` or `5300 px` on the longest edge
 - images and thumbnails uploaded to Sporely Cloud stay clean: no watermark, scale bar, measure overlay, plot, plate, or gallery mosaic is added
 
 If you change publish-image selection, image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
