@@ -6,7 +6,10 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from database.reference_data_paths import REFERENCE_DATA_GENERATED_DIR
+from database.reference_data_paths import (
+    BUNDLED_VERNACULAR_DB_PATH,
+    REFERENCE_DATA_GENERATED_DIR,
+)
 
 # Canonical labels for language codes used in vernacular DBs.
 VERNACULAR_LANGUAGE_LABELS = {
@@ -31,17 +34,6 @@ COMMON_NAME_LABEL_OVERRIDES = {
 
 # Preferred ordering for UI language pickers.
 VERNACULAR_LANGUAGE_ORDER = ["en", "de", "fr", "es", "da", "sv", "no", "fi", "pl", "pt", "it"]
-
-# Candidate filenames for a multi-language DB.
-MULTILANG_DB_NAMES = [
-    "vernacular_multilanguage.sqlite3",
-    "vernacular_multilanguage_unified.sqlite3",
-    "vernacular_multilanguage_unified_test.sqlite3",
-    "vernacular_multi.sqlite3",
-    "taxonomy_multilang.sqlite3",
-    "taxonomy_multi.sqlite3",
-    "vernacular_all_languages.sqlite3",
-]
 
 
 def normalize_vernacular_language(code: str | None) -> str:
@@ -96,11 +88,11 @@ def _vernacular_discovery_signature() -> tuple[int, str]:
 @lru_cache(maxsize=8)
 def _cached_resolve_multilang_db_path(_resolver_id: int, _cwd: str) -> Path | None:
     """Resolve the bundled multilingual DB path with a cache key that tracks monkeypatches."""
+    db_name = BUNDLED_VERNACULAR_DB_PATH.name
     for base in _candidate_roots():
-        for name in MULTILANG_DB_NAMES:
-            path = base / name
-            if path.exists():
-                return path
+        path = base / db_name
+        if path.exists():
+            return path
     return None
 
 

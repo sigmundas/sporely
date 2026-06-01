@@ -7,7 +7,8 @@ This folder separates the source inputs for taxonomy and lookup generation from 
 - `sources/`
   - Raw or curated inputs such as `taxon.txt`, `vernacularname.txt`, `parmasto_table35.csv`, `parmasto_table36.csv`, `livsmedium.txt`, `natursystem.txt`, and `vernacular_scientific.csv`
 - `generated/`
-  - Build outputs such as `reference_values.db`, `vernacular_multilanguage.sqlite3`, `vernacular_multilanguage_unified.sqlite3`, `artportalen_*.csv`, and the habitat tree JSON files
+  - Build outputs such as `reference_values.db`, `vernacular_multilanguage.sqlite3`, `artportalen_*.csv`, and the habitat tree JSON files
+  - Intermediate/test vernacular DB variants like `vernacular_multilanguage_unified.sqlite3` and `vernacular_multilanguage_unified_test.sqlite3` are local scratch outputs and should stay untracked
 
 ## Rebuild
 
@@ -33,4 +34,3 @@ python database/merge_parmasto_reference_data.py
 
 - `generated/` files are build artifacts unless the app explicitly bundles them.
 - `source/` files should be treated as inputs, not as mutable runtime state.
-
