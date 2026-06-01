@@ -1,6 +1,8 @@
-import pytest
+import warnings
 from pathlib import Path
-from utils.r2_storage import CloudflareR2Client, R2Config
+
+import pytest
+from utils.r2_storage import CloudflareR2Client, R2Config, r2_config_available
 
 
 class MockResponse:
@@ -88,3 +90,52 @@ def test_put_bytes_sends_custom_metadata_headers(monkeypatch):
     assert captured["headers"]["x-amz-meta-quality-profile"] == "high"
     assert captured["headers"]["x-amz-meta-encoding-quality"] == "80"
     assert captured["headers"]["x-amz-meta-encoding-format"] == "image/webp"
+
+
+def test_r2_config_available_false_when_values_missing(monkeypatch, tmp_path):
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.setattr("utils.r2_storage._ENV_FILE_CANDIDATES", (tmp_path / "missing-sporely-admin.env",))
+    monkeypatch.setattr("utils.r2_storage._LEGACY_ENV_FILE_CANDIDATES", (tmp_path / "missing-python.env",))
+
+    assert r2_config_available() is False
+
+
+def test_r2_config_available_true_when_sporely_admin_env_present(monkeypatch, tmp_path):
+    admin_env = tmp_path / "sporely-admin.env"
+    admin_env.write_text(
+        "R2_ACCESS_KEY_ID=test_key\n"
+        "R2_SECRET_ACCESS_KEY=test_secret\n"
+        "R2_S3_ENDPOINT=https://s3.test\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.setattr("utils.r2_storage._ENV_FILE_CANDIDATES", (admin_env,))
+    monkeypatch.setattr("utils.r2_storage._LEGACY_ENV_FILE_CANDIDATES", (tmp_path / "missing-python.env",))
+
+    assert r2_config_available() is True
+
+
+def test_r2_config_available_legacy_python_env_fallback_warns(monkeypatch, tmp_path):
+    legacy_env = tmp_path / "python.env"
+    legacy_env.write_text(
+        "R2_ACCESS_KEY_ID=test_key\n"
+        "R2_SECRET_ACCESS_KEY=test_secret\n"
+        "R2_S3_ENDPOINT=https://s3.test\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_S3_ENDPOINT", raising=False)
+    monkeypatch.setattr("utils.r2_storage._ENV_FILE_CANDIDATES", (tmp_path / "missing-sporely-admin.env",))
+    monkeypatch.setattr("utils.r2_storage._LEGACY_ENV_FILE_CANDIDATES", (legacy_env,))
+    monkeypatch.setattr("utils.r2_storage._LEGACY_ADMIN_ENV_WARNING_EMITTED", False)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert r2_config_available() is True
+
+    assert any("python.env is deprecated" in str(item.message) for item in caught)

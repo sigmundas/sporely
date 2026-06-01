@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import hmac
+import logging
 import os
 from pathlib import Path
 from typing import Iterable, Mapping
 from urllib.parse import quote, urlparse
 from xml.sax.saxutils import escape as xml_escape
+import warnings
 
 import requests
 
@@ -19,8 +21,17 @@ R2_BUCKET_NAME = "sporely-media"
 R2_PUBLIC_BASE_URL = "https://media.sporely.no"
 R2_REGION = "auto"
 R2_SERVICE = "s3"
+R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE = "Cloud media storage is not configured for direct desktop R2 access"
+SPORELY_ENABLE_DIRECT_R2_ENV_VAR = "SPORELY_ENABLE_DIRECT_R2"
+_LEGACY_ADMIN_ENV_DEPRECATION_MESSAGE = (
+    "python.env is deprecated; rename it to sporely-admin.env for local admin secrets."
+)
 
 _ENV_FILE_CANDIDATES = (
+    Path(__file__).resolve().parents[1] / "sporely-admin.env",
+    Path.cwd() / "sporely-admin.env",
+)
+_LEGACY_ENV_FILE_CANDIDATES = (
     Path(__file__).resolve().parents[1] / "python.env",
     Path.cwd() / "python.env",
 )
@@ -36,25 +47,84 @@ class R2ConfigError(RuntimeError):
     """Raised when R2 configuration is missing or invalid."""
 
 
-def _load_python_env_file() -> None:
-    """Load simple KEY=VALUE pairs from python.env if the variables are unset."""
-    for env_path in _ENV_FILE_CANDIDATES:
-        if not env_path.exists():
+def _load_simple_env_file(env_path: Path) -> bool:
+    """Load simple KEY=VALUE pairs from one local env file if variables are unset."""
+    if not env_path.exists():
+        return False
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return False
+    for raw_line in lines:
+        line = str(raw_line or "").strip()
+        if not line or line.startswith("#") or "=" not in line:
             continue
-        try:
-            lines = env_path.read_text(encoding="utf-8").splitlines()
-        except Exception:
+        key, value = line.split("=", 1)
+        env_key = key.strip()
+        if not env_key or env_key in os.environ:
             continue
-        for raw_line in lines:
-            line = str(raw_line or "").strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            env_key = key.strip()
-            if not env_key or env_key in os.environ:
-                continue
-            os.environ[env_key] = value.strip()
+        os.environ[env_key] = value.strip()
+    return True
+
+
+_LEGACY_ADMIN_ENV_WARNING_EMITTED = False
+
+
+def _warn_legacy_admin_env_file() -> None:
+    global _LEGACY_ADMIN_ENV_WARNING_EMITTED
+    if _LEGACY_ADMIN_ENV_WARNING_EMITTED:
         return
+    _LEGACY_ADMIN_ENV_WARNING_EMITTED = True
+    warnings.warn(_LEGACY_ADMIN_ENV_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=3)
+    logging.getLogger(__name__).warning(_LEGACY_ADMIN_ENV_DEPRECATION_MESSAGE)
+
+
+def load_admin_env_file(env_file: str | Path | None = None) -> bool:
+    """Load local admin secrets from sporely-admin.env, with python.env fallback.
+
+    Normal application runtime should not rely on this helper unless direct R2
+    access has been explicitly enabled.
+    """
+    if env_file is not None:
+        env_path = Path(env_file).expanduser()
+        loaded = _load_simple_env_file(env_path)
+        if loaded and env_path.name.lower() == "python.env":
+            _warn_legacy_admin_env_file()
+        return loaded
+
+    for env_path in _ENV_FILE_CANDIDATES:
+        if _load_simple_env_file(env_path):
+            return True
+
+    for env_path in _LEGACY_ENV_FILE_CANDIDATES:
+        if _load_simple_env_file(env_path):
+            _warn_legacy_admin_env_file()
+            return True
+    return False
+
+
+def _read_r2_env_values() -> tuple[str, str, str]:
+    load_admin_env_file()
+    access_key_id = str(os.environ.get("R2_ACCESS_KEY_ID") or "").strip()
+    secret_access_key = str(os.environ.get("R2_SECRET_ACCESS_KEY") or "").strip()
+    s3_endpoint = str(os.environ.get("R2_S3_ENDPOINT") or "").strip()
+    return access_key_id, secret_access_key, s3_endpoint
+
+
+def r2_config_available() -> bool:
+    access_key_id, secret_access_key, s3_endpoint = _read_r2_env_values()
+    return bool(access_key_id and secret_access_key and s3_endpoint)
+
+
+def direct_r2_runtime_enabled() -> bool:
+    value = str(os.environ.get(SPORELY_ENABLE_DIRECT_R2_ENV_VAR) or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def direct_r2_runtime_available() -> bool:
+    if not direct_r2_runtime_enabled():
+        return False
+    return r2_config_available()
 
 
 def normalize_media_key(value: str | None) -> str:
@@ -111,10 +181,7 @@ class R2Config:
 
     @classmethod
     def from_env(cls) -> "R2Config":
-        _load_python_env_file()
-        access_key_id = str(os.environ.get("R2_ACCESS_KEY_ID") or "").strip()
-        secret_access_key = str(os.environ.get("R2_SECRET_ACCESS_KEY") or "").strip()
-        s3_endpoint = str(os.environ.get("R2_S3_ENDPOINT") or "").strip()
+        access_key_id, secret_access_key, s3_endpoint = _read_r2_env_values()
         if not access_key_id or not secret_access_key or not s3_endpoint:
             raise R2ConfigError(
                 "Missing R2 configuration. Expected R2_ACCESS_KEY_ID, "

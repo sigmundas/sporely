@@ -326,6 +326,90 @@ def test_push_calibration_reference_image_uploads_derivative_and_patches_relativ
     assert uploaded_image.size != (3200, 2400)
 
 
+def test_push_calibration_reference_image_still_uses_monkeypatched_r2_when_direct_r2_config_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    source = _write_test_image(tmp_path / "source.jpg", size=(3200, 2400))
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": [{"path": str(tmp_path / "other.jpg")}]},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    uploads = []
+    patches = []
+
+    class DummyR2:
+        def put_bytes(self, data, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
+            uploads.append(
+                {
+                    "data": bytes(data),
+                    "key": key,
+                    "content_type": content_type,
+                    "cache_control": cache_control,
+                    "custom_metadata": dict(custom_metadata or {}),
+                    "timeout": timeout,
+                }
+            )
+
+    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))))
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": None},
+    )
+
+    assert warning is None
+    assert len(uploads) == 1
+    assert len(patches) == 1
+    assert patches[0][0] == "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1"
+
+
+def test_push_calibration_reference_image_skips_with_clear_warning_when_direct_r2_config_is_missing(
+    monkeypatch,
+    tmp_path,
+):
+    source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
+    calibration = {
+        "calibration_uuid": str(uuid.uuid4()),
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": []},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(
+        cloud_sync.CloudflareR2Client,
+        "from_env",
+        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
+    )
+    monkeypatch.setattr(
+        client,
+        "_patch",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_patch should not be called when direct R2 is unavailable")),
+    )
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": None},
+    )
+
+    assert warning is not None
+    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in warning
+
+
 def test_push_calibration_reference_image_skips_with_warning_when_no_readable_image_exists(monkeypatch):
     calibration = {
         "calibration_uuid": str(uuid.uuid4()),
@@ -356,6 +440,41 @@ def test_push_calibration_reference_image_skips_with_warning_when_no_readable_im
     assert "no readable local calibration image" in warning
     assert uploads == []
     assert patches == []
+
+
+def test_download_calibration_reference_to_cache_reports_direct_r2_unavailable_without_credentials(
+    monkeypatch,
+    tmp_path,
+):
+    _patch_app_data_dir(monkeypatch, tmp_path)
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "image_filepath": str(tmp_path / "missing-original.jpg"),
+        "image_storage_path": f"user-123/{calibration_uuid}/reference.webp",
+        "measurements_json": {"images": [{"id": 1, "path": str(tmp_path / "other.jpg")}]},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(
+        cloud_sync.CloudflareR2Client,
+        "from_env",
+        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
+    )
+    monkeypatch.setattr(
+        client,
+        "download_image_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download_image_file should not be called when direct R2 is unavailable")),
+    )
+
+    result = cloud_sync.download_calibration_reference_to_cache(client, calibration)
+
+    assert result["status"] == "unavailable_direct_r2_not_configured"
+    assert result["downloaded"] is False
+    assert result["cache_path"] is None
+    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["warning"]
 
 
 def test_push_calibration_reference_image_respects_existing_cloud_image_storage_path(monkeypatch, tmp_path):

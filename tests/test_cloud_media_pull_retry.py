@@ -328,8 +328,6 @@ def test_pull_all_retries_missing_local_cloud_media_after_snapshot_stays_unchang
 ):
     db_path = tmp_path / "sporely.db"
     _create_retry_db(db_path)
-    images_root = tmp_path / "images" / "obs-1"
-    images_root.mkdir(parents=True, exist_ok=True)
 
     remote_images = [
         {
@@ -669,6 +667,203 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
     snapshot = json.loads(snapshot_row[0])
     assert len(snapshot["images"]) == len(remote_images)
     assert len(snapshot["measurements"]) == len(remote_measurements)
+
+
+def test_pull_all_downgrades_to_metadata_only_when_direct_r2_config_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "sporely.db"
+    _create_retry_db(db_path)
+    images_root = tmp_path / "images" / "obs-1"
+    images_root.mkdir(parents=True, exist_ok=True)
+
+    remote_images = [
+        {
+            "id": "cloud-image-1",
+            "desktop_id": 1,
+            "observation_id": "cloud-obs-1",
+            "storage_path": "8c471394-b274-4933-b830-59805820d93c/617/0_1780071867059.webp",
+            "original_filename": "0_1780071867059.webp",
+            "image_type": "field",
+            "sort_order": 0,
+            "deleted_at": None,
+        },
+        {
+            "id": "cloud-image-2",
+            "desktop_id": 1,
+            "observation_id": "cloud-obs-1",
+            "storage_path": "8c471394-b274-4933-b830-59805820d93c/617/1_1780071867059.webp",
+            "original_filename": "1_1780071867059.webp",
+            "image_type": "field",
+            "sort_order": 1,
+            "deleted_at": None,
+        },
+    ]
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-1",
+            "desktop_id": None,
+            "image_id": "cloud-image-1",
+            "length_um": 12.5,
+            "width_um": 7.5,
+            "measurement_type": "manual",
+            "gallery_rotation": 90,
+            "p1_x": 1.1,
+            "p1_y": 2.2,
+            "p2_x": 3.3,
+            "p2_y": 4.4,
+            "p3_x": 5.5,
+            "p3_y": 6.6,
+            "p4_x": 7.7,
+            "p4_y": 8.8,
+            "measured_at": "2026-05-01T12:00:00Z",
+            "notes": "cloud note",
+        }
+    ]
+
+    class PublicDesktopClient(cloud_sync.SporelyCloudClient):
+        def __init__(self, remote_images, remote_measurements=None):
+            super().__init__("token", "user-123")
+            self.remote_images = [dict(row or {}) for row in remote_images]
+            self.remote_measurements = [dict(row or {}) for row in (remote_measurements or [])]
+            self.remote_observation = {
+                "id": "cloud-obs-1",
+                "desktop_id": 1,
+                "date": "2026-05-01",
+                "genus": "Flammulina",
+                "species": "velutipes",
+            }
+            self.download_attempts: list[str] = []
+            self.pull_bulk_calls = 0
+            self.pull_measurement_calls = 0
+
+        def pull_bulk_image_metadata(self, obs_cloud_ids):
+            self.pull_bulk_calls += 1
+            if "cloud-obs-1" not in set(obs_cloud_ids or []):
+                return []
+            return [dict(row) for row in self.remote_images]
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            if cloud_id != "cloud-obs-1":
+                return []
+            return [dict(row) for row in self.remote_images]
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            self.pull_measurement_calls += 1
+            image_ids = set(image_cloud_ids or [])
+            if "cloud-image-1" not in image_ids and "cloud-image-2" not in image_ids:
+                return []
+            return [dict(row) for row in self.remote_measurements]
+
+        def get_observation(self, cloud_id):
+            if cloud_id != "cloud-obs-1":
+                return None
+            return dict(self.remote_observation)
+
+        def set_image_desktop_id(self, *args, **kwargs):
+            return None
+
+        def set_measurement_desktop_id(self, *args, **kwargs):
+            return None
+
+        def set_desktop_id(self, *args, **kwargs):
+            return None
+
+        def download_image_file(self, storage_path, dest_path):
+            self.download_attempts.append(str(storage_path))
+            raise AssertionError("download_image_file should not be called when direct R2 is unavailable")
+
+    client = PublicDesktopClient(remote_images, remote_measurements)
+    generate_calls = []
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_apply_remote_observation_fields", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_detect_deleted_remote_observations", lambda remote_obs: [])
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: generate_calls.append((args, kwargs)))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ImageDB.add_image should not be called when direct R2 is unavailable")))
+
+    profiler = cloud_sync.CloudSyncProfiler()
+    with cloud_sync._cloud_sync_profile_scope(profiler):
+        result = cloud_sync.pull_all(
+            client,
+            remote_obs=[
+                {
+                    "id": "cloud-obs-1",
+                    "desktop_id": 1,
+                    "date": "2026-05-01",
+                    "genus": "Flammulina",
+                    "species": "velutipes",
+                }
+            ],
+            sync_calibrations=False,
+        )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        observation = conn.execute(
+            "SELECT cloud_id, sync_status FROM observations WHERE id = ?",
+            (1,),
+        ).fetchone()
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+        measurement_count = conn.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0]
+        snapshot_row = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("sporely_cloud_snapshot_obs_cloud-obs-1",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pulled"] == 1
+    assert len(result["errors"]) == 1
+    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["errors"][0]
+    assert client.download_attempts == []
+    assert generate_calls == []
+    assert client.pull_bulk_calls == 1
+    assert client.pull_measurement_calls == 1
+    assert profiler.download_image_file_calls == 0
+    assert profiler.generate_all_sizes_calls == 0
+    assert profiler.store_remote_snapshot_fetch_images_count == 0
+    assert profiler.store_remote_snapshot_fetch_measurements_count == 0
+    assert profiler.retry_missing_cloud_media_branch_runs == 0
+    assert observation == ("cloud-obs-1", "synced")
+    assert image_count == 0
+    assert measurement_count == 0
+    assert snapshot_row is not None
+    snapshot = json.loads(snapshot_row[0])
+    assert len(snapshot["images"]) == len(remote_images)
+    assert len(snapshot["measurements"]) == len(remote_measurements)
+
+
+def test_materialize_cloud_media_for_observation_reports_direct_r2_unavailable_without_credentials(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "sporely.db"
+    _create_retry_db(db_path)
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(
+        cloud_sync.CloudflareR2Client,
+        "from_env",
+        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
+    )
+
+    result = cloud_sync.materialize_cloud_media_for_observation(
+        cloud_sync.SporelyCloudClient("token", "user-123"),
+        1,
+    )
+
+    assert result["status"] == "error"
+    assert result["reason"] == "direct_r2_unavailable"
+    assert result["downloaded"] == 0
+    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["errors"]
 
 
 def test_materialize_cloud_media_for_observation_uses_snapshot_and_is_idempotent(

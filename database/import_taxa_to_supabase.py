@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-One-time import of taxa from vernacular_multilanguage_unified.sqlite3
+One-time import of taxa from vernacular_multilanguage.sqlite3
 into the Supabase taxa / taxa_vernacular tables.
 
 Usage:
@@ -8,6 +8,7 @@ Usage:
 
 Requires the SUPABASE_SERVICE_ROLE_KEY environment variable:
     export SUPABASE_SERVICE_ROLE_KEY=eyJ...   (from Supabase → Settings → API → service_role)
+Or put the secret in sporely-admin.env for local admin/developer use.
 
 Run supabase_taxa_schema.sql in the Supabase SQL editor first.
 """
@@ -18,9 +19,12 @@ import sqlite3
 import requests
 from pathlib import Path
 
+from utils.r2_storage import load_admin_env_file
+
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
+load_admin_env_file()
 SERVICE_KEY  = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')
-DB_PATH      = Path(__file__).resolve().with_name('reference_data') / 'generated' / 'vernacular_multilanguage_unified.sqlite3'
+DB_PATH      = Path(__file__).resolve().with_name('reference_data') / 'generated' / 'vernacular_multilanguage.sqlite3'
 BATCH        = 500
 
 if not SERVICE_KEY:

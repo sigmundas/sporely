@@ -2,6 +2,7 @@
 """Find and optionally delete Cloudflare R2 media not referenced by Supabase.
 
 Dry run by default. Use --delete only after reviewing the printed object list.
+Local direct-R2 admin credentials live in sporely-admin.env (python.env is a deprecated fallback).
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from utils.cloud_sync import SUPABASE_KEY, SUPABASE_URL, SporelyCloudClient  # noqa: E402
-from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key  # noqa: E402
+from utils.r2_storage import CloudflareR2Client, load_admin_env_file, media_variant_key, normalize_media_key  # noqa: E402
 
 
 def _chunks(values: list[str], size: int = 1000):
@@ -139,9 +140,16 @@ def main() -> int:
     parser.add_argument("--delete", action="store_true", help="Delete orphaned objects. Without this, only prints a dry run.")
     parser.add_argument("--limit", type=int, default=0, help="Only print/delete the first N orphaned objects.")
     parser.add_argument("--summary-only", action="store_true", help="Only print counts and total bytes.")
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Optional local admin env file path (defaults to sporely-admin.env with python.env fallback).",
+    )
     args = parser.parse_args()
 
     prefix = normalize_media_key(args.prefix)
+    load_admin_env_file(args.env_file)
     cloud_client = SporelyCloudClient.from_stored_credentials()
     if not cloud_client:
         raise RuntimeError("Sign in to Sporely Cloud before running R2 cleanup.")

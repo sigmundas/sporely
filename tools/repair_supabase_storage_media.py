@@ -9,13 +9,16 @@ places.
 Usage examples:
     python tools/repair_supabase_storage_media.py \
         --storage-path af912ffe-bdde-4f4a-a003-7938bf4f3504/59/558_cloud_0002.jpg \
-        --admin-service-role
+        --admin-service-role \
+        --env-file sporely-admin.env
 
     python tools/repair_supabase_storage_media.py \
         --legacy-upload-mode-null \
-        --admin-service-role
+        --admin-service-role \
+        --env-file sporely-admin.env
 
 Set SUPABASE_SERVICE_ROLE_KEY in the environment before using --admin-service-role.
+The recommended local admin env file is sporely-admin.env; python.env is a deprecated fallback.
 """
 from __future__ import annotations
 
@@ -44,7 +47,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from database.schema import get_database_path  # noqa: E402
 from utils.cloud_sync import SUPABASE_KEY, SUPABASE_URL, SporelyCloudClient  # noqa: E402
 from utils.cloud_media_policy import CLOUD_THUMB_MAX_EDGE  # noqa: E402
-from utils.r2_storage import CloudflareR2Client, R2_PUBLIC_BASE_URL, media_variant_key, normalize_media_key  # noqa: E402
+from utils.r2_storage import CloudflareR2Client, R2_PUBLIC_BASE_URL, load_admin_env_file, media_variant_key, normalize_media_key  # noqa: E402
 
 
 SUPABASE_STORAGE_BUCKET = "observation-images"
@@ -616,6 +619,8 @@ def _write_text_report(report: dict[str, Any], *, repair: bool, soft_delete_stal
 
 
 def _load_client(args: argparse.Namespace) -> tuple[Any, str]:
+    if args.admin_service_role or getattr(args, "env_file", None) is not None:
+        load_admin_env_file(getattr(args, "env_file", None))
     if args.admin_service_role:
         service_key = _normalize_text(os.environ.get(ADMIN_SERVICE_ROLE_ENV))
         if not service_key:
@@ -757,6 +762,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     scope.add_argument("--storage-path", help="Audit the exact storage_path for one observation image row.")
     scope.add_argument("--legacy-upload-mode-null", action="store_true", help="Audit active rows where deleted_at is null and upload_mode is null.")
     parser.add_argument("--admin-service-role", action="store_true", help="Use SUPABASE_SERVICE_ROLE_KEY for admin repair access.")
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Optional local admin env file path (defaults to sporely-admin.env with python.env fallback).",
+    )
     parser.add_argument("--limit", type=int, default=0, help="Optional maximum number of cloud rows to inspect.")
     parser.add_argument("--repair", action="store_true", help="Copy missing objects from legacy Supabase Storage into R2.")
     parser.add_argument("--soft-delete-stale-metadata", action="store_true", help="Soft-delete active rows whose media is missing from both backends.")

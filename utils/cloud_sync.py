@@ -55,7 +55,13 @@ from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
     normalize_cloud_plan_profile,
 )
-from utils.r2_storage import CloudflareR2Client, media_variant_key, normalize_media_key
+from utils.r2_storage import (
+    CloudflareR2Client,
+    R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE,
+    direct_r2_runtime_available,
+    media_variant_key,
+    normalize_media_key,
+)
 from utils.thumbnail_generator import generate_all_sizes
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
@@ -130,6 +136,26 @@ def _encode_postgrest_filter_value(value: str | None) -> str:
 def _normalize_cloud_media_key(value: str | None) -> str:
     """Normalize cloud media references to the stored relative key form."""
     return normalize_media_key(value)
+
+
+def _direct_r2_unavailable_warning(context: str | None = None) -> str:
+    detail = str(context or "").strip()
+    if detail:
+        return f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}; {detail}"
+    return R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE
+
+
+def _is_direct_r2_unavailable_error(exc: Exception | str) -> bool:
+    return R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE.lower() in str(exc or "").lower()
+
+
+def _client_uses_default_r2_loader(client: object | None) -> bool:
+    if not isinstance(client, SporelyCloudClient):
+        return False
+    try:
+        return client._using_default_r2_loader()
+    except Exception:
+        return False
 
 _CALIBRATION_SYNC_COLS = [
     'calibration_uuid',
@@ -595,6 +621,14 @@ def download_calibration_reference_to_cache(
         )
         return result
 
+    if getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
+        result["status"] = "unavailable_direct_r2_not_configured"
+        result["warning"] = (
+            f"calibration {calibration_uuid}: skipped recovery because "
+            f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}"
+        )
+        return result
+
     cache_root = _calibration_recovery_cache_root() / str(calibration_uuid)
     cache_root.mkdir(parents=True, exist_ok=True)
     initial_extension = _normalize_calibration_cache_extension(Path(str(image_storage_path)).suffix or ".jpg")
@@ -628,8 +662,15 @@ def download_calibration_reference_to_cache(
         return result
     except Exception as exc:
         detail = str(exc or "").strip() or exc.__class__.__name__
-        result["status"] = "download_failed"
-        result["warning"] = f"calibration {calibration_uuid}: skipped recovery download ({detail})"
+        if _is_direct_r2_unavailable_error(exc):
+            result["status"] = "unavailable_direct_r2_not_configured"
+            result["warning"] = (
+                f"calibration {calibration_uuid}: skipped recovery because "
+                f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}"
+            )
+        else:
+            result["status"] = "download_failed"
+            result["warning"] = f"calibration {calibration_uuid}: skipped recovery download ({detail})"
         return result
     finally:
         if temp_path and temp_path.exists():
@@ -4375,6 +4416,11 @@ class SporelyCloudClient:
             self._r2 = CloudflareR2Client.from_env()
         return self._r2
 
+    def _using_default_r2_loader(self) -> bool:
+        if "_get_r2" in self.__dict__:
+            return False
+        return type(self)._get_r2 is SporelyCloudClient._get_r2
+
     def _has_column(self, table_name: str, column_name: str) -> bool:
         cache_key = (str(table_name or '').strip(), str(column_name or '').strip())
         if not all(cache_key):
@@ -4694,9 +4740,13 @@ class SporelyCloudClient:
 
         if not cleaned:
             return
+        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
+            raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
         try:
             self._get_r2().delete_objects(cleaned)
         except Exception as exc:
+            if _is_direct_r2_unavailable_error(exc):
+                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
             raise CloudSyncError(f'R2 delete failed: {exc}') from exc
 
     # ── Observation push ─────────────────────────────────────────────────
@@ -4771,6 +4821,11 @@ class SporelyCloudClient:
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because no readable local calibration image was found'
             )
+        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
+            return (
+                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                f'because {R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}'
+            )
 
         try:
             image_bytes, content_type, extension = _calibration_reference_image_bytes(local_path)
@@ -4795,6 +4850,11 @@ class SporelyCloudClient:
                 timeout=120,
             )
         except Exception as exc:
+            if _is_direct_r2_unavailable_error(exc):
+                return (
+                    f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
+                    f'because {R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}'
+                )
             return (
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because R2 upload failed ({exc})'
@@ -4950,6 +5010,8 @@ class SporelyCloudClient:
         )
         mime = _content_type_for_path(path)
         cache_control = 'public, max-age=31536000, immutable'
+        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
+            raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
         r2 = self._get_r2()
         meta = dict(upload_meta or {})
         quality_profile = str(meta.get('quality_profile') or 'standard').strip().lower() or 'standard'
@@ -4990,6 +5052,8 @@ class SporelyCloudClient:
                 custom_metadata=common_metadata,
             )
         except Exception as exc:
+            if _is_direct_r2_unavailable_error(exc):
+                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
             raise CloudSyncError(f'R2 upload failed: {exc}') from exc
 
         # Generate the single cloud thumbnail variant used by web and desktop.
@@ -5248,6 +5312,8 @@ class SporelyCloudClient:
             try:
                 self._storage_remove(storage_paths)
             except CloudSyncError as exc:
+                if _is_direct_r2_unavailable_error(exc):
+                    raise
                 print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
         self._delete(f'observation_images?observation_id=eq.{cloud_id}')
         self._delete(f'observations?id=eq.{cloud_id}')
@@ -5261,10 +5327,14 @@ class SporelyCloudClient:
             storage_key = _normalize_cloud_media_key(storage_path)
             if not storage_key:
                 raise CloudSyncError('Missing storage path')
+            if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
+                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
             downloaded_path = Path(self._get_r2().download_to_file(storage_key, dest_path, timeout=120))
             return downloaded_path
         except Exception as exc:
             detail = str(exc or '').strip()
+            if _is_direct_r2_unavailable_error(exc):
+                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
             if 'nosuchkey' in detail.lower():
                 raise CloudSyncError(
                     f'Cloud image file is missing from storage ({storage_key})'
@@ -5406,6 +5476,12 @@ def push_all(
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     progress_state['done'] = _progress_done(progress_state)
     progress_state['total'] = _progress_total(progress_state) + total
+    if sync_images and getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
+        warning = _direct_r2_unavailable_warning(
+            'observation image uploads will still push metadata, but file uploads may fail'
+        )
+        errors.append(warning)
+        print(f'[cloud_sync] Warning: {warning}')
     remote_lookup = {
         str(row.get('id') or '').strip(): row
         for row in (remote_obs or [])
@@ -5707,6 +5783,11 @@ def _push_images_for_observation(
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
         include_upload_meta = client._observation_images_support_upload_metadata()
+        media_storage_available = not (
+            getattr(client, "_r2", None) is None
+            and _client_uses_default_r2_loader(client)
+            and not direct_r2_runtime_available()
+        )
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
@@ -5862,7 +5943,7 @@ def _push_images_for_observation(
         for stale_row in stale_rows:
             stale_cloud_id = str(stale_row.get('id') or '').strip()
             stale_storage_path = _normalize_cloud_media_key(stale_row.get('storage_path'))
-            if stale_storage_path:
+            if stale_storage_path and media_storage_available:
                 try:
                     client._storage_remove([stale_storage_path])
                 except Exception as e:
@@ -6066,6 +6147,13 @@ def pull_all(
 
     total = len(candidates)
     _extend_progress_total(progress_state, total)
+    if materialize_remote_images and getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
+        warning = _direct_r2_unavailable_warning(
+            'remote image downloads are skipped until direct media access is configured'
+        )
+        errors.append(warning)
+        print(f'[cloud_sync] Warning: {warning}')
+        materialize_remote_images = False
     bulk_images = client.pull_bulk_image_metadata(candidate_cloud_ids)
     remote_images_by_obs = {}
     for img in bulk_images:
@@ -6932,6 +7020,17 @@ def materialize_cloud_media_for_observation(
     if client is None:
         summary['status'] = 'error'
         summary['errors'].append('Could not load Sporely Cloud credentials.')
+        if profile_token is not None:
+            try:
+                _CLOUD_SYNC_PROFILE_CONTEXT.reset(profile_token)
+            except Exception:
+                pass
+        return _finish(summary)
+
+    if getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
+        summary['status'] = 'error'
+        summary['reason'] = 'direct_r2_unavailable'
+        summary['errors'].append(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
         if profile_token is not None:
             try:
                 _CLOUD_SYNC_PROFILE_CONTEXT.reset(profile_token)
