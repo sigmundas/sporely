@@ -669,7 +669,7 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
     assert len(snapshot["measurements"]) == len(remote_measurements)
 
 
-def test_pull_all_downgrades_to_metadata_only_when_direct_r2_config_is_missing(
+def test_pull_all_materializes_remote_images_without_direct_r2_secrets(
     tmp_path,
     monkeypatch,
 ):
@@ -772,12 +772,73 @@ def test_pull_all_downgrades_to_metadata_only_when_direct_r2_config_is_missing(
 
         def download_image_file(self, storage_path, dest_path):
             self.download_attempts.append(str(storage_path))
-            raise AssertionError("download_image_file should not be called when direct R2 is unavailable")
+            destination = Path(dest_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"cloud image bytes")
+            return destination
 
     client = PublicDesktopClient(remote_images, remote_measurements)
     generate_calls = []
 
-    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    def fake_add_image(**kwargs):
+        source_path = Path(str(kwargs["filepath"]))
+        conn = sqlite3.connect(db_path)
+        try:
+            obs_row = conn.execute(
+                "SELECT folder_path FROM observations WHERE id = ?",
+                (int(kwargs["observation_id"]),),
+            ).fetchone()
+            folder_path = Path(str(obs_row[0])) if obs_row and obs_row[0] else images_root
+            folder_path.mkdir(parents=True, exist_ok=True)
+            dest_path = folder_path / source_path.name
+            counter = 1
+            while dest_path.exists():
+                dest_path = folder_path / f"{source_path.stem}_{counter}{source_path.suffix}"
+                counter += 1
+            shutil.copy2(source_path, dest_path)
+            cursor = conn.execute(
+                """
+                INSERT INTO images (
+                    observation_id, filepath, original_filepath, sort_order, image_type,
+                    micro_category, objective_name, scale_microns_per_pixel, resample_scale_factor,
+                    mount_medium, stain, sample_type, contrast, measure_color, crop_mode,
+                    notes, gps_source, ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
+                    ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(kwargs["observation_id"]),
+                    str(dest_path),
+                    None,
+                    kwargs.get("sort_order"),
+                    kwargs.get("image_type"),
+                    kwargs.get("micro_category"),
+                    kwargs.get("objective_name"),
+                    kwargs.get("scale"),
+                    kwargs.get("resample_scale_factor"),
+                    kwargs.get("mount_medium"),
+                    kwargs.get("stain"),
+                    kwargs.get("sample_type"),
+                    kwargs.get("contrast"),
+                    kwargs.get("measure_color"),
+                    kwargs.get("crop_mode"),
+                    kwargs.get("notes"),
+                    kwargs.get("gps_source"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    kwargs.get("ai_crop_is_custom"),
+                    kwargs.get("captured_at"),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
     monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
     monkeypatch.setattr(cloud_sync, "_apply_remote_observation_fields", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "_detect_deleted_remote_observations", lambda remote_obs: [])
@@ -785,7 +846,12 @@ def test_pull_all_downgrades_to_metadata_only_when_direct_r2_config_is_missing(
     monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ImageDB.add_image should not be called when direct R2 is unavailable")))
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(
+        cloud_sync.CloudflareR2Client,
+        "from_env",
+        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
+    )
 
     profiler = cloud_sync.CloudSyncProfiler()
     with cloud_sync._cloud_sync_profile_scope(profiler):
@@ -819,51 +885,135 @@ def test_pull_all_downgrades_to_metadata_only_when_direct_r2_config_is_missing(
         conn.close()
 
     assert result["pulled"] == 1
-    assert len(result["errors"]) == 1
-    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["errors"][0]
-    assert client.download_attempts == []
-    assert generate_calls == []
+    assert result["errors"] == []
+    assert len(client.download_attempts) == len(remote_images)
+    assert len(generate_calls) == len(remote_images)
     assert client.pull_bulk_calls == 1
     assert client.pull_measurement_calls == 1
-    assert profiler.download_image_file_calls == 0
-    assert profiler.generate_all_sizes_calls == 0
+    assert profiler.generate_all_sizes_calls == len(remote_images)
     assert profiler.store_remote_snapshot_fetch_images_count == 0
     assert profiler.store_remote_snapshot_fetch_measurements_count == 0
     assert profiler.retry_missing_cloud_media_branch_runs == 0
     assert observation == ("cloud-obs-1", "synced")
-    assert image_count == 0
-    assert measurement_count == 0
+    assert image_count == len(remote_images)
+    assert measurement_count == len(remote_measurements)
     assert snapshot_row is not None
     snapshot = json.loads(snapshot_row[0])
     assert len(snapshot["images"]) == len(remote_images)
     assert len(snapshot["measurements"]) == len(remote_measurements)
 
 
-def test_materialize_cloud_media_for_observation_reports_direct_r2_unavailable_without_credentials(
+def test_materialize_cloud_media_for_observation_uses_public_or_worker_download_without_direct_r2_secrets(
     tmp_path,
     monkeypatch,
 ):
     db_path = tmp_path / "sporely.db"
     _create_retry_db(db_path)
 
-    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    remote_images = [
+        {
+            "id": "cloud-image-1",
+            "desktop_id": 1,
+            "observation_id": "cloud-obs-1",
+            "storage_path": "user-123/cloud-obs-1/0_1780071867059.jpg",
+            "original_filename": "0_1780071867059.jpg",
+            "image_type": "field",
+            "sort_order": 0,
+            "deleted_at": None,
+        }
+    ]
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-1",
+            "desktop_id": None,
+            "image_id": "cloud-image-1",
+            "length_um": 12.5,
+            "width_um": 7.5,
+            "measurement_type": "manual",
+            "gallery_rotation": 90,
+            "measured_at": "2026-05-01T12:00:00Z",
+        }
+    ]
+
+    client = RetryingClient(remote_images, remote_measurements)
+    client.failures_remaining = 0
+
+    def fake_add_image(**kwargs):
+        source_path = Path(str(kwargs["filepath"]))
+        conn = sqlite3.connect(db_path)
+        try:
+            obs_row = conn.execute(
+                "SELECT folder_path FROM observations WHERE id = ?",
+                (int(kwargs["observation_id"]),),
+            ).fetchone()
+            folder_path = Path(str(obs_row[0])) if obs_row and obs_row[0] else tmp_path / "images"
+            folder_path.mkdir(parents=True, exist_ok=True)
+            dest_path = folder_path / source_path.name
+            shutil.copy2(source_path, dest_path)
+            cursor = conn.execute(
+                """
+                INSERT INTO images (
+                    observation_id, filepath, original_filepath, sort_order, image_type,
+                    micro_category, objective_name, scale_microns_per_pixel, resample_scale_factor,
+                    mount_medium, stain, sample_type, contrast, measure_color, crop_mode,
+                    notes, gps_source, ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
+                    ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(kwargs["observation_id"]),
+                    str(dest_path),
+                    None,
+                    kwargs.get("sort_order"),
+                    kwargs.get("image_type"),
+                    kwargs.get("micro_category"),
+                    kwargs.get("objective_name"),
+                    kwargs.get("scale"),
+                    kwargs.get("resample_scale_factor"),
+                    kwargs.get("mount_medium"),
+                    kwargs.get("stain"),
+                    kwargs.get("sample_type"),
+                    kwargs.get("contrast"),
+                    kwargs.get("measure_color"),
+                    kwargs.get("crop_mode"),
+                    kwargs.get("notes"),
+                    kwargs.get("gps_source"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    kwargs.get("ai_crop_is_custom"),
+                    kwargs.get("captured_at"),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(
-        cloud_sync.CloudflareR2Client,
-        "from_env",
-        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
-    )
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
 
-    result = cloud_sync.materialize_cloud_media_for_observation(
-        cloud_sync.SporelyCloudClient("token", "user-123"),
-        1,
-    )
+    result = cloud_sync.materialize_cloud_media_for_observation(client, 1)
 
-    assert result["status"] == "error"
-    assert result["reason"] == "direct_r2_unavailable"
-    assert result["downloaded"] == 0
-    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["errors"]
+    conn = sqlite3.connect(db_path)
+    try:
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+        measurement_count = conn.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert result["status"] == "ok"
+    assert result["downloaded"] == len(remote_images)
+    assert result["errors"] == []
+    assert client.download_attempts == [remote_images[0]["storage_path"]]
+    assert image_count == len(remote_images)
+    assert measurement_count == len(remote_measurements)
 
 
 def test_materialize_cloud_media_for_observation_uses_snapshot_and_is_idempotent(

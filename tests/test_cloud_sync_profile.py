@@ -21,10 +21,13 @@ class _ProfiledClient(cloud_sync.SporelyCloudClient):
         super().__init__('access-token', 'user-id')
         self._remote_images = [dict(row or {}) for row in remote_images]
         self._remote_measurements = [dict(row or {}) for row in remote_measurements]
-        self._fake_r2 = _FakeR2(payload)
+        self._payload = payload
 
-    def _get_r2(self):
-        return self._fake_r2
+    def _download_public_media_file(self, storage_path, dest_path, *, timeout=120):
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(self._payload)
+        return dest
 
     def _get(self, path: str):
         if str(path or '').startswith('observation_images?'):

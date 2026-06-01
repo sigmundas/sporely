@@ -1,5 +1,11 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Worker-backed desktop media sync
+
+Desktop uploads, downloads, and deletes now go through the authenticated Cloudflare media Worker by default. Normal users only need their Supabase session plus the public Worker URL (`SPORELY_MEDIA_WORKER_URL`, default `https://upload.sporely.no`); direct R2 secrets remain admin/developer-only behind `SPORELY_ENABLE_DIRECT_R2=1`.
+
+Worker failures are treated as recoverable sync issues so a local image stays pending instead of creating a broken cloud row. When media is missing, the sync path now surfaces the object key so broken remote rows can be reuploaded or removed during repair.
+
 ### Cloud media integrity repair
 
 A media-health tool was added after older active `observation_images` rows were found pointing to missing R2 objects. The tool can dry-run all active cloud image rows, detect missing original/thumb objects, and repair them from matching local desktop files by reuploading to existing keys. It does not create duplicate cloud rows, tombstone rows, or delete R2/local files.

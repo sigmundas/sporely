@@ -1,5 +1,7 @@
 from utils.cloud_media_policy import (
     CLOUD_FULL_MAX_PIXELS,
+    CLOUD_FULL_RESIZE_MAX_EDGE,
+    CLOUD_FULL_RESIZE_MAX_PIXELS,
     CLOUD_HIGH_FULL_BYTE_CAP,
     CLOUD_HIGH_FULL_WEBP_QUALITY,
     CLOUD_QUALITY_PROFILE_HIGH,
@@ -31,9 +33,13 @@ def test_build_cloud_upload_policy_uses_expected_quality_and_caps():
     assert free_policy["uploadMode"] == "full"
     assert pro_policy["uploadMode"] == "full"
     assert free_policy["maxPixels"] == CLOUD_FULL_MAX_PIXELS
+    assert free_policy["resizeMaxPixels"] == CLOUD_FULL_RESIZE_MAX_PIXELS
+    assert free_policy["resizeMaxEdge"] == CLOUD_FULL_RESIZE_MAX_EDGE
     assert free_policy["fullImageWebpQuality"] == CLOUD_STANDARD_FULL_WEBP_QUALITY
     assert free_policy["fullImageByteCap"] == CLOUD_STANDARD_FULL_BYTE_CAP
     assert pro_policy["maxPixels"] == CLOUD_FULL_MAX_PIXELS
+    assert pro_policy["resizeMaxPixels"] == CLOUD_FULL_RESIZE_MAX_PIXELS
+    assert pro_policy["resizeMaxEdge"] == CLOUD_FULL_RESIZE_MAX_EDGE
     assert pro_policy["fullImageWebpQuality"] == CLOUD_HIGH_FULL_WEBP_QUALITY
     assert pro_policy["fullImageByteCap"] == CLOUD_HIGH_FULL_BYTE_CAP
 
@@ -41,3 +47,33 @@ def test_build_cloud_upload_policy_uses_expected_quality_and_caps():
 def test_build_full_image_webp_quality_attempts_are_descending():
     assert build_full_image_webp_quality_attempts(CLOUD_QUALITY_PROFILE_STANDARD) == (65, 55, 45, 35, 25)
     assert build_full_image_webp_quality_attempts(CLOUD_QUALITY_PROFILE_HIGH) == (80, 70, 60, 50, 40)
+
+
+def test_scale_dimensions_to_max_pixels_leaves_sub_threshold_full_images_unchanged():
+    from utils.cloud_media_policy import scale_dimensions_to_max_pixels
+
+    scaled = scale_dimensions_to_max_pixels(5184, 3888, CLOUD_FULL_RESIZE_MAX_PIXELS, CLOUD_FULL_RESIZE_MAX_EDGE)
+
+    assert scaled["resized"] is False
+    assert scaled["width"] == 5184
+    assert scaled["height"] == 3888
+
+
+def test_scale_dimensions_to_max_pixels_resizes_when_long_edge_exceeds_cap():
+    from utils.cloud_media_policy import scale_dimensions_to_max_pixels
+
+    scaled = scale_dimensions_to_max_pixels(6000, 4000, CLOUD_FULL_RESIZE_MAX_PIXELS, CLOUD_FULL_RESIZE_MAX_EDGE)
+
+    assert scaled["resized"] is True
+    assert max(scaled["width"], scaled["height"]) == CLOUD_FULL_RESIZE_MAX_EDGE
+    assert scaled["width"] * scaled["height"] <= CLOUD_FULL_RESIZE_MAX_PIXELS
+
+
+def test_scale_dimensions_to_max_pixels_resizes_when_pixel_area_exceeds_cap():
+    from utils.cloud_media_policy import scale_dimensions_to_max_pixels
+
+    scaled = scale_dimensions_to_max_pixels(5600, 5600, CLOUD_FULL_RESIZE_MAX_PIXELS, CLOUD_FULL_RESIZE_MAX_EDGE)
+
+    assert scaled["resized"] is True
+    assert scaled["width"] * scaled["height"] <= CLOUD_FULL_RESIZE_MAX_PIXELS
+    assert max(scaled["width"], scaled["height"]) <= CLOUD_FULL_RESIZE_MAX_EDGE

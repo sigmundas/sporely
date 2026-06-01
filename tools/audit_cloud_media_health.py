@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from database import models  # noqa: E402
 from database.schema import get_database_path  # noqa: E402
 from utils.cloud_sync import SporelyCloudClient, should_push_local_image_to_cloud  # noqa: E402
+from utils.cloud_media_policy import build_cloud_upload_policy  # noqa: E402
 from utils.heic_converter import guess_local_image_mime_type  # noqa: E402
 from utils.r2_storage import R2_PUBLIC_BASE_URL, media_variant_key, normalize_media_key  # noqa: E402
 
@@ -635,6 +636,7 @@ def _repair_rows(
     client: SporelyCloudClient,
     rows: list[dict[str, Any]],
     probe_session: requests.Session,
+    upload_meta: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     repaired_rows: list[dict[str, Any]] = []
     total_rows = len(rows)
@@ -666,6 +668,7 @@ def _repair_rows(
                 cloud_observation_id,
                 cloud_image_id,
                 storage_path=storage_path,
+                upload_meta=dict(upload_meta or {}),
             )
             row["repair_status"] = "uploaded"
             row["repair_uploaded_original_key"] = storage_path
@@ -707,6 +710,15 @@ def run_audit(
     client = SporelyCloudClient.from_stored_credentials()
     if client is None:
         raise RuntimeError("Could not load stored Sporely cloud credentials.")
+    repair_upload_meta: dict[str, Any] | None = None
+    if args.repair:
+        try:
+            repair_upload_meta = build_cloud_upload_policy(
+                client.fetch_cloud_plan_profile(),
+                upload_mode="full",
+            )
+        except Exception:
+            repair_upload_meta = build_cloud_upload_policy(None, upload_mode="full")
 
     with _sqlite_connect_readonly() as local_conn:
         scope_cloud_ids, scope_local_id = _scope_to_cloud_ids(client, args, local_conn)
@@ -728,7 +740,7 @@ def run_audit(
         )
         report_rows.append(_prepare_row_report(row, context, probe_session))
     if args.repair:
-        report_rows = _repair_rows(client, report_rows, probe_session)
+        report_rows = _repair_rows(client, report_rows, probe_session, repair_upload_meta)
 
     summary = _summarize_rows(report_rows)
     report = {

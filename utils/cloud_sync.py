@@ -53,10 +53,14 @@ from database.models import (
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
+    build_cloud_upload_policy,
+    build_full_image_webp_quality_attempts,
     normalize_cloud_plan_profile,
+    scale_dimensions_to_max_pixels,
 )
 from utils.r2_storage import (
     CloudflareR2Client,
+    CloudflareMediaWorkerClient,
     R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE,
     direct_r2_runtime_available,
     media_variant_key,
@@ -147,6 +151,39 @@ def _direct_r2_unavailable_warning(context: str | None = None) -> str:
 
 def _is_direct_r2_unavailable_error(exc: Exception | str) -> bool:
     return R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE.lower() in str(exc or "").lower()
+
+
+def _image_storage_timestamp_ms(image_row: dict | None) -> int:
+    row = dict(image_row or {})
+    for key in ('created_at', 'captured_at', 'synced_at'):
+        parsed = _parse_sync_timestamp(row.get(key))
+        if parsed is not None:
+            return int(parsed.timestamp() * 1000)
+        raw = str(row.get(key) or '').strip()
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except Exception:
+                continue
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _build_worker_storage_path(
+    user_id: str,
+    obs_cloud_id: str,
+    image_row: dict | None,
+    upload_path: str,
+) -> str:
+    path = Path(str(upload_path or '').strip())
+    suffix = path.suffix.lower() or _detected_image_extension(path)
+    extension = suffix if suffix.startswith('.') else f'.{suffix or "jpg"}'
+    sort_order = _safe_int((image_row or {}).get('sort_order'))
+    if sort_order < 0:
+        sort_order = 0
+    timestamp_ms = _image_storage_timestamp_ms(image_row)
+    return _normalize_cloud_media_key(
+        f'{str(user_id or "").strip()}/{str(obs_cloud_id or "").strip()}/{sort_order}_{timestamp_ms}{extension}'
+    )
 
 
 def _client_uses_default_r2_loader(client: object | None) -> bool:
@@ -621,14 +658,6 @@ def download_calibration_reference_to_cache(
         )
         return result
 
-    if getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
-        result["status"] = "unavailable_direct_r2_not_configured"
-        result["warning"] = (
-            f"calibration {calibration_uuid}: skipped recovery because "
-            f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}"
-        )
-        return result
-
     cache_root = _calibration_recovery_cache_root() / str(calibration_uuid)
     cache_root.mkdir(parents=True, exist_ok=True)
     initial_extension = _normalize_calibration_cache_extension(Path(str(image_storage_path)).suffix or ".jpg")
@@ -662,15 +691,8 @@ def download_calibration_reference_to_cache(
         return result
     except Exception as exc:
         detail = str(exc or "").strip() or exc.__class__.__name__
-        if _is_direct_r2_unavailable_error(exc):
-            result["status"] = "unavailable_direct_r2_not_configured"
-            result["warning"] = (
-                f"calibration {calibration_uuid}: skipped recovery because "
-                f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}"
-            )
-        else:
-            result["status"] = "download_failed"
-            result["warning"] = f"calibration {calibration_uuid}: skipped recovery download ({detail})"
+        result["status"] = "download_failed"
+        result["warning"] = f"calibration {calibration_uuid}: skipped recovery download ({detail})"
         return result
     finally:
         if temp_path and temp_path.exists():
@@ -3723,6 +3745,98 @@ def _cloud_thumb_save_format(path: Path) -> tuple[str, str, dict]:
     return 'JPEG', 'image/jpeg', {'quality': 72}
 
 
+def _cloud_upload_policy_from_meta(upload_meta: dict | None) -> dict[str, object]:
+    meta = dict(upload_meta or {})
+    upload_mode = str(meta.get('upload_mode') or meta.get('uploadMode') or 'full').strip().lower() or 'full'
+    cloud_plan = str(meta.get('cloud_plan') or meta.get('cloudPlan') or '').strip().lower()
+    quality_profile = str(meta.get('quality_profile') or meta.get('qualityProfile') or '').strip().lower()
+    profile = {}
+    if cloud_plan:
+        profile['cloud_plan'] = cloud_plan
+    elif quality_profile == 'high':
+        profile['is_pro'] = True
+    return build_cloud_upload_policy(normalize_cloud_plan_profile(profile), upload_mode=upload_mode)
+
+
+def _prepare_cloud_image_upload_file(
+    source_path: str,
+    temp_dir: Path,
+    image_id: int,
+    upload_meta: dict | None,
+) -> tuple[Path, int, int, int, int, str, int | float | None]:
+    source = Path(str(source_path or '').strip())
+    if not source.exists():
+        raise FileNotFoundError(source)
+
+    policy = _cloud_upload_policy_from_meta(upload_meta)
+    resize_max_pixels = max(
+        1,
+        int(
+            policy.get('resizeMaxPixels')
+            or policy.get('resize_max_pixels')
+            or policy.get('maxPixels')
+            or 0
+        ) or 20_000_000,
+    )
+    resize_max_edge = policy.get('resizeMaxEdge') or policy.get('resize_max_edge')
+    quality_profile = str(policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
+    byte_cap = int(policy.get('fullImageByteCap') or 0)
+    webp_qualities = list(build_full_image_webp_quality_attempts(quality_profile))
+
+    with Image.open(source) as img:
+        img = ImageOps.exif_transpose(img)
+        source_width = int(img.width or 0)
+        source_height = int(img.height or 0)
+        if not source_width or not source_height:
+            raise RuntimeError('Could not determine image dimensions')
+
+        if img.mode in ('RGBA', 'LA') or 'transparency' in img.info:
+            rgba = img.convert('RGBA')
+            background = Image.new('RGB', rgba.size, (255, 255, 255))
+            background.paste(rgba, mask=rgba.getchannel('A'))
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        target = scale_dimensions_to_max_pixels(source_width, source_height, resize_max_pixels, resize_max_edge)
+        if target['resized']:
+            img = img.resize((int(target['width']), int(target['height'])), Image.Resampling.LANCZOS)
+
+        attempts: list[tuple[str, str, dict, int | float | None]] = []
+        if features.check('webp'):
+            for quality in webp_qualities:
+                attempts.append(('WEBP', '.webp', {'quality': quality, 'method': 4}, quality))
+        attempts.append(('JPEG', '.jpg', {'quality': 88}, 88))
+
+        for fmt, ext, save_options, attempt_quality in attempts:
+            buffer = io.BytesIO()
+            img.save(buffer, fmt, **save_options)
+            data = buffer.getvalue()
+            if byte_cap and len(data) > byte_cap:
+                continue
+
+            out_path = temp_dir / f'cloud_{int(image_id):04d}{ext}'
+            out_path.write_bytes(data)
+            try:
+                source_stat = source.stat()
+                os.utime(out_path, (source_stat.st_atime, source_stat.st_mtime))
+            except Exception:
+                pass
+
+            encoding_format = 'image/webp' if fmt == 'WEBP' else 'image/jpeg'
+            return (
+                out_path,
+                source_width,
+                source_height,
+                int(img.width or 0),
+                int(img.height or 0),
+                encoding_format,
+                attempt_quality,
+            )
+
+    raise CloudSyncError(IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
+
+
 def _profile_generate_all_sizes(image_path: str, image_id: int):
     profiler = _cloud_sync_current_profiler()
     start = _cloud_sync_perf_counter()
@@ -4403,6 +4517,7 @@ class SporelyCloudClient:
         self.refresh_token = str(refresh_token or '').strip() or None
         self._s = requests.Session()
         self._r2: CloudflareR2Client | None = None
+        self._media_worker: CloudflareMediaWorkerClient | None = None
         self._column_support_cache: dict[tuple[str, str], bool] = {}
         self._cloud_image_storage_key_cache: dict[str, str] = {}
         self._s.headers.update({
@@ -4415,6 +4530,11 @@ class SporelyCloudClient:
         if self._r2 is None:
             self._r2 = CloudflareR2Client.from_env()
         return self._r2
+
+    def _get_media_worker(self) -> CloudflareMediaWorkerClient:
+        if self._media_worker is None:
+            self._media_worker = CloudflareMediaWorkerClient.from_access_token(self.access_token)
+        return self._media_worker
 
     def _using_default_r2_loader(self) -> bool:
         if "_get_r2" in self.__dict__:
@@ -4740,14 +4860,13 @@ class SporelyCloudClient:
 
         if not cleaned:
             return
-        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
-            raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
         try:
-            self._get_r2().delete_objects(cleaned)
+            if direct_r2_runtime_available():
+                self._get_r2().delete_objects(cleaned)
+            else:
+                self._get_media_worker().delete_objects(cleaned)
         except Exception as exc:
-            if _is_direct_r2_unavailable_error(exc):
-                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
-            raise CloudSyncError(f'R2 delete failed: {exc}') from exc
+            raise CloudSyncError(f'Media delete failed: {exc}') from exc
 
     # ── Observation push ─────────────────────────────────────────────────
 
@@ -4821,11 +4940,6 @@ class SporelyCloudClient:
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because no readable local calibration image was found'
             )
-        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
-            return (
-                f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
-                f'because {R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}'
-            )
 
         try:
             image_bytes, content_type, extension = _calibration_reference_image_bytes(local_path)
@@ -4842,19 +4956,46 @@ class SporelyCloudClient:
         )
         cache_control = 'public, max-age=31536000, immutable'
         try:
-            self._get_r2().put_bytes(
-                image_bytes,
-                storage_key,
-                content_type=content_type,
-                cache_control=cache_control,
-                timeout=120,
-            )
-        except Exception as exc:
-            if _is_direct_r2_unavailable_error(exc):
-                return (
-                    f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
-                    f'because {R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}'
+            if direct_r2_runtime_available():
+                self._get_r2().put_bytes(
+                    image_bytes,
+                    storage_key,
+                    content_type=content_type,
+                    cache_control=cache_control,
+                    timeout=120,
                 )
+            else:
+                cloud_plan = 'free'
+                try:
+                    cloud_plan = str(self.fetch_cloud_plan_profile().get('cloud_plan') or cloud_plan).strip() or cloud_plan
+                except Exception:
+                    pass
+                self._get_media_worker().put_bytes(
+                    image_bytes,
+                    storage_key,
+                    content_type=content_type,
+                    cache_control=cache_control,
+                    upload_meta={
+                        'upload_mode': 'full',
+                        'quality_profile': 'standard',
+                        'encoding_quality': '',
+                        'encoding_format': content_type,
+                        'source_width': '',
+                        'source_height': '',
+                        'stored_width': '',
+                        'stored_height': '',
+                        'stored_bytes': str(len(image_bytes)),
+                    },
+                    options={
+                        'uploadMode': 'full',
+                        'uploadVariant': 'full',
+                        'cloudPlan': cloud_plan,
+                        'qualityProfile': 'standard',
+                        'encodingFormat': content_type,
+                    },
+                    timeout=120,
+                )
+        except Exception as exc:
             return (
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because R2 upload failed ({exc})'
@@ -5008,107 +5149,186 @@ class SporelyCloudClient:
         storage_path = _normalize_cloud_media_key(
             storage_path or self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
         )
-        mime = _content_type_for_path(path)
         cache_control = 'public, max-age=31536000, immutable'
-        if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
-            raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
-        r2 = self._get_r2()
         meta = dict(upload_meta or {})
-        quality_profile = str(meta.get('quality_profile') or 'standard').strip().lower() or 'standard'
-        upload_mode = str(meta.get('upload_mode') or 'full').strip().lower() or 'full'
-        encoding_quality = meta.get('encoding_quality')
-        if encoding_quality is None:
-            encoding_quality = meta.get('full_image_webp_quality')
-        encoding_format = str(meta.get('encoding_format') or mime or '').strip().lower() or mime
-        source_width = meta.get('source_width')
-        source_height = meta.get('source_height')
-        stored_width = meta.get('stored_width')
-        stored_height = meta.get('stored_height')
-        stored_bytes = path.stat().st_size
-        common_metadata = {
-            'user_id': self.user_id,
-            'uploaded_at': datetime.now(timezone.utc).isoformat(),
-            'uploaded_by': self.user_id,
-            'upload_mode': upload_mode,
-            'upload_variant': 'full',
-            'cloud_plan': str(meta.get('cloud_plan') or ('pro' if quality_profile == 'high' else 'free')),
-            'quality_profile': quality_profile,
-            'encoding_quality': '' if encoding_quality is None else str(encoding_quality),
-            'encoding_format': encoding_format,
-            'source_width': '' if source_width is None else str(source_width),
-            'source_height': '' if source_height is None else str(source_height),
-            'stored_width': '' if stored_width is None else str(stored_width),
-            'stored_height': '' if stored_height is None else str(stored_height),
-            'stored_bytes': str(stored_bytes),
-        }
 
-        try:
-            r2.put_file(
-                path,
-                storage_path,
-                content_type=mime,
-                cache_control=cache_control,
-                timeout=120,
-                custom_metadata=common_metadata,
+        with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            prepared_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = _prepare_cloud_image_upload_file(
+                str(path),
+                temp_dir,
+                _safe_int(img_cloud_id, default=0) or 0,
+                meta,
             )
-        except Exception as exc:
-            if _is_direct_r2_unavailable_error(exc):
-                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
-            raise CloudSyncError(f'R2 upload failed: {exc}') from exc
+            mime = _content_type_for_path(prepared_path)
+            upload_policy = _cloud_upload_policy_from_meta(meta)
+            quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
+            upload_mode = str(upload_policy.get('uploadMode') or 'full').strip().lower() or 'full'
+            cloud_plan = str(upload_policy.get('cloudPlan') or ('pro' if quality_profile == 'high' else 'free'))
+            stored_bytes = prepared_path.stat().st_size
+            common_metadata = {
+                'user_id': self.user_id,
+                'uploaded_at': datetime.now(timezone.utc).isoformat(),
+                'uploaded_by': self.user_id,
+                'upload_mode': upload_mode,
+                'upload_variant': 'full',
+                'cloud_plan': cloud_plan,
+                'quality_profile': quality_profile,
+                'encoding_quality': '' if encoding_quality is None else str(encoding_quality),
+                'encoding_format': encoding_format,
+                'source_width': str(source_width),
+                'source_height': str(source_height),
+                'stored_width': str(stored_width),
+                'stored_height': str(stored_height),
+                'stored_bytes': str(stored_bytes),
+            }
 
-        # Generate the single cloud thumbnail variant used by web and desktop.
-        try:
-            with Image.open(path) as img:
-                img = ImageOps.exif_transpose(img)
-                if img.mode in ('RGBA', 'LA'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'RGBA':
-                        background.paste(img, mask=img.split()[3])
+            try:
+                if direct_r2_runtime_available():
+                    r2 = self._get_r2()
+                    r2.put_file(
+                        prepared_path,
+                        storage_path,
+                        content_type=mime,
+                        cache_control=cache_control,
+                        timeout=120,
+                        custom_metadata=common_metadata,
+                    )
+                else:
+                    worker = self._get_media_worker()
+                    upload_response = worker.put_file(
+                        prepared_path,
+                        storage_path,
+                        content_type=mime,
+                        cache_control=cache_control,
+                        timeout=120,
+                        upload_meta=common_metadata,
+                        options={
+                            'uploadMode': upload_mode,
+                            'uploadVariant': 'full',
+                            'cloudPlan': cloud_plan,
+                            'qualityProfile': quality_profile,
+                            'encodingQuality': encoding_quality,
+                            'encodingFormat': encoding_format,
+                            'sourceWidth': source_width,
+                            'sourceHeight': source_height,
+                            'storedWidth': stored_width,
+                            'storedHeight': stored_height,
+                        },
+                    )
+                    confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
+                    if not confirmed_key:
+                        raise CloudSyncError('Worker upload did not return a storage key')
+                    storage_path = confirmed_key
+            except Exception as exc:
+                raise CloudSyncError(f'Media upload failed: {exc}') from exc
+
+            # Generate the single cloud thumbnail variant used by web and desktop.
+            try:
+                with Image.open(prepared_path) as img:
+                    img = ImageOps.exif_transpose(img)
+                    if img.mode in ('RGBA', 'LA'):
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'RGBA':
+                            background.paste(img, mask=img.split()[3])
+                        else:
+                            background.paste(img, mask=img.split()[1])
+                        img = background
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+
+                    orig_w, orig_h = img.size
+                    scale = min(1.0, _CLOUD_THUMB_MAX_EDGE / max(orig_w, orig_h))
+                    target_w = max(1, int(orig_w * scale))
+                    target_h = max(1, int(orig_h * scale))
+
+                    variant_path = media_variant_key(storage_path, 'thumb')
+                    img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    buffer = io.BytesIO()
+                    thumb_format, thumb_mime, thumb_options = _cloud_thumb_save_format(prepared_path)
+                    img_resized.save(buffer, format=thumb_format, **thumb_options)
+                    thumb_quality = thumb_options.get('quality')
+                    thumb_metadata = {
+                        'user_id': self.user_id,
+                        'uploaded_at': common_metadata['uploaded_at'],
+                        'uploaded_by': self.user_id,
+                        'upload_mode': upload_mode,
+                        'upload_variant': 'thumb',
+                        'cloud_plan': cloud_plan,
+                        'quality_profile': quality_profile,
+                        'encoding_quality': '' if thumb_quality is None else str(thumb_quality),
+                        'encoding_format': thumb_mime,
+                        'source_width': str(source_width),
+                        'source_height': str(source_height),
+                        'stored_width': str(target_w),
+                        'stored_height': str(target_h),
+                        'stored_bytes': str(len(buffer.getvalue())),
+                    }
+                    if direct_r2_runtime_available():
+                        self._get_r2().put_bytes(
+                            buffer.getvalue(),
+                            variant_path,
+                            content_type=thumb_mime,
+                            cache_control=cache_control,
+                            timeout=60,
+                            custom_metadata=thumb_metadata,
+                        )
                     else:
-                        background.paste(img, mask=img.split()[1])
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                    
-                orig_w, orig_h = img.size
-                scale = min(1.0, _CLOUD_THUMB_MAX_EDGE / max(orig_w, orig_h))
-                target_w = max(1, int(orig_w * scale))
-                target_h = max(1, int(orig_h * scale))
-
-                variant_path = media_variant_key(storage_path, 'thumb')
-                img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                buffer = io.BytesIO()
-                thumb_format, thumb_mime, thumb_options = _cloud_thumb_save_format(path)
-                img_resized.save(buffer, format=thumb_format, **thumb_options)
-                thumb_quality = thumb_options.get('quality')
-                thumb_metadata = {
-                    'user_id': self.user_id,
-                    'uploaded_at': common_metadata['uploaded_at'],
-                    'uploaded_by': self.user_id,
-                    'upload_mode': upload_mode,
-                    'upload_variant': 'thumb',
-                    'cloud_plan': common_metadata['cloud_plan'],
-                    'quality_profile': quality_profile,
-                    'encoding_quality': '' if thumb_quality is None else str(thumb_quality),
-                    'encoding_format': thumb_mime,
-                    'source_width': '' if source_width is None else str(source_width),
-                    'source_height': '' if source_height is None else str(source_height),
-                    'stored_width': str(target_w),
-                    'stored_height': str(target_h),
-                    'stored_bytes': str(len(buffer.getvalue())),
-                }
-                r2.put_bytes(
-                    buffer.getvalue(),
-                    variant_path,
-                    content_type=thumb_mime,
-                    cache_control=cache_control,
-                    timeout=60,
-                    custom_metadata=thumb_metadata,
-                )
-        except Exception as e:
-            print(f"[cloud_sync] Warning: Could not generate/upload thumbnail for {storage_path}: {e}")
+                        thumb_response = self._get_media_worker().put_bytes(
+                            buffer.getvalue(),
+                            variant_path,
+                            content_type=thumb_mime,
+                            cache_control=cache_control,
+                            timeout=60,
+                            upload_meta=thumb_metadata,
+                            options={
+                                'uploadMode': upload_mode,
+                                'uploadVariant': 'thumb',
+                                'cloudPlan': cloud_plan,
+                                'qualityProfile': quality_profile,
+                                'encodingQuality': thumb_quality,
+                                'encodingFormat': thumb_mime,
+                                'sourceWidth': source_width,
+                                'sourceHeight': source_height,
+                                'storedWidth': target_w,
+                                'storedHeight': target_h,
+                            },
+                        )
+                        confirmed_thumb_key = _normalize_cloud_media_key(str((thumb_response or {}).get('key') or variant_path))
+                        if confirmed_thumb_key != _normalize_cloud_media_key(variant_path):
+                            raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
+            except Exception as e:
+                raise CloudSyncError(f'Media thumbnail upload failed: {e}') from e
 
         return storage_path
+
+    def _download_public_media_file(self, storage_path: str, dest_path: str | Path, *, timeout: int = 120) -> Path:
+        storage_key = _normalize_cloud_media_key(storage_path)
+        if not storage_key:
+            raise CloudSyncError('Missing storage path')
+        public_url = self._get_media_worker().public_url(storage_key)
+        if not public_url:
+            raise CloudSyncError('Missing public media URL')
+        destination = Path(dest_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        session = requests.Session()
+        response = session.get(public_url, stream=True, timeout=timeout)
+        try:
+            if not response.ok:
+                raise CloudSyncError(f'Public media download failed ({response.status_code})')
+            content_type = str(response.headers.get('content-type') or '').strip().lower()
+            if content_type and not content_type.startswith('image/') and content_type != 'application/octet-stream':
+                raise CloudSyncError(f'Public media download returned non-image content ({content_type})')
+            with destination.open('wb') as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+            return destination
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
 
     # ── Pull new web observations ─────────────────────────────────────────
 
@@ -5312,8 +5532,6 @@ class SporelyCloudClient:
             try:
                 self._storage_remove(storage_paths)
             except CloudSyncError as exc:
-                if _is_direct_r2_unavailable_error(exc):
-                    raise
                 print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
         self._delete(f'observation_images?observation_id=eq.{cloud_id}')
         self._delete(f'observations?id=eq.{cloud_id}')
@@ -5327,19 +5545,35 @@ class SporelyCloudClient:
             storage_key = _normalize_cloud_media_key(storage_path)
             if not storage_key:
                 raise CloudSyncError('Missing storage path')
-            if self._r2 is None and self._using_default_r2_loader() and not direct_r2_runtime_available():
-                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
-            downloaded_path = Path(self._get_r2().download_to_file(storage_key, dest_path, timeout=120))
-            return downloaded_path
+            if direct_r2_runtime_available():
+                downloaded_path = Path(self._get_r2().download_to_file(storage_key, dest_path, timeout=120))
+                return downloaded_path
+            try:
+                downloaded_path = Path(self._download_public_media_file(storage_key, dest_path, timeout=120))
+                return downloaded_path
+            except Exception as public_exc:
+                try:
+                    downloaded_path = Path(self._get_media_worker().download_to_file(storage_key, dest_path, timeout=120))
+                    return downloaded_path
+                except Exception as worker_exc:
+                    detail = str(worker_exc or '').strip() or worker_exc.__class__.__name__
+                    if 'nosuchkey' in detail.lower():
+                        raise CloudSyncError(
+                            f'Cloud image file is missing from storage ({storage_key})'
+                        ) from worker_exc
+                    public_detail = str(public_exc or '').strip()
+                    if public_detail:
+                        detail = f'{detail} (public fallback: {public_detail})'
+                    raise CloudSyncError(f'Download failed: {detail}') from worker_exc
+        except CloudSyncError:
+            raise
         except Exception as exc:
             detail = str(exc or '').strip()
-            if _is_direct_r2_unavailable_error(exc):
-                raise CloudSyncError(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE) from exc
             if 'nosuchkey' in detail.lower():
                 raise CloudSyncError(
                     f'Cloud image file is missing from storage ({storage_key})'
                 ) from exc
-            raise CloudSyncError(f'Download failed: {exc}') from exc
+            raise CloudSyncError(f'Download failed: {detail or exc.__class__.__name__}') from exc
         finally:
             if profiler is not None:
                 try:
@@ -5476,12 +5710,6 @@ def push_all(
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     progress_state['done'] = _progress_done(progress_state)
     progress_state['total'] = _progress_total(progress_state) + total
-    if sync_images and getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
-        warning = _direct_r2_unavailable_warning(
-            'observation image uploads will still push metadata, but file uploads may fail'
-        )
-        errors.append(warning)
-        print(f'[cloud_sync] Warning: {warning}')
     remote_lookup = {
         str(row.get('id') or '').strip(): row
         for row in (remote_obs or [])
@@ -5783,11 +6011,6 @@ def _push_images_for_observation(
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
         include_upload_meta = client._observation_images_support_upload_metadata()
-        media_storage_available = not (
-            getattr(client, "_r2", None) is None
-            and _client_uses_default_r2_loader(client)
-            and not direct_r2_runtime_available()
-        )
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
@@ -5822,17 +6045,10 @@ def _push_images_for_observation(
 
                 remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
                 existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
-                upload_suffix = Path(upload_path).suffix.lower()
-                if existing_storage_path and upload_suffix:
-                    existing_parts = existing_storage_path.split('/')
-                    existing_name = existing_parts[-1] if existing_parts else existing_storage_path
-                    existing_suffix = Path(existing_name).suffix.lower()
-                    if existing_suffix and existing_suffix != upload_suffix:
-                        migrated_name = f"{Path(existing_name).stem}{upload_suffix}"
-                        existing_storage_path = '/'.join([*existing_parts[:-1], migrated_name])
-                storage_path = existing_storage_path or client._build_storage_path(
+                storage_path = existing_storage_path or _build_worker_storage_path(
+                    client.user_id,
                     obs_cloud_id,
-                    remote_cloud_id or str(local_image_id or img.get('id') or ''),
+                    img,
                     upload_path,
                 )
                 expected_payload = _prepared_item_remote_payload(
@@ -5863,28 +6079,24 @@ def _push_images_for_observation(
                             local_cloud_id == remote_cloud_id
                             or bool(img.get('synced_at'))
                         )
-                    ):
-                        file_matches = True
+                        ):
+                            file_matches = True
 
                 img_cloud_id = remote_cloud_id
+                if not file_matches:
+                    uploaded_key = client.upload_image_file(
+                        upload_path,
+                        obs_cloud_id,
+                        img_cloud_id,
+                        storage_path=storage_path,
+                        upload_meta=dict(item.get('cloud_upload_meta') or {}),
+                    )
+                    storage_path = _normalize_cloud_media_key(uploaded_key or storage_path)
+
                 if not img_cloud_id or not metadata_matches:
                     if remote_row and remote_row.get('original_filename'):
                         img['original_filename'] = str(remote_row.get('original_filename') or '').strip()
                     img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path)
-                    if (
-                        not existing_storage_path
-                        and storage_path != client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path)
-                    ):
-                        storage_path = _normalize_cloud_media_key(client._build_storage_path(obs_cloud_id, img_cloud_id, upload_path))
-                        client._patch(
-                            f'observation_images?id=eq.{img_cloud_id}',
-                            {'storage_path': storage_path},
-                        )
-                    elif remote_row and _normalize_cloud_media_key(remote_row.get('storage_path')) != _normalize_cloud_media_key(storage_path):
-                        client._patch(
-                            f'observation_images?id=eq.{img_cloud_id}',
-                            {'storage_path': storage_path},
-                        )
                     remote_payload = _prepared_item_remote_payload(
                         img,
                         upload_path,
@@ -5895,14 +6107,7 @@ def _push_images_for_observation(
                     if remote_row and remote_row.get('original_filename'):
                         remote_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                     metadata_matches = True
-                if not file_matches:
-                    client.upload_image_file(
-                        upload_path,
-                        obs_cloud_id,
-                        img_cloud_id,
-                        storage_path=storage_path,
-                        upload_meta=dict(item.get('cloud_upload_meta') or {}),
-                    )
+
                 kept_cloud_ids.add(str(img_cloud_id or '').strip())
 
                 try:
@@ -5943,7 +6148,7 @@ def _push_images_for_observation(
         for stale_row in stale_rows:
             stale_cloud_id = str(stale_row.get('id') or '').strip()
             stale_storage_path = _normalize_cloud_media_key(stale_row.get('storage_path'))
-            if stale_storage_path and media_storage_available:
+            if stale_storage_path:
                 try:
                     client._storage_remove([stale_storage_path])
                 except Exception as e:
@@ -6147,13 +6352,6 @@ def pull_all(
 
     total = len(candidates)
     _extend_progress_total(progress_state, total)
-    if materialize_remote_images and getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
-        warning = _direct_r2_unavailable_warning(
-            'remote image downloads are skipped until direct media access is configured'
-        )
-        errors.append(warning)
-        print(f'[cloud_sync] Warning: {warning}')
-        materialize_remote_images = False
     bulk_images = client.pull_bulk_image_metadata(candidate_cloud_ids)
     remote_images_by_obs = {}
     for img in bulk_images:
@@ -7020,17 +7218,6 @@ def materialize_cloud_media_for_observation(
     if client is None:
         summary['status'] = 'error'
         summary['errors'].append('Could not load Sporely Cloud credentials.')
-        if profile_token is not None:
-            try:
-                _CLOUD_SYNC_PROFILE_CONTEXT.reset(profile_token)
-            except Exception:
-                pass
-        return _finish(summary)
-
-    if getattr(client, "_r2", None) is None and _client_uses_default_r2_loader(client) and not direct_r2_runtime_available():
-        summary['status'] = 'error'
-        summary['reason'] = 'direct_r2_unavailable'
-        summary['errors'].append(R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE)
         if profile_token is not None:
             try:
                 _CLOUD_SYNC_PROFILE_CONTEXT.reset(profile_token)

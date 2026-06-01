@@ -286,23 +286,23 @@ def test_push_calibration_reference_image_uploads_derivative_and_patches_relativ
     uploads = []
     patches = []
 
-    class DummyR2:
-        def put_bytes(self, data, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
+    class DummyWorker:
+        def put_bytes(self, data, key, *, content_type=None, cache_control=None, upload_meta=None, options=None, timeout=None):
             uploads.append(
                 {
                     "data": bytes(data),
                     "key": key,
                     "content_type": content_type,
                     "cache_control": cache_control,
-                    "custom_metadata": dict(custom_metadata or {}),
+                    "upload_meta": dict(upload_meta or {}),
+                    "options": dict(options or {}),
                     "timeout": timeout,
                 }
             )
+            return {"ok": True, "key": key, "url": f"https://media.sporely.no/{key}"}
 
-        def put_file(self, *args, **kwargs):
-            raise AssertionError("put_file should not be used for calibration reference uploads")
-
-    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(client, "_get_media_worker", lambda: DummyWorker())
+    monkeypatch.setattr(client, "fetch_cloud_plan_profile", lambda: {"cloud_plan": "free"})
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
 
     warning = client.push_calibration_reference_image(
@@ -326,7 +326,7 @@ def test_push_calibration_reference_image_uploads_derivative_and_patches_relativ
     assert uploaded_image.size != (3200, 2400)
 
 
-def test_push_calibration_reference_image_still_uses_monkeypatched_r2_when_direct_r2_config_is_missing(
+def test_push_calibration_reference_image_uses_worker_when_direct_r2_config_is_missing(
     monkeypatch,
     tmp_path,
 ):
@@ -344,20 +344,23 @@ def test_push_calibration_reference_image_still_uses_monkeypatched_r2_when_direc
     uploads = []
     patches = []
 
-    class DummyR2:
-        def put_bytes(self, data, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
+    class DummyWorker:
+        def put_bytes(self, data, key, *, content_type=None, cache_control=None, upload_meta=None, options=None, timeout=None):
             uploads.append(
                 {
                     "data": bytes(data),
                     "key": key,
                     "content_type": content_type,
                     "cache_control": cache_control,
-                    "custom_metadata": dict(custom_metadata or {}),
+                    "upload_meta": dict(upload_meta or {}),
+                    "options": dict(options or {}),
                     "timeout": timeout,
                 }
             )
+            return {"ok": True, "key": key, "url": f"https://media.sporely.no/{key}"}
 
-    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
+    monkeypatch.setattr(client, "_get_media_worker", lambda: DummyWorker())
+    monkeypatch.setattr(client, "fetch_cloud_plan_profile", lambda: {"cloud_plan": "free"})
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))))
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
 
@@ -373,7 +376,7 @@ def test_push_calibration_reference_image_still_uses_monkeypatched_r2_when_direc
     assert patches[0][0] == "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1"
 
 
-def test_push_calibration_reference_image_skips_with_clear_warning_when_direct_r2_config_is_missing(
+def test_push_calibration_reference_image_returns_warning_when_worker_upload_fails(
     monkeypatch,
     tmp_path,
 ):
@@ -388,17 +391,14 @@ def test_push_calibration_reference_image_skips_with_clear_warning_when_direct_r
     }
     client = cloud_sync.SporelyCloudClient("token", "user-123")
 
+    class FailingWorker:
+        def put_bytes(self, *args, **kwargs):
+            raise cloud_sync.CloudSyncError("Worker upload failed")
+
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
-    monkeypatch.setattr(
-        cloud_sync.CloudflareR2Client,
-        "from_env",
-        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
-    )
-    monkeypatch.setattr(
-        client,
-        "_patch",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_patch should not be called when direct R2 is unavailable")),
-    )
+    monkeypatch.setattr(client, "_get_media_worker", lambda: FailingWorker())
+    monkeypatch.setattr(client, "fetch_cloud_plan_profile", lambda: {"cloud_plan": "free"})
+    monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_patch should not be called when upload fails")))
 
     warning = client.push_calibration_reference_image(
         calibration,
@@ -407,7 +407,7 @@ def test_push_calibration_reference_image_skips_with_clear_warning_when_direct_r
     )
 
     assert warning is not None
-    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in warning
+    assert "Worker upload failed" in warning
 
 
 def test_push_calibration_reference_image_skips_with_warning_when_no_readable_image_exists(monkeypatch):
@@ -442,7 +442,7 @@ def test_push_calibration_reference_image_skips_with_warning_when_no_readable_im
     assert patches == []
 
 
-def test_download_calibration_reference_to_cache_reports_direct_r2_unavailable_without_credentials(
+def test_download_calibration_reference_to_cache_uses_worker_download_without_direct_r2_config(
     monkeypatch,
     tmp_path,
 ):
@@ -458,23 +458,20 @@ def test_download_calibration_reference_to_cache_reports_direct_r2_unavailable_w
     client = cloud_sync.SporelyCloudClient("token", "user-123")
 
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
-    monkeypatch.setattr(
-        cloud_sync.CloudflareR2Client,
-        "from_env",
-        classmethod(lambda cls: (_ for _ in ()).throw(AssertionError("from_env should not be called"))),
-    )
-    monkeypatch.setattr(
-        client,
-        "download_image_file",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download_image_file should not be called when direct R2 is unavailable")),
-    )
+    def fake_download_image_file(storage_path, dest_path):
+        destination = Path(dest_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"calibration-bytes")
+        return destination
+
+    monkeypatch.setattr(client, "download_image_file", fake_download_image_file)
 
     result = cloud_sync.download_calibration_reference_to_cache(client, calibration)
 
-    assert result["status"] == "unavailable_direct_r2_not_configured"
-    assert result["downloaded"] is False
-    assert result["cache_path"] is None
-    assert cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE in result["warning"]
+    assert result["status"] == "downloaded_to_cache"
+    assert result["downloaded"] is True
+    assert result["cache_path"] is not None
+    assert Path(result["cache_path"]).exists()
 
 
 def test_push_calibration_reference_image_respects_existing_cloud_image_storage_path(monkeypatch, tmp_path):

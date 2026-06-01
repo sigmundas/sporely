@@ -17,23 +17,79 @@ def _forbid_from_env(cls):
     raise AssertionError("CloudflareR2Client.from_env should not be called")
 
 
-def test_upload_image_file_raises_clear_error_without_direct_r2_config(monkeypatch, tmp_path):
+class _DummyMediaWorker:
+    def __init__(self):
+        self.calls = []
+
+    def put_file(self, file_path, key, *, content_type=None, cache_control=None, upload_meta=None, options=None, timeout=None):
+        self.calls.append(
+            (
+                "put_file",
+                str(file_path),
+                key,
+                content_type,
+                cache_control,
+                dict(upload_meta or {}),
+                dict(options or {}),
+                timeout,
+                Path(file_path).stat().st_size,
+            )
+        )
+        return {"ok": True, "key": key, "url": f"https://media.sporely.no/{key}"}
+
+    def put_bytes(self, data, key, *, content_type=None, cache_control=None, upload_meta=None, options=None, timeout=None):
+        self.calls.append(
+            (
+                "put_bytes",
+                bytes(data),
+                key,
+                content_type,
+                cache_control,
+                dict(upload_meta or {}),
+                dict(options or {}),
+                timeout,
+                len(bytes(data)),
+            )
+        )
+        return {"ok": True, "key": key, "url": f"https://media.sporely.no/{key}"}
+
+    def download_to_file(self, storage_key, dest_path, *, timeout=120):
+        destination = Path(dest_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"downloaded-bytes")
+        self.calls.append(("download_to_file", storage_key, str(destination), timeout))
+        return destination
+
+    def delete_objects(self, keys, timeout=120):
+        self.calls.append(("delete_objects", [str(key) for key in keys], timeout))
+
+    def public_url(self, key):
+        return f"https://media.sporely.no/{key}"
+
+
+def test_upload_image_file_uses_worker_without_r2_secrets(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     source = _write_test_image(tmp_path / "source.jpg")
+    worker = _DummyMediaWorker()
 
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
 
-    with pytest.raises(cloud_sync.CloudSyncError, match=cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE):
-        client.upload_image_file(
-            str(source),
-            "cloud-obs-1",
-            "cloud-img-1",
-            storage_path="user-123/cloud-obs-1/source.jpg",
-        )
+    uploaded_key = client.upload_image_file(
+        str(source),
+        "cloud-obs-1",
+        "cloud-img-1",
+        storage_path="user-123/cloud-obs-1/source.jpg",
+    )
+
+    assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
+    assert [call[0] for call in worker.calls[:2]] == ["put_file", "put_bytes"]
+    assert Path(worker.calls[0][1]).name.startswith("cloud_")
+    assert worker.calls[0][-1] <= source.stat().st_size
 
 
-def test_upload_image_file_does_not_touch_admin_env_without_explicit_flag(monkeypatch, tmp_path):
+def test_upload_image_file_uses_worker_even_when_admin_env_exists_without_explicit_flag(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     source = _write_test_image(tmp_path / "source.jpg")
     admin_env = tmp_path / "sporely-admin.env"
@@ -47,36 +103,67 @@ def test_upload_image_file_does_not_touch_admin_env_without_explicit_flag(monkey
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
     monkeypatch.setattr("utils.r2_storage._ENV_FILE_CANDIDATES", (admin_env,))
     monkeypatch.setattr("utils.r2_storage._LEGACY_ENV_FILE_CANDIDATES", (tmp_path / "missing-python.env",))
-    monkeypatch.setattr(
-        "utils.r2_storage.load_admin_env_file",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("admin env should not be loaded without the explicit runtime flag")),
-    )
+    worker = _DummyMediaWorker()
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
 
-    with pytest.raises(cloud_sync.CloudSyncError, match=cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE):
-        client.upload_image_file(
-            str(source),
-            "cloud-obs-1",
-            "cloud-img-1",
-            storage_path="user-123/cloud-obs-1/source.jpg",
-        )
+    uploaded_key = client.upload_image_file(
+        str(source),
+        "cloud-obs-1",
+        "cloud-img-1",
+        storage_path="user-123/cloud-obs-1/source.jpg",
+    )
+
+    assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
+    assert [call[0] for call in worker.calls[:2]] == ["put_file", "put_bytes"]
+    assert Path(worker.calls[0][1]).name.startswith("cloud_")
+    assert worker.calls[0][-1] <= source.stat().st_size
 
 
-def test_download_image_file_raises_clear_error_without_direct_r2_config(monkeypatch, tmp_path):
+def test_download_image_file_uses_public_media_without_r2_secrets(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
-
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
 
-    with pytest.raises(cloud_sync.CloudSyncError, match=cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE):
-        client.download_image_file(
-            "user-123/cloud-obs-1/source.jpg",
-            tmp_path / "downloaded.jpg",
-        )
+    def fake_public_download(storage_path, dest_path, *, timeout=120):
+        destination = Path(dest_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"public-bytes")
+        return destination
+
+    monkeypatch.setattr(client, "_download_public_media_file", fake_public_download)
+    monkeypatch.setattr(client, "_get_media_worker", lambda: (_ for _ in ()).throw(AssertionError("worker download should not be needed for public media")))
+
+    dest_path = tmp_path / "downloaded.jpg"
+    result = client.download_image_file(
+        "user-123/cloud-obs-1/source.jpg",
+        dest_path,
+    )
+
+    assert result == dest_path
+    assert result.read_bytes() == b"public-bytes"
 
 
-def test_delete_cloud_observation_raises_clear_error_without_direct_r2_config(monkeypatch):
+def test_download_image_file_falls_back_to_worker_when_public_media_fails(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
+    worker = _DummyMediaWorker()
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
+    monkeypatch.setattr(client, "_download_public_media_file", lambda *args, **kwargs: (_ for _ in ()).throw(cloud_sync.CloudSyncError("public media unavailable")))
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
+
+    dest_path = tmp_path / "downloaded.jpg"
+    result = client.download_image_file("user-123/cloud-obs-1/source.jpg", dest_path)
+
+    assert result == dest_path
+    assert result.read_bytes() == b"downloaded-bytes"
+    assert [call[0] for call in worker.calls] == ["download_to_file"]
+
+
+def test_delete_cloud_observation_uses_worker_without_r2_secrets(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    worker = _DummyMediaWorker()
     delete_calls = []
 
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
@@ -88,81 +175,18 @@ def test_delete_cloud_observation_raises_clear_error_without_direct_r2_config(mo
             {"storage_path": "user-123/cloud-obs-1/source.jpg"},
         ],
     )
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
     monkeypatch.setattr(client, "_delete", lambda path: delete_calls.append(path))
 
-    with pytest.raises(cloud_sync.CloudSyncError, match=cloud_sync.R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE):
-        client.delete_cloud_observation("cloud-obs-1")
+    client.delete_cloud_observation("cloud-obs-1")
 
-    assert delete_calls == []
-
-
-def test_upload_image_file_still_uses_monkeypatched_r2_when_public_config_is_missing(monkeypatch, tmp_path):
-    client = cloud_sync.SporelyCloudClient("token", "user-123")
-    source = _write_test_image(tmp_path / "source.jpg")
-    calls = []
-
-    class DummyR2:
-        def put_file(self, file_path, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
-            calls.append(
-                (
-                    "put_file",
-                    str(file_path),
-                    key,
-                    content_type,
-                    cache_control,
-                    dict(custom_metadata or {}),
-                    timeout,
-                )
-            )
-
-        def put_bytes(self, data, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
-            calls.append(
-                (
-                    "put_bytes",
-                    bytes(data),
-                    key,
-                    content_type,
-                    cache_control,
-                    dict(custom_metadata or {}),
-                    timeout,
-                )
-            )
-
-    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
-    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
-
-    uploaded_key = client.upload_image_file(
-        str(source),
-        "cloud-obs-1",
-        "cloud-img-1",
-        storage_path="user-123/cloud-obs-1/source.jpg",
-    )
-
-    assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
-    assert [call[0] for call in calls] == ["put_file", "put_bytes"]
-
-
-def test_download_image_file_still_uses_monkeypatched_r2_when_public_config_is_missing(monkeypatch, tmp_path):
-    client = cloud_sync.SporelyCloudClient("token", "user-123")
-    calls = []
-
-    class DummyR2:
-        def download_to_file(self, key, dest_path, *, timeout=120):
-            destination = Path(dest_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(b"downloaded-bytes")
-            calls.append((key, str(destination), timeout))
-            return destination
-
-    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
-    monkeypatch.setattr(client, "_get_r2", lambda: DummyR2())
-
-    dest_path = tmp_path / "downloaded.jpg"
-    result = client.download_image_file("user-123/cloud-obs-1/source.jpg", dest_path)
-
-    assert result == dest_path
-    assert result.read_bytes() == b"downloaded-bytes"
-    assert calls == [("user-123/cloud-obs-1/source.jpg", str(dest_path), 120)]
+    assert delete_calls == [
+        "observation_images?observation_id=eq.cloud-obs-1",
+        "observations?id=eq.cloud-obs-1",
+    ]
+    assert worker.calls and worker.calls[0][0] == "delete_objects"
+    assert "user-123/cloud-obs-1/source.jpg" in worker.calls[0][1]
+    assert "user-123/cloud-obs-1/thumb_source.jpg" in worker.calls[0][1]
 
 
 def test_upload_image_file_allows_direct_r2_when_explicit_flag_and_admin_env_are_present(monkeypatch, tmp_path):

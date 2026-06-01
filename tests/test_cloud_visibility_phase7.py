@@ -410,7 +410,71 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     result = cloud_sync._push_images_for_observation(client, {"id": 1}, "cloud-obs-1")
 
     assert result is True
-    assert order.index("tombstones") < order.index("existing_rows") < order.index("push_metadata") < order.index("upload_file")
+    assert order.index("tombstones") < order.index("existing_rows") < order.index("upload_file") < order.index("push_metadata")
+
+
+def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fails(monkeypatch, tmp_path):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    images_root = tmp_path / "images"
+    images_root.mkdir()
+    image_path = images_root / "image.jpg"
+    image_path.write_bytes(b"image-bytes")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", "2026-05-01T00:00:00Z"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, image_type, sort_order, created_at, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (11, 1, None, str(image_path), "field", 0, "2026-05-01T10:00:00Z", None),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    order = []
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_pending_image_tombstones",
+        lambda _client: order.append("tombstones") or [],
+    )
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(client, "pull_image_metadata", lambda obs_cloud_id: order.append("existing_rows") or [])
+    monkeypatch.setattr(
+        client,
+        "upload_image_file",
+        lambda *args, **kwargs: order.append("upload_file") or (_ for _ in ()).throw(cloud_sync.CloudSyncError("Worker upload failed")),
+    )
+    monkeypatch.setattr(client, "push_image_metadata", lambda *args, **kwargs: order.append("push_metadata") or "cloud-image-1")
+    monkeypatch.setattr(client, "set_image_desktop_id", lambda *args, **kwargs: order.append("set_desktop_id"))
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+
+    result = cloud_sync._push_images_for_observation(client, {"id": 1}, "cloud-obs-1")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT cloud_id, synced_at FROM images WHERE id = ?",
+            (11,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result is False
+    assert "push_metadata" not in order
+    assert row == (None, None)
 
 
 def test_apply_remote_observation_fields_pulls_interesting_comment(monkeypatch):
@@ -653,7 +717,7 @@ def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, 
     assert summary["other_count"] == 0
     assert blocked_row[0] is None
     assert blocked_row[1] == "blocked"
-    assert blocked_row[2] == "23514"
+    assert blocked_row[2] == "privacy_slot_limit"
     assert "privacy slot observations" in blocked_row[3]
     assert blocked_row[4] == cloud_sync.privacy_slot_limit_user_message()
     assert blocked_row[5] is not None

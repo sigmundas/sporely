@@ -9,6 +9,10 @@ CLOUD_QUALITY_PROFILE_HIGH = "high"
 
 CLOUD_REDUCED_MAX_PIXELS = 2_000_000
 CLOUD_FULL_MAX_PIXELS = 20_000_000
+# Public docs still say "20 MP", but the actual resize trigger is slightly
+# higher so borderline full-frame captures do not get downsampled.
+CLOUD_FULL_RESIZE_MAX_PIXELS = 21_000_000
+CLOUD_FULL_RESIZE_MAX_EDGE = 5300
 CLOUD_THUMB_MAX_EDGE = 400
 
 CLOUD_STANDARD_FULL_WEBP_QUALITY = 65
@@ -79,22 +83,33 @@ def normalize_cloud_upload_mode(value: str | None) -> str:
     return "full" if str(value or "").strip().lower() == "full" else "reduced"
 
 
-def scale_dimensions_to_max_pixels(width, height, max_pixels) -> dict[str, int | bool]:
+def scale_dimensions_to_max_pixels(width, height, max_pixels, max_edge=None) -> dict[str, int | bool]:
     source_width = max(1, int(width or 0))
     source_height = max(1, int(height or 0))
     cap = max(1, int(max_pixels or 0))
     pixels = source_width * source_height
-    if pixels <= cap:
+    longest_edge = max(source_width, source_height)
+    edge_cap = None
+    if max_edge is not None:
+        parsed_edge_cap = int(max_edge or 0)
+        if parsed_edge_cap > 0:
+            edge_cap = max(1, parsed_edge_cap)
+    if pixels <= cap and (edge_cap is None or longest_edge <= edge_cap):
         return {
             "width": source_width,
             "height": source_height,
             "resized": False,
         }
 
-    scale = sqrt(cap / pixels)
+    scales: list[float] = []
+    if pixels > cap:
+        scales.append(sqrt(cap / pixels))
+    if edge_cap is not None and longest_edge > edge_cap:
+        scales.append(edge_cap / longest_edge)
+    scale = min(scales) if scales else 1.0
     return {
-        "width": max(1, int(round(source_width * scale))),
-        "height": max(1, int(round(source_height * scale))),
+        "width": max(1, int(source_width * scale)),
+        "height": max(1, int(source_height * scale)),
         "resized": True,
     }
 
@@ -112,6 +127,8 @@ def build_cloud_upload_policy(profile: dict | None, upload_mode: str = "reduced"
     quality_profile = str(normalized.get("quality_profile") or CLOUD_QUALITY_PROFILE_STANDARD).strip().lower()
     if quality_profile not in {CLOUD_QUALITY_PROFILE_STANDARD, CLOUD_QUALITY_PROFILE_HIGH}:
         quality_profile = CLOUD_QUALITY_PROFILE_STANDARD
+    resize_max_pixels = CLOUD_FULL_RESIZE_MAX_PIXELS if mode == "full" else CLOUD_REDUCED_MAX_PIXELS
+    resize_max_edge = CLOUD_FULL_RESIZE_MAX_EDGE if mode == "full" else None
 
     return {
         **normalized,
@@ -121,6 +138,10 @@ def build_cloud_upload_policy(profile: dict | None, upload_mode: str = "reduced"
         "imageResolutionMode": "max" if mode == "full" else "reduced",
         "max_pixels": CLOUD_FULL_MAX_PIXELS if mode == "full" else CLOUD_REDUCED_MAX_PIXELS,
         "maxPixels": CLOUD_FULL_MAX_PIXELS if mode == "full" else CLOUD_REDUCED_MAX_PIXELS,
+        "resize_max_pixels": resize_max_pixels,
+        "resizeMaxPixels": resize_max_pixels,
+        "resize_max_edge": resize_max_edge,
+        "resizeMaxEdge": resize_max_edge,
         "full_image_webp_quality": CLOUD_HIGH_FULL_WEBP_QUALITY if quality_profile == CLOUD_QUALITY_PROFILE_HIGH else CLOUD_STANDARD_FULL_WEBP_QUALITY,
         "fullImageWebpQuality": CLOUD_HIGH_FULL_WEBP_QUALITY if quality_profile == CLOUD_QUALITY_PROFILE_HIGH else CLOUD_STANDARD_FULL_WEBP_QUALITY,
         "full_image_byte_cap": CLOUD_HIGH_FULL_BYTE_CAP if quality_profile == CLOUD_QUALITY_PROFILE_HIGH else CLOUD_STANDARD_FULL_BYTE_CAP,

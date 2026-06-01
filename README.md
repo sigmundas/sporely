@@ -79,6 +79,21 @@ Each new terminal session:
 - Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
 - Windows Command Prompt: `.\.venv\Scripts\activate.bat`
 
+## Cloud Media
+
+Normal desktop media sync uses the authenticated Cloudflare upload Worker, not direct R2.
+
+- Set the public Worker URL with `SPORELY_MEDIA_WORKER_URL` if you need to override the default. The default is `https://upload.sporely.no`.
+- `SPORELY_MEDIA_WORKER_URL` is public runtime config, not a secret.
+- Normal users do not need `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT`, or `SPORELY_ENABLE_DIRECT_R2`.
+- Direct R2 remains admin/developer-only and is only enabled when `SPORELY_ENABLE_DIRECT_R2=1` is set alongside local admin secrets.
+- The public image tier is still described as 20 MP, but the client only downsizes when a source image exceeds `21 MP` or `5300 px` on the longest edge, which keeps borderline 20 MP frames intact.
+
+If you need to audit or repair broken media rows:
+
+- `materialize_cloud_media_for_observation(client, local_observation_id)` will re-download missing local media through the public Worker URL or the authenticated Worker download endpoint.
+- `download_image_file(storage_path, dest_path)` now surfaces missing remote objects as `Cloud image file is missing from storage (<key>)`.
+- For a cloud observation, `pull_image_metadata(obs_cloud_id, include_deleted_for_sync=True)` shows the remote rows to inspect before reuploading or removing broken media entries.
 
 
 

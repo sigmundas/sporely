@@ -2,7 +2,13 @@ import warnings
 from pathlib import Path
 
 import pytest
-from utils.r2_storage import CloudflareR2Client, R2Config, r2_config_available
+from utils.r2_storage import (
+    CloudflareMediaWorkerClient,
+    CloudflareR2Client,
+    R2Config,
+    media_worker_base_url,
+    r2_config_available,
+)
 
 
 class MockResponse:
@@ -10,9 +16,28 @@ class MockResponse:
         self.ok = True
         self.text = ""
         self.status_code = 200
-    
+        self.headers = {}
+
     def iter_content(self, chunk_size=1024):
         yield b"fake_jpeg_bytes"
+
+    def json(self):
+        return {"ok": True}
+
+
+class MockJsonResponse:
+    def __init__(self, *, ok=True, status_code=200, payload=None, text=""):
+        self.ok = ok
+        self.status_code = status_code
+        self._payload = dict(payload or {})
+        self.text = text or ("" if ok else "error")
+        self.headers = {}
+
+    def json(self):
+        return dict(self._payload)
+
+    def iter_content(self, chunk_size=1024):
+        yield b"fake_worker_bytes"
 
 
 def test_download_to_file(monkeypatch, tmp_path):
@@ -139,3 +164,115 @@ def test_r2_config_available_legacy_python_env_fallback_warns(monkeypatch, tmp_p
         assert r2_config_available() is True
 
     assert any("python.env is deprecated" in str(item.message) for item in caught)
+
+
+def test_media_worker_base_url_defaults_to_production_endpoint(monkeypatch):
+    monkeypatch.delenv("SPORELY_MEDIA_WORKER_URL", raising=False)
+    assert media_worker_base_url() == "https://upload.sporely.no"
+
+
+def test_media_worker_upload_sends_bearer_auth_and_worker_headers(monkeypatch, tmp_path):
+    client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
+
+    captured = {}
+
+    def mock_request(self, method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = dict(kwargs.get("headers") or {})
+        captured["data"] = kwargs.get("data")
+        return MockJsonResponse(payload={
+            "ok": True,
+            "key": "user_123/obs_456/photo.webp",
+            "url": "https://media.sporely.no/user_123/obs_456/photo.webp",
+        }, status_code=201)
+
+    monkeypatch.setattr("requests.Session.request", mock_request)
+
+    payload = b"fake-bytes"
+    result = client.put_bytes(
+        payload,
+        "user_123/obs_456/photo.webp",
+        content_type="image/webp",
+        cache_control="public, max-age=31536000, immutable",
+        upload_meta={
+            "upload_mode": "reduced",
+            "quality_profile": "high",
+            "encoding_quality": 80,
+            "encoding_format": "image/webp",
+            "source_width": 800,
+            "source_height": 600,
+            "stored_width": 400,
+            "stored_height": 300,
+        },
+        options={
+            "uploadMode": "reduced",
+            "uploadVariant": "full",
+            "cloudPlan": "free",
+            "qualityProfile": "high",
+            "encodingQuality": 80,
+            "encodingFormat": "image/webp",
+            "sourceWidth": 800,
+            "sourceHeight": 600,
+            "storedWidth": 400,
+            "storedHeight": 300,
+        },
+    )
+
+    assert result["key"] == "user_123/obs_456/photo.webp"
+    assert captured["method"] == "PUT"
+    assert captured["url"] == "https://upload.test/upload/user_123/obs_456/photo.webp"
+    assert captured["data"] == payload
+    assert captured["headers"]["Authorization"] == "Bearer test-access-token"
+    assert captured["headers"]["Content-Type"] == "image/webp"
+    assert captured["headers"]["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert captured["headers"]["X-Sporely-Upload-Mode"] == "reduced"
+    assert captured["headers"]["X-Sporely-Upload-Variant"] == "full"
+    assert captured["headers"]["X-Sporely-Cloud-Plan"] == "free"
+    assert captured["headers"]["X-Sporely-Quality-Profile"] == "high"
+    assert captured["headers"]["X-Sporely-Encoding-Quality"] == "80"
+    assert captured["headers"]["X-Sporely-Encoding-Format"] == "image/webp"
+    assert captured["headers"]["X-Sporely-Source-Width"] == "800"
+    assert captured["headers"]["X-Sporely-Source-Height"] == "600"
+    assert captured["headers"]["X-Sporely-Stored-Width"] == "400"
+    assert captured["headers"]["X-Sporely-Stored-Height"] == "300"
+
+
+def test_media_worker_download_uses_bearer_auth(monkeypatch, tmp_path):
+    client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
+    captured = {}
+
+    def mock_request(self, method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = dict(kwargs.get("headers") or {})
+        return MockResponse()
+
+    monkeypatch.setattr("requests.Session.request", mock_request)
+
+    dest_file = tmp_path / "downloaded.jpg"
+    result = client.download_to_file("user_123/obs_456/photo.jpg", dest_file)
+
+    assert result == dest_file
+    assert result.read_bytes() == b"fake_jpeg_bytes"
+    assert captured["method"] == "GET"
+    assert captured["url"] == "https://upload.test/upload/user_123/obs_456/photo.jpg"
+    assert captured["headers"]["Authorization"] == "Bearer test-access-token"
+
+
+def test_media_worker_delete_tolerates_missing_objects(monkeypatch):
+    client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
+    captured = {}
+
+    def mock_request(self, method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = dict(kwargs.get("headers") or {})
+        return MockJsonResponse(ok=False, status_code=404, payload={"message": "not found"}, text="not found")
+
+    monkeypatch.setattr("requests.Session.request", mock_request)
+
+    assert client.delete_object("user_123/obs_456/photo.jpg") is None
+    assert captured["method"] == "DELETE"
+    assert captured["url"] == "https://upload.test/upload/user_123/obs_456/photo.jpg"
+    assert captured["headers"]["Authorization"] == "Bearer test-access-token"

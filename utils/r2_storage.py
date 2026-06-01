@@ -19,9 +19,11 @@ import requests
 
 R2_BUCKET_NAME = "sporely-media"
 R2_PUBLIC_BASE_URL = "https://media.sporely.no"
+MEDIA_WORKER_DEFAULT_URL = "https://upload.sporely.no"
 R2_REGION = "auto"
 R2_SERVICE = "s3"
 R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE = "Cloud media storage is not configured for direct desktop R2 access"
+SPORELY_MEDIA_WORKER_URL_ENV_VAR = "SPORELY_MEDIA_WORKER_URL"
 SPORELY_ENABLE_DIRECT_R2_ENV_VAR = "SPORELY_ENABLE_DIRECT_R2"
 _LEGACY_ADMIN_ENV_DEPRECATION_MESSAGE = (
     "python.env is deprecated; rename it to sporely-admin.env for local admin secrets."
@@ -125,6 +127,19 @@ def direct_r2_runtime_available() -> bool:
     if not direct_r2_runtime_enabled():
         return False
     return r2_config_available()
+
+
+def media_worker_base_url() -> str:
+    value = str(os.environ.get(SPORELY_MEDIA_WORKER_URL_ENV_VAR) or "").strip().rstrip("/")
+    return value or MEDIA_WORKER_DEFAULT_URL
+
+
+def _first_text(*values: object, default: str = "") -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return default
 
 
 def normalize_media_key(value: str | None) -> str:
@@ -454,6 +469,302 @@ class CloudflareR2Client:
             if normalize_media_key(key)
         )
         return f'<?xml version="1.0" encoding="UTF-8"?><Delete>{xml_keys}</Delete>'
+
+    @staticmethod
+    def _raise_for_status(response: requests.Response, message: str) -> None:
+        if response.ok:
+            return
+        try:
+            payload = response.text
+        except Exception:
+            payload = "<no response body>"
+        raise RuntimeError(f"{message}: {payload}")
+
+
+def _build_worker_upload_headers(
+    *,
+    access_token: str,
+    blob_type: str | None = None,
+    content_type: str | None = None,
+    cache_control: str | None = None,
+    upload_meta: Mapping[str, object] | None = None,
+    options: Mapping[str, object] | None = None,
+) -> dict[str, str]:
+    meta = dict(upload_meta or {})
+    opts = dict(options or {})
+    normalized_blob_type = _first_text(blob_type, default="image/jpeg")
+    normalized_content_type = _first_text(content_type, normalized_blob_type, default="image/jpeg")
+
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {str(access_token or '').strip()}",
+        "Content-Type": normalized_content_type,
+        "Cache-Control": str(cache_control or "public, max-age=31536000, immutable").strip(),
+    }
+
+    upload_variant = _first_text(
+        opts.get("uploadVariant"),
+        opts.get("upload_variant"),
+        meta.get("upload_variant"),
+        default="full",
+    ).lower() or "full"
+    upload_mode = _first_text(
+        opts.get("uploadMode"),
+        opts.get("upload_mode"),
+        meta.get("upload_mode"),
+        default="reduced",
+    ).lower() or "reduced"
+    cloud_plan = _first_text(
+        opts.get("cloudPlan"),
+        opts.get("cloud_plan"),
+        meta.get("cloud_plan"),
+        default="free",
+    )
+    quality_profile = _first_text(
+        opts.get("qualityProfile"),
+        opts.get("quality_profile"),
+        meta.get("quality_profile"),
+        default="standard",
+    )
+    encoding_quality = _first_text(
+        opts.get("encodingQuality"),
+        opts.get("encoding_quality"),
+        meta.get("encoding_quality"),
+    )
+    encoding_format = _first_text(
+        opts.get("encodingFormat"),
+        opts.get("encoding_format"),
+        meta.get("encoding_format"),
+        normalized_content_type,
+    )
+    source_width = _first_text(
+        opts.get("sourceWidth"),
+        opts.get("source_width"),
+        meta.get("source_width"),
+    )
+    source_height = _first_text(
+        opts.get("sourceHeight"),
+        opts.get("source_height"),
+        meta.get("source_height"),
+    )
+    stored_width = _first_text(
+        opts.get("storedWidth"),
+        opts.get("stored_width"),
+        meta.get("stored_width"),
+    )
+    stored_height = _first_text(
+        opts.get("storedHeight"),
+        opts.get("stored_height"),
+        meta.get("stored_height"),
+    )
+
+    headers["X-Sporely-Upload-Mode"] = upload_mode
+    headers["X-Sporely-Upload-Variant"] = upload_variant
+    headers["X-Sporely-Cloud-Plan"] = cloud_plan
+    headers["X-Sporely-Quality-Profile"] = quality_profile
+    if encoding_quality:
+        headers["X-Sporely-Encoding-Quality"] = encoding_quality
+    if encoding_format:
+        headers["X-Sporely-Encoding-Format"] = encoding_format
+    if source_width:
+        headers["X-Sporely-Source-Width"] = source_width
+    if source_height:
+        headers["X-Sporely-Source-Height"] = source_height
+    if stored_width:
+        headers["X-Sporely-Stored-Width"] = stored_width
+    if stored_height:
+        headers["X-Sporely-Stored-Height"] = stored_height
+    return headers
+
+
+class CloudflareMediaWorkerClient:
+    """Authenticated Cloudflare Worker client for media upload/download/delete."""
+
+    def __init__(
+        self,
+        access_token: str,
+        *,
+        base_url: str | None = None,
+        public_base_url: str = R2_PUBLIC_BASE_URL,
+        session: requests.Session | None = None,
+    ):
+        token = str(access_token or "").strip()
+        if not token:
+            raise ValueError("Missing access token for media worker client")
+        self.access_token = token
+        self.base_url = str(base_url or media_worker_base_url()).strip().rstrip("/")
+        self.public_base_url = str(public_base_url or R2_PUBLIC_BASE_URL).strip().rstrip("/")
+        self._session = session or requests.Session()
+
+    @classmethod
+    def from_access_token(
+        cls,
+        access_token: str,
+        *,
+        base_url: str | None = None,
+        public_base_url: str = R2_PUBLIC_BASE_URL,
+    ) -> "CloudflareMediaWorkerClient":
+        return cls(access_token, base_url=base_url, public_base_url=public_base_url)
+
+    def public_url(self, key: str | None) -> str:
+        normalized = normalize_media_key(key)
+        if not normalized:
+            return ""
+        return f"{self.public_base_url.rstrip('/')}/{normalized}"
+
+    def put_file(
+        self,
+        file_path: str | Path,
+        key: str,
+        *,
+        content_type: str | None = None,
+        cache_control: str | None = None,
+        upload_meta: Mapping[str, object] | None = None,
+        options: Mapping[str, object] | None = None,
+        timeout: int = 120,
+    ) -> dict:
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with path.open("rb") as handle:
+            response = self._request(
+                "PUT",
+                key=key,
+                data=handle,
+                content_type=content_type or _content_type_for_path(path),
+                cache_control=cache_control,
+                upload_meta=upload_meta,
+                options=options,
+                timeout=timeout,
+            )
+        return self._json_response(response, "Worker upload failed")
+
+    def put_bytes(
+        self,
+        data: bytes,
+        key: str,
+        *,
+        content_type: str | None = None,
+        cache_control: str | None = None,
+        upload_meta: Mapping[str, object] | None = None,
+        options: Mapping[str, object] | None = None,
+        timeout: int = 120,
+    ) -> dict:
+        payload = bytes(data)
+        response = self._request(
+            "PUT",
+            key=key,
+            data=payload,
+            content_type=content_type,
+            cache_control=cache_control,
+            upload_meta=upload_meta,
+            options=options,
+            timeout=timeout,
+        )
+        return self._json_response(response, "Worker upload failed")
+
+    def download_to_file(self, key: str, dest_path: str | Path, *, timeout: int = 120) -> Path:
+        normalized = normalize_media_key(key)
+        if not normalized:
+            raise ValueError("Missing media key")
+        destination = Path(dest_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        response = self._request("GET", key=normalized, timeout=timeout, stream=True)
+        self._raise_for_status(response, "Worker download failed")
+        content_type = str(response.headers.get("content-type") or "").strip().lower()
+        if content_type and not content_type.startswith("image/") and content_type != "application/octet-stream":
+            raise RuntimeError(f"Worker download returned non-image content ({content_type})")
+        with destination.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
+        return destination
+
+    def delete_object(self, key: str, *, timeout: int = 120, ignore_missing: bool = True) -> dict | None:
+        normalized = normalize_media_key(key)
+        if not normalized:
+            return None
+        response = self._request("DELETE", key=normalized, timeout=timeout)
+        if response.status_code == 404 and ignore_missing:
+            return None
+        return self._json_response(response, "Worker delete failed")
+
+    def delete_objects(self, keys: Iterable[str], *, timeout: int = 120) -> None:
+        for key in keys:
+            try:
+                self.delete_object(key, timeout=timeout, ignore_missing=True)
+            except Exception as exc:
+                # Missing objects are fine; only surface genuine failures.
+                if "404" in str(exc):
+                    continue
+                raise
+
+    def _request(
+        self,
+        method: str,
+        *,
+        key: str,
+        data=None,
+        content_type: str | None = None,
+        cache_control: str | None = None,
+        upload_meta: Mapping[str, object] | None = None,
+        options: Mapping[str, object] | None = None,
+        timeout: int = 120,
+        stream: bool = False,
+    ) -> requests.Response:
+        normalized = normalize_media_key(key)
+        if not normalized:
+            raise ValueError("Missing media key")
+        url = f"{self.base_url}/upload/{self._encode_object_key(normalized)}"
+        headers = None
+        if method.upper() in {"PUT", "POST"}:
+            headers = _build_worker_upload_headers(
+                access_token=self.access_token,
+                blob_type=content_type,
+                content_type=content_type,
+                cache_control=cache_control,
+                upload_meta=upload_meta,
+                options=options,
+            )
+        else:
+            headers = {"Authorization": f"Bearer {self.access_token}"}
+        return self._session.request(
+            method=method.upper(),
+            url=url,
+            headers=headers,
+            data=data,
+            timeout=timeout,
+            stream=stream,
+        )
+
+    @staticmethod
+    def _encode_object_key(storage_path: str) -> str:
+        return "/".join(
+            quote(segment, safe="-_.~")
+            for segment in normalize_media_key(storage_path).split("/")
+            if segment
+        )
+
+    @staticmethod
+    def _json_response(response: requests.Response, message: str) -> dict:
+        if response.ok:
+            try:
+                payload = response.json()
+            except Exception:
+                return {}
+            return payload if isinstance(payload, dict) else {}
+        detail = message
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                detail = str(payload.get("message") or payload.get("error") or detail)
+        except Exception:
+            try:
+                payload_text = response.text
+            except Exception:
+                payload_text = ""
+            if payload_text:
+                detail = payload_text
+        raise RuntimeError(f"{message}: {detail}")
 
     @staticmethod
     def _raise_for_status(response: requests.Response, message: str) -> None:
