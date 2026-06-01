@@ -5217,7 +5217,16 @@ class ObservationsTab(QWidget):
     ) -> tuple[Path, int, int, int, int, str, int | float | None]:
         source = Path(source_path)
         policy = dict(upload_policy or {})
-        max_pixels = max(1, int(policy.get("maxPixels") or 20_000_000))
+        resize_max_pixels = max(
+            1,
+            int(
+                policy.get("resizeMaxPixels")
+                or policy.get("resize_max_pixels")
+                or policy.get("maxPixels")
+                or 20_000_000
+            ),
+        )
+        resize_max_edge = policy.get("resizeMaxEdge") or policy.get("resize_max_edge")
         quality_profile = str(policy.get("qualityProfile") or policy.get("quality_profile") or "standard").strip().lower() or "standard"
         byte_cap = int(policy.get("fullImageByteCap") or policy.get("full_image_byte_cap") or 0)
         webp_qualities = list(build_full_image_webp_quality_attempts(quality_profile))
@@ -5236,7 +5245,7 @@ class ObservationsTab(QWidget):
             elif img.mode != "RGB":
                 img = img.convert("RGB")
 
-            target = scale_dimensions_to_max_pixels(source_width, source_height, max_pixels)
+            target = scale_dimensions_to_max_pixels(source_width, source_height, resize_max_pixels, resize_max_edge)
             if target["resized"]:
                 img = img.resize((int(target["width"]), int(target["height"])), Image.Resampling.LANCZOS)
 
