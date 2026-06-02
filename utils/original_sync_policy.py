@@ -32,6 +32,8 @@ _ALLOWED_FILE_PURPOSES = {
     "microscope",
 }
 
+FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES = 250 * 1024 * 1024
+
 _FUTURE_ORIGINAL_REMOTE_PATH_KEYS = (
     "original_storage_path",
     "original_image_key",
@@ -64,6 +66,19 @@ def _is_readable_file(path_value: Any) -> bool:
         return path.exists() and path.is_file() and os.access(path, os.R_OK)
     except Exception:
         return False
+
+
+def _readable_path_value(path_value: Any) -> Path | None:
+    text = str(path_value or "").strip()
+    if not text:
+        return None
+    path = Path(text)
+    try:
+        if path.exists() and path.is_file() and os.access(path, os.R_OK):
+            return path
+    except Exception:
+        return None
+    return None
 
 
 def _first_non_empty_text(*values: Any) -> str | None:
@@ -119,6 +134,68 @@ def is_full_original_sync_candidate(
     return False
 
 
+def resolve_full_original_upload_source(image_row: Mapping[str, Any] | None) -> dict[str, str] | None:
+    """Return the readable source path to upload for one eligible image row.
+
+    The helper keeps the source choice explicit so the desktop can report which
+    path was used without guessing. For converted local images, an original
+    HEIC/HEIF lineage file wins when present and readable; otherwise the
+    converted working copy is used when readable.
+    """
+    row = dict(image_row or {})
+    source_role = _normalize_slug(row.get("source_role"))
+    file_purpose = _normalize_slug(row.get("file_purpose"))
+
+    if not is_full_original_sync_candidate(
+        row,
+        include_converted_local=True,
+        include_original_path=True,
+    ):
+        return None
+
+    if source_role == "local_canonical":
+        source_path = _readable_path_value(row.get("filepath"))
+        if source_path is None:
+            return None
+        return {
+            "source_path": str(source_path),
+            "source_kind": "filepath",
+            "source_role": source_role,
+            "file_purpose": file_purpose,
+        }
+
+    if source_role == "converted_local":
+        original_path = _readable_path_value(row.get("original_filepath"))
+        if original_path is not None:
+            return {
+                "source_path": str(original_path),
+                "source_kind": "original_filepath",
+                "source_role": source_role,
+                "file_purpose": file_purpose,
+            }
+
+        working_path = _readable_path_value(row.get("filepath"))
+        if working_path is not None:
+            return {
+                "source_path": str(working_path),
+                "source_kind": "filepath",
+                "source_role": source_role,
+                "file_purpose": file_purpose,
+            }
+
+    return None
+
+
+def is_full_resolution_original_upload_too_large(path_value: Any) -> bool:
+    path = _readable_path_value(path_value)
+    if path is None:
+        return False
+    try:
+        return int(path.stat().st_size) > FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES
+    except Exception:
+        return False
+
+
 def should_download_full_original(
     remote_meta: Mapping[str, Any] | None,
     local_row: Mapping[str, Any] | None,
@@ -159,8 +236,11 @@ def should_download_full_original(
 
 
 __all__ = [
+    "FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES",
     "SYNC_FULL_RESOLUTION_ORIGINALS_SETTING",
     "is_full_original_sync_candidate",
     "is_full_resolution_original_sync_enabled",
+    "is_full_resolution_original_upload_too_large",
+    "resolve_full_original_upload_source",
     "should_download_full_original",
 ]

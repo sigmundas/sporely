@@ -58,6 +58,12 @@ from utils.cloud_media_policy import (
     normalize_cloud_plan_profile,
     scale_dimensions_to_max_pixels,
 )
+from utils.original_sync_policy import (
+    FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES,
+    is_full_resolution_original_sync_enabled,
+    is_full_resolution_original_upload_too_large,
+    resolve_full_original_upload_source,
+)
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -184,6 +190,20 @@ def _build_worker_storage_path(
     return _normalize_cloud_media_key(
         f'{str(user_id or "").strip()}/{str(obs_cloud_id or "").strip()}/{sort_order}_{timestamp_ms}{extension}'
     )
+
+
+def _sanitize_original_storage_filename(source_path: str | Path) -> str:
+    path = Path(str(source_path or '').strip())
+    raw_name = path.name or 'original'
+    stem = re.sub(r'[^A-Za-z0-9._-]+', '_', path.stem).strip('._') or 'original'
+    suffix = path.suffix.lower()
+    if not re.fullmatch(r'\.[A-Za-z0-9]{1,10}', suffix or ''):
+        suffix = ''
+    sanitized = f'{stem}{suffix}'
+    if sanitized:
+        return sanitized
+    cleaned_name = re.sub(r'[^A-Za-z0-9._-]+', '_', raw_name).strip('._')
+    return cleaned_name or 'original'
 
 
 def _client_uses_default_r2_loader(client: object | None) -> bool:
@@ -906,6 +926,12 @@ class CloudSyncProfiler:
     store_remote_snapshot_fetch_images_count: int = 0
     store_remote_snapshot_fetch_measurements_count: int = 0
     retry_missing_cloud_media_branch_runs: int = 0
+    original_upload_calls: int = 0
+    original_upload_bytes: int = 0
+    original_upload_skipped_disabled: int = 0
+    original_upload_skipped_ineligible: int = 0
+    original_upload_skipped_too_large: int = 0
+    original_upload_failed_uploads: int = 0
 
     def _emit(self, payload: dict) -> None:
         payload = dict(payload or {})
@@ -977,6 +1003,37 @@ class CloudSyncProfiler:
         except Exception:
             pass
 
+    def record_original_upload_success(self, bytes_uploaded: int = 0) -> None:
+        try:
+            self.original_upload_calls += 1
+            self.original_upload_bytes += max(0, int(bytes_uploaded))
+        except Exception:
+            pass
+
+    def record_original_upload_skipped_disabled(self) -> None:
+        try:
+            self.original_upload_skipped_disabled += 1
+        except Exception:
+            pass
+
+    def record_original_upload_skipped_ineligible(self) -> None:
+        try:
+            self.original_upload_skipped_ineligible += 1
+        except Exception:
+            pass
+
+    def record_original_upload_skipped_too_large(self) -> None:
+        try:
+            self.original_upload_skipped_too_large += 1
+        except Exception:
+            pass
+
+    def record_original_upload_failed(self) -> None:
+        try:
+            self.original_upload_failed_uploads += 1
+        except Exception:
+            pass
+
     def summary_payload(self, result: dict | None = None, error: Exception | None = None) -> dict:
         try:
             now = _cloud_sync_perf_counter()
@@ -1012,6 +1069,14 @@ class CloudSyncProfiler:
                     },
                     'retry_missing_cloud_media': {
                         'branch_runs': self.retry_missing_cloud_media_branch_runs,
+                    },
+                    'original_upload': {
+                        'calls': self.original_upload_calls,
+                        'bytes': self.original_upload_bytes,
+                        'skipped_disabled': self.original_upload_skipped_disabled,
+                        'skipped_ineligible': self.original_upload_skipped_ineligible,
+                        'skipped_too_large': self.original_upload_skipped_too_large,
+                        'failed_uploads': self.original_upload_failed_uploads,
                     },
                 },
             }
@@ -4699,6 +4764,9 @@ class SporelyCloudClient:
     def _observation_images_support_upload_metadata(self) -> bool:
         return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
 
+    def _observation_images_support_original_storage_path(self) -> bool:
+        return self._has_column('observation_images', 'original_storage_path')
+
     def _measurement_supports_media_keys(self) -> bool:
         return self._has_column('spore_measurements', 'image_key') or self._has_column('spore_measurements', 'thumb_key')
 
@@ -5219,6 +5287,17 @@ class SporelyCloudClient:
         safe_name = urllib.parse.quote(path.name)
         return f'{self.user_id}/{obs_cloud_id}/{img_cloud_id}_{safe_name}'
 
+    def _build_original_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
+        source_path = Path(str(local_path or '').strip())
+        safe_name = _sanitize_original_storage_filename(source_path)
+        normalized_image_id = str(img_cloud_id or '').strip()
+        if not normalized_image_id:
+            digest_source = f'{self.user_id}/{str(obs_cloud_id or "").strip()}/{safe_name}'
+            normalized_image_id = hashlib.sha1(digest_source.encode('utf-8')).hexdigest()[:16]
+        return _normalize_cloud_media_key(
+            f'{self.user_id}/{str(obs_cloud_id or "").strip()}/originals/{normalized_image_id}/{safe_name}'
+        )
+
     def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
         payload = {col: img.get(col) for col in _IMG_PUSH_COLS}
@@ -5262,6 +5341,18 @@ class SporelyCloudClient:
             self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
             self._set_observation_media_keys(obs_cloud_id, normalized_key, img.get('sort_order'))
         return cloud_id
+
+    def set_image_original_storage_path(self, cloud_image_id: str, original_storage_path: str) -> None:
+        normalized_id = str(cloud_image_id or '').strip()
+        normalized_key = _normalize_cloud_media_key(original_storage_path)
+        if not normalized_id or not normalized_key:
+            return
+        if not self._observation_images_support_original_storage_path():
+            return
+        self._patch(
+            f'observation_images?id=eq.{normalized_id}&user_id=eq.{self.user_id}',
+            {'original_storage_path': normalized_key},
+        )
 
     def upload_image_file(
         self,
@@ -5429,6 +5520,85 @@ class SporelyCloudClient:
                             raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
             except Exception as e:
                 raise CloudSyncError(f'Media thumbnail upload failed: {e}') from e
+
+        return storage_path
+
+    def upload_original_image_file(
+        self,
+        local_path: str,
+        obs_cloud_id: str,
+        img_cloud_id: str,
+        storage_path: str | None = None,
+        upload_meta: dict | None = None,
+    ) -> str | None:
+        """Upload a full-resolution original file to cloud storage without transforming it."""
+        path = Path(local_path)
+        if not path.exists():
+            return None
+
+        storage_path = _normalize_cloud_media_key(
+            storage_path or self._build_original_storage_path(obs_cloud_id, img_cloud_id, local_path)
+        )
+        if not storage_path:
+            return None
+
+        cache_control = 'public, max-age=31536000, immutable'
+        meta = dict(upload_meta or {})
+        source_size = 0
+        try:
+            source_size = int(path.stat().st_size)
+        except Exception:
+            source_size = 0
+        content_type = guess_local_image_mime_type(path) or _content_type_for_path(path)
+        upload_policy = _cloud_upload_policy_from_meta(meta)
+        quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
+        cloud_plan = str(upload_policy.get('cloudPlan') or ('pro' if quality_profile == 'high' else 'free'))
+        common_metadata = {
+            'user_id': self.user_id,
+            'uploaded_at': datetime.now(timezone.utc).isoformat(),
+            'uploaded_by': self.user_id,
+            'upload_mode': 'full',
+            'upload_variant': 'original',
+            'cloud_plan': cloud_plan,
+            'quality_profile': quality_profile,
+            'source_role': str(meta.get('source_role') or '').strip(),
+            'source_kind': str(meta.get('source_kind') or '').strip(),
+            'stored_bytes': str(source_size),
+        }
+
+        try:
+            if direct_r2_runtime_available():
+                r2 = self._get_r2()
+                r2.put_file(
+                    path,
+                    storage_path,
+                    content_type=content_type,
+                    cache_control=cache_control,
+                    timeout=120,
+                    custom_metadata=common_metadata,
+                )
+            else:
+                worker = self._get_media_worker()
+                upload_response = worker.put_file(
+                    path,
+                    storage_path,
+                    content_type=content_type,
+                    cache_control=cache_control,
+                    timeout=120,
+                    upload_meta=common_metadata,
+                    options={
+                        'uploadMode': 'full',
+                        'uploadVariant': 'original',
+                        'cloudPlan': cloud_plan,
+                        'qualityProfile': quality_profile,
+                    },
+                )
+                confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
+                if not confirmed_key:
+                    raise CloudSyncError('Worker upload did not return a storage key')
+                storage_path = confirmed_key
+        except Exception as exc:
+            raise CloudSyncError(f'Original media upload failed: {exc}') from exc
 
         return storage_path
 
@@ -5950,6 +6120,7 @@ def push_all(
                         except Exception as e:
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 else:
+                    image_warnings: list[str] = []
                     images_synced = _push_images_for_observation(
                         client,
                         obs,
@@ -5959,7 +6130,10 @@ def push_all(
                         progress_state=progress_state,
                         observation_index=i + 1,
                         observation_total=total,
+                        summary_warnings=image_warnings,
                     )
+                    if image_warnings:
+                        errors.extend(image_warnings)
                     if images_synced and local_obs_id > 0:
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
@@ -6025,6 +6199,7 @@ def _push_images_for_observation(
     progress_state: dict | None = None,
     observation_index: int | None = None,
     observation_total: int | None = None,
+    summary_warnings: list[str] | None = None,
 ) -> bool:
     """Push selected observation images for one observation."""
     warnings: list[str] = []
@@ -6060,6 +6235,14 @@ def _push_images_for_observation(
 
     for warning in warnings:
         print(f'[cloud_sync] Observation {obs["id"]}: {warning}')
+
+    def _record_original_upload_warning(message: str) -> None:
+        text = str(message or '').strip()
+        if not text:
+            return
+        print(f'[cloud_sync] Observation {obs["id"]}: {text}')
+        if isinstance(summary_warnings, list):
+            summary_warnings.append(text)
 
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [
@@ -6141,6 +6324,7 @@ def _push_images_for_observation(
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
         include_upload_meta = client._observation_images_support_upload_metadata()
+        original_sync_enabled = is_full_resolution_original_sync_enabled()
         for item_index, item in enumerate(prepared_items, start=1):
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
@@ -6258,6 +6442,116 @@ def _push_images_for_observation(
                     conn.close()
                 if current_file_sig:
                     _store_cloud_image_file_signature(obs.get('id'), local_image_id, current_file_sig)
+
+                original_upload_source = resolve_full_original_upload_source(img)
+                original_storage_path = _normalize_cloud_media_key((remote_row or {}).get('original_storage_path'))
+                if not original_storage_path:
+                    profiler = _cloud_sync_current_profiler()
+                    if not original_sync_enabled:
+                        if profiler is not None:
+                            try:
+                                if original_upload_source is None:
+                                    profiler.record_original_upload_skipped_ineligible()
+                                else:
+                                    profiler.record_original_upload_skipped_disabled()
+                            except Exception:
+                                pass
+                    elif original_upload_source is None:
+                        if profiler is not None:
+                            try:
+                                profiler.record_original_upload_skipped_ineligible()
+                            except Exception:
+                                pass
+                    else:
+                        source_path = str(original_upload_source.get('source_path') or '').strip()
+                        source_kind = str(original_upload_source.get('source_kind') or '').strip() or 'filepath'
+                        source_size = 0
+                        try:
+                            source_size = int(Path(source_path).stat().st_size)
+                        except Exception:
+                            source_size = 0
+
+                        if is_full_resolution_original_upload_too_large(source_path):
+                            if profiler is not None:
+                                try:
+                                    profiler.record_original_upload_skipped_too_large()
+                                except Exception:
+                                    pass
+                            _record_original_upload_warning(
+                                (
+                                    f"skipped original upload for image {img.get('id')} "
+                                    f"because {source_kind} is too large "
+                                    f"({_format_size(source_size)} > "
+                                    f"{_format_size(FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES)})"
+                                )
+                            )
+                        else:
+                            original_upload_meta = dict(item.get('cloud_upload_meta') or {})
+                            original_upload_meta.update(
+                                {
+                                    'source_role': original_upload_source.get('source_role'),
+                                    'source_kind': source_kind,
+                                    'upload_mode': 'full',
+                                    'upload_variant': 'original',
+                                }
+                            )
+                            original_storage_path = client._build_original_storage_path(
+                                obs_cloud_id,
+                                img_cloud_id,
+                                source_path,
+                            )
+                            try:
+                                uploaded_original_key = client.upload_original_image_file(
+                                    source_path,
+                                    obs_cloud_id,
+                                    img_cloud_id,
+                                    storage_path=original_storage_path,
+                                    upload_meta=original_upload_meta,
+                                )
+                            except CloudSyncError as exc:
+                                if profiler is not None:
+                                    try:
+                                        profiler.record_original_upload_failed()
+                                    except Exception:
+                                        pass
+                                _record_original_upload_warning(
+                                    (
+                                        f"original upload failed for image {img.get('id')} "
+                                        f"from {source_kind}: {exc}"
+                                    )
+                                )
+                            else:
+                                original_storage_path = _normalize_cloud_media_key(
+                                    uploaded_original_key or original_storage_path
+                                )
+                                if original_storage_path:
+                                    try:
+                                        client.set_image_original_storage_path(
+                                            img_cloud_id,
+                                            original_storage_path,
+                                        )
+                                    except Exception as exc:
+                                        if profiler is not None:
+                                            try:
+                                                profiler.record_original_upload_failed()
+                                            except Exception:
+                                                pass
+                                        _record_original_upload_warning(
+                                            (
+                                                f"original upload succeeded for image {img.get('id')} "
+                                                f"from {source_kind}, but patching original_storage_path failed: {exc}"
+                                            )
+                                        )
+                                    else:
+                                        if profiler is not None:
+                                            try:
+                                                profiler.record_original_upload_success(source_size)
+                                            except Exception:
+                                                pass
+                                        print(
+                                            f'[cloud_sync] Observation {obs["id"]}: original upload source for image {img.get("id")} '
+                                            f'was {source_kind}'
+                                        )
             except CloudSyncError as e:
                 if is_image_too_large_for_plan_error(e):
                     raise

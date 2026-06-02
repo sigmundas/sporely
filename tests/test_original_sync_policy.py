@@ -32,6 +32,10 @@ def test_local_canonical_jpeg_png_are_eligible(tmp_path, filename, file_purpose)
     }
 
     assert policy.is_full_original_sync_candidate(row) is True
+    upload_source = policy.resolve_full_original_upload_source(row)
+    assert upload_source is not None
+    assert upload_source["source_kind"] == "filepath"
+    assert upload_source["source_path"] == filepath
 
 
 def test_heic_original_lineage_requires_original_path_and_opt_in(tmp_path):
@@ -46,9 +50,17 @@ def test_heic_original_lineage_requires_original_path_and_opt_in(tmp_path):
 
     assert policy.is_full_original_sync_candidate(row) is False
     assert policy.is_full_original_sync_candidate(row, include_original_path=True) is True
+    upload_source = policy.resolve_full_original_upload_source(row)
+    assert upload_source is not None
+    assert upload_source["source_kind"] == "original_filepath"
+    assert upload_source["source_path"] == original_path
 
     Path(original_path).unlink()
     assert policy.is_full_original_sync_candidate(row, include_original_path=True) is False
+    upload_source = policy.resolve_full_original_upload_source(row)
+    assert upload_source is not None
+    assert upload_source["source_kind"] == "filepath"
+    assert upload_source["source_path"] == working_path
 
 
 def test_converted_local_working_copy_requires_explicit_opt_in(tmp_path):
@@ -62,6 +74,10 @@ def test_converted_local_working_copy_requires_explicit_opt_in(tmp_path):
 
     assert policy.is_full_original_sync_candidate(row) is False
     assert policy.is_full_original_sync_candidate(row, include_converted_local=True) is True
+    upload_source = policy.resolve_full_original_upload_source(row)
+    assert upload_source is not None
+    assert upload_source["source_kind"] == "filepath"
+    assert upload_source["source_path"] == working_path
 
 
 @pytest.mark.parametrize(
@@ -87,6 +103,14 @@ def test_cloud_derivative_and_generated_rows_are_never_eligible(
     }
 
     assert policy.is_full_original_sync_candidate(row) is False
+    assert policy.resolve_full_original_upload_source(row) is None
+
+
+def test_original_upload_size_guard_rejects_oversized_files(monkeypatch, tmp_path):
+    path = _write_file(tmp_path / "large.jpg")
+    monkeypatch.setattr(policy, "FULL_RESOLUTION_ORIGINAL_UPLOAD_MAX_BYTES", 1)
+
+    assert policy.is_full_resolution_original_upload_too_large(path) is True
 
 
 def test_should_download_full_original_stays_disabled_without_opt_in_even_when_original_key_exists(monkeypatch):

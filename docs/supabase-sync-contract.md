@@ -65,6 +65,8 @@ These should sync because they are shared domain data needed to recreate or cont
 - visibility/privacy fields
 - AI crop parameters
 - selected AI result
+- eligible full-resolution original uploads as opt-in companion objects, not as a blanket mirror of
+  every desktop file
 
 Cloud sync should not overwrite higher-quality local originals or device-local workflow state. Local originals and local paths remain desktop-owned, while cloud media is used for web display, recovery, and cross-device continuity.
 
@@ -94,7 +96,7 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 | Taxonomy and determination | `sync-required` | Genus, species, common name, species guess, determination method, and uncertainty flags should sync. |
 | Comments | mixed | `open_comment` should sync. `private_comment` is a decision point, not something to discard. |
 | AI suggestions | mixed | Crop/input parameters are sync-required. Selected result is near-term sync-required. Candidate lists are sync-capable/future-candidate. Raw/debug payloads stay cloud-only/cache unless needed for reproducibility. |
-| Images and originals | mixed | Desktop originals stay local. Cloud stores derivatives and cloud media keys. |
+| Images and originals | mixed | Desktop originals stay local. Cloud stores derivatives, opt-in companion original uploads, and cloud media keys. |
 | Microscope images | `sync-required` for metadata | Geometry, scale, objective, stain, mount medium, sample type, and contrast matter for analysis. |
 | Measurements | `sync-required` | Raw geometry and calibration context must be reconstructable. |
 | Calibration | `sync-required, staged implementation` | Calibration records and calibration photos are shared domain data because cloud bridges multiple desktop installs. |
@@ -108,7 +110,7 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 | Local table or asset | Cloud table or asset | Contract stance | Notes |
 | --- | --- | --- | --- |
 | `observations` | `public.observations` | `sync-required` | Core observation record. Local `id` maps to cloud `desktop_id`. |
-| `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path` and derivative bookkeeping. |
+| `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path`, derivative bookkeeping, and optional `original_storage_path` companion metadata. |
 | `spore_measurements` | `public.spore_measurements` | `sync-required` | Measurement points and values must round-trip. |
 | `calibrations` | `public.calibrations` | `sync-required, staged implementation` | Fields already mostly exist on both sides, but stable sync identity and implementation wiring are not done yet. |
 | `calibration_assets` | none | `desktop-only` | Local multi-asset calibration provenance for source photos, working photos, crops, overlays, debug outputs, and reference caches. |
@@ -193,8 +195,9 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
 - `storage_path`, `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`,
   and `stored_bytes` stay cloud bookkeeping, not provenance.
 - `storage_path`, `image_key`, and `thumb_key` are derivative/recovery keys.
-- `original_storage_path` is optional cloud-side metadata for a future original object. It
-  defaults to null and does not authorize replacing a local original.
+- `original_storage_path` is optional cloud-side metadata for a companion original object. It is
+  written only after an opt-in upload, defaults to null, and does not authorize replacing a local
+  original or triggering a download/recovery flow.
 - `notes` should not be used as a hidden file-role flag.
 
 #### `source_role`
@@ -284,21 +287,27 @@ Deferred items:
 
 - Cloud provenance fields on `public.observation_images` beyond the minimal
   `original_storage_path` contract support.
-- Full-resolution original sync.
+- Full-resolution original download/recovery.
 - A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
   spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
 - Calibration multi-asset provenance beyond the representative derivative path.
 
-Full-resolution original sync note:
+Full-resolution original upload note:
 
 - Current cloud image rows expose derivative/recovery media fields such as `storage_path`,
   `image_key`, and `thumb_key`.
-- The cloud contract also allows optional `original_storage_path` metadata for future original
-  objects. It stays null by default until runtime upload support lands.
+- The cloud contract also allows optional `original_storage_path` metadata for companion original
+  objects written by the desktop upload slice.
+- The desktop only uploads eligible rows when `sync_full_resolution_originals` is enabled.
+- Upload source selection is explicit:
+  - `local_canonical` uploads its readable `filepath`
+  - `converted_local` prefers readable `original_filepath`, then falls back to `filepath`
+- Only `field` and `microscope` purposes participate, and the source file must stay within the
+  250 MiB desktop upload ceiling.
 - `original_storage_path` is metadata only. Its presence does not mean the desktop should overwrite
   a better local original or bypass local provenance rules.
 - `should_download_full_original(...)` remains the gate for any future recovery-style download.
-- Upload/download for full-resolution originals remains deferred and disabled by default.
+- Download/recovery for full-resolution originals remains deferred.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
   `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
@@ -356,8 +365,8 @@ Cloud derivative rule:
 - Overlays and measurement rectangles must be reconstructable from source geometry plus calibration
   data.
 - Spore thumbnails are generated artifacts, not the only source of truth.
-- Large microscope originals may remain local-only unless the user explicitly opts into full-resolution
-  cloud storage later.
+- Large microscope originals may be uploaded as opt-in companion originals, but the local original
+  remains authoritative and download/recovery is still deferred.
 - Full measurement reproducibility is incomplete until calibration sync implementation lands.
   Measurement geometry can sync now, but calibration data are part of the shared contract even
   though the implementation is staged.

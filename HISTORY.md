@@ -1,20 +1,27 @@
 # Sporely Desktop — History & Debugging Notes
 
-### Optional full-resolution original sync policy
+### Optional full-resolution original sync upload slice
 
-Stage I is still helper-first. The desktop now preserves optional original-object metadata in
-stored cloud snapshots, and the cloud schema now carries nullable
-`public.observation_images.original_storage_path`, but the actual upload/download engine remains
-deferred.
+Stage I has moved from policy-only into an opt-in upload slice. The desktop can now upload
+eligible full-resolution originals as companion cloud objects when
+`sync_full_resolution_originals` is enabled, while download/recovery remains deferred and the
+local original stays authoritative.
 
 Covered changes:
-- Added `utils/original_sync_policy.py` with candidate and safe-download helpers.
-- Identified `sync_full_resolution_originals` as the opt-in gate and kept it default-off.
-- Added nullable cloud contract support for `original_storage_path` and preserved it as passive
-  snapshot metadata only.
-- Added focused tests for canonical local eligibility, HEIC lineage handling, converted-local
-  opt-in, snapshot preservation, and non-overwrite recovery.
-- No runtime upload/download or local replacement behavior was added.
+- Added `utils/original_sync_policy.py` with upload eligibility, source selection, size checks,
+  and safe future recovery helpers.
+- Kept `sync_full_resolution_originals` default-off and wired it into the desktop upload path.
+- Added opt-in original uploads for `local_canonical` and `converted_local` rows with `field` or
+  `microscope` purposes.
+- Prefer `original_filepath` for converted-local lineage when readable, otherwise fall back to the
+  readable working `filepath`.
+- Enforced a 250 MiB upload ceiling and surface oversize originals as sync warnings instead of hard
+  failures.
+- Added nullable cloud contract support for `original_storage_path` and kept it passive metadata
+  only.
+- Added focused tests for eligibility, source selection, upload success/failure, and oversized
+  source skipping.
+- No download/recovery or broad UI surface was added yet.
 
 ### Multi-asset calibration provenance
 
