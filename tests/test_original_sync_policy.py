@@ -89,11 +89,11 @@ def test_cloud_derivative_and_generated_rows_are_never_eligible(
     assert policy.is_full_original_sync_candidate(row) is False
 
 
-def test_should_download_full_original_stays_disabled_for_current_cloud_rows(monkeypatch):
-    monkeypatch.setattr(policy.SettingsDB, "get_setting", lambda key, default=None: True if key == policy.SYNC_FULL_RESOLUTION_ORIGINALS_SETTING else default)
+def test_should_download_full_original_stays_disabled_without_opt_in_even_when_original_key_exists(monkeypatch):
+    monkeypatch.setattr(policy.SettingsDB, "get_setting", lambda key, default=None: False if key == policy.SYNC_FULL_RESOLUTION_ORIGINALS_SETTING else default)
 
     assert policy.should_download_full_original(
-        {"storage_path": "user/obs/derivative.webp"},
+        {"original_storage_path": "user/obs/original.jpg"},
         None,
     ) is False
 

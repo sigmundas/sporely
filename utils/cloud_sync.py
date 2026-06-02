@@ -787,6 +787,12 @@ _SNAPSHOT_IMG_FIELDS = [
     'stored_width', 'stored_height', 'stored_bytes',
 ]
 
+# Future original-object metadata that we preserve in snapshots when it is
+# already present on the cloud row, but do not yet use for sync decisions.
+_SNAPSHOT_IMG_PASSIVE_FIELDS = [
+    'original_storage_path',
+]
+
 _CONFLICT_COMPARE_FIELDS = [
     'date',
     'genus',
@@ -1909,12 +1915,15 @@ def _cloud_observation_snapshot(
         if should_pull_cloud_image_to_desktop(row)
     ]
     for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
-        images_part.append(
-            {
-                field: _normalize_snapshot_value(image.get(field))
-                for field in _SNAPSHOT_IMG_FIELDS
-            }
-        )
+        image_payload = {
+            field: _normalize_snapshot_value(image.get(field))
+            for field in _SNAPSHOT_IMG_FIELDS
+        }
+        for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
+            passive_value = _normalize_cloud_media_key(image.get(field))
+            if passive_value:
+                image_payload[field] = _normalize_snapshot_value(passive_value)
+        images_part.append(image_payload)
     measurements_part = []
     filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
     for measurement in sorted(

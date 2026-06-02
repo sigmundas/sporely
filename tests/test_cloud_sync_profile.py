@@ -136,12 +136,14 @@ def test_cloud_sync_profiler_records_media_metrics_and_snapshot_fetches(monkeypa
             'observation_id': 'cloud-obs-1',
             'storage_path': 'bucket/image-1.jpg',
             'original_filename': 'image-1.jpg',
+            'original_storage_path': 'bucket/originals/image-1.tif',
         },
         {
             'id': 'cloud-image-2',
             'observation_id': 'cloud-obs-1',
             'storage_path': 'bucket/image-2.jpg',
             'original_filename': 'image-2.jpg',
+            'original_storage_path': None,
         },
     ]
     remote_measurements = [
@@ -194,6 +196,7 @@ def test_store_remote_snapshot_uses_prefetched_rows_without_fallback_fetches(mon
             'original_filename': 'image-1.jpg',
             'image_type': 'field',
             'sort_order': 0,
+            'original_storage_path': 'bucket/originals/image-1.tif',
         },
         {
             'id': 'cloud-image-2',
@@ -203,6 +206,7 @@ def test_store_remote_snapshot_uses_prefetched_rows_without_fallback_fetches(mon
             'original_filename': 'image-2.jpg',
             'image_type': 'field',
             'sort_order': 1,
+            'original_storage_path': None,
         },
     ]
     remote_measurements = [
@@ -247,3 +251,5 @@ def test_store_remote_snapshot_uses_prefetched_rows_without_fallback_fetches(mon
     assert len(snapshot['measurements']) == 2
     assert snapshot['images'][0]['id'] == 'cloud-image-1'
     assert snapshot['images'][1]['id'] == 'cloud-image-2'
+    assert snapshot['images'][0]['original_storage_path'] == 'bucket/originals/image-1.tif'
+    assert 'original_storage_path' not in snapshot['images'][1]

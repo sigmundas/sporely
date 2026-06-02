@@ -125,10 +125,11 @@ def should_download_full_original(
 ) -> bool:
     """Return True when a future full-resolution original can be recovered safely.
 
-    The current cloud schema does not yet carry a dedicated original-object key,
-    so this stays False for today’s cloud derivative rows. When a future original
-    key is present, the helper still refuses to overwrite a readable local
-    canonical or original path.
+    The cloud contract may now carry optional original-object metadata such as
+    original_storage_path, but upload/download remains deferred. This helper
+    only returns True when the opt-in is enabled, a remote original key is
+    present, and the local row does not already hold a readable canonical or
+    original path that would be overwritten.
     """
     if not is_full_resolution_original_sync_enabled():
         return False

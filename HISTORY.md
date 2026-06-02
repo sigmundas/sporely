@@ -2,17 +2,19 @@
 
 ### Optional full-resolution original sync policy
 
-Stage I started as a helper-only slice. The desktop now has explicit policy helpers for
-full-resolution original eligibility and future recovery downloads, while the actual upload /
-download engine remains untouched.
+Stage I is still helper-first. The desktop now preserves optional original-object metadata in
+stored cloud snapshots, and the cloud schema now carries nullable
+`public.observation_images.original_storage_path`, but the actual upload/download engine remains
+deferred.
 
 Covered changes:
 - Added `utils/original_sync_policy.py` with candidate and safe-download helpers.
 - Identified `sync_full_resolution_originals` as the opt-in gate and kept it default-off.
-- Confirmed the current cloud media contract still lacks original-object keys, so no schema change
-  was needed in this pass.
+- Added nullable cloud contract support for `original_storage_path` and preserved it as passive
+  snapshot metadata only.
 - Added focused tests for canonical local eligibility, HEIC lineage handling, converted-local
-  opt-in, cache/generated-artifact exclusions, and non-overwrite recovery.
+  opt-in, snapshot preservation, and non-overwrite recovery.
+- No runtime upload/download or local replacement behavior was added.
 
 ### Multi-asset calibration provenance
 

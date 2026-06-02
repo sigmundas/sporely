@@ -138,6 +138,7 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     assert posts[0][0] == "observation_images"
     assert posts[0][1]["calibration_uuid"] == calibration_uuid
     assert "calibration_id" not in posts[0][1]
+    assert "original_storage_path" not in posts[0][1]
     assert posts[0][1]["desktop_id"] == 11
     assert posts[0][1]["observation_id"] == "cloud-obs-1"
 

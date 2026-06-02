@@ -192,6 +192,9 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
   current cloud contract.
 - `storage_path`, `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`,
   and `stored_bytes` stay cloud bookkeeping, not provenance.
+- `storage_path`, `image_key`, and `thumb_key` are derivative/recovery keys.
+- `original_storage_path` is optional cloud-side metadata for a future original object. It
+  defaults to null and does not authorize replacing a local original.
 - `notes` should not be used as a hidden file-role flag.
 
 #### `source_role`
@@ -279,7 +282,8 @@ Tombstone interaction:
 
 Deferred items:
 
-- Cloud provenance fields on `public.observation_images`.
+- Cloud provenance fields on `public.observation_images` beyond the minimal
+  `original_storage_path` contract support.
 - Full-resolution original sync.
 - A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
   spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
@@ -287,12 +291,14 @@ Deferred items:
 
 Full-resolution original sync note:
 
-- Current cloud image rows only expose derivative/recovery media fields such as `storage_path`,
+- Current cloud image rows expose derivative/recovery media fields such as `storage_path`,
   `image_key`, and `thumb_key`.
-- A future original-object field such as `original_storage_path` is still needed before the desktop
-  can upload or restore full-resolution originals safely.
-- Until that contract exists, the desktop policy helper keeps original sync disabled by default and
-  only treats canonical local originals as eligible candidates.
+- The cloud contract also allows optional `original_storage_path` metadata for future original
+  objects. It stays null by default until runtime upload support lands.
+- `original_storage_path` is metadata only. Its presence does not mean the desktop should overwrite
+  a better local original or bypass local provenance rules.
+- `should_download_full_original(...)` remains the gate for any future recovery-style download.
+- Upload/download for full-resolution originals remains deferred and disabled by default.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
   `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
@@ -305,6 +311,7 @@ Full-resolution original sync note:
   - other ingestion-only file management state
 - `cloud-only`: cloud object references and upload bookkeeping.
   - `storage_path`
+  - `original_storage_path`
   - `image_key`
   - `thumb_key`
   - `upload_mode`
@@ -315,6 +322,8 @@ Full-resolution original sync note:
   - `stored_bytes`
 - `storage_path` and cloud media keys are cloud media references. The desktop may read them for
   recovery or download, but they are not local source-of-truth.
+- `original_storage_path`, when present, points to the future full-resolution original object and
+  is still not a local overwrite instruction.
 - `shared-but-currently-ignored`: `scale_bar_x1`, `scale_bar_y1`, `scale_bar_x2`, `scale_bar_y2`.
   - Keep this as a future contract item if the web needs to reproduce the desktop scale-bar overlay
     exactly.
