@@ -704,6 +704,7 @@ def download_calibration_reference_to_cache(
 
 _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
+    'calibration_uuid',
     'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
     'crop_mode', 'notes',
@@ -775,6 +776,7 @@ _SNAPSHOT_OBS_FIELDS = [
 
 _SNAPSHOT_IMG_FIELDS = [
     'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
+    'calibration_uuid',
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
     'crop_mode', 'notes',
@@ -1428,6 +1430,7 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'sort_order': _normalize_snapshot_value(row.get('sort_order')),
         'image_type': _normalize_snapshot_value(row.get('image_type')),
         'micro_category': _normalize_snapshot_value(row.get('micro_category')),
+        'calibration_uuid': _normalize_snapshot_value(_image_calibration_uuid(row)),
         'objective_name': _normalize_snapshot_value(row.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(row.get('scale_microns_per_pixel')),
         'resample_scale_factor': _normalize_snapshot_value(row.get('resample_scale_factor')),
@@ -2525,6 +2528,108 @@ def _local_calibration_lookup(rows: list[dict] | None = None) -> dict[str, dict]
     return lookup
 
 
+def _image_calibration_uuid(image_row: dict | None) -> str | None:
+    row = dict(image_row or {})
+    uuid_value = _normalize_calibration_uuid(row.get('calibration_uuid'))
+    if uuid_value:
+        return uuid_value
+
+    calibration_id = _safe_int(row.get('calibration_id'))
+    if calibration_id <= 0:
+        return None
+
+    try:
+        calibration = CalibrationDB.get_calibration(calibration_id)
+    except Exception:
+        return None
+    if not calibration:
+        return None
+    return _normalize_calibration_uuid(calibration.get('calibration_uuid'))
+
+
+def _local_calibration_id_for_image(image_row: dict | None) -> int | None:
+    calibration_uuid = _image_calibration_uuid(image_row)
+    if not calibration_uuid:
+        return None
+
+    calibration = _load_local_calibration_by_uuid(calibration_uuid)
+    if not calibration:
+        return None
+
+    calibration_id = _safe_int(calibration.get('id'))
+    return calibration_id if calibration_id > 0 else None
+
+
+def _reconcile_local_image_calibration_links() -> int:
+    """Backfill local image calibration_id values from stored cloud snapshots."""
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        try:
+            snapshot_rows = cursor.execute(
+                'SELECT key, value FROM settings WHERE key LIKE ?',
+                (f'{_SETTING_CLOUD_OBS_SNAPSHOT_PREFIX}%',),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return 0
+        if not snapshot_rows:
+            return 0
+
+        calibration_lookup = _local_calibration_lookup()
+        try:
+            local_image_rows = cursor.execute(
+                'SELECT id, cloud_id, calibration_id FROM images WHERE cloud_id IS NOT NULL'
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return 0
+
+        local_images_by_cloud_id = {
+            str(row['cloud_id']).strip(): dict(row)
+            for row in local_image_rows
+            if str(row['cloud_id']).strip()
+        }
+        updates: list[tuple[int, int]] = []
+
+        for snapshot_row in snapshot_rows:
+            snapshot = _parse_cloud_observation_snapshot(snapshot_row['value'])
+            for remote_image in snapshot.get('images') or []:
+                calibration_uuid = _normalize_calibration_uuid(remote_image.get('calibration_uuid'))
+                if not calibration_uuid:
+                    continue
+                calibration_row = calibration_lookup.get(calibration_uuid)
+                if not calibration_row:
+                    continue
+                local_calibration_id = _safe_int(calibration_row.get('id'))
+                if local_calibration_id <= 0:
+                    continue
+
+                cloud_image_id = str(remote_image.get('id') or '').strip()
+                if not cloud_image_id:
+                    continue
+                local_image_row = local_images_by_cloud_id.get(cloud_image_id)
+                if not local_image_row:
+                    continue
+                current_calibration_id = _safe_int(local_image_row.get('calibration_id'))
+                if current_calibration_id == local_calibration_id:
+                    continue
+                updates.append((local_calibration_id, _safe_int(local_image_row.get('id'))))
+
+        if not updates:
+            return 0
+
+        cursor.executemany(
+            'UPDATE images SET calibration_id = ? WHERE id = ?',
+            updates,
+        )
+        conn.commit()
+        return len(updates)
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        conn.close()
+
+
 def _calibration_sync_warning(direction: str, local_row: dict | None, remote_row: dict | None, fields: list[str]) -> str:
     calibration_uuid = _normalize_calibration_uuid((local_row or remote_row or {}).get('calibration_uuid')) or '?'
     label = _calibration_display_name(local_row or remote_row)
@@ -2682,6 +2787,11 @@ def pull_calibrations(
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
             _advance_progress(progress_state, 1)
+
+    try:
+        _reconcile_local_image_calibration_links()
+    except Exception as exc:
+        errors.append(f'calibration reconciliation: {exc}')
 
     return {'pulled': pulled, 'total': total, 'errors': errors}
 
@@ -2980,6 +3090,7 @@ def _prepared_item_remote_payload(
         'sort_order': _normalize_snapshot_value(image_row.get('sort_order')),
         'image_type': _normalize_snapshot_value(image_row.get('image_type')),
         'micro_category': _normalize_snapshot_value(image_row.get('micro_category')),
+        'calibration_uuid': _normalize_snapshot_value(_image_calibration_uuid(image_row)),
         'objective_name': _normalize_snapshot_value(image_row.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(image_row.get('scale_microns_per_pixel')),
         'resample_scale_factor': _normalize_snapshot_value(image_row.get('resample_scale_factor')),
@@ -3031,6 +3142,7 @@ def _remote_image_payload(
         'sort_order': _normalize_snapshot_value(image.get('sort_order')),
         'image_type': _normalize_snapshot_value(image.get('image_type')),
         'micro_category': _normalize_snapshot_value(image.get('micro_category')),
+        'calibration_uuid': _normalize_snapshot_value(image.get('calibration_uuid')),
         'objective_name': _normalize_snapshot_value(image.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(image.get('scale_microns_per_pixel')),
         'resample_scale_factor': _normalize_snapshot_value(image.get('resample_scale_factor')),
@@ -3942,27 +4054,30 @@ def _sync_existing_remote_image_to_local(
             shutil.copy2(temp_path, target_path)
         # If local is larger it is the full-res desktop-imported original — keep it as-is.
 
-        ImageDB.update_image(
-            image_id,
-            filepath=str(target_path),
-            image_type=str(remote_image.get('image_type') or 'field'),
-            scale=remote_image.get('scale_microns_per_pixel'),
-            notes=remote_image.get('notes'),
-            micro_category=remote_image.get('micro_category'),
-            objective_name=remote_image.get('objective_name'),
-            measure_color=remote_image.get('measure_color'),
-            mount_medium=remote_image.get('mount_medium'),
-            stain=remote_image.get('stain'),
-            sample_type=remote_image.get('sample_type'),
-            contrast=remote_image.get('contrast'),
-            crop_mode=remote_image.get('crop_mode'),
-            sort_order=remote_image.get('sort_order'),
-            gps_source=remote_image.get('gps_source'),
-            resample_scale_factor=remote_image.get('resample_scale_factor'),
-                ai_crop_box=_remote_ai_crop_box(remote_image),
-                ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
-                ai_crop_is_custom=_remote_ai_crop_is_custom(remote_image),
-            )
+        calibration_id = _local_calibration_id_for_image(remote_image)
+        update_kwargs = {
+            'filepath': str(target_path),
+            'image_type': str(remote_image.get('image_type') or 'field'),
+            'scale': remote_image.get('scale_microns_per_pixel'),
+            'notes': remote_image.get('notes'),
+            'micro_category': remote_image.get('micro_category'),
+            'objective_name': remote_image.get('objective_name'),
+            'measure_color': remote_image.get('measure_color'),
+            'mount_medium': remote_image.get('mount_medium'),
+            'stain': remote_image.get('stain'),
+            'sample_type': remote_image.get('sample_type'),
+            'contrast': remote_image.get('contrast'),
+            'crop_mode': remote_image.get('crop_mode'),
+            'sort_order': remote_image.get('sort_order'),
+            'gps_source': remote_image.get('gps_source'),
+            'resample_scale_factor': remote_image.get('resample_scale_factor'),
+            'ai_crop_box': _remote_ai_crop_box(remote_image),
+            'ai_crop_source_size': _remote_ai_crop_source_size(remote_image),
+            'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_image),
+        }
+        if calibration_id is not None:
+            update_kwargs['calibration_id'] = calibration_id
+        ImageDB.update_image(image_id, **update_kwargs)
         conn = get_connection()
         try:
             conn.execute(
@@ -4089,6 +4204,7 @@ def _apply_remote_images_to_local(
                 sort_order=remote_image.get('sort_order'),
                 gps_source=remote_image.get('gps_source'),
                 resample_scale_factor=remote_image.get('resample_scale_factor'),
+                calibration_id=_local_calibration_id_for_image(remote_image),
                 ai_crop_box=_remote_ai_crop_box(remote_image),
                 ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
                 ai_crop_is_custom=_remote_ai_crop_is_custom(remote_image),
@@ -4096,7 +4212,7 @@ def _apply_remote_images_to_local(
                 copy_to_folder=True,
                 mark_observation_dirty=False,
                 source_role='cloud_recovery_cache',
-                file_purpose=new_image_type if new_image_type in {'field', 'microscope'} else None,
+                file_purpose='cache',
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
             )
@@ -5097,6 +5213,11 @@ class SporelyCloudClient:
     def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
         payload = {col: img.get(col) for col in _IMG_PUSH_COLS}
+        calibration_uuid = _image_calibration_uuid(img)
+        if calibration_uuid:
+            payload['calibration_uuid'] = calibration_uuid
+        else:
+            payload.pop('calibration_uuid', None)
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
         payload['desktop_id']        = img['id']
@@ -6058,6 +6179,7 @@ def _push_images_for_observation(
                     include_ai_crop=include_ai_crop,
                     include_upload_meta=include_upload_meta,
                 )
+                local_calibration_uuid = _image_calibration_uuid(img)
                 if remote_row and remote_row.get('original_filename'):
                     expected_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                 remote_payload = _remote_image_payload(
@@ -6065,6 +6187,9 @@ def _push_images_for_observation(
                     include_ai_crop=include_ai_crop,
                     include_upload_meta=include_upload_meta,
                 )
+                if not local_calibration_uuid:
+                    expected_payload.pop('calibration_uuid', None)
+                    remote_payload.pop('calibration_uuid', None)
                 metadata_matches = bool(remote_row) and remote_payload == expected_payload
 
                 current_file_sig = _file_content_signature(upload_path)
@@ -6829,6 +6954,7 @@ def _import_remote_images(
                     crop_mode=image_row.get('crop_mode'),
                     gps_source=image_row.get('gps_source'),
                     resample_scale_factor=image_row.get('resample_scale_factor'),
+                    calibration_id=_local_calibration_id_for_image(image_row),
                     ai_crop_box=_remote_ai_crop_box(image_row),
                     ai_crop_source_size=_remote_ai_crop_source_size(image_row),
                     ai_crop_is_custom=_remote_ai_crop_is_custom(image_row),
@@ -6836,7 +6962,7 @@ def _import_remote_images(
                     copy_to_folder=True,
                     mark_observation_dirty=False,
                     source_role='cloud_recovery_cache',
-                    file_purpose=new_image_type if new_image_type in {'field', 'microscope'} else None,
+                    file_purpose='cache',
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
                 )

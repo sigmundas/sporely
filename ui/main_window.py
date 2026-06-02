@@ -9234,9 +9234,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
 
         if converted_path != original_path:
-            ImageDB.update_image(image_data['id'], filepath=converted_path)
+            update_kwargs = {"filepath": converted_path}
+            if not str(image_data.get("original_filepath") or "").strip():
+                update_kwargs["original_filepath"] = original_path
+            ImageDB.update_image(image_data['id'], **update_kwargs)
             image_data = dict(image_data)
             image_data['filepath'] = converted_path
+            if not str(image_data.get("original_filepath") or "").strip():
+                image_data["original_filepath"] = original_path
 
         self.current_image_path = image_data['filepath']
         self.current_image_id = image_data['id']
@@ -9700,6 +9705,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 converted_path,
                 image_type="microscope",
             )
+            original_filepath = path if converted_path != path else None
             image_id = ImageDB.add_image(
                 observation_id=self.active_observation_id,
                 filepath=converted_path,
@@ -9709,6 +9715,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 contrast=contrast_value,
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
+                original_filepath=original_filepath,
                 **provenance_kwargs,
             )
 
@@ -16980,6 +16987,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 converted_path,
                 image_type="microscope",
             )
+            original_filepath = path if converted_path != path else None
             image_id = ImageDB.add_image(
                 observation_id=self.active_observation_id,
                 filepath=converted_path,
@@ -16989,6 +16997,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 contrast=contrast_value,
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
+                original_filepath=original_filepath,
                 **provenance_kwargs,
             )
 

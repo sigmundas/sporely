@@ -93,6 +93,7 @@ def test_add_image_works_without_provenance_arguments(tmp_path, monkeypatch):
 
     assert image is not None
     assert image["filepath"] == str(source_path)
+    assert image["original_filepath"] is None
     assert image["source_role"] is None
     assert image["file_purpose"] is None
     assert image["original_mime_type"] is None
@@ -181,11 +182,13 @@ def test_add_image_round_trips_heic_conversion_provenance(tmp_path, monkeypatch)
         image_type="microscope",
         captured_at="2026-05-01 10:00:00",
         copy_to_folder=False,
+        original_filepath=str(source_path),
         **provenance,
     )
     image = models.ImageDB.get_image(image_id)
 
     assert image is not None
+    assert image["original_filepath"] == str(source_path)
     assert image["source_role"] == "converted_local"
     assert image["file_purpose"] == "microscope"
     assert image["original_mime_type"] == "image/heic"

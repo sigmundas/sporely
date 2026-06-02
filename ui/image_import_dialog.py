@@ -3234,7 +3234,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 exif_has_gps=has_exif_gps,
                 resize_to_optimal=self.resize_to_optimal_default,
                 store_original=self.store_original_default,
-                original_filepath=path,
+                original_filepath=source_path,
                 source_filepath=source_path,
             )
             self.import_results.append(result)

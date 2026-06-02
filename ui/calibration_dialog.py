@@ -247,7 +247,7 @@ def _calibration_reference_ui_state(
             "download_button_text": "Download cloud reference image",
             "download_button_enabled": False,
             "preview_path": None,
-            "source_role": "local_original",
+            "source_role": "local_canonical",
         }
 
     if cache_exists:

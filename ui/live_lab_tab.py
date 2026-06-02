@@ -1052,6 +1052,7 @@ class LiveLabTab(QWidget):
         objective = load_objectives().get(objective_key) if objective_key else None
         scale = objective.get("microns_per_pixel") if isinstance(objective, dict) else None
         calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
+        original_filepath = source_path if converted_path != source_path else None
 
         image_id = ImageDB.add_image(
             observation_id=observation_id,
@@ -1065,6 +1066,7 @@ class LiveLabTab(QWidget):
             sample_type=DatabaseTerms.canonicalize("sample", self.sample_combo.currentData()),
             calibration_id=calibration_id,
             resample_scale_factor=1.0,
+            original_filepath=original_filepath,
             lab_metadata=self._current_lab_metadata(),
             **build_local_image_provenance(
                 source_path,

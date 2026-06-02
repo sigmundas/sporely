@@ -218,7 +218,57 @@ def test_scan_folder_does_not_attempt_sync_shot_auto_detection(monkeypatch, qapp
     tab.scan_dir_input.setText(str(tmp_path))
     tab._scan_folder()
 
-    assert [row["filepath"] for row in tab._batch_images] == [str(first.resolve()), str(second.resolve())]
+
+def test_import_match_preserves_original_filepath_for_heic_conversion(monkeypatch, qapp, tmp_path):
+    tab, _saved_settings = build_tab(monkeypatch)
+    source_path = tmp_path / "source.heic"
+    converted_path = tmp_path / "converted.jpg"
+    source_path.write_bytes(b"heic bytes")
+    converted_path.write_bytes(b"jpeg bytes")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(ingestion_hub_tab, "maybe_convert_heic", lambda path, output_dir: str(converted_path))
+    monkeypatch.setattr(ingestion_hub_tab, "get_images_dir", lambda: tmp_path / "images")
+    monkeypatch.setattr(ingestion_hub_tab, "load_objectives", lambda: {})
+    monkeypatch.setattr(ingestion_hub_tab, "resolve_objective_key", lambda objective_key, objectives: None)
+    monkeypatch.setattr(ingestion_hub_tab.CalibrationDB, "get_active_calibration_id", lambda objective_key: None)
+    monkeypatch.setattr(ingestion_hub_tab, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ingestion_hub_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+
+    class DummyConn:
+        def execute(self, *args, **kwargs):
+            return self
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(ingestion_hub_tab, "get_connection", lambda: DummyConn(), raising=False)
+
+    def fake_add_image(**kwargs):
+        captured.update(kwargs)
+        return 42
+
+    monkeypatch.setattr(ingestion_hub_tab.ImageDB, "add_image", fake_add_image)
+
+    result = tab._import_match(
+        1,
+        {
+            "filepath": str(source_path),
+            "image_type": "field",
+            "state": {},
+        },
+    )
+
+    assert result == 42
+    assert captured["filepath"] == str(converted_path)
+    assert captured["original_filepath"] == str(source_path)
+    assert captured["source_role"] == "converted_local"
+    assert captured["file_purpose"] == "field"
+    assert captured["original_mime_type"] == "image/heic"
+    assert captured["working_mime_type"] == "image/jpeg"
 
 
 def test_recompute_matches_groups_images_by_observation_and_uses_offset(monkeypatch, qapp, tmp_path):

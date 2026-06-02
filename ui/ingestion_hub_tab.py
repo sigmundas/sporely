@@ -1382,6 +1382,7 @@ class IngestionHubTab(QWidget):
             if resolved_objective_key
             else None
         )
+        original_filepath = source_path if converted_path != source_path else None
         lab_metadata = None
         if matched_image_type == "microscope":
             lab_metadata = {
@@ -1444,6 +1445,7 @@ class IngestionHubTab(QWidget):
             captured_at=match_row.get("captured_at"),
             calibration_id=calibration_id if matched_image_type == "microscope" else None,
             resample_scale_factor=1.0,
+            original_filepath=original_filepath,
             lab_metadata=lab_metadata,
             **build_local_image_provenance(
                 source_path,

@@ -971,7 +971,7 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     assert captured["copy_to_folder"] is True
     assert captured["mark_observation_dirty"] is False
     assert captured["source_role"] == "cloud_recovery_cache"
-    assert captured["file_purpose"] == "field"
+    assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] == "image/jpeg"
     assert desktop_id_calls == [("cloud-img-1", 23)]
@@ -1036,7 +1036,7 @@ def test_import_remote_images_leaves_working_mime_type_null_for_unknown_extensio
     )
 
     assert captured["source_role"] == "cloud_recovery_cache"
-    assert captured["file_purpose"] == "field"
+    assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] is None
     assert desktop_id_calls == [("cloud-img-2", 24)]
@@ -1190,7 +1190,7 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
     assert download_calls == ["user/cloud-obs-1/cloud-image-active.jpg"]
     assert len(add_calls) == 1
     assert add_calls[0]["source_role"] == "cloud_recovery_cache"
-    assert add_calls[0]["file_purpose"] == "field"
+    assert add_calls[0]["file_purpose"] == "cache"
     assert add_calls[0]["original_mime_type"] is None
     assert add_calls[0]["working_mime_type"] == "image/jpeg"
     assert len(images) == 2
