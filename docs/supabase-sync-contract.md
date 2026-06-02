@@ -285,6 +285,15 @@ Deferred items:
   spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
 - Calibration multi-asset provenance beyond the representative derivative path.
 
+Full-resolution original sync note:
+
+- Current cloud image rows only expose derivative/recovery media fields such as `storage_path`,
+  `image_key`, and `thumb_key`.
+- A future original-object field such as `original_storage_path` is still needed before the desktop
+  can upload or restore full-resolution originals safely.
+- Until that contract exists, the desktop policy helper keeps original sync disabled by default and
+  only treats canonical local originals as eligible candidates.
+
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
   `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
   `contrast`, `measure_color`, `crop_mode`, `notes`, `gps_source`, `ai_crop_*`.

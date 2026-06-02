@@ -1,5 +1,19 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Optional full-resolution original sync policy
+
+Stage I started as a helper-only slice. The desktop now has explicit policy helpers for
+full-resolution original eligibility and future recovery downloads, while the actual upload /
+download engine remains untouched.
+
+Covered changes:
+- Added `utils/original_sync_policy.py` with candidate and safe-download helpers.
+- Identified `sync_full_resolution_originals` as the opt-in gate and kept it default-off.
+- Confirmed the current cloud media contract still lacks original-object keys, so no schema change
+  was needed in this pass.
+- Added focused tests for canonical local eligibility, HEIC lineage handling, converted-local
+  opt-in, cache/generated-artifact exclusions, and non-overwrite recovery.
+
 ### Multi-asset calibration provenance
 
 Stage H is now closed out. The desktop keeps calibration-side asset provenance in a local

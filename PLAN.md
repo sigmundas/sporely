@@ -186,10 +186,17 @@ Status: Done.
 
 ### Stage I — Optional full-resolution original sync
 
-Status: Not started.
+Status: In progress (policy/helper slice).
 
+- Added a desktop-only policy helper for full-resolution original eligibility and safe
+  recovery decisions.
+- The opt-in setting name is `sync_full_resolution_originals`; it stays off by default until the
+  real upload/download path is wired.
+- The current cloud contract still only carries derivative/cache keys (`storage_path`,
+  `image_key`, `thumb_key`), so no original-object sync has been enabled yet.
 - Only after provenance, quotas, and user settings are clear.
 - Never replace better local originals with cloud copies.
+- Do not add a broad UI until the quota story and cloud original-object fields exist.
 
 ---
 
