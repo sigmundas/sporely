@@ -118,6 +118,29 @@ def _probe_from_uploaded_keys(uploaded_urls: set[str]):
     return _probe
 
 
+def test_generated_artifact_detection_accepts_reference_purpose(monkeypatch):
+    monkeypatch.setattr(audit, "should_push_local_image_to_cloud", lambda image_row: True)
+
+    assert audit._is_generated_artifact_local_image(
+        {
+            "source_role": "generated_artifact",
+            "file_purpose": "cache",
+        }
+    ) is True
+    assert audit._is_generated_artifact_local_image(
+        {
+            "source_role": "local_canonical",
+            "file_purpose": "reference",
+        }
+    ) is True
+    assert audit._is_generated_artifact_local_image(
+        {
+            "source_role": "local_canonical",
+            "file_purpose": "cache",
+        }
+    ) is False
+
+
 def test_probe_uses_cache_busted_range_get_and_treats_206_as_exists(monkeypatch):
     captured = {}
 

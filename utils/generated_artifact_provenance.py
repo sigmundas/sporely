@@ -9,8 +9,7 @@ _VALID_FILE_PURPOSES = {
     "thumbnail",
     "spore_crop",
     "plot",
-    "plate",
-    "calibration_overlay",
+    "reference",
 }
 
 

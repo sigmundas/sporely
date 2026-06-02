@@ -1,5 +1,46 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Image provenance/source tags
+
+Stage E2 is now closed out. The desktop preserves HEIC source paths in `original_filepath` when a
+converted working copy is created, keeps the local import provenance vocabulary aligned with the
+existing image schema, and tags cloud-recovered media rows as cache-backed rather than canonical.
+
+Covered changes:
+- Audited every image-row creation path and confirmed the runtime paths either use
+  `build_local_image_provenance(...)` or intentionally special-case cloud recovery/cache rows.
+- Preserved the original source path for converted HEIC imports in the shared import flow and direct
+  import entry points.
+- Tagged cloud-recovered local rows with `source_role=cloud_recovery_cache` and
+  `file_purpose=cache`.
+- Normalized generated-artifact vocabulary to the accepted purposes used by the current code and
+  tests.
+- Confirmed the `_UNSET` cloud materialization fix only patches calibration ids when a matching
+  local calibration exists.
+- Added focused coverage for HEIC original-path preservation, cloud recovery provenance, and the
+  generated-artifact vocabulary.
+- Kept deferred items explicit: cloud provenance fields, full-resolution original sync, generated
+  artifact tables, and multi-asset calibration provenance.
+
+### Image-calibration linkage and reconciliation
+
+The desktop now carries portable `calibration_uuid` values through image cloud payloads and snapshots, resolves them back to local `calibration_id` on import/materialization when the matching calibration exists, and reconciles imported cloud images from stored snapshots after calibration sync. This keeps the cloud link stable without treating the local numeric calibration id as the portable identity.
+
+Covered changes:
+- Threaded `calibration_uuid` through image push/pull snapshot payloads in `utils/cloud_sync.py`.
+- Added snapshot-based reconciliation so images that arrived before calibrations can be linked once the calibration sync completes.
+- Added focused tests for push, pull/materialization, reconciliation, and conflict matching.
+- Added the cloud-side `observation_images.calibration_uuid` migration.
+
+### Calibration reference recovery
+
+The desktop now downloads cloud calibration reference images into a local recovery cache when the original local photo is missing. The recovery cache is keyed by `calibration_uuid`, the calibration dialog marks recovered previews as cloud-derived, and the canonical local original is never overwritten.
+
+Covered changes:
+- Added calibration recovery-state helpers and `download_calibration_reference_to_cache()` in `utils/cloud_sync.py`.
+- Wired the calibration dialog to surface cached cloud references and provide a download action.
+- Added tests for cache path resolution, download behavior, and UI state.
+
 ### Worker-backed desktop media sync
 
 Desktop uploads, downloads, and deletes now go through the authenticated Cloudflare media Worker by default. Normal users only need their Supabase session plus the public Worker URL (`SPORELY_MEDIA_WORKER_URL`, default `https://upload.sporely.no`); direct R2 secrets remain admin/developer-only behind `SPORELY_ENABLE_DIRECT_R2=1`.

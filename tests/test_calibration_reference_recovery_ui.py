@@ -10,7 +10,7 @@ from ui.calibration_dialog import (
 )
 
 
-def test_calibration_reference_ui_state_prefers_local_original_and_hides_download(tmp_path):
+def test_calibration_reference_ui_state_prefers_local_canonical_and_hides_download(tmp_path):
     calibration_uuid = str(uuid.uuid4())
     local_path = tmp_path / "reference.jpg"
     local_path.write_bytes(b"local")
@@ -34,7 +34,7 @@ def test_calibration_reference_ui_state_prefers_local_original_and_hides_downloa
     assert ui_state["status_tone"] == "success"
     assert ui_state["show_download_button"] is False
     assert ui_state["preview_path"] is None
-    assert ui_state["source_role"] == "local_original"
+    assert ui_state["source_role"] == "local_canonical"
 
 
 def test_calibration_reference_ui_state_shows_cached_cloud_reference_and_download_button(tmp_path):

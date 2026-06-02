@@ -53,12 +53,12 @@ def test_plot_descriptor_can_omit_source_image():
     assert descriptor["annotation_id"] is None
 
 
-def test_file_purpose_normalizes_common_variants():
+def test_reference_descriptor_normalizes_common_variants():
     descriptor = build_generated_artifact_provenance(
-        file_purpose="  Calibration Overlay  ",
+        file_purpose="  Reference  ",
     )
 
-    assert descriptor["file_purpose"] == "calibration_overlay"
+    assert descriptor["file_purpose"] == "reference"
 
 
 def test_invalid_file_purpose_is_rejected():
@@ -69,7 +69,7 @@ def test_invalid_file_purpose_is_rejected():
 def test_helper_is_pure_and_does_not_mutate_metadata(tmp_path):
     metadata = {"origin": "ui", "nested": {"kind": "export"}}
     descriptor = build_generated_artifact_provenance(
-        file_purpose="plate",
+        file_purpose="reference",
         metadata=metadata,
     )
 

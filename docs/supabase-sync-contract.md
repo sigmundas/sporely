@@ -181,16 +181,17 @@ Separate the AI model into four layers:
 
 ### Images and Originals
 
-This section defines a planned local-only provenance vocabulary for image files. It is additive: it
+This section defines the local-only provenance vocabulary for image files. It is additive: it
 does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload bookkeeping.
 
 - `filepath` is the local working file path.
 - `original_filepath` is the preserved source/import path when the source file is kept.
+- `source_role`, `file_purpose`, `original_filepath`, `original_mime_type`, and
+  `working_mime_type` are local-only provenance fields on `images`; they are not part of the
+  current cloud contract.
 - `storage_path`, `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`,
   and `stored_bytes` stay cloud bookkeeping, not provenance.
 - `notes` should not be used as a hidden file-role flag.
-- `source_role` and `file_purpose` are planned local-only columns; they are not in the current
-  schema yet.
 
 #### `source_role`
 
@@ -203,15 +204,15 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
 | `converted_local` | Local decoded/conversion result from an import source | Yes, when it is the durable working copy | Conditional | Metadata only | Yes, locally |
 | `cloud_derivative` | Web-friendly derivative created from decoded pixels or a cloud asset | No | Yes | Yes, cloud-side | Yes, public/browser |
 | `cloud_recovery_cache` | Local cache downloaded from cloud to recover a missing file | No | Yes | No | Owner-only |
-| `generated_artifact` | Derived output such as a plot, thumbnail, spore crop, or export | No | Yes | Deferred / optional publish-only | Only if intentionally published |
+| `generated_artifact` | Derived output such as a plot, thumbnail, spore crop, or reference derivative | No | Yes | Deferred / optional publish-only | Only if intentionally published |
 
 - `converted_local` is intentionally not a disposable-only label. If it is the durable working copy,
   it can still be authoritative for analysis.
 - `cloud_derivative` and `cloud_recovery_cache` are both derived, but only the derivative is a cloud
   sync asset. The recovery cache is a local-only fallback copy.
 - `generated_artifact` covers assets that should not be mistaken for canonical scientific originals.
-  If they need persistence, they should likely move to a later artifact table/model rather than the
-  main `images` table.
+  If they need persistence, they should move to a later artifact table/model rather than the main
+  `images` table.
 
 #### `file_purpose`
 
@@ -239,8 +240,10 @@ HEIC/import behavior:
 - Treat HEIC as an import source, not as a durable working format.
 - If a HEIC is decoded to JPEG/PNG for local work, that converted file can become `converted_local`
   and may still be the authoritative working copy.
-- If the original HEIC is preserved, remember it separately through `original_filepath` and/or the
-  planned provenance fields instead of overloading `filepath`.
+- Preserve the original source path in `original_filepath` when a converted working copy is
+  available.
+- If the original HEIC is preserved, remember it separately through `original_filepath` instead of
+  overloading `filepath`.
 - Cloud uploads should prefer decoded pixels when available so we avoid HEIC -> JPEG -> WebP double
   compression.
 - WebP should not become the default durable desktop working format unless it is explicitly tested.
@@ -257,6 +260,8 @@ Cloud derivative vs cloud recovery cache:
 - `cloud_derivative` is a cloud-side display/recovery asset, typically WebP or JPEG.
 - `cloud_recovery_cache` is a local-only file restored from cloud storage when the local source is
   missing.
+- When the desktop stores a local row for a cloud recovery cache, tag it with
+  `file_purpose=cache`.
 - A cloud recovery cache must never replace a higher-quality local canonical source.
 - If both exist, the local canonical or durable converted local copy wins for analysis, measurement,
   export, and re-upload decisions.
@@ -276,8 +281,7 @@ Deferred items:
 - Cloud provenance fields on `public.observation_images`.
 - Full-resolution original sync.
 - A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
-  spore crops, analysis/export plates, and calibration/reference overlays. Keep image thumbnails
-  in `thumbnails`.
+  spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
 - Calibration multi-asset provenance beyond the representative derivative path.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
@@ -388,8 +392,10 @@ Artifact categories:
 - `thumbnail`: image-level preview for gallery and browsing
 - `spore_crop`: evidence crop around a measured spore
 - `plot`: measurement or comparison plot
-- `analysis/export plates`: composite exports or review plates
-- `calibration/reference overlays`: visualization derived from calibration or reference data
+- `reference`: compact calibration/reference derivative
+
+Current generated-artifact `file_purpose` values are `thumbnail`, `spore_crop`, `plot`, and
+`reference`.
 
 Spore evidence crop rules:
 
@@ -406,7 +412,7 @@ Model decision:
 - Keep `images` for source, working, and recovery image files.
 - Do not store spore crops in `images`.
 - If persistent artifacts are needed, add a dedicated `measurement_artifacts` /
-  `spore_measurement_artifacts` table later.
+  `spore_measurement_artifacts` table later in Stage H.
 
 Source image missing:
 
@@ -431,6 +437,9 @@ Deletion behavior:
 - `objective_key` is grouping and display metadata, not identity.
 - Two similar calibrations for the same objective should remain separate unless they share the
   same stable identity.
+- Use `calibration_uuid` as the portable cross-device link for images.
+- `calibration_id` stays local-only and can be reconciled from `calibration_uuid` after
+  calibration sync.
 
 ### Calibration Photos
 
@@ -543,7 +552,8 @@ These stay `desktop-only`:
 - Local `inaturalist_taxon_id` does not have a matching field in the current cloud baseline.
 - Local `red_list_category` and `red_list_categories_json` do not have a matching canonical cloud
   observation field today.
-- Local `calibration_id` on images does not yet have a full cloud sync story.
+- Local `calibration_id` on images is reconciled from portable `calibration_uuid`; do not use the
+  numeric id as cloud identity.
 - `spore_annotations` exists on both sides, but the contract should treat it as a future shared
   annotation feature, not as current sync state.
 - Cloud image tombstones should be recorded locally and used to block reupload or recreation, but

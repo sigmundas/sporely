@@ -164,7 +164,7 @@ def _is_generated_artifact_local_image(image_row: dict) -> bool:
     file_purpose = _normalize_text(image_row.get("file_purpose")).lower()
     if source_role == "generated_artifact":
         return True
-    if file_purpose in {"thumbnail", "spore_crop", "plot", "plate", "calibration_overlay"}:
+    if file_purpose in {"thumbnail", "spore_crop", "plot", "reference"}:
         return True
     if not should_push_local_image_to_cloud(image_row):
         return True

@@ -4,7 +4,7 @@ This file tracks current implementation priorities. Detailed design decisions be
 
 ## Current Focus — Desktop ↔ Cloud Sync Foundation
 
-Goal: make `sporely-py`, `sporely-web`, Supabase, and R2 agree on image/calibration identity, deletion state, and file provenance before adding deeper recovery, multi-asset sync, or full-resolution cloud storage.
+Goal: make `sporely-py`, `sporely-web`, Supabase, and R2 agree on image/calibration identity, deletion state, and file provenance before moving into multi-asset sync or full-resolution cloud storage.
 
 ### Stage A — sporely-py local calibration UUID
 
@@ -72,27 +72,28 @@ Status: in progress.
 
 ### Stage E2 — Image provenance/source tags
 
-Status: Next.
+Status: Done.
 
 Purpose: define explicit provenance roles so the app does not confuse import sources, local working files, cloud derivatives, cloud recovery/cache files, and generated artifacts.
 
-Planned slices:
+Delivered coverage:
 
-- E2a: document provenance vocabulary and rules.
-- E2b: add local-only image provenance columns.
-- E2c: tag new imports/conversions.
-- E2d: tag cloud recovery/cache files.
-- E2e: define generated artifact/spore crop model.
-- E2f: optional cloud provenance fields.
+- E2a: documented provenance vocabulary and rules.
+- E2b: added local-only image provenance columns.
+- E2c: tagged new imports/conversions.
+- E2d: tagged cloud recovery/cache files.
+- E2e: kept generated-artifact provenance vocabulary-only; the table/model is deferred to Stage H.
+- E2f: deferred cloud provenance fields to a later cloud contract/provenance stage if needed.
 
-Initial local fields under consideration:
+Current local fields:
 
 - `source_role`
 - `file_purpose`
 - `original_mime_type`
 - `working_mime_type`
+- `original_filepath`
 
-Accepted vocabulary draft:
+Accepted vocabulary:
 
 `source_role`:
 - `import_source`
@@ -118,13 +119,13 @@ Important rules:
 - `sporely-py` may convert HEIC to JPEG/PNG for local work.
 - `converted_local` can still be analysis-authoritative when it is the durable working copy.
 - Cloud WebP/JPEG files are derivatives/cache, not scientific originals.
-- Generated artifacts are vocabulary-only for now; implementation may need a later artifact table/model.
+- Generated artifact provenance is vocabulary-only for now; persistence belongs to Stage H or a dedicated artifact-model stage.
 
 Deferred:
-- cloud provenance fields
-- full-resolution original sync
-- generated artifact table
-- multi-asset calibration provenance
+- cloud provenance fields → later cloud contract/provenance stage, only if actually needed
+- full-resolution original sync → Stage I
+- generated artifact table/model → Stage H or separate artifact-model stage
+- multi-asset calibration provenance → Stage H
 
 ### Stage E3 — Cloud media garbage collection
 
@@ -155,20 +156,22 @@ Status: deferred cleanup.
 
 ### Stage F — Calibration photo recovery/download cache
 
-Status: Not started.
+Status: Done.
 
 - Download cloud calibration derivative to cache/recovery when local photo is missing.
 - Mark as cloud-derived.
 - Do not overwrite local originals.
 - Do not write recovery paths into canonical local provenance fields unless explicitly designed.
+- Implemented in `utils/cloud_sync.py` and `ui/calibration_dialog.py`, with coverage in `tests/test_cloud_calibration_sync.py` and `tests/test_calibration_reference_recovery_ui.py`.
 
 ### Stage G — Image-calibration linkage/reconciliation
 
-Status: Not started.
+Status: Done.
 
-- Link synced calibration records to images/calibration_id safely.
-- Reconcile scale fields, objective names, and `calibration_uuid`.
-- Avoid automatic rescaling unless conflicts are clear.
+- Use portable `calibration_uuid` in image cloud payloads and snapshots.
+- Reconcile local `images.calibration_id` from stored cloud snapshots after calibration sync.
+- Keep scale fields and objective names in sync without automatic rescaling.
+- Implemented in `utils/cloud_sync.py`, with focused coverage in `tests/test_cloud_image_calibration_linkage.py`.
 
 ### Stage H — Multi-asset calibration provenance
 
@@ -252,7 +255,7 @@ Status: audit/documentation in progress.
   - HEIC as import source
   - JPEG/PNG as local working/canonical file
   - cloud derivative generated from best available decoded pixels when practical
-- [ ] Replace generated-media heuristics with explicit provenance tags after E2.
+- [ ] Replace generated-media heuristics with explicit provenance tags in Stage H or a dedicated artifact-model stage.
 
 ---
 
