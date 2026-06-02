@@ -1033,6 +1033,50 @@ def ensure_calibration_uuid_column(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def ensure_calibration_assets_table(cursor: sqlite3.Cursor) -> None:
+    """Ensure the local calibration assets table exists."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_assets'")
+    if cursor.fetchone():
+        return
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calibration_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_uuid TEXT NOT NULL,
+            calibration_id INTEGER,
+            calibration_uuid TEXT,
+            role TEXT NOT NULL,
+            source_role TEXT,
+            file_purpose TEXT,
+            local_path TEXT,
+            original_path TEXT,
+            cloud_storage_path TEXT,
+            mime_type TEXT,
+            width INTEGER,
+            height INTEGER,
+            bytes INTEGER,
+            sha256 TEXT,
+            metadata_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (calibration_id) REFERENCES calibrations(id) ON DELETE CASCADE
+        )
+        """
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_calibration_assets_uuid ON calibration_assets(asset_uuid)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_calibration_assets_calibration_id ON calibration_assets(calibration_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_calibration_assets_calibration_uuid ON calibration_assets(calibration_uuid)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_calibration_assets_role ON calibration_assets(role)"
+    )
+
+
 def _ensure_image_tombstones_table(cursor: sqlite3.Cursor) -> None:
     """Ensure the local image tombstones table exists."""
     cursor.execute(
@@ -1697,6 +1741,7 @@ def init_database():
         pass
 
     ensure_calibration_uuid_column(cursor)
+    ensure_calibration_assets_table(cursor)
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_species ON observations(genus, species)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_source ON observations(source_type)')
@@ -1741,6 +1786,13 @@ def init_database():
 
     conn.commit()
     conn.close()
+
+    try:
+        from .models import CalibrationAssetDB
+
+        CalibrationAssetDB.backfill_all()
+    except Exception as exc:
+        print(f"Warning: Could not backfill calibration assets: {exc}")
 
     init_reference_database()
     print(f"Database initialized at {db_path}")

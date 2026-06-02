@@ -53,3 +53,18 @@ def test_maybe_convert_heic_leaves_non_heic_paths_unchanged(tmp_path):
     result = maybe_convert_heic(str(source_path), tmp_path / "imports")
 
     assert result == str(source_path)
+
+
+def test_build_local_image_provenance_accepts_calibration_and_cache_purposes(tmp_path):
+    source_path = tmp_path / "sample.jpg"
+    working_path = tmp_path / "working.jpg"
+    source_path.write_bytes(b"source")
+    working_path.write_bytes(b"working")
+
+    calibration = build_local_image_provenance(source_path, working_path, image_type="calibration")
+    cache = build_local_image_provenance(source_path, working_path, image_type="cache")
+
+    assert calibration["file_purpose"] == "calibration"
+    assert calibration["source_role"] == "local_canonical"
+    assert cache["file_purpose"] == "cache"
+    assert cache["source_role"] == "local_canonical"

@@ -1,5 +1,22 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Multi-asset calibration provenance
+
+Stage H is now closed out. The desktop keeps calibration-side asset provenance in a local
+`calibration_assets` table, preserves original source paths when existing calibrations are reopened
+and resaved, and keeps the bundle export/import path portable for calibration assets without adding
+cloud path columns.
+
+Covered changes:
+- Added a local `calibration_assets` table/model with deterministic `asset_uuid` values.
+- Stored source photos, working photos, calibration crops, overlays, debug artifacts, and
+  reference-cache rows with accepted role and purpose vocabulary.
+- Preserved `source_path` and `working_path` through calibration save/load so old records do not
+  lose source provenance on resave.
+- Backfilled calibration assets from existing calibrations and kept missing-file rows safe.
+- Exported/imported calibration assets in desktop bundle archives without touching the cloud
+  contract.
+
 ### Image provenance/source tags
 
 Stage E2 is now closed out. The desktop preserves HEIC source paths in `original_filepath` when a

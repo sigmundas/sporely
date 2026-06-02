@@ -175,11 +175,14 @@ Status: Done.
 
 ### Stage H — Multi-asset calibration provenance
 
-Status: Not started.
+Status: Done.
 
-- Add a dedicated `calibration_assets`-style model/table if needed.
-- Support multiple calibration photos, crops, overlays, role labels, hashes, derived artifacts, and provenance.
-- Do not overload `public.calibrations` with many path columns.
+- Added a dedicated local `calibration_assets` model/table for multiple calibration photos, crops,
+  overlays, reference-cache rows, and derived artifacts.
+- Preserve asset roles, hashes, and provenance without overloading `public.calibrations` with many
+  path columns.
+- Keep the table desktop-only for now; the cloud contract still uses `calibration_uuid` and
+  calibration metadata, not a calibration-asset mirror.
 
 ### Stage I — Optional full-resolution original sync
 

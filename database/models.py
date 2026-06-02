@@ -5,7 +5,7 @@ import re
 import json
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from datetime import datetime
 from .schema import (
     get_app_settings,
@@ -17,6 +17,10 @@ from .schema import (
     save_app_settings,
 )
 from utils.exif_reader import get_image_datetime
+from utils.calibration_assets import (
+    build_reference_cache_asset_payload,
+    extract_calibration_asset_payloads,
+)
 from utils.publish_targets import (
     PUBLISH_TARGET_ARTSOBS_NO,
     normalize_publish_target,
@@ -3522,11 +3526,13 @@ class CalibrationDB:
                 measurements_json,
                 image_filepath,
             ]
+            calibration_uuid_value = None
 
             if "calibration_uuid" in columns:
                 insert_cols.append("calibration_uuid")
                 normalized_uuid = str(calibration_uuid).strip() if calibration_uuid is not None else ""
-                values.append(normalized_uuid or str(uuid.uuid4()))
+                calibration_uuid_value = normalized_uuid or str(uuid.uuid4())
+                values.append(calibration_uuid_value)
             if "camera" in columns:
                 insert_cols.append("camera")
                 values.append(camera)
@@ -3557,6 +3563,34 @@ class CalibrationDB:
             )
 
             calibration_id = cursor.lastrowid
+            calibration_row = {
+                "id": calibration_id,
+                "calibration_uuid": calibration_uuid_value
+                if calibration_uuid_value is not None
+                else (str(calibration_uuid).strip() if calibration_uuid is not None else None),
+                "objective_key": objective_key,
+                "calibration_date": calibration_date,
+                "calibration_image_date": calibration_image_date,
+                "microns_per_pixel": microns_per_pixel,
+                "microns_per_pixel_std": microns_per_pixel_std,
+                "confidence_interval_low": confidence_interval_low,
+                "confidence_interval_high": confidence_interval_high,
+                "num_measurements": num_measurements,
+                "measurements_json": measurements_json,
+                "image_filepath": image_filepath,
+                "camera": camera,
+                "megapixels": megapixels,
+                "target_sampling_pct": target_sampling_pct,
+                "resample_scale_factor": resample_scale_factor,
+                "calibration_image_width": calibration_image_width,
+                "calibration_image_height": calibration_image_height,
+                "notes": notes,
+                "is_active": 1 if set_active else 0,
+            }
+            try:
+                CalibrationAssetDB.upsert_assets_for_calibration(cursor, calibration_row)
+            except Exception:
+                pass
             conn.commit()
             return calibration_id
         except sqlite3.IntegrityError:
@@ -3688,11 +3722,24 @@ class CalibrationDB:
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        asset_rows = []
+        try:
+            cursor.execute(
+                "SELECT local_path, original_path FROM calibration_assets WHERE calibration_id = ?",
+                (calibration_id,),
+            )
+            asset_rows = cursor.fetchall()
+        except sqlite3.OperationalError:
+            asset_rows = []
         cursor.execute(
             "SELECT objective_key, image_filepath, measurements_json FROM calibrations WHERE id = ?",
             (calibration_id,),
         )
         row = cursor.fetchone()
+        try:
+            cursor.execute("DELETE FROM calibration_assets WHERE calibration_id = ?", (calibration_id,))
+        except sqlite3.OperationalError:
+            pass
         cursor.execute("DELETE FROM calibrations WHERE id = ?", (calibration_id,))
         conn.commit()
         conn.close()
@@ -3715,6 +3762,15 @@ class CalibrationDB:
                             path = entry.get("path")
                             if path:
                                 image_paths.add(Path(path))
+        for asset_row in asset_rows:
+            try:
+                local_path = asset_row["local_path"]
+                original_path = asset_row["original_path"]
+            except Exception:
+                local_path = original_path = None
+            for candidate in (local_path, original_path):
+                if candidate:
+                    image_paths.add(Path(candidate))
 
         if image_paths:
             images_root = get_images_dir().resolve()
@@ -3997,3 +4053,238 @@ class CalibrationDB:
         conn.close()
 
         return total_updated
+
+
+class CalibrationAssetDB:
+    """Handle calibration asset persistence and backfill."""
+
+    _INSERT_COLUMNS = [
+        "asset_uuid",
+        "calibration_id",
+        "calibration_uuid",
+        "role",
+        "source_role",
+        "file_purpose",
+        "local_path",
+        "original_path",
+        "cloud_storage_path",
+        "mime_type",
+        "width",
+        "height",
+        "bytes",
+        "sha256",
+        "metadata_json",
+    ]
+
+    @staticmethod
+    def _table_ready(cursor) -> bool:
+        return bool(_table_columns(cursor, "calibration_assets"))
+
+    @staticmethod
+    def _serialize_metadata(metadata: Any) -> str | None:
+        if metadata is None:
+            return None
+        if isinstance(metadata, str):
+            text = metadata.strip()
+            return text or None
+        if isinstance(metadata, (dict, list)):
+            return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+        return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _deserialize_metadata(metadata_json: Any) -> Any:
+        if metadata_json is None:
+            return None
+        if isinstance(metadata_json, (dict, list)):
+            return metadata_json
+        text = str(metadata_json).strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return text
+
+    @staticmethod
+    def _insert_or_update_asset(cursor, asset: dict) -> int:
+        if not CalibrationAssetDB._table_ready(cursor):
+            return 0
+
+        record = dict(asset or {})
+        asset_uuid = str(record.get("asset_uuid") or "").strip()
+        if not asset_uuid:
+            return 0
+
+        columns = _table_columns(cursor, "calibration_assets")
+        insert_cols: list[str] = [column for column in CalibrationAssetDB._INSERT_COLUMNS if column in columns]
+        if "asset_uuid" not in insert_cols:
+            insert_cols.insert(0, "asset_uuid")
+
+        values: list[object] = []
+        for column_name in insert_cols:
+            value = record.get(column_name)
+            if column_name == "metadata_json":
+                value = CalibrationAssetDB._serialize_metadata(value)
+            values.append(value)
+
+        update_cols = [
+            f"{column_name} = COALESCE(excluded.{column_name}, calibration_assets.{column_name})"
+            for column_name in insert_cols
+            if column_name != "asset_uuid"
+        ]
+        placeholders = ", ".join(["?"] * len(insert_cols))
+        cursor.execute(
+            f"""
+            INSERT INTO calibration_assets ({', '.join(insert_cols)})
+            VALUES ({placeholders})
+            ON CONFLICT(asset_uuid) DO UPDATE SET
+                {', '.join(update_cols)}
+            """,
+            values,
+        )
+        cursor.execute("SELECT id FROM calibration_assets WHERE asset_uuid = ?", (asset_uuid,))
+        row = cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+
+    @staticmethod
+    def upsert_assets_for_calibration(cursor, calibration: dict | None) -> int:
+        if not CalibrationAssetDB._table_ready(cursor):
+            return 0
+        assets = extract_calibration_asset_payloads(calibration)
+        written = 0
+        for asset in assets:
+            if CalibrationAssetDB._insert_or_update_asset(cursor, asset):
+                written += 1
+        return written
+
+    @staticmethod
+    def get_assets_for_calibration(
+        calibration_id: int | None = None,
+        calibration_uuid: str | None = None,
+    ) -> list[dict]:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            if not CalibrationAssetDB._table_ready(cursor):
+                return []
+            clauses: list[str] = []
+            values: list[object] = []
+            if calibration_id is not None:
+                clauses.append("calibration_id = ?")
+                values.append(int(calibration_id))
+            if calibration_uuid:
+                clauses.append("calibration_uuid = ?")
+                values.append(str(calibration_uuid).strip())
+            if not clauses:
+                return []
+            cursor.execute(
+                f"""
+                SELECT *
+                FROM calibration_assets
+                WHERE {' AND '.join(clauses)}
+                ORDER BY created_at, id
+                """,
+                values,
+            )
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        assets = []
+        for row in rows:
+            asset = dict(row)
+            asset["metadata_json"] = CalibrationAssetDB._deserialize_metadata(asset.get("metadata_json"))
+            assets.append(asset)
+        return assets
+
+    @staticmethod
+    def record_reference_cache_asset(
+        *,
+        calibration_id: int | None = None,
+        calibration_uuid: str | None = None,
+        cache_path: str | Path,
+        image_storage_path: str | None = None,
+        original_path: str | None = None,
+        metadata: dict | None = None,
+    ) -> int:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            if not CalibrationAssetDB._table_ready(cursor):
+                return 0
+            payload = build_reference_cache_asset_payload(
+                calibration_id=calibration_id,
+                calibration_uuid=calibration_uuid,
+                cache_path=cache_path,
+                image_storage_path=image_storage_path,
+                original_path=original_path,
+                metadata=metadata,
+            )
+            asset_id = CalibrationAssetDB._insert_or_update_asset(cursor, payload)
+            conn.commit()
+            return asset_id
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _backfill_reference_cache_assets(cursor) -> int:
+        if not CalibrationAssetDB._table_ready(cursor):
+            return 0
+        try:
+            from app_identity import app_data_dir
+        except Exception:
+            return 0
+
+        cache_root = app_data_dir() / "cloud_cache" / "calibrations"
+        if not cache_root.exists():
+            return 0
+
+        written = 0
+        for calibration_dir in cache_root.iterdir():
+            if not calibration_dir.is_dir():
+                continue
+            calibration_uuid = str(calibration_dir.name or "").strip()
+            if not calibration_uuid:
+                continue
+            try:
+                uuid.UUID(calibration_uuid)
+            except Exception:
+                continue
+            for cache_path in calibration_dir.glob("reference.*"):
+                if not cache_path.is_file():
+                    continue
+                payload = build_reference_cache_asset_payload(
+                    calibration_uuid=calibration_uuid,
+                    cache_path=cache_path,
+                    metadata={
+                        "cache_root": str(cache_root),
+                        "cache_directory": str(calibration_dir),
+                    },
+                )
+                if CalibrationAssetDB._insert_or_update_asset(cursor, payload):
+                    written += 1
+        return written
+
+    @staticmethod
+    def backfill_all() -> int:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        written = 0
+        try:
+            if not CalibrationAssetDB._table_ready(cursor):
+                return 0
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibrations'")
+            if not cursor.fetchone():
+                return 0
+            cursor.execute("SELECT * FROM calibrations ORDER BY id")
+            calibrations = cursor.fetchall()
+            for row in calibrations:
+                written += CalibrationAssetDB.upsert_assets_for_calibration(cursor, dict(row))
+            written += CalibrationAssetDB._backfill_reference_cache_assets(cursor)
+            conn.commit()
+            return written
+        finally:
+            conn.close()

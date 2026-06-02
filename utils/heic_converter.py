@@ -82,7 +82,20 @@ def build_local_image_provenance(
         source_role = "converted_local"
 
     normalized_type = str(image_type or "").strip().lower()
-    file_purpose = normalized_type if normalized_type in {"field", "microscope"} else None
+    file_purpose = (
+        normalized_type
+        if normalized_type in {
+            "field",
+            "microscope",
+            "calibration",
+            "reference",
+            "plot",
+            "thumbnail",
+            "spore_crop",
+            "cache",
+        }
+        else None
+    )
 
     return {
         "source_role": source_role,

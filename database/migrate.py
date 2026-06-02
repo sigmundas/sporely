@@ -3,6 +3,7 @@ import json
 import sqlite3
 import shutil
 from database.schema import (
+    ensure_calibration_assets_table,
     ensure_calibration_uuid_column,
     ensure_image_provenance_columns,
     get_database_path,
@@ -456,6 +457,7 @@ def migrate_database():
         if "megapixels" not in columns:
             cursor.execute("ALTER TABLE calibrations ADD COLUMN megapixels REAL")
         ensure_calibration_uuid_column(cursor)
+        ensure_calibration_assets_table(cursor)
         # Normalize objective_name values to current objective keys when possible
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
         if cursor.fetchone():
@@ -506,6 +508,12 @@ def migrate_database():
     _migrate_measure_categories_setting(cursor)
 
     conn.commit()
+    try:
+        from database.models import CalibrationAssetDB
+
+        CalibrationAssetDB.backfill_all()
+    except Exception as exc:
+        print(f"Warning: Could not backfill calibration assets: {exc}")
     conn.close()
 
 

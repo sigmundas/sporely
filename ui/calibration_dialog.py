@@ -28,7 +28,7 @@ from database.schema import (
     get_calibrations_dir, get_app_settings, update_app_settings,
     format_objective_display, objective_display_name, objective_sort_value,
 )
-from database.models import CalibrationDB, ObservationDB, SettingsDB
+from database.models import CalibrationAssetDB, CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 import utils.cloud_sync as cloud_sync
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
@@ -2244,6 +2244,20 @@ class CalibrationDialog(GeometryMixin, QDialog):
         result = cloud_sync.download_calibration_reference_to_cache(client, payload)
         cache_path = result.get("cache_path")
         if result.get("downloaded") and cache_path:
+            try:
+                CalibrationAssetDB.record_reference_cache_asset(
+                    calibration_id=calibration.get("id"),
+                    calibration_uuid=state.get("calibration_uuid"),
+                    cache_path=cache_path,
+                    image_storage_path=image_storage_path,
+                    original_path=state.get("image_filepath"),
+                    metadata={
+                        "downloaded_via": "calibration_dialog",
+                        "recovery_available": True,
+                    },
+                )
+            except Exception:
+                pass
             self._cloud_reference_state = dict(state)
             self._cloud_reference_state["image_storage_path"] = image_storage_path
             self._cloud_reference_state["cache_path"] = Path(cache_path)
@@ -3930,6 +3944,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         camera_text = self._extract_camera_text(path)
         self.calibration_images.append({
             "path": path,
+            "source_path": path,
+            "working_path": path,
             "pixmap": pixmap,
             "measurements": [],  # Measurements for this specific image
             "crop_box": None,
@@ -5228,7 +5244,18 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 if isinstance(loaded_data, dict) and "images" in loaded_data:
                     # New format: multiple images with per-image measurements
                     for img_info in loaded_data.get("images", []):
-                        img_path = img_info.get("path")
+                        working_path = str(
+                            img_info.get("working_path")
+                            or img_info.get("path")
+                            or ""
+                        ).strip()
+                        source_path = str(
+                            img_info.get("source_path")
+                            or img_info.get("original_path")
+                            or working_path
+                            or ""
+                        ).strip()
+                        img_path = working_path or source_path
                         if img_path and Path(img_path).exists():
                             pixmap = QPixmap(img_path)
                             if not pixmap.isNull():
@@ -5237,6 +5264,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
                                     division_distance_mm = DEFAULT_DIVISION_DISTANCE_MM
                                 self.calibration_images.append({
                                     "path": img_path,
+                                    "source_path": source_path or img_path,
+                                    "working_path": working_path or img_path,
                                     "pixmap": pixmap,
                                     "measurements": img_info.get("measurements", []),
                                     "crop_box": img_info.get("crop_box"),
@@ -5252,6 +5281,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
                             measurements = loaded_data if isinstance(loaded_data, list) else []
                             self.calibration_images.append({
                                 "path": image_path,
+                                "source_path": image_path,
+                                "working_path": image_path,
                                 "pixmap": pixmap,
                                 "measurements": measurements,
                                 "crop_box": None,
@@ -5267,6 +5298,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     if not pixmap.isNull():
                         self.calibration_images.append({
                             "path": image_path,
+                            "source_path": image_path,
+                            "working_path": image_path,
                             "pixmap": pixmap,
                             "measurements": [],
                             "crop_box": None,
@@ -5407,7 +5440,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     first_saved_path = saved_path
                 image_entries.append({
                     "index": idx,
+                    "source_path": img_data.get("source_path") or img_data["path"],
                     "path": saved_path,
+                    "working_path": saved_path,
                     "measurements": img_data.get("measurements", []),
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),
@@ -5419,7 +5454,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 result = auto_data["result"]
                 auto_images.append({
                     "index": idx,
+                    "source_path": img_data.get("source_path") or img_data["path"],
                     "path": saved_path,
+                    "working_path": saved_path,
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),
                     "spacing_um": auto_data.get("spacing_um"),
@@ -5583,7 +5620,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 saved_image_paths.append(saved_path)
                 calibration_data["images"].append({
                     "index": idx,
+                    "source_path": img_data.get("source_path") or img_data["path"],
                     "path": saved_path,
+                    "working_path": saved_path,
                     "measurements": img_data.get("measurements", []),
                     "crop_box": img_data.get("crop_box"),
                     "crop_source_size": img_data.get("crop_source_size"),

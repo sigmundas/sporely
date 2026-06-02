@@ -121,6 +121,18 @@ def _collect_calibration_asset_paths(
             entry_path = _resolve_local_asset_path(entry.get("path"), images_dir)
             if entry_path and entry_path.exists() and entry_path.is_file():
                 assets[str(entry_path.resolve())] = entry_path
+
+    try:
+        asset_rows = src_conn.execute(
+            "SELECT local_path, original_path FROM calibration_assets ORDER BY id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        asset_rows = []
+    for row in asset_rows:
+        for path_value in (row["local_path"], row["original_path"]):
+            asset_path = _resolve_local_asset_path(path_value, images_dir)
+            if asset_path and asset_path.exists() and asset_path.is_file():
+                assets[str(asset_path.resolve())] = asset_path
     return sorted(assets.values(), key=lambda path: str(path))
 
 
@@ -277,7 +289,7 @@ def export_database_bundle(
     if include_measurements:
         selected_tables.extend(["spore_measurements", "spore_annotations"])
     if include_calibrations:
-        selected_tables.append("calibrations")
+        selected_tables.extend(["calibrations", "calibration_assets"])
 
     image_files: list[Path] = []
     if include_images and images_dir.exists():
@@ -315,6 +327,12 @@ def export_database_bundle(
             dest_conn = sqlite3.connect(db_path)
 
             for table in selected_tables:
+                table_exists = src_conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if not table_exists:
+                    continue
                 _emit_progress(f"Exporting table: {table}...")
                 _copy_table_schema(src_conn, dest_conn, table)
 
@@ -341,6 +359,28 @@ def export_database_bundle(
                                             entry.get("path"), images_dir
                                         )
                                 data["measurements_json"] = json.dumps(loaded, ensure_ascii=False)
+                    if table_name == "calibration_assets":
+                        data["local_path"] = _relativize_path(data.get("local_path"), images_dir)
+                        data["original_path"] = _relativize_path(
+                            data.get("original_path"), images_dir
+                        )
+                        metadata_json = data.get("metadata_json")
+                        if metadata_json:
+                            try:
+                                loaded_metadata = (
+                                    json.loads(metadata_json)
+                                    if isinstance(metadata_json, str)
+                                    else metadata_json
+                                )
+                            except Exception:
+                                loaded_metadata = None
+                            if isinstance(loaded_metadata, dict):
+                                for key in ("source_path", "working_path", "original_path", "local_path"):
+                                    if key in loaded_metadata and loaded_metadata[key]:
+                                        loaded_metadata[key] = _relativize_path(
+                                            loaded_metadata.get(key), images_dir
+                                        )
+                                data["metadata_json"] = json.dumps(loaded_metadata, ensure_ascii=False)
                     return data
 
                 _copy_table_rows(src_conn, dest_conn, table, transform_row=_transform)
@@ -444,7 +484,11 @@ def import_database_bundle(
         fallback_objectives: dict[str, dict] = {}
         image_table_columns: set[str] = set()
         calibration_table_columns: set[str] = set()
+        calibration_asset_table_columns: set[str] = set()
         existing_calibration_uuids: set[str] = set()
+        existing_calibration_asset_uuids: set[str] = set()
+        calibration_id_map: dict[int, int] = {}
+        calibration_uuid_map: dict[str, int] = {}
 
         if (include_images or include_measurements) and src_cur is not None:
             try:
@@ -464,6 +508,12 @@ def import_database_bundle(
             except sqlite3.OperationalError:
                 calibration_table_columns = set()
 
+            try:
+                dest_cur.execute("PRAGMA table_info(calibration_assets)")
+                calibration_asset_table_columns = {row[1] for row in dest_cur.fetchall()}
+            except sqlite3.OperationalError:
+                calibration_asset_table_columns = set()
+
             if "calibration_uuid" in calibration_table_columns:
                 try:
                     dest_cur.execute(
@@ -481,6 +531,24 @@ def import_database_bundle(
                     }
                 except sqlite3.OperationalError:
                     existing_calibration_uuids = set()
+
+            if "asset_uuid" in calibration_asset_table_columns:
+                try:
+                    dest_cur.execute(
+                        """
+                        SELECT asset_uuid
+                        FROM calibration_assets
+                        WHERE asset_uuid IS NOT NULL
+                          AND TRIM(asset_uuid) != ''
+                        """
+                    )
+                    existing_calibration_asset_uuids = {
+                        str(row[0]).strip()
+                        for row in dest_cur.fetchall()
+                        if row[0] is not None and str(row[0]).strip()
+                    }
+                except sqlite3.OperationalError:
+                    existing_calibration_asset_uuids = set()
 
         if include_observations and src_cur is not None:
             src_cur.execute("SELECT * FROM observations ORDER BY id")
@@ -589,13 +657,25 @@ def import_database_bundle(
             src_cur.execute("SELECT * FROM calibrations ORDER BY id")
             for row in src_cur.fetchall():
                 data = dict(row)
-                data.pop("id", None)
+                old_calibration_id = data.pop("id", None)
                 objective_key = str(data.get("objective_key") or "").strip()
+                calibration_uuid = None
                 if "calibration_uuid" in calibration_table_columns:
                     calibration_uuid = str(data.get("calibration_uuid") or "").strip()
                     if not calibration_uuid:
                         calibration_uuid = str(uuid.uuid4())
                     if calibration_uuid in existing_calibration_uuids:
+                        existing_row = dest_cur.execute(
+                            "SELECT id FROM calibrations WHERE calibration_uuid = ?",
+                            (calibration_uuid,),
+                        ).fetchone()
+                        if existing_row and existing_row[0] is not None:
+                            if old_calibration_id is not None:
+                                try:
+                                    calibration_id_map[int(old_calibration_id)] = int(existing_row[0])
+                                except (TypeError, ValueError):
+                                    pass
+                            calibration_uuid_map[calibration_uuid] = int(existing_row[0])
                         warnings.append(
                             f"Skipped calibration import for duplicate calibration_uuid {calibration_uuid}."
                         )
@@ -652,9 +732,105 @@ def import_database_bundle(
                     f"INSERT INTO calibrations ({', '.join(columns)}) VALUES ({placeholders})",
                     values
                 )
+                new_calibration_id = int(dest_cur.lastrowid or 0)
+                if old_calibration_id is not None and new_calibration_id > 0:
+                    try:
+                        calibration_id_map[int(old_calibration_id)] = new_calibration_id
+                    except (TypeError, ValueError):
+                        pass
+                if "calibration_uuid" in calibration_table_columns and calibration_uuid:
+                    calibration_uuid_map[calibration_uuid] = new_calibration_id
                 if "calibration_uuid" in calibration_table_columns:
                     existing_calibration_uuids.add(data["calibration_uuid"])
                 imported_calibrations += 1
+
+            if calibration_asset_table_columns:
+                try:
+                    src_cur.execute("SELECT * FROM calibration_assets ORDER BY id")
+                except sqlite3.OperationalError:
+                    pass
+                else:
+                    for row in src_cur.fetchall():
+                        data = dict(row)
+                        old_asset_id = data.pop("id", None)
+                        source_calibration_id = data.get("calibration_id")
+                        try:
+                            source_calibration_id_int = (
+                                int(source_calibration_id) if source_calibration_id is not None else None
+                            )
+                        except (TypeError, ValueError):
+                            source_calibration_id_int = None
+                        source_calibration_uuid = str(data.get("calibration_uuid") or "").strip()
+
+                        dest_calibration_id = None
+                        if source_calibration_id_int is not None:
+                            dest_calibration_id = calibration_id_map.get(source_calibration_id_int)
+                        if dest_calibration_id is None and source_calibration_uuid:
+                            dest_calibration_id = calibration_uuid_map.get(source_calibration_uuid)
+                        if dest_calibration_id is None and source_calibration_uuid:
+                            row_match = dest_cur.execute(
+                                "SELECT id FROM calibrations WHERE calibration_uuid = ?",
+                                (source_calibration_uuid,),
+                            ).fetchone()
+                            if row_match and row_match[0] is not None:
+                                dest_calibration_id = int(row_match[0])
+                                calibration_uuid_map[source_calibration_uuid] = dest_calibration_id
+                        if dest_calibration_id is None:
+                            warnings.append(
+                                "Skipped calibration asset import for missing calibration link: "
+                                f"{source_calibration_uuid or source_calibration_id!r}."
+                            )
+                            continue
+
+                        data["calibration_id"] = dest_calibration_id
+                        if "calibration_uuid" in calibration_asset_table_columns:
+                            if not source_calibration_uuid:
+                                row_match = dest_cur.execute(
+                                    "SELECT calibration_uuid FROM calibrations WHERE id = ?",
+                                    (dest_calibration_id,),
+                                ).fetchone()
+                                if row_match and row_match[0] is not None:
+                                    data["calibration_uuid"] = str(row_match[0]).strip() or None
+                            else:
+                                data["calibration_uuid"] = source_calibration_uuid
+                        else:
+                            data.pop("calibration_uuid", None)
+
+                        data["local_path"] = _restore_archive_asset(
+                            data.get("local_path"),
+                            src_images_dir,
+                            dest_images_dir,
+                            copy_file=include_calibrations,
+                            warnings=warnings,
+                            warning_label="calibration asset file",
+                        )
+                        data["original_path"] = _restore_archive_asset(
+                            data.get("original_path"),
+                            src_images_dir,
+                            dest_images_dir,
+                            copy_file=include_calibrations,
+                            warnings=warnings,
+                            warning_label="calibration asset original file",
+                        )
+                        asset_uuid = str(data.get("asset_uuid") or "").strip()
+                        if not asset_uuid:
+                            asset_uuid = str(uuid.uuid4())
+                            data["asset_uuid"] = asset_uuid
+                        if asset_uuid and asset_uuid in existing_calibration_asset_uuids:
+                            warnings.append(
+                                f"Skipped calibration asset import for duplicate asset_uuid {asset_uuid}."
+                            )
+                            continue
+
+                        if asset_uuid and "asset_uuid" in calibration_asset_table_columns:
+                            existing_calibration_asset_uuids.add(asset_uuid)
+                        columns = [k for k in data.keys()]
+                        values = [data[k] for k in columns]
+                        placeholders = ", ".join(["?"] * len(columns))
+                        dest_cur.execute(
+                            f"INSERT INTO calibration_assets ({', '.join(columns)}) VALUES ({placeholders})",
+                            values,
+                        )
 
             objectives_bundle_path = temp_dir / "objectives.json"
             existing_objectives = load_objectives()

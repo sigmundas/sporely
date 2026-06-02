@@ -111,6 +111,7 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 | `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path` and derivative bookkeeping. |
 | `spore_measurements` | `public.spore_measurements` | `sync-required` | Measurement points and values must round-trip. |
 | `calibrations` | `public.calibrations` | `sync-required, staged implementation` | Fields already mostly exist on both sides, but stable sync identity and implementation wiring are not done yet. |
+| `calibration_assets` | none | `desktop-only` | Local multi-asset calibration provenance for source photos, working photos, crops, overlays, debug outputs, and reference caches. |
 | `spore_annotations` | `public.spore_annotations` | `future cloud feature` | Useful for overlays and ML, but not part of the current sync path. |
 | `reference_values.db` / `reference_values` | `public.reference_values` | `generated/reference-only` now, future shared model later | Desktop reference data is local cache / bundled data today. Cloud reference stats are lookup data, not yet a full shared dataset model. |
 | `taxon_min`, `vernacular_min`, `scientific_name_min`, `taxon_external_id_min` | `public.taxa`, `public.taxa_vernacular` | `generated/reference-only` | Lookup taxonomy mirrors, not user content. |
@@ -449,6 +450,8 @@ Deletion behavior:
 - Local calibration photos remain authoritative when present.
 - Cloud-hydrated calibration photos should be marked derived, cache, or recovery data.
 - Do not overwrite higher-quality local calibration photos.
+- Calibration-side assets now live in the desktop-only `calibration_assets` table. The current cloud
+  contract does not include those rows yet.
 
 ### Calibration Implementation Stages
 

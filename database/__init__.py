@@ -17,6 +17,7 @@ _MODEL_EXPORTS = {
     "SettingsDB",
     "SessionLogDB",
     "CalibrationDB",
+    "CalibrationAssetDB",
     "MeasurementRepository",
 }
 
@@ -45,5 +46,6 @@ __all__ = [
     "SettingsDB",
     "SessionLogDB",
     "CalibrationDB",
+    "CalibrationAssetDB",
     "MeasurementRepository",
 ]
