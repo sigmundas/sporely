@@ -65,8 +65,8 @@ These should sync because they are shared domain data needed to recreate or cont
 - visibility/privacy fields
 - AI crop parameters
 - selected AI result
-- eligible full-resolution original uploads as opt-in companion objects, not as a blanket mirror of
-  every desktop file
+- eligible full-resolution original uploads and cache-backed recovery copies as opt-in companion
+  objects, not as a blanket mirror of every desktop file
 
 Cloud sync should not overwrite higher-quality local originals or device-local workflow state. Local originals and local paths remain desktop-owned, while cloud media is used for web display, recovery, and cross-device continuity.
 
@@ -110,7 +110,7 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 | Local table or asset | Cloud table or asset | Contract stance | Notes |
 | --- | --- | --- | --- |
 | `observations` | `public.observations` | `sync-required` | Core observation record. Local `id` maps to cloud `desktop_id`. |
-| `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path`, derivative bookkeeping, and optional `original_storage_path` companion metadata. |
+| `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path`, derivative bookkeeping, and optional `original_storage_path` companion metadata. Recovered originals stay in `cloud_cache/originals` unless explicitly restored later. |
 | `spore_measurements` | `public.spore_measurements` | `sync-required` | Measurement points and values must round-trip. |
 | `calibrations` | `public.calibrations` | `sync-required, staged implementation` | Fields already mostly exist on both sides, but stable sync identity and implementation wiring are not done yet. |
 | `calibration_assets` | none | `desktop-only` | Local multi-asset calibration provenance for source photos, working photos, crops, overlays, debug outputs, and reference caches. |
@@ -197,7 +197,8 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
 - `storage_path`, `image_key`, and `thumb_key` are derivative/recovery keys.
 - `original_storage_path` is optional cloud-side metadata for a companion original object. It is
   written only after an opt-in upload, defaults to null, and does not authorize replacing a local
-  original or triggering a download/recovery flow.
+  original. Recovery downloads write to a separate cache path and remain secondary until an
+  explicit restore action copies them into place.
 - `notes` should not be used as a hidden file-role flag.
 
 #### `source_role`
@@ -273,6 +274,18 @@ Cloud derivative vs cloud recovery cache:
 - If both exist, the local canonical or durable converted local copy wins for analysis, measurement,
   export, and re-upload decisions.
 
+Full-resolution original recovery:
+
+- `recover_full_original_for_image(...)` downloads a cloud original into
+  `app_data_dir()/cloud_cache/originals/...` instead of overwriting `filepath`.
+- The downloaded cache copy is recorded through a small local sidecar file and is tagged as
+  `source_role=cloud_recovery_cache` and `file_purpose=cache` only in that sidecar metadata.
+- Recovery is idempotent: if the cache file already exists and is readable, the helper skips the
+  redownload.
+- Recovered originals stay secondary cache data until an explicit restore/promotion action exists.
+- `should_download_full_original(...)` remains the policy gate for deciding whether recovery is safe
+  for a given local row and remote original key.
+
 Tombstone interaction:
 
 - Tombstones are deletion state.
@@ -287,12 +300,12 @@ Deferred items:
 
 - Cloud provenance fields on `public.observation_images` beyond the minimal
   `original_storage_path` contract support.
-- Full-resolution original download/recovery.
+- Explicit restore-to-canonical UI/action for recovered originals.
 - A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
   spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
 - Calibration multi-asset provenance beyond the representative derivative path.
 
-Full-resolution original upload note:
+Full-resolution original upload/recovery note:
 
 - Current cloud image rows expose derivative/recovery media fields such as `storage_path`,
   `image_key`, and `thumb_key`.
@@ -306,8 +319,9 @@ Full-resolution original upload note:
   250 MiB desktop upload ceiling.
 - `original_storage_path` is metadata only. Its presence does not mean the desktop should overwrite
   a better local original or bypass local provenance rules.
-- `should_download_full_original(...)` remains the gate for any future recovery-style download.
-- Download/recovery for full-resolution originals remains deferred.
+- Recovery downloads write to a separate cache path and stay secondary until a future explicit
+  restore action promotes them into place.
+- `should_download_full_original(...)` remains the gate for any future restore-to-canonical action.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
   `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
@@ -365,8 +379,9 @@ Cloud derivative rule:
 - Overlays and measurement rectangles must be reconstructable from source geometry plus calibration
   data.
 - Spore thumbnails are generated artifacts, not the only source of truth.
-- Large microscope originals may be uploaded as opt-in companion originals, but the local original
-  remains authoritative and download/recovery is still deferred.
+- Large microscope originals may be uploaded as opt-in companion originals, and recovered originals
+  may be cached separately, but the local original remains authoritative until an explicit restore
+  action exists.
 - Full measurement reproducibility is incomplete until calibration sync implementation lands.
   Measurement geometry can sync now, but calibration data are part of the shared contract even
   though the implementation is staged.

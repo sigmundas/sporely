@@ -186,7 +186,7 @@ Status: Done.
 
 ### Stage I — Optional full-resolution original sync
 
-Status: In progress (opt-in upload slice implemented; download/recovery pending).
+Status: In progress (upload + recovery slices implemented; explicit restore/promotion UI pending).
 
 - Added a desktop-only policy helper for full-resolution original eligibility and safe recovery
   decisions.
@@ -196,7 +196,7 @@ Status: In progress (opt-in upload slice implemented; download/recovery pending)
 - The sync engine now supports opt-in original uploads for eligible rows and enforces an upload
   size guard on the desktop side.
 - Remaining Stage I tasks:
-  - download/recovery path
+  - explicit restore/promotion action if needed
   - UI/settings surface if needed
 - Never replace better local originals with cloud copies.
 - Do not add a broad UI until the quota story and cloud original-object fields exist.

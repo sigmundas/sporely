@@ -1,11 +1,29 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Optional full-resolution original sync recovery slice
+
+Stage I now has a helper-only recovery path. The desktop can download eligible cloud originals into
+`app_data_dir()/cloud_cache/originals/...` as sidecar cache copies when
+`sync_full_resolution_originals` is enabled, without mutating the canonical local image row or
+replacing a better local original.
+
+Covered changes:
+- Added `recover_full_original_for_image(...)` in `utils/cloud_sync.py` with cache-path and
+  sidecar helpers.
+- Kept `sync_full_resolution_originals` as the opt-in gate and reused `should_download_full_original(...)`
+  for the recovery decision.
+- Wrote recovered originals into a separate cache tree and preserved their remote key in a local
+  sidecar record.
+- Kept recovery idempotent: existing readable cache files are reused rather than redownloaded.
+- Added focused tests for disabled-state no-op, missing-key skips, overwrite protection,
+  cache-writing success, failure cleanup, idempotency, and snapshot-backed lookup.
+- No restore-to-canonical UI or overwrite action was added yet.
+
 ### Optional full-resolution original sync upload slice
 
-Stage I has moved from policy-only into an opt-in upload slice. The desktop can now upload
+Stage I has also moved from policy-only into an opt-in upload slice. The desktop can upload
 eligible full-resolution originals as companion cloud objects when
-`sync_full_resolution_originals` is enabled, while download/recovery remains deferred and the
-local original stays authoritative.
+`sync_full_resolution_originals` is enabled, and the local original stays authoritative.
 
 Covered changes:
 - Added `utils/original_sync_policy.py` with upload eligibility, source selection, size checks,
@@ -21,7 +39,7 @@ Covered changes:
   only.
 - Added focused tests for eligibility, source selection, upload success/failure, and oversized
   source skipping.
-- No download/recovery or broad UI surface was added yet.
+- No broad UI surface was added yet.
 
 ### Multi-asset calibration provenance
 
