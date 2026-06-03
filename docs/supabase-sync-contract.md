@@ -312,6 +312,8 @@ Full-resolution original upload/recovery note:
 - The cloud contract also allows optional `original_storage_path` metadata for companion original
   objects written by the desktop upload slice.
 - The desktop only uploads eligible rows when `sync_full_resolution_originals` is enabled.
+- The desktop surfaces that gate as a conservative `Sync full-resolution originals` checkbox in the
+  cloud sync dialog, and the setting stays off by default.
 - Upload source selection is explicit:
   - `local_canonical` uploads its readable `filepath`
   - `converted_local` prefers readable `original_filepath`, then falls back to `filepath`
@@ -321,6 +323,8 @@ Full-resolution original upload/recovery note:
   a better local original or bypass local provenance rules.
 - Recovery downloads write to a separate cache path and stay secondary until a future explicit
   restore action promotes them into place.
+- The sync dialog only shows concise original-upload counts when the opt-in is active enough to
+  matter; it stays quiet when the setting is off.
 - `should_download_full_original(...)` remains the gate for any future restore-to-canonical action.
 
 - `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,

@@ -1,5 +1,19 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Stage I closeout
+
+Stage I is now done. The desktop ships the conservative settings/status surface for full-resolution
+original sync without adding canonical restore/promotion.
+
+Covered changes:
+- Exposed `sync_full_resolution_originals` as an opt-in `Sync full-resolution originals` checkbox in
+  the cloud sync dialog and kept it off by default.
+- Kept the help text explicit: eligible field and microscope originals can be uploaded for recovery,
+  it uses more cloud storage, and it never replaces local originals.
+- Appended concise original-upload status lines to the sync dialog only when original sync is active
+  enough to matter.
+- Left full-resolution recovery as a cache/sidecar action only; restore-to-canonical remains deferred.
+
 ### Optional full-resolution original sync recovery slice
 
 Stage I now has a helper-only recovery path. The desktop can download eligible cloud originals into
@@ -39,7 +53,8 @@ Covered changes:
   only.
 - Added focused tests for eligibility, source selection, upload success/failure, and oversized
   source skipping.
-- No broad UI surface was added yet.
+- Kept the UI surface intentionally narrow: a single cloud sync checkbox, not a broad bulk-original
+  manager.
 
 ### Multi-asset calibration provenance
 

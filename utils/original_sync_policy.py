@@ -98,6 +98,11 @@ def is_full_resolution_original_sync_enabled() -> bool:
     return _coerce_bool(SettingsDB.get_setting(SYNC_FULL_RESOLUTION_ORIGINALS_SETTING, False))
 
 
+def set_full_resolution_original_sync_enabled(enabled: bool) -> None:
+    """Persist the opt-in gate for full-resolution original sync."""
+    SettingsDB.set_setting(SYNC_FULL_RESOLUTION_ORIGINALS_SETTING, bool(enabled))
+
+
 def is_full_original_sync_candidate(
     image_row: Mapping[str, Any] | None,
     *,
@@ -242,5 +247,6 @@ __all__ = [
     "is_full_resolution_original_sync_enabled",
     "is_full_resolution_original_upload_too_large",
     "resolve_full_original_upload_source",
+    "set_full_resolution_original_sync_enabled",
     "should_download_full_original",
 ]

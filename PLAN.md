@@ -186,7 +186,7 @@ Status: Done.
 
 ### Stage I — Optional full-resolution original sync
 
-Status: In progress (upload + recovery slices implemented; explicit restore/promotion UI pending).
+Status: Done (default-off opt-in upload, recovery cache path, and conservative settings/status surface shipped; explicit restore/promotion remains deferred).
 
 - Added a desktop-only policy helper for full-resolution original eligibility and safe recovery
   decisions.
@@ -195,11 +195,15 @@ Status: In progress (upload + recovery slices implemented; explicit restore/prom
   explicitly enabled.
 - The sync engine now supports opt-in original uploads for eligible rows and enforces an upload
   size guard on the desktop side.
-- Remaining Stage I tasks:
+- The cloud sync dialog exposes a conservative `Sync full-resolution originals` checkbox with a
+  short warning about storage and local-original safety.
+- Sync status stays quiet when the opt-in is off and shows concise original upload counts only when
+  original sync is actually active.
+- Deferred future work:
   - explicit restore/promotion action if needed
-  - UI/settings surface if needed
 - Never replace better local originals with cloud copies.
-- Do not add a broad UI until the quota story and cloud original-object fields exist.
+- Keep any broader bulk original management UI deferred until a restore/promotion workflow is
+  designed and tested.
 
 ---
 

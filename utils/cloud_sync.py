@@ -820,6 +820,61 @@ def _write_original_recovery_sidecar(
     return sidecar_path
 
 
+def _new_original_upload_summary(enabled: bool) -> dict[str, int | bool]:
+    return {
+        "enabled": bool(enabled),
+        "uploaded": 0,
+        "skipped_disabled": 0,
+        "skipped_ineligible": 0,
+        "skipped_too_large": 0,
+        "failed_uploads": 0,
+    }
+
+
+def _format_original_count(count: int, label: str) -> str:
+    total = max(0, int(count))
+    return f"{total} {label}"
+
+
+def format_original_upload_summary(original_summary: dict | None) -> str | None:
+    summary = dict(original_summary or {})
+    if not bool(summary.get("enabled")):
+        return None
+
+    uploaded = max(0, int(summary.get("uploaded") or 0))
+    skipped_disabled = max(0, int(summary.get("skipped_disabled") or 0))
+    skipped_ineligible = max(0, int(summary.get("skipped_ineligible") or 0))
+    skipped_too_large = max(0, int(summary.get("skipped_too_large") or 0))
+    failed_uploads = max(0, int(summary.get("failed_uploads") or 0))
+
+    skipped_total = skipped_disabled + skipped_ineligible + skipped_too_large
+    if not any((uploaded, skipped_total, failed_uploads)):
+        return None
+
+    parts: list[str] = []
+    if uploaded:
+        parts.append(_format_original_count(uploaded, "uploaded"))
+    if skipped_total:
+        parts.append(_format_original_count(skipped_total, "skipped"))
+    if failed_uploads:
+        parts.append(_format_original_count(failed_uploads, "failed"))
+    return f"Original uploads: {', '.join(parts)}."
+
+
+def format_original_recovery_summary(recovery_result: dict | None) -> str | None:
+    result = dict(recovery_result or {})
+    status = str(result.get("status") or "").strip()
+    if not status or status == "skipped_disabled":
+        return None
+    if status == "downloaded_to_cache":
+        return "Original recovery: 1 downloaded."
+    if status == "download_failed":
+        return "Original recovery: 1 failed."
+    if status.startswith("skipped_"):
+        return "Original recovery: 1 skipped."
+    return None
+
+
 def _local_image_existing_original_path(local_image: dict | None) -> Path | None:
     row = dict(local_image or {})
     source_role = _normalize_slug(row.get("source_role"))
@@ -2865,6 +2920,9 @@ def sync_all(
             ),
             'deleted_remote': pull_result.get('deleted_remote', []),
         }
+        original_sync = push_result.get('original_sync')
+        if original_sync is not None:
+            result['original_sync'] = original_sync
         return result
     except Exception as exc:
         sync_error = exc
@@ -6494,6 +6552,7 @@ def push_all(
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     progress_state['done'] = _progress_done(progress_state)
     progress_state['total'] = _progress_total(progress_state) + total
+    original_upload_summary = _new_original_upload_summary(is_full_resolution_original_sync_enabled())
     remote_lookup = {
         str(row.get('id') or '').strip(): row
         for row in (remote_obs or [])
@@ -6615,6 +6674,7 @@ def push_all(
                         observation_index=i + 1,
                         observation_total=total,
                         summary_warnings=image_warnings,
+                        original_summary=original_upload_summary,
                     )
                     if image_warnings:
                         errors.extend(image_warnings)
@@ -6665,13 +6725,16 @@ def push_all(
             errors.append(raw_error)
             _advance_progress(progress_state, 1)
 
-    return {
+    result = {
         'pushed': pushed,
         'total': total,
         'calibrations_pushed': calibration_result.get('pushed', 0),
         'calibrations_total': calibration_result.get('total', 0),
         'errors': errors,
     }
+    if format_original_upload_summary(original_upload_summary):
+        result['original_sync'] = original_upload_summary
+    return result
 
 
 def _push_images_for_observation(
@@ -6684,6 +6747,7 @@ def _push_images_for_observation(
     observation_index: int | None = None,
     observation_total: int | None = None,
     summary_warnings: list[str] | None = None,
+    original_summary: dict | None = None,
 ) -> bool:
     """Push selected observation images for one observation."""
     warnings: list[str] = []
@@ -6727,6 +6791,12 @@ def _push_images_for_observation(
         print(f'[cloud_sync] Observation {obs["id"]}: {text}')
         if isinstance(summary_warnings, list):
             summary_warnings.append(text)
+
+    def _record_original_summary(metric: str) -> None:
+        if not isinstance(original_summary, dict):
+            return
+        current = _safe_int(original_summary.get(metric))
+        original_summary[metric] = current + 1
 
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [
@@ -6940,12 +7010,17 @@ def _push_images_for_observation(
                                     profiler.record_original_upload_skipped_disabled()
                             except Exception:
                                 pass
+                        if original_upload_source is None:
+                            _record_original_summary('skipped_ineligible')
+                        else:
+                            _record_original_summary('skipped_disabled')
                     elif original_upload_source is None:
                         if profiler is not None:
                             try:
                                 profiler.record_original_upload_skipped_ineligible()
                             except Exception:
                                 pass
+                        _record_original_summary('skipped_ineligible')
                     else:
                         source_path = str(original_upload_source.get('source_path') or '').strip()
                         source_kind = str(original_upload_source.get('source_kind') or '').strip() or 'filepath'
@@ -6961,6 +7036,7 @@ def _push_images_for_observation(
                                     profiler.record_original_upload_skipped_too_large()
                                 except Exception:
                                     pass
+                            _record_original_summary('skipped_too_large')
                             _record_original_upload_warning(
                                 (
                                     f"skipped original upload for image {img.get('id')} "
@@ -6998,6 +7074,7 @@ def _push_images_for_observation(
                                         profiler.record_original_upload_failed()
                                     except Exception:
                                         pass
+                                _record_original_summary('failed_uploads')
                                 _record_original_upload_warning(
                                     (
                                         f"original upload failed for image {img.get('id')} "
@@ -7020,6 +7097,7 @@ def _push_images_for_observation(
                                                 profiler.record_original_upload_failed()
                                             except Exception:
                                                 pass
+                                        _record_original_summary('failed_uploads')
                                         _record_original_upload_warning(
                                             (
                                                 f"original upload succeeded for image {img.get('id')} "
@@ -7032,6 +7110,7 @@ def _push_images_for_observation(
                                                 profiler.record_original_upload_success(source_size)
                                             except Exception:
                                                 pass
+                                        _record_original_summary('uploaded')
                                         print(
                                             f'[cloud_sync] Observation {obs["id"]}: original upload source for image {img.get("id")} '
                                             f'was {source_kind}'

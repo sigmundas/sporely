@@ -16,6 +16,23 @@ def test_full_resolution_original_sync_setting_defaults_off(monkeypatch):
     assert policy.is_full_resolution_original_sync_enabled() is False
 
 
+def test_full_resolution_original_sync_setting_persists_via_settings_db(monkeypatch):
+    stored: dict[str, object] = {}
+
+    monkeypatch.setattr(policy.SettingsDB, "set_setting", lambda key, value: stored.__setitem__(key, value))
+    monkeypatch.setattr(policy.SettingsDB, "get_setting", lambda key, default=None: stored.get(key, default))
+
+    assert policy.is_full_resolution_original_sync_enabled() is False
+
+    policy.set_full_resolution_original_sync_enabled(True)
+    assert stored[policy.SYNC_FULL_RESOLUTION_ORIGINALS_SETTING] is True
+    assert policy.is_full_resolution_original_sync_enabled() is True
+
+    policy.set_full_resolution_original_sync_enabled(False)
+    assert stored[policy.SYNC_FULL_RESOLUTION_ORIGINALS_SETTING] is False
+    assert policy.is_full_resolution_original_sync_enabled() is False
+
+
 @pytest.mark.parametrize(
     ("filename", "file_purpose"),
     [
