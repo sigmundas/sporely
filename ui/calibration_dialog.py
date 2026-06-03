@@ -6,6 +6,7 @@ import base64
 import io
 import re
 import shutil
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,7 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from PySide6.QtCore import Qt, Signal, QPointF, QStandardPaths, QObject, QThread, Slot, QLocale, QSignalBlocker
-from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QIntValidator, QDoubleValidator
+from PySide6.QtGui import QIcon, QPixmap, QKeySequence, QShortcut, QIntValidator, QDoubleValidator
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QFormLayout, QTabWidget, QWidget, QDoubleSpinBox,
@@ -39,6 +40,14 @@ from .window_state import GeometryMixin
 from .zoomable_image_widget import ZoomableImageLabel
 from .image_gallery_widget import ImageGalleryWidget
 from .export_image_dialog import ExportImageDialog
+
+
+@lru_cache(maxsize=1)
+def _cloud_status_icon() -> QIcon:
+    icon_path = Path(__file__).resolve().parent.parent / "assets" / "icons" / "cloud.svg"
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    return QIcon()
 from .dialog_helpers import make_github_help_button
 
 
@@ -3014,9 +3023,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
         """Build the calibration history table section."""
         group, layout = create_section_card(self.tr("Calibration History"))
 
-        self.history_table = QTableWidget(0, 13)
+        self.history_table = QTableWidget(0, 14)
         self.history_table.setFocusPolicy(Qt.NoFocus)
         self.history_table.setHorizontalHeaderLabels([
+            self.tr("Cloud"),
             self.tr("Date"),
             self.tr("Image date"),
             self.tr("nm/px"),
@@ -3033,16 +3043,25 @@ class CalibrationDialog(GeometryMixin, QDialog):
         ])
         # Set column resize modes
         header = self.history_table.horizontalHeader()
-        # Date columns need enough room for full timestamp text.
         header.setSectionResizeMode(0, QHeaderView.Fixed)
-        self.history_table.setColumnWidth(0, 180)
+        self.history_table.setColumnWidth(0, 46)
+        header_item = self.history_table.horizontalHeaderItem(0)
+        if header_item is not None:
+            header_item.setTextAlignment(Qt.AlignCenter)
+        # Date columns need enough room for full timestamp text.
         header.setSectionResizeMode(1, QHeaderView.Fixed)
         self.history_table.setColumnWidth(1, 180)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        self.history_table.setColumnWidth(2, 170)
         # Data columns - resize to contents
-        for col in range(2, 12):
+        for col in range(3, 13):
+            if col == 4:
+                header.setSectionResizeMode(col, QHeaderView.Fixed)
+                self.history_table.setColumnWidth(col, 60)
+                continue
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         # Notes - stretch to fill remaining space
-        header.setSectionResizeMode(12, QHeaderView.Stretch)
+        header.setSectionResizeMode(13, QHeaderView.Stretch)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.verticalHeader().setDefaultSectionSize(26)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -5024,6 +5043,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         history = CalibrationDB.get_calibration_history(self.current_objective_key)
         usage_summary = CalibrationDB.get_calibration_usage_summary(self.current_objective_key)
+        cloud_synced_uuids = self._load_cloud_synced_calibration_uuids()
 
         # Create a map of calibration_id to usage stats
         usage_map = {u["calibration_id"]: u for u in usage_summary}
@@ -5033,20 +5053,28 @@ class CalibrationDialog(GeometryMixin, QDialog):
             cal_id = cal.get("id")
             self._history_calibration_ids.append(cal_id)
             usage = usage_map.get(cal_id, {})
+            calibration_uuid = cloud_sync._normalize_calibration_uuid(cal.get("calibration_uuid"))
+
+            cloud_item = QTableWidgetItem("")
+            cloud_item.setTextAlignment(Qt.AlignCenter)
+            if calibration_uuid and calibration_uuid in cloud_synced_uuids:
+                cloud_item.setIcon(_cloud_status_icon())
+                cloud_item.setToolTip(self.tr("Synced to cloud"))
+            self.history_table.setItem(row_idx, 0, cloud_item)
 
             # Date
             date_str = cal.get("calibration_date", "")[:16]
-            self.history_table.setItem(row_idx, 0, QTableWidgetItem(date_str))
+            self.history_table.setItem(row_idx, 1, QTableWidgetItem(date_str))
 
             # Image date (latest EXIF date among calibration images)
             image_date_raw = cal.get("calibration_image_date") or ""
             image_date_str = image_date_raw[:16] or "--"
-            self.history_table.setItem(row_idx, 1, QTableWidgetItem(image_date_str))
+            self.history_table.setItem(row_idx, 2, QTableWidgetItem(image_date_str))
 
             # nm/px
             scale_um = cal.get("microns_per_pixel", 0)
             scale_nm = um_to_nm(scale_um)
-            self.history_table.setItem(row_idx, 2, QTableWidgetItem(f"{scale_nm:.2f}"))
+            self.history_table.setItem(row_idx, 3, QTableWidgetItem(f"{scale_nm:.2f}"))
 
             # MP (megapixels used)
             mp_value = cal.get("megapixels")
@@ -5059,13 +5087,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
             elif estimate:
                 mp_value = estimate
             mp_value = self._effective_megapixels(mp_value, cal)
-            mp_text = f"{float(mp_value):.3f}" if isinstance(mp_value, (int, float)) and mp_value > 0 else "--"
-            self.history_table.setItem(row_idx, 3, QTableWidgetItem(mp_text))
+            mp_text = f"{int(round(float(mp_value)))}" if isinstance(mp_value, (int, float)) and mp_value > 0 else "--"
+            self.history_table.setItem(row_idx, 4, QTableWidgetItem(mp_text))
 
             # n (calibration measurements)
             n = cal.get("num_measurements", 0)
             n_text = str(n) if n else "man"
-            self.history_table.setItem(row_idx, 4, QTableWidgetItem(n_text))
+            self.history_table.setItem(row_idx, 5, QTableWidgetItem(n_text))
 
             # Diff%
             diff = cal.get("diff_from_first_percent")
@@ -5074,7 +5102,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 diff_text = f"{sign}{diff:.2f}%"
             else:
                 diff_text = "--"
-            self.history_table.setItem(row_idx, 5, QTableWidgetItem(diff_text))
+            self.history_table.setItem(row_idx, 6, QTableWidgetItem(diff_text))
 
             # Auto quality metrics (if available)
             mad_text = "--"
@@ -5110,30 +5138,50 @@ class CalibrationDialog(GeometryMixin, QDialog):
                         if residual_vals:
                             residual_text = f"{float(np.mean(residual_vals)):.2f} deg"
 
-            self.history_table.setItem(row_idx, 6, QTableWidgetItem(mad_text))
-            self.history_table.setItem(row_idx, 7, QTableWidgetItem(iqr_text))
-            self.history_table.setItem(row_idx, 8, QTableWidgetItem(residual_text))
+            self.history_table.setItem(row_idx, 7, QTableWidgetItem(mad_text))
+            self.history_table.setItem(row_idx, 8, QTableWidgetItem(iqr_text))
+            self.history_table.setItem(row_idx, 9, QTableWidgetItem(residual_text))
 
             # Observations count
             obs_count = usage.get("observation_count", 0)
             obs_item = QTableWidgetItem(str(obs_count))
             obs_item.setTextAlignment(Qt.AlignCenter)
-            self.history_table.setItem(row_idx, 9, obs_item)
+            self.history_table.setItem(row_idx, 10, obs_item)
 
             # Camera
             camera_text = self._extract_camera_text(cal.get("image_filepath")) or cal.get("camera") or "--"
-            self.history_table.setItem(row_idx, 10, QTableWidgetItem(camera_text))
+            self.history_table.setItem(row_idx, 11, QTableWidgetItem(camera_text))
 
             # Active
             is_active = cal.get("is_active", 0)
             active_text = "✓" if is_active else ""
             active_item = QTableWidgetItem(active_text)
             active_item.setTextAlignment(Qt.AlignCenter)
-            self.history_table.setItem(row_idx, 11, active_item)
+            self.history_table.setItem(row_idx, 12, active_item)
 
             # Notes
             notes = cal.get("notes", "") or ""
-            self.history_table.setItem(row_idx, 12, QTableWidgetItem(notes))
+            self.history_table.setItem(row_idx, 13, QTableWidgetItem(notes))
+
+    def _load_cloud_synced_calibration_uuids(self) -> set[str]:
+        try:
+            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+        if client is None:
+            return set()
+
+        try:
+            remote_rows = client.list_remote_calibrations() or []
+        except Exception:
+            return set()
+
+        synced_uuids: set[str] = set()
+        for row in remote_rows:
+            calibration_uuid = cloud_sync._normalize_calibration_uuid((row or {}).get("calibration_uuid"))
+            if calibration_uuid:
+                synced_uuids.add(calibration_uuid)
+        return synced_uuids
 
     def _on_history_row_clicked(self, row: int, column: int):
         """Handle click on a history table row to view that calibration."""

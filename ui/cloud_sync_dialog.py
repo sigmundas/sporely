@@ -39,10 +39,6 @@ from utils.cloud_sync import (
     summarize_sync_issues,
     unlink_local_observation_from_cloud,
 )
-from utils.original_sync_policy import (
-    is_full_resolution_original_sync_enabled,
-    set_full_resolution_original_sync_enabled,
-)
 from .cloud_conflict_dialog import CloudConflictDialog
 
 
@@ -176,23 +172,6 @@ class CloudSyncDialog(QDialog):
         self._pull_images_check.setChecked(True)
         sf.addWidget(self._pull_images_check)
 
-        self._original_sync_check = QCheckBox('Sync full-resolution originals')
-        self._original_sync_check.setChecked(is_full_resolution_original_sync_enabled())
-        self._original_sync_check.toggled.connect(self._on_original_sync_toggled)
-        self._original_sync_check.setToolTip(
-            'Uploads eligible field and microscope originals for recovery. Uses more cloud storage. '
-            'Does not replace local originals.'
-        )
-        sf.addWidget(self._original_sync_check)
-
-        self._original_sync_note = QLabel(
-            'Uploads eligible field and microscope originals for recovery. Uses more cloud storage. '
-            'Does not replace local originals.'
-        )
-        self._original_sync_note.setWordWrap(True)
-        self._original_sync_note.setStyleSheet('color: #6f6f6f;')
-        sf.addWidget(self._original_sync_note)
-
         self._status_label = QLabel('Ready to sync.')
         self._status_label.setWordWrap(True)
         sf.addWidget(self._status_label)
@@ -305,9 +284,6 @@ class CloudSyncDialog(QDialog):
 
     def _on_password_edited(self, _text: str) -> None:
         self._cloud_password_edited = True
-
-    def _on_original_sync_toggled(self, checked: bool) -> None:
-        set_full_resolution_original_sync_enabled(bool(checked))
 
     # ── Sync ─────────────────────────────────────────────────────────────
 

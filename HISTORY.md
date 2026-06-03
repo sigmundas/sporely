@@ -1,5 +1,11 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Calibration history cloud indicator
+
+The Calibration History table now shows a leading cloud-status column so cloud-synced calibrations
+are visible at a glance. I also tightened the image-date column a bit and rounded MP to whole
+numbers to keep the table compact.
+
 ### Stage I closeout
 
 Stage I is now done. The desktop ships the conservative settings/status surface for full-resolution
@@ -7,11 +13,10 @@ original sync without adding canonical restore/promotion.
 
 Covered changes:
 - Exposed `sync_full_resolution_originals` as an opt-in `Sync full-resolution originals` checkbox in
-  the cloud sync dialog and kept it off by default.
+  Preferences → `Profile & Cloud` and kept it off by default.
 - Kept the help text explicit: eligible field and microscope originals can be uploaded for recovery,
   it uses more cloud storage, and it never replaces local originals.
-- Appended concise original-upload status lines to the sync dialog only when original sync is active
-  enough to matter.
+- Appended concise original-upload status lines only when original sync is active enough to matter.
 - Left full-resolution recovery as a cache/sidecar action only; restore-to-canonical remains deferred.
 
 ### Optional full-resolution original sync recovery slice

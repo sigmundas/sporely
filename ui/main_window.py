@@ -206,6 +206,10 @@ from .hint_status import HintBar, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
+from utils.original_sync_policy import (
+    is_full_resolution_original_sync_enabled,
+    set_full_resolution_original_sync_enabled,
+)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
@@ -1828,6 +1832,27 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         cloud_preferences_row.addLayout(cloud_sharing_column, 1)
         cloud_layout.addLayout(cloud_preferences_row)
 
+        self.cloud_originals_checkbox = QCheckBox(self.tr("Sync full-resolution originals"))
+        self.cloud_originals_checkbox.toggled.connect(self._on_cloud_originals_changed)
+        self.cloud_originals_checkbox.setToolTip(
+            self.tr(
+                "Uploads eligible field and microscope originals for recovery. Uses more cloud storage. "
+                "Does not replace local originals."
+            )
+        )
+        cloud_layout.addWidget(self.cloud_originals_checkbox)
+
+        self.cloud_originals_note = QLabel(
+            self.tr(
+                "Uploads eligible field and microscope originals for recovery. Uses more cloud storage. "
+                "Does not replace local originals."
+            ),
+            self,
+        )
+        self.cloud_originals_note.setWordWrap(True)
+        self.cloud_originals_note.setStyleSheet("color: #6b7280; font-size: 11px;")
+        cloud_layout.addWidget(self.cloud_originals_note)
+
         self.cloud_status_label = QLabel(self.tr("Not logged in"))
         self.cloud_status_label.setWordWrap(True)
         self.cloud_status_label.setCursor(Qt.PointingHandCursor)
@@ -2073,6 +2098,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not self._loading_settings:
             self._save_settings()
 
+    def _on_cloud_originals_changed(self, _checked: bool) -> None:
+        if not self._loading_settings:
+            self._save_settings()
+
     @staticmethod
     def _normalize_debug_cloud_plan_override(value: str | None) -> str:
         raw = str(value or "").strip().lower()
@@ -2245,6 +2274,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
             self._selected_cloud_sharing_scope(),
+        )
+        set_full_resolution_original_sync_enabled(
+            bool(getattr(self, "cloud_originals_checkbox", None) and self.cloud_originals_checkbox.isChecked())
         )
         # Sporely Cloud sync always uploads clean images only. Keep legacy
         # per-sync content settings disabled in case older versions set them.
@@ -2934,6 +2966,10 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     "private",
                 )
             )
+            if hasattr(self, "cloud_originals_checkbox"):
+                self.cloud_originals_checkbox.blockSignals(True)
+                self.cloud_originals_checkbox.setChecked(is_full_resolution_original_sync_enabled())
+                self.cloud_originals_checkbox.blockSignals(False)
             self._set_debug_cloud_plan_override(
                 SettingsDB.get_setting(
                     self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,
@@ -4533,6 +4569,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         settings_action.setShortcut("Ctrl+,")
         settings_action.triggered.connect(self.open_settings_hub)
         settings_menu.addAction(settings_action)
+
+        cloud_sync_action = QAction(self.tr("Sporely Cloud Sync"), self)
+        cloud_sync_action.triggered.connect(lambda: self.open_cloud_sync_dialog())
+        settings_menu.addAction(cloud_sync_action)
 
         settings_menu.addSeparator()
 

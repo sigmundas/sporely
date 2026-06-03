@@ -9,7 +9,9 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 import ui.cloud_sync_dialog as cloud_sync_dialog
+import ui.main_window as main_window
 from ui.cloud_sync_dialog import CloudSyncDialog
+from ui.main_window import ArtsobservasjonerSettingsDialog
 from utils import cloud_sync
 
 
@@ -21,13 +23,24 @@ def qapp():
     return app
 
 
-def _build_dialog(monkeypatch, *, original_enabled: bool = False) -> CloudSyncDialog:
+def _build_cloud_dialog(monkeypatch) -> CloudSyncDialog:
     fake_client = SimpleNamespace(user_id="user-123")
     monkeypatch.setattr(cloud_sync_dialog.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
     monkeypatch.setattr(cloud_sync_dialog, "load_saved_cloud_password", lambda: ("", None, False))
     monkeypatch.setattr(cloud_sync_dialog, "get_app_settings", lambda: {})
-    monkeypatch.setattr(cloud_sync_dialog, "is_full_resolution_original_sync_enabled", lambda: original_enabled)
     return CloudSyncDialog()
+
+
+def _build_preferences_dialog(monkeypatch, tmp_path, *, original_enabled: bool = False) -> ArtsobservasjonerSettingsDialog:
+    monkeypatch.setattr(main_window, "app_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window, "is_full_resolution_original_sync_enabled", lambda: original_enabled)
+    monkeypatch.setattr(main_window, "set_full_resolution_original_sync_enabled", lambda enabled: None)
+    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
+    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
+    monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: [])
+    return ArtsobservasjonerSettingsDialog()
 
 
 def test_original_upload_summary_is_quiet_when_disabled():
@@ -74,25 +87,41 @@ def test_original_recovery_summary_formats_statuses(status, expected):
     assert cloud_sync.format_original_recovery_summary({"status": status}) == expected
 
 
-def test_cloud_sync_dialog_persists_original_sync_checkbox(monkeypatch, qapp):
-    dialog = _build_dialog(monkeypatch, original_enabled=False)
+@pytest.mark.parametrize("original_enabled", [False, True])
+def test_preferences_dialog_loads_original_sync_checkbox(monkeypatch, qapp, tmp_path, original_enabled):
+    dialog = _build_preferences_dialog(monkeypatch, tmp_path, original_enabled=original_enabled)
+
+    assert dialog.cloud_originals_checkbox.isChecked() is original_enabled
+    assert "Uploads eligible field and microscope originals for recovery." in dialog.cloud_originals_note.text()
+
+
+def test_preferences_dialog_persists_original_sync_checkbox(monkeypatch, qapp, tmp_path):
     saved_values: list[bool] = []
+
+    monkeypatch.setattr(main_window, "app_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window, "is_full_resolution_original_sync_enabled", lambda: False)
     monkeypatch.setattr(
-        cloud_sync_dialog,
+        main_window,
         "set_full_resolution_original_sync_enabled",
         lambda enabled: saved_values.append(bool(enabled)),
     )
+    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
+    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
+    monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: [])
 
-    assert dialog._original_sync_check.isChecked() is False
-    assert "Uploads eligible field and microscope originals for recovery." in dialog._original_sync_note.text()
+    dialog = ArtsobservasjonerSettingsDialog()
 
-    dialog._original_sync_check.setChecked(True)
+    assert dialog.cloud_originals_checkbox.isChecked() is False
+
+    dialog.cloud_originals_checkbox.setChecked(True)
 
     assert saved_values == [True]
 
 
 def test_cloud_sync_dialog_appends_original_upload_summary(monkeypatch, qapp):
-    dialog = _build_dialog(monkeypatch, original_enabled=True)
+    dialog = _build_cloud_dialog(monkeypatch)
 
     dialog._on_sync_done(
         {
@@ -119,7 +148,7 @@ def test_cloud_sync_dialog_appends_original_upload_summary(monkeypatch, qapp):
 
 
 def test_cloud_sync_dialog_stays_quiet_when_original_sync_disabled(monkeypatch, qapp):
-    dialog = _build_dialog(monkeypatch, original_enabled=False)
+    dialog = _build_cloud_dialog(monkeypatch)
 
     dialog._on_sync_done(
         {

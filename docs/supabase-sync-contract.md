@@ -313,7 +313,7 @@ Full-resolution original upload/recovery note:
   objects written by the desktop upload slice.
 - The desktop only uploads eligible rows when `sync_full_resolution_originals` is enabled.
 - The desktop surfaces that gate as a conservative `Sync full-resolution originals` checkbox in the
-  cloud sync dialog, and the setting stays off by default.
+  Preferences dialog's `Profile & Cloud` section, and the setting stays off by default.
 - Upload source selection is explicit:
   - `local_canonical` uploads its readable `filepath`
   - `converted_local` prefers readable `original_filepath`, then falls back to `filepath`

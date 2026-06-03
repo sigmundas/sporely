@@ -195,8 +195,8 @@ Status: Done (default-off opt-in upload, recovery cache path, and conservative s
   explicitly enabled.
 - The sync engine now supports opt-in original uploads for eligible rows and enforces an upload
   size guard on the desktop side.
-- The cloud sync dialog exposes a conservative `Sync full-resolution originals` checkbox with a
-  short warning about storage and local-original safety.
+- The Preferences dialog exposes a conservative `Sync full-resolution originals` checkbox in the
+  `Profile & Cloud` section with a short warning about storage and local-original safety.
 - Sync status stays quiet when the opt-in is off and shows concise original upload counts only when
   original sync is actually active.
 - Deferred future work:

@@ -21,6 +21,11 @@ def qapp():
 def _build_dialog(monkeypatch) -> CalibrationDialog:
     monkeypatch.setattr(calibration_dialog, "load_objectives", lambda: {})
     monkeypatch.setattr(
+        calibration_dialog.cloud_sync.SporelyCloudClient,
+        "from_stored_credentials",
+        lambda: None,
+    )
+    monkeypatch.setattr(
         calibration_dialog.SettingsDB,
         "get_setting",
         lambda key, default=None: default,
@@ -45,8 +50,82 @@ def _build_dialog(monkeypatch) -> CalibrationDialog:
 def test_history_columns_show_full_timestamp_text(qapp, monkeypatch):
     dialog = _build_dialog(monkeypatch)
 
-    assert dialog.history_table.columnWidth(0) >= 170
+    assert dialog.history_table.horizontalHeaderItem(0).text() == "Cloud"
+    assert 40 <= dialog.history_table.columnWidth(0) <= 60
     assert dialog.history_table.columnWidth(1) >= 170
+    assert dialog.history_table.columnWidth(2) >= 160
+    assert dialog.history_table.columnWidth(4) <= 70
+
+    dialog.deleteLater()
+
+
+def test_history_rows_show_cloud_icon_for_synced_calibrations(qapp, monkeypatch):
+    dialog = _build_dialog(monkeypatch)
+    calibration_uuid = "9c0c3b12-7f3c-4a72-8a6f-6d6e8df4b111"
+
+    monkeypatch.setattr(
+        calibration_dialog.CalibrationDB,
+        "get_calibration_history",
+        lambda objective_key: [
+            {
+                "id": 1,
+                "calibration_uuid": calibration_uuid,
+                "calibration_date": "2026-05-30 10:00:00",
+                "calibration_image_date": "2026-05-30 09:45:00",
+                "microns_per_pixel": 0.012345,
+                "megapixels": 12.8,
+                "num_measurements": 3,
+                "measurements_json": json.dumps({"images": []}),
+                "image_filepath": "",
+                "camera": "TestCam",
+                "notes": "",
+            },
+            {
+                "id": 2,
+                "calibration_uuid": "11111111-2222-3333-4444-555555555555",
+                "calibration_date": "2026-05-29 10:00:00",
+                "calibration_image_date": "2026-05-29 09:45:00",
+                "microns_per_pixel": 0.020000,
+                "megapixels": 8.2,
+                "num_measurements": 2,
+                "measurements_json": json.dumps({"images": []}),
+                "image_filepath": "",
+                "camera": "OtherCam",
+                "notes": "",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        calibration_dialog.CalibrationDB,
+        "get_calibration_usage_summary",
+        lambda objective_key: [
+            {"calibration_id": 1, "observation_count": 4},
+            {"calibration_id": 2, "observation_count": 1},
+        ],
+    )
+
+    class _FakeCloudClient:
+        def list_remote_calibrations(self):
+            return [{"calibration_uuid": calibration_uuid}]
+
+    monkeypatch.setattr(
+        calibration_dialog.cloud_sync.SporelyCloudClient,
+        "from_stored_credentials",
+        lambda: _FakeCloudClient(),
+    )
+
+    dialog.current_objective_key = "objective_1"
+    dialog._update_history_table()
+
+    synced_item = dialog.history_table.item(0, 0)
+    unsynced_item = dialog.history_table.item(1, 0)
+
+    assert synced_item is not None
+    assert unsynced_item is not None
+    assert not synced_item.icon().isNull()
+    assert unsynced_item.icon().isNull()
+    assert dialog.history_table.item(0, 4).text() == "13"
+    assert dialog.history_table.item(1, 4).text() == "8"
 
     dialog.deleteLater()
 
