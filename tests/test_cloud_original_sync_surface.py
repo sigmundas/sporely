@@ -6,7 +6,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QCheckBox
 
 import ui.cloud_sync_dialog as cloud_sync_dialog
 import ui.main_window as main_window
@@ -31,12 +31,10 @@ def _build_cloud_dialog(monkeypatch) -> CloudSyncDialog:
     return CloudSyncDialog()
 
 
-def _build_preferences_dialog(monkeypatch, tmp_path, *, original_enabled: bool = False) -> ArtsobservasjonerSettingsDialog:
+def _build_preferences_dialog(monkeypatch, tmp_path) -> ArtsobservasjonerSettingsDialog:
     monkeypatch.setattr(main_window, "app_data_dir", lambda: tmp_path)
     monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main_window, "is_full_resolution_original_sync_enabled", lambda: original_enabled)
-    monkeypatch.setattr(main_window, "set_full_resolution_original_sync_enabled", lambda enabled: None)
     monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
     monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
     monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: [])
@@ -87,37 +85,17 @@ def test_original_recovery_summary_formats_statuses(status, expected):
     assert cloud_sync.format_original_recovery_summary({"status": status}) == expected
 
 
-@pytest.mark.parametrize("original_enabled", [False, True])
-def test_preferences_dialog_loads_original_sync_checkbox(monkeypatch, qapp, tmp_path, original_enabled):
-    dialog = _build_preferences_dialog(monkeypatch, tmp_path, original_enabled=original_enabled)
+def test_preferences_dialog_does_not_expose_original_sync_toggle(monkeypatch, qapp, tmp_path):
+    dialog = _build_preferences_dialog(monkeypatch, tmp_path)
 
-    assert dialog.cloud_originals_checkbox.isChecked() is original_enabled
-    assert "Uploads eligible field and microscope originals for recovery." in dialog.cloud_originals_note.text()
+    assert hasattr(dialog, "cloud_originals_checkbox") is False
+    assert hasattr(dialog, "cloud_originals_note") is False
 
-
-def test_preferences_dialog_persists_original_sync_checkbox(monkeypatch, qapp, tmp_path):
-    saved_values: list[bool] = []
-
-    monkeypatch.setattr(main_window, "app_data_dir", lambda: tmp_path)
-    monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
-    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main_window, "is_full_resolution_original_sync_enabled", lambda: False)
-    monkeypatch.setattr(
-        main_window,
-        "set_full_resolution_original_sync_enabled",
-        lambda enabled: saved_values.append(bool(enabled)),
+    checkbox_texts = {checkbox.text() for checkbox in dialog.findChildren(QCheckBox)}
+    assert "Sync full-resolution originals" not in checkbox_texts
+    assert "Uploads eligible field and microscope originals for recovery and reproducibility." not in " ".join(
+        checkbox_texts
     )
-    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
-    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
-    monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: [])
-
-    dialog = ArtsobservasjonerSettingsDialog()
-
-    assert dialog.cloud_originals_checkbox.isChecked() is False
-
-    dialog.cloud_originals_checkbox.setChecked(True)
-
-    assert saved_values == [True]
 
 
 def test_cloud_sync_dialog_appends_original_upload_summary(monkeypatch, qapp):

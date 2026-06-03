@@ -32,6 +32,7 @@ from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 from .hint_status import HintBar, HintStatusController
 from .image_gallery_widget import ImageGalleryWidget
 from .section_card import create_section_card
+from .segmented_selector import SegmentedSelector
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -173,11 +174,19 @@ class LiveLabTab(QWidget):
             self.tr("Capture mode"),
             body_margins=(10, 12, 10, 10),
         )
-        self.session_mode_combo = self._make_combo()
-        self.session_mode_combo.addItem(self.tr("Live capture (watch folder)"), self.SESSION_MODE_LIVE)
-        self.session_mode_combo.addItem(self.tr("Retrospective session (log only)"), self.SESSION_MODE_OFFLINE)
-        self.session_mode_combo.currentIndexChanged.connect(self._on_session_mode_changed)
-        mode_layout.addWidget(self.session_mode_combo)
+        self.session_mode_selector = SegmentedSelector(self, compact=True)
+        self.session_mode_live_radio = self.session_mode_selector.add_option(
+            self.tr("Live capture (watch folder)"),
+            self.SESSION_MODE_LIVE,
+            checked=True,
+        )
+        self.session_mode_offline_radio = self.session_mode_selector.add_option(
+            self.tr("Offline (log only)"),
+            self.SESSION_MODE_OFFLINE,
+        )
+        self.session_mode_combo = self.session_mode_selector
+        self.session_mode_selector.selectionChanged.connect(lambda _value: self._on_session_mode_changed())
+        mode_layout.addWidget(self.session_mode_selector)
         left_layout.addWidget(mode_group)
 
         watch_group, watch_layout = create_section_card(
@@ -476,23 +485,24 @@ class LiveLabTab(QWidget):
         return mode if mode in {self.SESSION_MODE_LIVE, self.SESSION_MODE_OFFLINE} else self.SESSION_MODE_LIVE
 
     def _selected_session_mode(self) -> str:
-        if hasattr(self, "session_mode_combo"):
-            return self._normalize_session_mode(self.session_mode_combo.currentData())
+        selector = getattr(self, "session_mode_selector", None)
+        if selector is not None:
+            return self._normalize_session_mode(selector.selected_value(self.SESSION_MODE_LIVE))
         return self.SESSION_MODE_LIVE
 
     def _session_mode_label(self, mode: str | None = None) -> str:
         normalized = self._normalize_session_mode(mode or self._selected_session_mode())
         if normalized == self.SESSION_MODE_OFFLINE:
-            return self.tr("Retrospective session")
+            return self.tr("Offline")
         return self.tr("Live capture")
 
     def _restore_session_mode(self) -> None:
         saved = self._normalize_session_mode(SettingsDB.get_setting(self.SETTING_SESSION_MODE, self.SESSION_MODE_LIVE))
-        index = self.session_mode_combo.findData(saved)
-        if index >= 0:
-            self.session_mode_combo.setCurrentIndex(index)
+        selector = getattr(self, "session_mode_selector", None)
+        if selector is not None:
+            selector.set_selected_value(saved)
 
-    def _on_session_mode_changed(self, _index: int) -> None:
+    def _on_session_mode_changed(self) -> None:
         SettingsDB.set_setting(self.SETTING_SESSION_MODE, self._selected_session_mode())
         self._update_session_controls()
 
@@ -929,10 +939,10 @@ class LiveLabTab(QWidget):
             )
         else:
             self._clear_session_viewer(
-                title=self.tr("Retrospective session"),
+                title=self.tr("Offline session"),
                 meta=self.tr("Log microscope-state changes now and match images later in the Ingestion Hub."),
             )
-            status_text = self.tr("Retrospective session started for {name}.").format(
+            status_text = self.tr("Offline session started for {name}.").format(
                 name=self._observation_summary_text(self._session_observation_snapshot),
             )
 
@@ -998,7 +1008,7 @@ class LiveLabTab(QWidget):
         if had_session:
             self._show_status(
                 (
-                    self.tr("Retrospective session stopped. Logged {count} imported image(s).")
+                    self.tr("Offline session stopped. Logged {count} imported image(s).")
                     if session_mode == self.SESSION_MODE_OFFLINE
                     else self.tr("Live Lab session stopped. Imported {count} image(s).")
                 ).format(count=import_count),

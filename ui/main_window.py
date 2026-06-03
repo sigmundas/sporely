@@ -127,6 +127,7 @@ def _make_svg_icon(svg_bytes: bytes, color: str = "#c1c8c4") -> QIcon:
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 import json
 import html
+from datetime import datetime, timezone
 import numpy as np
 import math
 import sqlite3
@@ -197,19 +198,15 @@ from .spore_preview_widget import SporePreviewWidget
 from .observations_tab import ObservationsTab
 from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
-from .cloud_sync_dialog import CloudSyncDialog
 from .cloud_reference_dialog import CloudReferenceDialog
 from .section_card import create_section_card
+from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
-from utils.original_sync_policy import (
-    is_full_resolution_original_sync_enabled,
-    set_full_resolution_original_sync_enabled,
-)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
@@ -999,6 +996,8 @@ class SettingsHubDialog(QDialog):
         self._database_changed     = False
         self._cloud_profile_loaded_user_id = ""
         self._profile_avatar_url = ""
+        self._profile_avatar_loaded_url = ""
+        self._profile_avatar_pending_url = ""
 
         self._build_ui()
         start_page = max(0, min(int(start_page or 0), self._stack.count() - 1))
@@ -1063,10 +1062,13 @@ class SettingsHubDialog(QDialog):
         self._hub_help_layout.setContentsMargins(0, 0, 0, 0)
         self._hub_help_layout.setSpacing(0)
         btn_row.addWidget(self._hub_help_holder, 0, Qt.AlignRight | Qt.AlignVCenter)
-        close_btn = QPushButton(self.tr("Close"))
-        close_btn.setDefault(True)
-        close_btn.clicked.connect(self.accept)
-        btn_row.addWidget(close_btn)
+        self._hub_cancel_button = QPushButton(self.tr("Cancel"))
+        self._hub_cancel_button.clicked.connect(self.reject)
+        btn_row.addWidget(self._hub_cancel_button)
+        self._hub_save_button = QPushButton(self.tr("Save"))
+        self._hub_save_button.setDefault(True)
+        self._hub_save_button.clicked.connect(self._save_profile_and_close)
+        btn_row.addWidget(self._hub_save_button)
         right.addLayout(btn_row)
 
         right_widget = QWidget()
@@ -1118,12 +1120,24 @@ class SettingsHubDialog(QDialog):
 
         profile = SettingsDB.get_profile()
 
+        cloud = self._artsobs_dialog._cloud_section
+        cloud_layout = getattr(self._artsobs_dialog, "_cloud_section_layout", None)
+        if cloud_layout is None:
+            cloud_layout = QVBoxLayout(cloud)
+            cloud_layout.setContentsMargins(0, 0, 0, 0)
+            cloud_layout.setSpacing(8)
+
+        profile_block = QWidget(cloud)
+        profile_block_layout = QVBoxLayout(profile_block)
+        profile_block_layout.setContentsMargins(0, 0, 0, 0)
+        profile_block_layout.setSpacing(8)
+
         info = QLabel(self.tr(
             "Your profile is used for Sporely Cloud, contributor labels, and image watermarks. "
             "When you sign in, the local profile email follows your Sporely Cloud account email."
         ))
         info.setWordWrap(True)
-        layout.addWidget(info)
+        profile_block_layout.addWidget(info)
 
         identity_row = QHBoxLayout()
         identity_row.setContentsMargins(0, 0, 0, 0)
@@ -1148,21 +1162,59 @@ class SettingsHubDialog(QDialog):
         form.addRow(self.tr("Display name"), self._profile_name)
         form.addRow(self.tr("Email"), self._profile_email)
         form.addRow(self.tr("Bio"), self._profile_bio)
+        form.addRow(self.tr("Default sharing"), self._artsobs_dialog.cloud_sharing_selector)
         identity_row.addLayout(form, 1)
-        layout.addLayout(identity_row)
-
-        save_btn = QPushButton(self.tr("Save"))
-        save_btn.clicked.connect(self._save_profile)
-        layout.addWidget(save_btn)
-
-        cloud = self._artsobs_dialog._cloud_section
+        profile_block_layout.addLayout(identity_row)
+        cloud_layout.insertWidget(0, profile_block)
         cloud.setParent(page)
         cloud.show()
         layout.addWidget(cloud)
 
+        cloud_sync_group, cloud_sync_layout = create_section_card(self.tr("Cloud sync"), parent=page)
+        self.cloud_sync_group = cloud_sync_group
+
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(12)
+
+        self.cloud_sync_status_label = QLabel(self.tr("Not signed in."), cloud_sync_group)
+        self.cloud_sync_status_label.setWordWrap(True)
+        status_row.addWidget(self.cloud_sync_status_label, 1)
+
+        self.cloud_sync_error_label = QLabel("", cloud_sync_group)
+        self.cloud_sync_error_label.setWordWrap(True)
+        self.cloud_sync_error_label.setStyleSheet("color: #b45309;")
+        status_row.addWidget(self.cloud_sync_error_label, 0, Qt.AlignRight | Qt.AlignTop)
+        cloud_sync_layout.addLayout(status_row)
+
+        self.cloud_sync_summary_label = QLabel("", cloud_sync_group)
+        self.cloud_sync_summary_label.setWordWrap(True)
+        self.cloud_sync_summary_label.setStyleSheet("color: #6b7280;")
+        cloud_sync_layout.addWidget(self.cloud_sync_summary_label)
+
+        cloud_sync_button_row = QHBoxLayout()
+        cloud_sync_button_row.setContentsMargins(0, 0, 0, 0)
+        cloud_sync_button_row.setSpacing(8)
+        self.cloud_sync_now_button = QPushButton(self.tr("Sync now"), cloud_sync_group)
+        self.cloud_sync_now_button.clicked.connect(lambda: self._request_settings_cloud_sync(False))
+        cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
+        self.cloud_offline_media_button = QPushButton(
+            self.tr("Download missing cloud media for offline use"),
+            cloud_sync_group,
+        )
+        self.cloud_offline_media_button.clicked.connect(lambda: self._request_settings_cloud_sync(True))
+        cloud_sync_button_row.addWidget(self.cloud_offline_media_button)
+        self.cloud_sync_details_button = QPushButton(self.tr("Details"), cloud_sync_group)
+        self.cloud_sync_details_button.clicked.connect(self._show_cloud_sync_details)
+        cloud_sync_button_row.addWidget(self.cloud_sync_details_button)
+        cloud_sync_button_row.addStretch()
+        cloud_sync_layout.addLayout(cloud_sync_button_row)
+        layout.addWidget(cloud_sync_group)
+
         layout.addStretch()
         self._render_profile_avatar()
         QTimer.singleShot(0, self._refresh_cloud_profile_fields)
+        QTimer.singleShot(0, self.refresh_cloud_sync_status)
         return page
 
     def _build_database_page(self) -> QWidget:
@@ -1268,6 +1320,26 @@ class SettingsHubDialog(QDialog):
             or self._profile_email.text().strip()
             or "?"
         )
+        avatar_url = str(getattr(self, "_profile_avatar_url", "") or "").strip()
+        cached_url = str(getattr(self, "_profile_avatar_loaded_url", "") or "").strip()
+        cached_pixmap = getattr(self, "_profile_avatar_pixmap_cached", None)
+        pending_url = str(getattr(self, "_profile_avatar_pending_url", "") or "").strip()
+        if avatar_url:
+            if cached_url == avatar_url and isinstance(cached_pixmap, QPixmap) and not cached_pixmap.isNull():
+                self._apply_profile_avatar(cached_pixmap)
+                return
+            if pending_url == avatar_url:
+                self._apply_profile_initials_avatar(display)
+                return
+            self._apply_profile_initials_avatar(display)
+            self._fetch_and_set_profile_avatar(avatar_url)
+            return
+        self._apply_profile_initials_avatar(display)
+
+    def _apply_profile_initials_avatar(self, display: str) -> None:
+        button = getattr(self, "_profile_avatar_button", None)
+        if button is None:
+            return
         initial = display[0].upper() if display else "?"
         pixmap = QPixmap(68, 68)
         pixmap.fill(Qt.transparent)
@@ -1286,6 +1358,67 @@ class SettingsHubDialog(QDialog):
         painter.drawText(QRectF(2, 2, 64, 64), Qt.AlignCenter, initial)
         painter.end()
         button.setIcon(QIcon(pixmap))
+
+    def _apply_profile_avatar(self, pixmap: QPixmap) -> None:
+        button = getattr(self, "_profile_avatar_button", None)
+        if button is None or pixmap.isNull():
+            return
+        from PySide6.QtGui import QBrush
+
+        target_size = 68
+        circular = QPixmap(target_size, target_size)
+        circular.fill(Qt.transparent)
+
+        painter = QPainter(circular)
+        painter.setRenderHint(QPainter.Antialiasing)
+        scaled_pixmap = pixmap.scaled(
+            target_size,
+            target_size,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        painter.setBrush(QBrush(scaled_pixmap))
+        painter.setPen(QPen(QColor("#c1c8c4"), 1.5))
+        painter.drawEllipse(1, 1, target_size - 2, target_size - 2)
+        painter.end()
+        button.setIcon(QIcon(circular))
+
+    def _fetch_and_set_profile_avatar(self, avatar_url: str) -> None:
+        url = str(avatar_url or "").strip()
+        if not url:
+            return
+        cached_url = str(getattr(self, "_profile_avatar_loaded_url", "") or "").strip()
+        cached_pixmap = getattr(self, "_profile_avatar_pixmap_cached", None)
+        if cached_url == url and isinstance(cached_pixmap, QPixmap) and not cached_pixmap.isNull():
+            self._apply_profile_avatar(cached_pixmap)
+            return
+        if not hasattr(self, "_profile_avatar_network"):
+            self._profile_avatar_network = QNetworkAccessManager(self)
+        self._profile_avatar_pending_url = url
+        request = QNetworkRequest(QUrl(url))
+        request.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
+        request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
+        reply = self._profile_avatar_network.get(request)
+        reply.finished.connect(lambda: self._handle_profile_avatar_reply(reply, url))
+
+    def _handle_profile_avatar_reply(self, reply, avatar_url: str) -> None:
+        try:
+            from PySide6.QtNetwork import QNetworkReply
+
+            if reply.error() == QNetworkReply.NoError and str(getattr(self, "_profile_avatar_url", "") or "").strip() == str(avatar_url or "").strip():
+                data = reply.readAll()
+                pixmap = QPixmap()
+                if pixmap.loadFromData(data):
+                    self._profile_avatar_loaded_url = str(avatar_url or "").strip()
+                    self._profile_avatar_pixmap_cached = pixmap
+                    self._profile_avatar_pending_url = ""
+                    self._apply_profile_avatar(pixmap)
+        except Exception:
+            pass
+        finally:
+            if str(getattr(self, "_profile_avatar_pending_url", "") or "").strip() == str(avatar_url or "").strip():
+                self._profile_avatar_pending_url = ""
+            reply.deleteLater()
 
     def _avatar_jpeg_bytes_from_path(self, path: str) -> bytes:
         reader = QImageReader(path)
@@ -1335,11 +1468,12 @@ class SettingsHubDialog(QDialog):
             avatar_url = client.upload_profile_avatar(avatar_bytes)
             self._profile_avatar_url = avatar_url
             SettingsDB.set_setting("profile_avatar_url", avatar_url)
+            self._profile_avatar_pending_url = ""
             preview = getattr(self, "_profile_avatar_preview", None)
             if isinstance(preview, QPixmap) and not preview.isNull():
-                self._profile_avatar_button.setIcon(
-                    QIcon(preview.scaled(68, 68, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
-                )
+                self._profile_avatar_loaded_url = avatar_url
+                self._profile_avatar_pixmap_cached = preview
+                self._apply_profile_avatar(preview)
             else:
                 self._render_profile_avatar()
             parent = self.parent()
@@ -1376,6 +1510,7 @@ class SettingsHubDialog(QDialog):
             self._profile_email.setToolTip(self.tr("Signed in to Sporely Cloud."))
             self._cloud_profile_loaded_user_id = user_id
             self._profile_email.setText(str(get_app_settings().get("cloud_user_email") or "").strip())
+            self._profile_avatar_url = str(SettingsDB.get_setting("profile_avatar_url", "") or "").strip()
             self._render_profile_avatar()
             return
 
@@ -1405,26 +1540,192 @@ class SettingsHubDialog(QDialog):
         self._cloud_profile_loaded_user_id = user_id
         self._render_profile_avatar()
 
+    def _settings_hub_main_window(self):
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "observations_tab"):
+                return parent
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        return None
+
+    @staticmethod
+    def _format_cloud_sync_timestamp(raw_value: str | None) -> str:
+        text = str(raw_value or "").strip()
+        if not text:
+            return ""
+        candidate = text.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(candidate)
+        except Exception:
+            return text
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        try:
+            dt = dt.astimezone(timezone.utc)
+        except Exception:
+            pass
+        return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+    @staticmethod
+    def _cloud_sync_error_messages(settings: dict | None = None) -> list[str]:
+        raw_errors = str((settings or {}).get("cloud_last_sync_errors_json") or "").strip()
+        error_messages: list[str] = []
+        if raw_errors:
+            try:
+                loaded = json.loads(raw_errors)
+                if isinstance(loaded, list):
+                    error_messages = [str(item or "").strip() for item in loaded if str(item or "").strip()]
+            except Exception:
+                if raw_errors:
+                    error_messages = [raw_errors]
+        return error_messages
+
+    def _settings_cloud_sync_running(self) -> bool:
+        main_window = self._settings_hub_main_window()
+        if main_window is None:
+            return False
+        checker = getattr(main_window, "is_cloud_sync_running", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+
+    def refresh_cloud_sync_status(self) -> None:
+        if not hasattr(self, "cloud_sync_status_label"):
+            return
+        settings = get_app_settings()
+        client = self._cloud_client()
+        logged_in = bool(client)
+        running = self._settings_cloud_sync_running()
+        summary = str(settings.get("cloud_last_sync_summary") or "").strip()
+        error_count = max(0, int(settings.get("cloud_last_sync_error_count") or 0))
+        error_messages = self._cloud_sync_error_messages(settings)
+        last_sync_at = self._format_cloud_sync_timestamp(
+            settings.get("cloud_last_sync_at") or settings.get("cloud_last_pull_at")
+        )
+        if running:
+            status_text = self.tr("Syncing cloud metadata and media…")
+        elif not logged_in:
+            status_text = self.tr("Sign in to use cloud sync.")
+        elif last_sync_at:
+            status_text = self.tr("Last sync: {timestamp}").format(timestamp=last_sync_at)
+        else:
+            status_text = self.tr("Ready to sync.")
+        self.cloud_sync_status_label.setText(status_text)
+        self.cloud_sync_summary_label.setText(summary or self.tr("No sync summary yet."))
+        self.cloud_sync_error_label.setVisible(error_count > 0 and bool(error_messages))
+        if error_count > 0:
+            self.cloud_sync_error_label.setText(self.tr("Errors: {count}").format(count=error_count))
+        else:
+            self.cloud_sync_error_label.setText("")
+        has_details = error_count > 0 and bool(error_messages)
+        self.cloud_sync_details_button.setVisible(has_details)
+        self.cloud_sync_details_button.setEnabled(has_details and not running)
+        self.cloud_sync_now_button.setEnabled(logged_in and not running)
+        self.cloud_offline_media_button.setEnabled(logged_in and not running)
+        if not logged_in:
+            self.cloud_sync_now_button.setToolTip(self.tr("Sign in to sync cloud metadata."))
+            self.cloud_offline_media_button.setToolTip(self.tr("Sign in to download cloud media for offline use."))
+        else:
+            self.cloud_sync_now_button.setToolTip("")
+            self.cloud_offline_media_button.setToolTip("")
+
+    def _request_settings_cloud_sync(self, materialize_remote_images: bool) -> None:
+        main_window = self._settings_hub_main_window()
+        if main_window is None:
+            QMessageBox.warning(
+                self,
+                self.tr("Cloud Sync"),
+                self.tr("Cloud sync is not available right now."),
+            )
+            return
+        starter = getattr(main_window, "start_cloud_sync", None)
+        if not callable(starter):
+            QMessageBox.warning(
+                self,
+                self.tr("Cloud Sync"),
+                self.tr("Cloud sync is not available right now."),
+            )
+            return
+        started = False
+        try:
+            started = bool(
+                starter(
+                    show_status=True,
+                    run_refresh_flow=False,
+                    materialize_remote_images=bool(materialize_remote_images),
+                )
+            )
+        finally:
+            self.refresh_cloud_sync_status()
+        if not started:
+            QMessageBox.information(
+                self,
+                self.tr("Cloud Sync"),
+                self.tr("Cloud sync is already running or could not start."),
+            )
+
+    def _build_cloud_sync_details_dialog(self, error_messages: list[str]) -> QDialog:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.tr("Cloud Sync Details"))
+        dialog.setMinimumSize(560, 320)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        text = QPlainTextEdit(dialog)
+        text.setReadOnly(True)
+        text.setPlainText("\n".join(error_messages))
+        text.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        layout.addWidget(text, 1)
+        return dialog
+
+    def _show_cloud_sync_details(self) -> None:
+        settings = get_app_settings()
+        error_messages = self._cloud_sync_error_messages(settings)
+        if not error_messages:
+            return
+        self._build_cloud_sync_details_dialog(error_messages).exec()
+
     def _on_cloud_login_changed(self, client=None, email: str | None = None) -> None:
         self._cloud_profile_loaded_user_id = ""
         if email:
             self._profile_email.setText(str(email or "").strip())
             SettingsDB.set_setting("profile_email", str(email or "").strip())
         self._refresh_cloud_profile_fields(force=True)
+        self.refresh_cloud_sync_status()
 
     def _on_cloud_logout_changed(self) -> None:
         self._cloud_profile_loaded_user_id = ""
         if hasattr(self, "_profile_email"):
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
+        self._profile_avatar_url = str(SettingsDB.get_setting("profile_avatar_url", "") or "").strip()
+        self._render_profile_avatar()
+        self.refresh_cloud_sync_status()
 
-    def _save_profile(self):
+    def _profile_sync_error_message(self, exc: Exception) -> str:
+        text = str(exc or "").strip()
+        lower = text.lower()
+        if "23505" in lower or "unique constraint" in lower or "duplicate key" in lower or ("username" in lower and "taken" in lower):
+            return self.tr("That username is already taken. Please choose a different one.")
+        return self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc)
+
+    def _save_profile(self) -> bool:
         username = self._profile_username.text().strip().lstrip("@")
         name = self._profile_name.text().strip()
         email = self._profile_email_for_save()
         bio = self._profile_bio.toPlainText().strip()
         avatar_url = str(getattr(self, "_profile_avatar_url", "") or "").strip()
         SettingsDB.set_profile(name, email, bio, username, avatar_url)
+        self._profile_changed = True
+        parent = self.parent()
+        if parent and hasattr(parent, "_update_measure_copyright_overlay"):
+            parent._update_measure_copyright_overlay()
+        if parent and hasattr(parent, "_update_corner_ui"):
+            parent._update_corner_ui()
         client = self._cloud_client()
         if client is not None:
             try:
@@ -1438,16 +1739,14 @@ class SettingsHubDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     self.tr("Profile Not Synced"),
-                    self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc),
+                    self._profile_sync_error_message(exc),
                 )
-                return
-        self._profile_changed = True
-        parent = self.parent()
-        if parent and hasattr(parent, "_update_measure_copyright_overlay"):
-            parent._update_measure_copyright_overlay()
-        if parent and hasattr(parent, "_update_corner_ui"):
-            parent._update_corner_ui()
-        QMessageBox.information(self, self.tr("Profile"), self.tr("Profile saved."))
+                return False
+        return True
+
+    def _save_profile_and_close(self) -> None:
+        if self._save_profile():
+            self.accept()
 
     def _load_language_settings(self):
         current_ui = str(SettingsDB.get_setting("ui_language", "en") or "en").replace("-", "_")
@@ -1802,56 +2101,15 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         websites_layout.addLayout(button_layout)
         layout.addWidget(websites_group)
 
-        cloud_group = QGroupBox(self.tr("Sporely Cloud"), self)
-        cloud_layout = QVBoxLayout(cloud_group)
-        cloud_layout.setContentsMargins(10, 10, 10, 10)
-        cloud_layout.setSpacing(8)
-
-        cloud_preferences_row = QHBoxLayout()
-        cloud_preferences_row.setContentsMargins(0, 0, 0, 0)
-        cloud_preferences_row.setSpacing(20)
-
-        cloud_sharing_column = QVBoxLayout()
-        cloud_sharing_column.setContentsMargins(0, 0, 0, 0)
-        cloud_sharing_column.setSpacing(4)
-        cloud_sharing_column.addWidget(QLabel(self.tr("Default sharing:")))
-        self.cloud_sharing_group = QButtonGroup(self)
-        self.cloud_sharing_private_radio = QRadioButton(self.tr("Private"))
-        self.cloud_sharing_friends_radio = QRadioButton(self.tr("Friends"))
-        self.cloud_sharing_public_radio = QRadioButton(self.tr("Public"))
-        for radio, scope in (
-            (self.cloud_sharing_private_radio, "private"),
-            (self.cloud_sharing_friends_radio, "friends"),
-            (self.cloud_sharing_public_radio, "public"),
-        ):
-            self.cloud_sharing_group.addButton(radio)
-            radio.setProperty("sharing_scope", scope)
-            radio.toggled.connect(self._on_cloud_sharing_changed)
-            cloud_sharing_column.addWidget(radio)
-
-        cloud_preferences_row.addLayout(cloud_sharing_column, 1)
-        cloud_layout.addLayout(cloud_preferences_row)
-
-        self.cloud_originals_checkbox = QCheckBox(self.tr("Sync full-resolution originals"))
-        self.cloud_originals_checkbox.toggled.connect(self._on_cloud_originals_changed)
-        self.cloud_originals_checkbox.setToolTip(
-            self.tr(
-                "Uploads eligible field and microscope originals for recovery. Uses more cloud storage. "
-                "Does not replace local originals."
-            )
-        )
-        cloud_layout.addWidget(self.cloud_originals_checkbox)
-
-        self.cloud_originals_note = QLabel(
-            self.tr(
-                "Uploads eligible field and microscope originals for recovery. Uses more cloud storage. "
-                "Does not replace local originals."
-            ),
-            self,
-        )
-        self.cloud_originals_note.setWordWrap(True)
-        self.cloud_originals_note.setStyleSheet("color: #6b7280; font-size: 11px;")
-        cloud_layout.addWidget(self.cloud_originals_note)
+        cloud_group, cloud_layout = create_section_card(self.tr("Sporely Cloud"), parent=self)
+        self._cloud_section = cloud_group
+        self._cloud_section_layout = cloud_layout
+        self.cloud_sharing_selector = SegmentedSelector(cloud_group, compact=True)
+        self.cloud_sharing_private_radio = self.cloud_sharing_selector.add_option(self.tr("Private"), "private", checked=True)
+        self.cloud_sharing_friends_radio = self.cloud_sharing_selector.add_option(self.tr("Friends"), "friends")
+        self.cloud_sharing_public_radio = self.cloud_sharing_selector.add_option(self.tr("Public"), "public")
+        self.cloud_sharing_group = self.cloud_sharing_selector.button_group
+        self.cloud_sharing_selector.selectionChanged.connect(lambda _value: self._on_cloud_sharing_changed())
 
         self.cloud_status_label = QLabel(self.tr("Not logged in"))
         self.cloud_status_label.setWordWrap(True)
@@ -1900,7 +2158,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         cloud_button_row.addStretch()
         cloud_layout.addLayout(cloud_button_row)
 
-        self._cloud_section = cloud_group
         layout.addWidget(cloud_group, 0)
 
         options_group = QGroupBox(self.tr("Publish content"), self)
@@ -2072,33 +2329,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._save_settings()
 
     def _selected_cloud_sharing_scope(self) -> str:
-        for radio, scope in (
-            (getattr(self, "cloud_sharing_private_radio", None), "private"),
-            (getattr(self, "cloud_sharing_friends_radio", None), "friends"),
-            (getattr(self, "cloud_sharing_public_radio", None), "public"),
-        ):
-            if radio is not None and radio.isChecked():
-                return scope
-        return "private"
+        selector = getattr(self, "cloud_sharing_selector", None)
+        if selector is None:
+            return "private"
+        value = selector.selected_value("private")
+        return str(value or "private").strip().lower() if str(value or "").strip().lower() in {"private", "friends", "public"} else "private"
 
     def _set_cloud_sharing_scope(self, scope: str | None) -> None:
         normalized = str(scope or "").strip().lower()
         if normalized not in {"private", "friends", "public"}:
             normalized = "private"
-        radio_map = {
-            "private": getattr(self, "cloud_sharing_private_radio", None),
-            "friends": getattr(self, "cloud_sharing_friends_radio", None),
-            "public": getattr(self, "cloud_sharing_public_radio", None),
-        }
-        radio = radio_map.get(normalized) or getattr(self, "cloud_sharing_private_radio", None)
-        if radio is not None:
-            radio.setChecked(True)
+        selector = getattr(self, "cloud_sharing_selector", None)
+        if selector is not None:
+            selector.set_selected_value(normalized)
 
-    def _on_cloud_sharing_changed(self, _checked: bool) -> None:
-        if not self._loading_settings:
-            self._save_settings()
-
-    def _on_cloud_originals_changed(self, _checked: bool) -> None:
+    def _on_cloud_sharing_changed(self) -> None:
         if not self._loading_settings:
             self._save_settings()
 
@@ -2274,9 +2519,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         SettingsDB.set_setting(
             self.SETTING_CLOUD_DEFAULT_SHARING_SCOPE,
             self._selected_cloud_sharing_scope(),
-        )
-        set_full_resolution_original_sync_enabled(
-            bool(getattr(self, "cloud_originals_checkbox", None) and self.cloud_originals_checkbox.isChecked())
         )
         # Sporely Cloud sync always uploads clean images only. Keep legacy
         # per-sync content settings disabled in case older versions set them.
@@ -2966,10 +3208,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     "private",
                 )
             )
-            if hasattr(self, "cloud_originals_checkbox"):
-                self.cloud_originals_checkbox.blockSignals(True)
-                self.cloud_originals_checkbox.setChecked(is_full_resolution_original_sync_enabled())
-                self.cloud_originals_checkbox.blockSignals(False)
             self._set_debug_cloud_plan_override(
                 SettingsDB.get_setting(
                     self.SETTING_DEBUG_CLOUD_PLAN_OVERRIDE,
@@ -4570,10 +4808,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         settings_action.triggered.connect(self.open_settings_hub)
         settings_menu.addAction(settings_action)
 
-        cloud_sync_action = QAction(self.tr("Sporely Cloud Sync"), self)
-        cloud_sync_action.triggered.connect(lambda: self.open_cloud_sync_dialog())
-        settings_menu.addAction(cloud_sync_action)
-
         settings_menu.addSeparator()
 
         calib_action = QAction(self.tr("Calibration"), self)
@@ -4926,23 +5160,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         measure_layout.addWidget(self.measure_category_combo)
 
         mode_row = QHBoxLayout()
-        self.mode_group = QButtonGroup(self)
-        self.mode_lines = QRadioButton(self.tr("Line"))
-        self.mode_rect = QRadioButton(self.tr("Rectangle"))
-        self.mode_multiline = QRadioButton(self.tr("Multi-line"))
-        self.mode_rect.setChecked(True)
-        self.mode_group.addButton(self.mode_lines)
-        self.mode_group.addButton(self.mode_rect)
-        self.mode_group.addButton(self.mode_multiline)
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_row.setSpacing(8)
+        self.measure_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        self.mode_lines = self.measure_mode_selector.add_option(self.tr("Line"), "lines")
+        self.mode_rect = self.measure_mode_selector.add_option(self.tr("Rectangle"), "rectangle", checked=True)
+        self.mode_multiline = self.measure_mode_selector.add_option(self.tr("Multi-line"), "multiline")
+        self.mode_group = self.measure_mode_selector.button_group
         self.mode_lines.toggled.connect(self.on_measure_mode_changed)
         self.mode_rect.toggled.connect(self.on_measure_mode_changed)
         self.mode_multiline.toggled.connect(self.on_measure_mode_changed)
-        mode_row.addWidget(self.mode_lines)
-        mode_row.addSpacing(16)
-        mode_row.addWidget(self.mode_rect)
-        mode_row.addSpacing(16)
-        mode_row.addWidget(self.mode_multiline)
-        mode_row.addStretch()
+        mode_row.addWidget(self.measure_mode_selector, 1)
         measure_layout.addLayout(mode_row)
 
         self.measure_button = QPushButton(self.tr("Start measuring (M)"))
@@ -5044,14 +5272,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         style_row = QHBoxLayout()
         style_row.setContentsMargins(0, 0, 0, 0)
         style_row.setSpacing(8)
-        self.rectangle_style_label = QLabel(self.tr("Style"))
-        self.rectangle_style_a_radio = QRadioButton("A")
-        self.rectangle_style_b_radio = QRadioButton("B")
-        self.rectangle_style_group = QButtonGroup(self.rectangle_style_container)
-        self.rectangle_style_group.addButton(self.rectangle_style_a_radio)
-        self.rectangle_style_group.addButton(self.rectangle_style_b_radio)
-        self.rectangle_style_a_radio.setMinimumWidth(42)
-        self.rectangle_style_b_radio.setMinimumWidth(42)
+        self.rectangle_style_label = QLabel(self.tr("Style:"))
+        self.rectangle_style_selector = SegmentedSelector(self.rectangle_style_container, compact=True)
+        self.rectangle_style_a_radio = self.rectangle_style_selector.add_option("A", "a")
+        self.rectangle_style_b_radio = self.rectangle_style_selector.add_option("B", "b")
+        self.rectangle_style_group = self.rectangle_style_selector.button_group
         style_value = normalize_rectangle_style(
             self._measure_view_setting_text(self.SETTING_MEASURE_RECTANGLE_STYLE, DEFAULT_RECTANGLE_STYLE)
         )
@@ -5061,23 +5286,28 @@ class MainWindow(GeometryMixin, QMainWindow):
                 str(int(DEFAULT_RECTANGLE_THICKNESS)),
             )
         )))
-        self.rectangle_thick_label = QLabel(self.tr("T:"))
-        self.rectangle_thick_checkbox = QCheckBox()
-        self.rectangle_thick_checkbox.setText("")
-        self.rectangle_thick_checkbox.setToolTip(self.tr("Use thicker rectangle corners/stroke."))
+        self.rectangle_thickness_label = QLabel(self.tr("Thickness:"))
+        self.rectangle_thickness_selector = SegmentedSelector(self.rectangle_style_container, compact=True)
+        self.rectangle_thickness_thin_radio = self.rectangle_thickness_selector.add_option(
+            self.tr("Thin"),
+            "thin",
+            checked=thickness_value < 2,
+        )
+        self.rectangle_thickness_thick_radio = self.rectangle_thickness_selector.add_option(
+            self.tr("Thick"),
+            "thick",
+            checked=thickness_value >= 2,
+        )
+        self.rectangle_thickness_selector.selectionChanged.connect(self.on_measure_rectangle_thickness_changed)
         self.rectangle_style_a_radio.setChecked(style_value == "a")
         self.rectangle_style_b_radio.setChecked(style_value == "b")
-        self.rectangle_thick_checkbox.setChecked(thickness_value >= 2)
         self.rectangle_style_a_radio.toggled.connect(self.on_measure_rectangle_style_changed)
         self.rectangle_style_b_radio.toggled.connect(self.on_measure_rectangle_style_changed)
-        self.rectangle_thick_checkbox.toggled.connect(self.on_measure_rectangle_thickness_changed)
         style_row.addWidget(self.rectangle_style_label)
-        style_row.addSpacing(6)
-        style_row.addWidget(self.rectangle_style_a_radio)
-        style_row.addWidget(self.rectangle_style_b_radio)
+        style_row.addWidget(self.rectangle_style_selector, 0, Qt.AlignLeft)
         style_row.addSpacing(10)
-        style_row.addWidget(self.rectangle_thick_label)
-        style_row.addWidget(self.rectangle_thick_checkbox)
+        style_row.addWidget(self.rectangle_thickness_label)
+        style_row.addWidget(self.rectangle_thickness_selector, 0, Qt.AlignLeft)
         style_row.addStretch()
         rectangle_style_layout.addLayout(style_row)
 
@@ -5158,10 +5388,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         return "a"
 
     def _current_measure_rectangle_thickness(self) -> float:
-        if hasattr(self, "rectangle_thick_checkbox") and self.rectangle_thick_checkbox.isChecked():
-            return 2.0
-        if hasattr(self, "rectangle_thick_checkbox"):
-            return 1.0
+        if hasattr(self, "rectangle_thickness_selector"):
+            return 2.0 if self.rectangle_thickness_selector.selected_value("thin") == "thick" else 1.0
         return DEFAULT_RECTANGLE_THICKNESS
 
     def _apply_measure_rectangle_appearance(self, *, refresh_gallery: bool = False) -> None:
@@ -5274,7 +5502,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "show_scale_bar": bool(self.show_scale_bar_checkbox.isChecked()) if hasattr(self, "show_scale_bar_checkbox") else defaults["show_scale_bar"],
             "show_copyright": bool(self.show_copyright_checkbox.isChecked()) if hasattr(self, "show_copyright_checkbox") else defaults["show_copyright"],
             "rectangle_style": self._current_measure_rectangle_style() if hasattr(self, "rectangle_style_a_radio") else defaults["rectangle_style"],
-            "rectangle_thickness": self._current_measure_rectangle_thickness() if hasattr(self, "rectangle_thick_checkbox") else defaults["rectangle_thickness"],
+            "rectangle_thickness": self._current_measure_rectangle_thickness() if hasattr(self, "rectangle_thickness_selector") else defaults["rectangle_thickness"],
         }
         if bool(getattr(self, "_current_measure_scale_bar_value_custom", False)) and hasattr(self, "scale_bar_input"):
             settings["scale_bar_value"] = max(0.1, float(self.scale_bar_input.value()))
@@ -5373,10 +5601,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.rectangle_style_a_radio.blockSignals(False)
             self.rectangle_style_b_radio.blockSignals(False)
         rectangle_thickness = int(round(clamp_rectangle_thickness(settings.get("rectangle_thickness", DEFAULT_RECTANGLE_THICKNESS))))
-        if hasattr(self, "rectangle_thick_checkbox"):
-            self.rectangle_thick_checkbox.blockSignals(True)
-            self.rectangle_thick_checkbox.setChecked(rectangle_thickness >= 2)
-            self.rectangle_thick_checkbox.blockSignals(False)
+        if hasattr(self, "rectangle_thickness_selector"):
+            self.rectangle_thickness_selector.set_selected_value("thick" if rectangle_thickness >= 2 else "thin")
 
         if hasattr(self, "image_label"):
             self.image_label.set_show_measure_labels(
@@ -5603,18 +5829,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_style_layout.setSpacing(8)
         plot_style_label = QLabel(self.tr("Plot:"))
         plot_style_layout.addWidget(plot_style_label)
-        self.gallery_plot_style_group = QButtonGroup(self)
-        self.gallery_plot_style_ellipse_radio = QRadioButton(self.tr("Ellipse"))
-        self.gallery_plot_style_kde_radio = QRadioButton(self.tr("Kernel density"))
-        self.gallery_plot_style_mean_radio = QRadioButton(self.tr("Mean range"))
-        for radio in (
-            self.gallery_plot_style_ellipse_radio,
-            self.gallery_plot_style_kde_radio,
-            self.gallery_plot_style_mean_radio,
-        ):
-            self.gallery_plot_style_group.addButton(radio)
-            plot_style_layout.addWidget(radio)
-        plot_style_layout.addStretch()
+        self.gallery_plot_style_selector = SegmentedSelector(self, compact=True)
+        self.gallery_plot_style_ellipse_radio = self.gallery_plot_style_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
+        self.gallery_plot_style_kde_radio = self.gallery_plot_style_selector.add_option(self.tr("Kernel density"), "kde")
+        self.gallery_plot_style_mean_radio = self.gallery_plot_style_selector.add_option(self.tr("Mean range"), "mean")
+        self.gallery_plot_style_group = self.gallery_plot_style_selector.button_group
+        self.gallery_plot_style_selector.selectionChanged.connect(lambda _value: self.on_gallery_plot_setting_changed())
+        plot_style_layout.addWidget(self.gallery_plot_style_selector, 0, Qt.AlignLeft)
         plot_layout.addRow("", plot_style_row)
 
         plot_style = self._gallery_plot_style(self.gallery_plot_settings)
@@ -6542,32 +6763,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         shape_row = QHBoxLayout(shape_row_widget)
         shape_row.setContentsMargins(0, 0, 0, 0)
         shape_row.setSpacing(10)
-        shape_label = QLabel(self.tr("Reference shape:"))
+        shape_label = QLabel(self.tr("Shape:"))
         shape_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         shape_row.addWidget(shape_label)
-        self.ref_shape_group = QButtonGroup(self)
-        self.ref_shape_ellipse_radio = QRadioButton(self.tr("Ellipse"))
-        self.ref_shape_square_radio = QRadioButton(self.tr("Square"))
-        self.ref_shape_group.addButton(self.ref_shape_ellipse_radio)
-        self.ref_shape_group.addButton(self.ref_shape_square_radio)
+        self.ref_shape_selector = SegmentedSelector(self, compact=True)
+        self.ref_shape_ellipse_radio = self.ref_shape_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
+        self.ref_shape_square_radio = self.ref_shape_selector.add_option(self.tr("Square"), "square")
+        self.ref_shape_group = self.ref_shape_selector.button_group
         reference_shape = str(self.gallery_plot_settings.get("reference_shape", "ellipse") or "ellipse").strip().lower()
-        if reference_shape == "square":
-            self.ref_shape_square_radio.setChecked(True)
-        else:
-            self.ref_shape_ellipse_radio.setChecked(True)
-        self.ref_shape_ellipse_radio.toggled.connect(self.on_reference_overlay_setting_changed)
-        self.ref_shape_square_radio.toggled.connect(self.on_reference_overlay_setting_changed)
-        self.ref_shape_ellipse_radio.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        self.ref_shape_square_radio.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        shape_row.addWidget(self.ref_shape_ellipse_radio)
-        shape_row.addWidget(self.ref_shape_square_radio)
-        shape_row.addSpacing(12)
+        self.ref_shape_selector.set_selected_value("square" if reference_shape == "square" else "ellipse")
+        self.ref_shape_selector.selectionChanged.connect(lambda _value: self.on_reference_overlay_setting_changed())
+        shape_row.addWidget(self.ref_shape_selector, 0, Qt.AlignLeft)
         self.ref_show_minmax_checkbox = QCheckBox(self.tr("Min/Max"))
         self.ref_show_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("reference_minmax", True)))
         self.ref_show_minmax_checkbox.toggled.connect(self.on_reference_overlay_setting_changed)
         self.ref_show_minmax_checkbox.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         shape_row.addWidget(self.ref_show_minmax_checkbox)
-        shape_row.addStretch()
         layout.addWidget(shape_row_widget)
         _add_section_divider()
 
@@ -9069,8 +9280,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             "rectangle_style_label",
             "rectangle_style_a_radio",
             "rectangle_style_b_radio",
-            "rectangle_thick_label",
-            "rectangle_thick_checkbox",
+            "rectangle_thickness_label",
+            "rectangle_thickness_selector",
         ):
             widget = getattr(self, widget_name, None)
             if widget is not None:
@@ -9826,7 +10037,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._apply_measure_rectangle_appearance(refresh_gallery=True)
         self._save_current_image_measure_view_settings()
 
-    def on_measure_rectangle_thickness_changed(self, checked):
+    def on_measure_rectangle_thickness_changed(self, _value=None):
         thickness = self._current_measure_rectangle_thickness()
         SettingsDB.set_setting(self.SETTING_MEASURE_RECTANGLE_THICKNESS, str(int(round(thickness))))
         self._apply_measure_rectangle_appearance(refresh_gallery=True)
@@ -15512,7 +15723,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     def open_settings_hub(self, page: int = 0):
         """Open the unified Settings hub dialog."""
         dialog = SettingsHubDialog(self, start_page=page)
-        dialog.exec()
+        self._active_settings_hub_dialog = dialog
+        try:
+            dialog.exec()
+        finally:
+            if getattr(self, "_active_settings_hub_dialog", None) is dialog:
+                self._active_settings_hub_dialog = None
         # Propagate side-effects from embedded sub-dialogs
         if dialog.database_changed:
             self._populate_measure_categories()
@@ -15566,12 +15782,39 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._update_measure_copyright_overlay()
 
     def open_cloud_sync_dialog(self):
-        """Open Sporely Cloud Sync dialog."""
-        dialog = CloudSyncDialog(
-            self,
-            prepare_images_cb=getattr(self, "prepare_cloud_sync_image_uploads", None),
-        )
-        dialog.exec()
+        """Open the Preferences → Profile & Cloud page."""
+        self.open_settings_hub(page=SettingsHubDialog.PAGE_PROFILE)
+
+    def start_cloud_sync(
+        self,
+        *,
+        show_status: bool = True,
+        run_refresh_flow: bool = False,
+        materialize_remote_images: bool = False,
+    ) -> bool:
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is None:
+            return False
+        starter = getattr(observations_tab, "_start_cloud_sync", None)
+        if not callable(starter):
+            return False
+        return bool(starter(
+            show_status=show_status,
+            run_refresh_flow=run_refresh_flow,
+            materialize_remote_images=materialize_remote_images,
+        ))
+
+    def is_cloud_sync_running(self) -> bool:
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is None:
+            return False
+        checker = getattr(observations_tab, "_is_cloud_sync_running", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return False
 
     def prepare_cloud_sync_image_uploads(self, observation: dict, progress_cb=None):
         if not hasattr(self, "observations_tab") or self.observations_tab is None:
@@ -15999,10 +16242,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_style_layout.setContentsMargins(0, 0, 0, 0)
         plot_style_layout.setSpacing(10)
         plot_style_layout.addWidget(QLabel(self.tr("Plot:")))
-        plot_style_group = QButtonGroup(dialog)
-        plot_style_ellipse_radio = QRadioButton(self.tr("Ellipse"))
-        plot_style_kde_radio = QRadioButton(self.tr("Kernel density"))
-        plot_style_mean_radio = QRadioButton(self.tr("Mean range"))
+        plot_style_selector = SegmentedSelector(dialog, compact=True)
+        plot_style_ellipse_radio = plot_style_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
+        plot_style_kde_radio = plot_style_selector.add_option(self.tr("Kernel density"), "kde")
+        plot_style_mean_radio = plot_style_selector.add_option(self.tr("Mean range"), "mean")
         plot_style_ellipse_radio.setToolTip(
             self.tr("Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.")
         )
@@ -16012,10 +16255,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_style_mean_radio.setToolTip(
             self.tr("Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.")
         )
-        for radio in (plot_style_ellipse_radio, plot_style_kde_radio, plot_style_mean_radio):
-            plot_style_group.addButton(radio)
-            plot_style_layout.addWidget(radio)
-        plot_style_layout.addStretch()
+        plot_style_layout.addWidget(plot_style_selector, 0, Qt.AlignLeft)
         layout.addRow("", plot_style_row)
 
         plot_style = self._gallery_plot_style(settings)
@@ -16110,9 +16350,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             kde_coverage_value.setText(f"{int(kde_coverage_slider.value())}%")
             reference_shape_row.setEnabled(not bool(plot_style_mean_radio.isChecked()))
 
-        plot_style_ellipse_radio.toggled.connect(_sync_dialog_kde_controls)
-        plot_style_kde_radio.toggled.connect(_sync_dialog_kde_controls)
-        plot_style_mean_radio.toggled.connect(_sync_dialog_kde_controls)
+        plot_style_selector.selectionChanged.connect(lambda _value: _sync_dialog_kde_controls())
         ellipse_coverage_slider.valueChanged.connect(_sync_dialog_kde_controls)
         kde_bandwidth_slider.valueChanged.connect(_sync_dialog_kde_controls)
         kde_contours_slider.valueChanged.connect(_sync_dialog_kde_controls)
@@ -16140,19 +16378,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         reference_shape_layout = QHBoxLayout(reference_shape_row)
         reference_shape_layout.setContentsMargins(0, 0, 0, 0)
         reference_shape_layout.setSpacing(8)
-        reference_shape_layout.addWidget(QLabel(self.tr("Reference shape:")))
-        reference_shape_group = QButtonGroup(dialog)
-        reference_shape_ellipse_radio = QRadioButton(self.tr("Ellipse"))
-        reference_shape_square_radio = QRadioButton(self.tr("Square"))
-        reference_shape_group.addButton(reference_shape_ellipse_radio)
-        reference_shape_group.addButton(reference_shape_square_radio)
+        reference_shape_layout.addWidget(QLabel(self.tr("Shape:")))
+        reference_shape_selector = SegmentedSelector(dialog, compact=True)
+        reference_shape_ellipse_radio = reference_shape_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
+        reference_shape_square_radio = reference_shape_selector.add_option(self.tr("Square"), "square")
         if str(settings.get("reference_shape", "ellipse") or "ellipse").strip().lower() == "square":
-            reference_shape_square_radio.setChecked(True)
-        else:
-            reference_shape_ellipse_radio.setChecked(True)
-        reference_shape_layout.addWidget(reference_shape_ellipse_radio)
-        reference_shape_layout.addWidget(reference_shape_square_radio)
-        reference_shape_layout.addStretch()
+            reference_shape_selector.set_selected_value("square")
+        reference_shape_layout.addWidget(reference_shape_selector, 0, Qt.AlignLeft)
         layout.addRow("", reference_shape_row)
         _sync_dialog_kde_controls()
 

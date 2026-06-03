@@ -78,7 +78,7 @@ from utils.cloud_media_policy import (
     normalize_cloud_plan_profile,
     scale_dimensions_to_max_pixels,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import requests
 from urllib.parse import urlparse, parse_qs, unquote_plus
@@ -104,6 +104,7 @@ from utils.cloud_sync import (
     AccountMismatchError,
     SporelyCloudClient,
     cloud_media_materialization_state_for_observation,
+    format_original_upload_summary,
     materialize_cloud_media_for_observation,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
@@ -135,6 +136,7 @@ from .dialog_helpers import (
     make_github_help_button,
 )
 from .section_card import create_section_card
+from .segmented_selector import SegmentedSelector
 from .styles import (
     RED_LIST_BADGE_COLORS,
     pt,
@@ -227,9 +229,10 @@ class _CloudAutoSyncWorker(QThread):
     error = Signal(str)
     prepare_requested = Signal(object)
 
-    def __init__(self, prepare_images_cb=None, parent=None):
+    def __init__(self, prepare_images_cb=None, materialize_remote_images: bool = False, parent=None):
         super().__init__(parent)
         self._prepare_images_cb = prepare_images_cb
+        self._materialize_remote_images = bool(materialize_remote_images)
         self.prepare_requested.connect(self._handle_prepare_request)
 
     def _prepare_images(self, observation: dict, progress_cb=None):
@@ -277,6 +280,7 @@ class _CloudAutoSyncWorker(QThread):
                 client,
                 progress_cb=lambda msg, cur, tot: self.progress.emit(msg, cur, tot),
                 sync_images=True,
+                materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images,
             )
             if "skipped" not in result:
@@ -320,6 +324,19 @@ class _CloudMediaMaterializationWorker(QThread):
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
             self.error.emit(str(exc))
+
+
+def _cloud_sync_sanitized_messages(messages: list | tuple | None) -> list[str]:
+    cleaned: list[str] = []
+    for message in messages or []:
+        text = str(message or "").strip()
+        if text and text not in cleaned:
+            cleaned.append(text)
+    return cleaned
+
+
+def _cloud_sync_summary_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class _ThumbnailLoaderWorker(QThread):
@@ -2141,7 +2158,12 @@ class ObservationsTab(QWidget):
         if gallery is not None:
             gallery.setEnabled(not busy)
 
-    def _start_cloud_sync(self, show_status: bool, run_refresh_flow: bool) -> bool:
+    def _start_cloud_sync(
+        self,
+        show_status: bool,
+        run_refresh_flow: bool,
+        materialize_remote_images: bool = False,
+    ) -> bool:
         if self._cloud_sync_worker is not None:
             if show_status and not self._cloud_sync_show_status:
                 self._set_status_progress_visible(True)
@@ -2154,6 +2176,7 @@ class ObservationsTab(QWidget):
         self._cloud_sync_run_refresh_flow = bool(run_refresh_flow)
         self._cloud_sync_worker = _CloudAutoSyncWorker(
             prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+            materialize_remote_images=materialize_remote_images,
             parent=self,
         )
         self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
@@ -2168,6 +2191,32 @@ class ObservationsTab(QWidget):
             self.delete_btn.setEnabled(False)
         self._cloud_sync_worker.start()
         return True
+
+    def _record_cloud_sync_status(self, summary: str, *, errors: list[str] | None, status: str) -> None:
+        error_messages = _cloud_sync_sanitized_messages(errors)
+        update_app_settings(
+            {
+                "cloud_last_sync_at": _cloud_sync_summary_timestamp(),
+                "cloud_last_sync_summary": str(summary or "").strip(),
+                "cloud_last_sync_error_count": len(error_messages),
+                "cloud_last_sync_errors_json": json.dumps(error_messages),
+                "cloud_last_sync_status": str(status or "").strip() or "ok",
+            }
+        )
+        self._notify_active_settings_hub_cloud_status()
+
+    def _notify_active_settings_hub_cloud_status(self) -> None:
+        main_window = self.window()
+        settings_dialog = getattr(main_window, "_active_settings_hub_dialog", None) if main_window else None
+        if settings_dialog is None:
+            return
+        refresh = getattr(settings_dialog, "refresh_cloud_sync_status", None)
+        if not callable(refresh):
+            return
+        try:
+            refresh()
+        except Exception:
+            pass
 
     def _on_cloud_sync_progress(self, message: str, current: int, total: int) -> None:
         if self._cloud_sync_show_status and message:
@@ -2311,10 +2360,6 @@ class ObservationsTab(QWidget):
         self.refresh_observations(show_status=False)
         if self._cloud_sync_run_refresh_flow:
             self._finish_manual_refresh_flow()
-        if not self._cloud_sync_show_status:
-            return
-        self._set_status_progress_visible(False)
-        self._set_status_progress("", 0, 1)
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
         errors = list(result.get("errors", []) or [])
@@ -2330,6 +2375,8 @@ class ObservationsTab(QWidget):
             if message and message not in blocked_messages:
                 blocked_messages.append(message)
         deleted_count = len(deleted_remote)
+        if result.get("skipped"):
+            return
         if errors:
             print(
                 "[cloud_sync] Cloud sync finished with "
@@ -2350,10 +2397,8 @@ class ObservationsTab(QWidget):
                 )
             for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
                 print(f"[cloud_sync] other issue {idx}: {error}")
-        if result.get("skipped"):
-            return
+        parts = []
         if pushed or pulled:
-            parts = []
             if pushed:
                 parts.append(
                     self.tr("{count} uploaded").format(count=pushed)
@@ -2385,36 +2430,32 @@ class ObservationsTab(QWidget):
             if deleted_count:
                 message += " " + self.tr("{count} cloud deletion(s) to review.").format(count=deleted_count)
                 level = "warning"
-            self.set_status_message(message, level=level, auto_clear_ms=12000)
         elif errors:
             if blocked_count:
-                self.set_status_message(
-                    " ".join(blocked_messages) if blocked_messages else privacy_slot_limit_user_message(),
-                    level="warning",
-                    auto_clear_ms=12000,
-                )
-                return
-            self.set_status_message(
-                self.tr("Cloud sync finished with {count} issue(s).").format(
+                message = " ".join(blocked_messages) if blocked_messages else privacy_slot_limit_user_message()
+                level = "warning"
+            else:
+                message = self.tr("Cloud sync finished with {count} issue(s).").format(
                     count=int(issue_summary.get("display_count", 0) or 0)
-                ),
-                level="warning",
-                auto_clear_ms=12000,
-            )
+                )
+                level = "warning"
         elif deleted_count:
-            self.set_status_message(
-                self.tr("Cloud sync finished: {count} deleted cloud observation(s) need review.").format(
-                    count=deleted_count
-                ),
-                level="warning",
-                auto_clear_ms=12000,
+            message = self.tr("Cloud sync finished: {count} deleted cloud observation(s) need review.").format(
+                count=deleted_count
             )
+            level = "warning"
         else:
-            self.set_status_message(
-                self.tr("Sporely Cloud already up to date."),
-                level="success",
-                auto_clear_ms=5000,
-            )
+            message = self.tr("Sporely Cloud already up to date.")
+            level = "success"
+        original_summary = format_original_upload_summary(result.get("original_sync"))
+        if original_summary:
+            message = f"{message}\n{original_summary}"
+        self._record_cloud_sync_status(message, errors=errors, status="warning" if (errors or deleted_count) else "ok")
+        if not self._cloud_sync_show_status:
+            return
+        self._set_status_progress_visible(False)
+        self._set_status_progress("", 0, 1)
+        self.set_status_message(message, level=level, auto_clear_ms=12000 if level != "success" else 5000)
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
         if conflicts:
@@ -2424,10 +2465,14 @@ class ObservationsTab(QWidget):
         self.refresh_observations(show_status=False)
         if self._cloud_sync_run_refresh_flow:
             self._finish_manual_refresh_flow()
-        if str(message or "").strip() == ACCOUNT_MISMATCH_MESSAGE:
-            if self._cloud_sync_show_status:
-                self._set_status_progress_visible(False)
-                self._set_status_progress("", 0, 1)
+        summary = self._summarize_sync_error(message)
+        is_account_mismatch = str(message or "").strip() == ACCOUNT_MISMATCH_MESSAGE
+        self._record_cloud_sync_status(summary, errors=[message], status="blocked" if is_account_mismatch else "error")
+        if not self._cloud_sync_show_status:
+            return
+        self._set_status_progress_visible(False)
+        self._set_status_progress("", 0, 1)
+        if is_account_mismatch:
             QMessageBox.critical(
                 self,
                 self.tr("Sporely Cloud Sync"),
@@ -2439,15 +2484,12 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=12000,
             )
             return
-        if self._cloud_sync_show_status:
-            self._set_status_progress_visible(False)
-            self._set_status_progress("", 0, 1)
-            short = message.split('\n')[0][:120]
-            self.set_status_message(
-                self.tr("Cloud sync failed: {error}").format(error=short),
-                level="warning",
-                auto_clear_ms=12000,
-            )
+        short = message.split('\n')[0][:120]
+        self.set_status_message(
+            self.tr("Cloud sync failed: {error}").format(error=short),
+            level="warning",
+            auto_clear_ms=12000,
+        )
 
     def _on_cloud_sync_worker_done(self, *_args) -> None:
         worker = self._cloud_sync_worker
@@ -9313,6 +9355,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             body_spacing=body_spacing,
         )
 
+    def _build_stacked_selector_field(
+        self,
+        label_text: str,
+        widget: QWidget,
+        *,
+        parent: QWidget | None = None,
+    ) -> QWidget:
+        """Build a compact stacked label + selector field for cloud settings."""
+        field = QWidget(parent or self)
+        field.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        field_layout = QVBoxLayout(field)
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.setSpacing(4)
+
+        label = QLabel(str(label_text), field)
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        field_layout.addWidget(label, 0, Qt.AlignLeft)
+        field_layout.addWidget(widget, 0, Qt.AlignLeft)
+        return field
+
     def __init__(
         self,
         parent=None,
@@ -9621,8 +9683,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.is_draft_checkbox.setToolTip(self.tr("Draft observations are visible as work in progress until you mark them finished."))
         self.is_draft_checkbox.setChecked(True)
         _details_row = 0
-        left_layout.addWidget(self.is_draft_checkbox, _details_row, 0, 1, 3)
-        _details_row += 1
 
         # Date and time
         datetime_container = QWidget()
@@ -9737,6 +9797,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         _details_row += 1
 
         cloud_controls = QWidget()
+        cloud_controls.setObjectName("observationCloudControls")
+        self._cloud_controls = cloud_controls
         cloud_layout = QVBoxLayout(cloud_controls)
         cloud_layout.setContentsMargins(0, 0, 0, 0)
         cloud_layout.setSpacing(6)
@@ -9745,32 +9807,56 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         cloud_title.setObjectName("metaLabel")
         cloud_layout.addWidget(cloud_title)
 
-        self.sharing_scope_combo = QComboBox()
-        self.sharing_scope_combo.addItem(self.tr("Private (1 slot)"), SHARING_SCOPE_PRIVATE)
-        self.sharing_scope_combo.addItem(self.tr("Friends (1 slot)"), SHARING_SCOPE_FRIENDS)
-        self.sharing_scope_combo.addItem(self.tr("Public"), SHARING_SCOPE_PUBLIC)
-        self.sharing_scope_combo.setToolTip(self.tr("Who can see this observation in Sporely Cloud."))
-        self.sharing_scope_combo.currentIndexChanged.connect(
-            lambda _index: setattr(self, "_sharing_scope_value", normalize_sharing_scope(self.sharing_scope_combo.currentData()))
+        self.sharing_scope_selector = SegmentedSelector(self, compact=True)
+        self.sharing_scope_private_radio = self.sharing_scope_selector.add_option(
+            self.tr("Private"),
+            SHARING_SCOPE_PRIVATE,
+            checked=True,
+            tooltip=self.tr("Private observations are visible only to you."),
+        )
+        self.sharing_scope_friends_radio = self.sharing_scope_selector.add_option(
+            self.tr("Friends"),
+            SHARING_SCOPE_FRIENDS,
+            tooltip=self.tr("Friends-only observations consume one privacy slot."),
+        )
+        self.sharing_scope_public_radio = self.sharing_scope_selector.add_option(
+            self.tr("Public"),
+            SHARING_SCOPE_PUBLIC,
+            tooltip=self.tr("Public observations do not use a privacy slot."),
+        )
+        self.sharing_scope_selector.selectionChanged.connect(
+            lambda value: setattr(self, "_sharing_scope_value", normalize_sharing_scope(value))
         )
 
-        self.location_precision_combo = QComboBox()
-        self.location_precision_combo.addItem(self.tr("Exact"), LOCATION_PRECISION_EXACT)
-        self.location_precision_combo.addItem(self.tr("Fuzzed (1 slot)"), LOCATION_PRECISION_FUZZED)
-        self.location_precision_combo.setToolTip(self.tr("Fuzzed locations are rounded in public and follow feeds."))
+        self.location_precision_selector = SegmentedSelector(self, compact=True)
+        self.location_precision_exact_radio = self.location_precision_selector.add_option(
+            self.tr("Exact"),
+            LOCATION_PRECISION_EXACT,
+            checked=True,
+        )
+        self.location_precision_fuzzed_radio = self.location_precision_selector.add_option(
+            self.tr("Fuzzed"),
+            LOCATION_PRECISION_FUZZED,
+            tooltip=self.tr("Fuzzed locations are rounded in public and follow feeds."),
+        )
 
-        def _add_cloud_row(label_text: str, widget: QWidget) -> None:
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(8)
-            label = QLabel(label_text)
-            label.setMinimumWidth(120)
-            row.addWidget(label)
-            row.addWidget(widget, 1)
-            cloud_layout.addLayout(row)
-
-        _add_cloud_row(self.tr("Cloud sharing:"), self.sharing_scope_combo)
-        _add_cloud_row(self.tr("Location precision:"), self.location_precision_combo)
+        cloud_row = QHBoxLayout()
+        cloud_row.setContentsMargins(0, 0, 0, 0)
+        cloud_row.setSpacing(18)
+        cloud_row.addWidget(
+            self._build_stacked_selector_field(self.tr("Share with.."), self.sharing_scope_selector, parent=cloud_controls),
+            0,
+            Qt.AlignLeft | Qt.AlignTop,
+        )
+        cloud_row.addWidget(
+            self._build_stacked_selector_field(self.tr("Location precision:"), self.location_precision_selector, parent=cloud_controls),
+            0,
+            Qt.AlignLeft | Qt.AlignTop,
+        )
+        self.is_draft_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        cloud_row.addWidget(self.is_draft_checkbox, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        cloud_row.addStretch(1)
+        cloud_layout.addLayout(cloud_row)
 
         left_layout.addWidget(cloud_controls, _details_row, 0, 1, 3)
         _details_row += 1
@@ -14879,12 +14965,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
 
     def _selected_sharing_scope(self) -> str:
-        if hasattr(self, "sharing_scope_combo"):
-            return normalize_sharing_scope(self.sharing_scope_combo.currentData(), fallback=self._default_sharing_scope())
-        return normalize_sharing_scope(
-            getattr(self, "_sharing_scope_value", None),
-            fallback=self._default_sharing_scope(),
-        )
+        selector = getattr(self, "sharing_scope_selector", None)
+        if selector is not None:
+            return normalize_sharing_scope(selector.selected_value(self._default_sharing_scope()), fallback=self._default_sharing_scope())
+        return normalize_sharing_scope(getattr(self, "_sharing_scope_value", None), fallback=self._default_sharing_scope())
 
     def _set_sharing_scope(self, scope: str | None, location_public=None) -> None:
         raw = str(scope or "").strip().lower()
@@ -14896,22 +14980,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 else self._default_sharing_scope()
             )
         self._sharing_scope_value = normalized
-        if hasattr(self, "sharing_scope_combo"):
-            idx = self.sharing_scope_combo.findData(normalized)
-            if idx >= 0:
-                self.sharing_scope_combo.setCurrentIndex(idx)
+        selector = getattr(self, "sharing_scope_selector", None)
+        if selector is not None:
+            selector.set_selected_value(normalized)
 
     def _selected_location_precision(self) -> str:
-        if hasattr(self, "location_precision_combo"):
-            return normalize_location_precision(self.location_precision_combo.currentData())
+        selector = getattr(self, "location_precision_selector", None)
+        if selector is not None:
+            return normalize_location_precision(selector.selected_value(LOCATION_PRECISION_EXACT))
         return LOCATION_PRECISION_EXACT
 
     def _set_location_precision(self, value: str | None) -> None:
         normalized = normalize_location_precision(value)
-        if hasattr(self, "location_precision_combo"):
-            idx = self.location_precision_combo.findData(normalized)
-            if idx >= 0:
-                self.location_precision_combo.setCurrentIndex(idx)
+        selector = getattr(self, "location_precision_selector", None)
+        if selector is not None:
+            selector.set_selected_value(normalized)
 
     def _load_existing_observation(self):
         """Preload observation details and images for editing."""

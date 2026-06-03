@@ -354,6 +354,10 @@ QFrame#segmentedControl {{
     border-radius: 22px;
 }}
 
+QFrame#segmentedControl[compact="true"] {{
+    border-radius: 10px;
+}}
+
 QPushButton#segmentedButton {{
     background-color: transparent;
     color: {text};
@@ -364,6 +368,12 @@ QPushButton#segmentedButton {{
     font-family: 'Manrope', 'Segoe UI', sans-serif;
     font-size: {base_pt}pt;
     font-weight: 700;
+}}
+
+QPushButton#segmentedButton[compact="true"] {{
+    border-radius: 10px;
+    padding: 5px 14px 6px 14px;
+    min-height: 0px;
 }}
 
 QPushButton#segmentedButton:hover:!checked {{

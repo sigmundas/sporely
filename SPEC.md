@@ -11,6 +11,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 ## Data Flow & Sync Engine
 - **Local-First Database:** All data is initially written to the local SQLite database.
 - **Cloud Syncing:** `cloud_sync.py` manages bidirectional REST sync with the Supabase PostgreSQL database.
+- **Metadata-First Desktop Sync:** The desktop `Sync now` path refreshes observations, image metadata, measurements, and snapshots without downloading missing cloud media. When a user explicitly wants cloud media on the local device, there is a separate offline-media download action.
 - **Conflict Resolution:** 
   - Sync engine stores a last-seen snapshot for cloud observations.
   - Cloud is the source of truth for linked observation metadata; manual review is reserved for destructive cases such as image removal.
@@ -34,7 +35,10 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 
 ## Desktop Identity & Profiles
 - Mirrored from Supabase `public.profiles` (`username`, `display_name`, `bio`, `avatar_url`).
+- `username` is editable as a profile handle, but cloud saves must respect the server-side uniqueness constraint and surface a clear conflict if the name is taken.
 - Local `profile_email` follows the signed-in Sporely Cloud email to prevent orphaned/disjoint metadata while signed in.
+- The Preferences profile avatar should render `avatar_url` when available and fall back to initials when no image can be loaded.
+- The Preferences UI no longer exposes the old full-resolution original sync opt-in or its explanatory copy; the main cloud surface is intentionally metadata-first with a separate offline-media path.
 - Copyright and watermarks remain in Desktop "Online publishing" settings and are intentionally omitted from Sporely Cloud image syncs.
 
 ## External Integrations

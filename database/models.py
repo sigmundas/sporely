@@ -30,6 +30,11 @@ from utils.publish_targets import (
 _UNSET = object()
 _CLOUD_APP_SETTING_KEYS = {
     "cloud_last_pull_at",
+    "cloud_last_sync_at",
+    "cloud_last_sync_error_count",
+    "cloud_last_sync_errors_json",
+    "cloud_last_sync_status",
+    "cloud_last_sync_summary",
     "cloud_recent_import_local_ids",
     "linked_cloud_user_id",
 }

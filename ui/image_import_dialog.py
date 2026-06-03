@@ -29,7 +29,6 @@ from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImageReader, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractSpinBox,
-    QButtonGroup,
     QComboBox,
     QDateTimeEdit,
     QDialog,
@@ -86,6 +85,7 @@ from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .dialog_helpers import ask_measurements_exist_delete, make_github_help_button
 from .section_card import create_section_card
+from .segmented_selector import SegmentedSelector
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
 
@@ -1000,35 +1000,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self.image_type_group = QButtonGroup(self)
-        self.image_type_group.setExclusive(True)
-        segmented_control_height = 52
-        image_type_pill = QFrame()
-        image_type_pill.setObjectName("segmentedControl")
-        image_type_pill.setFixedHeight(segmented_control_height)
-        image_type_pill.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        image_type_layout = QHBoxLayout(image_type_pill)
-        image_type_layout.setContentsMargins(4, 4, 4, 4)
-        image_type_layout.setSpacing(4)
-
-        self.field_radio = QPushButton(self.tr("Field Image (F)"))
-        self.field_radio.setObjectName("segmentedButton")
-        self.field_radio.setCheckable(True)
-        self.field_radio.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.micro_radio = QPushButton(self.tr("Microscope Image (M)"))
-        self.micro_radio.setObjectName("segmentedButton")
-        self.micro_radio.setCheckable(True)
-        self.micro_radio.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.image_type_group.addButton(self.field_radio)
-        self.image_type_group.addButton(self.micro_radio)
-        self.field_radio.setChecked(True)
-        self.image_type_group.buttonClicked.connect(self._on_settings_changed)
-        image_type_layout.addWidget(self.field_radio)
-        image_type_layout.addWidget(self.micro_radio)
-        layout.addWidget(image_type_pill)
+        self.image_type_selector = SegmentedSelector(self, compact=False)
+        self.image_type_group = self.image_type_selector.button_group
+        self.field_radio = self.image_type_selector.add_option(self.tr("Field Image (F)"), "field", checked=True)
+        self.micro_radio = self.image_type_selector.add_option(self.tr("Microscope Image (M)"), "microscope")
+        self.image_type_selector.selectionChanged.connect(lambda _value: self._on_settings_changed())
+        layout.addWidget(self.image_type_selector)
 
         add_btn = QPushButton(self.tr("Add Images..."))
-        add_btn.setFixedHeight(segmented_control_height)
+        add_btn.setFixedHeight(35)
         add_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         add_btn.clicked.connect(self._on_add_images_clicked)
         add_btn_row = QWidget()
