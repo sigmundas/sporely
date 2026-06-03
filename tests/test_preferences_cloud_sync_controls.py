@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QDialogButtonBox
 from PySide6.QtWidgets import QPlainTextEdit
+from PySide6.QtCore import QPoint
 
 import ui.main_window as main_window
 import utils.cloud_sync as cloud_sync
@@ -60,11 +61,24 @@ def _build_settings_hub_dialog(
     client=None,
     running: bool = False,
 ):
-    fake_client = client or SimpleNamespace(
-        user_id="user-123",
-        fetch_current_user_info=lambda: {},
-        fetch_profile=lambda: {},
-    )
+    default_client = {
+        "user_id": "user-123",
+        "fetch_current_user_info": lambda: {"email": "sigmund.as@gmail.com"},
+        "fetch_profile": lambda: {
+            "username": "sigmundas",
+            "display_name": "Sigmundas",
+            "bio": "",
+            "avatar_url": "",
+        },
+        "fetch_cloud_plan_profile": lambda: {"cloud_plan": "free", "is_pro": False},
+        "list_remote_observations": lambda: [
+            {"visibility": "private", "location_precision": "exact"},
+            {"visibility": "public", "location_precision": "exact"},
+        ],
+    }
+    fake_client = SimpleNamespace(**default_client)
+    if client is not None:
+        fake_client.__dict__.update(getattr(client, "__dict__", {}))
     fake_parent = _FakeMainWindow(running=running)
 
     monkeypatch.setattr(main_window, "DatabaseSettingsDialog", _StubDatabaseSettingsDialog)
@@ -103,14 +117,55 @@ def test_profile_cloud_controls_expose_sync_actions(monkeypatch, qapp):
     assert dialog.cloud_offline_media_button.isEnabled() is True
     assert dialog._artsobs_dialog._cloud_section.objectName() == "sectionCard"
     assert dialog.cloud_sync_group.objectName() == "sectionCard"
+    cloud_card = dialog._artsobs_dialog
+    assert cloud_card.cloud_status_label.text() == "Signed in as: sigmund.as@gmail.com"
+    assert cloud_card.cloud_plan_label.text() == "Plan: Free"
+    assert cloud_card.cloud_privacy_slots_label.text() == "Private/fuzzed slots: 1 used of 20 (19 available)"
+    assert cloud_card.cloud_upgrade_label.isVisible() is True
+    assert "sporely.no" in cloud_card.cloud_upgrade_label.text()
+    login_x = cloud_card.cloud_login_button.mapTo(cloud_card, QPoint(0, 0)).x()
+    status_x = cloud_card.cloud_status_label.mapTo(cloud_card, QPoint(0, 0)).x()
+    selector_x = cloud_card.cloud_sharing_selector.mapTo(cloud_card, QPoint(0, 0)).x()
+    assert abs(login_x - selector_x) <= 1
+    assert abs(status_x - selector_x) <= 1
 
     label_texts = {label.text() for label in dialog.findChildren(main_window.QLabel)}
     assert "Default sharing" in label_texts
     assert "Default sharing:" not in label_texts
+    assert "Cloud sign-in" in label_texts
 
     checkbox_texts = {checkbox.text() for checkbox in dialog.findChildren(QCheckBox)}
     assert "Upload desktop images to cloud" not in checkbox_texts
     assert "Download cloud images to this device" not in checkbox_texts
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_controls_hide_privacy_slot_count_for_pro(monkeypatch, qapp):
+    pro_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_current_user_info=lambda: {"email": "sigmund.as@gmail.com"},
+        fetch_profile=lambda: {
+            "username": "sigmundas",
+            "display_name": "Sigmundas",
+            "bio": "",
+            "avatar_url": "",
+        },
+        fetch_cloud_plan_profile=lambda: {"cloud_plan": "pro", "is_pro": True},
+        list_remote_observations=lambda: [
+            {"visibility": "private", "location_precision": "fuzzed"},
+            {"visibility": "friends", "location_precision": "exact"},
+        ],
+    )
+
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, client=pro_client)
+    cloud_card = dialog._artsobs_dialog
+
+    assert cloud_card.cloud_plan_label.text() == "Plan: Pro"
+    assert cloud_card.cloud_privacy_slots_label.isVisible() is False
+    assert cloud_card.cloud_privacy_slots_label.text() == ""
+    assert cloud_card.cloud_upgrade_label.isVisible() is False
 
     dialog.deleteLater()
     parent.deleteLater()

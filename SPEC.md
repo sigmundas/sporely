@@ -17,6 +17,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
   - Cloud is the source of truth for linked observation metadata; manual review is reserved for destructive cases such as image removal.
   - Reduced cloud image copies and harmless metadata drift are merged without a modal.
   - Missing R2 media objects are gracefully skipped, allowing the rest of the sync to continue.
+- **Important Upload Failures:** Plan-limit image upload failures surface a detailed dialog naming the observation, image, and file sizes so users can tell which upload needs attention.
 - **Account Lock:** `linked_cloud_user_id` is stored in local settings after the first sync. Any attempt to sync with a different account without explicitly resetting the local cloud link throws an `AccountMismatchError`.
 
 ## Privacy & Visibility Model
@@ -25,6 +26,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
   - `sharing_scope`: Maps to Supabase `visibility` (`private`, `friends`, `public`).
   - `location_precision`: Maps to Supabase `location_precision` (`exact`, `fuzzed`).
 - **Privacy Slots:** When an observation syncs as non-public (`visibility != 'public'` or `location_precision = 'fuzzed'`), it consumes 1 of 20 available free-tier privacy slots in Supabase.
+- The observation editor shows the current available private slots for free-tier accounts and updates that count live when sharing or location precision changes; Pro accounts hide the slot counter.
 
 ## Location Lookup Engine
 - `database/reverse_location_lookup.py` manages asynchronous reverse geocoding.
@@ -38,6 +40,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 - `username` is editable as a profile handle, but cloud saves must respect the server-side uniqueness constraint and surface a clear conflict if the name is taken.
 - Local `profile_email` follows the signed-in Sporely Cloud email to prevent orphaned/disjoint metadata while signed in.
 - The Preferences profile avatar should render `avatar_url` when available and fall back to initials when no image can be loaded.
+- The Preferences Sporely Cloud card shows the signed-in email, current plan, free-tier privacy-slot usage, and a free-tier upgrade link to `sporely.no` when appropriate.
 - The Preferences UI no longer exposes the old full-resolution original sync opt-in or its explanatory copy; the main cloud surface is intentionally metadata-first with a separate offline-media path.
 - Copyright and watermarks remain in Desktop "Online publishing" settings and are intentionally omitted from Sporely Cloud image syncs.
 

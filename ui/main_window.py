@@ -1150,6 +1150,8 @@ class SettingsHubDialog(QDialog):
         identity_row.addWidget(self._profile_avatar_button, 0, Qt.AlignTop)
 
         form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._profile_username = QLineEdit(profile.get("username", ""))
         self._profile_username.setPlaceholderText(self.tr("@username"))
         self._profile_name  = QLineEdit(profile.get("name", ""))
@@ -1163,6 +1165,7 @@ class SettingsHubDialog(QDialog):
         form.addRow(self.tr("Email"), self._profile_email)
         form.addRow(self.tr("Bio"), self._profile_bio)
         form.addRow(self.tr("Default sharing"), self._artsobs_dialog.cloud_sharing_selector)
+        form.addRow(self.tr("Cloud sign-in"), self._artsobs_dialog.cloud_signin_row)
         identity_row.addLayout(form, 1)
         profile_block_layout.addLayout(identity_row)
         cloud_layout.insertWidget(0, profile_block)
@@ -1493,24 +1496,58 @@ class SettingsHubDialog(QDialog):
     def _refresh_cloud_profile_fields(self, force: bool = False) -> None:
         if not hasattr(self, "_profile_email"):
             return
+        cloud_dialog = getattr(self, "_artsobs_dialog", None)
         client = self._cloud_client()
         if client is None:
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
+            if cloud_dialog is not None:
+                cloud_dialog._cloud_client = None
+                cloud_dialog._cloud_account_email = ""
+                cloud_dialog._cloud_usage_summary = {}
+                cloud_dialog._cloud_usage_summary_user_id = ""
+                if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+                    cloud_dialog._update_cloud_account_summary_labels()
             return
         user_id = str(getattr(client, "user_id", "") or "").strip()
         if not force and user_id and self._cloud_profile_loaded_user_id == user_id:
+            if cloud_dialog is not None and getattr(cloud_dialog, "_cloud_usage_summary_user_id", "") != user_id:
+                try:
+                    from utils.cloud_sync import fetch_cloud_usage_summary
+
+                    summary = fetch_cloud_usage_summary(client)
+                except Exception:
+                    summary = {}
+                cloud_dialog._cloud_usage_summary = summary
+                cloud_dialog._cloud_usage_summary_user_id = user_id if summary.get("cloud_usage_loaded") else ""
+                if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+                    cloud_dialog._update_cloud_account_summary_labels()
             return
         try:
             user_info = client.fetch_current_user_info()
             account_email = str(user_info.get("email") or get_app_settings().get("cloud_user_email") or "").strip()
             cloud_profile = client.fetch_profile()
+            from utils.cloud_sync import fetch_cloud_usage_summary
+
+            if cloud_dialog is not None:
+                cloud_dialog._cloud_client = client
+                cloud_dialog._cloud_account_email = account_email
+                summary = fetch_cloud_usage_summary(client)
+                cloud_dialog._cloud_usage_summary = summary
+                cloud_dialog._cloud_usage_summary_user_id = user_id if summary.get("cloud_usage_loaded") else ""
         except Exception as exc:
             self._profile_email.setReadOnly(True)
             self._profile_email.setToolTip(self.tr("Signed in to Sporely Cloud."))
             self._cloud_profile_loaded_user_id = user_id
             self._profile_email.setText(str(get_app_settings().get("cloud_user_email") or "").strip())
             self._profile_avatar_url = str(SettingsDB.get_setting("profile_avatar_url", "") or "").strip()
+            if cloud_dialog is not None:
+                cloud_dialog._cloud_client = client
+                cloud_dialog._cloud_account_email = str(get_app_settings().get("cloud_user_email") or "").strip()
+                cloud_dialog._cloud_usage_summary = {}
+                cloud_dialog._cloud_usage_summary_user_id = user_id
+                if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+                    cloud_dialog._update_cloud_account_summary_labels()
             self._render_profile_avatar()
             return
 
@@ -1539,6 +1576,8 @@ class SettingsHubDialog(QDialog):
         )
         self._cloud_profile_loaded_user_id = user_id
         self._render_profile_avatar()
+        if cloud_dialog is not None and hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+            cloud_dialog._update_cloud_account_summary_labels()
 
     def _settings_hub_main_window(self):
         parent = self.parent()
@@ -1703,6 +1742,14 @@ class SettingsHubDialog(QDialog):
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
         self._profile_avatar_url = str(SettingsDB.get_setting("profile_avatar_url", "") or "").strip()
+        cloud_dialog = getattr(self, "_artsobs_dialog", None)
+        if cloud_dialog is not None:
+            cloud_dialog._cloud_client = None
+            cloud_dialog._cloud_account_email = ""
+            cloud_dialog._cloud_usage_summary = {}
+            cloud_dialog._cloud_usage_summary_user_id = ""
+            if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+                cloud_dialog._update_cloud_account_summary_labels()
         self._render_profile_avatar()
         self.refresh_cloud_sync_status()
 
@@ -2111,12 +2158,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.cloud_sharing_group = self.cloud_sharing_selector.button_group
         self.cloud_sharing_selector.selectionChanged.connect(lambda _value: self._on_cloud_sharing_changed())
 
-        self.cloud_status_label = QLabel(self.tr("Not logged in"))
-        self.cloud_status_label.setWordWrap(True)
-        self.cloud_status_label.setCursor(Qt.PointingHandCursor)
-        self.cloud_status_label.mousePressEvent = self._on_cloud_status_label_clicked
-        cloud_layout.addWidget(self.cloud_status_label)
-
         self.cloud_debug_override_container = QWidget(self)
         cloud_debug_layout = QVBoxLayout(self.cloud_debug_override_container)
         cloud_debug_layout.setContentsMargins(0, 0, 0, 0)
@@ -2145,9 +2186,17 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.cloud_debug_note_label.setStyleSheet("color: #6b7280; font-size: 11px;")
         cloud_debug_layout.addWidget(self.cloud_debug_note_label)
         self.cloud_debug_override_container.setVisible(False)
-        cloud_layout.addWidget(self.cloud_debug_override_container)
+        cloud_signin_row = QWidget(cloud_group)
+        cloud_signin_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        cloud_signin_row_layout = QVBoxLayout(cloud_signin_row)
+        cloud_signin_row_layout.setContentsMargins(0, 0, 0, 0)
+        cloud_signin_row_layout.setSpacing(4)
+        self.cloud_signin_row = cloud_signin_row
+        self.cloud_signin_row_layout = cloud_signin_row_layout
 
         cloud_button_row = QHBoxLayout()
+        cloud_button_row.setContentsMargins(0, 0, 0, 0)
+        cloud_button_row.setSpacing(8)
         self.cloud_login_button = QPushButton(self.tr("Log in"))
         self.cloud_login_button.clicked.connect(self._open_cloud_login)
         cloud_button_row.addWidget(self.cloud_login_button)
@@ -2155,8 +2204,42 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.cloud_logout_button = QPushButton(self.tr("Log out"))
         self.cloud_logout_button.clicked.connect(self._logout_cloud)
         cloud_button_row.addWidget(self.cloud_logout_button)
-        cloud_button_row.addStretch()
-        cloud_layout.addLayout(cloud_button_row)
+        cloud_button_row.addStretch(1)
+        cloud_signin_row_layout.addLayout(cloud_button_row)
+
+        self.cloud_status_label = QLabel(self.tr("Not logged in"))
+        self.cloud_status_label.setWordWrap(True)
+        self.cloud_status_label.setCursor(Qt.PointingHandCursor)
+        self.cloud_status_label.mousePressEvent = self._on_cloud_status_label_clicked
+        cloud_signin_row_layout.addWidget(self.cloud_status_label)
+
+        self.cloud_plan_label = QLabel("")
+        self.cloud_plan_label.setWordWrap(True)
+        self.cloud_plan_label.setStyleSheet("color: #6b7280;")
+        self.cloud_plan_label.setVisible(False)
+        cloud_signin_row_layout.addWidget(self.cloud_plan_label)
+
+        self.cloud_privacy_slots_label = QLabel("")
+        self.cloud_privacy_slots_label.setWordWrap(True)
+        self.cloud_privacy_slots_label.setStyleSheet("color: #6b7280;")
+        self.cloud_privacy_slots_label.setVisible(False)
+        cloud_signin_row_layout.addWidget(self.cloud_privacy_slots_label)
+
+        self.cloud_upgrade_label = QLabel("")
+        self.cloud_upgrade_label.setWordWrap(True)
+        self.cloud_upgrade_label.setTextFormat(Qt.RichText)
+        self.cloud_upgrade_label.setOpenExternalLinks(True)
+        self.cloud_upgrade_label.setStyleSheet("color: #2563eb;")
+        self.cloud_upgrade_label.setVisible(False)
+        cloud_signin_row_layout.addWidget(self.cloud_upgrade_label)
+
+        if not isinstance(self.parent(), SettingsHubDialog):
+            cloud_signin_form = QFormLayout()
+            cloud_signin_form.setLabelAlignment(Qt.AlignLeft)
+            cloud_signin_form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+            cloud_signin_form.addRow(self.tr("Cloud sign-in"), cloud_signin_row)
+            cloud_layout.addLayout(cloud_signin_form)
+        cloud_layout.addWidget(self.cloud_debug_override_container)
 
         layout.addWidget(cloud_group, 0)
 
@@ -2694,9 +2777,100 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         except Exception:
             self._cloud_client = None
 
+    def _update_cloud_account_summary_labels(self) -> None:
+        if not hasattr(self, "cloud_status_label"):
+            return
+
+        client = getattr(self, "_cloud_client", None)
+        logged_in = bool(client)
+        summary = dict(getattr(self, "_cloud_usage_summary", {}) or {})
+        summary_loaded = bool(summary.get("cloud_usage_loaded") or summary.get("cloudUsageLoaded"))
+
+        if not logged_in:
+            self.cloud_status_label.setText(self.tr("Not logged in"))
+            for label in (
+                getattr(self, "cloud_plan_label", None),
+                getattr(self, "cloud_privacy_slots_label", None),
+                getattr(self, "cloud_upgrade_label", None),
+            ):
+                if label is not None:
+                    label.setVisible(False)
+                    label.setText("")
+            return
+
+        email = str(
+            getattr(self, "_cloud_account_email", "")
+            or get_app_settings().get("cloud_user_email")
+            or ""
+        ).strip()
+        if not email and client is not None:
+            try:
+                user_info = client.fetch_current_user_info()
+            except Exception:
+                user_info = {}
+            email = str(user_info.get("email") or "").strip()
+        shown = email or f"{str(getattr(client, 'user_id', '') or '')[:8]}..."
+        status_text = self.tr("Signed in as: {account}").format(account=shown)
+        debug_override = self._selected_debug_cloud_plan_override()
+        if debug_override in {"free", "pro"}:
+            status_text = f"{status_text}\n{self.tr('Testing override: {mode}').format(mode=self.tr('Free') if debug_override == 'free' else self.tr('Pro'))}"
+        self.cloud_status_label.setText(status_text)
+
+        plan_label = getattr(self, "cloud_plan_label", None)
+        slots_label = getattr(self, "cloud_privacy_slots_label", None)
+        upgrade_label = getattr(self, "cloud_upgrade_label", None)
+        if plan_label is None or slots_label is None or upgrade_label is None:
+            return
+
+        if not summary_loaded:
+            plan_label.setText(self.tr("Plan: loading…"))
+            plan_label.setVisible(True)
+            slots_label.setText("")
+            slots_label.setVisible(False)
+            upgrade_label.setVisible(False)
+            return
+
+        is_pro = bool(summary.get("has_pro_access") or str(summary.get("cloud_plan") or "").strip().lower() == "pro")
+        plan_label.setText(self.tr("Plan: {plan}").format(plan=self.tr("Pro") if is_pro else self.tr("Free")))
+        plan_label.setVisible(True)
+
+        used = max(0, int(summary.get("privacy_slots_used") or summary.get("privacy_slot_count") or 0))
+        privacy_limit = summary.get("privacy_slots_limit")
+        if privacy_limit is None:
+            slots_label.setText("")
+            slots_label.setVisible(False)
+        else:
+            try:
+                limit_value = max(0, int(privacy_limit))
+            except Exception:
+                limit_value = 0
+            available = summary.get("privacy_slots_available")
+            try:
+                available_value = max(0, int(available)) if available is not None else max(0, limit_value - used)
+            except Exception:
+                available_value = max(0, limit_value - used)
+            slots_label.setText(
+                self.tr("Private/fuzzed slots: {used} used of {limit} ({available} available)").format(
+                    used=used,
+                    limit=limit_value,
+                    available=available_value,
+                )
+            )
+            slots_label.setVisible(True)
+
+        if is_pro:
+            upgrade_label.setVisible(False)
+            upgrade_label.setText("")
+        else:
+            upgrade_label.setText(
+                self.tr('<a href="https://sporely.no">Upgrade to Pro at sporely.no</a>')
+            )
+            upgrade_label.setVisible(True)
+
     def _update_cloud_controls(self) -> None:
         self._refresh_cloud_status()
         email = str(get_app_settings().get("cloud_user_email") or "").strip()
+        self._cloud_account_email = email
         logged_in = bool(self._cloud_client)
         debug_override = self._selected_debug_cloud_plan_override()
         if hasattr(self, "cloud_status_label"):
@@ -2715,6 +2889,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             )
         if hasattr(self, "cloud_logout_button"):
             self.cloud_logout_button.setEnabled(self._cloud_login_worker is None and logged_in)
+        self._update_cloud_account_summary_labels()
         self._update_cloud_debug_controls()
 
     def _update_controls(self):

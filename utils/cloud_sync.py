@@ -1680,6 +1680,7 @@ PRIVACY_SLOT_LIMIT_USER_MESSAGE = (
 IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE = (
     "Image is too large for your plan. Make it smaller or upgrade to Pro."
 )
+FREE_TIER_PRIVACY_SLOT_LIMIT = 20
 _PRIVACY_SLOT_LIMIT_HINTS = (
     "Free Sporely accounts",
     "20 privacy slot",
@@ -1693,6 +1694,59 @@ _IMAGE_TOO_LARGE_FOR_PLAN_HINTS = (
 
 def privacy_slot_limit_user_message() -> str:
     return PRIVACY_SLOT_LIMIT_USER_MESSAGE
+
+
+def cloud_observation_uses_privacy_slot(observation: dict | None) -> bool:
+    record = dict(observation or {})
+    sharing_scope = _normalize_sharing_scope(
+        record.get('visibility') or record.get('sharing_scope'),
+        fallback='private',
+    )
+    location_precision = ObservationDB._normalize_location_precision(record.get('location_precision'))
+    return sharing_scope != 'public' or location_precision == 'fuzzed'
+
+
+def count_cloud_privacy_slots(remote_observations: list[dict] | None) -> int:
+    return sum(1 for row in list(remote_observations or []) if cloud_observation_uses_privacy_slot(row))
+
+
+def fetch_cloud_usage_summary(client) -> dict:
+    profile = normalize_cloud_plan_profile({})
+    remote_observations: list[dict] = []
+    profile_loaded = False
+    remote_loaded = False
+    if client is not None:
+        try:
+            profile = normalize_cloud_plan_profile(client.fetch_cloud_plan_profile())
+            profile_loaded = True
+        except Exception:
+            profile = normalize_cloud_plan_profile({})
+        try:
+            remote_observations = list(client.list_remote_observations() or [])
+            remote_loaded = True
+        except Exception:
+            remote_observations = []
+    privacy_slots_used = count_cloud_privacy_slots(remote_observations)
+    has_pro_access = bool(profile.get('has_pro_access') or str(profile.get('cloud_plan') or '').strip().lower() == 'pro')
+    privacy_slots_limit = None if has_pro_access else FREE_TIER_PRIVACY_SLOT_LIMIT
+    privacy_slots_available = None if privacy_slots_limit is None else max(
+        0,
+        int(privacy_slots_limit) - int(privacy_slots_used),
+    )
+    summary = dict(profile)
+    summary.update({
+        'privacy_slots_used': privacy_slots_used,
+        'privacySlotsUsed': privacy_slots_used,
+        'privacy_slot_count': privacy_slots_used,
+        'privacySlotCount': privacy_slots_used,
+        'privacy_slots_limit': privacy_slots_limit,
+        'privacySlotsLimit': privacy_slots_limit,
+        'privacy_slots_available': privacy_slots_available,
+        'privacySlotsAvailable': privacy_slots_available,
+        'cloud_usage_loaded': bool(profile_loaded and remote_loaded),
+        'cloudUsageLoaded': bool(profile_loaded and remote_loaded),
+    })
+    return summary
 
 
 def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[str, list[str]]:
@@ -5917,12 +5971,23 @@ class SporelyCloudClient:
 
         with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
             temp_dir = Path(temp_dir_name)
-            prepared_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = _prepare_cloud_image_upload_file(
-                str(path),
-                temp_dir,
-                _safe_int(img_cloud_id, default=0) or 0,
-                meta,
-            )
+            try:
+                prepared_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = _prepare_cloud_image_upload_file(
+                    str(path),
+                    temp_dir,
+                    _safe_int(img_cloud_id, default=0) or 0,
+                    meta,
+                )
+            except Exception as exc:
+                if is_image_too_large_for_plan_error(exc):
+                    raise CloudSyncError(
+                        _format_cloud_image_too_large_error(
+                            path,
+                            meta,
+                            exc,
+                        )
+                    ) from exc
+                raise
             mime = _content_type_for_path(prepared_path)
             upload_policy = _cloud_upload_policy_from_meta(meta)
             quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
@@ -5984,6 +6049,14 @@ class SporelyCloudClient:
                         raise CloudSyncError('Worker upload did not return a storage key')
                     storage_path = confirmed_key
             except Exception as exc:
+                if is_image_too_large_for_plan_error(exc):
+                    raise CloudSyncError(
+                        _format_cloud_image_too_large_error(
+                            path,
+                            meta,
+                            exc,
+                        )
+                    ) from exc
                 raise CloudSyncError(f'Media upload failed: {exc}') from exc
 
             # Generate the single cloud thumbnail variant used by web and desktop.
@@ -6436,6 +6509,104 @@ def _format_size(size_bytes: int) -> str:
     if size_bytes < 1024: return f"{size_bytes} B"
     if size_bytes < 1024 * 1024: return f"{size_bytes/1024:.1f} KB"
     return f"{size_bytes/(1024*1024):.1f} MB"
+
+
+def _format_cloud_image_too_large_error(
+    local_path: str | Path,
+    upload_meta: dict | None = None,
+    inner_error: Exception | str | None = None,
+) -> str:
+    meta = dict(upload_meta or {})
+    path = Path(str(local_path or "").strip())
+
+    details: list[str] = []
+
+    observation_label = str(meta.get('observation_label') or '').strip()
+    observation_id = str(meta.get('observation_id') or '').strip()
+    if observation_label and observation_id:
+        details.append(f"Observation: {observation_label} (ID {observation_id})")
+    elif observation_label:
+        details.append(f"Observation: {observation_label}")
+    elif observation_id:
+        details.append(f"Observation ID: {observation_id}")
+
+    image_label = str(meta.get('image_label') or '').strip()
+    image_id = str(meta.get('image_id') or '').strip()
+    if image_label and image_id:
+        details.append(f"Image: {image_label} (ID {image_id})")
+    elif image_label:
+        details.append(f"Image: {image_label}")
+    elif image_id:
+        details.append(f"Image ID: {image_id}")
+
+    source_path = str(meta.get('source_path') or '').strip()
+    source_filename = str(meta.get('source_filename') or '').strip()
+    if source_path:
+        details.append(f"Original file: {source_path}")
+    elif source_filename:
+        details.append(f"Original file: {source_filename}")
+
+    source_bytes = _safe_int(meta.get('source_bytes'))
+    if source_bytes <= 0 and source_path:
+        try:
+            source_bytes = int(Path(source_path).stat().st_size)
+        except Exception:
+            source_bytes = 0
+    if source_bytes <= 0:
+        try:
+            source_bytes = int(path.stat().st_size)
+        except Exception:
+            source_bytes = 0
+    if source_bytes > 0:
+        details.append(f"Original size: {_format_size(source_bytes)}")
+
+    source_width = _safe_int(meta.get('source_width'))
+    source_height = _safe_int(meta.get('source_height'))
+    if source_width <= 0 or source_height <= 0:
+        try:
+            with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img)
+                source_width = int(img.width or 0)
+                source_height = int(img.height or 0)
+        except Exception:
+            source_width = source_width or 0
+            source_height = source_height or 0
+    if source_width > 0 and source_height > 0:
+        details.append(f"Original dimensions: {source_width} × {source_height} px")
+
+    prepared_bytes = _safe_int(meta.get('stored_bytes'))
+    if prepared_bytes <= 0:
+        try:
+            prepared_bytes = int(path.stat().st_size)
+        except Exception:
+            prepared_bytes = 0
+    if prepared_bytes > 0:
+        details.append(f"Prepared upload size: {_format_size(prepared_bytes)}")
+
+    prepared_width = _safe_int(meta.get('stored_width'))
+    prepared_height = _safe_int(meta.get('stored_height'))
+    if prepared_width > 0 and prepared_height > 0:
+        details.append(f"Prepared dimensions: {prepared_width} × {prepared_height} px")
+
+    byte_cap = _safe_int(meta.get('full_image_byte_cap') or meta.get('fullImageByteCap'))
+    if byte_cap > 0:
+        details.append(f"Plan cap: {_format_size(byte_cap)}")
+
+    upload_mode = str(meta.get('upload_mode') or meta.get('uploadMode') or '').strip().lower()
+    quality_profile = str(meta.get('quality_profile') or meta.get('qualityProfile') or '').strip().lower()
+    if upload_mode or quality_profile:
+        details.append(
+            f"Upload mode: {upload_mode or 'unknown'} / {quality_profile or 'standard'}"
+        )
+
+    if inner_error is not None:
+        extra = str(inner_error or '').strip()
+        if extra and not is_image_too_large_for_plan_error(extra):
+            details.append(f"Details: {extra}")
+
+    if not details:
+        return IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE
+    return "\n".join([IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE, "", *details])
 
 def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: str | None = None) -> dict:
     """Enhanced conflict details with filename-level media differences."""

@@ -120,6 +120,54 @@ def test_upload_image_file_uses_worker_even_when_admin_env_exists_without_explic
     assert worker.calls[0][-1] <= source.stat().st_size
 
 
+def test_upload_image_file_surfaces_plan_limit_context(monkeypatch, tmp_path):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    source = _write_test_image(tmp_path / "source.jpg")
+    upload_meta = {
+        "observation_id": 17,
+        "observation_label": "Agaricus campestris",
+        "image_id": 42,
+        "image_label": "source.jpg (field)",
+        "source_path": str(source),
+        "source_filename": source.name,
+        "source_bytes": source.stat().st_size,
+        "source_width": 800,
+        "source_height": 600,
+        "stored_width": 640,
+        "stored_height": 480,
+        "stored_bytes": source.stat().st_size,
+        "upload_mode": "full",
+        "quality_profile": "standard",
+        "full_image_byte_cap": 1_000_000,
+    }
+
+    monkeypatch.setattr(
+        cloud_sync,
+        "_prepare_cloud_image_upload_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            cloud_sync.CloudSyncError(cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
+        ),
+    )
+
+    with pytest.raises(cloud_sync.CloudSyncError) as excinfo:
+        client.upload_image_file(
+            str(source),
+            "cloud-obs-1",
+            "cloud-img-1",
+            storage_path="user-123/cloud-obs-1/source.jpg",
+            upload_meta=upload_meta,
+        )
+
+    text = str(excinfo.value)
+    assert text.startswith(cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE)
+    assert "Observation: Agaricus campestris (ID 17)" in text
+    assert "Image: source.jpg (field) (ID 42)" in text
+    assert "Original file: " in text
+    assert cloud_sync._format_size(source.stat().st_size) in text
+    assert "Prepared upload size: " in text
+    assert "Plan cap: " in text
+
+
 def test_download_image_file_uses_public_media_without_r2_secrets(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)

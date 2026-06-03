@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, Q
                                 QDoubleSpinBox, QTabWidget, QDialogButtonBox, QCompleter,
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
+                                QPlainTextEdit,
                                 QGridLayout)
 from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings, QModelIndex, QItemSelectionModel
 from PySide6.QtGui import (
@@ -103,8 +104,11 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     SporelyCloudClient,
+    cloud_observation_uses_privacy_slot,
     cloud_media_materialization_state_for_observation,
     format_original_upload_summary,
+    fetch_cloud_usage_summary,
+    is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
@@ -337,6 +341,87 @@ def _cloud_sync_sanitized_messages(messages: list | tuple | None) -> list[str]:
 
 def _cloud_sync_summary_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _cloud_sync_image_upload_meta(
+    observation: dict,
+    image_row: dict,
+    *,
+    source_path: str,
+    upload_path: str,
+    source_width: int | None,
+    source_height: int | None,
+    stored_width: int | None,
+    stored_height: int | None,
+    encoding_format: str,
+    encoding_quality: int | float | None,
+    upload_mode: str,
+    policy: dict,
+) -> dict:
+    obs = dict(observation or {})
+    img = dict(image_row or {})
+    source_file = Path(str(source_path or "").strip())
+    upload_file = Path(str(upload_path or "").strip())
+
+    try:
+        observation_id = int(obs.get("id") or 0)
+    except Exception:
+        observation_id = 0
+    try:
+        image_id = int(img.get("id") or 0)
+    except Exception:
+        image_id = 0
+
+    source_filename = str(img.get("original_filename") or source_file.name or upload_file.name or "").strip()
+    image_type = str(img.get("image_type") or "").strip()
+    image_label = source_filename
+    if image_type:
+        image_label = f"{image_label} ({image_type})" if image_label else image_type
+    if not image_label:
+        image_label = f"image {image_id}" if image_id > 0 else "image"
+
+    try:
+        source_bytes = int(source_file.stat().st_size)
+    except Exception:
+        source_bytes = 0
+    try:
+        stored_bytes = int(upload_file.stat().st_size)
+    except Exception:
+        stored_bytes = 0
+
+    return {
+        "upload_mode": upload_mode,
+        "source_path": source_path,
+        "source_filename": source_filename,
+        "source_bytes": source_bytes or None,
+        "source_width": source_width or None,
+        "source_height": source_height or None,
+        "stored_width": stored_width or None,
+        "stored_height": stored_height or None,
+        "stored_bytes": stored_bytes or None,
+        "cloud_plan": policy.get("cloudPlan") or policy.get("cloud_plan") or "free",
+        "quality_profile": policy.get("qualityProfile") or policy.get("quality_profile") or "standard",
+        "full_image_byte_cap": policy.get("fullImageByteCap") or policy.get("full_image_byte_cap"),
+        "encoding_quality": encoding_quality,
+        "encoding_format": encoding_format,
+        "observation_id": observation_id or None,
+        "observation_label": (
+            " ".join(
+                part
+                for part in (
+                    str(obs.get("genus") or "").strip(),
+                    str(obs.get("species") or "").strip(),
+                )
+                if part
+            ).strip()
+            or str(obs.get("species_guess") or "").strip()
+            or str(obs.get("location") or "").strip()
+            or (f"observation {observation_id}" if observation_id > 0 else "observation")
+        ),
+        "image_id": image_id or None,
+        "image_label": image_label,
+        "image_type": image_type or None,
+    }
 
 
 class _ThumbnailLoaderWorker(QThread):
@@ -2218,6 +2303,44 @@ class ObservationsTab(QWidget):
         except Exception:
             pass
 
+    def _summarize_sync_error(self, message: str) -> str:
+        text = str(message or "").strip()
+        if text == ACCOUNT_MISMATCH_MESSAGE:
+            return self.tr("Cloud sync blocked: this database is linked to another account.")
+        if is_image_too_large_for_plan_error(text):
+            return self.tr("Cloud sync failed while uploading an image that is too large for your plan.")
+        if text.startswith("Push phase failed"):
+            return self.tr("Cloud sync failed while pushing local observations to Sporely Cloud.")
+        if text.startswith("Pull phase failed"):
+            return self.tr("Cloud sync failed while pulling observations from Sporely Cloud.")
+        return self.tr("Cloud sync failed.")
+
+    def _build_cloud_sync_error_details_dialog(self, details: str) -> QDialog:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.tr("Sporely Cloud Sync"))
+        dialog.setModal(True)
+        dialog.setMinimumSize(680, 360)
+        dialog.setWindowFlags(
+            dialog.windowFlags()
+            & ~Qt.WindowContextHelpButtonHint
+        )
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        text = QPlainTextEdit(dialog)
+        text.setReadOnly(True)
+        text.setPlainText(str(details or "").strip())
+        text.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        text.setMinimumHeight(240)
+        layout.addWidget(text, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, dialog)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        return dialog
+
     def _on_cloud_sync_progress(self, message: str, current: int, total: int) -> None:
         if self._cloud_sync_show_status and message:
             display_current = current
@@ -2484,12 +2607,13 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=12000,
             )
             return
-        short = message.split('\n')[0][:120]
         self.set_status_message(
-            self.tr("Cloud sync failed: {error}").format(error=short),
+            summary,
             level="warning",
             auto_clear_ms=12000,
         )
+        if is_image_too_large_for_plan_error(message):
+            self._build_cloud_sync_error_details_dialog(message).exec()
 
     def _on_cloud_sync_worker_done(self, *_args) -> None:
         worker = self._cloud_sync_worker
@@ -5223,18 +5347,20 @@ class ObservationsTab(QWidget):
                 {
                     "image_row": image_row,
                     "upload_path": str(upload_path),
-                    "cloud_upload_meta": {
-                        "upload_mode": upload_mode,
-                        "source_width": source_width or None,
-                        "source_height": source_height or None,
-                        "stored_width": stored_width or None,
-                        "stored_height": stored_height or None,
-                        "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
-                        "cloud_plan": policy.get("cloudPlan") or policy.get("cloud_plan") or "free",
-                        "quality_profile": policy.get("qualityProfile") or policy.get("quality_profile") or "standard",
-                        "encoding_quality": encoding_quality,
-                        "encoding_format": encoding_format,
-                    },
+                    "cloud_upload_meta": _cloud_sync_image_upload_meta(
+                        obs,
+                        image_row,
+                        source_path=source_path,
+                        upload_path=str(upload_path),
+                        source_width=source_width,
+                        source_height=source_height,
+                        stored_width=stored_width,
+                        stored_height=stored_height,
+                        encoding_format=encoding_format,
+                        encoding_quality=encoding_quality,
+                        upload_mode=upload_mode,
+                        policy=policy,
+                    ),
                 }
             )
 
@@ -5395,18 +5521,20 @@ class ObservationsTab(QWidget):
                 {
                     "image_row": image_row,
                     "upload_path": str(upload_path),
-                    "cloud_upload_meta": {
-                        "upload_mode": upload_mode,
-                        "source_width": source_width or None,
-                        "source_height": source_height or None,
-                        "stored_width": stored_width or None,
-                        "stored_height": stored_height or None,
-                        "stored_bytes": int(Path(upload_path).stat().st_size) if Path(upload_path).exists() else None,
-                        "cloud_plan": policy.get("cloudPlan") or policy.get("cloud_plan") or "free",
-                        "quality_profile": policy.get("qualityProfile") or policy.get("quality_profile") or "standard",
-                        "encoding_quality": encoding_quality,
-                        "encoding_format": encoding_format,
-                    },
+                    "cloud_upload_meta": _cloud_sync_image_upload_meta(
+                        obs,
+                        image_row,
+                        source_path=source_path,
+                        upload_path=str(upload_path),
+                        source_width=source_width,
+                        source_height=source_height,
+                        stored_width=stored_width,
+                        stored_height=stored_height,
+                        encoding_format=encoding_format,
+                        encoding_quality=encoding_quality,
+                        upload_mode=upload_mode,
+                        policy=policy,
+                    ),
                 }
             )
             self._yield_background_sync_ui()
@@ -9375,6 +9503,87 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         field_layout.addWidget(widget, 0, Qt.AlignLeft)
         return field
 
+    def _cloud_privacy_usage_client(self) -> SporelyCloudClient | None:
+        window = self.window() if hasattr(self, "window") else None
+        getter = getattr(window, "_cloud_client", None) if window is not None else None
+        client = None
+        if callable(getter):
+            try:
+                client = getter()
+            except Exception:
+                client = None
+        if client is None:
+            try:
+                client = SporelyCloudClient.from_stored_credentials()
+            except Exception:
+                client = None
+        return client
+
+    def _refresh_cloud_privacy_slots_summary(self, force: bool = False) -> None:
+        client = self._cloud_privacy_usage_client()
+        if client is None:
+            self._cloud_privacy_usage_summary = {}
+            self._cloud_privacy_usage_summary_user_id = ""
+            self._update_cloud_privacy_slots_label()
+            return
+
+        user_id = str(getattr(client, "user_id", "") or "").strip()
+        if not force and user_id and self._cloud_privacy_usage_summary_user_id == user_id:
+            self._update_cloud_privacy_slots_label()
+            return
+
+        try:
+            summary = fetch_cloud_usage_summary(client)
+            self._cloud_privacy_usage_summary = summary
+        except Exception:
+            summary = {}
+            self._cloud_privacy_usage_summary = summary
+        self._cloud_privacy_usage_summary_user_id = user_id if summary.get("cloud_usage_loaded") else ""
+        self._update_cloud_privacy_slots_label()
+
+    def _current_cloud_privacy_slot_consumption(self) -> int:
+        record = {
+            "sharing_scope": self._selected_sharing_scope(),
+            "location_precision": self._selected_location_precision(),
+        }
+        return 1 if cloud_observation_uses_privacy_slot(record) else 0
+
+    def _update_cloud_privacy_slots_label(self) -> None:
+        label = getattr(self, "cloud_privacy_slots_label", None)
+        if label is None:
+            return
+
+        summary = dict(getattr(self, "_cloud_privacy_usage_summary", {}) or {})
+        summary_loaded = bool(summary.get("cloud_usage_loaded") or summary.get("cloudUsageLoaded"))
+        if not summary_loaded:
+            if self._cloud_privacy_usage_summary_user_id:
+                label.setText(self.tr("Private slot availability: loading…"))
+            else:
+                label.setText(self.tr("Sign in to Sporely Cloud to see private slot availability."))
+            return
+
+        base_used = max(0, int(summary.get("privacy_slots_used") or summary.get("privacy_slot_count") or 0))
+        original_consumption = max(0, int(getattr(self, "_cloud_privacy_original_slot_consumption", 0) or 0))
+        projected_consumption = self._current_cloud_privacy_slot_consumption()
+        projected_used = max(0, base_used - original_consumption + projected_consumption)
+        privacy_limit = summary.get("privacy_slots_limit")
+        if privacy_limit is None:
+            label.setText("")
+            label.setVisible(False)
+            return
+
+        try:
+            limit_value = max(0, int(privacy_limit))
+        except Exception:
+            limit_value = 0
+        available = max(0, limit_value - projected_used)
+        label.setText(
+            self.tr("Available private slots: {available} of {limit}").format(
+                available=available,
+                limit=limit_value,
+            )
+        )
+
     def __init__(
         self,
         parent=None,
@@ -9466,6 +9675,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Guard against duplicate launches for the current detail view.
         self._cloud_media_auto_start_attempted = False
         self._cloud_media_state: dict = {}
+        self._cloud_privacy_usage_summary: dict = {}
+        self._cloud_privacy_usage_summary_user_id = ""
+        self._cloud_privacy_original_slot_consumption = 0
         self._ai_selected_index: int | None = None
         self._publish_target_manual_override = False
         self._publish_target_sync_in_progress = False
@@ -9497,6 +9709,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_publish_target_combo(self._active_reporting_target(), manual_override=False)
             self._set_sharing_scope(None)
             self._apply_primary_metadata()
+            self._cloud_privacy_original_slot_consumption = 0
+            self._update_cloud_privacy_slots_label()
         self._loading_form = False
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
@@ -9827,6 +10041,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.sharing_scope_selector.selectionChanged.connect(
             lambda value: setattr(self, "_sharing_scope_value", normalize_sharing_scope(value))
         )
+        self.sharing_scope_selector.selectionChanged.connect(
+            lambda _value: self._update_cloud_privacy_slots_label()
+        )
 
         self.location_precision_selector = SegmentedSelector(self, compact=True)
         self.location_precision_exact_radio = self.location_precision_selector.add_option(
@@ -9839,24 +10056,37 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             LOCATION_PRECISION_FUZZED,
             tooltip=self.tr("Fuzzed locations are rounded in public and follow feeds."),
         )
+        self.location_precision_selector.selectionChanged.connect(
+            lambda _value: self._update_cloud_privacy_slots_label()
+        )
 
-        cloud_row = QHBoxLayout()
-        cloud_row.setContentsMargins(0, 0, 0, 0)
-        cloud_row.setSpacing(18)
-        cloud_row.addWidget(
-            self._build_stacked_selector_field(self.tr("Share with.."), self.sharing_scope_selector, parent=cloud_controls),
-            0,
-            Qt.AlignLeft | Qt.AlignTop,
-        )
-        cloud_row.addWidget(
-            self._build_stacked_selector_field(self.tr("Location precision:"), self.location_precision_selector, parent=cloud_controls),
-            0,
-            Qt.AlignLeft | Qt.AlignTop,
-        )
+        cloud_grid = QGridLayout()
+        cloud_grid.setContentsMargins(0, 0, 0, 0)
+        cloud_grid.setHorizontalSpacing(18)
+        cloud_grid.setVerticalSpacing(4)
+
+        share_label = QLabel(self.tr("Share with.."), cloud_controls)
+        precision_label = QLabel(self.tr("Location precision:"), cloud_controls)
+        cloud_grid.addWidget(share_label, 0, 0, Qt.AlignLeft)
+        cloud_grid.addWidget(precision_label, 0, 1, Qt.AlignLeft)
+        cloud_grid.addWidget(self.sharing_scope_selector, 1, 0, Qt.AlignLeft | Qt.AlignTop)
+        cloud_grid.addWidget(self.location_precision_selector, 1, 1, Qt.AlignLeft | Qt.AlignTop)
+
+        draft_container = QWidget(cloud_controls)
+        draft_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        draft_container_layout = QVBoxLayout(draft_container)
+        draft_container_layout.setContentsMargins(0, 0, 0, 0)
+        draft_container_layout.setSpacing(0)
         self.is_draft_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        cloud_row.addWidget(self.is_draft_checkbox, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        cloud_row.addStretch(1)
-        cloud_layout.addLayout(cloud_row)
+        draft_container_layout.addWidget(self.is_draft_checkbox, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        cloud_grid.addWidget(draft_container, 1, 2, Qt.AlignLeft | Qt.AlignVCenter)
+
+        cloud_layout.addLayout(cloud_grid)
+        self.cloud_privacy_slots_label = QLabel(self.tr("Sign in to Sporely Cloud to see private slot availability."))
+        self.cloud_privacy_slots_label.setWordWrap(True)
+        self.cloud_privacy_slots_label.setStyleSheet("color: #6b7280;")
+        cloud_layout.addWidget(self.cloud_privacy_slots_label)
+        self._update_cloud_privacy_slots_label()
 
         left_layout.addWidget(cloud_controls, _details_row, 0, 1, 3)
         _details_row += 1
@@ -12635,6 +12865,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             gallery_start = time.perf_counter()
             self._refresh_image_gallery_summary()
             self._refresh_cloud_media_materialization_controls(show_prompt=True)
+            self._refresh_cloud_privacy_slots_summary(force=True)
             QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
             _debug_import_flow(
                 "deferred gallery refresh complete; "
@@ -14915,6 +15146,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._set_location_precision(obs.get("location_precision"))
         if hasattr(self, "is_draft_checkbox"):
             self.is_draft_checkbox.setChecked(bool(obs.get("is_draft", 1)))
+        cloud_id = str(obs.get("cloud_id") or "").strip()
+        self._cloud_privacy_original_slot_consumption = (
+            1 if cloud_id and cloud_observation_uses_privacy_slot(obs) else 0
+        )
+        self._update_cloud_privacy_slots_label()
         method = obs.get("determination_method")
         idx = self.determination_method_combo.findData(method)
         if idx >= 0:

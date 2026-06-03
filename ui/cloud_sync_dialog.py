@@ -33,6 +33,7 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     CloudSyncError,
+    is_image_too_large_for_plan_error,
     format_original_upload_summary,
     sync_all,
     load_saved_cloud_password,
@@ -520,7 +521,10 @@ class CloudSyncDialog(QDialog):
             box.setText(ACCOUNT_MISMATCH_MESSAGE)
         else:
             box.setText(summary)
-            box.setInformativeText('Open Details to copy the raw server/message text.')
+            if is_image_too_large_for_plan_error(msg):
+                box.setInformativeText('Open Details to view the observation, image, and file size.')
+            else:
+                box.setInformativeText('Open Details to copy the raw server/message text.')
             box.setDetailedText(str(msg))
         box.exec()
 
@@ -528,6 +532,8 @@ class CloudSyncDialog(QDialog):
         text = str(msg or '').strip()
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return 'Cloud sync blocked: this database is linked to another account.'
+        if is_image_too_large_for_plan_error(text):
+            return 'Cloud sync failed while uploading an image that is too large for your plan.'
         if text.startswith('Push phase failed'):
             return 'Cloud sync failed while pushing local observations to Sporely Cloud.'
         if text.startswith('Pull phase failed'):

@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -639,6 +640,24 @@ def test_privacy_slot_limit_error_classifier_matches_supabase_payload():
             "message": "Some other check constraint failed.",
         }
     )
+
+
+def test_fetch_cloud_usage_summary_counts_private_and_fuzzed_slots():
+    client = SimpleNamespace(
+        fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
+        list_remote_observations=lambda: [
+            {"visibility": "private", "location_precision": "exact"},
+            {"visibility": "public", "location_precision": "fuzzed"},
+            {"visibility": "public", "location_precision": "exact"},
+        ],
+    )
+
+    summary = cloud_sync.fetch_cloud_usage_summary(client)
+
+    assert summary["cloud_usage_loaded"] is True
+    assert summary["privacy_slots_used"] == 2
+    assert summary["privacy_slots_available"] == 18
+    assert summary["cloud_plan"] == "free"
 
 
 def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, monkeypatch):
