@@ -2,7 +2,31 @@
 
 This file tracks current implementation priorities. Detailed design decisions belong in `docs/supabase-sync-contract.md`; completed work belongs in `HISTORY.md`.
 
-## Current Focus — Desktop ↔ Cloud Sync Foundation
+## Bugs
+Scale bar does not show up on microscope images, published to inaturalist
+Spore stats: language should be english for inatrualist. Replace Sporer with Spores
+The thumbnail strip: when selecting a thumbnail near the end of the strip, and there are more thumbs outside, the selected thumb should center. Right now it bounces out of view.
+in Analysis tab: Orient and Uniform scale should be on by default. 
+Sync-handling: I added a bunch of microscope photos, measured, then closed the app. The images did not sync. A dialog should perhaps pop up here to remind people to sync? I hate dialogs though, so if this can be avoided I'm all ears.
+
+Sync to cloud should allways recode to webp. I got this error:
+obs 389: Image is too large for your plan. Make it smaller or upgrade to Pro.
+
+Observation: Panaeolina foenisecii (ID 389)
+Image: 20260603-173447.jpg (microscope) (ID 869)
+Original file: /Users/sigmundas/Library/Application Support/Sporely/images/Panaeolina/foenisecii - 2026-06-02T18-12-47+00-00 (2)/20260603-173447.jpg
+Original size: 4.6 MB
+Original dimensions: 5184 × 3888 px
+Prepared upload size: 1.5 MB
+Prepared dimensions: 5184 × 3888 px
+Plan cap: 4.8 MB
+Upload mode: full / high
+
+Note that this is from a pro account, so I should not have seen this. Anyway, upload should ahve been webp.
+
+I openend the app again, and microscope images still don't sync. I dunno if the error above blocks all syncs? I have a button for download missing cloud media, pressing that does not upload microscope images either..
+
+## Desktop ↔ Cloud Sync Foundation
 
 Goal: make `sporely-py`, `sporely-web`, Supabase, and R2 agree on image/calibration identity, deletion state, and file provenance before moving into multi-asset sync or full-resolution cloud storage.
 

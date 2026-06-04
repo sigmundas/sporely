@@ -2949,6 +2949,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self._auto_calibration_running = True
 
         thread = QThread(self)
+        thread.setObjectName("Auto calibration")
         worker = _AutoCalibrationWorker(
             image_path=image_path,
             spacing_um=spacing_um,
@@ -3892,6 +3893,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self._set_hint_progress(self.tr("Export Image"), 0)
 
         thread = QThread(self)
+        thread.setObjectName("Export image")
         worker = _ExportImageWorker(
             image_path=str(image_path),
             save_path=str(save_path),

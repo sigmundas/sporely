@@ -4630,6 +4630,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.app_version = app_version or ""
         self._update_check_started = False
         self._cloud_client = None
+        self._background_activity_manual: dict[int, str] = {}
+        self._background_activity_seq = 0
+        self._background_activity_badge: QLabel | None = None
+        self._background_activity_timer: QTimer | None = None
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_order: list[str] = []
         self._pixmap_cache_max = 6
@@ -4890,6 +4894,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         corner_layout.setContentsMargins(0, 0, 8, 0)
         corner_layout.setSpacing(4)
 
+        self._background_activity_badge = QLabel(self.tr("Working"), corner)
+        self._background_activity_badge.setObjectName("backgroundActivityBadge")
+        self._background_activity_badge.setAlignment(Qt.AlignCenter)
+        self._background_activity_badge.setTextInteractionFlags(Qt.NoTextInteraction)
+        self._background_activity_badge.setMargin(0)
+        self._background_activity_badge.setMinimumHeight(22)
+        self._background_activity_badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._background_activity_badge.setVisible(False)
+        corner_layout.addWidget(self._background_activity_badge, 0, Qt.AlignRight | Qt.AlignVCenter)
+
         self._avatar_corner_btn = QToolButton()
         self._avatar_corner_btn.setObjectName("cornerAvatarBtn")
         self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
@@ -4914,7 +4928,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._settings_corner_btn.setStyleSheet("QToolButton { border: none; padding: 2px; } QToolButton:hover { background-color: rgba(128,128,128,0.2); border-radius: 4px; }")
         corner_layout.addWidget(self._settings_corner_btn)
 
+        self._background_activity_timer = QTimer(self)
+        self._background_activity_timer.setInterval(400)
+        self._background_activity_timer.timeout.connect(self._refresh_background_activity_badge)
+        self._background_activity_timer.start()
+
         self._update_corner_ui()
+        self._refresh_background_activity_badge()
         self.tab_widget.setCornerWidget(corner, Qt.TopRightCorner)
 
         # Tab navigation shortcuts: Alt/Option on all platforms.
@@ -5088,6 +5108,117 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud: Not logged in"))
             self._avatar_corner_btn.setIcon(_make_svg_icon(_SVG_CLOUD_DISCONNECTED, icon_color))
             self._avatar_corner_btn.setIconSize(QSize(22, 22))
+
+        self._style_background_activity_badge()
+
+    def _style_background_activity_badge(self) -> None:
+        badge = getattr(self, "_background_activity_badge", None)
+        if badge is None:
+            return
+        theme = str(SettingsDB.get_setting("ui_theme", "auto") or "auto").strip().lower()
+        if theme not in {"auto", "light", "dark"}:
+            theme = "auto"
+        dark = _is_dark(theme)
+        bg = "#23313a" if dark else "#e7f1ec"
+        border = "#5b8096" if dark else "#96b0a4"
+        text = "#eef5ff" if dark else "#22322c"
+        badge.setStyleSheet(
+            "QLabel#backgroundActivityBadge {"
+            f"background: {bg};"
+            f"color: {text};"
+            f"border: 1px solid {border};"
+            "border-radius: 999px;"
+            "padding: 2px 8px;"
+            f"font-size: {pt(9)}pt;"
+            "font-weight: 600;"
+            "}"
+        )
+
+    def _background_activity_summary(self) -> tuple[int, list[str]]:
+        labels: list[str] = []
+        counts: dict[str, int] = {}
+
+        def _add(label: str) -> None:
+            text = str(label or "").strip()
+            if not text:
+                return
+            key = text.casefold()
+            if key not in counts:
+                labels.append(text)
+                counts[key] = 0
+            counts[key] += 1
+
+        for label in (self._background_activity_manual or {}).values():
+            _add(label)
+
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                for thread in app.findChildren(QThread):
+                    try:
+                        if not thread.isRunning():
+                            continue
+                    except Exception:
+                        continue
+                    thread_label = ""
+                    try:
+                        thread_label = str(thread.objectName() or "").strip()
+                    except Exception:
+                        thread_label = ""
+                    if not thread_label:
+                        thread_label = type(thread).__name__
+                    _add(thread_label)
+            except Exception:
+                pass
+
+        total = sum(counts.values())
+        summary: list[str] = []
+        for label in labels:
+            count = counts.get(label.casefold(), 0)
+            if count > 1:
+                summary.append(self.tr("{label} × {count}").format(label=label, count=count))
+            else:
+                summary.append(label)
+        return total, summary
+
+    def _refresh_background_activity_badge(self) -> None:
+        badge = getattr(self, "_background_activity_badge", None)
+        if badge is None:
+            return
+        total, labels = self._background_activity_summary()
+        if total <= 0:
+            badge.clear()
+            badge.setToolTip("")
+            badge.setVisible(False)
+            return
+        if total == 1:
+            badge.setText(self.tr("Working"))
+        else:
+            badge.setText(self.tr("Working ({count})").format(count=total))
+        if labels:
+            badge.setToolTip(
+                self.tr("Background work running:\n{details}").format(details="\n".join(labels))
+            )
+        else:
+            badge.setToolTip(self.tr("Background work running."))
+        badge.setVisible(True)
+
+    def begin_background_activity(self, label: str) -> int:
+        self._background_activity_seq += 1
+        token = self._background_activity_seq
+        self._background_activity_manual[token] = str(label or "").strip() or self.tr("Working")
+        self._refresh_background_activity_badge()
+        return token
+
+    def end_background_activity(self, token: int | None) -> None:
+        if token is None:
+            return
+        try:
+            removed = self._background_activity_manual.pop(int(token), None)
+        except Exception:
+            removed = None
+        if removed is not None:
+            self._refresh_background_activity_badge()
 
     def _fetch_and_set_cloud_avatar(self, user_id: str):
         if hasattr(self, "_avatar_pixmap_cached"):
@@ -14388,8 +14519,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_plot_canvas.draw()
         self._update_gallery_stats_preview()
 
+    @staticmethod
+    def _quantize_png8(path: Path) -> None:
+        """Reduce a PNG to an indexed 256-color palette for deliberate PNG-8 exports."""
+        try:
+            with Image.open(path) as img:
+                img8 = img.convert("P", palette=Image.ADAPTIVE, colors=256)
+                img8.save(path, format="PNG", optimize=True)
+        except Exception:
+            return
+
     def export_graph_plot_svg(self):
-        """Export analysis graphs to SVG, PNG, or JPEG."""
+        """Export analysis graphs to SVG, PNG-16, PNG-8, or JPEG."""
         if not hasattr(self, "gallery_plot_figure"):
             return
 
@@ -14418,11 +14559,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if name:
                     default_name = f"{name} - plot"
 
-        ext_map = {"svg": ".svg", "png": ".png", "jpg": ".jpg"}
-        default_ext = ext_map.get(export_format, ".svg")
+        ext_map = {"svg": ".svg", "png16": ".png", "png8": ".png", "jpg": ".jpg"}
+        default_ext = ext_map.get(export_format, ".png")
         filter_map = {
             "svg": "SVG Files (*.svg)",
-            "png": "PNG Images (*.png)",
+            "png16": "PNG-16 Images (*.png)",
+            "png8": "PNG-8 Images (*.png)",
             "jpg": "JPEG Images (*.jpg)",
         }
         default_path = str(Path(self._get_default_export_dir()) / f"{default_name}{default_ext}")
@@ -14447,13 +14589,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             elif export_theme == "light" and dark:
                 self._apply_plot_light_theme(fig, axes)
 
-            fmt = "jpeg" if export_format == "jpg" else export_format
             canvas = getattr(fig, "canvas", None)
             if canvas is not None:
                 canvas.draw()
 
             save_kwargs = {
-                "format": fmt,
+                "format": "jpeg" if export_format == "jpg" else "png" if export_format in {"png16", "png8"} else "svg",
                 "facecolor": fig.get_facecolor(),
                 "edgecolor": "none",
                 "transparent": False,
@@ -14464,6 +14605,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             if export_format == "jpg":
                 save_kwargs["pil_kwargs"] = {"quality": export_quality}
             fig.savefig(filename, **save_kwargs)
+            if export_format == "png8":
+                self._quantize_png8(Path(filename))
             self.measure_status_label.setText(f"\u2713 Plot exported to {Path(filename).name}")
             self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
         except Exception as exc:
@@ -14478,8 +14621,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if canvas:
                     canvas.draw_idle()
 
-    def export_publish_measure_plot_png(self, observation_id: int, out_path: Path | str) -> bool:
-        """Render and export a publish PNG using the same analysis plot pipeline."""
+    def export_publish_measure_plot_jpg(self, observation_id: int, out_path: Path | str) -> bool:
+        """Render and export a publish JPEG using the same analysis plot pipeline."""
         if not observation_id or not hasattr(self, "gallery_plot_figure"):
             return False
         target_path = Path(out_path)
@@ -14522,7 +14665,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             except Exception:
                 previous_fig_size = None
             self.update_graph_plots(measurements)
-            self.gallery_plot_figure.savefig(str(target_path), format="png", dpi=140)
+            self.gallery_plot_figure.savefig(
+                str(target_path),
+                format="jpeg",
+                dpi=140,
+                pil_kwargs={"quality": 90},
+            )
             return target_path.exists()
         except Exception:
             return False
@@ -14548,6 +14696,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 )
             if previous_tab_index is not None and hasattr(self, "tab_widget"):
                 self.tab_widget.setCurrentIndex(previous_tab_index)
+
+    def export_publish_measure_plot_png(self, observation_id: int, out_path: Path | str) -> bool:
+        """Backward-compatible alias for the publish JPEG export helper."""
+        return self.export_publish_measure_plot_jpg(observation_id, out_path)
 
     def on_gallery_plot_pick(self, event):
         """Handle pick events from gallery plots."""

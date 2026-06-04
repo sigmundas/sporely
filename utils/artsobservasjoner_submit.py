@@ -32,6 +32,48 @@ class ArtsObservasjonerWebClient:
         for name, value in cookies_dict.items():
             self.session.cookies.set(name, value, domain=".artsobservasjoner.no")
 
+    @staticmethod
+    def _response_error_text(response: requests.Response, limit: int = 400) -> str:
+        """Return a short, human-readable error summary for an HTTP response."""
+        text = str(response.text or "").strip()
+        if not text:
+            return ""
+
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        if "application/json" in content_type:
+            try:
+                payload = response.json()
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                errors = payload.get("errors")
+                if isinstance(errors, list):
+                    parts = [str(item).strip() for item in errors if str(item).strip()]
+                    if parts:
+                        return "; ".join(parts)[:limit]
+                for key in ("error", "message"):
+                    value = payload.get(key)
+                    if str(value or "").strip():
+                        return str(value).strip()[:limit]
+
+        lowered = text.lower()
+        if "<!doctype" in lowered or "<html" in lowered:
+            title_match = re.search(
+                r"<title>\s*(.*?)\s*</title>",
+                text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if title_match:
+                title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+                if title:
+                    return f"HTML error page (title: {title})"
+            text = re.sub(r"<[^>]+>", " ", text)
+
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > limit:
+            text = f"{text[:limit].rstrip()}..."
+        return text
+
     def submit_observation_web(
         self,
         taxon_id: int,
@@ -150,9 +192,8 @@ class ArtsObservasjonerWebClient:
             timeout=self.REQUEST_TIMEOUT,
         )
         if not response.ok:
-            raise RuntimeError(
-                f"Observation upload failed ({response.status_code}): {response.text}"
-            )
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
+            raise RuntimeError(f"Observation upload failed ({response.status_code}): {detail}")
         sighting_id = self._extract_sighting_id(response.text)
         temporary_sighting_id = self._extract_temporary_sighting_id(response.text)
         if not sighting_id and temporary_sighting_id:
@@ -275,8 +316,9 @@ class ArtsObservasjonerWebClient:
             timeout=self.REQUEST_TIMEOUT,
         )
         if not response.ok:
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
             raise RuntimeError(
-                f"Could not open web image upload form ({response.status_code}): {response.text}"
+                f"Could not open web image upload form ({response.status_code}): {detail}"
             )
         return response.text or ""
 
@@ -351,20 +393,21 @@ class ArtsObservasjonerWebClient:
             files = {
                 "UploadImageViewModel.Image": (file_path.name, handle, content_type),
             }
-            response = self.session.post(
-                url,
-                data=data,
-                files=files,
-                headers=headers,
-                timeout=self.UPLOAD_TIMEOUT,
-            )
+        response = self.session.post(
+            url,
+            data=data,
+            files=files,
+            headers=headers,
+            timeout=self.UPLOAD_TIMEOUT,
+        )
 
         # Trust the HTTP status code directly for this known endpoint.
         # _web_upload_response_ok scans the body for words like "error"/"feil"/
         # "exception" which appear in navigation and JS on virtually every page,
         # causing false negatives even when the upload succeeded.
         if not response.ok:
-            raise RuntimeError(f"{response.status_code}: {response.text[:300]}")
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
+            raise RuntimeError(f"{response.status_code}: {detail}")
         return {
             "filename": file_path.name,
             "url": url,
@@ -432,9 +475,10 @@ class ArtsObservasjonerWebClient:
                             "status_code": response.status_code,
                             "field_name": file_field,
                         }
+                    detail = self._response_error_text(response) or response.reason or "HTTP error"
                     last_error = (
                         f"{url} [{file_field}/{id_field}] -> "
-                        f"{response.status_code}: {response.text[:180]}"
+                        f"{response.status_code}: {detail}"
                     )
 
         raise RuntimeError(last_error or "No accepted upload endpoint was found.")
@@ -468,9 +512,8 @@ class ArtsObservasjonerWebClient:
         url = f"{self.BASE_URL}/SubmitSighting/Report"
         response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
         if not response.ok:
-            raise RuntimeError(
-                f"Failed to load report form ({response.status_code}): {response.text}"
-            )
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
+            raise RuntimeError(f"Failed to load report form ({response.status_code}): {detail}")
         return response.text or ""
 
     def _get_request_verification_token(self) -> str:
@@ -561,9 +604,8 @@ class ArtsObservasjonerWebClient:
             timeout=self.REQUEST_TIMEOUT,
         )
         if not response.ok:
-            raise RuntimeError(
-                f"Start date validation failed ({response.status_code}): {response.text}"
-            )
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
+            raise RuntimeError(f"Start date validation failed ({response.status_code}): {detail}")
 
     def _validate_taxon(self, taxon_id: int) -> None:
         data = {
@@ -583,9 +625,8 @@ class ArtsObservasjonerWebClient:
             timeout=self.REQUEST_TIMEOUT,
         )
         if not response.ok:
-            raise RuntimeError(
-                f"Taxon validation failed ({response.status_code}): {response.text}"
-            )
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
+            raise RuntimeError(f"Taxon validation failed ({response.status_code}): {detail}")
 
     def _prepare_new_site_context(
         self,
@@ -653,8 +694,9 @@ class ArtsObservasjonerWebClient:
             timeout=self.REQUEST_TIMEOUT,
         )
         if not response.ok:
+            detail = self._response_error_text(response) or response.reason or "HTTP error"
             raise RuntimeError(
-                f"Site coordinate validation failed ({response.status_code}): {response.text}"
+                f"Site coordinate validation failed ({response.status_code}): {detail}"
             )
         lowered = (response.text or "").lower()
         if "outside norway" in lowered or "utenfor norge" in lowered:

@@ -176,11 +176,15 @@ class ExportPlotDialog(QDialog):
         layout.setSpacing(8)
 
         self.format_input = QComboBox()
-        self.format_input.addItem("SVG", "svg")
-        self.format_input.addItem("PNG", "png")
+        self.format_input.addItem("PNG-16", "png16")
+        self.format_input.addItem("PNG-8", "png8")
         self.format_input.addItem("JPEG", "jpg")
+        self.format_input.addItem("SVG (lossless)", "svg")
         self.format_input.currentIndexChanged.connect(self._on_format_changed)
         layout.addRow(self.tr("Format:"), self.format_input)
+        self.format_input.setToolTip(
+            self.tr("PNG-16 keeps full color. PNG-8 uses an indexed palette and may posterize gradients.")
+        )
 
         self.theme_input = QComboBox()
         current_label = self.tr("Dark (current)") if self._current_dark else self.tr("Light (current)")

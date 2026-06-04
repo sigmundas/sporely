@@ -6303,9 +6303,11 @@ class ObservationsTab(QWidget):
             progress_cb(self.tr("Preparing measure plot image..."), 1, 3)
         self._yield_background_sync_ui()
 
-        out_path = temp_dir / "measure_plot.png"
+        out_path = temp_dir / "measure_plot.jpg"
         parent = self.window()
-        export_plot = getattr(parent, "export_publish_measure_plot_png", None)
+        export_plot = getattr(parent, "export_publish_measure_plot_jpg", None)
+        if not callable(export_plot):
+            export_plot = getattr(parent, "export_publish_measure_plot_png", None)
         if callable(export_plot):
             if cancel_cb:
                 cancel_cb()
@@ -6314,7 +6316,6 @@ class ObservationsTab(QWidget):
             self._yield_background_sync_ui()
             try:
                 if bool(export_plot(observation_id, out_path)):
-                    self._quantize_png8(out_path)
                     return str(out_path)
             except Exception:
                 pass
@@ -6446,9 +6447,8 @@ class ObservationsTab(QWidget):
         if progress_cb:
             progress_cb(self.tr("Rendering measure plot image..."), 3, 3)
         self._yield_background_sync_ui()
-        fig.savefig(out_path, format="png", dpi=140)
+        fig.savefig(out_path, format="jpeg", dpi=140, pil_kwargs={"quality": 90})
         fig.clear()
-        self._quantize_png8(out_path)
         return str(out_path)
 
     def _generate_publish_gallery_mosaic_image(
@@ -6685,7 +6685,6 @@ class ObservationsTab(QWidget):
             cancel_cb()
         try:
             if export_observation_plate_image(obs, out_path, excluded_image_ids=excluded):
-                self._quantize_png8(out_path)
                 return str(out_path)
         except Exception:
             return None
@@ -7517,6 +7516,7 @@ class ObservationsTab(QWidget):
             if upload_state["error"] is not None:
                 raise upload_state["error"]  # type: ignore[misc]
             result = upload_state["result"]
+
         except UploadCancelledError:
             return _fail(
                 self.tr("Upload cancelled."),
@@ -7524,7 +7524,20 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=8000,
             )
         except Exception as exc:
-            return _fail(self.tr("Upload failed: {error}").format(error=exc))
+            message = str(exc)
+            if uploader.key in {"mobile", "web"} and "Taxon validation failed" in message:
+                taxon_pair = self._extract_artsobs_taxon_pair(obs)
+                if taxon_pair:
+                    taxon_label = " ".join(part for part in taxon_pair if part).strip()
+                    taxon_id = ObservationDB.resolve_adb_taxon_id(*taxon_pair)
+                    if taxon_id:
+                        message = (
+                            f"{message} (observation taxon: {taxon_label}, "
+                            f"Artsdatabanken id {taxon_id})"
+                        )
+                    elif taxon_label:
+                        message = f"{message} (observation taxon: {taxon_label})"
+            return _fail(self.tr("Upload failed: {error}").format(error=message))
         finally:
             self._set_status_progress_visible(False)
             self._set_status_progress("", 0, 1)
