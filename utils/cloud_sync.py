@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 from PIL import Image, ImageOps, features
@@ -53,6 +53,7 @@ from database.models import (
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
+    WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE,
     build_cloud_upload_policy,
     build_full_image_webp_quality_attempts,
     normalize_cloud_plan_profile,
@@ -70,6 +71,7 @@ from utils.r2_storage import (
     CloudflareMediaWorkerClient,
     R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE,
     direct_r2_runtime_available,
+    media_worker_base_url,
     media_variant_key,
     normalize_media_key,
 )
@@ -1678,7 +1680,7 @@ PRIVACY_SLOT_LIMIT_USER_MESSAGE = (
     "Make one public, delete one, or upgrade to Pro."
 )
 IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE = (
-    "Image is too large for your plan. Make it smaller or upgrade to Pro."
+    "Image upload was rejected by the worker."
 )
 FREE_TIER_PRIVACY_SLOT_LIMIT = 20
 _PRIVACY_SLOT_LIMIT_HINTS = (
@@ -1690,6 +1692,270 @@ _IMAGE_TOO_LARGE_FOR_PLAN_HINTS = (
     "image too large for plan",
     "too large for your plan",
 )
+_IMAGE_TOO_LARGE_FOR_PLAN_REASONS = {"byte_cap", "pixel_cap", "edge_cap", "unknown"}
+_IMAGE_TOO_LARGE_FOR_PLAN_FIRST_LINE_RE = re.compile(
+    r"(?i)^\s*(?:Image(?:\s+is)?\s+too\s+large(?:\s+for\s+your\s+plan)?(?:\.\s*Make it smaller or upgrade to Pro\.)?|Image\s+too\s+large\s+for\s+plan)\s*$"
+)
+_IMAGE_TOO_LARGE_FOR_PLAN_REASON_LINE_RE = re.compile(
+    r"(?im)^\s*(?:Worker\s+)?Reason:\s*(?P<reason>[A-Za-z_]+)\s*$"
+)
+
+
+def _normalize_image_too_large_reason(reason: str | None) -> str:
+    text = str(reason or "").strip().lower().replace("-", "_")
+    return text if text in _IMAGE_TOO_LARGE_FOR_PLAN_REASONS else ""
+
+
+def _parse_human_size(text: str | None) -> int | None:
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return None
+    match = re.search(r"(?i)(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)\b", cleaned)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).upper()
+    scale = {
+        "B": 1,
+        "KB": 1024,
+        "MB": 1024 * 1024,
+        "GB": 1024 * 1024 * 1024,
+        "TB": 1024 * 1024 * 1024 * 1024,
+    }.get(unit, 1)
+    return int(value * scale)
+
+
+def _parse_dimension_pair(text: str | None) -> tuple[int, int] | None:
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return None
+    match = re.search(r"(?i)(\d+)\s*[×x]\s*(\d+)\s*px\b", cleaned)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _parse_int_text(text: str | None) -> int | None:
+    cleaned = str(text or "").strip().replace(",", "")
+    if not cleaned:
+        return None
+    match = re.search(r"(-?\d+)", cleaned)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except Exception:
+        return None
+
+
+def _extract_label_value(text: str, label: str) -> str:
+    pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*:\s*(?P<value>.+?)\s*$")
+    match = pattern.search(str(text or ""))
+    return str(match.group("value") or "").strip() if match else ""
+
+
+def _image_too_large_reason_message(reason: str | None) -> str:
+    normalized = _normalize_image_too_large_reason(reason)
+    if normalized == "byte_cap":
+        return "Image exceeds the byte cap for this upload policy."
+    if normalized == "pixel_cap":
+        return "Image exceeds the pixel cap for this upload policy."
+    if normalized == "edge_cap":
+        return "Image exceeds the longest-edge cap for this upload policy."
+    return IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE
+
+
+def _image_too_large_summary_message(reason: str | None) -> str:
+    normalized = _normalize_image_too_large_reason(reason)
+    if normalized == "byte_cap":
+        return "Cloud sync failed while uploading an image that exceeded the byte cap."
+    if normalized == "pixel_cap":
+        return "Cloud sync failed while uploading an image that exceeded the pixel cap."
+    if normalized == "edge_cap":
+        return "Cloud sync failed while uploading an image that exceeded the longest-edge cap."
+    return "Cloud sync failed while uploading an image that was rejected by the worker."
+
+
+def _infer_image_too_large_reason_from_text(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+
+    reason_match = _IMAGE_TOO_LARGE_FOR_PLAN_REASON_LINE_RE.search(cleaned)
+    if reason_match:
+        normalized = _normalize_image_too_large_reason(reason_match.group("reason"))
+        if normalized:
+            return normalized
+
+    worker_body_bytes = _parse_human_size(_extract_label_value(cleaned, "Worker body size"))
+    worker_plan_cap = _parse_human_size(_extract_label_value(cleaned, "Worker plan cap"))
+    prepared_bytes = _parse_human_size(_extract_label_value(cleaned, "Prepared upload size"))
+    plan_cap = _parse_human_size(_extract_label_value(cleaned, "Plan cap"))
+    if worker_body_bytes and worker_plan_cap and worker_body_bytes > worker_plan_cap:
+        return "byte_cap"
+    if prepared_bytes and plan_cap and prepared_bytes > plan_cap:
+        return "byte_cap"
+
+    worker_stored_pixels = _parse_int_text(_extract_label_value(cleaned, "Worker stored pixels"))
+    worker_stored_pixel_cap = _parse_int_text(_extract_label_value(cleaned, "Worker stored pixel cap"))
+    if worker_stored_pixels and worker_stored_pixel_cap and worker_stored_pixels > worker_stored_pixel_cap:
+        return "pixel_cap"
+
+    worker_resize_max_edge = _parse_int_text(_extract_label_value(cleaned, "Worker resize max edge"))
+    stored_dimensions = _parse_dimension_pair(
+        _extract_label_value(cleaned, "Worker stored dimensions") or _extract_label_value(cleaned, "Prepared dimensions")
+    )
+    if stored_dimensions and worker_resize_max_edge and max(stored_dimensions) > worker_resize_max_edge:
+        return "edge_cap"
+
+    return "unknown"
+
+
+def infer_image_too_large_for_plan_reason(error) -> str:
+    code, texts = _collect_sync_error_details(error)
+    haystack = " ".join(dict.fromkeys(texts)).lower()
+    if not (
+        code.strip().lower() == "image_too_large_for_plan"
+        or "image_too_large_for_plan" in haystack
+        or "too large for your plan" in haystack
+    ):
+        return ""
+
+    payload = {}
+    if isinstance(error, dict):
+        payload = dict(error)
+    else:
+        for attr in ("payload", "response_payload", "response", "body"):
+            try:
+                candidate = getattr(error, attr)
+            except Exception:
+                candidate = None
+            if isinstance(candidate, dict):
+                payload = dict(candidate)
+                break
+
+    details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+    reason = _normalize_image_too_large_reason(
+        details.get("reason")
+        or payload.get("reason")
+        or details.get("errorReason")
+        or payload.get("errorReason")
+    )
+    if reason:
+        return reason
+
+    worker_body_bytes = _safe_int(
+        details.get("bodyBytes")
+        or details.get("body_bytes")
+        or payload.get("bodyBytes")
+        or payload.get("body_bytes")
+    )
+    worker_plan_cap = _safe_int(
+        details.get("planByteCap")
+        or details.get("plan_byte_cap")
+        or details.get("planCap")
+        or details.get("plan_cap")
+        or payload.get("planByteCap")
+        or payload.get("plan_byte_cap")
+        or payload.get("planCap")
+        or payload.get("plan_cap")
+    )
+    if worker_body_bytes > 0 and worker_plan_cap > 0 and worker_body_bytes > worker_plan_cap:
+        return "byte_cap"
+
+    prepared_bytes = _safe_int(
+        details.get("preparedBytes")
+        or details.get("prepared_bytes")
+        or payload.get("preparedBytes")
+        or payload.get("prepared_bytes")
+    )
+    prepared_plan_cap = _safe_int(
+        details.get("planCap")
+        or details.get("plan_cap")
+        or payload.get("planCap")
+        or payload.get("plan_cap")
+        or worker_plan_cap
+    )
+    if prepared_bytes > 0 and prepared_plan_cap > 0 and prepared_bytes > prepared_plan_cap:
+        return "byte_cap"
+
+    worker_stored_pixels = _safe_int(
+        details.get("storedPixels")
+        or details.get("stored_pixels")
+        or payload.get("storedPixels")
+        or payload.get("stored_pixels")
+    )
+    worker_stored_pixel_cap = _safe_int(
+        details.get("storedPixelCap")
+        or details.get("stored_pixel_cap")
+        or payload.get("storedPixelCap")
+        or payload.get("stored_pixel_cap")
+    )
+    if worker_stored_pixels > 0 and worker_stored_pixel_cap > 0 and worker_stored_pixels > worker_stored_pixel_cap:
+        return "pixel_cap"
+
+    worker_stored_width = _safe_int(
+        details.get("storedWidth")
+        or details.get("stored_width")
+        or payload.get("storedWidth")
+        or payload.get("stored_width")
+        or details.get("preparedWidth")
+        or details.get("prepared_width")
+        or payload.get("preparedWidth")
+        or payload.get("prepared_width")
+    )
+    worker_stored_height = _safe_int(
+        details.get("storedHeight")
+        or details.get("stored_height")
+        or payload.get("storedHeight")
+        or payload.get("stored_height")
+        or details.get("preparedHeight")
+        or details.get("prepared_height")
+        or payload.get("preparedHeight")
+        or payload.get("prepared_height")
+    )
+    worker_resize_max_edge = _safe_int(
+        details.get("resizeMaxEdge")
+        or details.get("resize_max_edge")
+        or payload.get("resizeMaxEdge")
+        or payload.get("resize_max_edge")
+    )
+    if worker_stored_width > 0 and worker_stored_height > 0 and worker_resize_max_edge > 0 and max(worker_stored_width, worker_stored_height) > worker_resize_max_edge:
+        return "edge_cap"
+
+    return _infer_image_too_large_reason_from_text("\n".join(dict.fromkeys(texts)))
+
+
+def format_image_too_large_for_plan_reason(reason_or_error) -> str:
+    if isinstance(reason_or_error, str):
+        reason = _normalize_image_too_large_reason(reason_or_error)
+        if not reason:
+            reason = infer_image_too_large_for_plan_reason(reason_or_error)
+    else:
+        reason = infer_image_too_large_for_plan_reason(reason_or_error)
+    return _image_too_large_reason_message(reason)
+
+
+def summarize_image_too_large_for_plan_error(reason_or_error) -> str:
+    if isinstance(reason_or_error, str):
+        reason = _normalize_image_too_large_reason(reason_or_error)
+        if not reason:
+            reason = infer_image_too_large_for_plan_reason(reason_or_error)
+    else:
+        reason = infer_image_too_large_for_plan_reason(reason_or_error)
+    return _image_too_large_summary_message(reason)
+
+
+def sanitize_image_too_large_for_plan_error_message(error) -> str:
+    text = str(error or "").strip()
+    if not text or not is_image_too_large_for_plan_error(text):
+        return text
+    lines = [line.rstrip() for line in text.splitlines()]
+    reason_message = format_image_too_large_for_plan_reason(text)
+    if not lines:
+        return reason_message
+    lines[0] = reason_message
+    return "\n".join(lines)
 
 
 def privacy_slot_limit_user_message() -> str:
@@ -1813,7 +2079,7 @@ def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[st
             candidate = str(raw_code).strip()
             if candidate and not code:
                 code = candidate
-    for attr in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response'):
+    for attr in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response', 'payload', 'response_payload'):
         try:
             raw_value = getattr(value, attr)
         except Exception:
@@ -1861,6 +2127,10 @@ def is_image_too_large_for_plan_error(error) -> bool:
     return has_phrase or has_code
 
 
+def is_webp_support_required_for_cloud_media_upload_error(error) -> bool:
+    return WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in str(error or '').lower()
+
+
 def _normalize_cloud_user_id(value: str | None) -> str:
     return str(value or '').strip()
 
@@ -1906,6 +2176,7 @@ def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
 def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
     conflict_entries: dict[str, dict] = {}
     blocked_errors: list[dict] = []
+    retryable_errors: list[dict] = []
     other_errors: list[str] = []
 
     for raw_error in list(errors or []):
@@ -1919,9 +2190,11 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
             })
             continue
         if is_image_too_large_for_plan_error(text):
-            blocked_errors.append({
+            reason = infer_image_too_large_for_plan_reason(text)
+            retryable_errors.append({
                 'error': text,
-                'message': IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
+                'reason': reason,
+                'message': summarize_image_too_large_for_plan_error(reason),
             })
             continue
         push_match = _PUSH_CONFLICT_RE.match(text)
@@ -1967,9 +2240,11 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
         'conflict_count': len(conflicts),
         'blocked_errors': blocked_errors,
         'blocked_count': len(blocked_errors),
+        'retryable_errors': retryable_errors,
+        'retryable_count': len(retryable_errors),
         'other_errors': other_errors,
         'other_count': len(other_errors),
-        'display_count': len(conflicts) + len(blocked_errors) + len(other_errors),
+        'display_count': len(conflicts) + len(blocked_errors) + len(retryable_errors) + len(other_errors),
     }
 
 
@@ -4192,6 +4467,25 @@ def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
     )
 
 
+def _set_observation_plan_image_retryable(local_id: int, raw_error: str) -> str:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            sync_status='dirty',
+            sync_error_code='image_too_large_for_plan',
+            sync_error_message=str(raw_error or '').strip() or None,
+            sync_blocked_reason=None,
+            sync_blocked_at=None,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return summarize_image_too_large_for_plan_error(raw_error)
+
+
 def _set_observation_plan_image_blocked(local_id: int, raw_error: str) -> str:
     return _set_observation_sync_blocked(
         local_id,
@@ -4565,6 +4859,9 @@ def _prepare_cloud_image_upload_file(
     byte_cap = int(policy.get('fullImageByteCap') or 0)
     webp_qualities = list(build_full_image_webp_quality_attempts(quality_profile))
 
+    if not features.check('webp'):
+        raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE)
+
     with Image.open(source) as img:
         img = ImageOps.exif_transpose(img)
         source_width = int(img.width or 0)
@@ -4584,20 +4881,14 @@ def _prepare_cloud_image_upload_file(
         if target['resized']:
             img = img.resize((int(target['width']), int(target['height'])), Image.Resampling.LANCZOS)
 
-        attempts: list[tuple[str, str, dict, int | float | None]] = []
-        if features.check('webp'):
-            for quality in webp_qualities:
-                attempts.append(('WEBP', '.webp', {'quality': quality, 'method': 4}, quality))
-        attempts.append(('JPEG', '.jpg', {'quality': 88}, 88))
-
-        for fmt, ext, save_options, attempt_quality in attempts:
+        for attempt_quality in webp_qualities:
             buffer = io.BytesIO()
-            img.save(buffer, fmt, **save_options)
+            img.save(buffer, 'WEBP', quality=attempt_quality, method=4)
             data = buffer.getvalue()
             if byte_cap and len(data) > byte_cap:
                 continue
 
-            out_path = temp_dir / f'cloud_{int(image_id):04d}{ext}'
+            out_path = temp_dir / f'cloud_{int(image_id):04d}.webp'
             out_path.write_bytes(data)
             try:
                 source_stat = source.stat()
@@ -4605,14 +4896,13 @@ def _prepare_cloud_image_upload_file(
             except Exception:
                 pass
 
-            encoding_format = 'image/webp' if fmt == 'WEBP' else 'image/jpeg'
             return (
                 out_path,
                 source_width,
                 source_height,
                 int(img.width or 0),
                 int(img.height or 0),
-                encoding_format,
+                'image/webp',
                 attempt_quality,
             )
 
@@ -5971,6 +6261,7 @@ class SporelyCloudClient:
 
         with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
             temp_dir = Path(temp_dir_name)
+            worker_base_url = media_worker_base_url()
             try:
                 prepared_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = _prepare_cloud_image_upload_file(
                     str(path),
@@ -5985,10 +6276,16 @@ class SporelyCloudClient:
                             path,
                             meta,
                             exc,
+                            upload_variant='full',
+                            storage_key=storage_path,
+                            content_type='image/webp',
+                            prepared_path_suffix='.webp',
+                            worker_base_url=worker_base_url,
                         )
                     ) from exc
                 raise
             mime = _content_type_for_path(prepared_path)
+            prepared_path_suffix = prepared_path.suffix.lower() or '.webp'
             upload_policy = _cloud_upload_policy_from_meta(meta)
             quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
             upload_mode = str(upload_policy.get('uploadMode') or 'full').strip().lower() or 'full'
@@ -6024,6 +6321,7 @@ class SporelyCloudClient:
                     )
                 else:
                     worker = self._get_media_worker()
+                    worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
                     upload_response = worker.put_file(
                         prepared_path,
                         storage_path,
@@ -6055,8 +6353,15 @@ class SporelyCloudClient:
                             path,
                             meta,
                             exc,
+                            upload_variant='full',
+                            storage_key=storage_path,
+                            content_type=mime,
+                            prepared_path_suffix=prepared_path_suffix,
+                            worker_base_url=worker_base_url,
                         )
                     ) from exc
+                if is_webp_support_required_for_cloud_media_upload_error(exc):
+                    raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE) from exc
                 raise CloudSyncError(f'Media upload failed: {exc}') from exc
 
             # Generate the single cloud thumbnail variant used by web and desktop.
@@ -6079,6 +6384,9 @@ class SporelyCloudClient:
                     target_h = max(1, int(orig_h * scale))
 
                     variant_path = media_variant_key(storage_path, 'thumb')
+                    thumb_worker_base_url = media_worker_base_url()
+                    thumb_prepared_suffix = Path(variant_path).suffix.lower() or '.webp'
+                    thumb_mime = mime
                     img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                     buffer = io.BytesIO()
                     thumb_format, thumb_mime, thumb_options = _cloud_thumb_save_format(prepared_path)
@@ -6100,6 +6408,8 @@ class SporelyCloudClient:
                         'stored_height': str(target_h),
                         'stored_bytes': str(len(buffer.getvalue())),
                     }
+                    thumb_worker_base_url = media_worker_base_url()
+                    thumb_prepared_suffix = Path(variant_path).suffix.lower() or '.webp'
                     if direct_r2_runtime_available():
                         self._get_r2().put_bytes(
                             buffer.getvalue(),
@@ -6110,7 +6420,9 @@ class SporelyCloudClient:
                             custom_metadata=thumb_metadata,
                         )
                     else:
-                        thumb_response = self._get_media_worker().put_bytes(
+                        worker = self._get_media_worker()
+                        thumb_worker_base_url = str(getattr(worker, 'base_url', media_worker_base_url()) or media_worker_base_url()).strip().rstrip('/')
+                        thumb_response = worker.put_bytes(
                             buffer.getvalue(),
                             variant_path,
                             content_type=thumb_mime,
@@ -6134,6 +6446,19 @@ class SporelyCloudClient:
                         if confirmed_thumb_key != _normalize_cloud_media_key(variant_path):
                             raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
             except Exception as e:
+                if is_image_too_large_for_plan_error(e):
+                    raise CloudSyncError(
+                        _format_cloud_image_too_large_error(
+                            path,
+                            meta,
+                            e,
+                            upload_variant='thumb',
+                            storage_key=variant_path,
+                            content_type=thumb_mime,
+                            prepared_path_suffix=thumb_prepared_suffix,
+                            worker_base_url=thumb_worker_base_url,
+                        )
+                    ) from e
                 raise CloudSyncError(f'Media thumbnail upload failed: {e}') from e
 
         return storage_path
@@ -6146,7 +6471,7 @@ class SporelyCloudClient:
         storage_path: str | None = None,
         upload_meta: dict | None = None,
     ) -> str | None:
-        """Upload a full-resolution original file to cloud storage without transforming it."""
+        """Upload a full-resolution original file to cloud storage as WebP."""
         path = Path(local_path)
         if not path.exists():
             return None
@@ -6159,61 +6484,114 @@ class SporelyCloudClient:
 
         cache_control = 'public, max-age=31536000, immutable'
         meta = dict(upload_meta or {})
-        source_size = 0
-        try:
-            source_size = int(path.stat().st_size)
-        except Exception:
-            source_size = 0
-        content_type = guess_local_image_mime_type(path) or _content_type_for_path(path)
-        upload_policy = _cloud_upload_policy_from_meta(meta)
-        quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
-        cloud_plan = str(upload_policy.get('cloudPlan') or ('pro' if quality_profile == 'high' else 'free'))
-        common_metadata = {
-            'user_id': self.user_id,
-            'uploaded_at': datetime.now(timezone.utc).isoformat(),
-            'uploaded_by': self.user_id,
-            'upload_mode': 'full',
-            'upload_variant': 'original',
-            'cloud_plan': cloud_plan,
-            'quality_profile': quality_profile,
-            'source_role': str(meta.get('source_role') or '').strip(),
-            'source_kind': str(meta.get('source_kind') or '').strip(),
-            'stored_bytes': str(source_size),
-        }
+        with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            worker_base_url = media_worker_base_url()
+            try:
+                prepared_path, source_width, source_height, stored_width, stored_height, encoding_format, encoding_quality = _prepare_cloud_image_upload_file(
+                    str(path),
+                    temp_dir,
+                    _safe_int(img_cloud_id, default=0) or 0,
+                    meta,
+                )
+            except Exception as exc:
+                if is_image_too_large_for_plan_error(exc):
+                    raise CloudSyncError(
+                        _format_cloud_image_too_large_error(
+                            path,
+                            meta,
+                            exc,
+                            upload_variant='original',
+                            storage_key=storage_path,
+                            content_type='image/webp',
+                            prepared_path_suffix='.webp',
+                            worker_base_url=worker_base_url,
+                        )
+                    ) from exc
+                if is_webp_support_required_for_cloud_media_upload_error(exc):
+                    raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE) from exc
+                raise
 
-        try:
-            if direct_r2_runtime_available():
-                r2 = self._get_r2()
-                r2.put_file(
-                    path,
-                    storage_path,
-                    content_type=content_type,
-                    cache_control=cache_control,
-                    timeout=120,
-                    custom_metadata=common_metadata,
-                )
-            else:
-                worker = self._get_media_worker()
-                upload_response = worker.put_file(
-                    path,
-                    storage_path,
-                    content_type=content_type,
-                    cache_control=cache_control,
-                    timeout=120,
-                    upload_meta=common_metadata,
-                    options={
-                        'uploadMode': 'full',
-                        'uploadVariant': 'original',
-                        'cloudPlan': cloud_plan,
-                        'qualityProfile': quality_profile,
-                    },
-                )
-                confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
-                if not confirmed_key:
-                    raise CloudSyncError('Worker upload did not return a storage key')
-                storage_path = confirmed_key
-        except Exception as exc:
-            raise CloudSyncError(f'Original media upload failed: {exc}') from exc
+            content_type = _content_type_for_path(prepared_path)
+            prepared_path_suffix = prepared_path.suffix.lower() or '.webp'
+            upload_policy = _cloud_upload_policy_from_meta(meta)
+            quality_profile = str(upload_policy.get('qualityProfile') or 'standard').strip().lower() or 'standard'
+            cloud_plan = str(upload_policy.get('cloudPlan') or ('pro' if quality_profile == 'high' else 'free'))
+            stored_bytes = prepared_path.stat().st_size
+            common_metadata = {
+                'user_id': self.user_id,
+                'uploaded_at': datetime.now(timezone.utc).isoformat(),
+                'uploaded_by': self.user_id,
+                'upload_mode': 'full',
+                'upload_variant': 'original',
+                'cloud_plan': cloud_plan,
+                'quality_profile': quality_profile,
+                'encoding_quality': '' if encoding_quality is None else str(encoding_quality),
+                'encoding_format': encoding_format,
+                'source_width': str(source_width),
+                'source_height': str(source_height),
+                'stored_width': str(stored_width),
+                'stored_height': str(stored_height),
+                'stored_bytes': str(stored_bytes),
+                'source_role': str(meta.get('source_role') or '').strip(),
+                'source_kind': str(meta.get('source_kind') or '').strip(),
+            }
+
+            try:
+                if direct_r2_runtime_available():
+                    r2 = self._get_r2()
+                    r2.put_file(
+                        prepared_path,
+                        storage_path,
+                        content_type=content_type,
+                        cache_control=cache_control,
+                        timeout=120,
+                        custom_metadata=common_metadata,
+                    )
+                else:
+                    worker = self._get_media_worker()
+                    worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
+                    upload_response = worker.put_file(
+                        prepared_path,
+                        storage_path,
+                        content_type=content_type,
+                        cache_control=cache_control,
+                        timeout=120,
+                        upload_meta=common_metadata,
+                        options={
+                            'uploadMode': 'full',
+                            'uploadVariant': 'original',
+                            'cloudPlan': cloud_plan,
+                            'qualityProfile': quality_profile,
+                            'encodingQuality': encoding_quality,
+                            'encodingFormat': encoding_format,
+                            'sourceWidth': source_width,
+                            'sourceHeight': source_height,
+                            'storedWidth': stored_width,
+                            'storedHeight': stored_height,
+                        },
+                    )
+                    confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
+                    if not confirmed_key:
+                        raise CloudSyncError('Worker upload did not return a storage key')
+                    storage_path = confirmed_key
+            except Exception as exc:
+                if is_image_too_large_for_plan_error(exc):
+                    raise CloudSyncError(
+                        _format_cloud_image_too_large_error(
+                            path,
+                            meta,
+                            exc,
+                            upload_variant='original',
+                            storage_key=storage_path,
+                            content_type=content_type,
+                            prepared_path_suffix=prepared_path_suffix,
+                            worker_base_url=worker_base_url,
+                        )
+                    ) from exc
+                if is_webp_support_required_for_cloud_media_upload_error(exc):
+                    raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE) from exc
+                raise CloudSyncError(f'Original media upload failed: {exc}') from exc
 
         return storage_path
 
@@ -6511,15 +6889,101 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes/(1024*1024):.1f} MB"
 
 
+def _worker_base_url_from_request_url(request_url: str | None) -> str:
+    text = str(request_url or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+    except Exception:
+        return ""
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return ""
+
+
 def _format_cloud_image_too_large_error(
     local_path: str | Path,
     upload_meta: dict | None = None,
     inner_error: Exception | str | None = None,
+    *,
+    upload_variant: str | None = None,
+    storage_key: str | None = None,
+    content_type: str | None = None,
+    prepared_path_suffix: str | None = None,
+    worker_base_url: str | None = None,
 ) -> str:
     meta = dict(upload_meta or {})
     path = Path(str(local_path or "").strip())
+    upload_policy = _cloud_upload_policy_from_meta(meta)
 
     details: list[str] = []
+    worker_payload: dict[str, object] = {}
+    worker_request_url = ""
+    worker_request_method = ""
+    worker_response_status = 0
+    worker_response_text = ""
+    worker_request_headers: dict[str, str] = {}
+    if isinstance(inner_error, dict):
+        worker_payload = dict(inner_error)
+    elif inner_error is not None:
+        for attr in ('payload', 'response_payload', 'response', 'body'):
+            try:
+                candidate = getattr(inner_error, attr)
+            except Exception:
+                candidate = None
+            if isinstance(candidate, dict):
+                worker_payload = dict(candidate)
+                break
+        try:
+            worker_request_url = str(getattr(inner_error, 'request_url', '') or '').strip()
+        except Exception:
+            worker_request_url = ""
+        try:
+            worker_request_method = str(getattr(inner_error, 'request_method', '') or '').strip().upper()
+        except Exception:
+            worker_request_method = ""
+        try:
+            worker_response_status = _safe_int(
+                getattr(inner_error, 'response_status', None)
+                or getattr(inner_error, 'response_status_code', None)
+                or getattr(inner_error, 'status_code', None)
+            )
+        except Exception:
+            worker_response_status = 0
+        try:
+            worker_response_text = str(getattr(inner_error, 'response_text', '') or getattr(inner_error, 'text', '') or '').strip()
+        except Exception:
+            worker_response_text = ""
+        try:
+            headers = getattr(inner_error, 'request_headers', None)
+        except Exception:
+            headers = None
+        if isinstance(headers, dict):
+            worker_request_headers = {
+                str(name): str(value).strip()
+                for name, value in headers.items()
+                if str(name or "").strip() and str(value or "").strip()
+            }
+
+    worker_details = worker_payload.get('details')
+    worker_detail_map = worker_details if isinstance(worker_details, dict) else {}
+    worker_code = str(
+        worker_payload.get('error')
+        or worker_payload.get('code')
+        or worker_detail_map.get('error')
+        or worker_detail_map.get('code')
+        or ''
+    ).strip()
+    worker_message = str(
+        worker_payload.get('message')
+        or worker_detail_map.get('message')
+        or worker_detail_map.get('detail')
+        or ''
+    ).strip()
+    worker_reason = str(worker_payload.get('reason') or worker_detail_map.get('reason') or '').strip()
+    if worker_payload and not worker_detail_map:
+        details.append("Worker details: missing")
 
     observation_label = str(meta.get('observation_label') or '').strip()
     observation_id = str(meta.get('observation_id') or '').strip()
@@ -6576,6 +7040,10 @@ def _format_cloud_image_too_large_error(
 
     prepared_bytes = _safe_int(meta.get('stored_bytes'))
     if prepared_bytes <= 0:
+        prepared_bytes = _safe_int(worker_detail_map.get('bodyBytes') or worker_detail_map.get('body_bytes'))
+    if prepared_bytes <= 0:
+        prepared_bytes = _safe_int(worker_detail_map.get('storedBytes') or worker_detail_map.get('stored_bytes'))
+    if prepared_bytes <= 0:
         try:
             prepared_bytes = int(path.stat().st_size)
         except Exception:
@@ -6585,18 +7053,262 @@ def _format_cloud_image_too_large_error(
 
     prepared_width = _safe_int(meta.get('stored_width'))
     prepared_height = _safe_int(meta.get('stored_height'))
+    if (prepared_width <= 0 or prepared_height <= 0) and worker_detail_map:
+        prepared_width = prepared_width or _safe_int(
+            worker_detail_map.get('storedWidth')
+            or worker_detail_map.get('stored_width')
+        )
+        prepared_height = prepared_height or _safe_int(
+            worker_detail_map.get('storedHeight')
+            or worker_detail_map.get('stored_height')
+        )
     if prepared_width > 0 and prepared_height > 0:
         details.append(f"Prepared dimensions: {prepared_width} × {prepared_height} px")
 
-    byte_cap = _safe_int(meta.get('full_image_byte_cap') or meta.get('fullImageByteCap'))
+    prepared_suffix = str(
+        prepared_path_suffix
+        or meta.get('prepared_path_suffix')
+        or meta.get('preparedPathSuffix')
+        or ''
+    ).strip().lower()
+    if not prepared_suffix:
+        prepared_suffix = path.suffix.lower() or ''
+    if not prepared_suffix and content_type:
+        lowered_content_type = str(content_type or '').strip().lower()
+        if lowered_content_type == 'image/webp':
+            prepared_suffix = '.webp'
+        elif lowered_content_type in {'image/jpeg', 'image/jpg'}:
+            prepared_suffix = '.jpg'
+        elif lowered_content_type == 'image/png':
+            prepared_suffix = '.png'
+        elif lowered_content_type == 'image/avif':
+            prepared_suffix = '.avif'
+        elif lowered_content_type == 'image/tiff':
+            prepared_suffix = '.tif'
+    if prepared_suffix:
+        details.append(f"Prepared path suffix: {prepared_suffix}")
+
+    encoding_format = str(meta.get('encoding_format') or meta.get('encodingFormat') or '').strip().lower()
+    if not encoding_format and worker_detail_map:
+        encoding_format = str(
+            worker_detail_map.get('encodingFormat')
+            or worker_detail_map.get('encoding_format')
+            or ''
+        ).strip().lower()
+    if encoding_format:
+        details.append(f"Encoding format: {encoding_format}")
+
+    byte_cap = _safe_int(
+        meta.get('full_image_byte_cap')
+        or meta.get('fullImageByteCap')
+        or upload_policy.get('fullImageByteCap')
+        or upload_policy.get('full_image_byte_cap')
+    )
     if byte_cap > 0:
         details.append(f"Plan cap: {_format_size(byte_cap)}")
 
-    upload_mode = str(meta.get('upload_mode') or meta.get('uploadMode') or '').strip().lower()
+    local_upload_variant = str(
+        upload_variant
+        or meta.get('upload_variant')
+        or meta.get('uploadVariant')
+        or worker_request_headers.get('X-Sporely-Upload-Variant')
+        or worker_detail_map.get('uploadVariant')
+        or worker_detail_map.get('upload_variant')
+        or ''
+    ).strip().lower()
+    if local_upload_variant:
+        details.append(f"Local upload variant: {local_upload_variant}")
+
+    upload_mode = str(
+        meta.get('upload_mode')
+        or meta.get('uploadMode')
+        or worker_request_headers.get('X-Sporely-Upload-Mode')
+        or worker_detail_map.get('uploadMode')
+        or worker_detail_map.get('upload_mode')
+        or ''
+    ).strip().lower()
     quality_profile = str(meta.get('quality_profile') or meta.get('qualityProfile') or '').strip().lower()
+    if not quality_profile and worker_detail_map:
+        quality_profile = str(
+            worker_detail_map.get('qualityProfile')
+            or worker_detail_map.get('quality_profile')
+            or ''
+        ).strip().lower()
     if upload_mode or quality_profile:
         details.append(
-            f"Upload mode: {upload_mode or 'unknown'} / {quality_profile or 'standard'}"
+            f"Local upload mode: {upload_mode or 'unknown'} / {quality_profile or 'standard'}"
+        )
+
+    local_content_type = str(
+        content_type
+        or meta.get('content_type')
+        or meta.get('contentType')
+        or worker_request_headers.get('Content-Type')
+        or worker_detail_map.get('contentType')
+        or worker_detail_map.get('content_type')
+        or ''
+    ).strip().lower()
+    if local_content_type:
+        details.append(f"Content type: {local_content_type}")
+
+    if worker_base_url:
+        worker_base = str(worker_base_url or '').strip().rstrip('/')
+    else:
+        worker_base = _worker_base_url_from_request_url(worker_request_url)
+        if not worker_base and worker_payload:
+            worker_base = media_worker_base_url()
+    if worker_base:
+        details.append(f"Worker base URL: {worker_base}")
+
+    storage_key_text = str(storage_key or meta.get('storage_path') or meta.get('storageKey') or '').strip()
+    if storage_key_text:
+        details.append(f"Storage key: {storage_key_text}")
+
+    desktop_cloud_plan = str(meta.get('cloud_plan') or meta.get('cloudPlan') or '').strip().lower()
+    desktop_quality_profile = str(meta.get('quality_profile') or meta.get('qualityProfile') or '').strip().lower()
+    if desktop_cloud_plan or desktop_quality_profile:
+        details.append(
+            f"Desktop cloud plan: {desktop_cloud_plan or 'unknown'} / {desktop_quality_profile or 'standard'}"
+        )
+
+    worker_cloud_plan = ""
+    worker_quality_profile = ""
+    worker_plan_cap = 0
+    worker_body_bytes = 0
+    worker_stored_width = 0
+    worker_stored_height = 0
+    worker_stored_pixels = 0
+    worker_stored_pixel_cap = 0
+    worker_resize_max_edge = 0
+    worker_upload_mode = ""
+    worker_upload_variant = ""
+    worker_encoding_format = ""
+    worker_content_type = ""
+    reason = ""
+
+    if worker_payload:
+        worker_cloud_plan = str(
+            worker_detail_map.get('cloudPlan')
+            or worker_detail_map.get('cloud_plan')
+            or worker_payload.get('cloudPlan')
+            or worker_payload.get('cloud_plan')
+            or ''
+        ).strip().lower()
+        worker_quality_profile = str(
+            worker_detail_map.get('qualityProfile')
+            or worker_detail_map.get('quality_profile')
+            or worker_payload.get('qualityProfile')
+            or worker_payload.get('quality_profile')
+            or ''
+        ).strip().lower()
+        worker_plan_cap = _safe_int(
+            worker_detail_map.get('planByteCap')
+            or worker_detail_map.get('plan_byte_cap')
+            or worker_payload.get('planByteCap')
+            or worker_payload.get('plan_byte_cap')
+        )
+        worker_body_bytes = _safe_int(
+            worker_detail_map.get('bodyBytes')
+            or worker_detail_map.get('body_bytes')
+            or worker_payload.get('bodyBytes')
+            or worker_payload.get('body_bytes')
+        )
+        worker_stored_width = _safe_int(
+            worker_detail_map.get('storedWidth')
+            or worker_detail_map.get('stored_width')
+        )
+        worker_stored_height = _safe_int(
+            worker_detail_map.get('storedHeight')
+            or worker_detail_map.get('stored_height')
+        )
+        worker_stored_pixels = _safe_int(
+            worker_detail_map.get('storedPixels')
+            or worker_detail_map.get('stored_pixels')
+        )
+        worker_stored_pixel_cap = _safe_int(
+            worker_detail_map.get('storedPixelCap')
+            or worker_detail_map.get('stored_pixel_cap')
+        )
+        worker_resize_max_edge = _safe_int(
+            worker_detail_map.get('resizeMaxEdge')
+            or worker_detail_map.get('resize_max_edge')
+        )
+        worker_upload_mode = str(
+            worker_detail_map.get('uploadMode')
+            or worker_detail_map.get('upload_mode')
+            or worker_request_headers.get('X-Sporely-Upload-Mode')
+            or ''
+        ).strip().lower()
+        worker_upload_variant = str(
+            worker_detail_map.get('uploadVariant')
+            or worker_detail_map.get('upload_variant')
+            or worker_request_headers.get('X-Sporely-Upload-Variant')
+            or ''
+        ).strip().lower()
+        worker_encoding_format = str(
+            worker_detail_map.get('encodingFormat')
+            or worker_detail_map.get('encoding_format')
+            or worker_request_headers.get('X-Sporely-Encoding-Format')
+            or ''
+        ).strip().lower()
+        worker_content_type = str(
+            worker_detail_map.get('contentType')
+            or worker_detail_map.get('content_type')
+            or worker_request_headers.get('Content-Type')
+            or ''
+        ).strip().lower()
+
+        if worker_code:
+            details.append(f"Worker error code: {worker_code}")
+        if worker_message:
+            details.append(f"Worker message: {worker_message}")
+        if worker_reason:
+            details.append(f"Worker reason: {worker_reason}")
+        if worker_cloud_plan or worker_quality_profile:
+            details.append(
+                f"Worker cloud plan: {worker_cloud_plan or 'unknown'} / {worker_quality_profile or 'standard'}"
+            )
+        if worker_plan_cap > 0:
+            details.append(f"Worker plan cap: {_format_size(worker_plan_cap)}")
+        if worker_body_bytes > 0:
+            details.append(f"Worker body size: {_format_size(worker_body_bytes)}")
+        if worker_stored_width > 0 and worker_stored_height > 0:
+            details.append(f"Worker stored dimensions: {worker_stored_width} × {worker_stored_height} px")
+        if worker_stored_pixels > 0:
+            details.append(f"Worker stored pixels: {worker_stored_pixels:,}")
+        if worker_stored_pixel_cap > 0:
+            details.append(f"Worker stored pixel cap: {worker_stored_pixel_cap:,}")
+        if worker_resize_max_edge > 0:
+            details.append(f"Worker resize max edge: {worker_resize_max_edge}px")
+        if worker_upload_mode or worker_upload_variant:
+            details.append(
+                f"Worker upload mode: {worker_upload_mode or 'unknown'} / {worker_upload_variant or 'unknown'}"
+            )
+            if worker_encoding_format or worker_content_type:
+                details.append(
+                    f"Worker encoding/content type: {worker_encoding_format or 'unknown'} / {worker_content_type or 'unknown'}"
+                )
+
+    if not reason:
+        reason = infer_image_too_large_for_plan_reason(
+            {
+                'error': worker_code or 'image_too_large_for_plan',
+                'message': worker_message,
+                'reason': worker_reason,
+                'details': {
+                    'bodyBytes': worker_body_bytes,
+                    'planByteCap': worker_plan_cap,
+                    'storedWidth': worker_stored_width,
+                    'storedHeight': worker_stored_height,
+                    'storedPixels': worker_stored_pixels,
+                    'storedPixelCap': worker_stored_pixel_cap,
+                    'resizeMaxEdge': worker_resize_max_edge,
+                    'preparedBytes': prepared_bytes,
+                    'planCap': byte_cap,
+                    'preparedWidth': prepared_width,
+                    'preparedHeight': prepared_height,
+                },
+            }
         )
 
     if inner_error is not None:
@@ -6604,9 +7316,10 @@ def _format_cloud_image_too_large_error(
         if extra and not is_image_too_large_for_plan_error(extra):
             details.append(f"Details: {extra}")
 
+    first_line = format_image_too_large_for_plan_reason(reason)
     if not details:
-        return IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE
-    return "\n".join([IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE, "", *details])
+        return first_line
+    return "\n".join([first_line, "", *details])
 
 def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: str | None = None) -> dict:
     """Enhanced conflict details with filename-level media differences."""
@@ -6834,7 +7547,7 @@ def push_all(
                         except Exception as e:
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 else:
-                    image_warnings: list[str] = []
+                    original_upload_warnings: list[str] = []
                     images_synced = _push_images_for_observation(
                         client,
                         obs,
@@ -6844,11 +7557,9 @@ def push_all(
                         progress_state=progress_state,
                         observation_index=i + 1,
                         observation_total=total,
-                        summary_warnings=image_warnings,
+                        summary_warnings=original_upload_warnings,
                         original_summary=original_upload_summary,
                     )
-                    if image_warnings:
-                        errors.extend(image_warnings)
                     if images_synced and local_obs_id > 0:
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
@@ -6878,12 +7589,21 @@ def push_all(
                     progress_state,
                 )
             elif is_image_too_large_for_plan_error(raw_error):
-                _set_observation_plan_image_blocked(int(obs['id']), raw_error)
+                _set_observation_plan_image_retryable(int(obs['id']), raw_error)
                 _emit_progress(
                     progress_cb,
                     (
-                        f"Observation {i + 1}/{max(1, total)} blocked: "
-                        f"{IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE}"
+                        f"Observation {i + 1}/{max(1, total)} needs retry: "
+                        f"{summarize_image_too_large_for_plan_error(raw_error)}"
+                    ),
+                    progress_state,
+                )
+            elif is_webp_support_required_for_cloud_media_upload_error(raw_error):
+                _emit_progress(
+                    progress_cb,
+                    (
+                        f"Observation {i + 1}/{max(1, total)} failed: "
+                        f"{WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE}"
                     ),
                     progress_state,
                 )
@@ -6935,7 +7655,7 @@ def _push_images_for_observation(
             prepared_items, cleanup, prep_warnings = prepare_images_cb(obs, prepare_progress)
             warnings.extend(prep_warnings or [])
         except Exception as e:
-            if is_image_too_large_for_plan_error(e):
+            if is_image_too_large_for_plan_error(e) or is_webp_support_required_for_cloud_media_upload_error(e):
                 raise
             print(f'[cloud_sync] Observation {obs["id"]} image preparation failed: {e}')
             prepared_items = []

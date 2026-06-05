@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from utils.r2_storage import (
+    CloudflareWorkerError,
     CloudflareMediaWorkerClient,
     CloudflareR2Client,
     R2Config,
@@ -236,6 +237,79 @@ def test_media_worker_upload_sends_bearer_auth_and_worker_headers(monkeypatch, t
     assert captured["headers"]["X-Sporely-Source-Height"] == "600"
     assert captured["headers"]["X-Sporely-Stored-Width"] == "400"
     assert captured["headers"]["X-Sporely-Stored-Height"] == "300"
+
+
+def test_media_worker_upload_raises_structured_error_payload(monkeypatch):
+    client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
+
+    def mock_request(self, method, url, **kwargs):
+        return MockJsonResponse(
+            ok=False,
+            status_code=413,
+            payload={
+                "error": "image_too_large_for_plan",
+                "message": "Image is too large for plan",
+                "details": {
+                    "bodyBytes": 5200001,
+                    "planByteCap": 5000000,
+                    "cloudPlan": "pro",
+                    "qualityProfile": "high",
+                },
+            },
+            text="Image is too large for plan",
+        )
+
+    monkeypatch.setattr("requests.Session.request", mock_request)
+
+    with pytest.raises(CloudflareWorkerError) as excinfo:
+        client.put_bytes(
+            b"fake-bytes",
+            "user_123/obs_456/photo.webp",
+            content_type="image/webp",
+            cache_control="public, max-age=31536000, immutable",
+            upload_meta={
+                "upload_mode": "reduced",
+                "quality_profile": "high",
+                "encoding_quality": 80,
+                "encoding_format": "image/webp",
+                "source_width": 800,
+                "source_height": 600,
+                "stored_width": 400,
+                "stored_height": 300,
+            },
+            options={
+                "uploadMode": "reduced",
+                "uploadVariant": "full",
+                "cloudPlan": "free",
+                "qualityProfile": "high",
+                "encodingQuality": 80,
+                "encodingFormat": "image/webp",
+                "sourceWidth": 800,
+                "sourceHeight": 600,
+                "storedWidth": 400,
+                "storedHeight": 300,
+            },
+        )
+
+    assert excinfo.value.status_code == 413
+    assert excinfo.value.code == "image_too_large_for_plan"
+    assert excinfo.value.payload["details"]["planByteCap"] == 5_000_000
+    assert excinfo.value.payload["details"]["cloudPlan"] == "pro"
+    assert excinfo.value.response_payload == excinfo.value.payload
+    assert excinfo.value.request_url == "https://upload.test/upload/user_123/obs_456/photo.webp"
+    assert excinfo.value.request_method == "PUT"
+    assert excinfo.value.response_status == 413
+    assert excinfo.value.response_text == "Image is too large for plan"
+    assert excinfo.value.request_headers["Content-Type"] == "image/webp"
+    assert excinfo.value.request_headers["X-Sporely-Upload-Mode"] == "reduced"
+    assert excinfo.value.request_headers["X-Sporely-Upload-Variant"] == "full"
+    assert excinfo.value.request_headers["X-Sporely-Cloud-Plan"] == "free"
+    assert excinfo.value.request_headers["X-Sporely-Quality-Profile"] == "high"
+    assert excinfo.value.request_headers["X-Sporely-Encoding-Format"] == "image/webp"
+    assert excinfo.value.request_headers["X-Sporely-Stored-Width"] == "400"
+    assert excinfo.value.request_headers["X-Sporely-Stored-Height"] == "300"
+    assert "Authorization" not in excinfo.value.request_headers
+    assert "Worker upload failed" in str(excinfo.value)
 
 
 def test_media_worker_download_uses_bearer_auth(monkeypatch, tmp_path):

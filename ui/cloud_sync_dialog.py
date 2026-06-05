@@ -35,11 +35,14 @@ from utils.cloud_sync import (
     CloudSyncError,
     is_image_too_large_for_plan_error,
     format_original_upload_summary,
+    sanitize_image_too_large_for_plan_error_message,
+    summarize_image_too_large_for_plan_error,
     sync_all,
     load_saved_cloud_password,
     summarize_sync_issues,
     unlink_local_observation_from_cloud,
 )
+from utils.cloud_media_policy import WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE
 from .cloud_conflict_dialog import CloudConflictDialog
 
 
@@ -409,6 +412,7 @@ class CloudSyncDialog(QDialog):
         conflicts = list(issue_summary.get('conflicts', []) or [])
         conflict_count = int(issue_summary.get('conflict_count', 0) or 0)
         blocked_count = int(issue_summary.get('blocked_count', 0) or 0)
+        retryable_count = int(issue_summary.get('retryable_count', 0) or 0)
         other_count = int(issue_summary.get('other_count', 0) or 0)
         deleted_count = len(deleted_remote)
         parts = []
@@ -417,7 +421,12 @@ class CloudSyncDialog(QDialog):
         if pulled:
             parts.append(f'{pulled} observation{"s" if pulled != 1 else ""} pulled')
         if not parts:
-            parts.append('Cloud sync blocked' if blocked_count else 'Everything up to date')
+            if blocked_count:
+                parts.append('Cloud sync blocked')
+            elif retryable_count:
+                parts.append('Cloud sync needs retry')
+            else:
+                parts.append('Everything up to date')
         summary = ', '.join(parts) + '.'
         original_summary = format_original_upload_summary(result.get('original_sync'))
         if original_summary:
@@ -428,6 +437,8 @@ class CloudSyncDialog(QDialog):
                 issue_parts.append(f'{conflict_count} conflict{"s" if conflict_count != 1 else ""}')
             if blocked_count:
                 issue_parts.append(f'{blocked_count} blocked')
+            if retryable_count:
+                issue_parts.append(f'{retryable_count} will retry')
             if other_count:
                 issue_parts.append(f'{other_count} error{"s" if other_count != 1 else ""}')
             summary += f"\n{', '.join(issue_parts)} — check console or Details for raw messages."
@@ -453,14 +464,16 @@ class CloudSyncDialog(QDialog):
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Warning)
             box.setWindowTitle('Sporely Cloud Sync')
-            if blocked_count and not conflict_count and not other_count:
+            if blocked_count and not conflict_count and not other_count and not retryable_count:
                 box.setText('Cloud sync blocked by the privacy cap.')
+            elif retryable_count and not conflict_count and not blocked_count and not other_count:
+                box.setText('Cloud sync completed, but some images will retry.')
             elif conflict_count and not other_count and not blocked_count:
                 box.setText('Most cloud changes synced automatically, but a few observations still need review.')
             else:
                 box.setText('Cloud sync completed, but some observations or images failed.')
             box.setInformativeText(
-                f'Pushed: {pushed}\nPulled: {pulled}\nNeeds review: {conflict_count}\nBlocked: {blocked_count}\nOther errors: {other_count}\n\nOpen Details to copy the full error list.'
+                f'Pushed: {pushed}\nPulled: {pulled}\nNeeds review: {conflict_count}\nBlocked: {blocked_count}\nWill retry: {retryable_count}\nOther errors: {other_count}\n\nOpen Details to copy the full error list.'
             )
             box.setDetailedText('\n'.join(str(err) for err in errors))
             box.exec()
@@ -522,18 +535,24 @@ class CloudSyncDialog(QDialog):
         else:
             box.setText(summary)
             if is_image_too_large_for_plan_error(msg):
-                box.setInformativeText('Open Details to view the observation, image, and file size.')
+                box.setInformativeText('Open Details to view the observation, image, and cap details.')
             else:
                 box.setInformativeText('Open Details to copy the raw server/message text.')
-            box.setDetailedText(str(msg))
+            box.setDetailedText(
+                sanitize_image_too_large_for_plan_error_message(msg)
+                if is_image_too_large_for_plan_error(msg)
+                else str(msg)
+            )
         box.exec()
 
     def _summarize_sync_error(self, msg: str) -> str:
         text = str(msg or '').strip()
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return 'Cloud sync blocked: this database is linked to another account.'
+        if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
+            return 'Cloud sync failed because WebP support is required for cloud media uploads.'
         if is_image_too_large_for_plan_error(text):
-            return 'Cloud sync failed while uploading an image that is too large for your plan.'
+            return summarize_image_too_large_for_plan_error(text)
         if text.startswith('Push phase failed'):
             return 'Cloud sync failed while pushing local observations to Sporely Cloud.'
         if text.startswith('Pull phase failed'):

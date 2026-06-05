@@ -82,6 +82,117 @@ def _init_tombstone_sync_db(tmp_path):
     return db_path
 
 
+def _init_push_all_sync_db(tmp_path):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("ALTER TABLE observations ADD COLUMN date TEXT")
+        conn.execute("ALTER TABLE observations ADD COLUMN user_id TEXT")
+        conn.execute("ALTER TABLE observations ADD COLUMN sync_error_code TEXT")
+        conn.execute("ALTER TABLE observations ADD COLUMN sync_error_message TEXT")
+        conn.execute("ALTER TABLE observations ADD COLUMN sync_blocked_reason TEXT")
+        conn.execute("ALTER TABLE observations ADD COLUMN sync_blocked_at TEXT")
+        conn.execute("ALTER TABLE images ADD COLUMN source_role TEXT")
+        conn.execute("ALTER TABLE images ADD COLUMN file_purpose TEXT")
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
+class _PushAllImageClient(cloud_sync.SporelyCloudClient):
+    def __init__(self, *, fail_derivative_upload: bool = False, fail_original_upload: bool = False):
+        super().__init__("token", "user-123")
+        self.fail_derivative_upload = bool(fail_derivative_upload)
+        self.fail_original_upload = bool(fail_original_upload)
+        self.upload_image_calls: list[dict] = []
+        self.upload_original_calls: list[dict] = []
+        self.push_metadata_calls: list[dict] = []
+        self.original_patch_calls: list[dict] = []
+
+    def push_observation(self, obs):
+        return "cloud-obs-1"
+
+    def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
+        return []
+
+    def pull_measurements_for_images(self, image_cloud_ids: list[str]) -> list[dict]:
+        return []
+
+    def _observation_images_support_ai_crop(self) -> bool:
+        return False
+
+    def _observation_images_support_ai_crop_custom(self) -> bool:
+        return False
+
+    def _observation_images_support_upload_metadata(self) -> bool:
+        return False
+
+    def _observation_images_support_original_storage_path(self) -> bool:
+        return True
+
+    def upload_image_file(
+        self,
+        local_path: str,
+        obs_cloud_id: str,
+        img_cloud_id: str,
+        storage_path: str | None = None,
+        upload_meta: dict | None = None,
+    ) -> str | None:
+        self.upload_image_calls.append(
+            {
+                "local_path": str(local_path),
+                "obs_cloud_id": str(obs_cloud_id),
+                "img_cloud_id": str(img_cloud_id),
+                "storage_path": str(storage_path or ""),
+                "upload_meta": dict(upload_meta or {}),
+            }
+        )
+        if self.fail_derivative_upload:
+            raise cloud_sync.CloudSyncError(cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
+        return storage_path or self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
+
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+        cloud_id = str(img.get("cloud_id") or "").strip() or f"cloud-image-{len(self.push_metadata_calls) + 1}"
+        self.push_metadata_calls.append(
+            {
+                "cloud_id": cloud_id,
+                "storage_path": cloud_sync.normalize_media_key(storage_path),
+                "desktop_id": img.get("id"),
+            }
+        )
+        return cloud_id
+
+    def upload_original_image_file(
+        self,
+        local_path: str,
+        obs_cloud_id: str,
+        img_cloud_id: str,
+        storage_path: str | None = None,
+        upload_meta: dict | None = None,
+    ) -> str | None:
+        self.upload_original_calls.append(
+            {
+                "local_path": str(local_path),
+                "obs_cloud_id": str(obs_cloud_id),
+                "img_cloud_id": str(img_cloud_id),
+                "storage_path": str(storage_path or ""),
+                "upload_meta": dict(upload_meta or {}),
+            }
+        )
+        if self.fail_original_upload:
+            raise cloud_sync.CloudSyncError("Original media upload failed: worker refused")
+        return storage_path or self._build_original_storage_path(obs_cloud_id, img_cloud_id, local_path)
+
+    def set_image_original_storage_path(self, cloud_image_id: str, original_storage_path: str) -> None:
+        self.original_patch_calls.append(
+            {
+                "cloud_image_id": str(cloud_image_id),
+                "original_storage_path": cloud_sync.normalize_media_key(original_storage_path),
+            }
+        )
+
+
 def test_phase7_visibility_normalization_maps_cloud_draft_to_local_private():
     assert cloud_sync._normalize_sharing_scope("draft") == "private"
     assert cloud_sync._cloud_visibility_to_sharing_scope("draft") == "private"
@@ -741,6 +852,282 @@ def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, 
     assert blocked_row[4] == cloud_sync.privacy_slot_limit_user_message()
     assert blocked_row[5] is not None
     assert synced_row == ("cloud-obs-2", "synced")
+
+
+def test_push_all_marks_image_too_large_as_retryable_and_keeps_next_row_moving(tmp_path, monkeypatch):
+    db_path = tmp_path / "push_all_retryable.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE observations (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            cloud_id TEXT,
+            sync_status TEXT,
+            synced_at TEXT,
+            user_id TEXT,
+            visibility TEXT,
+            location_precision TEXT,
+            sync_error_code TEXT,
+            sync_error_message TEXT,
+            sync_blocked_reason TEXT,
+            sync_blocked_at TEXT
+        );
+        INSERT INTO observations (
+            id, date, cloud_id, sync_status, synced_at,
+            user_id, visibility, location_precision
+        ) VALUES
+            (1, '2026-05-02', NULL, 'dirty', NULL, 'user-1', 'public', 'exact'),
+            (2, '2026-05-01', NULL, 'dirty', NULL, 'user-1', 'public', 'exact');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    class DummyClient:
+        def push_observation(self, obs):
+            if int(obs.get("id") or 0) == 1:
+                raise cloud_sync.CloudSyncError(
+                    'Image is too large for your plan. Make it smaller or upgrade to Pro.'
+                )
+            return "cloud-obs-2"
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+
+    result = cloud_sync.push_all(
+        DummyClient(),
+        sync_images=False,
+        sync_calibrations=False,
+    )
+
+    summary = cloud_sync.summarize_sync_issues(result["errors"])
+    conn = sqlite3.connect(db_path)
+    try:
+        retryable_row = conn.execute(
+            """
+            SELECT
+                cloud_id, sync_status, sync_error_code, sync_error_message,
+                sync_blocked_reason, sync_blocked_at
+            FROM observations
+            WHERE id = 1
+            """
+        ).fetchone()
+        synced_row = conn.execute(
+            """
+            SELECT cloud_id, sync_status
+            FROM observations
+            WHERE id = 2
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 1
+    assert summary["retryable_count"] == 1
+    assert summary["blocked_count"] == 0
+    assert summary["other_count"] == 0
+    assert retryable_row[0] is None
+    assert retryable_row[1] == "dirty"
+    assert retryable_row[2] == "image_too_large_for_plan"
+    assert "Image is too large for your plan" in retryable_row[3]
+    assert retryable_row[4] is None
+    assert retryable_row[5] is None
+    assert synced_row == ("cloud-obs-2", "synced")
+
+
+def test_push_all_marks_image_upload_plan_limit_retryable_and_keeps_observation_dirty(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _init_push_all_sync_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"image-bytes")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, cloud_id, sync_status, synced_at, sync_error_code,
+                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, None, "dirty", None, None, None, None, None, "user-1", "2026-05-02"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                11,
+                1,
+                None,
+                str(image_path),
+                None,
+                "field",
+                "local_canonical",
+                "field",
+                0,
+                "2026-05-01T10:00:00Z",
+                None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = _PushAllImageClient(fail_derivative_upload=True)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_image_file_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_store_local_cloud_media_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", lambda *args, **kwargs: None)
+
+    result = cloud_sync.push_all(
+        client,
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    summary = cloud_sync.summarize_sync_issues(result["errors"])
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            """
+            SELECT cloud_id, sync_status, sync_error_code, sync_error_message,
+                   sync_blocked_reason, sync_blocked_at
+            FROM observations
+            WHERE id = 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 0
+    assert summary["retryable_count"] == 1
+    assert summary["blocked_count"] == 0
+    assert summary["other_count"] == 0
+    assert row[0] == "cloud-obs-1"
+    assert row[1] == "dirty"
+    assert row[2] == "image_too_large_for_plan"
+    assert cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE in row[3]
+    assert row[4] is None
+    assert row[5] is None
+    assert len(client.upload_image_calls) == 1
+    assert client.upload_original_calls == []
+
+
+def test_push_all_keeps_optional_original_upload_failure_out_of_top_level_errors_and_dirty_state(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _init_push_all_sync_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"image-bytes")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, cloud_id, sync_status, synced_at, sync_error_code,
+                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, None, "dirty", None, None, None, None, None, "user-1", "2026-05-02"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                11,
+                1,
+                None,
+                str(image_path),
+                None,
+                "field",
+                "local_canonical",
+                "field",
+                0,
+                "2026-05-01T10:00:00Z",
+                None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = _PushAllImageClient(fail_original_upload=True)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_image_file_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_store_local_cloud_media_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: True)
+    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", lambda *args, **kwargs: None)
+
+    result = cloud_sync.push_all(
+        client,
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    summary = cloud_sync.summarize_sync_issues(result["errors"])
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            """
+            SELECT cloud_id, sync_status, sync_error_code, sync_error_message,
+                   sync_blocked_reason, sync_blocked_at
+            FROM observations
+            WHERE id = 1
+            """
+        ).fetchone()
+        image_row = conn.execute(
+            """
+            SELECT cloud_id, synced_at
+            FROM images
+            WHERE id = 11
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert summary["retryable_count"] == 0
+    assert summary["blocked_count"] == 0
+    assert summary["other_count"] == 0
+    assert result["original_sync"]["failed_uploads"] == 1
+    assert row[0] == "cloud-obs-1"
+    assert row[1] == "synced"
+    assert row[2] is None
+    assert row[3] is None
+    assert row[4] is None
+    assert row[5] is None
+    assert image_row[0] is not None
+    assert image_row[1] is not None
+    assert len(client.upload_image_calls) == 1
+    assert len(client.upload_original_calls) == 1
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):

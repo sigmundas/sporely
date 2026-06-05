@@ -49,6 +49,45 @@ class R2ConfigError(RuntimeError):
     """Raised when R2 configuration is missing or invalid."""
 
 
+class CloudflareWorkerError(RuntimeError):
+    """Raised when the media worker returns a structured error payload."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        payload: Mapping[str, object] | None = None,
+        request_url: str | None = None,
+        request_method: str | None = None,
+        response_status: int | None = None,
+        response_text: str | None = None,
+        request_headers: Mapping[str, str] | None = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = str(code or "").strip()
+        self.payload = dict(payload or {})
+        self.response_payload = dict(self.payload)
+        self.response = dict(self.payload)
+        self.body = dict(self.payload)
+        self.text = message
+        self.message = message
+        self.request_url = str(request_url or "").strip()
+        self.request_method = str(request_method or "").strip().upper()
+        self.response_status = response_status if response_status is not None else status_code
+        self.response_status_code = self.response_status
+        self.response_text = str(response_text or "").strip()
+        self.request_headers = {
+            str(key): str(value)
+            for key, value in dict(request_headers or {}).items()
+            if str(key or "").strip() and str(value or "").strip()
+        }
+        self.details = self.payload.get("details") if isinstance(self.payload.get("details"), dict) else self.payload.get("details")
+        self.error = self.payload.get("error")
+
+
 def _load_simple_env_file(env_path: Path) -> bool:
     """Load simple KEY=VALUE pairs from one local env file if variables are unset."""
     if not env_path.exists():
@@ -140,6 +179,34 @@ def _first_text(*values: object, default: str = "") -> str:
         if text:
             return text
     return default
+
+
+def _safe_sporely_request_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    """Keep only the Sporely-specific worker request headers."""
+    if not headers:
+        return {}
+
+    requested_headers = {
+        "content-type": "Content-Type",
+        "x-sporely-upload-mode": "X-Sporely-Upload-Mode",
+        "x-sporely-upload-variant": "X-Sporely-Upload-Variant",
+        "x-sporely-cloud-plan": "X-Sporely-Cloud-Plan",
+        "x-sporely-quality-profile": "X-Sporely-Quality-Profile",
+        "x-sporely-encoding-format": "X-Sporely-Encoding-Format",
+        "x-sporely-stored-width": "X-Sporely-Stored-Width",
+        "x-sporely-stored-height": "X-Sporely-Stored-Height",
+    }
+    lowered_headers = {
+        str(name).strip().lower(): str(value).strip()
+        for name, value in dict(headers or {}).items()
+        if str(name or "").strip() and str(value or "").strip()
+    }
+    safe_headers: dict[str, str] = {}
+    for lookup_name, canonical_name in requested_headers.items():
+        value = lowered_headers.get(lookup_name)
+        if value:
+            safe_headers[canonical_name] = value
+    return safe_headers
 
 
 def normalize_media_key(value: str | None) -> str:
@@ -636,7 +703,13 @@ class CloudflareMediaWorkerClient:
                 options=options,
                 timeout=timeout,
             )
-        return self._json_response(response, "Worker upload failed")
+        return self._json_response(
+            response,
+            "Worker upload failed",
+            request_url=getattr(response, "_sporely_request_url", None),
+            request_method=getattr(response, "_sporely_request_method", None),
+            request_headers=getattr(response, "_sporely_request_headers", None),
+        )
 
     def put_bytes(
         self,
@@ -660,7 +733,13 @@ class CloudflareMediaWorkerClient:
             options=options,
             timeout=timeout,
         )
-        return self._json_response(response, "Worker upload failed")
+        return self._json_response(
+            response,
+            "Worker upload failed",
+            request_url=getattr(response, "_sporely_request_url", None),
+            request_method=getattr(response, "_sporely_request_method", None),
+            request_headers=getattr(response, "_sporely_request_headers", None),
+        )
 
     def download_to_file(self, key: str, dest_path: str | Path, *, timeout: int = 120) -> Path:
         normalized = normalize_media_key(key)
@@ -686,7 +765,13 @@ class CloudflareMediaWorkerClient:
         response = self._request("DELETE", key=normalized, timeout=timeout)
         if response.status_code == 404 and ignore_missing:
             return None
-        return self._json_response(response, "Worker delete failed")
+        return self._json_response(
+            response,
+            "Worker delete failed",
+            request_url=getattr(response, "_sporely_request_url", None),
+            request_method=getattr(response, "_sporely_request_method", None),
+            request_headers=getattr(response, "_sporely_request_headers", None),
+        )
 
     def delete_objects(self, keys: Iterable[str], *, timeout: int = 120) -> None:
         for key in keys:
@@ -727,7 +812,8 @@ class CloudflareMediaWorkerClient:
             )
         else:
             headers = {"Authorization": f"Bearer {self.access_token}"}
-        return self._session.request(
+        safe_headers = _safe_sporely_request_headers(headers)
+        response = self._session.request(
             method=method.upper(),
             url=url,
             headers=headers,
@@ -735,6 +821,13 @@ class CloudflareMediaWorkerClient:
             timeout=timeout,
             stream=stream,
         )
+        try:
+            setattr(response, "_sporely_request_url", url)
+            setattr(response, "_sporely_request_method", method.upper())
+            setattr(response, "_sporely_request_headers", safe_headers)
+        except Exception:
+            pass
+        return response
 
     @staticmethod
     def _encode_object_key(storage_path: str) -> str:
@@ -745,26 +838,49 @@ class CloudflareMediaWorkerClient:
         )
 
     @staticmethod
-    def _json_response(response: requests.Response, message: str) -> dict:
+    def _json_response(
+        response: requests.Response,
+        message: str,
+        *,
+        request_url: str | None = None,
+        request_method: str | None = None,
+        request_headers: Mapping[str, str] | None = None,
+    ) -> dict:
         if response.ok:
             try:
                 payload = response.json()
             except Exception:
                 return {}
             return payload if isinstance(payload, dict) else {}
-        detail = message
+        payload: dict[str, object] = {}
         try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                detail = str(payload.get("message") or payload.get("error") or detail)
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                payload = dict(parsed)
         except Exception:
             try:
                 payload_text = response.text
             except Exception:
                 payload_text = ""
             if payload_text:
-                detail = payload_text
-        raise RuntimeError(f"{message}: {detail}")
+                payload = {"message": payload_text}
+        detail = str(payload.get("message") or payload.get("error") or message)
+        error_code = str(payload.get("error") or payload.get("code") or "").strip() or None
+        try:
+            response_text = response.text
+        except Exception:
+            response_text = ""
+        raise CloudflareWorkerError(
+            f"{message}: {detail}",
+            status_code=response.status_code,
+            code=error_code,
+            payload=payload,
+            request_url=request_url,
+            request_method=request_method,
+            response_status=response.status_code,
+            response_text=response_text,
+            request_headers=request_headers,
+        )
 
     @staticmethod
     def _raise_for_status(response: requests.Response, message: str) -> None:

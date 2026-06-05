@@ -4,6 +4,7 @@ import pytest
 from PIL import Image
 
 from utils import cloud_sync
+from utils.r2_storage import CloudflareWorkerError
 
 
 def _write_test_image(path: Path, size=(800, 600), color=(96, 64, 32)) -> Path:
@@ -85,7 +86,9 @@ def test_upload_image_file_uses_worker_without_r2_secrets(monkeypatch, tmp_path)
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
     assert [call[0] for call in worker.calls[:2]] == ["put_file", "put_bytes"]
-    assert Path(worker.calls[0][1]).name.startswith("cloud_")
+    assert Path(worker.calls[0][1]).suffix == ".webp"
+    assert worker.calls[0][3] == "image/webp"
+    assert worker.calls[0][5]["encoding_format"] == "image/webp"
     assert worker.calls[0][-1] <= source.stat().st_size
 
 
@@ -116,7 +119,35 @@ def test_upload_image_file_uses_worker_even_when_admin_env_exists_without_explic
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
     assert [call[0] for call in worker.calls[:2]] == ["put_file", "put_bytes"]
-    assert Path(worker.calls[0][1]).name.startswith("cloud_")
+    assert Path(worker.calls[0][1]).suffix == ".webp"
+    assert worker.calls[0][3] == "image/webp"
+    assert worker.calls[0][5]["encoding_format"] == "image/webp"
+    assert worker.calls[0][-1] <= source.stat().st_size
+
+
+def test_upload_original_image_file_uses_worker_without_r2_secrets(monkeypatch, tmp_path):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    source = _write_test_image(tmp_path / "source.jpg")
+    worker = _DummyMediaWorker()
+
+    monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
+    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
+
+    uploaded_key = client.upload_original_image_file(
+        str(source),
+        "cloud-obs-1",
+        "cloud-img-1",
+        storage_path="user-123/cloud-obs-1/originals/source.jpg",
+    )
+
+    assert uploaded_key == "user-123/cloud-obs-1/originals/source.jpg"
+    assert [call[0] for call in worker.calls[:1]] == ["put_file"]
+    assert Path(worker.calls[0][1]).suffix == ".webp"
+    assert worker.calls[0][3] == "image/webp"
+    assert worker.calls[0][5]["upload_variant"] == "original"
+    assert worker.calls[0][5]["encoding_format"] == "image/webp"
+    assert worker.calls[0][6]["uploadVariant"] == "original"
     assert worker.calls[0][-1] <= source.stat().st_size
 
 
@@ -135,7 +166,6 @@ def test_upload_image_file_surfaces_plan_limit_context(monkeypatch, tmp_path):
         "source_height": 600,
         "stored_width": 640,
         "stored_height": 480,
-        "stored_bytes": source.stat().st_size,
         "upload_mode": "full",
         "quality_profile": "standard",
         "full_image_byte_cap": 1_000_000,
@@ -148,6 +178,7 @@ def test_upload_image_file_surfaces_plan_limit_context(monkeypatch, tmp_path):
             cloud_sync.CloudSyncError(cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
         ),
     )
+    monkeypatch.setattr(cloud_sync, "media_worker_base_url", lambda: "https://upload.test")
 
     with pytest.raises(cloud_sync.CloudSyncError) as excinfo:
         client.upload_image_file(
@@ -165,7 +196,160 @@ def test_upload_image_file_surfaces_plan_limit_context(monkeypatch, tmp_path):
     assert "Original file: " in text
     assert cloud_sync._format_size(source.stat().st_size) in text
     assert "Prepared upload size: " in text
+    assert "Prepared dimensions: 640 × 480 px" in text
     assert "Plan cap: " in text
+    assert "Local upload variant: full" in text
+    assert "Local upload mode: full / standard" in text
+    assert "Worker base URL: https://upload.test" in text
+    assert "Storage key: user-123/cloud-obs-1/source.jpg" in text
+    assert "Content type: image/webp" in text
+    assert "Prepared path suffix: .webp" in text
+
+
+def test_upload_image_file_surfaces_worker_plan_limit_context_with_missing_details(monkeypatch, tmp_path):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    source = _write_test_image(tmp_path / "source.jpg")
+    upload_meta = {
+        "observation_id": 17,
+        "observation_label": "Agaricus campestris",
+        "image_id": 42,
+        "image_label": "source.jpg (field)",
+        "source_path": str(source),
+        "source_filename": source.name,
+        "source_bytes": source.stat().st_size,
+        "source_width": 800,
+        "source_height": 600,
+        "stored_width": 800,
+        "stored_height": 600,
+        "upload_mode": "full",
+        "quality_profile": "standard",
+        "full_image_byte_cap": 1_000_000,
+    }
+
+    class _FailingWorker:
+        base_url = "https://upload.test"
+
+        def put_file(self, *args, **kwargs):
+            raise CloudflareWorkerError(
+                "Worker upload failed: Image is too large for plan",
+                status_code=413,
+                code="image_too_large_for_plan",
+                payload={
+                    "error": "image_too_large_for_plan",
+                    "message": "Image is too large for plan",
+                },
+                request_url="https://upload.test/upload/user_123/cloud-obs-1/source.jpg",
+                request_method="PUT",
+                response_status=413,
+                response_text='{"error":"image_too_large_for_plan","message":"Image is too large for plan"}',
+                request_headers={
+                    "Content-Type": "image/webp",
+                    "X-Sporely-Upload-Mode": "full",
+                    "X-Sporely-Upload-Variant": "full",
+                    "X-Sporely-Cloud-Plan": "pro",
+                    "X-Sporely-Quality-Profile": "standard",
+                    "X-Sporely-Encoding-Format": "image/webp",
+                    "X-Sporely-Stored-Width": "800",
+                    "X-Sporely-Stored-Height": "600",
+                },
+            )
+
+    monkeypatch.setattr(cloud_sync, "direct_r2_runtime_available", lambda: False)
+    monkeypatch.setattr(cloud_sync, "media_worker_base_url", lambda: "https://upload.test")
+    monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
+    monkeypatch.setattr(client, "_get_media_worker", lambda: _FailingWorker())
+
+    with pytest.raises(cloud_sync.CloudSyncError) as excinfo:
+        client.upload_image_file(
+            str(source),
+            "cloud-obs-1",
+            "cloud-img-1",
+            storage_path="user-123/cloud-obs-1/source.jpg",
+            upload_meta=upload_meta,
+        )
+
+    text = str(excinfo.value)
+    assert "Observation: Agaricus campestris (ID 17)" in text
+    assert "Image: source.jpg (field) (ID 42)" in text
+    assert "Original file: " in text
+    assert cloud_sync._format_size(source.stat().st_size) in text
+    assert "Local upload variant: full" in text
+    assert "Local upload mode: full / standard" in text
+    assert "Worker base URL: https://upload.test" in text
+    assert "Storage key: user-123/cloud-obs-1/source.jpg" in text
+    assert "Content type: image/webp" in text
+    assert "Prepared path suffix: .webp" in text
+    assert "Prepared dimensions: 800 × 600 px" in text
+    assert "Prepared upload size: " in text
+    assert "Worker details: missing" in text
+    assert "Worker error code: image_too_large_for_plan" in text
+
+
+@pytest.mark.parametrize(
+    "payload, expected_reason, expected_message",
+    [
+        (
+            {
+                "error": "image_too_large_for_plan",
+                "details": {
+                    "bodyBytes": 5_200_001,
+                    "planByteCap": 5_000_000,
+                    "cloudPlan": "pro",
+                    "qualityProfile": "high",
+                },
+            },
+            "byte_cap",
+            "Image exceeds the byte cap for this upload policy.",
+        ),
+        (
+            {
+                "error": "image_too_large_for_plan",
+                "details": {
+                    "storedPixels": 21_000_001,
+                    "storedPixelCap": 21_000_000,
+                    "cloudPlan": "pro",
+                    "qualityProfile": "high",
+                },
+            },
+            "pixel_cap",
+            "Image exceeds the pixel cap for this upload policy.",
+        ),
+        (
+            {
+                "error": "image_too_large_for_plan",
+                "details": {
+                    "storedWidth": 5_301,
+                    "storedHeight": 3_888,
+                    "resizeMaxEdge": 5_300,
+                    "cloudPlan": "pro",
+                    "qualityProfile": "high",
+                },
+            },
+            "edge_cap",
+            "Image exceeds the longest-edge cap for this upload policy.",
+        ),
+    ],
+)
+def test_infer_image_too_large_for_plan_reason_from_worker_details(payload, expected_reason, expected_message):
+    assert cloud_sync.infer_image_too_large_for_plan_reason(payload) == expected_reason
+    assert cloud_sync.format_image_too_large_for_plan_reason(payload) == expected_message
+
+
+def test_upload_image_file_requires_webp_support(monkeypatch, tmp_path):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    source = _write_test_image(tmp_path / "source.jpg")
+
+    monkeypatch.setattr(cloud_sync.features, "check", lambda name: False if name == "webp" else True)
+
+    with pytest.raises(cloud_sync.CloudSyncError) as excinfo:
+        client.upload_image_file(
+            str(source),
+            "cloud-obs-1",
+            "cloud-img-1",
+            storage_path="user-123/cloud-obs-1/source.jpg",
+        )
+
+    assert str(excinfo.value) == cloud_sync.WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE
 
 
 def test_download_image_file_uses_public_media_without_r2_secrets(monkeypatch, tmp_path):
