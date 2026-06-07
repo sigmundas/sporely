@@ -78,6 +78,7 @@ from database.database_tags import DatabaseTerms
 from utils.vernacular_utils import normalize_vernacular_language
 from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates, get_camera_model
 from utils.heic_converter import maybe_convert_heic
+from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from .image_gallery_widget import ImageGalleryWidget
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
@@ -171,6 +172,7 @@ class ImageImportResult:
     store_original: bool = False
     original_filepath: Optional[str] = None
     source_filepath: Optional[str] = None
+    lab_metadata: Optional[dict] = None
     scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
     scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
 
@@ -3163,6 +3165,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         start_time = time.perf_counter()
         import_dir = get_images_dir() / "imports"
         import_dir.mkdir(parents=True, exist_ok=True)
+        default_image_type = "microscope" if self.micro_radio.isChecked() else "field"
         first_new_index = len(self.import_results)
         show_progress = len(paths) > 1
         total_paths = len(paths)
@@ -3178,10 +3181,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
             source_path = path
             if not path:
                 continue
-            converted_path = maybe_convert_heic(path, import_dir)
-            if converted_path and converted_path != path:
-                self._converted_import_paths.add(converted_path)
-                path = converted_path
+            try:
+                ingest = prepare_local_ingest_image(
+                    path,
+                    lab_metadata={"image_type": default_image_type},
+                    output_dir=import_dir,
+                )
+            except RawRenderingUnavailableError as exc:
+                print(f"Warning: Could not import RAW image {path}: {exc}")
+                continue
+            except RuntimeError as exc:
+                print(f"Warning: Could not prepare image {path}: {exc}")
+                continue
+            path = ingest.working_path
+            if path and path != source_path:
+                self._converted_import_paths.add(path)
             self.image_paths.append(path)
             meta = get_image_metadata(path)
             if meta.get("missing"):
@@ -3216,6 +3230,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 store_original=self.store_original_default,
                 original_filepath=source_path,
                 source_filepath=source_path,
+                lab_metadata=ingest.lab_metadata,
             )
             self.import_results.append(result)
             if show_progress:

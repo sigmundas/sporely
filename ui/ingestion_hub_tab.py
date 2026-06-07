@@ -1466,7 +1466,7 @@ class IngestionHubTab(QWidget):
             calibration_id=calibration_id if matched_image_type == "microscope" else None,
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
-            lab_metadata=lab_metadata,
+            lab_metadata=getattr(ingest, "lab_metadata", None) or lab_metadata,
             **ingest.provenance_kwargs(),
         )
         image_data = ImageDB.get_image(image_id)

@@ -1093,7 +1093,7 @@ class LiveLabTab(QWidget):
             calibration_id=calibration_id,
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
-            lab_metadata=self._current_lab_metadata(),
+            lab_metadata=getattr(ingest, "lab_metadata", None) or self._current_lab_metadata(),
             **ingest.provenance_kwargs(),
         )
 

@@ -71,8 +71,9 @@ from database.schema import (
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
-from utils.heic_converter import build_local_image_provenance, maybe_convert_heic, save_image_as_webp
+from utils.heic_converter import build_local_image_provenance, save_image_as_webp
 from utils.ml_export import export_coco_format, get_export_summary
+from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
     WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE,
@@ -9590,14 +9591,34 @@ class ObservationsTab(QWidget):
             filepath = result.filepath
             if not filepath:
                 continue
-            final_path = maybe_convert_heic(filepath, output_dir)
-            if final_path is None:
+            image_lab_metadata = dict(getattr(result, "lab_metadata", None) or {})
+            if image_type:
+                image_lab_metadata["image_type"] = image_type
+            raw_processing = image_lab_metadata.get("raw_processing")
+            raw_settings = None
+            if isinstance(raw_processing, dict):
+                raw_settings = raw_processing.get("settings")
+            try:
+                ingest = prepare_local_ingest_image(
+                    filepath,
+                    raw_settings=raw_settings,
+                    lab_metadata=image_lab_metadata,
+                    output_dir=output_dir,
+                )
+            except RawRenderingUnavailableError as exc:
+                print(f"Warning: Could not prepare image {filepath}: {exc}")
                 continue
+            except RuntimeError as exc:
+                print(f"Warning: Could not prepare image {filepath}: {exc}")
+                continue
+            final_path = ingest.working_path
             if objective_name:
                 calibration_id = CalibrationDB.get_active_calibration_id(objective_name)
             resample_factor = self._compute_resample_scale_factor(result, scale, objective_entry)
             result.resample_scale_factor = resample_factor
             resampled_path = final_path
+            original_source = getattr(result, "original_filepath", None) or filepath
+            original_to_store = original_source if original_source and original_source != resampled_path else None
             if (
                 image_type == "microscope"
                 and getattr(result, "resize_to_optimal", True)
@@ -9607,13 +9628,12 @@ class ObservationsTab(QWidget):
                 if scale is not None and resample_factor > 0:
                     scale = float(scale) / float(resample_factor)
 
-            original_to_store = None
             if (
                 image_type == "microscope"
                 and getattr(result, "store_original", False)
                 and resample_factor < 0.999
             ):
-                original_to_store = result.original_filepath or final_path
+                original_to_store = original_source or final_path
             provenance_kwargs = {}
             source_path = getattr(result, "source_filepath", None)
             if source_path:
@@ -9622,6 +9642,9 @@ class ObservationsTab(QWidget):
                     resampled_path,
                     image_type=image_type,
                 )
+            image_lab_metadata = dict(ingest.lab_metadata or image_lab_metadata)
+            if image_type:
+                image_lab_metadata["image_type"] = image_type
             image_id = ImageDB.add_image(
                 observation_id=obs_id,
                 filepath=resampled_path,
@@ -9642,6 +9665,7 @@ class ObservationsTab(QWidget):
                 gps_source=result.gps_source,
                 resample_scale_factor=resample_factor,
                 original_filepath=original_to_store,
+                lab_metadata=image_lab_metadata or None,
                 **provenance_kwargs,
             )
             stored_scale_bar_selection = self._scale_scale_bar_selection(
