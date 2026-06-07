@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from app_identity import APP_NAME, app_data_dir
+from utils.raw_detection import SUPPORTED_RAW_SUFFIXES
 
 # Database settings
 DB_NAME = "mushrooms.db"
@@ -19,5 +20,19 @@ IMAGE_DISPLAY_HEIGHT = 700
 DEFAULT_SCALE = 0.5  # microns per pixel
 
 # Supported image formats
-SUPPORTED_FORMATS = "Images (*.png *.jpg *.jpeg *.tif *.tiff *.NEF *.ORF)"
-RAW_FORMATS = ('.nef', '.orf', '.cr2', '.arw')
+def _format_image_filter(suffixes: tuple[str, ...]) -> str:
+    return " ".join(f"*{suffix}" for suffix in suffixes)
+
+
+_RASTER_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
+_LOCAL_IMPORT_IMAGE_SUFFIXES = _RASTER_IMAGE_SUFFIXES + (".webp", ".heic", ".heif")
+_RAW_FORMAT_FILTER = _format_image_filter(tuple(sorted(SUPPORTED_RAW_SUFFIXES)))
+
+RASTER_IMAGE_FILTER = f"Images ({_format_image_filter(_RASTER_IMAGE_SUFFIXES)})"
+# Only use this for paths that route through prepare_local_ingest_image().
+LOCAL_IMPORT_IMAGE_FILTER = (
+    f"Images ({_format_image_filter(_LOCAL_IMPORT_IMAGE_SUFFIXES)} {_RAW_FORMAT_FILTER})"
+)
+# Legacy alias for direct-open callers.
+SUPPORTED_FORMATS = RASTER_IMAGE_FILTER
+RAW_FORMATS = tuple(sorted(SUPPORTED_RAW_SUFFIXES))

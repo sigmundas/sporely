@@ -63,6 +63,7 @@ from PySide6.QtWidgets import (
 )
 
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG
+from config import LOCAL_IMPORT_IMAGE_FILTER, RAW_FORMATS
 from database.schema import (
     load_objectives,
     save_objectives,
@@ -96,11 +97,10 @@ SUPPORTED_IMAGE_EXTENSIONS = {
     ".jpeg",
     ".tif",
     ".tiff",
+    ".webp",
     ".heic",
     ".heif",
-    ".orf",
-    ".nef",
-}
+} | set(RAW_FORMATS)
 
 
 def _debug_import_flow_enabled() -> bool:
@@ -3155,7 +3155,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self,
             self.tr("Select Images"),
             self._get_default_import_dir(),
-            self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"),
+            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)"),
         )
         if paths:
             self._remember_import_dir(paths[0])
@@ -4848,6 +4848,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 resize_to_optimal=resize_suggested,
                 translate=self.tr,
             )
+            badges.extend(ImageGalleryWidget.build_raw_source_badges(result.lab_metadata, translate=self.tr))
             has_measurements = bool(result.image_id and int(result.image_id) in measured_image_ids)
             is_source = self._observation_source_index == idx
             gps_highlight = is_source and result.exif_has_gps

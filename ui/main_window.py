@@ -396,6 +396,7 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, LEGACY_APP_NAME, app_data_dir
+from config import LOCAL_IMPORT_IMAGE_FILTER
 
 
 _REFERENCE_PLOT_PALETTE = [
@@ -10614,7 +10615,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Load a microscope image."""
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open Microscope Image", self._get_default_import_dir(),
-            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
+            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
         )
 
         if not paths:
@@ -17947,7 +17948,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Load microscope images and link them to the active observation."""
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open Microscope Image", self._get_default_import_dir(),
-            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
+            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
         )
 
         if not paths:

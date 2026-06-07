@@ -8814,6 +8814,7 @@ class ObservationsTab(QWidget):
                     original_filepath=img.get("original_filepath") or filepath,
                     resize_to_optimal=resize_to_optimal,
                     store_original=store_original,
+                    lab_metadata=dict(img.get("lab_metadata") or {}) or None,
                     scale_bar_selection=scale_bar_sel,
                     scale_bar_length_um=calibration_length_um,
                 )
@@ -12228,7 +12229,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         files, _ = QFileDialog.getOpenFileNames(
             self, "Select Photos", last_import_dir,
-            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.orf *.nef *.heic *.heif);;All Files (*)"
+            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
         )
         if not files:
             return
@@ -13461,6 +13462,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     resize_to_optimal=resize_to_optimal,
                     store_original=store_original,
                     original_filepath=str(img.get("original_filepath") or filepath),
+                    lab_metadata=dict(img.get("lab_metadata") or {}) or None,
                 )
             )
         return results
@@ -13609,6 +13611,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 needs_scale=needs_scale,
                 translate=self.tr,
             )
+            badges.extend(ImageGalleryWidget.build_raw_source_badges(item.lab_metadata, translate=self.tr))
             has_measurements = False
             if item.image_id:
                 has_measurements = bool(MeasurementDB.get_measurements_for_image(item.image_id))

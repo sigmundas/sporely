@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QProgressBar, QGridLayout, QLayout, QDialogButtonBox, QStyle,
 )
 
+from config import RASTER_IMAGE_FILTER
 from database.schema import (
     load_objectives, save_objectives, get_last_objective_path,
     get_calibrations_dir, get_app_settings, update_app_settings,
@@ -3495,7 +3496,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self,
             self.tr("Select Calibration Images"),
             "",
-            self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff);;All Files (*)"),
+            self.tr(f"{RASTER_IMAGE_FILTER};;All Files (*)"),
         )
         for path in paths:
             self._add_calibration_image(path)

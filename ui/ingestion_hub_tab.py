@@ -566,17 +566,9 @@ class IngestionHubTab(QWidget):
             self._set_hint_progress_visible(True)
             self._set_hint_progress(self.tr("Scanning import folder..."), 0)
         try:
-            for index, file_path in enumerate(files, start=1):
-                prepared_rows.extend(self._matcher.prepare_image_rows([file_path]))
-                if show_progress:
-                    progress_value = int(round((index / max(1, total_files)) * 70))
-                    self._set_hint_progress(
-                        self.tr("Scanning image {current} of {total}...").format(
-                            current=index,
-                            total=total_files,
-                        ),
-                        progress_value,
-                    )
+            prepared_rows = self._matcher.prepare_image_rows(files)
+            if show_progress:
+                self._set_hint_progress(self.tr("Scanning image candidates..."), 70)
             prepared_rows.sort(
                 key=lambda row: (
                     row.get("captured_at") or datetime.max,
@@ -1115,7 +1107,7 @@ class IngestionHubTab(QWidget):
             self,
             self.tr("Choose QR image"),
             start_dir,
-            self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif *.orf *.nef);;All files (*.*)"),
+            self.tr("Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All files (*.*)"),
         )
         if not chosen_path:
             return

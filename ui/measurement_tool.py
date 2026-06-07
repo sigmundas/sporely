@@ -4,7 +4,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QPoint, Signal
 import numpy as np
 
-from config import DEFAULT_SCALE, IMAGE_DISPLAY_WIDTH, IMAGE_DISPLAY_HEIGHT, SUPPORTED_FORMATS, RAW_FORMATS
+from config import DEFAULT_SCALE, IMAGE_DISPLAY_WIDTH, IMAGE_DISPLAY_HEIGHT, RASTER_IMAGE_FILTER, RAW_FORMATS
 from database import MeasurementRepository
 from utils.stats import calculate_statistics
 
@@ -60,14 +60,14 @@ class MeasurementTool(QWidget):
     def load_image(self):
         """Load an image file for measurement."""
         path, _ = QFileDialog.getOpenFileName(
-            self, self.tr("Open Microscope Image"), "", SUPPORTED_FORMATS
+            self, self.tr("Open Microscope Image"), "", RASTER_IMAGE_FILTER
         )
         if path:
             self.image_path = path
 
             # Handle RAW files
             if path.lower().endswith(RAW_FORMATS):
-                self.result_label.setText(self.tr("RAW file - convert to TIFF first"))
+                self.result_label.setText(self.tr("RAW files are not supported in the measurement tool yet."))
                 return
 
             # Load and display
