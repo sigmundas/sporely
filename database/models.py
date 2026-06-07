@@ -937,7 +937,12 @@ class ObservationDB:
                           habitat_nin2_note: str | None = None,
                           habitat_substrate_note: str | None = None,
                           habitat_grows_on_note: str | None = None,
-                          ai_state_json: str | None = None) -> int:
+                          ai_state_json: str | None = None,
+                          ai_selected_service: str | None = None,
+                          ai_selected_taxon_id: str | None = None,
+                          ai_selected_scientific_name: str | None = None,
+                          ai_selected_probability: float | None = None,
+                          ai_selected_at: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -989,8 +994,10 @@ class ObservationDB:
                                      habitat_nin2_path, habitat_substrate_path,
                                      habitat_host_genus, habitat_host_species, habitat_host_common_name,
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
-                                     open_comment, private_comment, interesting_comment, ai_state_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     open_comment, private_comment, interesting_comment, ai_state_json,
+                                     ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
+                                     ai_selected_probability, ai_selected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1003,7 +1010,9 @@ class ObservationDB:
               habitat_nin2_path, habitat_substrate_path,
               habitat_host_genus, habitat_host_species, habitat_host_common_name,
               habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
-              open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json))
+              open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json,
+              ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
+              ai_selected_probability, ai_selected_at))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1038,7 +1047,12 @@ class ObservationDB:
                            habitat_nin2_note: str | object = _UNSET,
                            habitat_substrate_note: str | object = _UNSET,
                            habitat_grows_on_note: str | object = _UNSET,
-                           ai_state_json: str | object = _UNSET) -> Optional[str]:
+                           ai_state_json: str | object = _UNSET,
+                           ai_selected_service: str | object = _UNSET,
+                           ai_selected_taxon_id: str | object = _UNSET,
+                           ai_selected_scientific_name: str | object = _UNSET,
+                           ai_selected_probability: float | object = _UNSET,
+                           ai_selected_at: str | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1205,6 +1219,21 @@ class ObservationDB:
             if ai_state_json is not _UNSET and (allow_nulls or ai_state_json is not None):
                 updates.append('ai_state_json = ?')
                 values.append(ai_state_json)
+            if ai_selected_service is not _UNSET and (allow_nulls or ai_selected_service is not None):
+                updates.append('ai_selected_service = ?')
+                values.append(ai_selected_service)
+            if ai_selected_taxon_id is not _UNSET and (allow_nulls or ai_selected_taxon_id is not None):
+                updates.append('ai_selected_taxon_id = ?')
+                values.append(ai_selected_taxon_id)
+            if ai_selected_scientific_name is not _UNSET and (allow_nulls or ai_selected_scientific_name is not None):
+                updates.append('ai_selected_scientific_name = ?')
+                values.append(ai_selected_scientific_name)
+            if ai_selected_probability is not _UNSET and (allow_nulls or ai_selected_probability is not None):
+                updates.append('ai_selected_probability = ?')
+                values.append(ai_selected_probability)
+            if ai_selected_at is not _UNSET and (allow_nulls or ai_selected_at is not None):
+                updates.append('ai_selected_at = ?')
+                values.append(ai_selected_at)
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)

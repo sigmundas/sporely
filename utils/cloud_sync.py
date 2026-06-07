@@ -85,14 +85,14 @@ _profile_suffix = runtime_profile_scope()
 _CLOUD_KEYRING_ACCOUNT = f'password:{_profile_suffix}' if _profile_suffix else 'password'
 
 # Cloud contract audit:
-# - Synced now: `is_draft`, `location_precision`, image `measure_color` and `crop_mode`,
-#   and spore measurement `gallery_rotation`.
+# - Synced now: `is_draft`, `location_precision`, `ai_selected_*`, image `measure_color`
+#   and `crop_mode`, and spore measurement `gallery_rotation`.
 # - Future work: image `scale_bar_*`, spore measurement `notes`, `image_key`,
 #   `thumb_key`, and cloud upload metadata/derived keys remain intentionally
 #   out of the desktop contract for now.
 # - Intentionally blocked / future work for the desktop schema: observation
-#   `captured_at`, `gps_altitude`, `gps_accuracy`, `ai_selected_*`, and the
-#   stored `observation_identifications` table.
+#   `captured_at`, `gps_altitude`, `gps_accuracy`, and the stored
+#   `observation_identifications` table.
 # - Avoid user-facing conflicts for harmless reduced cloud media copies.
 # Observation columns we push to cloud (excludes local-only fields)
 _OBS_PUSH_COLS = [
@@ -101,6 +101,9 @@ _OBS_PUSH_COLS = [
     'location', 'gps_latitude', 'gps_longitude',
     'location_public',
     'is_draft', 'location_precision',
+    'ai_selected_service', 'ai_selected_taxon_id',
+    'ai_selected_scientific_name', 'ai_selected_probability',
+    'ai_selected_at',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -1270,6 +1273,9 @@ _SNAPSHOT_OBS_FIELDS = [
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude', 'location_public',
     'is_draft', 'location_precision',
+    'ai_selected_service', 'ai_selected_taxon_id',
+    'ai_selected_scientific_name', 'ai_selected_probability',
+    'ai_selected_at',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -4518,6 +4524,11 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'location_precision': ObservationDB._normalize_location_precision(
             remote.get('location_precision')
         ),
+        'ai_selected_service': remote.get('ai_selected_service'),
+        'ai_selected_taxon_id': remote.get('ai_selected_taxon_id'),
+        'ai_selected_scientific_name': remote.get('ai_selected_scientific_name'),
+        'ai_selected_probability': remote.get('ai_selected_probability'),
+        'ai_selected_at': remote.get('ai_selected_at'),
         'spore_data_visibility': (lambda v: v if v in {'private', 'friends', 'public'} else 'public')(
             str(remote.get('spore_data_visibility') or 'public').strip().lower()
         ),
@@ -4552,6 +4563,394 @@ def _remote_observation_extra_values(remote: dict) -> dict:
         'spore_statistics': remote.get('spore_statistics'),
         'auto_threshold': remote.get('auto_threshold'),
     }
+
+
+def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
+    """Preserve cloud-side selected AI values when the desktop row is still empty.
+
+    Existing desktop observations may have `NULL` in the newly added fields until
+    they are re-pulled from cloud. When we push an unrelated desktop edit, we
+    don't want those missing local values to wipe the cloud selection.
+    """
+    merged = dict(local_obs or {})
+    remote = dict(remote_obs or {})
+    for field in (
+        'ai_selected_service',
+        'ai_selected_taxon_id',
+        'ai_selected_scientific_name',
+        'ai_selected_probability',
+        'ai_selected_at',
+    ):
+        local_value = merged.get(field)
+        if local_value not in (None, ''):
+            continue
+        remote_value = remote.get(field)
+        if remote_value not in (None, ''):
+            merged[field] = remote_value
+    return merged
+
+
+def _normalize_cloud_identification_service(value: object) -> str | None:
+    raw = str(value or '').strip().lower()
+    if raw in {'artsorakel', 'arts'}:
+        return 'artsorakel'
+    if raw in {'inat', 'inaturalist'}:
+        return 'inat'
+    return None
+
+
+def _cloud_identification_prediction_taxon(prediction: dict, service: str | None = None) -> dict | None:
+    pred = dict(prediction or {})
+    taxon = dict(pred.get('taxon') or {})
+    scientific_name = str(
+        pred.get('scientificName')
+        or pred.get('scientific_name')
+        or pred.get('name')
+        or ''
+    ).strip()
+    vernacular_name = str(
+        pred.get('vernacularName')
+        or pred.get('vernacular_name')
+        or pred.get('commonName')
+        or pred.get('common_name')
+        or ''
+    ).strip()
+    taxon_id = pred.get('taxonId') or pred.get('taxon_id')
+
+    if scientific_name:
+        taxon.setdefault('scientificName', scientific_name)
+        taxon.setdefault('scientific_name', scientific_name)
+        taxon.setdefault('name', scientific_name)
+    if vernacular_name:
+        taxon.setdefault('vernacularName', vernacular_name)
+        taxon.setdefault('vernacular_name', vernacular_name)
+        taxon.setdefault('preferred_common_name', vernacular_name)
+        taxon.setdefault('common_name', vernacular_name)
+    if taxon_id not in (None, ''):
+        taxon.setdefault('id', taxon_id)
+        taxon.setdefault('taxonId', taxon_id)
+        taxon.setdefault('taxon_id', taxon_id)
+    if service == 'inat' and vernacular_name and not taxon.get('preferred_common_name'):
+        taxon['preferred_common_name'] = vernacular_name
+
+    return taxon or None
+
+
+def _cloud_identification_prediction_display_name(prediction: dict) -> str:
+    scientific_name = str(
+        prediction.get('scientificName')
+        or prediction.get('scientific_name')
+        or prediction.get('name')
+        or ''
+    ).strip()
+    vernacular_name = str(
+        prediction.get('vernacularName')
+        or prediction.get('vernacular_name')
+        or prediction.get('commonName')
+        or prediction.get('common_name')
+        or ''
+    ).strip()
+    display_name = str(prediction.get('displayName') or prediction.get('display_name') or '').strip()
+
+    if display_name:
+        return display_name
+    if vernacular_name and scientific_name and vernacular_name.casefold() != scientific_name.casefold():
+        return f'{vernacular_name} ({scientific_name})'
+    return vernacular_name or scientific_name
+
+
+def _cloud_identification_prediction_species_url(prediction: dict, service: str | None = None) -> str | None:
+    pred = dict(prediction or {})
+    taxon = dict(pred.get('taxon') or {})
+    if service == 'inat':
+        taxon_id = str(
+            pred.get('taxonId')
+            or pred.get('taxon_id')
+            or taxon.get('id')
+            or taxon.get('taxonId')
+            or taxon.get('taxon_id')
+            or ''
+        ).strip()
+        if taxon_id:
+            return f'https://www.inaturalist.org/taxa/{taxon_id}'
+        return None
+
+    for source in (pred, taxon):
+        for key in (
+            'species_url',
+            'speciesUrl',
+            'adbUrl',
+            'url',
+            'link',
+            'href',
+            'uri',
+            'infoUrl',
+            'infoURL',
+            'info_url',
+        ):
+            value = source.get(key)
+            if isinstance(value, str) and value.strip().startswith('http'):
+                return value.strip()
+
+    taxon_id = str(
+        pred.get('taxonId')
+        or pred.get('taxon_id')
+        or taxon.get('taxonId')
+        or taxon.get('taxon_id')
+        or taxon.get('id')
+        or ''
+    ).strip()
+    if taxon_id and taxon_id.isdigit():
+        return f'https://artsdatabanken.no/arter/takson/{taxon_id}'
+    return None
+
+
+def _cloud_identification_prediction_matches_observation(prediction: dict, observation: dict | None) -> bool:
+    obs = dict(observation or {})
+    obs_scientific_name = str(
+        obs.get('genus')
+        or ''
+    ).strip()
+    obs_species = str(obs.get('species') or '').strip()
+    if obs_scientific_name and obs_species:
+        obs_scientific_name = f'{obs_scientific_name} {obs_species}'.strip()
+    else:
+        obs_scientific_name = str(obs.get('species_guess') or obs_scientific_name or '').strip()
+    obs_common_name = str(obs.get('common_name') or '').strip()
+
+    prediction_scientific_name = str(
+        prediction.get('scientificName')
+        or prediction.get('scientific_name')
+        or prediction.get('name')
+        or ''
+    ).strip()
+    taxon = dict(prediction.get('taxon') or {})
+    if not prediction_scientific_name:
+        prediction_scientific_name = str(
+            taxon.get('scientificName')
+            or taxon.get('scientific_name')
+            or taxon.get('name')
+            or ''
+        ).strip()
+    prediction_common_name = str(
+        prediction.get('vernacularName')
+        or prediction.get('vernacular_name')
+        or prediction.get('commonName')
+        or prediction.get('common_name')
+        or ''
+    ).strip()
+    if not prediction_common_name:
+        prediction_common_name = str(
+            taxon.get('vernacularName')
+            or taxon.get('vernacular_name')
+            or taxon.get('preferred_common_name')
+            or taxon.get('common_name')
+            or ''
+        ).strip()
+    prediction_taxon_id = str(
+        prediction.get('taxonId')
+        or prediction.get('taxon_id')
+        or ''
+    ).strip()
+    if not prediction_taxon_id:
+        prediction_taxon_id = str(
+            taxon.get('id')
+            or taxon.get('taxonId')
+            or taxon.get('taxon_id')
+            or ''
+        ).strip()
+    selected_taxon_id = str(obs.get('ai_selected_taxon_id') or '').strip()
+    selected_scientific_name = str(obs.get('ai_selected_scientific_name') or '').strip()
+
+    if selected_taxon_id and prediction_taxon_id and selected_taxon_id == prediction_taxon_id:
+        return True
+    if selected_scientific_name and prediction_scientific_name and selected_scientific_name == prediction_scientific_name:
+        return True
+    if obs_scientific_name and prediction_scientific_name and obs_scientific_name == prediction_scientific_name:
+        return True
+    if obs_common_name and prediction_common_name and obs_common_name == prediction_common_name:
+        return True
+    return False
+
+
+def build_cloud_ai_state_from_observation_identifications(
+    observation: dict | None,
+    identification_rows: list[dict] | None,
+    local_images: list[dict] | None = None,
+) -> dict | None:
+    """Build the desktop AI-state cache from cloud observation_identifications rows.
+
+    The cloud table stays authoritative; the desktop only keeps a derived cache
+    so the observation detail dialog can render the same suggestions without a
+    separate local AI run.
+    """
+    obs = dict(observation or {})
+    rows = [dict(row or {}) for row in (identification_rows or []) if row]
+    if not rows:
+        return None
+
+    local_image_rows = [dict(row or {}) for row in (local_images or []) if row]
+    index_count = len(local_image_rows) or 1
+    indices = list(range(index_count))
+    paths = [str(row.get('filepath') or '').strip() for row in local_image_rows]
+    image_ids = [_safe_int(row.get('id')) or None for row in local_image_rows]
+    selected_service = _normalize_cloud_identification_service(obs.get('ai_selected_service'))
+
+    service_rows: dict[str, dict] = {}
+    for row in sorted(
+        rows,
+        key=lambda item: (
+            _parse_sync_timestamp(item.get('created_at')) or datetime.min.replace(tzinfo=timezone.utc),
+            _safe_int(item.get('id')) or 0,
+        ),
+        reverse=True,
+    ):
+        service = _normalize_cloud_identification_service(row.get('service'))
+        if not service or service in service_rows:
+            continue
+        service_rows[service] = row
+
+    predictions_by_service: dict[str, list[dict]] = {'artsorakel': [], 'inat': []}
+    selected_by_service: dict[str, dict] = {}
+    for service, row in service_rows.items():
+        raw_predictions = [dict(pred or {}) for pred in (row.get('results') or []) if isinstance(pred, dict)]
+        normalized_predictions: list[dict] = []
+        for prediction in raw_predictions:
+            taxon = _cloud_identification_prediction_taxon(prediction, service=service)
+            if taxon:
+                prediction['taxon'] = taxon
+            if not str(prediction.get('scientificName') or '').strip():
+                scientific_name = str(
+                    prediction.get('scientific_name')
+                    or taxon.get('scientificName')
+                    or taxon.get('scientific_name')
+                    or taxon.get('name')
+                    or ''
+                ).strip()
+                if scientific_name:
+                    prediction['scientificName'] = scientific_name
+                    prediction['scientific_name'] = scientific_name
+            if not str(prediction.get('vernacularName') or '').strip():
+                vernacular_name = str(
+                    prediction.get('vernacular_name')
+                    or taxon.get('vernacularName')
+                    or taxon.get('vernacular_name')
+                    or taxon.get('preferred_common_name')
+                    or taxon.get('common_name')
+                    or ''
+                ).strip()
+                if vernacular_name:
+                    prediction['vernacularName'] = vernacular_name
+                    prediction['vernacular_name'] = vernacular_name
+            if not str(prediction.get('displayName') or '').strip():
+                display_name = _cloud_identification_prediction_display_name(prediction)
+                if display_name:
+                    prediction['displayName'] = display_name
+                    prediction['display_name'] = display_name
+            species_url = _cloud_identification_prediction_species_url(prediction, service=service)
+            if species_url:
+                prediction['species_url'] = species_url
+                prediction['speciesUrl'] = species_url
+                prediction['adbUrl'] = species_url
+            normalized_predictions.append(prediction)
+
+        if not normalized_predictions:
+            top_scientific_name = str(row.get('top_scientific_name') or '').strip()
+            top_vernacular_name = str(row.get('top_vernacular_name') or '').strip()
+            top_taxon_id = str(row.get('top_taxon_id') or '').strip()
+            top_species_url = str(
+                row.get('top_species_url')
+                or row.get('top_speciesUrl')
+                or row.get('top_adbUrl')
+                or ''
+            ).strip()
+            if top_scientific_name or top_vernacular_name or top_taxon_id:
+                synth_prediction = {
+                    'service': service,
+                    'rank': 1,
+                    'scientificName': top_scientific_name or None,
+                    'scientific_name': top_scientific_name or None,
+                    'vernacularName': top_vernacular_name or None,
+                    'vernacular_name': top_vernacular_name or None,
+                    'displayName': top_vernacular_name or top_scientific_name or top_taxon_id or 'Unknown',
+                    'taxonId': top_taxon_id or None,
+                    'taxon_id': top_taxon_id or None,
+                    'probability': row.get('top_probability'),
+                }
+                if top_species_url:
+                    synth_prediction['species_url'] = top_species_url
+                    synth_prediction['speciesUrl'] = top_species_url
+                    synth_prediction['adbUrl'] = top_species_url
+                taxon = _cloud_identification_prediction_taxon(synth_prediction, service=service)
+                if taxon:
+                    synth_prediction['taxon'] = taxon
+                normalized_predictions = [synth_prediction]
+
+        if not normalized_predictions:
+            continue
+
+        selected_prediction = None
+        if selected_service == service:
+            selected_prediction = next(
+                (
+                    prediction
+                    for prediction in normalized_predictions
+                    if _cloud_identification_prediction_matches_observation(prediction, obs)
+                ),
+                None,
+            )
+
+        predictions_by_service[service] = normalized_predictions
+        if selected_prediction:
+            selected_by_service[service] = selected_prediction
+
+    if not any(predictions_by_service.values()) and not selected_by_service:
+        selected_service = _normalize_cloud_identification_service(obs.get('ai_selected_service'))
+        selected_scientific_name = str(obs.get('ai_selected_scientific_name') or '').strip()
+        selected_taxon_id = str(obs.get('ai_selected_taxon_id') or '').strip()
+        if selected_service and (selected_scientific_name or selected_taxon_id):
+            synth_prediction = {
+                'service': selected_service,
+                'rank': 1,
+                'scientificName': selected_scientific_name or None,
+                'scientific_name': selected_scientific_name or None,
+                'vernacularName': str(obs.get('common_name') or '').strip() or None,
+                'vernacular_name': str(obs.get('common_name') or '').strip() or None,
+                'displayName': selected_scientific_name or str(obs.get('common_name') or '').strip() or selected_taxon_id or 'Unknown',
+                'taxonId': selected_taxon_id or None,
+                'taxon_id': selected_taxon_id or None,
+                'probability': obs.get('ai_selected_probability'),
+            }
+            taxon = _cloud_identification_prediction_taxon(synth_prediction, service=selected_service)
+            if taxon:
+                synth_prediction['taxon'] = taxon
+            predictions_by_service[selected_service] = [synth_prediction]
+            selected_by_service[selected_service] = synth_prediction
+
+    if not any(predictions_by_service.values()) and not selected_by_service:
+        return None
+
+    state: dict = {
+        'predictions': {},
+        'selected': {},
+        'inat_predictions': {},
+        'inat_selected': {},
+        'selected_index': indices[0] if indices else None,
+        'paths': paths,
+        'image_ids': image_ids,
+    }
+
+    for index in indices:
+        if predictions_by_service.get('artsorakel'):
+            state['predictions'][index] = [dict(pred or {}) for pred in predictions_by_service['artsorakel']]
+            if selected_by_service.get('artsorakel'):
+                state['selected'][index] = dict(selected_by_service['artsorakel'])
+        if predictions_by_service.get('inat'):
+            state['inat_predictions'][index] = [dict(pred or {}) for pred in predictions_by_service['inat']]
+            if selected_by_service.get('inat'):
+                state['inat_selected'][index] = dict(selected_by_service['inat'])
+
+    return state
 
 
 def _apply_remote_observation_fields(
@@ -5312,8 +5711,16 @@ def resolve_conflict_keep_local(
     if not local_obs:
         raise CloudSyncError(f'Local observation {local_id} not found')
 
+    remote_obs = None
+    cloud_value = str(local_obs.get('cloud_id') or '').strip()
+    if cloud_value:
+        try:
+            remote_obs = client.get_observation(cloud_value)
+        except Exception:
+            remote_obs = None
+
     try:
-        cloud_id = client.push_observation(local_obs)
+        cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(local_obs, remote_obs))
     except Exception as exc:
         if not is_privacy_slot_limit_error(exc):
             raise
@@ -5483,7 +5890,7 @@ def resolve_conflict_merge(
 
     # Then push the local observation (which now includes merged images)
     try:
-        cloud_id = client.push_observation(local_obs)
+        cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(local_obs, remote_obs))
     except Exception as exc:
         if not is_privacy_slot_limit_error(exc):
             raise
@@ -6656,6 +7063,27 @@ class SporelyCloudClient:
             if not str(row.get('deleted_at') or '').strip()
         ]
 
+    def pull_observation_identifications(self, obs_cloud_id: str) -> list[dict]:
+        cloud_value = str(obs_cloud_id or '').strip()
+        if not cloud_value:
+            return []
+        try:
+            return [
+                dict(row or {})
+                for row in self._get(
+                    f'observation_identifications?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}&order=created_at.desc,id.desc&select=*'
+                )
+            ]
+        except Exception as exc:
+            message = str(exc or '').lower()
+            if 'observation_identifications' in message and (
+                'could not find the table' in message
+                or 'schema cache' in message
+                or 'does not exist' in message
+            ):
+                return []
+            raise
+
     def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
         """Write the local SQLite measurement ID back to the cloud row for future dedup."""
         self._patch(
@@ -7487,7 +7915,7 @@ def push_all(
                     )
                     continue
 
-            cloud_id = client.push_observation(obs)
+            cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(obs, remote))
 
             # Update local record with cloud_id and sync_status
             conn2 = get_connection()
@@ -8569,6 +8997,11 @@ def _create_local_from_remote(
         gps_longitude=remote.get('gps_longitude'),
         is_draft=True if remote.get('is_draft') is None else bool(remote.get('is_draft')),
         location_precision=remote.get('location_precision'),
+        ai_selected_service=remote.get('ai_selected_service'),
+        ai_selected_taxon_id=remote.get('ai_selected_taxon_id'),
+        ai_selected_scientific_name=remote.get('ai_selected_scientific_name'),
+        ai_selected_probability=remote.get('ai_selected_probability'),
+        ai_selected_at=remote.get('ai_selected_at'),
         source_type=remote.get('source_type') or 'personal',
         author=remote.get('author'),
         habitat_nin2_path=remote.get('habitat_nin2_path'),

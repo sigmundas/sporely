@@ -109,6 +109,7 @@ from utils.cloud_sync import (
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
     cloud_media_materialization_state_for_observation,
+    build_cloud_ai_state_from_observation_identifications,
     format_original_upload_summary,
     fetch_cloud_usage_summary,
     is_image_too_large_for_plan_error,
@@ -2040,6 +2041,11 @@ class ObservationsTab(QWidget):
             "uncertain": bool(raw.get("uncertain", False)),
             "unspontaneous": bool(raw.get("unspontaneous", False)),
             "determination_method": raw.get("determination_method"),
+            "ai_selected_service": raw.get("ai_selected_service"),
+            "ai_selected_taxon_id": raw.get("ai_selected_taxon_id"),
+            "ai_selected_scientific_name": raw.get("ai_selected_scientific_name"),
+            "ai_selected_probability": raw.get("ai_selected_probability"),
+            "ai_selected_at": raw.get("ai_selected_at"),
             "location": raw.get("location"),
             "habitat": raw.get("habitat"),
             "habitat_nin2_path": raw.get("habitat_nin2_path"),
@@ -4490,6 +4496,96 @@ class ObservationsTab(QWidget):
         ai_state = self._deserialize_ai_state(observation.get("ai_state_json"))
         if obs_id is not None and ai_state:
             self._ai_suggestions_cache[obs_id] = ai_state
+            return ai_state
+
+        cloud_id = str(observation.get("cloud_id") or "").strip()
+        if not cloud_id:
+            return None
+
+        client = SporelyCloudClient.from_stored_credentials()
+        if client is None:
+            return None
+
+        try:
+            identification_rows = client.pull_observation_identifications(cloud_id)
+        except Exception:
+            return None
+        if not identification_rows:
+            return None
+
+        local_images = []
+        try:
+            obs_id_int = int(obs_id)
+        except (TypeError, ValueError):
+            obs_id_int = 0
+        if obs_id_int > 0:
+            try:
+                local_images = ImageDB.get_images_for_observation(obs_id_int) or []
+            except Exception:
+                local_images = []
+
+        ai_state = build_cloud_ai_state_from_observation_identifications(
+            observation,
+            identification_rows,
+            local_images,
+        )
+        if obs_id is not None and ai_state:
+            self._ai_suggestions_cache[obs_id] = ai_state
+        return ai_state
+
+    @staticmethod
+    def _ai_state_image_rows(image_results: list | None) -> list[dict]:
+        rows: list[dict] = []
+        for result in image_results or []:
+            if isinstance(result, dict):
+                filepath = str(
+                    result.get("filepath")
+                    or result.get("preview_path")
+                    or result.get("original_filepath")
+                    or ""
+                ).strip()
+                image_id = result.get("id") or result.get("image_id")
+            else:
+                filepath = str(
+                    getattr(result, "filepath", "")
+                    or getattr(result, "preview_path", "")
+                    or getattr(result, "original_filepath", "")
+                    or ""
+                ).strip()
+                image_id = getattr(result, "image_id", None)
+            if not filepath:
+                continue
+            rows.append({"id": image_id, "filepath": filepath})
+        return rows
+
+    def _load_cloud_observation_ai_state(
+        self,
+        row_data: dict | None,
+        image_results: list | None = None,
+    ) -> dict | None:
+        if not isinstance(row_data, dict):
+            return None
+        raw = dict(row_data.get("raw") or {})
+        cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
+        if not cloud_id:
+            return None
+
+        client = SporelyCloudClient.from_stored_credentials()
+        if client is None:
+            return None
+
+        try:
+            identification_rows = client.pull_observation_identifications(cloud_id)
+        except Exception:
+            return None
+        if not identification_rows:
+            return None
+
+        ai_state = build_cloud_ai_state_from_observation_identifications(
+            self._cloud_observation_draft_data(row_data),
+            identification_rows,
+            self._ai_state_image_rows(image_results),
+        )
         return ai_state
 
     def _lookup_common_name(self, obs: dict, name_map: dict[tuple[str, str], str | None]) -> str | None:
@@ -7797,6 +7893,11 @@ class ObservationsTab(QWidget):
                     species=data.get('species'),
                     common_name=data.get('common_name'),
                     inaturalist_taxon_id=data.get('inaturalist_taxon_id'),
+                    ai_selected_service=data.get('ai_selected_service'),
+                    ai_selected_taxon_id=data.get('ai_selected_taxon_id'),
+                    ai_selected_scientific_name=data.get('ai_selected_scientific_name'),
+                    ai_selected_probability=data.get('ai_selected_probability'),
+                    ai_selected_at=data.get('ai_selected_at'),
                     red_list_category=data.get('red_list_category'),
                     red_list_categories_json=data.get('red_list_categories_json'),
                     publish_target=data.get('publish_target'),
@@ -8034,7 +8135,7 @@ class ObservationsTab(QWidget):
             return
         image_results = self._cloud_image_import_results(row_data)
         draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
-        ai_state: dict | None = None
+        ai_state: dict | None = self._load_cloud_observation_ai_state(row_data, image_results)
         ai_taxon: dict | None = None
         primary_index = 0 if image_results else None
         while True:
@@ -9701,6 +9802,58 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
         )
 
+    def _ai_selected_fields(self, obs: dict | None) -> dict:
+        row = dict(obs or {})
+        return {
+            "ai_selected_service": str(row.get("ai_selected_service") or "").strip() or None,
+            "ai_selected_taxon_id": str(row.get("ai_selected_taxon_id") or "").strip() or None,
+            "ai_selected_scientific_name": str(row.get("ai_selected_scientific_name") or "").strip() or None,
+            "ai_selected_probability": (
+                None
+                if row.get("ai_selected_probability") in {"", None}
+                else row.get("ai_selected_probability")
+            ),
+            "ai_selected_at": str(row.get("ai_selected_at") or "").strip() or None,
+        }
+
+    def _format_selected_ai_summary(self, obs: dict | None) -> str | None:
+        row = dict(obs or {})
+        service = str(row.get("ai_selected_service") or "").strip()
+        taxon_id = str(row.get("ai_selected_taxon_id") or "").strip()
+        scientific_name = str(row.get("ai_selected_scientific_name") or "").strip()
+        selected_at = str(row.get("ai_selected_at") or "").strip()
+        probability = row.get("ai_selected_probability")
+        parts: list[str] = []
+        if service:
+            parts.append(service)
+        if scientific_name:
+            parts.append(scientific_name)
+        if taxon_id:
+            parts.append(self.tr("taxon {taxon_id}").format(taxon_id=taxon_id))
+        if probability is not None and str(probability).strip():
+            try:
+                probability_text = f"{float(probability):.3f}".rstrip("0").rstrip(".")
+            except Exception:
+                probability_text = str(probability).strip()
+            parts.append(f"p={probability_text}")
+        if selected_at:
+            parts.append(selected_at)
+        if not parts:
+            return None
+        return self.tr("Selected AI: {summary}").format(summary=" · ".join(parts))
+
+    def _update_selected_ai_summary_label(self, obs: dict | None) -> None:
+        label = getattr(self, "ai_selected_summary_label", None)
+        if label is None:
+            return
+        summary = self._format_selected_ai_summary(obs)
+        if summary:
+            label.setText(summary)
+            label.setVisible(True)
+        else:
+            label.setText("")
+            label.setVisible(False)
+
     def __init__(
         self,
         parent=None,
@@ -10378,6 +10531,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.determination_method_combo.currentIndexChanged.connect(self._update_taxonomy_tab_indicators)
         determination_row.addWidget(self.determination_method_combo, 1)
         identified_layout.addLayout(determination_row)
+
+        self.ai_selected_summary_label = QLabel("")
+        self.ai_selected_summary_label.setWordWrap(True)
+        self.ai_selected_summary_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.ai_selected_summary_label.setVisible(False)
+        identified_layout.addWidget(self.ai_selected_summary_label)
 
         self.publish_target_combo = QComboBox()
         self.publish_target_combo.addItem(self.tr("Artsobservasjoner (Norway)"), PUBLISH_TARGET_ARTSOBS_NO)
@@ -11283,35 +11442,52 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return value if isinstance(value, dict) else None
 
     def _ai_prediction_link(self, pred: dict, taxon: dict, source: str = "arts") -> str | None:
+        source = str(source or "").strip().lower()
+        pred_obj = pred if isinstance(pred, dict) else {}
+        taxon_obj = taxon if isinstance(taxon, dict) else {}
+
         if source == "inat":
-            taxon_id = taxon.get("id") if isinstance(taxon, dict) else None
+            taxon_id = str(
+                taxon_obj.get("id")
+                or taxon_obj.get("taxonId")
+                or taxon_obj.get("taxon_id")
+                or pred_obj.get("taxonId")
+                or pred_obj.get("taxon_id")
+                or ""
+            ).strip()
             if taxon_id:
                 return f"https://www.inaturalist.org/taxa/{taxon_id}"
             return None
-        if isinstance(pred, dict):
-            for key in ("infoURL", "infoUrl", "info_url"):
-                value = pred.get(key)
-                if isinstance(value, str) and value.startswith("http"):
-                    return value
-        if not isinstance(taxon, dict):
-            return None
-        for key in ("infoURL", "infoUrl", "info_url"):
-            value = taxon.get(key)
-            if isinstance(value, str) and value.startswith("http"):
-                return value
-        for key in ("url", "link", "href", "uri"):
-            value = taxon.get(key)
-            if isinstance(value, str) and value.startswith("http"):
-                return value
-        taxon_id = (
-            taxon.get("taxonId")
-            or taxon.get("taxon_id")
-            or taxon.get("TaxonId")
-            or taxon.get("id")
-        )
-        if taxon_id:
+
+        for obj in (pred_obj, taxon_obj):
+            for key in (
+                "species_url",
+                "speciesUrl",
+                "adbUrl",
+                "url",
+                "link",
+                "href",
+                "uri",
+                "infoUrl",
+                "infoURL",
+                "info_url",
+            ):
+                value = obj.get(key)
+                if isinstance(value, str) and value.strip().startswith("http"):
+                    return value.strip()
+
+        taxon_id = str(
+            taxon_obj.get("taxonId")
+            or taxon_obj.get("taxon_id")
+            or taxon_obj.get("TaxonId")
+            or taxon_obj.get("id")
+            or pred_obj.get("taxonId")
+            or pred_obj.get("taxon_id")
+            or ""
+        ).strip()
+        if taxon_id and taxon_id.isdigit():
             return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
-        return "https://artsdatabanken.no"
+        return None
 
     def _ai_prediction_links(self, pred: dict, taxon: dict, source: str = "arts") -> list[tuple[str, str]]:
         links: list[tuple[str, str]] = []
@@ -12636,6 +12812,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         host_species = self.host_species_input.text().strip() if hasattr(self, "host_species_input") else ""
         host_vernacular = self.host_vernacular_input.text().strip() if hasattr(self, "host_vernacular_input") else ""
         host_scientific = f"{host_genus} {host_species}".strip()
+        ai_source = self.observation if isinstance(self.observation, dict) and self.observation else self.draft_data
+        ai_selected = self._ai_selected_fields(ai_source)
         habitat_parts: list[str] = []
         if nin2_labels:
             habitat_parts.append(f"{self._nin2_tab_title()}: {' > '.join(nin2_labels)}")
@@ -12664,6 +12842,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'location_public': sharing_scope_location_public(sharing_scope),
             'location_precision': location_precision,
             'species_guess': working_title,
+            **ai_selected,
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
             'determination_method': self.determination_method_combo.currentData(),
@@ -15095,6 +15274,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if hasattr(self, "grows_on_note_input"):
             self.grows_on_note_input.setPlainText(obs.get("habitat_grows_on_note") or "")
         self._update_map_button()
+        self._update_selected_ai_summary_label(obs)
         self._maybe_set_vernacular_from_taxon()
         self._update_taxonomy_tab_indicators()
 

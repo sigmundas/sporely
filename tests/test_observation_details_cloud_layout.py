@@ -142,3 +142,62 @@ def test_edit_observation_cloud_controls_hide_private_slot_summary_for_pro(monke
     assert dialog.cloud_privacy_slots_label.text() == ""
 
     dialog.deleteLater()
+
+
+def test_edit_observation_cloud_controls_show_selected_ai_summary(monkeypatch, qapp) -> None:
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
+        list_remote_observations=lambda: [],
+    )
+    monkeypatch.setattr(observations_tab.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(
+        observations_tab.ObservationDetailsDialog,
+        "_load_objectives",
+        lambda self: {"default": {"is_default": True}},
+    )
+    monkeypatch.setattr(
+        observations_tab.ObservationDetailsDialog,
+        "_load_tag_options",
+        lambda self, category: [f"{category}-default"],
+    )
+    monkeypatch.setattr(
+        observations_tab.ObservationDetailsDialog,
+        "_load_habitat_tree",
+        lambda self, filename: [],
+    )
+    monkeypatch.setattr(observations_tab.ObservationDetailsDialog, "_apply_primary_metadata", lambda self: None)
+    monkeypatch.setattr(observations_tab.ObservationDetailsDialog, "_apply_suggested_taxon", lambda self: None)
+    monkeypatch.setattr(observations_tab.ObservationDetailsDialog, "_sync_taxon_cache", lambda self: None)
+    monkeypatch.setattr(
+        observations_tab.ObservationDetailsDialog,
+        "_complete_deferred_dialog_setup",
+        lambda self: None,
+    )
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
+
+    dialog = observations_tab.ObservationDetailsDialog(
+        parent=None,
+        observation=None,
+        draft_data={
+            "ai_selected_service": "inat",
+            "ai_selected_taxon_id": "12345",
+            "ai_selected_scientific_name": "Entoloma clypeatum",
+            "ai_selected_probability": 0.97,
+            "ai_selected_at": "2026-05-01T12:34:56Z",
+        },
+        image_results=[],
+    )
+    qapp.processEvents()
+
+    assert "Selected AI:" in dialog.ai_selected_summary_label.text()
+    assert "Entoloma clypeatum" in dialog.ai_selected_summary_label.text()
+
+    data = dialog.get_data()
+    assert data["ai_selected_service"] == "inat"
+    assert data["ai_selected_taxon_id"] == "12345"
+    assert data["ai_selected_scientific_name"] == "Entoloma clypeatum"
+    assert data["ai_selected_probability"] == 0.97
+    assert data["ai_selected_at"] == "2026-05-01T12:34:56Z"
+
+    dialog.deleteLater()

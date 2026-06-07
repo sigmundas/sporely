@@ -322,6 +322,11 @@ def migrate_database():
                     species_guess TEXT,
                     notes TEXT,
                     inaturalist_id INTEGER,
+                    ai_selected_service TEXT,
+                    ai_selected_taxon_id TEXT,
+                    ai_selected_scientific_name TEXT,
+                    ai_selected_probability REAL,
+                    ai_selected_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -411,6 +416,16 @@ def migrate_database():
             cursor.execute("ALTER TABLE observations ADD COLUMN private_comment TEXT")
         if "interesting_comment" not in columns:
             cursor.execute("ALTER TABLE observations ADD COLUMN interesting_comment INTEGER DEFAULT 0")
+        if "ai_selected_service" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN ai_selected_service TEXT")
+        if "ai_selected_taxon_id" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN ai_selected_taxon_id TEXT")
+        if "ai_selected_scientific_name" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN ai_selected_scientific_name TEXT")
+        if "ai_selected_probability" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN ai_selected_probability REAL")
+        if "ai_selected_at" not in columns:
+            cursor.execute("ALTER TABLE observations ADD COLUMN ai_selected_at TIMESTAMP")
         if "inaturalist_taxon_id" not in columns:
             cursor.execute("ALTER TABLE observations ADD COLUMN inaturalist_taxon_id INTEGER")
         if "red_list_category" not in columns:

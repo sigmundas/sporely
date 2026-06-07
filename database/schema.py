@@ -1164,6 +1164,11 @@ def init_database():
             private_comment TEXT,
             interesting_comment INTEGER DEFAULT 0,
             ai_state_json TEXT,
+            ai_selected_service TEXT,
+            ai_selected_taxon_id TEXT,
+            ai_selected_scientific_name TEXT,
+            ai_selected_probability REAL,
+            ai_selected_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -1343,6 +1348,26 @@ def init_database():
         pass  # Column already exists
     try:
         cursor.execute('ALTER TABLE observations ADD COLUMN ai_state_json TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_selected_service TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_selected_taxon_id TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_selected_scientific_name TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_selected_probability REAL')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN ai_selected_at TIMESTAMP')
     except sqlite3.OperationalError:
         pass  # Column already exists
     try:
