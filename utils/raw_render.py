@@ -85,7 +85,7 @@ class RawRenderSettings:
     white_balance_mode: str = "camera"
     wb_multipliers: tuple[float, float, float] | None = None
     wb_selection: tuple[float, float, float, float] | None = None
-    auto_levels: bool = False
+    auto_levels: bool = True
     black_percentile: float = 0.001
     white_percentile: float = 0.999
     tone_curve_enabled: bool = False
@@ -125,7 +125,7 @@ class RawRenderSettings:
             white_balance_mode=white_balance_mode,
             wb_multipliers=wb_multipliers,  # type: ignore[arg-type]
             wb_selection=wb_selection,  # type: ignore[arg-type]
-            auto_levels=_coerce_bool(mapping.get("auto_levels"), False),
+            auto_levels=_coerce_bool(mapping.get("auto_levels"), True),
             black_percentile=_coerce_float(mapping.get("black_percentile"), 0.001),
             white_percentile=_coerce_float(mapping.get("white_percentile"), 0.999),
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),

@@ -59,6 +59,14 @@ def test_raw_render_settings_round_trip():
     assert RawRenderSettings.from_dict(settings.to_dict()) == settings
 
 
+def test_raw_render_settings_default_uses_camera_wb_and_auto_levels():
+    settings = RawRenderSettings.default()
+
+    assert settings.white_balance_mode == "camera"
+    assert settings.auto_levels is True
+    assert settings.tone_curve_enabled is False
+
+
 def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeypatch):
     source_path = tmp_path / "sample.nef"
     source_path.write_bytes(b"raw-bytes")

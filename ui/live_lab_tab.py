@@ -4,9 +4,11 @@ from __future__ import annotations
 from uuid import uuid4
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QUrl, QTimer, QSignalBlocker
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QImageReader, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QFormLayout,
@@ -17,7 +19,9 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QSlider,
     QVBoxLayout,
+    QToolButton,
     QWidget,
 )
 
@@ -25,8 +29,11 @@ from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, objective_sort_value
 from utils.image_utils import cleanup_import_temp_file
+from utils.image_companion_grouping import companion_group_key, select_preferred_companion_path
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.lab_watcher import LabWatcherWorker
+from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
+from utils.raw_render import RawRenderSettings
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
 from .hint_status import HintBar, HintStatusController
@@ -76,7 +83,11 @@ class LiveLabTab(QWidget):
         self._watcher: LabWatcherWorker | None = None
         self._session_image_ids: list[int] = []
         self._selected_session_image_id: int | None = None
+        self._raw_render_settings = RawRenderSettings.default()
         self._seen_source_paths: set[str] = set()
+        self._pending_companion_groups: dict[str, dict[str, object]] = {}
+        self._consumed_companion_groups: set[str] = set()
+        self._raw_companion_hold_ms = 2000
         self._session_import_count = 0
         self._session_stop_pending = False
         self._pending_stop_status: tuple[str, str, int] | None = None
@@ -240,6 +251,95 @@ class LiveLabTab(QWidget):
         note_row_layout.addWidget(self.add_note_btn, 0)
         tag_form.addRow(self.tr("Note:"), note_row)
         left_layout.addWidget(tag_group)
+
+        self.raw_processing_card = QFrame()
+        self.raw_processing_card.setObjectName("sectionCard")
+        self.raw_processing_card.setFrameShape(QFrame.NoFrame)
+        raw_card_layout = QVBoxLayout(self.raw_processing_card)
+        raw_card_layout.setContentsMargins(0, 0, 0, 0)
+        raw_card_layout.setSpacing(0)
+        self.raw_processing_toggle_btn = QToolButton()
+        self.raw_processing_toggle_btn.setCheckable(True)
+        self.raw_processing_toggle_btn.setChecked(False)
+        self.raw_processing_toggle_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.raw_processing_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.raw_processing_toggle_btn.setStyleSheet(
+            "QToolButton { border: none; padding: 10px 12px; text-align: left; font-weight: 600; }"
+        )
+        self.raw_processing_toggle_btn.toggled.connect(self._on_raw_processing_toggle_changed)
+        raw_card_layout.addWidget(self.raw_processing_toggle_btn)
+
+        self.raw_processing_body = QWidget()
+        raw_body_layout = QVBoxLayout(self.raw_processing_body)
+        raw_body_layout.setContentsMargins(12, 0, 12, 12)
+        raw_body_layout.setSpacing(8)
+        self.raw_processing_details_label = QLabel(
+            self.tr("Applies to future RAW captures in this Live Lab session.")
+        )
+        self.raw_processing_details_label.setWordWrap(True)
+        self.raw_processing_details_label.setStyleSheet("color: #6b7280;")
+        raw_body_layout.addWidget(self.raw_processing_details_label)
+
+        raw_form = QFormLayout()
+        raw_form.setContentsMargins(0, 0, 0, 0)
+        raw_form.setHorizontalSpacing(8)
+        raw_form.setVerticalSpacing(8)
+        raw_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        self.raw_white_balance_combo = QComboBox()
+        self.raw_white_balance_combo.addItem(self.tr("Camera WB"), "camera")
+        self.raw_white_balance_combo.addItem(self.tr("Auto WB"), "auto")
+        self.raw_white_balance_combo.currentIndexChanged.connect(self._on_raw_processing_controls_changed)
+        raw_form.addRow(self.tr("White balance:"), self.raw_white_balance_combo)
+
+        self.raw_auto_levels_checkbox = QCheckBox(self.tr("Auto levels"))
+        self.raw_auto_levels_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
+        raw_form.addRow(self.tr("Levels:"), self.raw_auto_levels_checkbox)
+
+        self.raw_tone_curve_checkbox = QCheckBox(self.tr("Tone curve"))
+        self.raw_tone_curve_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
+        raw_form.addRow(self.tr("Tone curve:"), self.raw_tone_curve_checkbox)
+
+        self.raw_curve_strength_row = QWidget()
+        raw_strength_row_layout = QHBoxLayout(self.raw_curve_strength_row)
+        raw_strength_row_layout.setContentsMargins(0, 0, 0, 0)
+        raw_strength_row_layout.setSpacing(8)
+        self.raw_curve_strength_slider = QSlider(Qt.Horizontal)
+        self.raw_curve_strength_slider.setRange(0, 100)
+        self.raw_curve_strength_slider.setSingleStep(1)
+        self.raw_curve_strength_slider.setPageStep(5)
+        self.raw_curve_strength_slider.setValue(int(round(self._raw_render_settings.tone_curve_strength * 100.0)))
+        self.raw_curve_strength_slider.valueChanged.connect(self._on_raw_processing_controls_changed)
+        self.raw_curve_strength_value_label = QLabel("")
+        self.raw_curve_strength_value_label.setMinimumWidth(28)
+        self.raw_curve_strength_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        raw_strength_row_layout.addWidget(self.raw_curve_strength_slider, 1)
+        raw_strength_row_layout.addWidget(self.raw_curve_strength_value_label, 0)
+        raw_form.addRow(self.tr("Curve strength:"), self.raw_curve_strength_row)
+
+        self.raw_curve_midpoint_row = QWidget()
+        raw_midpoint_row_layout = QHBoxLayout(self.raw_curve_midpoint_row)
+        raw_midpoint_row_layout.setContentsMargins(0, 0, 0, 0)
+        raw_midpoint_row_layout.setSpacing(8)
+        self.raw_curve_midpoint_slider = QSlider(Qt.Horizontal)
+        self.raw_curve_midpoint_slider.setRange(0, 100)
+        self.raw_curve_midpoint_slider.setSingleStep(1)
+        self.raw_curve_midpoint_slider.setPageStep(5)
+        self.raw_curve_midpoint_slider.setValue(int(round(self._raw_render_settings.tone_curve_midpoint * 100.0)))
+        self.raw_curve_midpoint_slider.valueChanged.connect(self._on_raw_processing_controls_changed)
+        self.raw_curve_midpoint_value_label = QLabel("")
+        self.raw_curve_midpoint_value_label.setMinimumWidth(28)
+        self.raw_curve_midpoint_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        raw_midpoint_row_layout.addWidget(self.raw_curve_midpoint_slider, 1)
+        raw_midpoint_row_layout.addWidget(self.raw_curve_midpoint_value_label, 0)
+        raw_form.addRow(self.tr("Curve midpoint:"), self.raw_curve_midpoint_row)
+
+        raw_body_layout.addLayout(raw_form)
+        self.raw_processing_body.setVisible(False)
+        raw_card_layout.addWidget(self.raw_processing_body)
+        self._sync_raw_processing_controls_from_settings(self._raw_render_settings)
+        self._update_raw_processing_section_label(False)
+        left_layout.addWidget(self.raw_processing_card)
         left_layout.addStretch(1)
 
         left_scroll = QScrollArea()
@@ -383,6 +483,30 @@ class LiveLabTab(QWidget):
             disabled_hint=self.tr("Start a Live Lab session before adding notes."),
         )
         self._register_hint_widget(
+            self.raw_processing_toggle_btn,
+            self.tr("Show or hide the RAW processing controls for future session-level captures."),
+        )
+        self._register_hint_widget(
+            self.raw_white_balance_combo,
+            self.tr("Choose the default white balance mode for future RAW captures."),
+        )
+        self._register_hint_widget(
+            self.raw_auto_levels_checkbox,
+            self.tr("Apply automatic levels to future RAW captures."),
+        )
+        self._register_hint_widget(
+            self.raw_tone_curve_checkbox,
+            self.tr("Enable the luminance tone curve for future RAW captures."),
+        )
+        self._register_hint_widget(
+            self.raw_curve_strength_slider,
+            self.tr("Adjust the tone curve strength."),
+        )
+        self._register_hint_widget(
+            self.raw_curve_midpoint_slider,
+            self.tr("Adjust the tone curve midpoint."),
+        )
+        self._register_hint_widget(
             self.add_note_btn,
             self.tr("Append the note to the current session log with the current timestamp."),
             disabled_hint=self.tr("Start a Live Lab session before adding notes."),
@@ -418,6 +542,337 @@ class LiveLabTab(QWidget):
             allow_when_disabled=allow_when_disabled,
             disabled_hint=disabled_hint,
         )
+
+    def _raw_processing_preset_context(self) -> dict[str, str | None]:
+        """Return the context key that future RAW presets will use."""
+        objective_key = str(self.objective_combo.currentData() or "").strip() or None
+        objective_label = str(self.objective_combo.currentText() or "").strip() or None
+        return {
+            "capture_source": "live_lab",
+            "instrument": "microscope",
+            "objective_name": objective_key,
+            "objective_label": objective_label,
+            "contrast": DatabaseTerms.canonicalize("contrast", self.contrast_combo.currentData()),
+            "mount_medium": DatabaseTerms.canonicalize("mount", self.mount_combo.currentData()),
+            "stain": DatabaseTerms.canonicalize("stain", self.stain_combo.currentData()),
+            "sample_type": DatabaseTerms.canonicalize("sample", self.sample_combo.currentData()),
+        }
+
+    def _raw_settings_from_controls(self) -> RawRenderSettings:
+        base_settings = getattr(self, "_raw_render_settings", RawRenderSettings.default())
+        white_balance_combo = getattr(self, "raw_white_balance_combo", None)
+        auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+        tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
+        strength_slider = getattr(self, "raw_curve_strength_slider", None)
+        midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
+
+        white_balance_mode = "camera"
+        if white_balance_combo is not None:
+            white_balance_mode = str(white_balance_combo.currentData() or "camera").strip().lower() or "camera"
+
+        auto_levels = True
+        if auto_levels_checkbox is not None:
+            auto_levels = bool(auto_levels_checkbox.isChecked())
+
+        tone_curve_enabled = False
+        if tone_curve_checkbox is not None:
+            tone_curve_enabled = bool(tone_curve_checkbox.isChecked())
+
+        tone_curve_strength = float(getattr(base_settings, "tone_curve_strength", 0.5))
+        if strength_slider is not None:
+            tone_curve_strength = max(0.0, min(1.0, float(strength_slider.value()) / 100.0))
+
+        tone_curve_midpoint = float(getattr(base_settings, "tone_curve_midpoint", 0.5))
+        if midpoint_slider is not None:
+            tone_curve_midpoint = max(0.0, min(1.0, float(midpoint_slider.value()) / 100.0))
+
+        settings = RawRenderSettings(
+            white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto"} else "camera",
+            auto_levels=auto_levels,
+            tone_curve_enabled=tone_curve_enabled,
+            tone_curve_strength=tone_curve_strength,
+            tone_curve_midpoint=tone_curve_midpoint,
+        )
+        self._raw_render_settings = settings
+        return settings
+
+    def _sync_raw_processing_controls_from_settings(self, settings: RawRenderSettings | None = None) -> None:
+        settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
+        self._raw_render_settings = settings
+        combo = getattr(self, "raw_white_balance_combo", None)
+        auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+        tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
+        strength_slider = getattr(self, "raw_curve_strength_slider", None)
+        midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
+        strength_label = getattr(self, "raw_curve_strength_value_label", None)
+        midpoint_label = getattr(self, "raw_curve_midpoint_value_label", None)
+
+        if combo is not None:
+            target_index = combo.findData(settings.white_balance_mode)
+            if target_index < 0:
+                target_index = combo.findData("camera")
+            if target_index >= 0:
+                with QSignalBlocker(combo):
+                    combo.setCurrentIndex(target_index)
+        if auto_levels_checkbox is not None:
+            with QSignalBlocker(auto_levels_checkbox):
+                auto_levels_checkbox.setChecked(bool(settings.auto_levels))
+        if tone_curve_checkbox is not None:
+            with QSignalBlocker(tone_curve_checkbox):
+                tone_curve_checkbox.setChecked(bool(settings.tone_curve_enabled))
+        if strength_slider is not None:
+            with QSignalBlocker(strength_slider):
+                strength_slider.setValue(int(round(float(settings.tone_curve_strength) * 100.0)))
+        if midpoint_slider is not None:
+            with QSignalBlocker(midpoint_slider):
+                midpoint_slider.setValue(int(round(float(settings.tone_curve_midpoint) * 100.0)))
+
+        if strength_label is not None:
+            strength_label.setText(str(int(round(float(settings.tone_curve_strength) * 100.0))))
+        if midpoint_label is not None:
+            midpoint_label.setText(str(int(round(float(settings.tone_curve_midpoint) * 100.0))))
+
+        self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
+        self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+
+    def _set_raw_tone_controls_enabled(self, enabled: bool) -> None:
+        for attr in (
+            "raw_curve_strength_row",
+            "raw_curve_midpoint_row",
+            "raw_curve_strength_slider",
+            "raw_curve_midpoint_slider",
+            "raw_curve_strength_value_label",
+            "raw_curve_midpoint_value_label",
+        ):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.setEnabled(bool(enabled))
+
+    def _raw_processing_summary_text(self) -> str:
+        settings = self._raw_settings_from_controls()
+        wb_label = self.tr("Auto WB") if settings.white_balance_mode == "auto" else self.tr("Camera WB")
+        levels_label = self.tr("Auto levels") if settings.auto_levels else self.tr("levels off")
+        if settings.tone_curve_enabled:
+            curve_label = self.tr("Curve {strength} / mid {midpoint}").format(
+                strength=int(round(float(settings.tone_curve_strength) * 100.0)),
+                midpoint=int(round(float(settings.tone_curve_midpoint) * 100.0)),
+            )
+        else:
+            curve_label = self.tr("Curve off")
+        return " \u00b7 ".join([wb_label, levels_label, curve_label])
+
+    def _update_raw_processing_section_label(self, expanded: bool) -> None:
+        if not hasattr(self, "raw_processing_toggle_btn"):
+            return
+        arrow = "▾" if expanded else "▸"
+        summary = self._raw_processing_summary_text()
+        self.raw_processing_toggle_btn.setText(
+            self.tr("RAW processing {arrow} {summary}").format(arrow=arrow, summary=summary)
+        )
+
+    def _on_raw_processing_toggle_changed(self, checked: bool) -> None:
+        if hasattr(self, "raw_processing_body"):
+            self.raw_processing_body.setVisible(bool(checked))
+        self._update_raw_processing_section_label(bool(checked))
+
+    def _on_raw_processing_controls_changed(self, *_args) -> None:
+        self._current_raw_render_settings()
+        self._set_raw_tone_controls_enabled(bool(self._raw_render_settings.tone_curve_enabled))
+        self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+
+    def _current_raw_render_settings(self) -> RawRenderSettings:
+        _preset_context = self._raw_processing_preset_context()
+        del _preset_context
+        # TODO: resolve a saved preset first using _raw_processing_preset_context().
+        return self._raw_settings_from_controls()
+
+    def _reset_companion_dedupe_state(self) -> None:
+        pending = getattr(self, "_pending_companion_groups", {})
+        for state in list(pending.values()):
+            timer = state.get("timer") if isinstance(state, dict) else None
+            if isinstance(timer, QTimer):
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+                try:
+                    timer.deleteLater()
+                except Exception:
+                    pass
+        pending.clear()
+        getattr(self, "_consumed_companion_groups", set()).clear()
+
+    def _same_stem_companion_paths(self, source_path: str) -> list[str]:
+        source_text = str(source_path or "").strip()
+        if not source_text:
+            return []
+        try:
+            source = Path(source_text)
+        except Exception:
+            return [source_text]
+        try:
+            if not source.exists() or not source.is_file():
+                return [str(source)]
+        except Exception:
+            return [source_text]
+
+        supported_suffixes = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif"} | set(SUPPORTED_RAW_SUFFIXES)
+        candidates: list[str] = []
+        try:
+            for child in source.parent.iterdir():
+                if not child.is_file():
+                    continue
+                if child.stem.casefold() != source.stem.casefold():
+                    continue
+                if child.suffix.lower() not in supported_suffixes:
+                    continue
+                try:
+                    candidates.append(str(child.resolve()))
+                except Exception:
+                    candidates.append(str(child))
+        except Exception:
+            return [str(source)]
+
+        if not candidates:
+            return [str(source)]
+        seen: set[str] = set()
+        unique: list[str] = []
+        for candidate in sorted(candidates, key=lambda path: Path(path).name.casefold()):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            unique.append(candidate)
+        return unique
+
+    def _fallback_companion_path(self, source_path: str, *, exclude_path: str | None = None) -> str | None:
+        companion_paths = self._same_stem_companion_paths(source_path)
+        non_raw_paths = [
+            path
+            for path in companion_paths
+            if path and path != exclude_path and not is_raw_image_path(path)
+        ]
+        if not non_raw_paths:
+            return None
+        return select_preferred_companion_path(non_raw_paths) or non_raw_paths[0]
+
+    def _companion_state_for_path(self, source_path: str) -> tuple[str, dict[str, object]]:
+        group_key = companion_group_key(source_path)
+        state = self._pending_companion_groups.get(group_key)
+        if state is None:
+            state = {
+                "paths": set(),
+                "timer": None,
+                "raw_failed": False,
+                "failed_raw_path": None,
+            }
+            self._pending_companion_groups[group_key] = state
+        paths = state.setdefault("paths", set())
+        if isinstance(paths, set):
+            paths.add(str(source_path))
+        return group_key, state
+
+    def _clear_companion_group(self, group_key: str) -> None:
+        state = self._pending_companion_groups.pop(group_key, None)
+        if isinstance(state, dict):
+            timer = state.get("timer")
+            if isinstance(timer, QTimer):
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+                try:
+                    timer.deleteLater()
+                except Exception:
+                    pass
+        self._consumed_companion_groups.add(group_key)
+
+    def _queue_companion_source(self, source_path: str) -> bool:
+        source = str(source_path or "").strip()
+        if not source:
+            return False
+        if source in self._seen_source_paths:
+            return False
+        self._seen_source_paths.add(source)
+
+        if not Path(source).exists():
+            return False
+        group_key, state = self._companion_state_for_path(source)
+        if group_key in self._consumed_companion_groups:
+            return False
+
+        if is_raw_image_path(source):
+            timer = state.get("timer")
+            if isinstance(timer, QTimer):
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            if self._ingest_detected_image(source):
+                self._clear_companion_group(group_key)
+                return True
+            fallback = self._fallback_companion_path(source, exclude_path=source)
+            if fallback and fallback != source and self._ingest_detected_image(fallback):
+                self._clear_companion_group(group_key)
+                return True
+            state["raw_failed"] = True
+            state["failed_raw_path"] = source
+            return False
+
+        if bool(state.get("raw_failed")):
+            if self._ingest_detected_image(source):
+                self._clear_companion_group(group_key)
+                return True
+            return False
+
+        timer = state.get("timer")
+        if not isinstance(timer, QTimer):
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda key=group_key: self._flush_companion_group(key))
+            state["timer"] = timer
+        timer.stop()
+        timer.start(int(self._raw_companion_hold_ms))
+        return True
+
+    def _flush_companion_group(self, group_key: str) -> None:
+        if group_key in self._consumed_companion_groups:
+            return
+        state = self._pending_companion_groups.get(group_key)
+        if not isinstance(state, dict):
+            return
+        timer = state.get("timer")
+        if isinstance(timer, QTimer):
+            try:
+                timer.stop()
+            except Exception:
+                pass
+        paths = [str(path) for path in (state.get("paths") or set()) if str(path or "").strip()]
+        if not paths:
+            return
+        primary_path = paths[0]
+        if bool(state.get("raw_failed")):
+            fallback = self._fallback_companion_path(primary_path, exclude_path=str(state.get("failed_raw_path") or ""))
+            if fallback and self._ingest_detected_image(fallback):
+                self._clear_companion_group(group_key)
+            return
+
+        candidate_paths = self._same_stem_companion_paths(primary_path)
+        preferred = select_preferred_companion_path(candidate_paths) or select_preferred_companion_path(paths)
+        if not preferred:
+            return
+        if is_raw_image_path(preferred):
+            if self._ingest_detected_image(preferred):
+                self._clear_companion_group(group_key)
+                return
+            fallback = self._fallback_companion_path(preferred, exclude_path=preferred)
+            if fallback and self._ingest_detected_image(fallback):
+                self._clear_companion_group(group_key)
+                return
+            state["raw_failed"] = True
+            state["failed_raw_path"] = preferred
+            return
+        if self._ingest_detected_image(preferred):
+            self._clear_companion_group(group_key)
 
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
@@ -917,6 +1372,7 @@ class LiveLabTab(QWidget):
         self._session_image_ids = []
         self._selected_session_image_id = None
         self._seen_source_paths = set()
+        self._reset_companion_dedupe_state()
         self._session_import_count = 0
         self._session_active = True
         self._session_id = uuid4().hex
@@ -997,6 +1453,7 @@ class LiveLabTab(QWidget):
         self._session_stop_pending = False
         self._session_observation_id = None
         self._session_observation_snapshot = None
+        self._reset_companion_dedupe_state()
         self._update_session_controls()
 
         if self._pending_stop_status is not None:
@@ -1039,20 +1496,25 @@ class LiveLabTab(QWidget):
         source = str(source_path or "").strip()
         if not source or source in self._seen_source_paths:
             return
-        self._seen_source_paths.add(source)
-        self._ingest_detected_image(source)
+        self._queue_companion_source(source)
 
-    def _ingest_detected_image(self, source_path: str) -> None:
+    def _ingest_detected_image(self, source_path: str) -> bool:
         observation_id = int(self._session_observation_id or 0)
         if observation_id <= 0:
-            return
+            return False
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
         ingest_context = dict(self._current_lab_metadata())
         ingest_context["image_type"] = "microscope"
+        raw_settings = self._current_raw_render_settings()
         try:
-            ingest = prepare_local_ingest_image(source_path, lab_metadata=ingest_context, output_dir=output_dir)
+            ingest = prepare_local_ingest_image(
+                source_path,
+                raw_settings=raw_settings,
+                lab_metadata=ingest_context,
+                output_dir=output_dir,
+            )
         except RawRenderingUnavailableError as exc:
             self._show_status(
                 self.tr("RAW image {name} cannot be imported yet: {error}").format(
@@ -1062,7 +1524,7 @@ class LiveLabTab(QWidget):
                 tone="warning",
                 timeout_ms=6000,
             )
-            return
+            return False
         except RuntimeError as exc:
             self._show_status(
                 self.tr("Could not prepare {name}: {error}").format(
@@ -1072,7 +1534,7 @@ class LiveLabTab(QWidget):
                 tone="warning",
                 timeout_ms=6000,
             )
-            return
+            return False
 
         objective_key = self.objective_combo.currentData()
         objective = load_objectives().get(objective_key) if objective_key else None
@@ -1137,6 +1599,7 @@ class LiveLabTab(QWidget):
             },
         )
         self._refresh_main_window_after_import(image_id)
+        return True
 
     def _refresh_session_gallery(self) -> None:
         objectives = load_objectives()
@@ -1172,6 +1635,7 @@ class LiveLabTab(QWidget):
                 ),
                 translate=self.tr,
             )
+            badges.extend(ImageGalleryWidget.build_raw_source_badges(image.get("lab_metadata"), translate=self.tr))
             items.append(
                 {
                     "id": image_id,

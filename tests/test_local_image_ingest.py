@@ -133,6 +133,7 @@ def test_prepare_local_ingest_image_renders_raw_files(tmp_path, monkeypatch):
     assert result.lab_metadata["raw_processing"]["local_derivative"]["height"] == 2
     assert result.lab_metadata["raw_processing"]["local_derivative"]["path"] == result.working_path
     assert result.lab_metadata["raw_processing"]["settings"] == RawRenderSettings.default().to_dict()
+    assert result.lab_metadata["raw_processing"]["settings"]["auto_levels"] is True
     assert result.raw_render_snapshot == result.lab_metadata["raw_processing"]
     assert get_image_metadata(result.working_path)["datetime"] == timestamp
     with Image.open(result.working_path) as rendered:

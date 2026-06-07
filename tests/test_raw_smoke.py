@@ -51,6 +51,7 @@ def test_optional_raw_smoke_rendering(tmp_path):
     assert result.lab_metadata["raw_processing"]["local_derivative"]["width"] > 0
     assert result.lab_metadata["raw_processing"]["local_derivative"]["height"] > 0
     assert result.lab_metadata["raw_processing"]["settings"]["white_balance_mode"] == "camera"
+    assert result.lab_metadata["raw_processing"]["settings"]["auto_levels"] is True
 
     source_timestamp = read_rawpy_capture_datetime(source)
     if source_timestamp is not None:
