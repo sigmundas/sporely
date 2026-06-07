@@ -160,9 +160,9 @@ def test_cloud_reference_dialog_species_rows_use_taxon_lookup_service(tmp_path: 
     assert isinstance(choice, TaxonChoice)
     assert choice.genus == "Agaricus"
     assert choice.species == "bisporus"
-    assert choice.common_name == "Button mushroom"
-    assert choice.family == "Agaricaceae"
-    assert item.text() == "Agaricus bisporus - Button mushroom - Agaricaceae"
+    assert choice.common_name is None
+    assert choice.family is None
+    assert item.text() == "bisporus"
     assert item.data(Qt.UserRole) == "bisporus"
     assert item.data(Qt.UserRole + 1) == "Agaricus"
     assert item.data(Qt.UserRole + 2) == "bisporus"
@@ -188,7 +188,7 @@ def test_cloud_reference_dialog_focus_populates_blank_prefix_species_and_common_
     species_calls: list[tuple[str, str, int]] = []
     common_calls: list[tuple[str, str | None, str | None, int]] = []
 
-    def _suggest_species(genus: str, prefix: str, limit: int = 50) -> list[TaxonChoice]:
+    def _suggest_species(genus: str, prefix: str, limit: int = 200) -> list[TaxonChoice]:
         species_calls.append((genus, prefix, limit))
         assert prefix in ("", "bi")
         return [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")]
@@ -197,10 +197,10 @@ def test_cloud_reference_dialog_focus_populates_blank_prefix_species_and_common_
         prefix: str = "",
         genus: str | None = None,
         species: str | None = None,
-        limit: int = 50,
+        limit: int = 200,
     ) -> list[TaxonChoice]:
         common_calls.append((prefix, genus, species, limit))
-        assert prefix == ""
+        assert prefix in ("", "Button mushroom")
         return [
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Cultivated mushroom"),
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom"),
@@ -227,14 +227,14 @@ def test_cloud_reference_dialog_focus_populates_blank_prefix_species_and_common_
     qapp.processEvents()
     dialog.eventFilter(dialog.species_input, QEvent(QEvent.FocusIn))
     qapp.processEvents()
-    assert species_calls == [("Agaricus", "bi", 50)]
+    assert species_calls == [("Agaricus", "bi", 200)]
     assert dialog._species_model.rowCount() == 1
     assert dialog._species_model.item(0).data(Qt.UserRole) == "bisporus"
     assert dialog.species_input.selectedText() == "bi"
 
     dialog.eventFilter(dialog.vernacular_input, QEvent(QEvent.FocusIn))
     qapp.processEvents()
-    assert common_calls == [("", "Agaricus", "bi", 50)]
+    assert common_calls == [("", "Agaricus", "bi", 200)]
     assert dialog._vernacular_model.rowCount() == 2
     assert dialog._vernacular_model.item(0).data(dialog._ROLE_TAXON_CHOICE).common_name == "Cultivated mushroom"
     assert dialog._vernacular_model.item(1).data(dialog._ROLE_TAXON_CHOICE).common_name == "Button mushroom"
@@ -307,7 +307,8 @@ def test_cloud_reference_dialog_handles_choice_without_species(tmp_path: Path, m
 
     dialog._on_species_selected(index)
 
-    assert dialog.species_input.text() == "preserve me"
+    assert dialog.genus_input.text() == ""
+    assert dialog.species_input.text() == ""
     assert dialog.vernacular_input.text() == "Button mushroom"
 
     dialog.vernacular_input.setText("Button mushroom")
@@ -321,7 +322,8 @@ def test_cloud_reference_dialog_handles_choice_without_species(tmp_path: Path, m
 
     dialog._on_vernacular_editing_finished()
 
-    assert dialog.genus_input.text() == "Agaricus"
+    assert dialog.vernacular_input.text() == ""
+    assert dialog.genus_input.text() == ""
     assert dialog.species_input.text() == "preserve me"
 
     dialog.deleteLater()

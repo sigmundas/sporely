@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 import ui.main_window as main_window
 from database.taxon_lookup import TaxonChoice
 from database.vernacular_db import VernacularDB
+from ui.taxon_input_controller import TaxonInputController
 
 
 @pytest.fixture(scope="module")
@@ -82,11 +83,11 @@ class _ReferenceLookupStub:
         self.language_code = "en"
         self.vernacular_db = object()
 
-    def suggest_genera(self, prefix: str = "", limit: int = 50) -> list[str]:
+    def suggest_genera(self, prefix: str = "", limit: int = 200) -> list[str]:
         self.calls.append(("suggest_genera", prefix, limit))
         return list(self.genera)
 
-    def suggest_species(self, genus: str, prefix: str = "", limit: int = 50) -> list[TaxonChoice]:
+    def suggest_species(self, genus: str, prefix: str = "", limit: int = 200) -> list[TaxonChoice]:
         self.calls.append(("suggest_species", genus, prefix, limit))
         return list(self.species)
 
@@ -95,7 +96,7 @@ class _ReferenceLookupStub:
         prefix: str = "",
         genus: str | None = None,
         species: str | None = None,
-        limit: int = 50,
+        limit: int = 200,
     ) -> list[TaxonChoice]:
         self.calls.append(("suggest_common_names", prefix, genus, species, limit))
         return list(self.common_names)
@@ -352,6 +353,7 @@ def test_reference_panel_taxon_lookup_suggestions_and_hidden_choice_selection(
     assert window._ref_genus_model.stringList() == ["Agaricus", "Entoloma"]
     assert species_values == ["bisporus"]
     assert window._ref_species_model.rowCount() == 1
+    assert window._ref_species_model.item(0).text() == "bisporus"
     assert window._ref_species_model.item(0).data(Qt.UserRole) == "bisporus"
 
     window.ref_genus_input.setText("Agaricus")
@@ -419,6 +421,19 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
         family="Agaricaceae",
     )
     window._ensure_reference_taxon_lookup = lambda: lookup
+    window._reference_taxon_controller = TaxonInputController(
+        lookup,
+        window.ref_genus_input,
+        window.ref_species_input,
+        window.ref_vernacular_input,
+        window,
+    )
+    window._ref_genus_model = window._reference_taxon_controller.genus_model
+    window._ref_species_model = window._reference_taxon_controller.species_model
+    window._ref_vernacular_model = window._reference_taxon_controller.vernacular_model
+    window._ref_genus_completer = window._reference_taxon_controller.genus_completer
+    window._ref_species_completer = window._reference_taxon_controller.species_completer
+    window._ref_vernacular_completer = window._reference_taxon_controller.vernacular_completer
     complete_calls: list[str] = []
     monkeypatch.setattr(window._ref_genus_completer, "complete", lambda *args, **kwargs: complete_calls.append("genus"))
     monkeypatch.setattr(window._ref_species_completer, "complete", lambda *args, **kwargs: complete_calls.append("species"))
@@ -434,7 +449,7 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
     qapp.processEvents()
     window.eventFilter(window.ref_genus_input, QEvent(QEvent.FocusIn))
     qapp.processEvents()
-    assert ("suggest_genera", "Aga", 50) in lookup.calls
+    assert ("suggest_genera", "Aga", 200) in lookup.calls
     assert "genus" in complete_calls
     assert window.ref_genus_input.selectedText() == "Aga"
 
@@ -449,7 +464,7 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
     window.eventFilter(window.ref_species_input, QEvent(QEvent.FocusIn))
     qapp.processEvents()
 
-    assert ("suggest_species", "Agaricus", "bi", 50) in lookup.calls
+    assert ("suggest_species", "Agaricus", "bi", 200) in lookup.calls
     assert window._ref_species_model.rowCount() == 1
     assert window._ref_species_model.item(0).data(Qt.UserRole) == "bisporus"
     assert "species" in complete_calls
@@ -460,7 +475,7 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
     window.ref_species_input.blockSignals(False)
     window.eventFilter(window.ref_vernacular_input, QEvent(QEvent.FocusIn))
 
-    assert ("suggest_common_names", "", "Agaricus", "bisporus", 50) in lookup.calls
+    assert ("suggest_common_names", "", "Agaricus", "bisporus", 200) in lookup.calls
     assert window._ref_vernacular_model.rowCount() == 2
     assert window._ref_vernacular_model.item(0).data(Qt.UserRole) == "Cultivated mushroom"
     assert window._ref_vernacular_model.item(1).data(Qt.UserRole) == "Button mushroom"

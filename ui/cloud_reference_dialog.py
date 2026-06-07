@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from database.models import SettingsDB, SpeciesDataAvailability
-from database.taxon_lookup import TaxonChoice, TaxonLookupService
+from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
 from database.vernacular_db import VernacularDB
 from utils.cloud_sync import CloudSyncError, SporelyCloudClient
 from utils.vernacular_utils import (
@@ -41,6 +41,7 @@ from utils.vernacular_utils import (
 
 from .delegates import SpeciesItemDelegate
 from .dialog_helpers import make_github_help_button
+from .taxon_input_controller import TaxonInputController
 
 
 def _should_select_all_on_focus(event) -> bool:
@@ -423,24 +424,10 @@ class CloudReferenceDialog(QDialog):
         self.vernacular_input.setPlaceholderText(f"e.g., {'; '.join(cleaned[:4])}")
 
     def _format_species_choice_display(self, choice: TaxonChoice) -> str:
-        genus = self._clean_genus_text(choice.genus)
-        species = self._clean_species_text(choice.species)
-        text = f"{genus} {species}".strip()
-        common_name = str(choice.common_name or "").strip()
-        family = str(choice.family or "").strip()
-        if common_name:
-            text = f"{text} - {common_name}".strip() if text else common_name
-        if family:
-            text = f"{text} - {family}".strip() if text else family
-        return text or common_name or family
+        return self._clean_species_text(choice.species)
 
     def _format_common_name_choice_display(self, choice: TaxonChoice) -> str:
-        common_name = str(choice.common_name or "").strip()
-        if common_name:
-            return common_name
-        genus = self._clean_genus_text(choice.genus)
-        species = self._clean_species_text(choice.species)
-        return f"{genus} {species}".strip()
+        return str(choice.common_name or "").strip()
 
     def _choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
         if not index.isValid():
@@ -454,6 +441,21 @@ class CloudReferenceDialog(QDialog):
         if genus and species:
             return TaxonChoice(genus=genus, species=species, common_name=common_name)
         return None
+
+    def _customize_species_item(self, item: QStandardItem, choice: TaxonChoice) -> None:
+        has_data = False
+        if self._species_availability and choice.genus and choice.species:
+            try:
+                info = self._species_availability.get_detailed_info(choice.genus, choice.species)
+                has_data = bool(
+                    info.get("has_personal_points")
+                    or info.get("has_shared_points")
+                    or info.get("has_published_points")
+                    or info.get("has_reference_minmax")
+                )
+            except Exception:
+                has_data = False
+        item.setData(bool(has_data), Qt.UserRole + 3)
 
     def _apply_taxon_choice_to_inputs(self, choice: TaxonChoice, *, vernacular_text: str | None = None) -> None:
         genus = self._clean_genus_text(choice.genus)
@@ -469,35 +471,6 @@ class CloudReferenceDialog(QDialog):
 
     def _init_completers(self) -> None:
         popup_styler = getattr(self.parent(), "_style_dropdown_popup_readability", None)
-        self._genus_model = QStringListModel()
-        self._species_model = QStandardItemModel()
-        self._vernacular_model = QStandardItemModel()
-
-        self._genus_completer = QCompleter(self._genus_model, self)
-        self._genus_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._genus_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.genus_input.setCompleter(self._genus_completer)
-        if callable(popup_styler):
-            popup_styler(self._genus_completer.popup(), self.genus_input)
-        self._genus_completer.activated[str].connect(self._on_genus_selected)
-
-        self._species_completer = QCompleter(self._species_model, self)
-        self._species_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._species_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self._species_completer.setCompletionRole(Qt.UserRole)
-        self._species_completer.setFilterMode(Qt.MatchContains)
-        self.species_input.setCompleter(self._species_completer)
-        if callable(popup_styler):
-            popup_styler(self._species_completer.popup(), self.species_input)
-        self._species_completer.popup().setItemDelegate(
-            SpeciesItemDelegate(
-                self._species_availability,
-                self._species_completer.popup(),
-                genus_provider=lambda: self._clean_genus_text(self.genus_input.text()),
-            )
-        )
-        self._species_completer.activated[QModelIndex].connect(self._on_species_selected)
-
         stored = SettingsDB.get_setting("vernacular_language", "no")
         lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
         db_path = resolve_vernacular_db_path(lang)
@@ -510,58 +483,48 @@ class CloudReferenceDialog(QDialog):
             language_code=lang,
             include_reference_data=True,
         )
-        self._vernacular_completer = QCompleter(self._vernacular_model, self)
-        self._vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self._vernacular_completer.setCompletionRole(Qt.UserRole)
-        self.vernacular_input.setCompleter(self._vernacular_completer)
-        if callable(popup_styler):
-            popup_styler(self._vernacular_completer.popup(), self.vernacular_input)
-        self._vernacular_completer.activated[QModelIndex].connect(self._on_vernacular_selected)
+        self._taxon_controller = TaxonInputController(
+            self._taxon_lookup,
+            self.genus_input,
+            self.species_input,
+            self.vernacular_input,
+            self,
+            species_item_customizer=self._customize_species_item,
+        )
+        self._genus_model = self._taxon_controller.genus_model
+        self._species_model = self._taxon_controller.species_model
+        self._vernacular_model = self._taxon_controller.vernacular_model
+        self._genus_completer = self._taxon_controller.genus_completer
+        self._species_completer = self._taxon_controller.species_completer
+        self._vernacular_completer = self._taxon_controller.vernacular_completer
 
-        self.genus_input.textChanged.connect(self._on_genus_text_changed)
-        self.species_input.textChanged.connect(self._on_species_text_changed)
-        self.vernacular_input.textChanged.connect(self._on_vernacular_text_changed)
-        self.genus_input.editingFinished.connect(self._on_taxon_editing_finished)
-        self.species_input.editingFinished.connect(self._on_taxon_editing_finished)
-        self.vernacular_input.editingFinished.connect(self._on_vernacular_editing_finished)
-        self.genus_input.installEventFilter(self)
-        self.species_input.installEventFilter(self)
-        self.vernacular_input.installEventFilter(self)
-
-        self._update_genus_suggestions(self.genus_input.text())
-        if self.genus_input.text().strip():
-            suggestions = self._update_species_suggestions(self.genus_input.text(), self.species_input.text())
-            self._set_species_placeholder_from_suggestions(suggestions)
+        genus_popup = self._genus_completer.popup() if self._genus_completer else None
+        if callable(popup_styler) and genus_popup is not None:
+            popup_styler(genus_popup, self.genus_input)
+        species_popup = self._species_completer.popup() if self._species_completer else None
+        if callable(popup_styler) and species_popup is not None:
+            popup_styler(species_popup, self.species_input)
+        if species_popup is not None:
+            species_popup.setItemDelegate(
+                SpeciesItemDelegate(
+                    self._species_availability,
+                    species_popup,
+                    genus_provider=lambda: self._clean_genus_text(self.genus_input.text()),
+                )
+            )
+        vernacular_popup = self._vernacular_completer.popup() if self._vernacular_completer else None
+        if callable(popup_styler) and vernacular_popup is not None:
+            popup_styler(vernacular_popup, self.vernacular_input)
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.FocusIn:
-            if obj == self.vernacular_input and not self.vernacular_input.text().strip():
-                self._update_vernacular_suggestions_for_taxon()
-                if self._vernacular_model.rowCount() > 0:
-                    self._vernacular_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.genus_input:
-                self._update_genus_suggestions(self.genus_input.text())
-                if self._genus_model.stringList():
-                    self._genus_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.species_input:
-                genus = self._clean_genus_text(self.genus_input.text())
-                if genus:
-                    self._update_species_suggestions(genus, self.species_input.text())
-                    if self._species_model.rowCount() > 0:
-                        self._species_completer.setCompletionPrefix(self._clean_species_text(self.species_input.text()))
-                        self._species_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is not None and controller.eventFilter(obj, event):
+            return True
         return super().eventFilter(obj, event)
 
     def _update_genus_suggestions(self, text: str, hide_on_exact: bool = False) -> list[str]:
         lookup = self._taxon_lookup
-        values = lookup.suggest_genera(text or "") if lookup else []
+        values = lookup.suggest_genera(text or "", limit=TAXON_COMPLETER_LIMIT) if lookup else []
         values = sorted({value for value in values if value})
         if hide_on_exact and text.strip():
             text_lower = text.strip().lower()
@@ -576,7 +539,7 @@ class CloudReferenceDialog(QDialog):
         genus = self._clean_genus_text(genus)
         prefix = self._clean_species_text(text)
         lookup = self._taxon_lookup
-        choices = lookup.suggest_species(genus, prefix) if lookup else []
+        choices = lookup.suggest_species(genus, prefix, limit=TAXON_COMPLETER_LIMIT) if lookup else []
         values = [self._clean_species_text(choice.species) for choice in choices if self._clean_species_text(choice.species)]
         if hide_on_exact and prefix:
             prefix_lower = prefix.lower()
@@ -594,12 +557,24 @@ class CloudReferenceDialog(QDialog):
             item.setData(self._clean_genus_text(choice.genus) or genus, Qt.UserRole + 1)
             item.setData(species, Qt.UserRole + 2)
             item.setData(choice, self._ROLE_TAXON_CHOICE)
+            if self._species_availability:
+                try:
+                    info = self._species_availability.get_detailed_info(genus, species)
+                    has_data = bool(
+                        info.get("has_personal_points")
+                        or info.get("has_shared_points")
+                        or info.get("has_published_points")
+                        or info.get("has_reference_minmax")
+                    )
+                except Exception:
+                    has_data = False
+                item.setData(has_data, Qt.UserRole + 3)
             self._species_model.appendRow(item)
         return values
 
     def _populate_vernacular_model(self, suggestions: list[TaxonChoice]) -> None:
         self._vernacular_model.clear()
-        for choice in suggestions:
+        for choice in suggestions or []:
             name = self._format_common_name_choice_display(choice)
             item = QStandardItem(name)
             item.setData(name, Qt.UserRole)
@@ -616,11 +591,9 @@ class CloudReferenceDialog(QDialog):
             return
         genus = self._clean_genus_text(self.genus_input.text()) or None
         species = self._clean_species_text(self.species_input.text()) or None
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
         self._populate_vernacular_model(suggestions)
-        self._set_vernacular_placeholder_from_suggestions(
-            [choice.common_name or f"{choice.genus} {choice.species}".strip() for choice in suggestions]
-        )
+        self._set_vernacular_placeholder_from_suggestions([choice.common_name for choice in suggestions if choice.common_name])
 
     def _maybe_set_vernacular_from_taxon(self) -> None:
         lookup = self._taxon_lookup
@@ -634,10 +607,8 @@ class CloudReferenceDialog(QDialog):
         if choice and choice.common_name:
             self.vernacular_input.setText(choice.common_name)
         else:
-            suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-            self._set_vernacular_placeholder_from_suggestions(
-                [item.common_name or f"{item.genus} {item.species}".strip() for item in suggestions]
-            )
+            suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
+            self._set_vernacular_placeholder_from_suggestions([item.common_name for item in suggestions if item.common_name])
 
     def _on_genus_text_changed(self, text: str) -> None:
         self._update_genus_suggestions(text, hide_on_exact=True)
@@ -679,7 +650,7 @@ class CloudReferenceDialog(QDialog):
         if not text.strip():
             self._update_vernacular_suggestions_for_taxon()
             return
-        suggestions = lookup.suggest_common_names(prefix=text, genus=genus, species=species)
+        suggestions = lookup.suggest_common_names(prefix=text, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
         self._populate_vernacular_model(suggestions)
 
     def _on_taxon_editing_finished(self) -> None:
@@ -721,6 +692,9 @@ class CloudReferenceDialog(QDialog):
             taxon = matches[0]
             genus = self._clean_genus_text(taxon.genus)
             species = self._clean_species_text(taxon.species)
+            if not species:
+                self.vernacular_input.clear()
+                return
             if genus:
                 self.genus_input.setText(genus)
             if species:
@@ -735,16 +709,15 @@ class CloudReferenceDialog(QDialog):
         if not index.isValid():
             return
         choice = self._choice_from_index(index)
-        species = (
-            self._clean_species_text(choice.species)
-            if choice
-            else self._clean_species_text(index.data(Qt.UserRole) or index.data(Qt.DisplayRole))
-        )
+        species = self._clean_species_text(choice.species) if choice and choice.species else ""
+        if not choice:
+            species = self._clean_species_text(index.data(Qt.UserRole) or index.data(Qt.DisplayRole))
         if species:
             self.species_input.setText(species)
         if choice and choice.common_name and not self.vernacular_input.text().strip():
             self.vernacular_input.setText(choice.common_name)
-        self._maybe_set_vernacular_from_taxon()
+        if choice and choice.species:
+            self._maybe_set_vernacular_from_taxon()
 
     def _set_busy(self, busy: bool, status_text: str | None = None) -> None:
         self.search_button.setEnabled(not busy)

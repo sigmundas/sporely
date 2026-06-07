@@ -179,8 +179,8 @@ def apply_palette(theme: str = "auto") -> None:
         palette.setColor(QPalette.Mid,             QColor("#cbd5e1"))
         palette.setColor(QPalette.Dark,            QColor("#cbd5e1"))
         palette.setColor(QPalette.Light,           QColor("#ffffff"))
-        palette.setColor(QPalette.Highlight,       QColor("#f0fdfa"))
-        palette.setColor(QPalette.HighlightedText, QColor("#1e293b"))
+        palette.setColor(QPalette.Highlight,       QColor("#2563eb"))
+        palette.setColor(QPalette.HighlightedText, QColor("#000000"))
         palette.setColor(QPalette.PlaceholderText, QColor("#64748b"))
         palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#64748b"))
         palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#64748b"))
@@ -279,9 +279,9 @@ def get_style(theme: str = "auto") -> str:
         menubar_bg   = "#52796f"
         menubar_h    = "#486b62"
         img_bg       = "#f1f5f9"         # matches surface_low
-        sel_bg       = "#f0fdfa"         # subtle emerald tint
-        sel_fg       = "#1e293b"
-        sel_inact    = "#f0fdfa"         # focus tint
+        sel_bg       = "#2563eb"         # accessible blue selection
+        sel_fg       = "#000000"
+        sel_inact    = "#eff6ff"         # focus tint
         inline_brd   = "#4d7c7a"
         indicator_border   = "#64748b"
         indicator_checked  = "#52796f"   # save green fill for checked state
@@ -629,6 +629,8 @@ QLineEdit {{
     padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
 }}
 
 QLineEdit:focus {{
@@ -655,6 +657,13 @@ QTextEdit {{
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: {small_pt}pt;
     color: {text};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
+}}
+
+QPlainTextEdit {{
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
 }}
 
 QTextEdit:focus {{

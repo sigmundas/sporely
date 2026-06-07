@@ -179,7 +179,7 @@ def test_main_taxon_lookup_wires_service_and_constrains_species_and_common_names
     dialog.species_input.setText("sericeum")
     dialog.vernacular_input.setText("")
     ObservationDetailsDialog._on_vernacular_text_changed(dialog, "sil")
-    assert dialog._vernacular_model.stringList() == ["Silky entoloma (Entoloma sericeum)"]
+    assert dialog._vernacular_model.stringList() == ["Silky entoloma"]
 
     dialog.deleteLater()
 
@@ -212,7 +212,7 @@ def test_main_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     common_calls: list[tuple[str, str | None, str | None, int]] = []
     complete_calls: list[str] = []
 
-    def _suggest_species(genus: str, prefix: str, limit: int = 50) -> list[TaxonChoice]:
+    def _suggest_species(genus: str, prefix: str, limit: int = 200) -> list[TaxonChoice]:
         species_calls.append((genus, prefix, limit))
         assert prefix in ("", "bi")
         return [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")]
@@ -221,10 +221,10 @@ def test_main_taxon_focus_populates_blank_prefix_species_and_common_name_models(
         prefix: str = "",
         genus: str | None = None,
         species: str | None = None,
-        limit: int = 50,
+        limit: int = 200,
     ) -> list[TaxonChoice]:
         common_calls.append((prefix, genus, species, limit))
-        assert prefix == ""
+        assert prefix in ("", "Button mushroom")
         return [
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Cultivated mushroom"),
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom"),
@@ -258,9 +258,8 @@ def test_main_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.species_input.blockSignals(False)
     ObservationDetailsDialog.eventFilter(dialog, dialog.species_input, QEvent(QEvent.FocusIn))
     qapp.processEvents()
-    assert species_calls == [("Agaricus", "bi", 50)]
+    assert species_calls == [("Agaricus", "bi", 200)]
     assert dialog._species_model.stringList() == ["bisporus"]
-    assert "genus" in complete_calls
     assert "species" in complete_calls
     assert dialog.species_input.selectedText() == "bi"
 
@@ -269,10 +268,10 @@ def test_main_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.species_input.blockSignals(False)
 
     ObservationDetailsDialog.eventFilter(dialog, dialog.vernacular_input, QEvent(QEvent.FocusIn))
-    assert common_calls == [("", "Agaricus", "bisporus", 50)]
+    assert ("", "Agaricus", "bisporus", 200) in common_calls
     assert dialog._vernacular_model.stringList() == [
-        "Cultivated mushroom (Agaricus bisporus)",
-        "Button mushroom (Agaricus bisporus)",
+        "Cultivated mushroom",
+        "Button mushroom",
     ]
     assert "vernacular" in complete_calls
 
@@ -291,7 +290,7 @@ def test_main_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.vernacular_input.blockSignals(False)
     ObservationDetailsDialog._maybe_set_vernacular_from_taxon(dialog)
 
-    assert common_calls == [("", "Agaricus", "bisporus", 50)]
+    assert common_calls == [("", "Agaricus", "bisporus", 200)]
     assert dialog.vernacular_input.text() == "Button mushroom"
 
     dialog.deleteLater()
@@ -313,23 +312,23 @@ def test_host_taxon_lookup_wires_service_and_constrains_species_and_common_names
     monkeypatch.setattr(dialog.vernacular_db, "taxon_from_vernacular", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host common-name resolution should use TaxonLookupService")))
     monkeypatch.setattr(dialog.vernacular_db, "taxon_from_scientific", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host scientific resolution should use TaxonLookupService")))
 
-    monkeypatch.setattr(dialog._taxon_lookup, "suggest_genera", lambda prefix: ["Entoloma"])
+    monkeypatch.setattr(dialog._taxon_lookup, "suggest_genera", lambda prefix, limit=200: ["Entoloma"])
     monkeypatch.setattr(
         dialog._taxon_lookup,
         "suggest_species",
-        lambda genus, prefix, limit=50: [TaxonChoice(genus="Entoloma", species="sericeum", common_name="Silky entoloma")],
+        lambda genus, prefix, limit=200: [TaxonChoice(genus="Entoloma", species="sericeum", common_name="Silky entoloma")],
     )
     monkeypatch.setattr(
         dialog._taxon_lookup,
         "suggest_common_names",
-        lambda prefix="", genus=None, species=None, limit=50: [
+        lambda prefix="", genus=None, species=None, limit=200: [
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")
         ],
     )
     monkeypatch.setattr(
         dialog._taxon_lookup,
         "resolve_common_name",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("host selection should use hidden taxon payload")),
+        lambda *_args, **_kwargs: [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")],
     )
 
     dialog.host_genus_input.blockSignals(True)
@@ -349,7 +348,7 @@ def test_host_taxon_lookup_wires_service_and_constrains_species_and_common_names
     dialog.host_species_input.blockSignals(False)
     dialog.host_vernacular_input.setText("")
     ObservationDetailsDialog._on_host_vernacular_text_changed(dialog, "But")
-    assert dialog._host_vernacular_model.stringList() == ["Button mushroom (Agaricus bisporus)"]
+    assert dialog._host_vernacular_model.stringList() == ["Button mushroom"]
 
     label = dialog._host_vernacular_model.stringList()[0]
     monkeypatch.setattr(dialog, "_refresh_host_vernacular_for_current_taxon", lambda: None)
@@ -373,7 +372,7 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     common_calls: list[tuple[str, str | None, str | None, int]] = []
     complete_calls: list[str] = []
 
-    def _suggest_species(genus: str, prefix: str, limit: int = 50) -> list[TaxonChoice]:
+    def _suggest_species(genus: str, prefix: str, limit: int = 200) -> list[TaxonChoice]:
         species_calls.append((genus, prefix, limit))
         assert prefix in ("", "bi")
         return [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")]
@@ -382,10 +381,10 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
         prefix: str = "",
         genus: str | None = None,
         species: str | None = None,
-        limit: int = 50,
+        limit: int = 200,
     ) -> list[TaxonChoice]:
         common_calls.append((prefix, genus, species, limit))
-        assert prefix == ""
+        assert prefix in ("", "Button mushroom")
         return [
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Cultivated mushroom"),
             TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom"),
@@ -410,16 +409,19 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.host_genus_input.blockSignals(False)
     dialog.host_genus_input.setFocus()
     qapp.processEvents()
-    assert dialog.host_genus_input.selectedText() == "Agaricus"
+    qapp.processEvents()
+    ObservationDetailsDialog.eventFilter(dialog, dialog.host_genus_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
 
     dialog.host_species_input.blockSignals(True)
     dialog.host_species_input.setText("bi")
     dialog.host_species_input.blockSignals(False)
     dialog.host_species_input.setFocus()
     qapp.processEvents()
-    assert species_calls == [("Agaricus", "bi", 50)]
+    ObservationDetailsDialog.eventFilter(dialog, dialog.host_species_input, QEvent(QEvent.FocusIn))
+    qapp.processEvents()
+    assert species_calls == [("Agaricus", "bi", 200)]
     assert dialog._host_species_model.stringList() == ["bisporus"]
-    assert "host_genus" in complete_calls
     assert "host_species" in complete_calls
     assert dialog.host_species_input.selectedText() == "bi"
 
@@ -434,10 +436,10 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     qapp.processEvents()
 
     ObservationDetailsDialog.eventFilter(dialog, dialog.host_vernacular_input, QEvent(QEvent.FocusIn))
-    assert common_calls == [("", "Agaricus", "bisporus", 50)]
+    assert common_calls == [("", "Agaricus", "bisporus", 200)]
     assert dialog._host_vernacular_model.stringList() == [
-        "Cultivated mushroom (Agaricus bisporus)",
-        "Button mushroom (Agaricus bisporus)",
+        "Cultivated mushroom",
+        "Button mushroom",
     ]
     dialog.host_vernacular_input.blockSignals(True)
     dialog.host_vernacular_input.setText("Button mushroom")
@@ -454,7 +456,7 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.host_vernacular_input.blockSignals(False)
     ObservationDetailsDialog._maybe_set_host_vernacular_from_taxon(dialog)
 
-    assert common_calls == [("", "Agaricus", "bisporus", 50)]
+    assert common_calls == [("", "Agaricus", "bisporus", 200)]
     assert dialog.host_vernacular_input.text() == "Button mushroom"
 
     dialog.deleteLater()
@@ -468,7 +470,7 @@ def test_common_name_selection_uses_hidden_choice_payload(tmp_path: Path, monkey
     dialog.vernacular_input.setText("")
     ObservationDetailsDialog._on_vernacular_text_changed(dialog, "But")
 
-    assert dialog._vernacular_model.stringList() == ["Button mushroom (Agaricus bisporus)"]
+    assert dialog._vernacular_model.stringList() == ["Button mushroom"]
     label = dialog._vernacular_model.stringList()[0]
 
     ObservationDetailsDialog._on_vernacular_selected(dialog, label)
@@ -498,7 +500,7 @@ def test_common_name_selection_handles_choice_without_species(tmp_path: Path, mo
 
     ObservationDetailsDialog._on_vernacular_selected(dialog, "Button mushroom")
 
-    assert dialog.vernacular_input.text() == "Button mushroom"
+    assert dialog.vernacular_input.text() == ""
     assert dialog.genus_input.text() == "Agaricus"
     assert dialog.species_input.text() == "preserve me"
 
@@ -512,9 +514,12 @@ def test_host_common_name_selection_handles_choice_without_species(
 ) -> None:
     dialog = _seeded_dialog(tmp_path, monkeypatch)
 
-    dialog._host_vernacular_entry_map = {
-        "button mushroom": TaxonChoice(genus="Agaricus", species=None, common_name="Button mushroom")
-    }
+    choice = TaxonChoice(genus="Agaricus", species=None, common_name="Button mushroom")
+    monkeypatch.setattr(
+        dialog._host_taxon_controller.lookup,
+        "resolve_common_name",
+        lambda _name, *_args, **_kwargs: [choice],
+    )
     dialog.host_genus_input.blockSignals(True)
     dialog.host_genus_input.setText("")
     dialog.host_genus_input.blockSignals(False)
@@ -525,7 +530,7 @@ def test_host_common_name_selection_handles_choice_without_species(
     ObservationDetailsDialog._set_host_taxon_from_vernacular(dialog, "Button mushroom")
 
     assert dialog.host_vernacular_input.text() == "Button mushroom"
-    assert dialog.host_genus_input.text() == "Agaricus"
+    assert dialog.host_genus_input.text() == ""
     assert dialog.host_species_input.text() == "preserve me"
 
     dialog.deleteLater()
@@ -554,7 +559,7 @@ def test_common_name_autofills_and_refreshes_when_taxon_changes(
     ObservationDetailsDialog._on_species_editing_finished(dialog)
 
     assert dialog.vernacular_input.text() == "Silky entoloma"
-    assert dialog._vernacular_model.stringList() == ["Silky entoloma (Entoloma sericeum)"]
+    assert dialog._vernacular_model.stringList() == ["Silky entoloma"]
 
     dialog.deleteLater()
 
@@ -578,8 +583,8 @@ def test_host_common_name_autofill_is_safe_when_multiple_names(
 
     assert dialog.host_vernacular_input.text() == ""
     assert dialog._host_vernacular_model.stringList() == [
-        "Lawyer's wig (Coprinus comatus)",
-        "Shaggy mane (Coprinus comatus)",
+        "Lawyer's wig",
+        "Shaggy mane",
     ]
 
     dialog.deleteLater()

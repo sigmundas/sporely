@@ -163,7 +163,9 @@ def test_suggest_species_returns_species_constrained_by_genus(tmp_path: Path, mo
     assert [choice.genus for choice in values] == ["Entoloma"]
     assert [choice.species for choice in values] == ["sericeum"]
     assert values[0].source == "taxonomy"
-    assert values[0].family == "Entolomataceae"
+    assert values[0].taxon_id is None
+    assert values[0].common_name is None
+    assert values[0].family is None
     _assert_no_redlist(values[0])
 
 
@@ -176,7 +178,9 @@ def test_suggest_species_includes_reference_only_species(tmp_path: Path, monkeyp
     assert values[0].genus == "Coprinus"
     assert values[0].species == "comatus"
     assert values[0].source == "reference"
+    assert values[0].taxon_id is None
     assert values[0].common_name is None
+    assert values[0].family is None
     _assert_no_redlist(values[0])
 
 
@@ -188,7 +192,74 @@ def test_suggest_species_without_prefix_returns_species_for_genus(tmp_path: Path
     assert [choice.genus for choice in values] == ["Entoloma"]
     assert [choice.species for choice in values] == ["sericeum"]
     assert values[0].source == "taxonomy"
+    assert values[0].taxon_id is None
+    assert values[0].common_name is None
+    assert values[0].family is None
     _assert_no_redlist(values[0])
+
+
+def test_suggest_species_is_alphabetical_and_respects_limit(tmp_path: Path) -> None:
+    db_path = tmp_path / "sorted-taxonomy.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE taxon_min (
+                taxon_id INTEGER PRIMARY KEY,
+                genus TEXT,
+                specific_epithet TEXT,
+                family TEXT,
+                canonical_scientific_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vernacular_min (
+                taxon_id INTEGER,
+                vernacular_name TEXT,
+                is_preferred_name INTEGER,
+                language_code TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scientific_name_min (
+                taxon_id INTEGER,
+                scientific_name TEXT,
+                is_preferred_name INTEGER
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO taxon_min (taxon_id, genus, specific_epithet, family, canonical_scientific_name)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (1, "Agaricus", "zeta", "Agaricaceae", "Agaricus zeta"),
+                (2, "Agaricus", "alpha", "Agaricaceae", "Agaricus alpha"),
+                (3, "Agaricus", "beta", "Agaricaceae", "Agaricus beta"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO scientific_name_min (taxon_id, scientific_name, is_preferred_name)
+            VALUES (?, ?, ?)
+            """,
+            [
+                (1, "Agaricus zeta", 1),
+                (2, "Agaricus alpha", 1),
+                (3, "Agaricus beta", 1),
+            ],
+        )
+
+    service = TaxonLookupService(vernacular_db=VernacularDB(db_path, language_code="en"), language_code="en")
+
+    values = service.suggest_species("Agaricus", "", limit=2)
+
+    assert [choice.species for choice in values] == ["alpha", "beta"]
+    assert len(values) == 2
 
 
 def test_duplicate_species_from_taxonomy_and_reference_are_merged(tmp_path: Path, monkeypatch) -> None:
@@ -200,9 +271,9 @@ def test_duplicate_species_from_taxonomy_and_reference_are_merged(tmp_path: Path
     assert values[0].genus == "Agaricus"
     assert values[0].species == "bisporus"
     assert values[0].source == "both"
-    assert values[0].taxon_id == 1
-    assert values[0].common_name == "Button mushroom"
-    assert values[0].family == "Agaricaceae"
+    assert values[0].taxon_id is None
+    assert values[0].common_name is None
+    assert values[0].family is None
     _assert_no_redlist(values[0])
 
 

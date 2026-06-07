@@ -53,7 +53,8 @@ from database.models import (
     update_observation_sync_state,
 )
 from database.vernacular_db import VernacularDB
-from database.taxon_lookup import TaxonChoice, TaxonLookupService
+from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from .taxon_input_controller import TaxonInputController
 from database.reverse_location_lookup import LocationLookupResult, lookup_location_suggestions
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -74,6 +75,7 @@ from utils.heic_converter import build_local_image_provenance, maybe_convert_hei
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
+    WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE,
     build_cloud_upload_policy,
     build_full_image_webp_quality_attempts,
     normalize_cloud_plan_profile,
@@ -103,6 +105,7 @@ from utils.publish_targets import (
 from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
+    CloudSyncError,
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
     cloud_media_materialization_state_for_observation,
@@ -110,9 +113,11 @@ from utils.cloud_sync import (
     fetch_cloud_usage_summary,
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
+    sanitize_image_too_large_for_plan_error_message,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
     privacy_slot_limit_user_message,
+    summarize_image_too_large_for_plan_error,
     summarize_sync_issues,
     sync_all,
     unlink_local_observation_from_cloud,
@@ -235,6 +240,7 @@ class _CloudAutoSyncWorker(QThread):
 
     def __init__(self, prepare_images_cb=None, materialize_remote_images: bool = False, parent=None):
         super().__init__(parent)
+        self.setObjectName("Cloud sync")
         self._prepare_images_cb = prepare_images_cb
         self._materialize_remote_images = bool(materialize_remote_images)
         self.prepare_requested.connect(self._handle_prepare_request)
@@ -313,6 +319,7 @@ class _CloudMediaMaterializationWorker(QThread):
 
     def __init__(self, local_observation_id: int, parent=None):
         super().__init__(parent)
+        self.setObjectName("Cloud media download")
         self._local_observation_id = int(local_observation_id)
 
     def run(self) -> None:
@@ -1406,13 +1413,13 @@ class ObservationsTab(QWidget):
 
         left_panel_layout.addLayout(share_row)
 
-        # ── Refresh — full-width, above the separator ─────────────────────
-        self.refresh_btn = QPushButton(self.tr("Refresh"))
+        # ── Sync now — full-width, above the separator ────────────────────
+        self.refresh_btn = QPushButton(self.tr("Sync now"))
         self.refresh_btn.setObjectName("outlineButton")
         self.refresh_btn.setIcon(self._btn_icon("icon_refresh.svg", get_button_icon_color("outlineButton")))
         self.refresh_btn.setIconSize(self._icon_size)
         self._button_icon_map[self.refresh_btn] = ("icon_refresh.svg", "outlineButton")
-        self.refresh_btn.setToolTip(self.tr("Refresh database (R)"))
+        self.refresh_btn.setToolTip(self.tr("Sync with cloud now (R)"))
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         left_panel_layout.addWidget(self.refresh_btn)
 
@@ -1643,7 +1650,7 @@ class ObservationsTab(QWidget):
             (getattr(self, "new_btn", None), self.tr("Create a new observation"), None),
             (getattr(self, "rename_btn", None), self.tr("Edit selected observation"), self.tr("Select an observation to edit")),
             (getattr(self, "delete_btn", None), self.tr("Delete selected observation(s)"), self.tr("Select one or more observations to delete")),
-            (getattr(self, "refresh_btn", None), self.tr("Refresh database"), None),
+            (getattr(self, "refresh_btn", None), self.tr("Sync with cloud now"), None),
             (getattr(self, "export_btn", None), self.tr("Export database bundle to zip archive"), None),
             (getattr(self, "import_btn", None), self.tr("Import observations from zip archive"), None),
         ):
@@ -2109,6 +2116,72 @@ class ObservationsTab(QWidget):
             return
         self.status_label.setText(text)
 
+    def _refresh_cloud_sync_idle_hint(self) -> None:
+        if not hasattr(self, "_status_hint_controller") or self._status_hint_controller is None:
+            return
+        main_window = self.window() if hasattr(self, "window") else None
+        pending_ids: list[int] = []
+        blocked_ids: list[int] = []
+        formatter = None
+        if main_window is not None:
+            pending_getter = getattr(main_window, "_cloud_sync_pending_observation_ids", None)
+            blocked_getter = getattr(main_window, "_cloud_sync_blocked_observation_ids", None)
+            formatter = getattr(main_window, "_format_cloud_sync_observation_ids", None)
+            if callable(pending_getter):
+                try:
+                    pending_ids = [int(value) for value in (pending_getter() or []) if int(value) > 0]
+                except Exception:
+                    pending_ids = []
+            if callable(blocked_getter):
+                try:
+                    blocked_ids = [int(value) for value in (blocked_getter() or []) if int(value) > 0]
+                except Exception:
+                    blocked_ids = []
+        if not callable(formatter):
+            formatter = lambda values: ", ".join(str(int(value)) for value in values if int(value) > 0)  # noqa: E731
+
+        logged_in = bool(getattr(main_window, "_cloud_client", None)) if main_window is not None else False
+
+        def _ids_phrase(ids: list[int]) -> str:
+            ids_text = str(formatter(ids) or "").strip()
+            noun = self.tr("observation ID") if len(ids) == 1 else self.tr("observation IDs")
+            return f"{noun} {ids_text}" if ids_text else noun
+
+        if blocked_ids and pending_ids:
+            message = self.tr(
+                "Cloud sync blocked for {blocked_ids}.\n"
+                "Cloud sync pending for {pending_ids}.\n"
+                "Open Sync now to review the error details, then click Sync now to retry uploads."
+            ).format(
+                blocked_ids=_ids_phrase(blocked_ids),
+                pending_ids=_ids_phrase(pending_ids),
+            )
+            tone = "warning"
+        elif blocked_ids:
+            message = self.tr(
+                "Cloud sync blocked for {blocked_ids}.\n"
+                "Open Sync now to review the error details."
+            ).format(blocked_ids=_ids_phrase(blocked_ids))
+            tone = "warning"
+        elif pending_ids:
+            message = self.tr(
+                "Cloud sync pending for {pending_ids}.\n"
+                "{action}"
+            ).format(
+                pending_ids=_ids_phrase(pending_ids),
+                action=(
+                    self.tr("Click Sync now to retry uploads.")
+                    if logged_in
+                    else self.tr("Sign in, then click Sync now to retry uploads.")
+                ),
+            )
+            tone = "warning"
+        else:
+            message = self.tr("Ready.")
+            tone = "info"
+
+        self._status_hint_controller.set_hint(message, tone=tone)
+
     def _set_status_progress_visible(self, visible: bool) -> None:
         visible = bool(visible)
         if hasattr(self, "status_label"):
@@ -2307,8 +2380,10 @@ class ObservationsTab(QWidget):
         text = str(message or "").strip()
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return self.tr("Cloud sync blocked: this database is linked to another account.")
+        if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
+            return self.tr("Cloud sync failed because WebP support is required for cloud media uploads.")
         if is_image_too_large_for_plan_error(text):
-            return self.tr("Cloud sync failed while uploading an image that is too large for your plan.")
+            return self.tr(summarize_image_too_large_for_plan_error(text))
         if text.startswith("Push phase failed"):
             return self.tr("Cloud sync failed while pushing local observations to Sporely Cloud.")
         if text.startswith("Pull phase failed"):
@@ -2491,6 +2566,7 @@ class ObservationsTab(QWidget):
         conflicts = list(issue_summary.get("conflicts", []) or [])
         conflict_count = int(issue_summary.get("conflict_count", 0) or 0)
         blocked_count = int(issue_summary.get("blocked_count", 0) or 0)
+        retryable_count = int(issue_summary.get("retryable_count", 0) or 0)
         other_count = int(issue_summary.get("other_count", 0) or 0)
         blocked_messages: list[str] = []
         for blocked in issue_summary.get("blocked_errors", []) or []:
@@ -2517,6 +2593,11 @@ class ObservationsTab(QWidget):
                 print(
                     f"[cloud_sync] blocked issue {idx}: "
                     f"{blocked.get('error')} | {blocked.get('message')}"
+                )
+            for idx, retryable in enumerate(issue_summary.get("retryable_errors", []) or [], 1):
+                print(
+                    f"[cloud_sync] retryable issue {idx}: "
+                    f"{retryable.get('error')} | {retryable.get('message')}"
                 )
             for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
                 print(f"[cloud_sync] other issue {idx}: {error}")
@@ -2546,6 +2627,10 @@ class ObservationsTab(QWidget):
                     issue_parts.append(
                         self.tr("{count} blocked").format(count=blocked_count)
                     )
+                if retryable_count:
+                    issue_parts.append(
+                        self.tr("{count} will retry").format(count=retryable_count)
+                    )
                 if issue_parts:
                     message += " " + ", ".join(issue_parts) + "."
                 if blocked_messages:
@@ -2556,6 +2641,11 @@ class ObservationsTab(QWidget):
         elif errors:
             if blocked_count:
                 message = " ".join(blocked_messages) if blocked_messages else privacy_slot_limit_user_message()
+                level = "warning"
+            elif retryable_count:
+                message = self.tr("Cloud sync finished with {count} retryable issue(s).").format(
+                    count=retryable_count
+                )
                 level = "warning"
             else:
                 message = self.tr("Cloud sync finished with {count} issue(s).").format(
@@ -2568,8 +2658,15 @@ class ObservationsTab(QWidget):
             )
             level = "warning"
         else:
-            message = self.tr("Sporely Cloud already up to date.")
-            level = "success"
+            if blocked_count:
+                message = self.tr("Cloud sync blocked.")
+                level = "warning"
+            elif retryable_count:
+                message = self.tr("Cloud sync needs retry.")
+                level = "warning"
+            else:
+                message = self.tr("Sporely Cloud already up to date.")
+                level = "success"
         original_summary = format_original_upload_summary(result.get("original_sync"))
         if original_summary:
             message = f"{message}\n{original_summary}"
@@ -2613,7 +2710,9 @@ class ObservationsTab(QWidget):
             auto_clear_ms=12000,
         )
         if is_image_too_large_for_plan_error(message):
-            self._build_cloud_sync_error_details_dialog(message).exec()
+            self._build_cloud_sync_error_details_dialog(
+                sanitize_image_too_large_for_plan_error_message(message)
+            ).exec()
 
     def _on_cloud_sync_worker_done(self, *_args) -> None:
         worker = self._cloud_sync_worker
@@ -4193,6 +4292,7 @@ class ObservationsTab(QWidget):
             show_status=show_status,
             status_message=status_message,
         )
+        self._refresh_cloud_sync_idle_hint()
 
     def _get_vernacular_db_for_active_language(self):
         stored = SettingsDB.get_setting("vernacular_language", "no")
@@ -5338,6 +5438,9 @@ class ObservationsTab(QWidget):
                 if IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE.lower() in str(exc).lower():
                     self._cleanup_publish_temp_dir(temp_dir)
                     raise
+                if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in str(exc).lower():
+                    self._cleanup_publish_temp_dir(temp_dir)
+                    raise
                 warnings.append(
                     self.tr("Could not prepare image {index} for cloud upload.").format(index=idx)
                 )
@@ -5398,6 +5501,10 @@ class ObservationsTab(QWidget):
         quality_profile = str(policy.get("qualityProfile") or policy.get("quality_profile") or "standard").strip().lower() or "standard"
         byte_cap = int(policy.get("fullImageByteCap") or policy.get("full_image_byte_cap") or 0)
         webp_qualities = list(build_full_image_webp_quality_attempts(quality_profile))
+
+        if not features.check("webp"):
+            raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE)
+
         with Image.open(source) as img:
             img = ImageOps.exif_transpose(img)
             source_width = int(img.width or 0)
@@ -5417,37 +5524,30 @@ class ObservationsTab(QWidget):
             if target["resized"]:
                 img = img.resize((int(target["width"]), int(target["height"])), Image.Resampling.LANCZOS)
 
-            attempts: list[tuple[str, str, dict, int | float | None]] = []
-            if features.check("webp"):
-                for quality in webp_qualities:
-                    attempts.append(("WEBP", ".webp", {"quality": quality, "method": 4}, quality))
-            attempts.append(("JPEG", ".jpg", {"quality": 88}, 88))
-
-            for fmt, ext, save_options, attempt_quality in attempts:
+            for attempt_quality in webp_qualities:
                 buffer = io.BytesIO()
-                img.save(buffer, fmt, **save_options)
+                img.save(buffer, "WEBP", quality=attempt_quality, method=4)
                 data = buffer.getvalue()
                 if byte_cap and len(data) > byte_cap:
                     continue
-                out_path = temp_dir / f"cloud_{int(image_id):04d}{ext}"
+                out_path = temp_dir / f"cloud_{int(image_id):04d}.webp"
                 out_path.write_bytes(data)
                 try:
                     source_stat = source.stat()
                     os.utime(out_path, (source_stat.st_atime, source_stat.st_mtime))
                 except Exception:
                     pass
-                encoding_format = "image/webp" if fmt == "WEBP" else "image/jpeg"
                 return (
                     out_path,
                     source_width,
                     source_height,
                     int(img.width or 0),
                     int(img.height or 0),
-                    encoding_format,
+                    "image/webp",
                     attempt_quality,
                 )
 
-            raise RuntimeError(IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
+            raise CloudSyncError(IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
 
     def prepare_cloud_sync_image_uploads(
         self,
@@ -5511,6 +5611,9 @@ class ObservationsTab(QWidget):
                 )
             except Exception as exc:
                 if IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE.lower() in str(exc).lower():
+                    self._cleanup_publish_temp_dir(temp_dir)
+                    raise
+                if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in str(exc).lower():
                     self._cleanup_publish_temp_dir(temp_dir)
                     raise
                 warnings.append(
@@ -9480,6 +9583,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     _geometry_key = "ObservationDetailsDialog"
     _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
     _taxonomy_splitter_key = "splitter/ObservationDetailsDialogTaxonomy"
+    _ROLE_TAXON_CHOICE = Qt.UserRole + 4
 
     def _create_dialog_box(
         self,
@@ -13632,45 +13736,29 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         else:
             self.vernacular_db = None
         self._ensure_taxon_lookup()
-        self._vernacular_model = QStringListModel()
-        self._vernacular_completer = QCompleter(self._vernacular_model, self)
-        self._vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.vernacular_input.setCompleter(self._vernacular_completer)
-        vernacular_popup = self._vernacular_completer.popup()
+        self._taxon_controller = TaxonInputController(
+            self._taxon_lookup,
+            self.genus_input,
+            self.species_input,
+            self.vernacular_input,
+            self,
+        )
+        self._genus_model = self._taxon_controller.genus_model
+        self._species_model = self._taxon_controller.species_model
+        self._vernacular_model = self._taxon_controller.vernacular_model
+        self._genus_completer = self._taxon_controller.genus_completer
+        self._species_completer = self._taxon_controller.species_completer
+        self._vernacular_completer = self._taxon_controller.vernacular_completer
+
+        vernacular_popup = self._vernacular_completer.popup() if self._vernacular_completer else None
         if vernacular_popup:
             self._style_dropdown_popup_readability(vernacular_popup, self.vernacular_input)
-        self._vernacular_completer.activated.connect(self._on_vernacular_selected)
-        self.vernacular_input.textChanged.connect(self._on_vernacular_text_changed)
-        self.vernacular_input.editingFinished.connect(self._on_vernacular_editing_finished)
-        self.vernacular_input.installEventFilter(self)
-
-        self._genus_model = QStringListModel()
-        self._genus_completer = QCompleter(self._genus_model, self)
-        self._genus_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._genus_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.genus_input.setCompleter(self._genus_completer)
-        genus_popup = self._genus_completer.popup()
+        genus_popup = self._genus_completer.popup() if self._genus_completer else None
         if genus_popup:
             self._style_dropdown_popup_readability(genus_popup, self.genus_input)
-        self._genus_completer.activated.connect(self._on_genus_selected)
-        self.genus_input.textChanged.connect(self._on_genus_text_changed)
-        self.genus_input.editingFinished.connect(self._on_genus_editing_finished)
-
-        self._species_model = QStringListModel()
-        self._species_completer = QCompleter(self._species_model, self)
-        self._species_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._species_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.species_input.setCompleter(self._species_completer)
-        species_popup = self._species_completer.popup()
+        species_popup = self._species_completer.popup() if self._species_completer else None
         if species_popup:
             self._style_dropdown_popup_readability(species_popup, self.species_input)
-        self._species_completer.activated.connect(self._on_species_selected)
-        self.species_input.textChanged.connect(self._on_species_text_changed)
-        self.species_input.editingFinished.connect(self._on_species_editing_finished)
-
-        self.genus_input.installEventFilter(self)
-        self.species_input.installEventFilter(self)
 
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
@@ -13681,58 +13769,42 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             or not hasattr(self, "host_vernacular_input")
         ):
             return
+        self._host_taxon_controller = TaxonInputController(
+            lookup,
+            self.host_genus_input,
+            self.host_species_input,
+            self.host_vernacular_input,
+            self,
+        )
+        self._host_genus_model = self._host_taxon_controller.genus_model
+        self._host_species_model = self._host_taxon_controller.species_model
+        self._host_vernacular_model = self._host_taxon_controller.vernacular_model
+        self._host_genus_completer = self._host_taxon_controller.genus_completer
+        self._host_species_completer = self._host_taxon_controller.species_completer
+        self._host_vernacular_completer = self._host_taxon_controller.vernacular_completer
 
-        self._host_genus_model = QStringListModel()
-        self._host_genus_completer = QCompleter(self._host_genus_model, self)
-        self._host_genus_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._host_genus_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.host_genus_input.setCompleter(self._host_genus_completer)
-        host_genus_popup = self._host_genus_completer.popup()
+        host_genus_popup = self._host_genus_completer.popup() if self._host_genus_completer else None
         if host_genus_popup:
             self._style_dropdown_popup_readability(host_genus_popup, self.host_genus_input)
-        self._host_genus_completer.activated.connect(self._on_host_genus_selected)
-        self.host_genus_input.textChanged.connect(self._on_host_genus_text_changed)
-        self.host_genus_input.editingFinished.connect(self._on_host_genus_editing_finished)
-        self.host_genus_input.installEventFilter(self)
-
-        self._host_species_model = QStringListModel()
-        self._host_species_completer = QCompleter(self._host_species_model, self)
-        self._host_species_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._host_species_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.host_species_input.setCompleter(self._host_species_completer)
-        host_species_popup = self._host_species_completer.popup()
+        host_species_popup = self._host_species_completer.popup() if self._host_species_completer else None
         if host_species_popup:
             self._style_dropdown_popup_readability(host_species_popup, self.host_species_input)
-        self._host_species_completer.activated.connect(self._on_host_species_selected)
-        self.host_species_input.textChanged.connect(self._on_host_species_text_changed)
-        self.host_species_input.editingFinished.connect(self._on_host_species_editing_finished)
-        self.host_species_input.installEventFilter(self)
-
-        self._host_vernacular_model = QStringListModel()
-        self._host_vernacular_completer = QCompleter(self._host_vernacular_model, self)
-        self._host_vernacular_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._host_vernacular_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.host_vernacular_input.setCompleter(self._host_vernacular_completer)
-        vern_popup = self._host_vernacular_completer.popup()
+        vern_popup = self._host_vernacular_completer.popup() if self._host_vernacular_completer else None
         if vern_popup:
             self._style_dropdown_popup_readability(vern_popup, self.host_vernacular_input)
-        self._host_vernacular_completer.activated.connect(self._on_host_vernacular_selected)
-        self.host_vernacular_input.textChanged.connect(self._on_host_vernacular_text_changed)
-        self.host_vernacular_input.editingFinished.connect(self._on_host_vernacular_editing_finished)
-        self.host_vernacular_input.installEventFilter(self)
 
     def _on_host_genus_text_changed(self, text: str) -> None:
         lookup = getattr(self, "_taxon_lookup", None)
         if not lookup or self._host_suppress_taxon_autofill:
             return
         value = (text or "").strip()
-        suggestions = lookup.suggest_genera(value)
+        suggestions = lookup.suggest_genera(value, limit=TAXON_COMPLETER_LIMIT)
         if len(suggestions) == 1 and suggestions[0].casefold() == value.casefold():
             self._host_genus_model.setStringList([])
             if self._host_genus_completer:
                 self._host_genus_completer.popup().hide()
         else:
-            self._host_genus_model.setStringList(suggestions[:30])
+            self._host_genus_model.setStringList(suggestions[:TAXON_COMPLETER_LIMIT])
         if not value:
             self._host_suppress_taxon_autofill = True
             try:
@@ -13754,7 +13826,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self._host_species_completer and not self.host_species_input.hasFocus():
             self._host_species_completer.setCompletionPrefix("")
         if not self.host_species_input.text().strip():
-            species_suggestions = lookup.suggest_species(value, "")
+            species_suggestions = lookup.suggest_species(value, "", limit=TAXON_COMPLETER_LIMIT)
             self._set_host_species_placeholder_from_suggestions(
                 [choice.species for choice in species_suggestions if choice.species]
             )
@@ -13769,8 +13841,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if self.host_species_input.text().strip():
             return
-        suggestions = lookup.suggest_species(str(genus).strip(), "")
-        self._host_species_model.setStringList([choice.species for choice in suggestions if choice.species][:30])
+        suggestions = lookup.suggest_species(str(genus).strip(), "", limit=TAXON_COMPLETER_LIMIT)
+        self._host_species_model.setStringList([choice.species for choice in suggestions if choice.species][:TAXON_COMPLETER_LIMIT])
         self._set_host_species_placeholder_from_suggestions(
             [choice.species for choice in suggestions if choice.species]
         )
@@ -13800,14 +13872,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_host_vernacular_placeholder_from_suggestions([])
             return
         prefix = (text or "").strip()
-        suggestions = lookup.suggest_species(genus, prefix)
+        suggestions = lookup.suggest_species(genus, prefix, limit=TAXON_COMPLETER_LIMIT)
         species_values = [choice.species for choice in suggestions if choice.species]
         if prefix and any(s.lower() == prefix.lower() for s in species_values):
             self._host_species_model.setStringList([])
             if self._host_species_completer:
                 self._host_species_completer.popup().hide()
         else:
-            self._host_species_model.setStringList(species_values[:30])
+            self._host_species_model.setStringList(species_values[:TAXON_COMPLETER_LIMIT])
             if self._host_species_model.stringList() and self._host_species_completer:
                 self._host_species_completer.setCompletionPrefix(prefix)
                 self._host_species_completer.complete()
@@ -13842,7 +13914,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.host_genus_input.text().strip() or None
         species = self.host_species_input.text().strip() or None
-        entries = lookup.suggest_common_names(prefix=value, genus=genus, species=species)
+        entries = lookup.suggest_common_names(prefix=value, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
         text_label = self._format_vernacular_suggestion_label(
             {"vernacular_name": value, "genus": genus, "species": species}
         )
@@ -13851,7 +13923,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if self._host_vernacular_completer:
                 self._host_vernacular_completer.popup().hide()
         else:
-            self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=20)
+            self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=TAXON_COMPLETER_LIMIT)
 
     def _on_host_vernacular_selected(self, text: str) -> None:
         self._set_host_taxon_from_vernacular(text)
@@ -13860,77 +13932,25 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._set_host_taxon_from_vernacular(self.host_vernacular_input.text())
 
     def _set_host_taxon_from_vernacular(self, name: str) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db:
+        controller = getattr(self, "_host_taxon_controller", None)
+        if controller is None or not hasattr(self, "host_vernacular_input"):
             return
         value = (name or "").strip()
-        if not value:
-            return
-        entry = self._lookup_vernacular_entry(value, host=True)
-        choice = self._vernacular_entry_to_choice(entry)
-        if choice is None:
-            current_genus = self.host_genus_input.text().strip() or None
-            current_species = self.host_species_input.text().strip() or None
-            matches = lookup.resolve_common_name(value, genus=current_genus, species=current_species)
-            if len(matches) != 1:
-                return
-            choice = matches[0]
-        current_genus = self.host_genus_input.text().strip()
-        current_species = self.host_species_input.text().strip()
-        self._host_suppress_taxon_autofill = True
-        try:
-            vernacular_text = str(choice.common_name or value or "").strip()
-            if vernacular_text:
-                self.host_vernacular_input.setText(vernacular_text)
-            if choice.genus and not current_genus:
-                self.host_genus_input.setText(choice.genus)
-            if choice.species and not current_species:
-                self.host_species_input.setText(choice.species)
-        finally:
-            self._host_suppress_taxon_autofill = False
-        if choice.species:
-            self._resolve_current_taxon_to_accepted(host=True)
-            self._refresh_host_vernacular_for_current_taxon()
-        else:
-            self._update_host_vernacular_suggestions_for_taxon()
-            self._set_host_vernacular_placeholder_from_suggestions([])
+        if value and value != self.host_vernacular_input.text().strip():
+            self.host_vernacular_input.setText(value)
+        controller.on_vernacular_editing_finished()
 
     def _maybe_set_host_vernacular_from_taxon(self) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db:
+        controller = getattr(self, "_host_taxon_controller", None)
+        if controller is None:
             return
-        if self.host_vernacular_input.text().strip():
-            return
-        genus = self.host_genus_input.text().strip()
-        species = self.host_species_input.text().strip()
-        if not genus or not species:
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        choice = lookup.best_common_name_for_taxon(genus, species)
-        if choice and choice.common_name:
-            self._host_suppress_taxon_autofill = True
-            try:
-                self.host_vernacular_input.setText(choice.common_name)
-            finally:
-                self._host_suppress_taxon_autofill = False
-            self._set_host_vernacular_placeholder_from_suggestions([])
-        else:
-            self._set_host_vernacular_placeholder_from_suggestions(suggestions)
+        controller.sync_vernacular_after_taxon_change()
 
     def _update_host_vernacular_suggestions_for_taxon(self) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db or not hasattr(self, "_host_vernacular_model"):
+        controller = getattr(self, "_host_taxon_controller", None)
+        if controller is None:
             return
-        genus = self.host_genus_input.text().strip() or None
-        species = self.host_species_input.text().strip() or None
-        if not genus and not species:
-            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
-            self._set_host_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        entries = list(suggestions)
-        self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=20)
-        self._set_host_vernacular_placeholder_from_suggestions(suggestions)
+        controller.refresh_vernacular_suggestions()
 
     def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | dict | str]) -> None:
         if not hasattr(self, "host_vernacular_input"):
@@ -14006,16 +14026,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _format_vernacular_suggestion_label(entry: TaxonChoice | dict) -> str:
         if isinstance(entry, TaxonChoice):
             vernacular_name = str(entry.common_name or "").strip()
-            genus = str(entry.genus or "").strip()
-            species = str(entry.species or "").strip()
         else:
             vernacular_name = str(entry.get("vernacular_name") or entry.get("common_name") or "").strip()
-            genus = str(entry.get("genus") or "").strip()
-            species = str(entry.get("species") or "").strip()
-        scientific_name = " ".join(part for part in (genus, species) if part).strip()
-        if vernacular_name and scientific_name:
-            return f"{vernacular_name} ({scientific_name})"
-        return vernacular_name or scientific_name
+        return vernacular_name
 
     def _set_vernacular_entries(
         self,
@@ -14023,19 +14036,35 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         entries: list[TaxonChoice | dict],
         *,
         host: bool = False,
-        limit: int = 30,
+        limit: int = TAXON_COMPLETER_LIMIT,
     ) -> None:
         if model is None:
             return
         labels: list[str] = []
         entry_map: dict[str, dict] = {}
+        row_entries: list[TaxonChoice | dict] = []
         for entry in entries[:limit]:
             label = self._format_vernacular_suggestion_label(entry)
             if not label:
                 continue
             labels.append(label)
             entry_map[label.casefold()] = entry
+            row_entries.append(entry)
         model.setStringList(labels)
+        if hasattr(model, "item"):
+            for row, entry in enumerate(row_entries):
+                item = model.item(row, 0)
+                if item is None:
+                    continue
+                choice = self._vernacular_entry_to_choice(entry)
+                item.setData(labels[row], Qt.UserRole)
+                item.setData(choice or entry, self._ROLE_TAXON_CHOICE)
+                if isinstance(entry, TaxonChoice):
+                    item.setData(str(entry.genus or "").strip(), Qt.UserRole + 1)
+                    item.setData(str(entry.species or "").strip(), Qt.UserRole + 2)
+                elif isinstance(entry, dict):
+                    item.setData(str(entry.get("genus") or "").strip(), Qt.UserRole + 1)
+                    item.setData(str(entry.get("species") or "").strip(), Qt.UserRole + 2)
         if host:
             self._host_vernacular_entry_map = entry_map
         else:
@@ -14101,7 +14130,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
-        entries = lookup.suggest_common_names(prefix=text, genus=genus, species=species)
+        entries = lookup.suggest_common_names(prefix=text, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
         text_label = self._format_vernacular_suggestion_label(
             TaxonChoice(genus=genus or "", species=species, common_name=text.strip())
         )
@@ -14110,21 +14139,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if self._vernacular_completer:
                 self._vernacular_completer.popup().hide()
         else:
-            self._set_vernacular_entries(self._vernacular_model, entries, host=False, limit=30)
+            self._set_vernacular_entries(self._vernacular_model, entries, host=False, limit=TAXON_COMPLETER_LIMIT)
 
     def _update_vernacular_suggestions_for_taxon(self):
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
             return
-        genus = self.genus_input.text().strip() or None
-        species = self.species_input.text().strip() or None
-        if not genus and not species:
-            self._set_vernacular_entries(self._vernacular_model, [], host=False)
-            self._set_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        self._set_vernacular_entries(self._vernacular_model, suggestions, host=False, limit=30)
-        self._set_vernacular_placeholder_from_suggestions(suggestions)
+        controller.refresh_vernacular_suggestions()
 
     def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | dict | str]) -> None:
         if not hasattr(self, "vernacular_input"):
@@ -14165,10 +14186,25 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         lookup = getattr(self, "_taxon_lookup", None)
         if not lookup:
             return
-        entry = self._lookup_vernacular_entry(name, host=False)
+        index = name if isinstance(name, QModelIndex) else None
+        raw_name = ""
+        if index is not None and index.isValid():
+            raw_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
+            choice = index.data(self._ROLE_TAXON_CHOICE)
+            if isinstance(choice, TaxonChoice):
+                entry = choice
+            else:
+                entry = self._lookup_vernacular_entry(raw_name, host=False)
+        else:
+            raw_name = str(name or "").strip()
+            entry = self._lookup_vernacular_entry(name, host=False)
         choice = self._vernacular_entry_to_choice(entry)
-        if choice is None and name:
-            matches = lookup.resolve_common_name(name)
+        if choice is None and index is not None and index.isValid():
+            payload = index.data(self._ROLE_TAXON_CHOICE)
+            if isinstance(payload, TaxonChoice):
+                choice = payload
+        if choice is None and raw_name:
+            matches = lookup.resolve_common_name(raw_name)
             choice = matches[0] if matches else None
         if choice is None:
             return
@@ -14235,7 +14271,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self._suppress_taxon_autofill:
             return
         text = text.strip()
-        suggestions = lookup.suggest_genera(text)
+        suggestions = lookup.suggest_genera(text, limit=TAXON_COMPLETER_LIMIT)
 
         # If text exactly matches a single suggestion, clear the model to prevent popup
         if len(suggestions) == 1 and suggestions[0].lower() == text.lower():
@@ -14265,7 +14301,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._species_completer.setCompletionPrefix("")
 
         if not self.species_input.text().strip():
-            species_suggestions = lookup.suggest_species(text, "")
+            species_suggestions = lookup.suggest_species(text, "", limit=TAXON_COMPLETER_LIMIT)
             self._set_species_placeholder_from_suggestions(
                 [choice.species for choice in species_suggestions if choice.species]
             )
@@ -14283,7 +14319,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._maybe_set_vernacular_from_taxon()
         genus = self.genus_input.text().strip()
         if genus and not self.species_input.text().strip():
-            species_suggestions = lookup.suggest_species(genus, "")
+            species_suggestions = lookup.suggest_species(genus, "", limit=TAXON_COMPLETER_LIMIT)
             self._set_species_placeholder_from_suggestions(
                 [choice.species for choice in species_suggestions if choice.species]
             )
@@ -14298,7 +14334,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         if self.species_input.text().strip():
             return
-        species_suggestions = lookup.suggest_species(str(genus).strip(), "")
+        species_suggestions = lookup.suggest_species(str(genus).strip(), "", limit=TAXON_COMPLETER_LIMIT)
         self._set_species_placeholder_from_suggestions(
             [choice.species for choice in species_suggestions if choice.species]
         )
@@ -14340,7 +14376,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_vernacular_placeholder_from_suggestions([])
             return
         text_stripped = (text or "").strip()
-        suggestions = lookup.suggest_species(genus, text_stripped)
+        suggestions = lookup.suggest_species(genus, text_stripped, limit=TAXON_COMPLETER_LIMIT)
         species_values = [choice.species for choice in suggestions if choice.species]
 
         # Hide popup when text exactly matches any suggestion (covers multi-result cases)
@@ -14391,173 +14427,31 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if obj == getattr(self, "location_input", None) and event.type() == QEvent.MouseButtonRelease:
             if not self.location_input.hasSelectedText():
                 self._show_location_suggestions_dropdown()
-        lookup = getattr(self, "_taxon_lookup", None)
-        if event.type() == QEvent.FocusIn and lookup:
-            if obj == self.vernacular_input:
-                if not self.vernacular_input.text().strip():
-                    # Reset completer filtering when focusing empty field
-                    if self._vernacular_completer:
-                        self._vernacular_completer.setCompletionPrefix("")
-                    self._update_vernacular_suggestions_for_taxon()
-                    if self._vernacular_model.stringList():
-                        self._vernacular_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.genus_input:
-                text = self.genus_input.text().strip()
-                suggestions = lookup.suggest_genera(text)
-                self._genus_model.setStringList(suggestions)
-                if suggestions:
-                    self._genus_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.species_input:
-                genus = self.genus_input.text().strip()
-                if genus:
-                    text = self.species_input.text().strip()
-                    suggestions = lookup.suggest_species(genus, text)
-                    species_values = [choice.species for choice in suggestions if choice.species]
-                    self._species_model.setStringList(species_values)
-                    if species_values:
-                        self._species_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.host_genus_input:
-                text = self.host_genus_input.text().strip()
-                suggestions = lookup.suggest_genera(text)
-                if len(suggestions) == 1 and suggestions[0].casefold() == text.casefold():
-                    self._host_genus_model.setStringList([])
-                    if self._host_genus_completer:
-                        self._host_genus_completer.popup().hide()
-                else:
-                    self._host_genus_model.setStringList(suggestions[:30])
-                if suggestions:
-                    self._host_genus_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.host_species_input:
-                genus = self.host_genus_input.text().strip()
-                if genus:
-                    text = self.host_species_input.text().strip()
-                    suggestions = lookup.suggest_species(genus, text)
-                    species_values = [choice.species for choice in suggestions if choice.species]
-                    self._host_species_model.setStringList(species_values[:30])
-                    if species_values:
-                        self._host_species_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
-            elif obj == self.host_vernacular_input:
-                if not self.host_vernacular_input.text().strip():
-                    if self._host_vernacular_completer:
-                        self._host_vernacular_completer.setCompletionPrefix("")
-                    self._update_host_vernacular_suggestions_for_taxon()
-                    if self._host_vernacular_model.stringList():
-                        self._host_vernacular_completer.complete()
-                if _should_select_all_on_focus(event):
-                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
+        controller = getattr(self, "_taxon_controller", None)
+        host_controller = getattr(self, "_host_taxon_controller", None)
+        if controller is not None:
+            controller.eventFilter(obj, event)
+        if host_controller is not None:
+            host_controller.eventFilter(obj, event)
         return super().eventFilter(obj, event)
 
     def _maybe_set_vernacular_from_taxon(self):
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
             return
-        if not hasattr(self, "vernacular_input"):
-            return
-        if self.vernacular_input.text().strip():
-            return
-        genus = self.genus_input.text().strip()
-        species = self.species_input.text().strip()
-        if not genus or not species:
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        self._set_vernacular_entries(self._vernacular_model, suggestions, host=False, limit=30)
-        choice = lookup.best_common_name_for_taxon(genus, species)
-        if choice and choice.common_name:
-            self._suppress_taxon_autofill = True
-            try:
-                self.vernacular_input.setText(choice.common_name)
-            finally:
-                self._suppress_taxon_autofill = False
-            self._set_vernacular_placeholder_from_suggestions([])
-        else:
-            self._set_vernacular_placeholder_from_suggestions(suggestions)
+        controller.sync_vernacular_after_taxon_change()
 
     def _refresh_vernacular_for_current_taxon(self) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db or not hasattr(self, "vernacular_input"):
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
             return
-        genus = self.genus_input.text().strip()
-        species = self.species_input.text().strip()
-        if not genus or not species:
-            self._set_vernacular_entries(self._vernacular_model, [], host=False)
-            self._set_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        self._set_vernacular_entries(self._vernacular_model, suggestions, host=False, limit=30)
-        current_common = self.vernacular_input.text().strip()
-        resolved = lookup.resolve_common_name(current_common, genus=genus, species=species) if current_common else []
-        best_choice = lookup.best_common_name_for_taxon(genus, species)
-        if current_common and resolved:
-            self._set_vernacular_placeholder_from_suggestions(suggestions)
-            return
-        old_block = self.vernacular_input.blockSignals(True)
-        try:
-            self._suppress_taxon_autofill = True
-            if best_choice and best_choice.common_name:
-                self.vernacular_input.setText(best_choice.common_name)
-            else:
-                self.vernacular_input.clear()
-        finally:
-            self._suppress_taxon_autofill = False
-            self.vernacular_input.blockSignals(old_block)
-        self._set_vernacular_placeholder_from_suggestions([] if best_choice and best_choice.common_name else suggestions)
+        controller.sync_vernacular_after_taxon_change()
 
     def _refresh_host_vernacular_for_current_taxon(self) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db:
+        controller = getattr(self, "_host_taxon_controller", None)
+        if controller is None:
             return
-        if (
-            not hasattr(self, "host_genus_input")
-            or not hasattr(self, "host_species_input")
-            or not hasattr(self, "host_vernacular_input")
-            or not hasattr(self, "_host_vernacular_model")
-        ):
-            return
-        genus = self.host_genus_input.text().strip()
-        species = self.host_species_input.text().strip()
-        if not genus and not species:
-            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
-            if self.host_vernacular_input.text().strip():
-                old_block = self.host_vernacular_input.blockSignals(True)
-                try:
-                    self._host_suppress_taxon_autofill = True
-                    self.host_vernacular_input.clear()
-                finally:
-                    self._host_suppress_taxon_autofill = False
-                    self.host_vernacular_input.blockSignals(old_block)
-            self._set_host_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species)
-        self._set_vernacular_entries(self._host_vernacular_model, suggestions, host=True, limit=20)
-        current_common = self.host_vernacular_input.text().strip()
-        resolved = lookup.resolve_common_name(current_common, genus=genus, species=species) if current_common else []
-        if current_common and resolved:
-            self._set_host_vernacular_placeholder_from_suggestions(suggestions)
-            return
-        best_choice = lookup.best_common_name_for_taxon(genus, species) if genus and species else None
-        old_block = self.host_vernacular_input.blockSignals(True)
-        try:
-            self._host_suppress_taxon_autofill = True
-            if best_choice and best_choice.common_name:
-                self.host_vernacular_input.setText(best_choice.common_name)
-            else:
-                self.host_vernacular_input.clear()
-        finally:
-            self._host_suppress_taxon_autofill = False
-            self.host_vernacular_input.blockSignals(old_block)
-        self._set_host_vernacular_placeholder_from_suggestions(
-            [] if best_choice and best_choice.common_name else suggestions
-        )
+        controller.sync_vernacular_after_taxon_change()
 
     def get_files(self):
         """Return selected image files."""

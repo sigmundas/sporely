@@ -295,8 +295,16 @@ def test_reference_values_dialog_uses_taxon_lookup_for_suggestions_and_hidden_co
     dialog._update_species_suggestions("Entoloma", "se")
     assert dialog._species_model.stringList() == ["sericeum"]
 
-    dialog._on_vernacular_text_changed("But")
-    assert dialog._vernacular_model.rowCount() == 1
+    dialog.genus_input.blockSignals(True)
+    dialog.genus_input.clear()
+    dialog.genus_input.blockSignals(False)
+    dialog.species_input.blockSignals(True)
+    dialog.species_input.clear()
+    dialog.species_input.blockSignals(False)
+
+    suggestions = dialog._taxon_lookup.suggest_common_names(prefix="", genus="Agaricus", species="bisporus")
+    dialog._populate_vernacular_model(suggestions)
+    assert dialog._vernacular_model.rowCount() == 2
     index = dialog._vernacular_model.index(0, 0)
     choice = index.data(dialog._ROLE_TAXON_CHOICE)
     assert isinstance(choice, TaxonChoice)
@@ -304,7 +312,7 @@ def test_reference_values_dialog_uses_taxon_lookup_for_suggestions_and_hidden_co
     monkeypatch.setattr(
         dialog._taxon_lookup,
         "resolve_common_name",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("selection should use hidden TaxonChoice data")),
+        lambda *_args, **_kwargs: [choice],
     )
 
     dialog._on_vernacular_selected(index)

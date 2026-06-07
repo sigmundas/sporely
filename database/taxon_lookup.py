@@ -29,6 +29,9 @@ class TaxonChoice:
     red_list_source: str | None = None
 
 
+TAXON_COMPLETER_LIMIT = 200
+
+
 def _normalize_genus_display(genus: str | None) -> str:
     text = str(genus or "").strip()
     if not text:
@@ -208,10 +211,11 @@ class TaxonLookupService:
             return []
         return list(values or [])
 
-    def _local_suggest_genera(self, prefix: str) -> list[str]:
+    def _local_suggest_genera(self, prefix: str, limit: int) -> list[str]:
         if not self.vernacular_db:
             return []
         prefix = _normalize_text(prefix)
+        limit_value = max(0, int(limit))
         if not prefix:
             seen: dict[str, str] = {}
             if self._has_local_table("taxon_min") and self._has_local_column("taxon_min", "genus"):
@@ -221,7 +225,10 @@ class TaxonLookupService:
                     FROM taxon_min
                     WHERE genus IS NOT NULL AND genus != ''
                     ORDER BY genus
+                    LIMIT ?
                     """
+                    ,
+                    (limit_value,)
                 )
                 for row in rows:
                     genus = _normalize_genus_display(row[0])
@@ -234,7 +241,10 @@ class TaxonLookupService:
                     FROM scientific_name_min
                     WHERE scientific_name IS NOT NULL AND scientific_name != ''
                     ORDER BY scientific_name
+                    LIMIT ?
                     """
+                    ,
+                    (limit_value,)
                 )
                 for row in rows:
                     scientific_name = str(row[0] or "").strip()
@@ -247,11 +257,12 @@ class TaxonLookupService:
         except Exception:
             return []
 
-    def _local_suggest_species(self, genus: str, prefix: str) -> list[str]:
+    def _local_suggest_species(self, genus: str, prefix: str, limit: int) -> list[str]:
         if not self.vernacular_db:
             return []
         genus = _normalize_genus_display(genus)
         prefix = _normalize_species_display(prefix)
+        limit_value = max(0, int(limit))
         if not genus:
             return []
         if prefix:
@@ -268,8 +279,9 @@ class TaxonLookupService:
                 WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet IS NOT NULL AND specific_epithet != ''
                 ORDER BY specific_epithet
+                LIMIT ?
                 """,
-                (genus,),
+                (genus, limit_value),
             )
             for row in rows:
                 species = _normalize_species_display(row[0])
@@ -282,8 +294,9 @@ class TaxonLookupService:
                 FROM scientific_name_min
                 WHERE scientific_name LIKE ? || ' %'
                 ORDER BY scientific_name
+                LIMIT ?
                 """,
-                (genus,),
+                (genus, limit_value),
             )
             for row in rows:
                 scientific_name = str(row[0] or "").strip()
@@ -458,7 +471,7 @@ class TaxonLookupService:
         rows = self._local_common_name_rows(genus=genus, species=species, limit=limit)
         return [self._row_to_choice(row, "taxonomy") for row in rows]
 
-    def suggest_genera(self, prefix: str = "", limit: int = 50) -> list[str]:
+    def suggest_genera(self, prefix: str = "", limit: int = TAXON_COMPLETER_LIMIT) -> list[str]:
         prefix = _normalize_text(prefix)
         limit_value = max(0, int(limit))
         cache_key = (prefix.casefold(), limit_value)
@@ -467,7 +480,7 @@ class TaxonLookupService:
             return list(cached[:limit_value])
         seen: dict[str, str] = {}
 
-        for value in self._local_suggest_genera(prefix):
+        for value in self._local_suggest_genera(prefix, limit_value):
             genus = _normalize_genus_display(value)
             if genus:
                 seen.setdefault(genus.casefold(), genus)
@@ -481,7 +494,7 @@ class TaxonLookupService:
         self._suggest_genera_cache[cache_key] = values
         return list(values)
 
-    def suggest_species(self, genus: str, prefix: str = "", limit: int = 50) -> list[TaxonChoice]:
+    def suggest_species(self, genus: str, prefix: str = "", limit: int = TAXON_COMPLETER_LIMIT) -> list[TaxonChoice]:
         genus = _normalize_genus_display(genus)
         prefix = _normalize_species_display(prefix)
         if not genus:
@@ -492,7 +505,11 @@ class TaxonLookupService:
         if cached is not None:
             return list(cached[:limit_value])
 
-        local_species = {_normalize_species_display(value) for value in self._local_suggest_species(genus, prefix) if _normalize_species_display(value)}
+        local_species = {
+            _normalize_species_display(value)
+            for value in self._local_suggest_species(genus, prefix, limit_value)
+            if _normalize_species_display(value)
+        }
         reference_species = {
             _normalize_species_display(value)
             for value in self._reference_values("list_species", genus, prefix)
@@ -505,25 +522,7 @@ class TaxonLookupService:
             source = "taxonomy" if species in local_species else "reference"
             if species in local_species and species in reference_species:
                 source = "both"
-            if species in local_species:
-                choice = self.resolve_scientific(genus, species)
-                if choice is None:
-                    choice = TaxonChoice(genus=genus, species=species, source="taxonomy")
-                if source != choice.source:
-                    choice = TaxonChoice(
-                        genus=choice.genus,
-                        species=choice.species,
-                        common_name=choice.common_name,
-                        family=choice.family,
-                        source=source,
-                        taxon_id=choice.taxon_id,
-                        language_code=choice.language_code,
-                        red_list_category=choice.red_list_category,
-                        red_list_source=choice.red_list_source,
-                    )
-            else:
-                choice = TaxonChoice(genus=genus, species=species, source=source)
-            choices.append(choice)
+            choices.append(TaxonChoice(genus=genus, species=species, source=source))
         self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
 
@@ -532,7 +531,7 @@ class TaxonLookupService:
         prefix: str = "",
         genus: str | None = None,
         species: str | None = None,
-        limit: int = 50,
+        limit: int = TAXON_COMPLETER_LIMIT,
     ) -> list[TaxonChoice]:
         prefix = _normalize_text(prefix)
         if not prefix and genus is None and species is None:
@@ -547,7 +546,7 @@ class TaxonLookupService:
         cached = self._suggest_common_names_cache.get(cache_key)
         if cached is not None:
             return list(cached[:limit_value])
-        rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit)
+        rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit_value)
         values = tuple(self._row_to_choice(row, "taxonomy") for row in rows[:limit_value])
         self._suggest_common_names_cache[cache_key] = values
         return list(values)
@@ -597,7 +596,7 @@ class TaxonLookupService:
         self._resolve_common_name_cache[cache_key] = values
         return list(values)
 
-    def common_names_for_taxon(self, genus: str, species: str, limit: int = 20) -> list[TaxonChoice]:
+    def common_names_for_taxon(self, genus: str, species: str, limit: int = TAXON_COMPLETER_LIMIT) -> list[TaxonChoice]:
         return self.suggest_common_names(prefix="", genus=genus, species=species, limit=limit)
 
     def best_common_name_for_taxon(self, genus: str, species: str) -> TaxonChoice | None:
@@ -622,4 +621,4 @@ class TaxonLookupService:
         return None
 
 
-__all__ = ["TaxonChoice", "TaxonLookupService"]
+__all__ = ["TAXON_COMPLETER_LIMIT", "TaxonChoice", "TaxonLookupService"]
