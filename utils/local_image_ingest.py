@@ -13,6 +13,7 @@ from utils.raw_render import (
     build_raw_processing_metadata,
     render_raw_image,
 )
+from utils.rawpy_import import read_rawpy_capture_datetime
 
 
 def _default_import_dir() -> Path:
@@ -97,12 +98,14 @@ def prepare_local_ingest_image(
         if raw_settings_source is None and isinstance(existing_raw_processing, Mapping):
             raw_settings_source = existing_raw_processing.get("settings")
         render_settings = RawRenderSettings.from_dict(_normalize_raw_settings(raw_settings_source))
+        source_capture_datetime = read_rawpy_capture_datetime(source_text)
         resolved_output_dir = Path(output_dir) if output_dir is not None else _default_import_dir()
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
         working_path = render_raw_image(
             source_text,
             settings=render_settings,
             output_dir=resolved_output_dir,
+            source_capture_datetime=source_capture_datetime,
         )
         try:
             from PIL import Image
@@ -117,6 +120,7 @@ def prepare_local_ingest_image(
             render_settings,
             width=width,
             height=height,
+            source_capture_datetime=source_capture_datetime,
         )
         lab_metadata_dict["raw_processing"] = raw_render_snapshot
     elif source.suffix.lower() in {".heic", ".heif"}:

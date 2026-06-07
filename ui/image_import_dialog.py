@@ -3512,6 +3512,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             pixmap = self._get_cached_pixmap(preview_path)
             preview_scaled = self._pixmap_cache_is_preview.get(preview_path or "", False)
         if (pixmap is None or pixmap.isNull()) and preview_path:
+            # Preview-only fallback: keep this as a leaf helper for cached local previews,
+            # not as the persistent ingest path.
             converted_path = maybe_convert_heic(preview_path, get_images_dir() / "imports")
             if converted_path and converted_path != preview_path:
                 self._converted_import_paths.add(converted_path)

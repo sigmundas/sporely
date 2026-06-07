@@ -1,7 +1,11 @@
+from datetime import datetime
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from PIL import Image
 
+from utils.exif_reader import get_image_metadata
 from utils.raw_render import (
     RAW_DERIVATIVE_FORMAT,
     RAW_DERIVATIVE_QUALITY,
@@ -12,8 +16,9 @@ from utils.raw_render import (
 
 
 class _DummyRaw:
-    def __init__(self, rgb: np.ndarray) -> None:
+    def __init__(self, rgb: np.ndarray, timestamp: datetime | None = None) -> None:
         self._rgb = rgb
+        self.other = SimpleNamespace(timestamp=timestamp)
         self.kwargs = None
         self.source_path = None
 
@@ -95,6 +100,20 @@ def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeyp
     with Image.open(output_path) as rendered:
         assert rendered.size == (2, 2)
         assert rendered.format == "JPEG"
+
+
+def test_render_raw_image_preserves_capture_time_in_exif(tmp_path, monkeypatch):
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    output_dir = tmp_path / "imports"
+    timestamp = datetime(2026, 5, 16, 19, 44, 11)
+    raw = _DummyRaw(np.full((2, 2, 3), 0.5, dtype=np.float64), timestamp=timestamp)
+    monkeypatch.setattr("utils.raw_render.import_rawpy", lambda: _DummyRawpyModule(raw))
+
+    output_path = render_raw_image(source_path, output_dir=output_dir, source_capture_datetime=timestamp)
+
+    metadata = get_image_metadata(str(output_path))
+    assert metadata["datetime"] == timestamp
 
 
 def test_render_raw_image_removes_partial_output_on_failure(tmp_path, monkeypatch):

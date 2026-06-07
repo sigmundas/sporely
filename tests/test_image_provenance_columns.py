@@ -195,6 +195,72 @@ def test_add_image_round_trips_heic_conversion_provenance(tmp_path, monkeypatch)
     assert image["working_mime_type"] == "image/jpeg"
 
 
+def test_add_image_round_trips_raw_processing_metadata_json(tmp_path, monkeypatch):
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    source_path = tmp_path / "source.nef"
+    working_path = tmp_path / "working.jpg"
+    source_path.write_text("source", encoding="utf-8")
+    working_path.write_text("working", encoding="utf-8")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO observations (id, date) VALUES (?, ?)", (1, "2026-05-01"))
+        conn.commit()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    provenance = build_local_image_provenance(source_path, working_path, image_type="microscope")
+    raw_processing = {
+        "engine": "rawpy",
+        "source": {
+            "kind": "camera_raw",
+            "path": str(source_path),
+            "mime_type": "image/x-raw",
+            "captured_at": "2026-05-01 10:00:00",
+        },
+        "local_derivative": {
+            "kind": "rendered_from_raw",
+            "format": "jpeg",
+            "mime_type": "image/jpeg",
+            "path": str(working_path),
+            "quality": 95,
+            "subsampling": 0,
+            "width": 2,
+            "height": 2,
+        },
+        "settings": {
+            "white_balance_mode": "camera",
+            "auto_levels": False,
+        },
+    }
+    image_id = models.ImageDB.add_image(
+        observation_id=1,
+        filepath=str(working_path),
+        image_type="microscope",
+        captured_at="2026-05-01 10:00:00",
+        copy_to_folder=False,
+        original_filepath=str(source_path),
+        lab_metadata={"image_type": "microscope", "contrast": "phase", "raw_processing": raw_processing},
+        **provenance,
+    )
+    image = models.ImageDB.get_image(image_id)
+
+    assert image is not None
+    assert image["original_filepath"] == str(source_path)
+    assert image["lab_metadata"]["image_type"] == "microscope"
+    assert image["lab_metadata"]["contrast"] == "phase"
+    assert image["lab_metadata"]["raw_processing"]["engine"] == "rawpy"
+    assert image["lab_metadata"]["raw_processing"]["source"]["kind"] == "camera_raw"
+    assert image["lab_metadata"]["raw_processing"]["source"]["path"] == str(source_path)
+    assert image["lab_metadata"]["raw_processing"]["source"]["mime_type"] == "image/x-raw"
+    assert image["lab_metadata"]["raw_processing"]["source"]["captured_at"] == "2026-05-01 10:00:00"
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["kind"] == "rendered_from_raw"
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["path"] == str(working_path)
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["mime_type"] == "image/jpeg"
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["quality"] == 95
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["subsampling"] == 0
+    assert image["lab_metadata"]["raw_processing"]["settings"]["white_balance_mode"] == "camera"
+
+
 def test_add_image_handles_mime_detection_failure(tmp_path, monkeypatch):
     db_path = _init_fresh_database(tmp_path, monkeypatch)
     source_path = tmp_path / "source.unknown"

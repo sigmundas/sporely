@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 
@@ -24,4 +26,19 @@ def import_rawpy() -> Any:
         )
 
 
-__all__ = ["import_rawpy"]
+def read_rawpy_capture_datetime(source_path: str | Path) -> datetime | None:
+    """Return the source capture timestamp when rawpy exposes one."""
+    rawpy_module = import_rawpy()
+    try:
+        with rawpy_module.imread(str(source_path)) as raw:
+            other = getattr(raw, "other", None)
+            timestamp = getattr(other, "timestamp", None)
+            return timestamp if isinstance(timestamp, datetime) else None
+    except Exception:
+        return None
+
+
+__all__ = ["import_rawpy", "read_rawpy_capture_datetime"]
+
+# TODO(pyinstaller): rawpy/LibRaw may need hidden-import or native-library checks
+# in the desktop bundle once packaging is exercised with real RAW files.

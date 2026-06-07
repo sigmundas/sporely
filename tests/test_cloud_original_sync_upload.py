@@ -225,6 +225,36 @@ def test_original_upload_skips_when_setting_is_disabled_and_keeps_derivative_flo
     assert client.remote_images[0]["original_storage_path"] is None
 
 
+def test_raw_lineage_does_not_upload_originals_by_default(monkeypatch, tmp_path):
+    db_path = _create_sync_db(tmp_path)
+    working_path = tmp_path / "rendered_from_raw.jpg"
+    original_path = tmp_path / "source.nef"
+    working_path.write_text("working-bytes", encoding="utf-8")
+    original_path.write_text("raw-bytes", encoding="utf-8")
+    _seed_image(
+        db_path,
+        image_id=12,
+        observation_id=1,
+        filepath=working_path,
+        source_role="converted_local",
+        file_purpose="microscope",
+        original_filepath=original_path,
+    )
+    _patch_db_connections(monkeypatch, db_path)
+    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
+
+    client = _MemoryOriginalSyncClient()
+    result = cloud_sync._push_images_for_observation(client, {"id": 1}, "cloud-obs-1")
+
+    assert result is True
+    assert len(client.upload_image_calls) == 1
+    assert client.upload_image_calls[0]["local_path"] == str(working_path)
+    assert len(client.push_metadata_calls) == 1
+    assert client.upload_original_calls == []
+    assert client.original_patch_calls == []
+    assert client.remote_images[0]["original_storage_path"] is None
+
+
 def test_local_canonical_original_upload_updates_cloud_row_and_snapshot(monkeypatch, tmp_path):
     db_path = _create_sync_db(tmp_path)
     source_path = tmp_path / "field.jpg"

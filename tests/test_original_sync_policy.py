@@ -80,6 +80,24 @@ def test_heic_original_lineage_requires_original_path_and_opt_in(tmp_path):
     assert upload_source["source_path"] == working_path
 
 
+def test_raw_original_lineage_requires_original_path_and_opt_in(tmp_path):
+    working_path = _write_file(tmp_path / "working.jpg")
+    original_path = _write_file(tmp_path / "source.nef")
+    row = {
+        "filepath": working_path,
+        "original_filepath": original_path,
+        "source_role": "converted_local",
+        "file_purpose": "microscope",
+    }
+
+    assert policy.is_full_original_sync_candidate(row) is False
+    assert policy.is_full_original_sync_candidate(row, include_original_path=True) is True
+    upload_source = policy.resolve_full_original_upload_source(row)
+    assert upload_source is not None
+    assert upload_source["source_kind"] == "original_filepath"
+    assert upload_source["source_path"] == original_path
+
+
 def test_converted_local_working_copy_requires_explicit_opt_in(tmp_path):
     working_path = _write_file(tmp_path / "working.jpg")
     row = {

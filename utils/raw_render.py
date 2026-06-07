@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import os
 from pathlib import Path
 from typing import Any, Mapping
@@ -63,6 +64,18 @@ def _coerce_float_tuple(value: Any, length: int) -> tuple[float, ...] | None:
         return tuple(float(item) for item in items)
     except Exception:
         return None
+
+
+def _format_capture_datetime(value: datetime | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        normalized = value
+        if normalized.tzinfo is not None:
+            normalized = normalized.astimezone().replace(tzinfo=None)
+        return normalized.strftime("%Y:%m:%d %H:%M:%S")
+    text = str(value).strip()
+    return text or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,7 +258,12 @@ def _render_raw_array(
     return np.asarray(rgb)
 
 
-def _save_local_derivative_jpeg(rgb: np.ndarray, destination: Path, source_path: Path) -> None:
+def _save_local_derivative_jpeg(
+    rgb: np.ndarray,
+    destination: Path,
+    source_path: Path,
+    source_capture_datetime: datetime | str | None = None,
+) -> None:
     rgb8 = np.asarray(rgb, dtype=np.float64)
     if rgb8.ndim == 2:
         rgb8 = np.repeat(rgb8[..., None], 3, axis=2)
@@ -261,6 +279,17 @@ def _save_local_derivative_jpeg(rgb: np.ndarray, destination: Path, source_path:
             "subsampling": RAW_DERIVATIVE_SUBSAMPLING,
             "optimize": RAW_DERIVATIVE_OPTIMIZE,
         }
+        exif_timestamp = _format_capture_datetime(source_capture_datetime)
+        if exif_timestamp:
+            exif_factory = getattr(Image, "Exif", None)
+            if callable(exif_factory):
+                exif = exif_factory()
+                for tag_id in (306, 36867, 36868):
+                    exif[tag_id] = exif_timestamp
+                try:
+                    save_kwargs["exif"] = exif.tobytes()
+                except Exception:
+                    pass
         image.save(destination, "JPEG", **save_kwargs)
         source_stat = source_path.stat()
         os.utime(destination, (source_stat.st_atime, source_stat.st_mtime))
@@ -281,17 +310,20 @@ def build_raw_processing_metadata(
     width: int,
     height: int,
     source_mime_type: str | None = None,
+    source_capture_datetime: datetime | str | None = None,
 ) -> dict[str, Any]:
     """Build the metadata snapshot for a rendered-from-RAW local derivative."""
     source = Path(source_path)
     derivative = Path(local_derivative_path)
     render_settings = RawRenderSettings.from_dict(settings).to_dict()
+    captured_at = _format_capture_datetime(source_capture_datetime)
     return {
         "engine": "rawpy",
         "source": {
             "kind": "camera_raw",
             "path": str(source),
             "mime_type": source_mime_type or raw_mime_type_for_path(source),
+            **({"captured_at": captured_at} if captured_at else {}),
         },
         "local_derivative": {
             "kind": "rendered_from_raw",
@@ -323,6 +355,7 @@ def render_raw_image(
     output_path: str | Path | None = None,
     output_dir: str | Path | None = None,
     preview: bool = False,
+    source_capture_datetime: datetime | str | None = None,
     **_kwargs: Any,
 ) -> Path:
     """Render a RAW source file to a high-quality local JPEG derivative."""
@@ -383,7 +416,12 @@ def render_raw_image(
                 render_settings.tone_curve_strength,
                 render_settings.tone_curve_midpoint,
             )
-        _save_local_derivative_jpeg(rgb_float, destination, source)
+        _save_local_derivative_jpeg(
+            rgb_float,
+            destination,
+            source,
+            source_capture_datetime=source_capture_datetime,
+        )
         return destination
     except RawRenderingUnavailableError:
         raise
