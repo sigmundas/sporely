@@ -3,6 +3,8 @@ import os
 import mimetypes
 from pathlib import Path
 
+from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, raw_mime_type_for_path
+
 WEBP_QUALITY = 65
 WEBP_METHOD = 4
 JPEG_QUALITY = 90
@@ -55,6 +57,9 @@ def guess_local_image_mime_type(filepath) -> str | None:
         return None
     path = Path(filepath)
     suffix = path.suffix.lower()
+    raw_mime = raw_mime_type_for_path(path)
+    if raw_mime != "application/octet-stream":
+        return raw_mime
     mime, _encoding = mimetypes.guess_type(str(path))
     if mime:
         return mime
@@ -78,7 +83,8 @@ def build_local_image_provenance(
     working_mime = guess_local_image_mime_type(working) if working else None
 
     source_role = "local_canonical"
-    if source and source_suffix in {".heic", ".heif"} and working_text and working_text != source_text:
+    converted_suffixes = {".heic", ".heif"} | set(SUPPORTED_RAW_SUFFIXES)
+    if source and source_suffix in converted_suffixes and working_text and working_text != source_text:
         source_role = "converted_local"
 
     normalized_type = str(image_type or "").strip().lower()

@@ -31,7 +31,7 @@ from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
 from utils.exif_reader import get_image_datetime
-from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
+from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.image_utils import cleanup_import_temp_file
 from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
 from utils.temporal_matcher import TemporalMatcher, normalize_timestamp
@@ -1359,12 +1359,32 @@ class IngestionHubTab(QWidget):
             return 0
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
-        converted_path = maybe_convert_heic(source_path, output_dir)
-        if converted_path is None:
+        matched_image_type = str(match_row.get("image_type") or "field").strip().lower() or "field"
+        ingest_context = {"image_type": matched_image_type}
+        try:
+            ingest = prepare_local_ingest_image(source_path, lab_metadata=ingest_context, output_dir=output_dir)
+        except RawRenderingUnavailableError as exc:
+            self._show_status(
+                self.tr("RAW image {name} cannot be imported yet: {error}").format(
+                    name=Path(source_path).name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+            return 0
+        except RuntimeError as exc:
+            self._show_status(
+                self.tr("Could not prepare {name}: {error}").format(
+                    name=Path(source_path).name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
             return 0
 
         state = dict(match_row.get("state") or {})
-        matched_image_type = str(match_row.get("image_type") or "field").strip().lower() or "field"
         objectives = load_objectives()
         objective_key = str(state.get("objective_name") or "").strip() or None
         resolved_objective_key = (
@@ -1382,7 +1402,7 @@ class IngestionHubTab(QWidget):
             if resolved_objective_key
             else None
         )
-        original_filepath = source_path if converted_path != source_path else None
+        original_filepath = ingest.original_path if ingest.original_path != ingest.working_path else None
         lab_metadata = None
         if matched_image_type == "microscope":
             lab_metadata = {
@@ -1417,7 +1437,7 @@ class IngestionHubTab(QWidget):
             }
         image_id = ImageDB.add_image(
             observation_id=observation_id,
-            filepath=converted_path,
+            filepath=ingest.working_path,
             image_type="microscope" if matched_image_type == "microscope" else "field",
             scale=scale if matched_image_type == "microscope" and scale > 0 else None,
             objective_name=resolved_objective_key if matched_image_type == "microscope" else None,
@@ -1447,19 +1467,15 @@ class IngestionHubTab(QWidget):
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
             lab_metadata=lab_metadata,
-            **build_local_image_provenance(
-                source_path,
-                converted_path,
-                image_type="microscope" if matched_image_type == "microscope" else "field",
-            ),
+            **ingest.provenance_kwargs(),
         )
         image_data = ImageDB.get_image(image_id)
-        stored_path = str((image_data or {}).get("filepath") or converted_path)
+        stored_path = str((image_data or {}).get("filepath") or ingest.working_path)
         try:
             generate_all_sizes(stored_path, image_id)
         except Exception:
             pass
-        cleanup_import_temp_file(source_path, converted_path, stored_path, output_dir)
+        cleanup_import_temp_file(source_path, ingest.working_path, stored_path, output_dir)
         return int(image_id or 0)
 
     def _refresh_main_window_after_commit(self, observation_id: int, image_id: int) -> None:

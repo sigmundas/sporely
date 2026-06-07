@@ -227,7 +227,23 @@ def test_import_match_preserves_original_filepath_for_heic_conversion(monkeypatc
     converted_path.write_bytes(b"jpeg bytes")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(ingestion_hub_tab, "maybe_convert_heic", lambda path, output_dir: str(converted_path))
+    class DummyIngestResult:
+        working_path = str(converted_path)
+        original_path = str(source_path)
+
+        def provenance_kwargs(self):
+            return {
+                "source_role": "converted_local",
+                "file_purpose": "field",
+                "original_mime_type": "image/heic",
+                "working_mime_type": "image/jpeg",
+            }
+
+    monkeypatch.setattr(
+        ingestion_hub_tab,
+        "prepare_local_ingest_image",
+        lambda path, **kwargs: DummyIngestResult(),
+    )
     monkeypatch.setattr(ingestion_hub_tab, "get_images_dir", lambda: tmp_path / "images")
     monkeypatch.setattr(ingestion_hub_tab, "load_objectives", lambda: {})
     monkeypatch.setattr(ingestion_hub_tab, "resolve_objective_key", lambda objective_key, objectives: None)

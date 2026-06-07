@@ -68,3 +68,16 @@ def test_build_local_image_provenance_accepts_calibration_and_cache_purposes(tmp
     assert calibration["source_role"] == "local_canonical"
     assert cache["file_purpose"] == "cache"
     assert cache["source_role"] == "local_canonical"
+
+
+def test_build_local_image_provenance_treats_raw_originals_as_converted_local(tmp_path):
+    source_path = tmp_path / "sample.nef"
+    working_path = tmp_path / "working.jpg"
+    source_path.write_bytes(b"source")
+    working_path.write_bytes(b"working")
+
+    provenance = build_local_image_provenance(source_path, working_path, image_type="microscope")
+
+    assert provenance["source_role"] == "converted_local"
+    assert provenance["original_mime_type"] == "image/x-raw"
+    assert provenance["working_mime_type"] == "image/jpeg"

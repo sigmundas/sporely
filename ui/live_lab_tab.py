@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
 from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, objective_sort_value
-from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
 from utils.image_utils import cleanup_import_temp_file
+from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.lab_watcher import LabWatcherWorker
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
@@ -1049,10 +1049,26 @@ class LiveLabTab(QWidget):
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
-        converted_path = maybe_convert_heic(source_path, output_dir)
-        if converted_path is None:
+        ingest_context = dict(self._current_lab_metadata())
+        ingest_context["image_type"] = "microscope"
+        try:
+            ingest = prepare_local_ingest_image(source_path, lab_metadata=ingest_context, output_dir=output_dir)
+        except RawRenderingUnavailableError as exc:
             self._show_status(
-                self.tr("HEIC conversion failed for {name}.").format(name=Path(source_path).name),
+                self.tr("RAW image {name} cannot be imported yet: {error}").format(
+                    name=Path(source_path).name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+            return
+        except RuntimeError as exc:
+            self._show_status(
+                self.tr("Could not prepare {name}: {error}").format(
+                    name=Path(source_path).name,
+                    error=str(exc),
+                ),
                 tone="warning",
                 timeout_ms=6000,
             )
@@ -1062,11 +1078,11 @@ class LiveLabTab(QWidget):
         objective = load_objectives().get(objective_key) if objective_key else None
         scale = objective.get("microns_per_pixel") if isinstance(objective, dict) else None
         calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
-        original_filepath = source_path if converted_path != source_path else None
+        original_filepath = ingest.original_path if ingest.original_path != ingest.working_path else None
 
         image_id = ImageDB.add_image(
             observation_id=observation_id,
-            filepath=converted_path,
+            filepath=ingest.working_path,
             image_type="microscope",
             scale=scale,
             objective_name=objective_key,
@@ -1078,15 +1094,11 @@ class LiveLabTab(QWidget):
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
             lab_metadata=self._current_lab_metadata(),
-            **build_local_image_provenance(
-                source_path,
-                converted_path,
-                image_type="microscope",
-            ),
+            **ingest.provenance_kwargs(),
         )
 
         image_data = ImageDB.get_image(image_id)
-        stored_path = str((image_data or {}).get("filepath") or converted_path)
+        stored_path = str((image_data or {}).get("filepath") or ingest.working_path)
         warning_text = ""
         try:
             generate_all_sizes(stored_path, image_id)
@@ -1095,7 +1107,7 @@ class LiveLabTab(QWidget):
                 name=Path(stored_path).name,
                 error=str(exc),
             )
-        cleanup_import_temp_file(source_path, converted_path, stored_path, output_dir)
+        cleanup_import_temp_file(source_path, ingest.working_path, stored_path, output_dir)
 
         self._session_image_ids.append(int(image_id))
         self._selected_session_image_id = int(image_id)

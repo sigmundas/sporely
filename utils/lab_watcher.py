@@ -5,11 +5,13 @@ from PySide6.QtCore import QThread, Signal
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from utils.raw_detection import SUPPORTED_RAW_SUFFIXES
+
 class NewImageHandler(FileSystemEventHandler):
     def __init__(self, callback):
         super().__init__()
         self.callback = callback
-        self.valid_extensions = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.heic', '.heif'}
+        self.valid_extensions = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.heic', '.heif'} | set(SUPPORTED_RAW_SUFFIXES)
 
     def _emit_if_supported(self, path: str):
         ext = Path(path).suffix.lower()
