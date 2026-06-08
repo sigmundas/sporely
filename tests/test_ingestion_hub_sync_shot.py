@@ -202,7 +202,9 @@ def test_scan_folder_does_not_attempt_sync_shot_auto_detection(monkeypatch, qapp
     monkeypatch.setattr(
         tab._matcher,
         "prepare_image_rows",
-        lambda paths: [row for path in paths for row in rows_by_path.get(str(Path(path).resolve()), [])],
+        lambda paths, *, source_preference=None: [
+            row for path in paths for row in rows_by_path.get(str(Path(path).resolve()), [])
+        ],
     )
     monkeypatch.setattr(tab, "_recompute_matches", lambda: None)
     monkeypatch.setattr(tab, "_auto_apply_clock_offset_if_helpful", lambda: False)

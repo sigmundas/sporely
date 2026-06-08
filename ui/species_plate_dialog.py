@@ -2844,6 +2844,7 @@ class SpeciesPlateDialog(QDialog):
                 resize_to_optimal=False,
                 translate=self.tr,
             )
+            badges.extend(_IGW.build_raw_source_badges(img.get("lab_metadata"), translate=self.tr))
             items.append({
                 "id": img.get("id"),
                 "filepath": img.get("filepath", ""),

@@ -1,6 +1,7 @@
 """Shared local image ingestion façade for HEIC, raster, and future RAW files."""
 from __future__ import annotations
 
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -121,6 +122,7 @@ def prepare_local_ingest_image(
             width=width,
             height=height,
             source_capture_datetime=source_capture_datetime,
+            rendered_at=datetime.now(),
         )
         lab_metadata_dict["raw_processing"] = raw_render_snapshot
     elif source.suffix.lower() in {".heic", ".heif"}:

@@ -28,7 +28,10 @@ def import_rawpy() -> Any:
 
 def read_rawpy_capture_datetime(source_path: str | Path) -> datetime | None:
     """Return the source capture timestamp when rawpy exposes one."""
-    rawpy_module = import_rawpy()
+    try:
+        rawpy_module = import_rawpy()
+    except Exception:
+        return None
     try:
         with rawpy_module.imread(str(source_path)) as raw:
             other = getattr(raw, "other", None)

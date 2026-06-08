@@ -8,6 +8,8 @@ from typing import Iterable
 
 from database.models import ImageDB, ObservationDB, SessionLogDB
 from utils.exif_reader import get_image_datetime
+from utils.image_companion_grouping import group_companion_paths
+from utils.raw_detection import SUPPORTED_RAW_SUFFIXES
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {
@@ -18,9 +20,7 @@ SUPPORTED_IMAGE_EXTENSIONS = {
     ".tiff",
     ".heic",
     ".heif",
-    ".orf",
-    ".nef",
-}
+} | set(SUPPORTED_RAW_SUFFIXES)
 
 
 def _normalize_path(path: str | Path | None) -> str:
@@ -247,20 +247,21 @@ class TemporalMatcher:
         )
         return sessions
 
-    def prepare_image_rows(self, paths: Iterable[str | Path]) -> list[dict]:
+    def prepare_image_rows(
+        self,
+        paths: Iterable[str | Path],
+        *,
+        source_preference: str | None = None,
+    ) -> list[dict]:
         rows: list[dict] = []
-        seen: set[str] = set()
-        for raw_path in paths or []:
-            filepath = _normalize_path(raw_path)
-            if not filepath or filepath in seen:
+        for group in group_companion_paths(paths, source_preference=source_preference):
+            filepath = _normalize_path(group.preferred_path)
+            if not filepath:
                 continue
-            seen.add(filepath)
             path_obj = Path(filepath)
-            if not path_obj.exists() or not path_obj.is_file():
-                continue
             if path_obj.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
                 continue
-            captured_at = normalize_timestamp(get_image_datetime(filepath))
+            captured_at = normalize_timestamp(group.captured_at)
             rows.append(
                 {
                     "filepath": filepath,

@@ -33,6 +33,10 @@ RASTER_IMAGE_FILTER = f"Images ({_format_image_filter(_RASTER_IMAGE_SUFFIXES)})"
 LOCAL_IMPORT_IMAGE_FILTER = (
     f"Images ({_format_image_filter(_LOCAL_IMPORT_IMAGE_SUFFIXES)} {_RAW_FORMAT_FILTER})"
 )
+# RAW companion preference is a user-level setting shared by Live Lab and folder import.
+SETTING_RAW_COMPANION_SOURCE_PREFERENCE = "raw_companion_source_preference"
+RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW = "prefer_raw"
+RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG = "camera_jpeg"
 # Legacy alias for direct-open callers.
 SUPPORTED_FORMATS = RASTER_IMAGE_FILTER
 RAW_FORMATS = tuple(sorted(SUPPORTED_RAW_SUFFIXES))

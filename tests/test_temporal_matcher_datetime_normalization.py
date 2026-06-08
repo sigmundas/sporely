@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from PIL import Image
 
 import utils.sync_shot_qr as sync_shot_qr
 import utils.temporal_matcher as temporal_matcher
@@ -73,13 +74,66 @@ def test_prepare_image_rows_normalizes_exif_capture_time(monkeypatch, tmp_path):
     image_path = tmp_path / "capture.jpg"
     image_path.write_bytes(b"")
     exif_dt = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
-    monkeypatch.setattr(temporal_matcher, "get_image_datetime", lambda _path: exif_dt)
+    monkeypatch.setattr(
+        "utils.image_companion_grouping.get_image_datetime",
+        lambda _path: exif_dt,
+    )
 
     rows = matcher.prepare_image_rows([image_path])
 
     assert len(rows) == 1
     assert rows[0]["captured_at"] == _local_naive(exif_dt)
     assert rows[0]["captured_at"].tzinfo is None
+    assert rows[0]["has_capture_time"] is True
+
+
+def test_prepare_image_rows_groups_raw_and_jpeg_companions(monkeypatch, tmp_path):
+    matcher = TemporalMatcher()
+    raw_path = tmp_path / "P070020_1.ORF"
+    jpeg_path = tmp_path / "P070020_1.JPG"
+    raw_path.write_bytes(b"raw-bytes")
+    image = Image.new("RGB", (4, 4), "white")
+    exif = Image.Exif()
+    exif[36867] = "2026:05:16 19:44:11"
+    exif[36868] = "2026:05:16 19:44:11"
+    exif[306] = "2026:05:16 19:44:11"
+    image.save(jpeg_path, "JPEG", exif=exif)
+    monkeypatch.setattr(
+        "utils.image_companion_grouping.read_rawpy_capture_datetime",
+        lambda _path: None,
+    )
+
+    rows = matcher.prepare_image_rows([jpeg_path, raw_path])
+
+    assert len(rows) == 1
+    assert rows[0]["filepath"] == str(raw_path.resolve())
+    assert rows[0]["filename"] == raw_path.name
+    assert rows[0]["captured_at"] == datetime(2026, 5, 16, 19, 44, 11)
+    assert rows[0]["has_capture_time"] is True
+
+
+def test_prepare_image_rows_can_prefer_camera_jpeg_for_companion_groups(monkeypatch, tmp_path):
+    matcher = TemporalMatcher()
+    raw_path = tmp_path / "P070020_1.ORF"
+    jpeg_path = tmp_path / "P070020_1.JPG"
+    raw_path.write_bytes(b"raw-bytes")
+    image = Image.new("RGB", (4, 4), "white")
+    exif = Image.Exif()
+    exif[36867] = "2026:05:16 19:44:11"
+    exif[36868] = "2026:05:16 19:44:11"
+    exif[306] = "2026:05:16 19:44:11"
+    image.save(jpeg_path, "JPEG", exif=exif)
+    monkeypatch.setattr(
+        "utils.image_companion_grouping.read_rawpy_capture_datetime",
+        lambda _path: None,
+    )
+
+    rows = matcher.prepare_image_rows([raw_path, jpeg_path], source_preference="camera_jpeg")
+
+    assert len(rows) == 1
+    assert rows[0]["filepath"] == str(jpeg_path.resolve())
+    assert rows[0]["filename"] == jpeg_path.name
+    assert rows[0]["captured_at"] == datetime(2026, 5, 16, 19, 44, 11)
     assert rows[0]["has_capture_time"] is True
 
 

@@ -27,10 +27,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from config import (
+    RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+    SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+)
 from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
 from utils.exif_reader import get_image_datetime
+from utils.image_companion_grouping import normalize_raw_companion_source_preference
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.image_utils import cleanup_import_temp_file
 from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
@@ -566,7 +571,10 @@ class IngestionHubTab(QWidget):
             self._set_hint_progress_visible(True)
             self._set_hint_progress(self.tr("Scanning import folder..."), 0)
         try:
-            prepared_rows = self._matcher.prepare_image_rows(files)
+            prepared_rows = self._matcher.prepare_image_rows(
+                files,
+                source_preference=self._raw_companion_source_preference(),
+            )
             if show_progress:
                 self._set_hint_progress(self.tr("Scanning image candidates..."), 70)
             prepared_rows.sort(
@@ -606,6 +614,13 @@ class IngestionHubTab(QWidget):
             tone="success" if self._batch_images else "info",
             timeout_ms=5000,
         )
+
+    def _raw_companion_source_preference(self) -> str:
+        saved = SettingsDB.get_setting(
+            SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+            RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+        )
+        return normalize_raw_companion_source_preference(saved)
 
     def _on_offset_changed(self, _value: float) -> None:
         SettingsDB.set_setting(self.SETTING_OFFSET_SECONDS, float(self.offset_spin.value()))

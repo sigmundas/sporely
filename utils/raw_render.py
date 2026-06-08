@@ -1,7 +1,7 @@
 """RAW render settings and rawpy-backed rendering helpers."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import os
 from pathlib import Path
@@ -10,10 +10,15 @@ from typing import Any, Mapping
 import numpy as np
 from PIL import Image
 
+from utils.image_processing_pipeline import (
+    apply_auto_levels_from_bounds,
+    apply_post_decode_processing,
+    compute_auto_level_bounds,
+    to_float_rgb,
+)
 from utils.raw_detection import raw_mime_type_for_path
-from utils.raw_tone_curve import apply_luminance_tone_curve
 from utils.raw_white_balance import estimate_white_balance_from_background
-from utils.rawpy_import import import_rawpy
+from utils.rawpy_import import import_rawpy, read_rawpy_capture_datetime
 
 RAW_DERIVATIVE_FORMAT = "jpeg"
 RAW_DERIVATIVE_MIME_TYPE = "image/jpeg"
@@ -42,6 +47,13 @@ def _coerce_float(value: Any, default: float) -> float:
         return float(default)
 
 
+def _coerce_float_in_range(value: Any, default: float, minimum: float, maximum: float) -> float:
+    coerced = _coerce_float(value, default)
+    if not np.isfinite(coerced):
+        return float(default)
+    return float(np.clip(coerced, float(minimum), float(maximum)))
+
+
 def _coerce_int(value: Any, default: int) -> int:
     try:
         return int(value)
@@ -66,6 +78,62 @@ def _coerce_float_tuple(value: Any, length: int) -> tuple[float, ...] | None:
         return None
 
 
+def _coerce_point_tuple(value: Any, length: int) -> tuple[float, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, tuple):
+        items = list(value)
+    elif isinstance(value, list):
+        items = list(value)
+    else:
+        return None
+    if len(items) != length:
+        return None
+    try:
+        return tuple(float(item) for item in items)
+    except Exception:
+        return None
+
+
+def _normalize_white_balance_mode(mode: Any, *, wb_multipliers: tuple[float, float, float] | None = None) -> str:
+    normalized = str(mode or "camera").strip().lower() or "camera"
+    if normalized in {"background", "user"}:
+        return "custom"
+    if normalized == "camera" and wb_multipliers is not None:
+        return "custom"
+    return normalized
+
+
+def _normalize_white_balance_multiplier_space(
+    value: Any,
+    *,
+    wb_multipliers: tuple[float, float, float] | None = None,
+) -> str | None:
+    normalized = str(value or "").strip().lower() or None
+    if normalized == "post_decode_rgb":
+        return normalized
+    if wb_multipliers is not None:
+        return "post_decode_rgb"
+    return normalized
+
+
+def _normalize_wb_sample_base_mode(
+    value: Any,
+    *,
+    white_balance_mode: str,
+    wb_multipliers: tuple[float, float, float] | None = None,
+) -> str | None:
+    normalized = str(value or "").strip().lower() or None
+    if normalized in {"camera", "auto"}:
+        return normalized
+    if wb_multipliers is None:
+        return None
+    mode = str(white_balance_mode or "camera").strip().lower() or "camera"
+    if mode == "auto":
+        return "auto"
+    return "camera"
+
+
 def _format_capture_datetime(value: datetime | str | None) -> str | None:
     if value is None:
         return None
@@ -85,9 +153,18 @@ class RawRenderSettings:
     white_balance_mode: str = "camera"
     wb_multipliers: tuple[float, float, float] | None = None
     wb_selection: tuple[float, float, float, float] | None = None
+    wb_multiplier_space: str | None = None
+    wb_sample_point: tuple[float, float] | None = None
+    wb_sample_size: int | None = None
+    wb_sample_base_mode: str | None = None
+    wb_selection_space: str | None = None
     auto_levels: bool = True
     black_percentile: float = 0.001
     white_percentile: float = 0.999
+    auto_levels_strength: float = 1.0
+    auto_levels_soft_tails: bool = False
+    auto_levels_tail_size: float = 0.03
+    auto_levels_shadow_lift: float = 0.0
     tone_curve_enabled: bool = False
     tone_curve_strength: float = 0.5
     tone_curve_midpoint: float = 0.5
@@ -102,9 +179,18 @@ class RawRenderSettings:
             "white_balance_mode": self.white_balance_mode,
             "wb_multipliers": list(self.wb_multipliers) if self.wb_multipliers is not None else None,
             "wb_selection": list(self.wb_selection) if self.wb_selection is not None else None,
+            "wb_multiplier_space": self.wb_multiplier_space,
+            "wb_sample_point": list(self.wb_sample_point) if self.wb_sample_point is not None else None,
+            "wb_sample_size": int(self.wb_sample_size) if self.wb_sample_size is not None else None,
+            "wb_sample_base_mode": self.wb_sample_base_mode,
+            "wb_selection_space": self.wb_selection_space,
             "auto_levels": bool(self.auto_levels),
             "black_percentile": float(self.black_percentile),
             "white_percentile": float(self.white_percentile),
+            "auto_levels_strength": float(self.auto_levels_strength),
+            "auto_levels_soft_tails": bool(self.auto_levels_soft_tails),
+            "auto_levels_tail_size": float(self.auto_levels_tail_size),
+            "auto_levels_shadow_lift": float(self.auto_levels_shadow_lift),
             "tone_curve_enabled": bool(self.tone_curve_enabled),
             "tone_curve_strength": float(self.tone_curve_strength),
             "tone_curve_midpoint": float(self.tone_curve_midpoint),
@@ -116,18 +202,48 @@ class RawRenderSettings:
         if value is None:
             return cls.default()
         if isinstance(value, cls):
-            return value
-        mapping = dict(value) if isinstance(value, Mapping) else {}
-        white_balance_mode = str(mapping.get("white_balance_mode") or "camera").strip().lower() or "camera"
+            mapping = dict(value.to_dict())
+        else:
+            mapping = dict(value) if isinstance(value, Mapping) else {}
         wb_multipliers = _coerce_float_tuple(mapping.get("wb_multipliers"), 3)
         wb_selection = _coerce_float_tuple(mapping.get("wb_selection"), 4)
+        white_balance_mode = _normalize_white_balance_mode(mapping.get("white_balance_mode") or "camera", wb_multipliers=wb_multipliers)
+        wb_multiplier_space = _normalize_white_balance_multiplier_space(
+            mapping.get("wb_multiplier_space"),
+            wb_multipliers=wb_multipliers,
+        )
+        wb_sample_point = _coerce_point_tuple(mapping.get("wb_sample_point"), 2)
+        sample_size_raw = mapping.get("wb_sample_size")
+        wb_sample_size = None
+        if sample_size_raw is not None:
+            try:
+                sample_size = int(sample_size_raw)
+            except Exception:
+                sample_size = 0
+            if sample_size > 0:
+                wb_sample_size = sample_size
+        wb_sample_base_mode = _normalize_wb_sample_base_mode(
+            mapping.get("wb_sample_base_mode"),
+            white_balance_mode=white_balance_mode,
+            wb_multipliers=wb_multipliers,
+        )
+        wb_selection_space = str(mapping.get("wb_selection_space") or "").strip() or None
         return cls(
             white_balance_mode=white_balance_mode,
             wb_multipliers=wb_multipliers,  # type: ignore[arg-type]
             wb_selection=wb_selection,  # type: ignore[arg-type]
+            wb_multiplier_space=wb_multiplier_space,
+            wb_sample_point=wb_sample_point,  # type: ignore[arg-type]
+            wb_sample_size=wb_sample_size,
+            wb_sample_base_mode=wb_sample_base_mode,
+            wb_selection_space=wb_selection_space,
             auto_levels=_coerce_bool(mapping.get("auto_levels"), True),
             black_percentile=_coerce_float(mapping.get("black_percentile"), 0.001),
             white_percentile=_coerce_float(mapping.get("white_percentile"), 0.999),
+            auto_levels_strength=_coerce_float_in_range(mapping.get("auto_levels_strength"), 1.0, 0.0, 1.0),
+            auto_levels_soft_tails=_coerce_bool(mapping.get("auto_levels_soft_tails"), False),
+            auto_levels_tail_size=_coerce_float_in_range(mapping.get("auto_levels_tail_size"), 0.03, 0.0, 0.5),
+            auto_levels_shadow_lift=_coerce_float_in_range(mapping.get("auto_levels_shadow_lift"), 0.0, 0.0, 0.25),
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),
             tone_curve_strength=_coerce_float(mapping.get("tone_curve_strength"), 0.5),
             tone_curve_midpoint=_coerce_float(mapping.get("tone_curve_midpoint"), 0.5),
@@ -200,47 +316,18 @@ def _build_postprocess_kwargs(
 
 
 def _to_float_rgb(rgb: Any) -> np.ndarray:
-    arr = np.asarray(rgb)
-    if arr.ndim == 2:
-        arr = np.repeat(arr[..., None], 3, axis=2)
-    if arr.ndim != 3 or arr.shape[-1] < 3:
-        raise ValueError("Expected an RGB image with at least 3 channels")
-    arr = np.asarray(arr[..., :3], dtype=np.float64)
-    arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
-    if np.issubdtype(np.asarray(rgb).dtype, np.integer):
-        max_value = float(np.iinfo(np.asarray(rgb).dtype).max)
-        if max_value > 0:
-            arr = arr / max_value
-    elif arr.max(initial=0.0) > 1.0:
-        arr = arr / float(arr.max(initial=1.0))
-    return np.clip(arr, 0.0, 1.0)
+    return to_float_rgb(rgb)
 
 
-def _apply_auto_levels(rgb: np.ndarray, black_percentile: float, white_percentile: float) -> np.ndarray:
-    arr = np.asarray(rgb, dtype=np.float64)
-    if arr.ndim != 3 or arr.shape[-1] < 3:
-        raise ValueError("Expected an RGB image with at least 3 channels")
-    arr = arr[..., :3]
-    black_percentile = float(np.clip(black_percentile, 0.0, 1.0))
-    white_percentile = float(np.clip(white_percentile, 0.0, 1.0))
-    if white_percentile <= black_percentile:
-        return np.clip(arr, 0.0, 1.0)
-
-    luminance = (
-        arr[..., 0] * 0.2126
-        + arr[..., 1] * 0.7152
-        + arr[..., 2] * 0.0722
-    )
-    low = float(np.quantile(luminance, black_percentile))
-    high = float(np.quantile(luminance, white_percentile))
-    if not np.isfinite(low) or not np.isfinite(high) or high <= low:
-        return np.clip(arr, 0.0, 1.0)
-
-    mapped = np.clip((luminance - low) / (high - low), 0.0, 1.0)
-    scale = np.ones_like(luminance, dtype=np.float64)
-    usable = luminance > np.finfo(np.float64).eps
-    scale[usable] = mapped[usable] / luminance[usable]
-    return np.clip(arr * scale[..., None], 0.0, 1.0)
+def _apply_auto_levels(
+    rgb: np.ndarray,
+    black_percentile: float,
+    white_percentile: float,
+    *,
+    shadow_lift: float = 0.0,
+) -> np.ndarray:
+    black_level, white_level = compute_auto_level_bounds(rgb, black_percentile, white_percentile)
+    return apply_auto_levels_from_bounds(rgb, black_level, white_level, shadow_lift=shadow_lift)
 
 
 def _render_raw_array(
@@ -311,12 +398,14 @@ def build_raw_processing_metadata(
     height: int,
     source_mime_type: str | None = None,
     source_capture_datetime: datetime | str | None = None,
+    rendered_at: datetime | str | None = None,
 ) -> dict[str, Any]:
     """Build the metadata snapshot for a rendered-from-RAW local derivative."""
     source = Path(source_path)
     derivative = Path(local_derivative_path)
     render_settings = RawRenderSettings.from_dict(settings).to_dict()
     captured_at = _format_capture_datetime(source_capture_datetime)
+    rendered_at_text = _format_capture_datetime(rendered_at)
     return {
         "engine": "rawpy",
         "source": {
@@ -334,6 +423,7 @@ def build_raw_processing_metadata(
             "subsampling": RAW_DERIVATIVE_SUBSAMPLING,
             "width": int(width),
             "height": int(height),
+            **({"rendered_at": rendered_at_text} if rendered_at_text else {}),
         },
         "settings": render_settings,
     }
@@ -376,46 +466,37 @@ def render_raw_image(
     destination_had_file = destination.exists()
 
     try:
-        if render_settings.white_balance_mode == "background" and render_settings.wb_selection is not None:
-            preview_rgb = _render_raw_array(
-                rawpy_module,
-                source,
-                render_settings,
-                preview=preview,
-                wb_mode="camera",
-            )
+        sample_base_mode = str(render_settings.wb_sample_base_mode or "").strip().lower() or None
+        if sample_base_mode not in {"camera", "auto"}:
+            sample_base_mode = "auto" if render_settings.white_balance_mode == "auto" else "camera"
+        rawpy_mode = sample_base_mode if sample_base_mode in {"camera", "auto"} else "camera"
+        rgb = _render_raw_array(
+            rawpy_module,
+            source,
+            render_settings,
+            preview=preview,
+            wb_mode=rawpy_mode,
+        )
+
+        processing_settings = render_settings
+        if (
+            render_settings.white_balance_mode in {"background", "custom"}
+            and render_settings.wb_multipliers is None
+            and render_settings.wb_selection is not None
+        ):
             background_wb = estimate_white_balance_from_background(
-                _to_float_rgb(preview_rgb),
+                to_float_rgb(rgb),
                 rect=render_settings.wb_selection,
             )
-            user_wb = [float(background_wb[0]), float(background_wb[1]), float(background_wb[2]), float(background_wb[1])]
-            rgb = _render_raw_array(
-                rawpy_module,
-                source,
+            processing_settings = replace(
                 render_settings,
-                preview=preview,
-                user_wb=user_wb,
+                white_balance_mode="custom",
+                wb_multipliers=(float(background_wb[0]), float(background_wb[1]), float(background_wb[2])),
+                wb_multiplier_space="post_decode_rgb",
+                wb_sample_base_mode=rawpy_mode,
             )
-        else:
-            rgb = _render_raw_array(
-                rawpy_module,
-                source,
-                render_settings,
-                preview=preview,
-            )
-        rgb_float = _to_float_rgb(rgb)
-        if render_settings.auto_levels:
-            rgb_float = _apply_auto_levels(
-                rgb_float,
-                render_settings.black_percentile,
-                render_settings.white_percentile,
-            )
-        if render_settings.tone_curve_enabled:
-            rgb_float = apply_luminance_tone_curve(
-                rgb_float,
-                render_settings.tone_curve_strength,
-                render_settings.tone_curve_midpoint,
-            )
+
+        rgb_float = apply_post_decode_processing(rgb, processing_settings)
         _save_local_derivative_jpeg(
             rgb_float,
             destination,
@@ -430,6 +511,29 @@ def render_raw_image(
         raise RuntimeError(f"RAW rendering failed for {source.name}: {exc}") from exc
 
 
+def render_raw_preview(
+    source_path: str | Path,
+    *,
+    settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None = None,
+    output_path: str | Path | None = None,
+    output_dir: str | Path | None = None,
+    **kwargs: Any,
+) -> Path:
+    """Render a temporary RAW preview using the same engine as the final derivative."""
+    source_capture_datetime = kwargs.pop("source_capture_datetime", None)
+    if source_capture_datetime is None:
+        source_capture_datetime = read_rawpy_capture_datetime(source_path)
+    return render_raw_image(
+        source_path,
+        settings=settings,
+        output_path=output_path,
+        output_dir=output_dir,
+        preview=True,
+        source_capture_datetime=source_capture_datetime,
+        **kwargs,
+    )
+
+
 __all__ = [
     "RAW_DERIVATIVE_FORMAT",
     "RAW_DERIVATIVE_MIME_TYPE",
@@ -439,4 +543,5 @@ __all__ = [
     "RawRenderingUnavailableError",
     "build_raw_processing_metadata",
     "render_raw_image",
+    "render_raw_preview",
 ]

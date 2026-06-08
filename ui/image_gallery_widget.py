@@ -623,6 +623,21 @@ class ImageGalleryWidget(QGroupBox):
 
         return badges
 
+    @staticmethod
+    def build_raw_source_badges(lab_metadata, translate=None) -> list[str]:
+        tr = translate if translate is not None else (lambda text: text)
+        if not isinstance(lab_metadata, dict):
+            return []
+        raw_processing = lab_metadata.get("raw_processing")
+        if not isinstance(raw_processing, dict):
+            return []
+        source = raw_processing.get("source")
+        if not isinstance(source, dict):
+            return []
+        if str(source.get("kind") or "").strip().lower() == "camera_raw":
+            return [tr("RAW")]
+        return []
+
     def select_image(self, image_id: int | None) -> None:
         self._selected_id = image_id
         self._selected_keys = set()

@@ -226,6 +226,7 @@ def test_add_image_round_trips_raw_processing_metadata_json(tmp_path, monkeypatc
             "subsampling": 0,
             "width": 2,
             "height": 2,
+            "rendered_at": "2026:05:01 10:05:00",
         },
         "settings": {
             "white_balance_mode": "camera",
@@ -258,6 +259,7 @@ def test_add_image_round_trips_raw_processing_metadata_json(tmp_path, monkeypatc
     assert image["lab_metadata"]["raw_processing"]["local_derivative"]["mime_type"] == "image/jpeg"
     assert image["lab_metadata"]["raw_processing"]["local_derivative"]["quality"] == 95
     assert image["lab_metadata"]["raw_processing"]["local_derivative"]["subsampling"] == 0
+    assert image["lab_metadata"]["raw_processing"]["local_derivative"]["rendered_at"] == "2026:05:01 10:05:00"
     assert image["lab_metadata"]["raw_processing"]["settings"]["white_balance_mode"] == "camera"
 
 
