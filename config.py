@@ -37,6 +37,11 @@ LOCAL_IMPORT_IMAGE_FILTER = (
 SETTING_RAW_COMPANION_SOURCE_PREFERENCE = "raw_companion_source_preference"
 RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW = "prefer_raw"
 RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG = "camera_jpeg"
+# Advanced RAW processing preferences used by Live Lab and the curve inspector.
+SETTING_RAW_PROCESSING_DARK_CUTOFF = "raw_processing_dark_cutoff"
+SETTING_RAW_PROCESSING_BRIGHT_CUTOFF = "raw_processing_bright_cutoff"
+SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED = "raw_processing_shadow_lift_enabled"
+SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX = "raw_processing_shadow_lift_max"
 # Legacy alias for direct-open callers.
 SUPPORTED_FORMATS = RASTER_IMAGE_FILTER
 RAW_FORMATS = tuple(sorted(SUPPORTED_RAW_SUFFIXES))

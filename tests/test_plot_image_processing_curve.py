@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QSlider, QSizePolicy
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -114,8 +115,8 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     assert isinstance(window.curve_midpoint_slider, QSlider)
     assert window.dark_cutoff_slider.minimum() == 0
     assert window.dark_cutoff_slider.maximum() == 50
-    assert window.dark_cutoff_value_label.text() == "0.10%"
-    assert window.bright_cutoff_value_label.text() == "0.10%"
+    assert window.dark_cutoff_value_label.text() == "0.05%"
+    assert window.bright_cutoff_value_label.text() == "0.05%"
     assert window.auto_levels_strength_slider.minimum() == 0
     assert window.auto_levels_strength_slider.maximum() == 100
     assert window.auto_levels_strength_value_label.text() == "100%"
@@ -154,6 +155,27 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     assert window.black_level_label.text() != "—"
     assert window.figure.axes[0].get_xlabel() == "Input luminance"
     assert window.figure.axes[0].get_ylabel() == "Output luminance"
+
+
+def test_zoomable_preview_refresh_preserves_view_state(qapp):
+    label = ZoomableImageLabel()
+    label.setFixedSize(200, 200)
+
+    first_pixmap = QPixmap(100, 100)
+    first_pixmap.fill(Qt.red)
+    label.set_image_sources(first_pixmap, "/tmp/source_one.jpg")
+    label.set_view_state(QPointF(25, 30), 2.0)
+    before = label.get_view_state()
+    assert before is not None
+
+    second_pixmap = QPixmap(100, 100)
+    second_pixmap.fill(Qt.blue)
+    label.set_image_sources(second_pixmap, "/tmp/source_one.jpg", preserve_view=True)
+    after = label.get_view_state()
+    assert after is not None
+    assert after["zoom"] == pytest.approx(before["zoom"])
+    assert after["center"].x() == pytest.approx(before["center"].x())
+    assert after["center"].y() == pytest.approx(before["center"].y())
 
 
 def test_processing_curve_window_uses_real_chart_transfer_mapping(qapp):

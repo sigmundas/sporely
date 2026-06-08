@@ -382,14 +382,14 @@ class ProcessingCurveWindow(QMainWindow):
         controls_form.addRow("Shadow lift", shadow_lift_row)
 
         dark_cutoff_row, self.dark_cutoff_slider, self.dark_cutoff_value_label = self._create_cutoff_slider_row(
-            cutoff_percent=0.10,
+            cutoff_percent=0.05,
         )
         self.black_quantile_slider = self.dark_cutoff_slider
         self.black_quantile_value_label = self.dark_cutoff_value_label
         controls_form.addRow("Dark cutoff", dark_cutoff_row)
 
         bright_cutoff_row, self.bright_cutoff_slider, self.bright_cutoff_value_label = self._create_cutoff_slider_row(
-            cutoff_percent=0.10,
+            cutoff_percent=0.05,
         )
         self.white_quantile_slider = self.bright_cutoff_slider
         self.white_quantile_value_label = self.bright_cutoff_value_label
@@ -891,15 +891,9 @@ class ProcessingCurveWindow(QMainWindow):
         source_rgb = self._source.rgb
         processed_rgb, debug = apply_post_decode_processing(source_rgb, self._settings, return_debug=True)
 
-        previous_view_state = self.preview_label.get_view_state()
         preview_pixmap = _rgb_to_pixmap(processed_rgb)
-        self.preview_label.set_image_sources(preview_pixmap)
+        self.preview_label.set_image_sources(preview_pixmap, preserve_view=True)
         self.preview_label.set_pan_without_shift(True)
-        if previous_view_state and tuple(previous_view_state.get("size", ())) == (preview_pixmap.width(), preview_pixmap.height()):
-            try:
-                self.preview_label.set_view_state(previous_view_state["center"], previous_view_state["zoom"])
-            except Exception:
-                pass
 
         self.figure.clear()
         _draw_processing_figure(self.figure, source_rgb, self._settings, debug=debug)

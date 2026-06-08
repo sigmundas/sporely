@@ -240,10 +240,17 @@ class _CloudAutoSyncWorker(QThread):
     error = Signal(str)
     prepare_requested = Signal(object)
 
-    def __init__(self, prepare_images_cb=None, materialize_remote_images: bool = False, parent=None):
+    def __init__(
+        self,
+        prepare_images_cb=None,
+        materialize_remote_images: bool = False,
+        sync_images: bool = True,
+        parent=None,
+    ):
         super().__init__(parent)
         self.setObjectName("Cloud sync")
-        self._prepare_images_cb = prepare_images_cb
+        self._sync_images = bool(sync_images)
+        self._prepare_images_cb = prepare_images_cb if self._sync_images else None
         self._materialize_remote_images = bool(materialize_remote_images)
         self.prepare_requested.connect(self._handle_prepare_request)
 
@@ -291,9 +298,9 @@ class _CloudAutoSyncWorker(QThread):
             result = sync_all(
                 client,
                 progress_cb=lambda msg, cur, tot: self.progress.emit(msg, cur, tot),
-                sync_images=True,
+                sync_images=self._sync_images,
                 materialize_remote_images=self._materialize_remote_images,
-                prepare_images_cb=self._prepare_images,
+                prepare_images_cb=self._prepare_images if self._sync_images else None,
             )
             if "skipped" not in result:
                 result["skipped"] = False
@@ -1287,6 +1294,10 @@ class ObservationsTab(QWidget):
         self._cloud_sync_show_status = False
         self._cloud_sync_run_refresh_flow = False
         self._cloud_sync_startup_scheduled = False
+        self._metadata_sync_delay_ms = 8000
+        self._metadata_sync_timer = QTimer(self)
+        self._metadata_sync_timer.setSingleShot(True)
+        self._metadata_sync_timer.timeout.connect(self._on_metadata_sync_timeout)
         self._delete_in_progress = False
         self._thumb_loader: _ThumbnailLoaderWorker | None = None
         self._thumb_pending_paths: set = set()
@@ -2290,6 +2301,64 @@ class ObservationsTab(QWidget):
         except Exception as e:
             print(f"Background auto-sync failed: {e}")
 
+    def _current_window(self):
+        try:
+            return self.window()
+        except Exception:
+            return None
+
+    def _cloud_sync_pending_ids(self) -> list[int]:
+        window = self._current_window()
+        getter = getattr(window, "_cloud_sync_pending_observation_ids", None) if window is not None else None
+        if not callable(getter):
+            return []
+        try:
+            return [int(obs_id) for obs_id in getter() if int(obs_id) > 0]
+        except Exception:
+            return []
+
+    def _metadata_sync_should_pause(self) -> bool:
+        if self._is_cloud_sync_running():
+            return True
+        if QApplication.activeModalWidget() is not None:
+            return True
+        window = self._current_window()
+        if window is not None and bool(getattr(window, "measurement_active", False)):
+            return True
+        return False
+
+    def schedule_metadata_cloud_sync(self, observation_id: int | None = None) -> None:
+        try:
+            obs_id = int(observation_id or 0)
+        except Exception:
+            obs_id = 0
+        if obs_id > 0:
+            obs = ObservationDB.get_observation(obs_id)
+            if not obs or not str(obs.get("cloud_id") or "").strip():
+                return
+        self._metadata_sync_timer.start(self._metadata_sync_delay_ms)
+
+    def _on_metadata_sync_timeout(self) -> None:
+        if self._metadata_sync_should_pause():
+            self._metadata_sync_timer.start(self._metadata_sync_delay_ms)
+            return
+        pending_ids = self._cloud_sync_pending_ids()
+        if not pending_ids:
+            self._metadata_sync_timer.stop()
+            return
+        try:
+            started = self._start_cloud_sync(
+                show_status=False,
+                run_refresh_flow=False,
+                sync_images=False,
+                materialize_remote_images=False,
+            )
+        except Exception as exc:
+            print(f"Background metadata sync failed: {exc}")
+            return
+        if started:
+            self._metadata_sync_timer.stop()
+
     def _is_cloud_sync_running(self) -> bool:
         worker = getattr(self, "_cloud_sync_worker", None)
         if worker is None:
@@ -2327,6 +2396,7 @@ class ObservationsTab(QWidget):
         self,
         show_status: bool,
         run_refresh_flow: bool,
+        sync_images: bool = True,
         materialize_remote_images: bool = False,
     ) -> bool:
         if self._cloud_sync_worker is not None:
@@ -2340,8 +2410,9 @@ class ObservationsTab(QWidget):
         self._cloud_sync_show_status = bool(show_status)
         self._cloud_sync_run_refresh_flow = bool(run_refresh_flow)
         self._cloud_sync_worker = _CloudAutoSyncWorker(
-            prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+            prepare_images_cb=self.prepare_cloud_sync_image_uploads if sync_images else None,
             materialize_remote_images=materialize_remote_images,
+            sync_images=sync_images,
             parent=self,
         )
         self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
@@ -2351,7 +2422,12 @@ class ObservationsTab(QWidget):
         self._cloud_sync_worker.error.connect(self._on_cloud_sync_worker_done)
         if show_status:
             self._set_status_progress_visible(True)
-            self._set_status_progress(self.tr("Preparing Sporely Cloud sync..."), 0, 1)
+            progress_text = (
+                self.tr("Preparing Sporely Cloud metadata sync...")
+                if not sync_images
+                else self.tr("Preparing Sporely Cloud sync...")
+            )
+            self._set_status_progress(progress_text, 0, 1)
         if hasattr(self, "delete_btn"):
             self.delete_btn.setEnabled(False)
         self._cloud_sync_worker.start()
@@ -3401,6 +3477,7 @@ class ObservationsTab(QWidget):
                     observation_id,
                     publish_target=target,
                 )
+                self.schedule_metadata_cloud_sync(observation_id)
             except Exception:
                 return False
 
@@ -7753,6 +7830,7 @@ class ObservationsTab(QWidget):
         if obs_id:
             if uploader.key in {"mobile", "web"}:
                 ObservationDB.update_observation(observation_id, artsdata_id=int(obs_id))
+                self.schedule_metadata_cloud_sync(observation_id)
                 if uploader.key == "web":
                     ImageDB.mark_observation_images_artsobs_web_uploaded(observation_id)
                 self._artsobs_dead_by_observation_id[observation_id] = False
@@ -7930,6 +8008,7 @@ class ObservationsTab(QWidget):
                     gps_longitude=data.get('gps_longitude'),
                     allow_nulls=True
                 )
+                self.schedule_metadata_cloud_sync(obs_id)
 
                 self._apply_import_results_to_observation(
                     obs_id,
@@ -7993,6 +8072,7 @@ class ObservationsTab(QWidget):
                         gps_longitude=obs_lon,
                         allow_nulls=True,
                     )
+                    self.schedule_metadata_cloud_sync(obs_id)
                     if observation is not None:
                         observation["gps_latitude"] = obs_lat
                         observation["gps_longitude"] = obs_lon
@@ -8062,6 +8142,7 @@ class ObservationsTab(QWidget):
             gps_longitude=obs_lon,
             allow_nulls=True,
         )
+        self.schedule_metadata_cloud_sync(obs_id)
         self._apply_import_results_to_observation(obs_id, image_results, existing_images=existing_images)
         self.refresh_observations()
         for r, obs in enumerate(ObservationDB.get_all_observations()):

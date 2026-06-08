@@ -75,12 +75,16 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state.objective_combo = QComboBox()
     state.objective_combo.addItem("Not set", None)
     state.contrast_combo = QComboBox()
+    state.contrast_combo.addItem("Not set", "Not_set")
     state.contrast_combo.addItem("Phase", "phase")
     state.mount_combo = QComboBox()
+    state.mount_combo.addItem("Not set", "Not_set")
     state.mount_combo.addItem("Water", "water")
     state.stain_combo = QComboBox()
+    state.stain_combo.addItem("Not set", "Not_set")
     state.stain_combo.addItem("None", "none")
     state.sample_combo = QComboBox()
+    state.sample_combo.addItem("Not set", "Not_set")
     state.sample_combo.addItem("Spore", "spore")
     state.pending_raw_frame = QFrame()
     state.pending_raw_count_label = QLabel()
@@ -123,6 +127,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
             max(float(start.x()), float(end.x())),
             max(float(start.y()), float(end.y())),
         ),
+        size=lambda: SimpleNamespace(
+            width=lambda: int(state.live_image_label.original_pixmap.width()),
+            height=lambda: int(state.live_image_label.original_pixmap.height()),
+        ),
+        get_current_view_crop_rect=lambda: None,
         setCursor=lambda cursor: setattr(state.live_image_label, "cursor", cursor),
     )
     state.session_gallery = SimpleNamespace(
@@ -174,8 +183,14 @@ def _build_raw_controls_state() -> SimpleNamespace:
     )
     state._set_raw_tone_controls_enabled = lambda enabled: live_lab_tab.LiveLabTab._set_raw_tone_controls_enabled(state, enabled)
     state._raw_settings_summary_text = lambda settings: live_lab_tab.LiveLabTab._raw_settings_summary_text(state, settings)
+    state._raw_settings_info_text = lambda settings: live_lab_tab.LiveLabTab._raw_settings_info_text(state, settings)
     state._raw_processing_summary_text = lambda: live_lab_tab.LiveLabTab._raw_processing_summary_text(state)
+    state._refresh_raw_processing_context_ui = lambda: live_lab_tab.LiveLabTab._refresh_raw_processing_context_ui(state)
     state._update_raw_processing_section_label = lambda expanded: live_lab_tab.LiveLabTab._update_raw_processing_section_label(state, expanded)
+    state._lab_state_combo_alert_stylesheet = lambda: live_lab_tab.LiveLabTab._lab_state_combo_alert_stylesheet(state)
+    state._combo_is_unset = lambda combo: live_lab_tab.LiveLabTab._combo_is_unset(combo)
+    state._set_lab_state_combo_alert = lambda combo, alert: live_lab_tab.LiveLabTab._set_lab_state_combo_alert(state, combo, alert)
+    state._update_lab_state_combo_alerts = lambda *_args: live_lab_tab.LiveLabTab._update_lab_state_combo_alerts(state, *_args)
     state._current_raw_render_settings = lambda: live_lab_tab.LiveLabTab._current_raw_render_settings(state)
     state._raw_settings_has_sampled_background_wb = lambda settings=None: live_lab_tab.LiveLabTab._raw_settings_has_sampled_background_wb(settings)
     state._raw_settings_for_copy = lambda settings: live_lab_tab.LiveLabTab._raw_settings_for_copy(state, settings)
@@ -194,6 +209,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._raw_background_wb_sample_base_mode = lambda settings=None: live_lab_tab.LiveLabTab._raw_background_wb_sample_base_mode(state, settings)
     state._raw_background_wb_sampling_settings = lambda settings=None: live_lab_tab.LiveLabTab._raw_background_wb_sampling_settings(state, settings)
     state._raw_background_wb_sampling_pixmap = lambda target="pending": live_lab_tab.LiveLabTab._raw_background_wb_sampling_pixmap(state, target)
+    state._raw_background_wb_sampling_view = lambda target="pending": live_lab_tab.LiveLabTab._raw_background_wb_sampling_view(state, target)
     state._raw_background_wb_sample_rect_from_point = lambda point, sample_size=None, pixmap=None: live_lab_tab.LiveLabTab._raw_background_wb_sample_rect_from_point(
         state,
         point,
@@ -465,6 +481,10 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     )
 
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Camera WB · Auto levels · Curve off"
+    assert (
+        state._raw_settings_info_text(RawRenderSettings.default())
+        == "Camera WB · Dark cutoff 0.05% · Bright cutoff 0.05% · Shadow lift 0.0% · Soft tails off · Curve strength 50% · Curve midpoint 50%"
+    )
     assert state.raw_curve_strength_row.isEnabled() is False
     assert state.raw_curve_midpoint_row.isEnabled() is False
     assert state.raw_curve_strength_slider.isEnabled() is False
@@ -1083,8 +1103,6 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     )
     tab._pending_raw_captures = [pending]
     tab._selected_pending_raw_index = 0
-    tab.raw_capture_mode_selector.set_selected_value(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
-    tab._raw_capture_mode = live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW
     tab._update_pending_raw_controls()
     qapp.processEvents()
 
@@ -1096,7 +1114,7 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     assert tab.pending_raw_save_btn.text() == "Save current"
     assert tab.pending_raw_apply_all_btn.text() == "Apply settings to all pending"
     assert tab.pending_raw_pick_wb_btn.text() == "Pick background WB"
-    assert tab.pending_raw_shortcuts_label.text() == "←/→ select · Delete discard · Enter save"
+    assert tab.pending_raw_shortcuts_label.text() == "←/→ select · Delete/Backspace remove current image · Enter save"
     assert tab.session_gallery._items[0]["id"].startswith("pending:")
     assert tab.session_gallery._items[0]["badges"][0] == "UNSAVED RAW"
     assert tab.session_gallery._items[0]["frame_border_color"] == "#e67e22"
@@ -1210,6 +1228,22 @@ def test_live_lab_review_keyboard_shortcut_discard_removes_selected_pending(tmp_
     assert add_image_calls == []
 
 
+def test_live_lab_current_lab_state_unset_combo_is_alert_styled():
+    _qapp()
+    state = _build_raw_controls_state()
+
+    live_lab_tab.LiveLabTab._update_lab_state_combo_alerts(state)
+
+    assert state.objective_combo.property("labStateAlert") is True
+    assert state.objective_combo.styleSheet().startswith('QComboBox[labStateAlert="true"]')
+    assert "background-color" in state.objective_combo.styleSheet()
+    assert "QAbstractItemView" in state.objective_combo.styleSheet()
+    assert state.contrast_combo.property("labStateAlert") is True
+    assert state.mount_combo.property("labStateAlert") is True
+    assert state.stain_combo.property("labStateAlert") is True
+    assert state.sample_combo.property("labStateAlert") is True
+
+
 def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tmp_path, monkeypatch):
     _qapp()
     source_path = tmp_path / "P070020_1.ORF"
@@ -1272,6 +1306,12 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
     assert state.pending_raw_pick_wb_btn.isChecked() is False
     assert state.raw_white_balance_combo.currentData() == "custom"
     assert state.viewer_meta_label.text().startswith("Custom WB")
+    assert "Dark cutoff" in state.viewer_meta_label.text()
+    assert "Bright cutoff" in state.viewer_meta_label.text()
+    assert "Shadow lift" in state.viewer_meta_label.text()
+    assert "Soft tails" in state.viewer_meta_label.text()
+    assert "Curve strength" in state.viewer_meta_label.text()
+    assert "Curve midpoint" in state.viewer_meta_label.text()
     assert state.pending_raw_shortcuts_label.text().startswith("Custom WB")
     assert "Enter save" in state.pending_raw_shortcuts_label.text()
     preview_payload = json.loads(Path(pending.preview_path).read_text(encoding="utf-8"))
@@ -1291,6 +1331,66 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
     assert pending is not None
     assert pending.raw_settings.wb_multipliers == pytest.approx((2.0, 1.0, 4.0), rel=1e-3)
     assert pending.raw_settings.wb_sample_base_mode == "camera"
+    assert captured_calls == []
+    assert add_image_calls == []
+
+
+def test_live_lab_background_wb_sampling_tracks_zoomed_view_crop(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = []
+    state._selected_session_image_id = None
+    state._session_import_count = 0
+    state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
+    state._raw_processing_preset_context = lambda: {}
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: None
+    state._update_session_controls = lambda: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._update_observation_thumbnail = lambda: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state.raw_capture_mode_selector.set_selected_value(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+    state._on_raw_capture_mode_changed(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+
+    preview_image = QImage(8, 8, QImage.Format.Format_RGB32)
+    for y in range(8):
+        for x in range(8):
+            preview_image.setPixelColor(x, y, live_lab_tab.QColor(20, 40, 10))
+    preview_pixmap = QPixmap.fromImage(preview_image)
+    state._load_viewer_pixmap = lambda path: (preview_pixmap, False)
+
+    captured_calls: list[dict[str, object]] = []
+    add_image_calls: list[dict[str, object]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: tmp_path / "imports" / f"{source.stem}.jpg",
+        captured_calls=captured_calls,
+        add_image_calls=add_image_calls,
+    )
+    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+
+    assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_path), group_key="group-1", state={})
+    pending = state._current_pending_raw_capture()
+    assert pending is not None
+
+    state.live_image_label.get_current_view_crop_rect = lambda: (2.0, 1.0, 4.0, 4.0)
+    state.live_image_label.size = lambda: SimpleNamespace(width=lambda: 4, height=lambda: 4)
+
+    live_lab_tab.LiveLabTab._toggle_pending_raw_background_wb_pick(state, True)
+    assert live_lab_tab.LiveLabTab._on_live_image_clicked_for_background_wb(state, QPointF(4.0, 3.0)) is None
+
+    pending = state._current_pending_raw_capture()
+    assert pending is not None
+    assert pending.raw_settings.wb_sample_point == pytest.approx((4.0, 3.0), rel=1e-3)
+    assert pending.raw_settings.wb_selection == pytest.approx((2.0, 1.0, 4.0, 4.0), rel=1e-3)
+    assert pending.raw_settings.wb_multipliers == pytest.approx((2.0, 1.0, 4.0), rel=1e-3)
+    assert state.pending_raw_pick_wb_btn.isChecked() is False
     assert captured_calls == []
     assert add_image_calls == []
 
@@ -1343,7 +1443,7 @@ def test_live_lab_pending_raw_invalid_background_wb_sample_leaves_settings_uncha
 
     live_lab_tab.LiveLabTab._cancel_active_raw_background_wb_selection(state)
     assert state.pending_raw_pick_wb_btn.isChecked() is False
-    assert state.pending_raw_shortcuts_label.text() == "←/→ select · Delete discard · Enter save"
+    assert state.pending_raw_shortcuts_label.text() == "←/→ select · Delete/Backspace remove current image · Enter save"
     assert captured_calls == []
     assert add_image_calls == []
 
@@ -1416,6 +1516,12 @@ def test_live_lab_committed_raw_edit_background_wb_click_sets_custom_mode_and_ap
     assert state._raw_edit_session.working_settings.wb_selection == pytest.approx((0.0, 0.0, 5.5, 5.5), rel=1e-3)
     assert state._raw_edit_session.working_settings.wb_multipliers == pytest.approx((2.0, 1.0, 4.0), rel=1e-3)
     assert "Custom WB" in state.raw_edit_summary_label.text()
+    assert "Dark cutoff" in state.raw_edit_summary_label.text()
+    assert "Bright cutoff" in state.raw_edit_summary_label.text()
+    assert "Shadow lift" in state.raw_edit_summary_label.text()
+    assert "Soft tails" in state.raw_edit_summary_label.text()
+    assert "Curve strength" in state.raw_edit_summary_label.text()
+    assert "Curve midpoint" in state.raw_edit_summary_label.text()
     assert state.raw_edit_pick_wb_btn.isChecked() is False
 
     state.raw_tone_curve_checkbox.setChecked(True)

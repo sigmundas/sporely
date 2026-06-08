@@ -59,6 +59,16 @@ def _clamp_unit(value: Any, default: float = 0.0) -> float:
     return float(np.clip(numeric, 0.0, 1.0))
 
 
+def _clamp_range(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        numeric = float(value)
+    except Exception:
+        numeric = float(default)
+    if not np.isfinite(numeric):
+        numeric = float(default)
+    return float(np.clip(numeric, float(minimum), float(maximum)))
+
+
 def _raw_settings_class():
     from utils.raw_render import RawRenderSettings
 
@@ -96,6 +106,10 @@ def raw_settings_from_basic_controls(
     contrast: float,
     midpoint: float,
     preserve_tails: bool,
+    dark_cutoff: float = 0.0005,
+    bright_cutoff: float = 0.0005,
+    shadow_lift_enabled: bool = True,
+    shadow_lift_max: float = 0.05,
     existing_settings: Any | None = None,
 ) -> Any:
     """Map simplified Live Lab controls into a full RAW settings snapshot."""
@@ -126,8 +140,15 @@ def raw_settings_from_basic_controls(
     midpoint_value = _clamp_unit(midpoint, 0.5)
     curve_midpoint = 0.18 + midpoint_value * 0.64
     curve_strength = 0.08 + 0.72 * (contrast_value ** 1.35)
-    dark_bias = smoothstep((0.50 - curve_midpoint) / 0.35)
-    shadow_lift = min(0.05, 0.005 + 0.045 * dark_bias * contrast_value)
+    dark_cutoff_value = _clamp_range(dark_cutoff, 0.0005, 0.0, 0.02)
+    bright_cutoff_value = _clamp_range(bright_cutoff, 0.0005, 0.0, 0.02)
+    lift_enabled = bool(shadow_lift_enabled)
+    lift_max = _clamp_range(shadow_lift_max, 0.05, 0.0, 0.05)
+    if lift_enabled and midpoint_value < 0.20:
+        lift_ratio = float(smoothstep((0.20 - midpoint_value) / 0.20))
+        shadow_lift = float(np.clip(lift_max * lift_ratio, 0.0, lift_max))
+    else:
+        shadow_lift = 0.0
 
     resolved = replace(
         base_settings,
@@ -140,8 +161,8 @@ def raw_settings_from_basic_controls(
         wb_sample_base_mode=resolved_wb_sample_base_mode,
         wb_selection_space=resolved_wb_selection_space,
         auto_levels=True,
-        black_percentile=0.0005,
-        white_percentile=0.9995,
+        black_percentile=float(dark_cutoff_value),
+        white_percentile=float(max(0.0, 1.0 - bright_cutoff_value)),
         auto_levels_strength=1.0,
         auto_levels_soft_tails=bool(preserve_tails),
         auto_levels_tail_size=0.03,
@@ -584,6 +605,7 @@ def compute_post_decode_transfer_curve(
 
 
 __all__ = [
+    "RawBasicControlState",
     "ProcessingDebugInfo",
     "PostDecodeTransferCurve",
     "apply_auto_levels_from_bounds",
@@ -598,5 +620,7 @@ __all__ = [
     "hard_luminance_levels",
     "smoothstep",
     "soft_luminance_levels",
+    "raw_basic_controls_from_settings",
+    "raw_settings_from_basic_controls",
     "to_float_rgb",
 ]

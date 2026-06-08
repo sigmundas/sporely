@@ -40,6 +40,7 @@ from PySide6.QtCore import (
     Signal,
     QPoint,
     QEvent,
+    QSignalBlocker,
     QStringListModel,
     QUrl,
     QStandardPaths,
@@ -396,7 +397,16 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, LEGACY_APP_NAME, app_data_dir
-from config import LOCAL_IMPORT_IMAGE_FILTER
+from config import (
+    LOCAL_IMPORT_IMAGE_FILTER,
+    RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
+    RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+    SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+    SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+    SETTING_RAW_PROCESSING_DARK_CUTOFF,
+    SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
+    SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
+)
 
 
 _REFERENCE_PLOT_PALETTE = [
@@ -973,7 +983,8 @@ class AppearanceDialog(QDialog):
 class SettingsHubDialog(QDialog):
     """Single settings hub with left-nav pane and stacked content pages.
 
-    Consolidates: User profile, Database, Online publishing, Language, Appearance.
+    Consolidates: User profile, Database, Online publishing, Language, Appearance,
+    and advanced RAW processing preferences.
     Calibration is intentionally excluded (it's a workflow, not a preference).
     """
 
@@ -982,6 +993,7 @@ class SettingsHubDialog(QDialog):
     PAGE_PUBLISHING = 2
     PAGE_LANGUAGE   = 3
     PAGE_APPEARANCE = 4
+    PAGE_RAW_PROCESSING = 5
 
     def __init__(self, parent=None, start_page: int = 0):
         super().__init__(parent)
@@ -1028,6 +1040,7 @@ class SettingsHubDialog(QDialog):
             self.tr("Online publishing"),
             self.tr("Language"),
             self.tr("Appearance"),
+            self.tr("RAW processing"),
         ):
             item = QListWidgetItem(label)
             item.setSizeHint(QSize(180, 36))
@@ -1039,6 +1052,7 @@ class SettingsHubDialog(QDialog):
         self._stack.addWidget(self._build_publishing_page())
         self._stack.addWidget(self._build_language_page())
         self._stack.addWidget(self._build_appearance_page())
+        self._stack.addWidget(self._build_raw_processing_page())
 
         # Wire nav after stack exists
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
@@ -1300,6 +1314,365 @@ class SettingsHubDialog(QDialog):
         layout.addStretch()
         self._load_appearance_settings()
         return page
+
+    def _build_raw_processing_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        info = QLabel(self.tr(
+            "These advanced RAW settings affect Live Lab review renders and the curve inspector defaults."
+        ))
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        group, form = create_section_card(self.tr("Advanced RAW processing"), QFormLayout, parent=page)
+        form.setLabelAlignment(Qt.AlignLeft)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(8)
+
+        dark_row = QWidget(group)
+        dark_row_layout = QHBoxLayout(dark_row)
+        dark_row_layout.setContentsMargins(0, 0, 0, 0)
+        dark_row_layout.setSpacing(8)
+        self._raw_dark_cutoff_slider = QSlider(Qt.Horizontal, dark_row)
+        self._configure_raw_percent_slider(self._raw_dark_cutoff_slider, minimum=0, maximum=200, page_step=10)
+        self._raw_dark_cutoff_slider.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_slider_to_spinbox(
+                self._raw_dark_cutoff_slider,
+                self._raw_dark_cutoff_spin,
+                units_per_percent=100.0,
+            )
+        )
+        dark_row_layout.addWidget(self._raw_dark_cutoff_slider, 1)
+        self._raw_dark_cutoff_spin = QDoubleSpinBox(dark_row)
+        self._configure_raw_percent_spinbox(self._raw_dark_cutoff_spin, minimum=0.0, maximum=2.0, single_step=0.01)
+        self._raw_dark_cutoff_spin.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._raw_dark_cutoff_spin.setMinimumWidth(96)
+        self._raw_dark_cutoff_spin.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_spinbox_to_slider(
+                self._raw_dark_cutoff_spin,
+                self._raw_dark_cutoff_slider,
+                units_per_percent=100.0,
+            )
+        )
+        dark_row_layout.addWidget(self._raw_dark_cutoff_spin, 0)
+        form.addRow(self.tr("Dark cutoff:"), dark_row)
+
+        bright_row = QWidget(group)
+        bright_row_layout = QHBoxLayout(bright_row)
+        bright_row_layout.setContentsMargins(0, 0, 0, 0)
+        bright_row_layout.setSpacing(8)
+        self._raw_bright_cutoff_slider = QSlider(Qt.Horizontal, bright_row)
+        self._configure_raw_percent_slider(self._raw_bright_cutoff_slider, minimum=0, maximum=200, page_step=10)
+        self._raw_bright_cutoff_slider.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_slider_to_spinbox(
+                self._raw_bright_cutoff_slider,
+                self._raw_bright_cutoff_spin,
+                units_per_percent=100.0,
+            )
+        )
+        bright_row_layout.addWidget(self._raw_bright_cutoff_slider, 1)
+        self._raw_bright_cutoff_spin = QDoubleSpinBox(bright_row)
+        self._configure_raw_percent_spinbox(self._raw_bright_cutoff_spin, minimum=0.0, maximum=2.0, single_step=0.01)
+        self._raw_bright_cutoff_spin.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._raw_bright_cutoff_spin.setMinimumWidth(96)
+        self._raw_bright_cutoff_spin.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_spinbox_to_slider(
+                self._raw_bright_cutoff_spin,
+                self._raw_bright_cutoff_slider,
+                units_per_percent=100.0,
+            )
+        )
+        bright_row_layout.addWidget(self._raw_bright_cutoff_spin, 0)
+        form.addRow(self.tr("Bright cutoff:"), bright_row)
+
+        shadow_row = QWidget(group)
+        shadow_row_layout = QHBoxLayout(shadow_row)
+        shadow_row_layout.setContentsMargins(0, 0, 0, 0)
+        shadow_row_layout.setSpacing(8)
+        self._raw_shadow_lift_checkbox = QCheckBox(self.tr("Enable shadow lift"), shadow_row)
+        self._raw_shadow_lift_checkbox.setToolTip(
+            self.tr("Automatically lifts the shadows when the curve midpoint is below 20.")
+        )
+        self._raw_shadow_lift_checkbox.toggled.connect(self._on_raw_shadow_lift_toggled)
+        shadow_row_layout.addWidget(self._raw_shadow_lift_checkbox, 0)
+        self._raw_shadow_lift_slider = QSlider(Qt.Horizontal, shadow_row)
+        self._configure_raw_percent_slider(self._raw_shadow_lift_slider, minimum=0, maximum=100, page_step=5)
+        self._raw_shadow_lift_slider.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_slider_to_spinbox(
+                self._raw_shadow_lift_slider,
+                self._raw_shadow_lift_max_spin,
+                units_per_percent=20.0,
+            )
+        )
+        shadow_row_layout.addWidget(self._raw_shadow_lift_slider, 1)
+        self._raw_shadow_lift_max_spin = QDoubleSpinBox(shadow_row)
+        self._configure_raw_percent_spinbox(self._raw_shadow_lift_max_spin, minimum=0.0, maximum=5.0, single_step=0.05)
+        self._raw_shadow_lift_max_spin.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._raw_shadow_lift_max_spin.setMinimumWidth(96)
+        self._raw_shadow_lift_max_spin.valueChanged.connect(
+            lambda _value: self._sync_raw_percent_spinbox_to_slider(
+                self._raw_shadow_lift_max_spin,
+                self._raw_shadow_lift_slider,
+                units_per_percent=20.0,
+            )
+        )
+        shadow_row_layout.addWidget(self._raw_shadow_lift_max_spin, 0)
+        shadow_row_layout.addStretch(1)
+        form.addRow(self.tr("Shadow lift:"), shadow_row)
+
+        self._raw_companion_source_selector = SegmentedSelector(self, compact=True)
+        self._raw_companion_source_selector.add_option(
+            self.tr("Prefer RAW"),
+            RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+            checked=True,
+        )
+        self._raw_companion_source_selector.add_option(
+            self.tr("Use camera JPEG"),
+            RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
+        )
+        self._raw_companion_source_selector.selectionChanged.connect(self._save_raw_processing_preferences)
+        form.addRow(self.tr("RAW source:"), self._raw_companion_source_selector)
+
+        self._raw_capture_mode_selector = SegmentedSelector(self, compact=True)
+        self._raw_capture_mode_selector.add_option(
+            self.tr("Auto-save RAW"),
+            LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE,
+            checked=True,
+        )
+        self._raw_capture_mode_selector.add_option(
+            self.tr("Review RAW"),
+            LiveLabTab.RAW_CAPTURE_MODE_REVIEW,
+        )
+        self._raw_capture_mode_selector.selectionChanged.connect(self._save_raw_processing_preferences)
+        form.addRow(self.tr("Capture mode:"), self._raw_capture_mode_selector)
+
+        layout.addWidget(group)
+        layout.addStretch()
+        self._load_raw_processing_settings()
+        return page
+
+    @staticmethod
+    def _configure_raw_percent_spinbox(
+        spinbox: QDoubleSpinBox,
+        *,
+        minimum: float,
+        maximum: float,
+        single_step: float,
+    ) -> None:
+        spinbox.setRange(float(minimum), float(maximum))
+        spinbox.setDecimals(2)
+        spinbox.setSingleStep(float(single_step))
+        spinbox.setSuffix(" %")
+        spinbox.setAlignment(Qt.AlignRight)
+
+    @staticmethod
+    def _configure_raw_percent_slider(
+        slider: QSlider,
+        *,
+        minimum: int,
+        maximum: int,
+        page_step: int,
+    ) -> None:
+        slider.setOrientation(Qt.Horizontal)
+        slider.setRange(int(minimum), int(maximum))
+        slider.setSingleStep(1)
+        slider.setPageStep(max(1, int(page_step)))
+        slider.setTickPosition(QSlider.NoTicks)
+        slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def _sync_raw_percent_slider_to_spinbox(
+        self,
+        slider: QSlider,
+        spinbox: QDoubleSpinBox,
+        *,
+        units_per_percent: float,
+    ) -> None:
+        if slider is None or spinbox is None:
+            return
+        scale = float(units_per_percent) if units_per_percent else 1.0
+        desired = float(slider.value()) / scale
+        if not np.isfinite(desired):
+            desired = 0.0
+        if not np.isclose(float(spinbox.value()), desired):
+            with QSignalBlocker(spinbox):
+                spinbox.setValue(desired)
+        self._save_raw_processing_preferences()
+
+    def _sync_raw_percent_spinbox_to_slider(
+        self,
+        spinbox: QDoubleSpinBox,
+        slider: QSlider,
+        *,
+        units_per_percent: float,
+    ) -> None:
+        if slider is None or spinbox is None:
+            return
+        scale = float(units_per_percent) if units_per_percent else 1.0
+        desired = int(round(float(spinbox.value()) * scale))
+        desired = max(int(slider.minimum()), min(int(slider.maximum()), desired))
+        if int(slider.value()) != desired:
+            with QSignalBlocker(slider):
+                slider.setValue(desired)
+        self._save_raw_processing_preferences()
+
+    @staticmethod
+    def _raw_processing_setting_float(key: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(SettingsDB.get_setting(key, default))
+        except Exception:
+            value = float(default)
+        if not np.isfinite(value):
+            value = float(default)
+        return float(np.clip(value, float(minimum), float(maximum)))
+
+    @staticmethod
+    def _raw_processing_setting_bool(key: str, default: bool) -> bool:
+        value = SettingsDB.get_setting(key, default)
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return bool(default)
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if not text:
+            return bool(default)
+        return text in {"1", "true", "yes", "on", "enabled"}
+
+    @staticmethod
+    def _normalize_raw_companion_source_preference(value: str | None) -> str:
+        text = str(value or "").strip().lower()
+        if text == RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG:
+            return RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG
+        return RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW
+
+    @staticmethod
+    def _normalize_raw_capture_mode_preference(value: str | None) -> str:
+        text = str(value or "").strip().lower()
+        if text == LiveLabTab.RAW_CAPTURE_MODE_REVIEW:
+            return LiveLabTab.RAW_CAPTURE_MODE_REVIEW
+        return LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE
+
+    def _load_raw_processing_settings(self) -> None:
+        dark_cutoff = self._raw_processing_setting_float(
+            SETTING_RAW_PROCESSING_DARK_CUTOFF,
+            0.0005,
+            0.0,
+            0.02,
+        )
+        bright_cutoff = self._raw_processing_setting_float(
+            SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+            0.0005,
+            0.0,
+            0.02,
+        )
+        shadow_lift_enabled = self._raw_processing_setting_bool(
+            SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
+            True,
+        )
+        shadow_lift_max = self._raw_processing_setting_float(
+            SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
+            0.05,
+            0.0,
+            0.05,
+        )
+        raw_source = self._normalize_raw_companion_source_preference(
+            SettingsDB.get_setting(
+                SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+                RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+            )
+        )
+        capture_mode = self._normalize_raw_capture_mode_preference(
+            SettingsDB.get_setting(
+                LiveLabTab.SETTING_RAW_CAPTURE_MODE,
+                LiveLabTab.RAW_CAPTURE_MODE_REVIEW,
+            )
+        )
+
+        for widget, value in (
+            (getattr(self, "_raw_dark_cutoff_slider", None), int(round(dark_cutoff * 100.0 * 100.0))),
+            (getattr(self, "_raw_dark_cutoff_spin", None), dark_cutoff * 100.0),
+            (getattr(self, "_raw_bright_cutoff_slider", None), int(round(bright_cutoff * 100.0 * 100.0))),
+            (getattr(self, "_raw_bright_cutoff_spin", None), bright_cutoff * 100.0),
+            (getattr(self, "_raw_shadow_lift_checkbox", None), shadow_lift_enabled),
+            (getattr(self, "_raw_shadow_lift_slider", None), int(round(shadow_lift_max * 100.0 * 20.0))),
+            (getattr(self, "_raw_shadow_lift_max_spin", None), shadow_lift_max * 100.0),
+        ):
+            if widget is None:
+                continue
+            with QSignalBlocker(widget):
+                if isinstance(widget, QCheckBox):
+                    widget.setChecked(bool(value))
+                elif isinstance(widget, QSlider):
+                    widget.setValue(int(value))
+                else:
+                    widget.setValue(float(value))
+
+        source_selector = getattr(self, "_raw_companion_source_selector", None)
+        if source_selector is not None:
+            with QSignalBlocker(source_selector):
+                if not source_selector.set_selected_value(raw_source):
+                    source_selector.set_selected_value(RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW)
+
+        capture_selector = getattr(self, "_raw_capture_mode_selector", None)
+        if capture_selector is not None:
+            with QSignalBlocker(capture_selector):
+                if not capture_selector.set_selected_value(capture_mode):
+                    capture_selector.set_selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+
+        self._update_raw_shadow_lift_max_enabled()
+
+    def _update_raw_shadow_lift_max_enabled(self) -> None:
+        slider = getattr(self, "_raw_shadow_lift_slider", None)
+        spinbox = getattr(self, "_raw_shadow_lift_max_spin", None)
+        checkbox = getattr(self, "_raw_shadow_lift_checkbox", None)
+        if checkbox is None:
+            return
+        enabled = bool(checkbox.isChecked())
+        if slider is not None:
+            slider.setEnabled(enabled)
+        if spinbox is not None:
+            spinbox.setEnabled(enabled)
+
+    def _save_raw_processing_preferences(self, *_args) -> None:
+        dark_spin = getattr(self, "_raw_dark_cutoff_spin", None)
+        bright_spin = getattr(self, "_raw_bright_cutoff_spin", None)
+        shadow_checkbox = getattr(self, "_raw_shadow_lift_checkbox", None)
+        shadow_spin = getattr(self, "_raw_shadow_lift_max_spin", None)
+        source_selector = getattr(self, "_raw_companion_source_selector", None)
+        capture_selector = getattr(self, "_raw_capture_mode_selector", None)
+
+        if dark_spin is not None:
+            SettingsDB.set_setting(SETTING_RAW_PROCESSING_DARK_CUTOFF, float(dark_spin.value()) / 100.0)
+        if bright_spin is not None:
+            SettingsDB.set_setting(SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, float(bright_spin.value()) / 100.0)
+        if shadow_checkbox is not None:
+            SettingsDB.set_setting(SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED, bool(shadow_checkbox.isChecked()))
+        if shadow_spin is not None:
+            SettingsDB.set_setting(SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX, float(shadow_spin.value()) / 100.0)
+        if source_selector is not None:
+            SettingsDB.set_setting(
+                SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+                self._normalize_raw_companion_source_preference(
+                    source_selector.selected_value(RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW),
+                ),
+            )
+        if capture_selector is not None:
+            SettingsDB.set_setting(
+                LiveLabTab.SETTING_RAW_CAPTURE_MODE,
+                self._normalize_raw_capture_mode_preference(
+                    capture_selector.selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW),
+                ),
+            )
+        self._update_raw_shadow_lift_max_enabled()
+
+    def _on_raw_shadow_lift_toggled(self, checked: bool) -> None:
+        self._update_raw_shadow_lift_max_enabled()
+        self._save_raw_processing_preferences()
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 
@@ -1705,6 +2078,7 @@ class SettingsHubDialog(QDialog):
                 starter(
                     show_status=True,
                     run_refresh_flow=False,
+                    sync_images=False,
                     materialize_remote_images=bool(materialize_remote_images),
                 )
             )
@@ -7346,6 +7720,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         ObservationDB.update_observation(obs_id, spore_data_visibility=vis)
         from utils.cloud_sync import mark_observation_dirty
         mark_observation_dirty(obs_id)
+        observations_tab = getattr(self, "observations_tab", None)
+        scheduler = getattr(observations_tab, "schedule_metadata_cloud_sync", None) if observations_tab is not None else None
+        if callable(scheduler):
+            scheduler(obs_id)
 
     def _build_reference_panel(self):
         panel = QWidget()
@@ -16519,6 +16897,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         *,
         show_status: bool = True,
         run_refresh_flow: bool = False,
+        sync_images: bool = True,
         materialize_remote_images: bool = False,
     ) -> bool:
         observations_tab = getattr(self, "observations_tab", None)
@@ -16530,6 +16909,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         return bool(starter(
             show_status=show_status,
             run_refresh_flow=run_refresh_flow,
+            sync_images=sync_images,
             materialize_remote_images=materialize_remote_images,
         ))
 

@@ -110,14 +110,39 @@ class ZoomableImageLabel(QLabel):
         self.crop_overlay_color = QColor(243, 156, 18)
         self.crop_overlay_active_color = QColor(211, 84, 0)
 
-    def set_image_sources(self, pixmap, full_path=None, preview_scaled=False):
+    def set_image_sources(self, pixmap, full_path=None, preview_scaled=False, preserve_view: bool = False):
         """Set image with optional full-resolution source."""
+        previous_view = self.get_view_state() if preserve_view else None
         self.original_pixmap = pixmap
         self._full_image_path = str(full_path) if full_path else None
         self._preview_is_scaled = bool(preview_scaled)
         self._preview_tag_text = "Preview" if self._preview_is_scaled else ""
         self._corner_tag_text = ""
         self._full_loaded = not self._preview_is_scaled
+        if not pixmap:
+            self.pan_offset = QPointF(0, 0)
+            self.zoom_level = 1.0
+            self.update()
+            return
+
+        if previous_view and preserve_view:
+            try:
+                old_width, old_height = previous_view.get("size") or (0, 0)
+                old_center = previous_view.get("center")
+                old_zoom = float(previous_view.get("zoom") or 1.0)
+                if old_center is not None and old_width and old_height:
+                    new_width = max(1, int(pixmap.width() or 0))
+                    new_height = max(1, int(pixmap.height() or 0))
+                    center = QPointF(
+                        float(old_center.x()) * float(new_width) / float(old_width),
+                        float(old_center.y()) * float(new_height) / float(old_height),
+                    )
+                    self.set_view_state(center, old_zoom)
+                    self._auto_fit_pending = False
+                    return
+            except Exception:
+                pass
+
         self.pan_offset = QPointF(0, 0)
         self.reset_view()
         self._auto_fit_pending = True

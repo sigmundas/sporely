@@ -27,6 +27,78 @@ def test_cloud_auto_sync_worker_disables_remote_media_materialization(monkeypatc
     assert sync_kwargs["materialize_remote_images"] is False
 
 
+def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatch):
+    fake_client = SimpleNamespace(user_id="user-123")
+    sync_kwargs: dict = {}
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
+    monkeypatch.setattr(
+        observations_tab,
+        "sync_all",
+        lambda *args, **kwargs: sync_kwargs.update(kwargs) or {"pushed": 0, "pulled": 0, "errors": []},
+    )
+
+    worker = observations_tab._CloudAutoSyncWorker(
+        prepare_images_cb=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("image prep should not run")),
+        sync_images=False,
+    )
+    worker.run()
+
+    assert sync_kwargs["sync_images"] is False
+    assert sync_kwargs["prepare_images_cb"] is None
+    assert sync_kwargs["materialize_remote_images"] is False
+
+
+def test_metadata_sync_timeout_starts_metadata_only_sync(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class _FakeTimer:
+        def start(self, interval_ms):
+            calls["timer_start"] = int(interval_ms)
+
+        def stop(self):
+            calls["timer_stop"] = True
+
+    fake_tab = SimpleNamespace(
+        _metadata_sync_timer=_FakeTimer(),
+        _metadata_sync_delay_ms=8000,
+        _metadata_sync_should_pause=lambda: False,
+        _cloud_sync_pending_ids=lambda: [17],
+        _start_cloud_sync=lambda **kwargs: calls.setdefault("start", kwargs) or True,
+    )
+
+    observations_tab.ObservationsTab._on_metadata_sync_timeout(fake_tab)
+
+    assert calls["start"]["sync_images"] is False
+    assert calls["start"]["materialize_remote_images"] is False
+    assert calls.get("timer_stop") is True
+
+
+def test_metadata_sync_timeout_defers_while_measurement_active():
+    class _FakeTimer:
+        def __init__(self):
+            self.starts: list[int] = []
+
+        def start(self, interval_ms):
+            self.starts.append(int(interval_ms))
+
+        def stop(self):
+            self.starts.append(-1)
+
+    fake_timer = _FakeTimer()
+    fake_tab = SimpleNamespace(
+        _metadata_sync_timer=fake_timer,
+        _metadata_sync_delay_ms=8000,
+        _metadata_sync_should_pause=lambda: True,
+        _cloud_sync_pending_ids=lambda: [17],
+        _start_cloud_sync=lambda **kwargs: (_ for _ in ()).throw(AssertionError("sync should have been deferred")),
+    )
+
+    observations_tab.ObservationsTab._on_metadata_sync_timeout(fake_tab)
+
+    assert fake_timer.starts == [8000]
+
+
 def test_cloud_media_detail_view_auto_launches_lazy_materialization(monkeypatch):
     launched: list[bool] = []
 

@@ -35,11 +35,19 @@ class _FakeMainWindow(QWidget):
         self._running = bool(running)
         self.start_calls: list[dict] = []
 
-    def start_cloud_sync(self, *, show_status: bool, run_refresh_flow: bool, materialize_remote_images: bool) -> bool:
+    def start_cloud_sync(
+        self,
+        *,
+        show_status: bool,
+        run_refresh_flow: bool,
+        sync_images: bool = True,
+        materialize_remote_images: bool,
+    ) -> bool:
         self.start_calls.append(
             {
                 "show_status": bool(show_status),
                 "run_refresh_flow": bool(run_refresh_flow),
+                "sync_images": bool(sync_images),
                 "materialize_remote_images": bool(materialize_remote_images),
             }
         )
@@ -60,6 +68,7 @@ def _build_settings_hub_dialog(
     app_settings: dict | None = None,
     client=None,
     running: bool = False,
+    set_setting_sink: list[tuple[str, object]] | None = None,
 ):
     default_client = {
         "user_id": "user-123",
@@ -90,7 +99,14 @@ def _build_settings_hub_dialog(
         "avatar_url": "",
     })
     monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
-    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    if set_setting_sink is None:
+        monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    else:
+        monkeypatch.setattr(
+            main_window.SettingsDB,
+            "set_setting",
+            lambda key, value: set_setting_sink.append((str(key), value)),
+        )
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: None)
     monkeypatch.setattr(main_window, "get_app_settings", lambda: dict(app_settings or {}))
     monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
@@ -250,6 +266,7 @@ def test_profile_cloud_sync_now_starts_metadata_first_sync(monkeypatch, qapp):
         {
             "show_status": True,
             "run_refresh_flow": False,
+            "sync_images": False,
             "materialize_remote_images": False,
         }
     ]
@@ -268,9 +285,56 @@ def test_profile_cloud_offline_media_action_starts_materializing_sync(monkeypatc
         {
             "show_status": True,
             "run_refresh_flow": False,
+            "sync_images": False,
             "materialize_remote_images": True,
         }
     ]
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, qapp):
+    saved_settings: list[tuple[str, object]] = []
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, set_setting_sink=saved_settings)
+
+    dialog._nav.setCurrentRow(main_window.SettingsHubDialog.PAGE_RAW_PROCESSING)
+    qapp.processEvents()
+
+    assert dialog._nav.item(main_window.SettingsHubDialog.PAGE_RAW_PROCESSING).text() == "RAW processing"
+    assert dialog._raw_dark_cutoff_spin.value() == pytest.approx(0.05)
+    assert dialog._raw_dark_cutoff_slider.value() == 5
+    assert dialog._raw_dark_cutoff_slider.maximum() == 200
+    assert dialog._raw_bright_cutoff_spin.value() == pytest.approx(0.05)
+    assert dialog._raw_bright_cutoff_slider.value() == 5
+    assert dialog._raw_bright_cutoff_slider.maximum() == 200
+    assert dialog._raw_shadow_lift_checkbox.isChecked() is True
+    assert dialog._raw_shadow_lift_max_spin.value() == pytest.approx(5.0)
+    assert dialog._raw_shadow_lift_slider.value() == 100
+    assert dialog._raw_shadow_lift_slider.maximum() == 100
+    assert dialog._raw_shadow_lift_max_spin.isEnabled() is True
+    assert dialog._raw_shadow_lift_slider.isEnabled() is True
+    assert dialog._raw_companion_source_selector.selected_value() == main_window.RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW
+    assert dialog._raw_capture_mode_selector.selected_value() == main_window.LiveLabTab.RAW_CAPTURE_MODE_REVIEW
+
+    dialog._raw_dark_cutoff_slider.setValue(12)
+    dialog._raw_bright_cutoff_slider.setValue(34)
+    dialog._raw_shadow_lift_checkbox.setChecked(False)
+    dialog._raw_shadow_lift_checkbox.setChecked(True)
+    dialog._raw_shadow_lift_max_spin.setValue(4.0)
+    assert dialog._raw_shadow_lift_slider.value() == 80
+    dialog._raw_shadow_lift_slider.setValue(70)
+    dialog._raw_companion_source_selector.set_selected_value(main_window.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG)
+    dialog._raw_capture_mode_selector.set_selected_value(main_window.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE)
+    dialog._save_raw_processing_preferences()
+    qapp.processEvents()
+
+    assert (main_window.SETTING_RAW_PROCESSING_DARK_CUTOFF, pytest.approx(0.12 / 100.0)) in saved_settings
+    assert (main_window.SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, pytest.approx(0.34 / 100.0)) in saved_settings
+    assert (main_window.SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED, False) in saved_settings
+    assert (main_window.SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX, pytest.approx(3.5 / 100.0)) in saved_settings
+    assert (main_window.SETTING_RAW_COMPANION_SOURCE_PREFERENCE, main_window.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG) in saved_settings
+    assert (main_window.LiveLabTab.SETTING_RAW_CAPTURE_MODE, main_window.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE) in saved_settings
 
     dialog.deleteLater()
     parent.deleteLater()

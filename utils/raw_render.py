@@ -159,8 +159,8 @@ class RawRenderSettings:
     wb_sample_base_mode: str | None = None
     wb_selection_space: str | None = None
     auto_levels: bool = True
-    black_percentile: float = 0.001
-    white_percentile: float = 0.999
+    black_percentile: float = 0.0005
+    white_percentile: float = 0.9995
     auto_levels_strength: float = 1.0
     auto_levels_soft_tails: bool = False
     auto_levels_tail_size: float = 0.03
@@ -238,8 +238,8 @@ class RawRenderSettings:
             wb_sample_base_mode=wb_sample_base_mode,
             wb_selection_space=wb_selection_space,
             auto_levels=_coerce_bool(mapping.get("auto_levels"), True),
-            black_percentile=_coerce_float(mapping.get("black_percentile"), 0.001),
-            white_percentile=_coerce_float(mapping.get("white_percentile"), 0.999),
+            black_percentile=_coerce_float(mapping.get("black_percentile"), 0.0005),
+            white_percentile=_coerce_float(mapping.get("white_percentile"), 0.9995),
             auto_levels_strength=_coerce_float_in_range(mapping.get("auto_levels_strength"), 1.0, 0.0, 1.0),
             auto_levels_soft_tails=_coerce_bool(mapping.get("auto_levels_soft_tails"), False),
             auto_levels_tail_size=_coerce_float_in_range(mapping.get("auto_levels_tail_size"), 0.03, 0.0, 0.5),

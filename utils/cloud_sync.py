@@ -2544,6 +2544,59 @@ def _summarize_image_changes(
     return lines
 
 
+def _normalize_observation_sync_field(field: str) -> str:
+    normalized = str(field or '').strip()
+    if normalized in {'visibility', 'sharing_scope'}:
+        return 'sharing_scope'
+    return normalized
+
+
+def _format_observation_metadata_field_label(field: str) -> str:
+    labels = {
+        'date': 'date',
+        'genus': 'genus',
+        'species': 'species',
+        'common_name': 'common name',
+        'species_guess': 'species guess',
+        'uncertain': 'uncertain',
+        'unspontaneous': 'unspontaneous',
+        'determination_method': 'determination method',
+        'location': 'location',
+        'gps_latitude': 'latitude',
+        'gps_longitude': 'longitude',
+        'location_public': 'location public',
+        'is_draft': 'draft flag',
+        'location_precision': 'location precision',
+        'ai_selected_service': 'AI service',
+        'ai_selected_taxon_id': 'AI taxon id',
+        'ai_selected_scientific_name': 'AI scientific name',
+        'ai_selected_probability': 'AI probability',
+        'ai_selected_at': 'AI selected at',
+        'habitat': 'habitat',
+        'habitat_nin2_path': 'NIN2 path',
+        'habitat_substrate_path': 'substrate path',
+        'habitat_host_genus': 'host genus',
+        'habitat_host_species': 'host species',
+        'habitat_host_common_name': 'host common name',
+        'habitat_nin2_note': 'NIN2 note',
+        'habitat_substrate_note': 'substrate note',
+        'habitat_grows_on_note': 'grows-on note',
+        'notes': 'notes',
+        'open_comment': 'open comment',
+        'interesting_comment': 'interesting comment',
+        'publish_target': 'publish target',
+        'artsdata_id': 'Artsobs id',
+        'artportalen_id': 'Artportalen id',
+        'inaturalist_id': 'iNaturalist id',
+        'mushroomobserver_id': 'Mushroom Observer id',
+        'spore_data_visibility': 'spore visibility',
+        'visibility': 'visibility',
+        'sharing_scope': 'sharing scope',
+    }
+    normalized = str(field or '').strip()
+    return labels.get(normalized, normalized.replace('_', ' '))
+
+
 def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict | None, baseline_obs: dict | None) -> dict:
     local_payload = _observation_compare_payload(local_obs, local=True)
     remote_payload = _observation_compare_payload(remote_obs, local=False)
@@ -2621,7 +2674,7 @@ def _remaining_local_changes_after_remote_merge(
     *,
     local_media_changed: bool,
 ) -> bool:
-    return bool(field_changes.get('local_only_fields') or local_media_changed)
+    return bool(field_changes.get('local_only_fields') or field_changes.get('conflict_fields') or local_media_changed)
 
 
 def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str] | None = None) -> str:
@@ -3221,6 +3274,12 @@ def sync_all(
                 remote_obs=remote_obs,
                 sync_calibrations=False,
             )
+
+        # Refresh remote observations after the push phase so pull-side
+        # comparisons see the cloud state that now includes any local metadata
+        # edits we just pushed.
+        with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
+            remote_obs = client.list_remote_observations()
 
         # Phase 2: Pull cloud edits to the desktop
         with _cloud_sync_phase_scope(profiler, 'pull_all'):
@@ -7891,6 +7950,7 @@ def push_all(
                     progress_state,
                 )
                 continue
+            push_payload = dict(obs)
             if cloud_id and stored_snapshot and remote:
                 remote_images = client.pull_image_metadata(cloud_id) or []
                 remote_measurements = _pull_remote_measurements_for_images(
@@ -7898,24 +7958,27 @@ def push_all(
                     [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
                 )
                 remote_snapshot = _cloud_observation_snapshot(remote, remote_images, remote_measurements)
-                if remote_snapshot != stored_snapshot:
-                    if _clear_observation_dirty_if_no_real_changes(int(obs['id']), cloud_id):
-                        _advance_progress(progress_state, 1)
-                        _emit_progress(
-                            progress_cb,
-                            f"Skipped stale local change for observation {i + 1}/{max(1, total)}: {name}",
-                            progress_state,
-                        )
-                        continue
+                if remote_snapshot != stored_snapshot and _clear_observation_dirty_if_no_real_changes(int(obs['id']), cloud_id):
                     _advance_progress(progress_state, 1)
                     _emit_progress(
                         progress_cb,
-                        f"Skipping push for observation {i + 1}/{max(1, total)} until the cloud version is applied: {name}",
+                        f"Skipped stale local change for observation {i + 1}/{max(1, total)}: {name}",
                         progress_state,
                     )
                     continue
+                if remote_snapshot != stored_snapshot:
+                    snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
+                    baseline_obs = _baseline_observation_compare_payload(snapshot_data.get('observation') or {})
+                    field_changes = _analyze_observation_field_changes(obs, remote, baseline_obs)
+                    remote_update_kwargs = _remote_observation_update_kwargs(remote)
+                    for field in {
+                        _normalize_observation_sync_field(field)
+                        for field in (field_changes.get('remote_only_fields') or [])
+                    }:
+                        if field in remote_update_kwargs:
+                            push_payload[field] = remote_update_kwargs[field]
 
-            cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(obs, remote))
+            cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(push_payload, remote))
 
             # Update local record with cloud_id and sync_status
             conn2 = get_connection()
@@ -8831,14 +8894,32 @@ def pull_all(
                         f"Applying cloud changes to local observation {local_id}: {name}…",
                         progress_state,
                     )
-                    fields_to_apply = set(field_changes.get('remote_only_fields') or []) | set(
-                        field_changes.get('conflict_fields') or []
-                    )
-                    if fields_to_apply:
+                    remote_only_fields = {
+                        _normalize_observation_sync_field(field)
+                        for field in (field_changes.get('remote_only_fields') or [])
+                    }
+                    conflict_fields = {
+                        _normalize_observation_sync_field(field)
+                        for field in (field_changes.get('conflict_fields') or [])
+                    }
+                    if remote_only_fields:
                         _apply_remote_observation_fields(
                             local_id,
                             remote,
-                            fields=fields_to_apply,
+                            fields=remote_only_fields,
+                        )
+                    if conflict_fields:
+                        errors.append(
+                            _format_review_needed_error(
+                                local_id,
+                                cloud_id,
+                                [
+                                    ', '.join(
+                                        _format_observation_metadata_field_label(field)
+                                        for field in sorted(conflict_fields)
+                                    )
+                                ],
+                            )
                         )
 
                     if remote_image_changes.get('changed'):
@@ -8878,6 +8959,7 @@ def pull_all(
                         field_changes,
                         local_media_changed=local_media_changed,
                     ) or bool(measurement_result.get('conflict'))
+                    should_store_snapshot = should_store_snapshot and not bool(conflict_fields)
                     _set_observation_sync_state(local_id, cloud_id, dirty=remaining_local_changes)
                     if not local_media_changed:
                         _refresh_local_cloud_media_signature(local_id)

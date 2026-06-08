@@ -12,10 +12,9 @@ from pathlib import Path
 
 import numpy as np
 
-from PySide6.QtCore import QSize, Qt, QUrl, QTimer, QSignalBlocker, QEvent, QPointF
+from PySide6.QtCore import QSize, Qt, QTimer, QSignalBlocker, QEvent, QPointF
 from PySide6.QtGui import (
     QColor,
-    QDesktopServices,
     QIcon,
     QImage,
     QImageReader,
@@ -55,6 +54,10 @@ from PySide6.QtWidgets import (
 from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+    SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+    SETTING_RAW_PROCESSING_DARK_CUTOFF,
+    SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
+    SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
     SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
 )
 from database.database_tags import DatabaseTerms
@@ -307,6 +310,7 @@ class LiveLabTab(QWidget):
         self._clear_session_viewer()
         self._update_target_display()
         self._update_session_controls()
+        self._update_lab_state_combo_alerts()
         self._register_hint_widgets()
         self._set_hint(self._default_hint_text)
 
@@ -357,34 +361,12 @@ class LiveLabTab(QWidget):
         self.current_observation_date_label.setWordWrap(True)
         self.current_observation_date_label.setStyleSheet("color: #6b7280;")
         current_text_layout.addWidget(self.current_observation_date_label)
-        current_text_layout.addStretch(1)
-        self.change_observation_btn = QPushButton(self.tr("Change observation"))
-        self.change_observation_btn.clicked.connect(self._open_observations_tab)
-        current_text_layout.addWidget(self.change_observation_btn, 0, Qt.AlignLeft)
-        current_row.addLayout(current_text_layout, 1)
-        current_layout.addLayout(current_row)
-        left_layout.addWidget(current_group)
-
         self.start_stop_btn = QPushButton(self.tr("Start Session"))
         self.start_stop_btn.setMinimumHeight(36)
+        self.start_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
         self.start_stop_btn.clicked.connect(self._toggle_session)
-        left_layout.addWidget(self.start_stop_btn)
-
-        self.session_status_label = QLabel("")
-        self.session_status_label.setWordWrap(True)
-        self.session_status_label.setStyleSheet("color: #4b5563;")
-        left_layout.addWidget(self.session_status_label)
-
-        self.session_count_label = QLabel(self.tr("Imported this session: 0"))
-        self.session_count_label.setWordWrap(True)
-        self.session_count_label.setStyleSheet("color: #6b7280;")
-        left_layout.addWidget(self.session_count_label)
-
-        mode_group, mode_layout = create_section_card(
-            self.tr("Capture mode"),
-            body_margins=(10, 12, 10, 10),
-        )
+        current_text_layout.addWidget(self.start_stop_btn)
         self.session_mode_selector = SegmentedSelector(self, compact=True)
         self.session_mode_live_radio = self.session_mode_selector.add_option(
             self.tr("Live capture (watch folder)"),
@@ -397,29 +379,29 @@ class LiveLabTab(QWidget):
         )
         self.session_mode_combo = self.session_mode_selector
         self.session_mode_selector.selectionChanged.connect(lambda _value: self._on_session_mode_changed())
-        mode_layout.addWidget(self.session_mode_selector)
-        left_layout.addWidget(mode_group)
+        current_text_layout.addWidget(self.session_mode_selector)
 
-        watch_group, watch_layout = create_section_card(
-            self.tr("Watched folder"),
-            body_margins=(10, 12, 10, 10),
-        )
-        self.watch_group = watch_group
+        self.watch_group = QWidget()
+        self.watch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        watch_layout = QHBoxLayout(self.watch_group)
+        watch_layout.setContentsMargins(0, 4, 0, 0)
+        watch_layout.setSpacing(8)
         self.watch_dir_input = QLineEdit()
         self.watch_dir_input.setPlaceholderText(self.tr("Choose the microscope capture folder"))
+        self.watch_dir_input.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.watch_dir_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.watch_dir_input.textChanged.connect(self._on_watch_dir_changed)
         watch_layout.addWidget(self.watch_dir_input)
-        watch_buttons = QHBoxLayout()
-        watch_buttons.setContentsMargins(0, 0, 0, 0)
-        watch_buttons.setSpacing(8)
         self.browse_btn = QPushButton(self.tr("Browse"))
         self.browse_btn.clicked.connect(self._choose_watch_dir)
-        watch_buttons.addWidget(self.browse_btn)
-        self.open_folder_btn = QPushButton(self.tr("Open folder"))
-        self.open_folder_btn.clicked.connect(self._open_watch_dir)
-        watch_buttons.addWidget(self.open_folder_btn)
-        watch_layout.addLayout(watch_buttons)
-        left_layout.addWidget(watch_group)
+        self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.browse_btn.setMinimumWidth(72)
+        watch_layout.addWidget(self.browse_btn, 0, Qt.AlignVCenter)
+        current_text_layout.addWidget(self.watch_group)
+        current_text_layout.addStretch(1)
+        current_row.addLayout(current_text_layout, 1)
+        current_layout.addLayout(current_row)
+        left_layout.addWidget(current_group)
 
         tag_group, tag_form = create_section_card(
             self.tr("Current Lab State"),
@@ -471,59 +453,43 @@ class LiveLabTab(QWidget):
 
         self.raw_processing_body = QWidget()
         raw_body_layout = QVBoxLayout(self.raw_processing_body)
-        raw_body_layout.setContentsMargins(12, 0, 12, 12)
-        raw_body_layout.setSpacing(8)
-        self.raw_processing_details_label = QLabel(
-            self.tr("Applies to future RAW captures in this Live Lab session.")
-        )
-        self.raw_processing_details_label.setWordWrap(True)
-        self.raw_processing_details_label.setStyleSheet("color: #6b7280;")
-        raw_body_layout.addWidget(self.raw_processing_details_label)
-
-        self.raw_capture_mode_selector = SegmentedSelector(self, compact=True)
-        self.raw_capture_mode_selector.add_option(
-            self.tr("Auto-save RAW captures"),
-            self.RAW_CAPTURE_MODE_AUTO_SAVE,
-            checked=True,
-        )
-        self.raw_capture_mode_selector.add_option(
-            self.tr("Review RAW before saving"),
-            self.RAW_CAPTURE_MODE_REVIEW,
-        )
-        self.raw_capture_mode_selector.selectionChanged.connect(self._on_raw_capture_mode_changed)
+        raw_body_layout.setContentsMargins(12, 4, 12, 12)
+        raw_body_layout.setSpacing(10)
 
         raw_form = QFormLayout()
         raw_form.setContentsMargins(0, 0, 0, 0)
         raw_form.setHorizontalSpacing(8)
         raw_form.setVerticalSpacing(8)
         raw_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        raw_form.addRow(self.tr("Capture mode:"), self.raw_capture_mode_selector)
 
-        self.raw_companion_source_selector = SegmentedSelector(self, compact=True)
-        self.raw_companion_source_selector.add_option(
-            self.tr("Prefer RAW"),
-            RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
-            checked=True,
-        )
-        self.raw_companion_source_selector.add_option(
-            self.tr("Use camera JPEG"),
-            RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
-        )
-        self.raw_companion_source_selector.selectionChanged.connect(
-            self._on_raw_companion_source_preference_changed
-        )
-        raw_form.addRow(self.tr("Companion source:"), self.raw_companion_source_selector)
-
-        self.raw_white_balance_combo = QComboBox()
-        self.raw_white_balance_combo.addItem(self.tr("Camera WB"), "camera")
-        self.raw_white_balance_combo.addItem(self.tr("Auto WB"), "auto")
-        self.raw_white_balance_combo.addItem(self.tr("Custom WB"), "custom")
-        self.raw_white_balance_combo.currentIndexChanged.connect(self._on_raw_processing_controls_changed)
-        raw_form.addRow(self.tr("White balance:"), self.raw_white_balance_combo)
+        self.raw_white_balance_selector = SegmentedSelector(self, compact=True, button_height=32, container_height=40)
+        self.raw_white_balance_selector.add_option(self.tr("Camera WB"), "camera", checked=True)
+        self.raw_white_balance_selector.add_option(self.tr("Auto WB"), "auto")
+        self.raw_white_balance_selector.add_option(self.tr("Custom WB"), "custom")
+        self.raw_white_balance_selector.selectionChanged.connect(self._on_raw_processing_controls_changed)
+        self.raw_white_balance_combo = self.raw_white_balance_selector
+        white_balance_row = QWidget()
+        white_balance_row_layout = QHBoxLayout(white_balance_row)
+        white_balance_row_layout.setContentsMargins(0, 4, 0, 4)
+        white_balance_row_layout.setSpacing(8)
+        white_balance_row_layout.addWidget(self.raw_white_balance_selector, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self.raw_pick_wb_btn = QPushButton(self.tr("Pick"))
+        self.raw_pick_wb_btn.setCheckable(True)
+        self.raw_pick_wb_btn.setMinimumHeight(32)
+        self.raw_pick_wb_btn.toggled.connect(self._toggle_active_raw_background_wb_pick)
+        white_balance_row_layout.addWidget(self.raw_pick_wb_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        white_balance_row_layout.addStretch(1)
+        white_balance_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        white_balance_row.setMinimumHeight(44)
+        raw_form.addRow(white_balance_row)
 
         self.raw_auto_levels_checkbox = QCheckBox(self.tr("Auto levels"))
         self.raw_auto_levels_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
         raw_form.addRow(self.tr("Levels:"), self.raw_auto_levels_checkbox)
+
+        self.raw_preserve_tails_checkbox = QCheckBox(self.tr("Preserve tails"))
+        self.raw_preserve_tails_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
+        raw_form.addRow(self.tr("Tails:"), self.raw_preserve_tails_checkbox)
 
         self.raw_tone_curve_checkbox = QCheckBox(self.tr("Tone curve"))
         self.raw_tone_curve_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
@@ -765,11 +731,6 @@ class LiveLabTab(QWidget):
 
     def _register_hint_widgets(self) -> None:
         self._register_hint_widget(
-            self.change_observation_btn,
-            self.tr("Switch back to Observations to choose a different current observation."),
-            disabled_hint=self.tr("Stop the current Live Lab session before changing observation."),
-        )
-        self._register_hint_widget(
             self.session_mode_combo,
             self.tr("Choose between live folder watching and retrospective log-only capture."),
             disabled_hint=self.tr("Stop the current session before changing capture mode."),
@@ -781,11 +742,6 @@ class LiveLabTab(QWidget):
         self._register_hint_widget(
             self.browse_btn,
             self.tr("Choose the folder your microscope camera saves into."),
-        )
-        self._register_hint_widget(
-            self.open_folder_btn,
-            self.tr("Open the watched folder in Finder."),
-            disabled_hint=self.tr("Choose an existing watched folder first."),
         )
         self._register_hint_widget(
             self.objective_combo,
@@ -814,23 +770,19 @@ class LiveLabTab(QWidget):
         )
         self._register_hint_widget(
             self.raw_processing_toggle_btn,
-            self.tr("Show or hide the RAW processing controls for future session-level captures."),
+            self.tr("Show or hide the simplified RAW processing controls for future session-level captures."),
         )
         self._register_hint_widget(
-            self.raw_capture_mode_selector,
-            self.tr("Choose whether RAW captures are committed immediately or held for review."),
-        )
-        self._register_hint_widget(
-            self.raw_companion_source_selector,
-            self.tr("Choose whether RAW files or the companion camera JPEG should win when both exist."),
-        )
-        self._register_hint_widget(
-            self.raw_white_balance_combo,
-            self.tr("Choose the default white balance mode for future RAW captures."),
+            self.raw_white_balance_selector,
+            self.tr("Choose the white balance mode for future RAW captures."),
         )
         self._register_hint_widget(
             self.raw_auto_levels_checkbox,
             self.tr("Apply automatic levels to future RAW captures."),
+        )
+        self._register_hint_widget(
+            self.raw_preserve_tails_checkbox,
+            self.tr("Keep the auto-level curve softer near the ends."),
         )
         self._register_hint_widget(
             self.raw_tone_curve_checkbox,
@@ -842,7 +794,11 @@ class LiveLabTab(QWidget):
         )
         self._register_hint_widget(
             self.raw_curve_midpoint_slider,
-            self.tr("Adjust the tone curve midpoint."),
+            self.tr("Adjust the tone curve midpoint. Lower values automatically increase shadow lift."),
+        )
+        self._register_hint_widget(
+            self.raw_pick_wb_btn,
+            self.tr("Sample a neutral point from the preview and set the current RAW white balance."),
         )
         self._register_hint_widget(
             self.raw_edit_open_btn,
@@ -1016,21 +972,77 @@ class LiveLabTab(QWidget):
     def _on_raw_companion_source_preference_changed(self, value) -> None:
         self._save_raw_companion_source_preference(str(value or ""))
 
+    @staticmethod
+    def _raw_processing_setting_float(key: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(SettingsDB.get_setting(key, default))
+        except Exception:
+            value = float(default)
+        if not np.isfinite(value):
+            value = float(default)
+        return float(np.clip(value, float(minimum), float(maximum)))
+
+    @staticmethod
+    def _raw_processing_setting_bool(key: str, default: bool) -> bool:
+        value = SettingsDB.get_setting(key, default)
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return bool(default)
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value).strip().lower()
+        if not text:
+            return bool(default)
+        return text in {"1", "true", "yes", "on", "enabled"}
+
+    def _raw_processing_preferences(self) -> dict[str, float | bool]:
+        return {
+            "dark_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_DARK_CUTOFF,
+                0.0005,
+                0.0,
+                0.02,
+            ),
+            "bright_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+                0.0005,
+                0.0,
+                0.02,
+            ),
+            "shadow_lift_enabled": self._raw_processing_setting_bool(
+                SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
+                True,
+            ),
+            "shadow_lift_max": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
+                0.05,
+                0.0,
+                0.05,
+            ),
+        }
+
     def _raw_settings_from_controls(self, *, update_session_settings: bool = True) -> RawRenderSettings:
         base_settings = getattr(self, "_raw_render_settings", RawRenderSettings.default())
+        white_balance_selector = getattr(self, "raw_white_balance_selector", None)
         white_balance_combo = getattr(self, "raw_white_balance_combo", None)
         auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+        preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
         tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
         strength_slider = getattr(self, "raw_curve_strength_slider", None)
         midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
 
         white_balance_mode = "camera"
-        if white_balance_combo is not None:
+        if white_balance_selector is not None and hasattr(white_balance_selector, "selected_value"):
+            white_balance_mode = str(white_balance_selector.selected_value("camera") or "camera").strip().lower() or "camera"
+        elif white_balance_combo is not None:
             white_balance_mode = str(white_balance_combo.currentData() or "camera").strip().lower() or "camera"
 
         auto_levels = True
         if auto_levels_checkbox is not None:
             auto_levels = bool(auto_levels_checkbox.isChecked())
+
+        preserve_tails = bool(getattr(preserve_tails_checkbox, "isChecked", lambda: False)())
 
         tone_curve_enabled = False
         if tone_curve_checkbox is not None:
@@ -1044,8 +1056,31 @@ class LiveLabTab(QWidget):
         if midpoint_slider is not None:
             tone_curve_midpoint = max(0.0, min(1.0, float(midpoint_slider.value()) / 100.0))
 
-        settings = RawRenderSettings(
+        preferences_getter = getattr(self, "_raw_processing_preferences", None)
+        if callable(preferences_getter):
+            preferences = preferences_getter()
+        else:
+            preferences = {
+                "dark_cutoff": 0.0005,
+                "bright_cutoff": 0.0005,
+                "shadow_lift_enabled": True,
+                "shadow_lift_max": 0.05,
+            }
+
+        settings = raw_settings_from_basic_controls(
             white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto", "custom"} else "camera",
+            wb_multipliers=getattr(base_settings, "wb_multipliers", None),
+            contrast=tone_curve_strength,
+            midpoint=tone_curve_midpoint,
+            preserve_tails=preserve_tails,
+            dark_cutoff=float(preferences["dark_cutoff"]),
+            bright_cutoff=float(preferences["bright_cutoff"]),
+            shadow_lift_enabled=bool(preferences["shadow_lift_enabled"]),
+            shadow_lift_max=float(preferences["shadow_lift_max"]),
+            existing_settings=base_settings,
+        )
+        settings = replace(
+            settings,
             auto_levels=auto_levels,
             tone_curve_enabled=tone_curve_enabled,
             tone_curve_strength=tone_curve_strength,
@@ -1064,16 +1099,22 @@ class LiveLabTab(QWidget):
         settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
         if update_session_settings:
             self._raw_render_settings = settings
+        white_balance_selector = getattr(self, "raw_white_balance_selector", None)
         combo = getattr(self, "raw_white_balance_combo", None)
         auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+        preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
         tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
         strength_slider = getattr(self, "raw_curve_strength_slider", None)
         midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
         strength_label = getattr(self, "raw_curve_strength_value_label", None)
         midpoint_label = getattr(self, "raw_curve_midpoint_value_label", None)
 
-        if combo is not None:
-            target_index = combo.findData(settings.white_balance_mode)
+        target_mode = str(settings.white_balance_mode or "camera").strip().lower() or "camera"
+        if white_balance_selector is not None and hasattr(white_balance_selector, "set_selected_value"):
+            if not white_balance_selector.set_selected_value(target_mode):
+                white_balance_selector.set_selected_value("camera")
+        elif combo is not None:
+            target_index = combo.findData(target_mode)
             if target_index < 0:
                 target_index = combo.findData("camera")
             if target_index >= 0:
@@ -1082,6 +1123,9 @@ class LiveLabTab(QWidget):
         if auto_levels_checkbox is not None:
             with QSignalBlocker(auto_levels_checkbox):
                 auto_levels_checkbox.setChecked(bool(settings.auto_levels))
+        if preserve_tails_checkbox is not None:
+            with QSignalBlocker(preserve_tails_checkbox):
+                preserve_tails_checkbox.setChecked(bool(settings.auto_levels_soft_tails))
         if tone_curve_checkbox is not None:
             with QSignalBlocker(tone_curve_checkbox):
                 tone_curve_checkbox.setChecked(bool(settings.tone_curve_enabled))
@@ -1098,6 +1142,7 @@ class LiveLabTab(QWidget):
             midpoint_label.setText(str(int(round(float(settings.tone_curve_midpoint) * 100.0))))
 
         self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
+        self._refresh_raw_processing_context_ui()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
 
     def _set_raw_tone_controls_enabled(self, enabled: bool) -> None:
@@ -1162,8 +1207,116 @@ class LiveLabTab(QWidget):
             curve_label = self.tr("Curve off")
         return " \u00b7 ".join([wb_label, levels_label, curve_label])
 
+    @staticmethod
+    def _format_raw_percent(value: float | int | None, *, decimals: int = 1) -> str:
+        try:
+            numeric = float(value)
+        except Exception:
+            numeric = 0.0
+        if not np.isfinite(numeric):
+            numeric = 0.0
+        return f"{max(0.0, numeric) * 100.0:.{decimals}f}%"
+
+    def _raw_settings_info_text(self, settings: RawRenderSettings | None) -> str:
+        resolved = RawRenderSettings.from_dict(settings)
+        dark_cutoff = LiveLabTab._format_raw_percent(resolved.black_percentile, decimals=2)
+        bright_cutoff = LiveLabTab._format_raw_percent(1.0 - float(resolved.white_percentile), decimals=2)
+        shadow_lift = LiveLabTab._format_raw_percent(resolved.auto_levels_shadow_lift, decimals=1)
+        soft_tails_label = self.tr("on") if resolved.auto_levels_soft_tails else self.tr("off")
+        curve_strength = LiveLabTab._format_raw_percent(resolved.tone_curve_strength, decimals=0)
+        curve_midpoint = LiveLabTab._format_raw_percent(resolved.tone_curve_midpoint, decimals=0)
+        return " \u00b7 ".join(
+            [
+                self._raw_white_balance_label(resolved),
+                self.tr("Dark cutoff {value}").format(value=dark_cutoff),
+                self.tr("Bright cutoff {value}").format(value=bright_cutoff),
+                self.tr("Shadow lift {value}").format(value=shadow_lift),
+                self.tr("Soft tails {state}").format(state=soft_tails_label),
+                self.tr("Curve strength {value}").format(value=curve_strength),
+                self.tr("Curve midpoint {value}").format(value=curve_midpoint),
+            ]
+        )
+
     def _raw_processing_summary_text(self) -> str:
         return self._raw_settings_summary_text(self._raw_settings_from_controls(update_session_settings=False))
+
+    def _raw_processing_hint_text(self) -> str:
+        return self.tr(
+            "Pick Camera, Auto, or Custom WB, then click Pick to sample a neutral patch from the preview. "
+            "Preserve tails keeps the auto-level curve softer near the ends, and low midpoint values lift shadows."
+        )
+
+    def _pending_raw_review_hint_text(self) -> str:
+        return self.tr(
+            "Review mode: use ←/→ to move between RAW captures, Delete or Backspace to remove the current image, "
+            "and Enter to save the selected render."
+        )
+
+    def _raw_edit_hint_text(self) -> str:
+        return self.tr(
+            "Editing mode: choose a WB mode, use Pick to sample the preview, then click Apply re-render when ready."
+        )
+
+    def _current_raw_hint_text(self) -> str:
+        if getattr(self, "_raw_edit_session", None) is not None:
+            return self._raw_edit_hint_text()
+        if self._current_pending_raw_capture() is not None:
+            return self._pending_raw_review_hint_text()
+        raw_body = getattr(self, "raw_processing_body", None)
+        if raw_body is not None and raw_body.isVisible():
+            return self._raw_processing_hint_text()
+        return self._default_hint_text
+
+    def _refresh_raw_processing_context_ui(self) -> None:
+        updater = getattr(self, "_update_raw_processing_pick_button", None)
+        if callable(updater):
+            updater()
+        hint_setter = getattr(self, "_set_hint", None)
+        if callable(hint_setter):
+            hint_setter(self._current_raw_hint_text())
+
+    def _raw_processing_pick_target(self) -> str | None:
+        if getattr(self, "_raw_edit_session", None) is not None:
+            return "edit"
+        if self._current_pending_raw_capture() is not None:
+            return "pending"
+        return None
+
+    def _update_raw_processing_pick_button(self) -> None:
+        button = getattr(self, "raw_pick_wb_btn", None)
+        if button is None:
+            return
+        target = self._raw_processing_pick_target()
+        armed = False
+        if target == "edit":
+            armed = bool(getattr(self, "_raw_edit_background_wb_armed", False))
+        elif target == "pending":
+            armed = bool(getattr(self, "_pending_raw_background_wb_armed", False))
+        with QSignalBlocker(button):
+            button.setChecked(armed)
+        button.setEnabled(bool(target))
+        button.setText(self.tr("Cancel") if armed else self.tr("Pick"))
+
+    def _toggle_active_raw_background_wb_pick(self, checked: bool) -> None:
+        target = self._raw_processing_pick_target()
+        button = getattr(self, "raw_pick_wb_btn", None)
+        if not checked:
+            if target is not None:
+                self._cancel_raw_background_wb_selection(target=target)
+            self._refresh_raw_processing_context_ui()
+            return
+        if target is None:
+            if button is not None:
+                with QSignalBlocker(button):
+                    button.setChecked(False)
+            self._show_status(
+                self.tr("Choose a pending RAW capture or a RAW edit session before sampling background WB."),
+                tone="warning",
+                timeout_ms=4000,
+            )
+            self._refresh_raw_processing_context_ui()
+            return
+        self._toggle_raw_background_wb_pick(True, target=target)
 
     def _update_raw_processing_section_label(self, expanded: bool) -> None:
         if not hasattr(self, "raw_processing_toggle_btn"):
@@ -1178,6 +1331,7 @@ class LiveLabTab(QWidget):
         if hasattr(self, "raw_processing_body"):
             self.raw_processing_body.setVisible(bool(checked))
         self._update_raw_processing_section_label(bool(checked))
+        self._set_hint(self._current_raw_hint_text())
 
     def _on_raw_processing_controls_changed(self, *_args) -> None:
         editing_session = getattr(self, "_raw_edit_session", None)
@@ -1263,8 +1417,8 @@ class LiveLabTab(QWidget):
         active_capture = capture or self._current_pending_raw_capture()
         if self._raw_settings_has_sampled_background_wb(active_capture.raw_settings if active_capture is not None else None):
             readout = self._raw_white_balance_readout_text(active_capture.raw_settings if active_capture is not None else None)
-            return self.tr("{readout} · ←/→ select · Delete discard · Enter save").format(readout=readout)
-        return self.tr("←/→ select · Delete discard · Enter save")
+            return self.tr("{readout} · ←/→ select · Delete/Backspace remove current image · Enter save").format(readout=readout)
+        return self.tr("←/→ select · Delete/Backspace remove current image · Enter save")
 
     def _set_pending_raw_background_wb_armed(self, armed: bool) -> None:
         self._set_raw_background_wb_armed(armed, target="pending")
@@ -1384,14 +1538,14 @@ class LiveLabTab(QWidget):
             session_name = Path(str(session.source_raw_path)).name
             summary_text = self.tr("Editing RAW: {name} · {summary}").format(
                 name=session_name,
-                summary=self._raw_settings_summary_text(session.working_settings),
+                summary=self._raw_settings_info_text(session.working_settings),
             )
             if session.dirty:
                 summary_text = f"{summary_text} {self.tr('· modified')}"
         elif editable_session is not None:
             summary_text = self.tr("RAW-backed image: {name} · {summary}").format(
                 name=Path(str(editable_session.current_derivative_path)).name,
-                summary=self._raw_settings_summary_text(editable_session.original_settings),
+                summary=self._raw_settings_info_text(editable_session.original_settings),
             )
             if has_copied_settings:
                 summary_text = f"{summary_text} {self.tr('· copied settings available')}"
@@ -1400,6 +1554,7 @@ class LiveLabTab(QWidget):
 
         if summary_label is not None:
             summary_label.setText(summary_text)
+        self._refresh_raw_processing_context_ui()
 
     def _begin_raw_edit_for_selected_image(
         self,
@@ -1695,7 +1850,7 @@ class LiveLabTab(QWidget):
                     label.setText(
                         self.tr("Editing RAW: {name} · {summary}").format(
                             name=Path(str(self._raw_edit_session.source_raw_path)).name,
-                            summary=self._raw_settings_summary_text(self._raw_edit_session.working_settings),
+                            summary=self._raw_settings_info_text(self._raw_edit_session.working_settings),
                         )
                     )
 
@@ -1712,6 +1867,7 @@ class LiveLabTab(QWidget):
                 self.live_image_label.setCursor(Qt.CrossCursor if armed else Qt.ArrowCursor)
             except Exception:
                 pass
+        self._refresh_raw_processing_context_ui()
 
     def _cancel_raw_background_wb_selection(self, *, target: str = "pending") -> None:
         self._set_raw_background_wb_armed(False, target=target)
@@ -1821,6 +1977,88 @@ class LiveLabTab(QWidget):
             return pixmap
         return None
 
+    def _raw_background_wb_sampling_view(
+        self,
+        target: str = "pending",
+    ) -> tuple[QPixmap | None, tuple[float, float, float, float] | None, tuple[float, float] | None, tuple[float, float] | None]:
+        base_pixmap = self._raw_background_wb_sampling_pixmap(target)
+        if base_pixmap is None or base_pixmap.isNull():
+            return None, None, None, None
+
+        display_pixmap = getattr(self.live_image_label, "original_pixmap", None)
+        if display_pixmap is None or display_pixmap.isNull():
+            display_pixmap = base_pixmap
+
+        display_width = float(max(1, int(display_pixmap.width())))
+        display_height = float(max(1, int(display_pixmap.height())))
+        base_width = float(max(1, int(base_pixmap.width())))
+        base_height = float(max(1, int(base_pixmap.height())))
+        source_scale_x = base_width / display_width
+        source_scale_y = base_height / display_height
+
+        crop_left = 0.0
+        crop_top = 0.0
+        crop_width = base_width
+        crop_height = base_height
+        view_getter = getattr(self.live_image_label, "get_current_view_crop_rect", None)
+        if callable(view_getter):
+            try:
+                view_rect = view_getter()
+            except Exception:
+                view_rect = None
+            if view_rect:
+                try:
+                    view_left, view_top, view_width, view_height = (
+                        float(view_rect[0]),
+                        float(view_rect[1]),
+                        float(view_rect[2]),
+                        float(view_rect[3]),
+                    )
+                except Exception:
+                    view_left = view_top = view_width = view_height = 0.0
+                if view_width > 0 and view_height > 0:
+                    crop_left = max(0.0, min(base_width - 1.0, view_left * source_scale_x))
+                    crop_top = max(0.0, min(base_height - 1.0, view_top * source_scale_y))
+                    crop_width = max(1.0, min(base_width - crop_left, view_width * source_scale_x))
+                    crop_height = max(1.0, min(base_height - crop_top, view_height * source_scale_y))
+
+        crop_x = max(0, min(int(crop_left), int(base_width) - 1))
+        crop_y = max(0, min(int(crop_top), int(base_height) - 1))
+        crop_w = max(1, min(int(round(crop_width)), int(base_width) - crop_x))
+        crop_h = max(1, min(int(round(crop_height)), int(base_height) - crop_y))
+        working_pixmap = base_pixmap.copy(crop_x, crop_y, crop_w, crop_h)
+
+        widget_size = getattr(self.live_image_label, "size", None)
+        if callable(widget_size):
+            try:
+                widget_size = widget_size()
+            except Exception:
+                widget_size = None
+        if widget_size is not None:
+            try:
+                target_w = int(widget_size.width())
+                target_h = int(widget_size.height())
+            except Exception:
+                target_w = target_h = 0
+            if target_w > 0 and target_h > 0 and (working_pixmap.width() > target_w or working_pixmap.height() > target_h):
+                scale = min(float(target_w) / float(working_pixmap.width()), float(target_h) / float(working_pixmap.height()))
+                if scale < 1.0:
+                    working_pixmap = working_pixmap.scaled(
+                        max(1, int(round(working_pixmap.width() * scale))),
+                        max(1, int(round(working_pixmap.height() * scale))),
+                        Qt.IgnoreAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
+
+        working_scale_x = float(working_pixmap.width()) / float(crop_w)
+        working_scale_y = float(working_pixmap.height()) / float(crop_h)
+        return (
+            working_pixmap,
+            (float(crop_x), float(crop_y), float(crop_w), float(crop_h)),
+            (source_scale_x, source_scale_y),
+            (working_scale_x, working_scale_y),
+        )
+
     def _raw_background_wb_sample_rect_from_point(
         self,
         point: QPointF,
@@ -1917,7 +2155,15 @@ class LiveLabTab(QWidget):
         if not armed:
             return False
 
-        pixmap = self._raw_background_wb_sampling_pixmap(target)
+        pixmap, crop_rect, source_scale, working_scale = self._raw_background_wb_sampling_view(target)
+        if pixmap is None or crop_rect is None or source_scale is None or working_scale is None:
+            self._show_status(
+                self.tr("The stable preview is not available for background WB sampling."),
+                tone="warning",
+                timeout_ms=4000,
+            )
+            return False
+
         rgb = self._pixmap_rgb_array(pixmap)
         if rgb is None:
             self._show_status(
@@ -1944,8 +2190,24 @@ class LiveLabTab(QWidget):
         height = float(max(0.0, y2 - y1))
         if width < 1.0 or height < 1.0:
             return False
+        source_x1 = float(x1) * float(source_scale[0])
+        source_y1 = float(y1) * float(source_scale[1])
+        source_x2 = float(x2) * float(source_scale[0])
+        source_y2 = float(y2) * float(source_scale[1])
+        local_x1 = max(0.0, source_x1 - float(crop_rect[0]))
+        local_y1 = max(0.0, source_y1 - float(crop_rect[1]))
+        local_x2 = min(float(crop_rect[2]), source_x2 - float(crop_rect[0]))
+        local_y2 = min(float(crop_rect[3]), source_y2 - float(crop_rect[1]))
+        if local_x2 <= local_x1 or local_y2 <= local_y1:
+            return False
+        sample_rect = (
+            float(local_x1) * float(working_scale[0]),
+            float(local_y1) * float(working_scale[1]),
+            max(1.0, float(local_x2 - local_x1) * float(working_scale[0])),
+            max(1.0, float(local_y2 - local_y1) * float(working_scale[1])),
+        )
         try:
-            multipliers = estimate_white_balance_from_background(rgb, rect=(x1, y1, width, height))
+            multipliers = estimate_white_balance_from_background(rgb, rect=sample_rect)
         except Exception as exc:
             self._show_status(
                 self.tr("Could not sample background WB from the selected region: {error}").format(error=str(exc)),
@@ -1974,7 +2236,7 @@ class LiveLabTab(QWidget):
         return self._apply_raw_background_wb_result(
             base_settings,
             (float(multipliers[0]), float(multipliers[1]), float(multipliers[2])),
-            (float(x1), float(y1), float(width), float(height)),
+            (float(crop_rect[0] + local_x1), float(crop_rect[1] + local_y1), float(local_x2 - local_x1), float(local_y2 - local_y1)),
             target=target,
             sample_size=None,
         )
@@ -1984,7 +2246,15 @@ class LiveLabTab(QWidget):
         if not armed:
             return False
 
-        pixmap = self._raw_background_wb_sampling_pixmap(target)
+        pixmap, crop_rect, source_scale, working_scale = self._raw_background_wb_sampling_view(target)
+        if pixmap is None or crop_rect is None or source_scale is None or working_scale is None:
+            self._show_status(
+                self.tr("The stable preview is not available for background WB sampling."),
+                tone="warning",
+                timeout_ms=4000,
+            )
+            return False
+
         rgb = self._pixmap_rgb_array(pixmap)
         if rgb is None:
             self._show_status(
@@ -1995,7 +2265,10 @@ class LiveLabTab(QWidget):
             return False
 
         sample_rect = self._raw_background_wb_sample_rect_from_point(
-            point,
+            QPointF(
+                max(0.0, (float(point.x()) * float(source_scale[0])) - float(crop_rect[0])) * float(working_scale[0]),
+                max(0.0, (float(point.y()) * float(source_scale[1])) - float(crop_rect[1])) * float(working_scale[1]),
+            ),
             self.RAW_BACKGROUND_WB_SAMPLE_SIZE,
             pixmap=pixmap,
         )
@@ -2037,7 +2310,12 @@ class LiveLabTab(QWidget):
         return self._apply_raw_background_wb_result(
             base_settings,
             (float(multipliers[0]), float(multipliers[1]), float(multipliers[2])),
-            sample_rect,
+            (
+                float(crop_rect[0] + (float(sample_rect[0]) / float(working_scale[0]))),
+                float(crop_rect[1] + (float(sample_rect[1]) / float(working_scale[1]))),
+                float(sample_rect[2]) / float(working_scale[0]),
+                float(sample_rect[3]) / float(working_scale[1]),
+            ),
             target=target,
             sample_point=sample_point,
             sample_size=self.RAW_BACKGROUND_WB_SAMPLE_SIZE,
@@ -2215,7 +2493,8 @@ class LiveLabTab(QWidget):
         selector = getattr(self, "raw_capture_mode_selector", None)
         if selector is not None:
             return self._normalize_raw_capture_mode(selector.selected_value(self.RAW_CAPTURE_MODE_AUTO_SAVE))
-        return self._normalize_raw_capture_mode(getattr(self, "_raw_capture_mode", self.RAW_CAPTURE_MODE_AUTO_SAVE))
+        # The simplified Live Lab UI always reviews RAW captures.
+        return self.RAW_CAPTURE_MODE_REVIEW
 
     def _raw_capture_mode_label(self, mode: str | None = None, *, short: bool = False) -> str:
         normalized = self._normalize_raw_capture_mode(mode or self._selected_raw_capture_mode())
@@ -2227,16 +2506,21 @@ class LiveLabTab(QWidget):
         saved = self._normalize_raw_capture_mode(
             SettingsDB.get_setting(self.SETTING_RAW_CAPTURE_MODE, self.RAW_CAPTURE_MODE_AUTO_SAVE)
         )
-        self._raw_capture_mode = saved
         selector = getattr(self, "raw_capture_mode_selector", None)
         if selector is not None:
+            self._raw_capture_mode = saved
             selector.set_selected_value(saved)
+        else:
+            self._raw_capture_mode = self.RAW_CAPTURE_MODE_REVIEW
         self._update_pending_raw_controls()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
 
     def _save_raw_capture_mode(self, mode: str | None = None) -> None:
         normalized = self._normalize_raw_capture_mode(mode or self._selected_raw_capture_mode())
-        self._raw_capture_mode = normalized
+        if getattr(self, "raw_capture_mode_selector", None) is not None:
+            self._raw_capture_mode = normalized
+        else:
+            self._raw_capture_mode = self.RAW_CAPTURE_MODE_REVIEW
         SettingsDB.set_setting(self.SETTING_RAW_CAPTURE_MODE, normalized)
 
     def _on_raw_capture_mode_changed(self, value) -> None:
@@ -2444,6 +2728,7 @@ class LiveLabTab(QWidget):
             hint_label.setText(self._pending_raw_action_hint_text(current_capture))
 
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+        self._refresh_raw_processing_context_ui()
 
     def _show_pending_raw_capture(self, index: int | None = None) -> None:
         captures = getattr(self, "_pending_raw_captures", [])
@@ -2496,7 +2781,19 @@ class LiveLabTab(QWidget):
             self._update_pending_raw_controls()
             return
 
-        self.live_image_label.set_image_sources(pixmap, preview_path, preview_scaled)
+        preserve_view = False
+        preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
+        if callable(preserve_view_checker):
+            try:
+                preserve_view = bool(preserve_view_checker(preview_path))
+            except Exception:
+                preserve_view = False
+        self.live_image_label.set_image_sources(
+            pixmap,
+            preview_path,
+            preview_scaled,
+            preserve_view=preserve_view,
+        )
         self.reset_view_btn.setEnabled(True)
         self.live_image_label.set_microns_per_pixel(0.0)
         self.live_image_label.set_scale_bar(False, 0.0)
@@ -2507,7 +2804,7 @@ class LiveLabTab(QWidget):
                 name=capture.source_path.name,
             )
         )
-        self.viewer_meta_label.setText(self._raw_processing_summary_text())
+        self.viewer_meta_label.setText(self._raw_settings_info_text(capture.raw_settings))
         self._update_pending_raw_controls()
 
     def _refresh_selected_pending_raw_preview(self) -> None:
@@ -2967,12 +3264,22 @@ class LiveLabTab(QWidget):
             self._clear_companion_group(group_key)
 
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
-        if self._hint_controller is not None:
-            self._hint_controller.set_hint(text, tone=tone)
+        controller = getattr(self, "_hint_controller", None)
+        if controller is not None:
+            controller.set_hint(text, tone=tone)
 
     def _show_status(self, text: str | None, tone: str = "info", timeout_ms: int = 4000) -> None:
-        if self._hint_controller is not None:
-            self._hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
+        controller = getattr(self, "_hint_controller", None)
+        if controller is not None:
+            controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        event_type = event.type() if event is not None else None
+        palette_change = getattr(QEvent, "PaletteChange", None)
+        app_palette_change = getattr(QEvent, "ApplicationPaletteChange", None)
+        if event_type in {palette_change, app_palette_change}:
+            self._update_lab_state_combo_alerts()
 
     def _make_combo(self):
         from PySide6.QtWidgets import QComboBox
@@ -3005,6 +3312,97 @@ class LiveLabTab(QWidget):
     def _remember_last_used_term(self, category: str, value: str | None) -> None:
         if value:
             SettingsDB.set_setting(DatabaseTerms.last_used_key(category), str(value))
+
+    def _lab_state_combo_alert_stylesheet(self) -> str:
+        app = QApplication.instance()
+        palette = app.palette() if app is not None else QApplication.palette()
+        dark = bool(palette.window().color().lightness() < 128)
+        if dark:
+            background = "#4b1f24"
+            background_hover = "#5d262d"
+            border = "#d65a63"
+            text = "#ffecec"
+        else:
+            background = "#ffe1e1"
+            background_hover = "#ffd3d3"
+            border = "#d64545"
+            text = "#7f1d1d"
+        view_base = palette.base().color().name()
+        view_text = palette.text().color().name()
+        view_highlight = palette.highlight().color().name()
+        view_highlight_text = palette.highlightedText().color().name()
+        return (
+            'QComboBox[labStateAlert="true"] {'
+            f" background-color: {background};"
+            f" color: {text};"
+            f" border: 1px solid {border};"
+            " border-radius: 6px;"
+            " }"
+            "QComboBox[labStateAlert=\"true\"] QAbstractItemView {"
+            f" background-color: {view_base};"
+            f" color: {view_text};"
+            f" selection-background-color: {view_highlight};"
+            f" selection-color: {view_highlight_text};"
+            " }"
+            f'QComboBox[labStateAlert="true"]:hover {{ background-color: {background_hover}; }}'
+            f'QComboBox[labStateAlert="true"]::drop-down {{ border-left: 1px solid {border}; }}'
+        )
+
+    @staticmethod
+    def _combo_is_unset(combo) -> bool:
+        if combo is None:
+            return False
+        try:
+            if combo.count() <= 0 or combo.currentIndex() < 0:
+                return True
+        except Exception:
+            return True
+        try:
+            data = combo.currentData()
+        except Exception:
+            data = None
+        if data is None:
+            return True
+        data_text = str(data or "").strip().lower()
+        if data_text in {"not_set", "not set"}:
+            return True
+        text = str(combo.currentText() or "").strip().lower()
+        return not text or text in {"not_set", "not set"}
+
+    def _set_lab_state_combo_alert(self, combo, alert: bool) -> None:
+        if combo is None:
+            return
+        combo.setProperty("labStateAlert", bool(alert))
+        combo.setStyleSheet(self._lab_state_combo_alert_stylesheet())
+        style = combo.style()
+        try:
+            style.unpolish(combo)
+            style.polish(combo)
+        except Exception:
+            pass
+        combo.update()
+
+    def _update_lab_state_combo_alerts(self, *_args) -> None:
+        for combo in (
+            getattr(self, "objective_combo", None),
+            getattr(self, "contrast_combo", None),
+            getattr(self, "mount_combo", None),
+            getattr(self, "stain_combo", None),
+            getattr(self, "sample_combo", None),
+        ):
+            self._set_lab_state_combo_alert(combo, self._combo_is_unset(combo))
+
+    def _should_preserve_live_image_view(self, image_path: str | None) -> bool:
+        label = getattr(self, "live_image_label", None)
+        if label is None or not image_path:
+            return False
+        current_path = str(getattr(label, "_full_image_path", "") or "").strip()
+        if not current_path:
+            return False
+        try:
+            return Path(current_path) == Path(str(image_path))
+        except Exception:
+            return current_path == str(image_path)
 
     def _populate_objective_combo(self) -> None:
         self.objective_combo.clear()
@@ -3061,6 +3459,7 @@ class LiveLabTab(QWidget):
                 self.objective_combo.currentText(),
             )
         )
+        self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.contrast_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "contrast",
@@ -3068,6 +3467,7 @@ class LiveLabTab(QWidget):
                 self.contrast_combo.currentText(),
             )
         )
+        self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.mount_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "mount_medium",
@@ -3075,6 +3475,7 @@ class LiveLabTab(QWidget):
                 self.mount_combo.currentText(),
             )
         )
+        self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.stain_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "stain",
@@ -3082,6 +3483,7 @@ class LiveLabTab(QWidget):
                 self.stain_combo.currentText(),
             )
         )
+        self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.sample_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "sample_type",
@@ -3089,14 +3491,19 @@ class LiveLabTab(QWidget):
                 self.sample_combo.currentText(),
             )
         )
+        self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
 
     def _restore_watch_dir(self) -> None:
         saved = str(SettingsDB.get_setting(self.SETTING_WATCH_DIR, "") or "").strip()
         if saved:
             self.watch_dir_input.setText(saved)
+            self.watch_dir_input.setCursorPosition(len(saved))
+            self.watch_dir_input.setToolTip(saved)
 
     def _on_watch_dir_changed(self, text: str) -> None:
         SettingsDB.set_setting(self.SETTING_WATCH_DIR, str(text or "").strip())
+        if hasattr(self, "watch_dir_input") and self.watch_dir_input is not None:
+            self.watch_dir_input.setToolTip(str(text or "").strip())
         self._update_session_controls()
 
     def _choose_watch_dir(self) -> None:
@@ -3105,11 +3512,8 @@ class LiveLabTab(QWidget):
         chosen = QFileDialog.getExistingDirectory(self, self.tr("Choose microscope capture folder"), start_dir)
         if chosen:
             self.watch_dir_input.setText(chosen)
-
-    def _open_watch_dir(self) -> None:
-        path = str(self.watch_dir_input.text() or "").strip()
-        if path and Path(path).exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            self.watch_dir_input.setCursorPosition(len(chosen))
+            self.watch_dir_input.setToolTip(chosen)
 
     def _open_observations_tab(self) -> None:
         self._main_window.tab_widget.setCurrentIndex(0)
@@ -3361,11 +3765,6 @@ class LiveLabTab(QWidget):
             and (watch_ok if selected_mode == self.SESSION_MODE_LIVE else True)
         )
 
-        self.change_observation_btn.setEnabled(not running and not stopping)
-        self.change_observation_btn.setProperty(
-            "_hint_disabled_text",
-            self.tr("Stop the current Live Lab session before changing observation."),
-        )
         self.session_mode_combo.setEnabled(not running and not stopping)
         self.session_mode_combo.setProperty(
             "_hint_disabled_text",
@@ -3374,44 +3773,20 @@ class LiveLabTab(QWidget):
         self.watch_group.setVisible(mode_is_live if running else selected_mode == self.SESSION_MODE_LIVE)
         self.watch_dir_input.setReadOnly(running or stopping or selected_mode != self.SESSION_MODE_LIVE)
         self.browse_btn.setEnabled(not running and not stopping and selected_mode == self.SESSION_MODE_LIVE)
-        self.open_folder_btn.setEnabled(watch_ok and selected_mode == self.SESSION_MODE_LIVE)
-        self.open_folder_btn.setProperty(
-            "_hint_disabled_text",
-            self.tr("Choose an existing watched folder first."),
-        )
         self.start_stop_btn.setEnabled(bool(running or can_start))
         self.session_note_input.setEnabled(bool(running and not stopping))
         self.add_note_btn.setEnabled(bool(running and not stopping))
 
         if stopping:
             self.start_stop_btn.setText(self.tr("Stopping..."))
-            status_text = (
-                self.tr("Stopping the retrospective session...")
-                if active_mode == self.SESSION_MODE_OFFLINE
-                else self.tr("Stopping the Live Lab session...")
-            )
         elif running:
             self.start_stop_btn.setText(self.tr("Stop Session"))
-            status_text = (
-                self.tr("Recording lab-state changes for retrospective matching.")
-                if active_mode == self.SESSION_MODE_OFFLINE
-                else self.tr("Watching for new microscope captures.")
-            )
         else:
             self.start_stop_btn.setText(
                 self.tr("Start Log Session")
                 if selected_mode == self.SESSION_MODE_OFFLINE
                 else self.tr("Start Session")
             )
-            if not self._target_observation_id:
-                status_text = self.tr("Choose a current observation in Observations before starting a Live Lab session.")
-            elif selected_mode == self.SESSION_MODE_LIVE and not watch_ok:
-                status_text = self.tr("Choose an existing microscope capture folder to watch.")
-            elif selected_mode == self.SESSION_MODE_OFFLINE:
-                status_text = self.tr("Ready to start a retrospective log-only session.")
-            else:
-                status_text = self.tr("Ready to start a Live Lab session.")
-
         if not running and not stopping:
             if selected_mode == self.SESSION_MODE_OFFLINE:
                 disabled_hint = self.tr("Choose a current observation before starting the session.")
@@ -3425,10 +3800,6 @@ class LiveLabTab(QWidget):
 
         self._set_session_button_style(bool(running or stopping))
         self._update_tab_recording_indicator(bool(running or stopping))
-        self.session_status_label.setText(status_text)
-        self.session_count_label.setText(
-            self.tr("Imported this session: {count}").format(count=self._session_import_count)
-        )
 
     def _toggle_session(self) -> None:
         if self.is_session_running():
@@ -3838,7 +4209,19 @@ class LiveLabTab(QWidget):
             self._update_raw_edit_controls()
             return
 
-        self.live_image_label.set_image_sources(pixmap, image_path, preview_scaled)
+        preserve_view = False
+        preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
+        if callable(preserve_view_checker):
+            try:
+                preserve_view = bool(preserve_view_checker(image_path))
+            except Exception:
+                preserve_view = False
+        self.live_image_label.set_image_sources(
+            pixmap,
+            image_path,
+            preview_scaled,
+            preserve_view=preserve_view,
+        )
         self.reset_view_btn.setEnabled(True)
 
         mpp_value = self._image_microns_per_pixel(image)
@@ -3854,7 +4237,7 @@ class LiveLabTab(QWidget):
             self.viewer_title_label.setText(
                 self.tr("Editing RAW: {name}").format(name=edit_session.source_raw_path.name)
             )
-            self.viewer_meta_label.setText(self._raw_settings_summary_text(edit_session.working_settings))
+            self.viewer_meta_label.setText(self._raw_settings_info_text(edit_session.working_settings))
         else:
             title_prefix = self.tr("Last import")
             if self._session_image_ids and int(image_id) != int(self._session_image_ids[-1]):
