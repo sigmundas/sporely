@@ -621,43 +621,9 @@ class LiveLabTab(QWidget):
         viewer_header_layout.addWidget(self.reset_view_btn, 0, Qt.AlignTop)
         viewer_layout.addWidget(viewer_header)
 
-        self.raw_edit_frame = QFrame()
-        self.raw_edit_frame.setObjectName("sectionCard")
-        self.raw_edit_frame.setFrameShape(QFrame.NoFrame)
-        self.raw_edit_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        raw_edit_layout = QVBoxLayout(self.raw_edit_frame)
-        raw_edit_layout.setContentsMargins(12, 8, 12, 8)
-        raw_edit_layout.setSpacing(8)
-
-        self.raw_edit_summary_label = QLabel("")
-        self.raw_edit_summary_label.setWordWrap(True)
-        self.raw_edit_summary_label.setStyleSheet("color: #6b7280;")
-        raw_edit_layout.addWidget(self.raw_edit_summary_label)
-
-        self.raw_edit_note_label = QLabel(
-            self.tr("Re-render the selected RAW-backed image in place. The original RAW source stays untouched.")
-        )
-        self.raw_edit_note_label.setWordWrap(True)
-        self.raw_edit_note_label.setStyleSheet("color: #6b7280;")
-        raw_edit_layout.addWidget(self.raw_edit_note_label)
-
-        raw_edit_button_row = QWidget()
-        raw_edit_button_layout = QGridLayout(raw_edit_button_row)
-        raw_edit_button_layout.setContentsMargins(0, 0, 0, 0)
-        raw_edit_button_layout.setHorizontalSpacing(8)
-        raw_edit_button_layout.setVerticalSpacing(8)
-
-        self.raw_edit_open_btn = QPushButton(self.tr("Edit RAW settings"))
-        self.raw_edit_open_btn.clicked.connect(self._begin_raw_edit_for_selected_image)
-        raw_edit_button_layout.addWidget(self.raw_edit_open_btn, 0, 0)
-
-        self.raw_edit_apply_btn = QPushButton(self.tr("Apply re-render"))
-        self.raw_edit_apply_btn.clicked.connect(self._apply_raw_edit_session)
-        raw_edit_button_layout.addWidget(self.raw_edit_apply_btn, 0, 2)
-
-        raw_edit_layout.addWidget(raw_edit_button_row)
-        self.raw_edit_frame.setVisible(False)
-        viewer_layout.addWidget(self.raw_edit_frame)
+        # Committed RAW images behave like normal images; the in-place RAW
+        # re-render panel has been removed. Users review/edit RAW settings once
+        # before saving via the pending RAW review flow.
 
         viewer_layout.addWidget(self.pending_raw_frame)
 
@@ -782,16 +748,6 @@ class LiveLabTab(QWidget):
         self._register_hint_widget(
             self.raw_pick_wb_btn,
             self.tr("Sample a neutral point from the preview and set the current RAW white balance."),
-        )
-        self._register_hint_widget(
-            self.raw_edit_open_btn,
-            self.tr("Open the selected RAW-backed image for in-place re-rendering."),
-            disabled_hint=self.tr("Select a committed RAW-backed session image first."),
-        )
-        self._register_hint_widget(
-            self.raw_edit_apply_btn,
-            self.tr("Render the selected RAW-backed image again using the current settings."),
-            disabled_hint=self.tr("Start a RAW edit session first."),
         )
         self._register_hint_widget(
             self.pending_raw_save_btn,

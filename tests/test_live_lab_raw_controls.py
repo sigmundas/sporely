@@ -1121,6 +1121,74 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     assert tab.session_gallery._selected_id == tab.session_gallery._items[0]["id"]
 
 
+def _build_offscreen_live_lab_tab(monkeypatch):
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_populate_objective_combo", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_restore_watch_dir", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_restore_session_mode", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_restore_raw_capture_mode", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_load_raw_processing_settings_for_current_context", lambda self: self._raw_render_settings)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_connect_session_logging_signals", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_clear_session_viewer", lambda self, *args, **kwargs: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_update_target_display", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_update_session_controls", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_register_hint_widgets", lambda self: None)
+    monkeypatch.setattr(live_lab_tab.LiveLabTab, "_set_hint", lambda self, *args, **kwargs: None)
+    monkeypatch.setattr(live_lab_tab, "load_objectives", lambda: {})
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    return live_lab_tab.LiveLabTab(SimpleNamespace())
+
+
+def test_live_lab_instantiates_without_committed_raw_edit_panel(monkeypatch, qapp):
+    tab = _build_offscreen_live_lab_tab(monkeypatch)
+    tab.show()
+    qapp.processEvents()
+
+    # The committed RAW re-render / edit panel and its buttons are gone.
+    assert not hasattr(tab, "raw_edit_frame")
+    assert not hasattr(tab, "raw_edit_open_btn")
+    assert not hasattr(tab, "raw_edit_apply_btn")
+    assert not hasattr(tab, "raw_edit_summary_label")
+    assert not hasattr(tab, "raw_edit_note_label")
+
+    # Pending RAW review controls remain available.
+    assert tab.pending_raw_save_btn.text() == "Save current"
+    assert tab.pending_raw_apply_all_btn.text() == "Apply settings to all pending"
+
+
+def test_live_lab_selecting_committed_raw_image_does_not_show_edit_panel(tmp_path, monkeypatch, qapp):
+    tab = _build_offscreen_live_lab_tab(monkeypatch)
+    tab.show()
+    qapp.processEvents()
+
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    derivative_path = tmp_path / "imports" / "sample.jpg"
+    derivative_path.parent.mkdir(parents=True, exist_ok=True)
+    _fake_render_raw_jpeg(source_path, output_path=derivative_path)
+
+    images = {101: _make_raw_image_row(101, source_path=source_path, derivative_path=derivative_path)}
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None,
+    )
+
+    tab._session_image_ids = [101]
+    tab._selected_session_image_id = 101
+
+    # Selecting a committed RAW-backed image must not crash or surface an edit panel.
+    tab._update_raw_edit_controls()
+    tab._show_session_image(101)
+    qapp.processEvents()
+
+    assert not hasattr(tab, "raw_edit_frame")
+    assert not hasattr(tab, "raw_edit_open_btn")
+    assert not hasattr(tab, "raw_edit_apply_btn")
+    # The committed RAW image still displays normally.
+    assert tab.live_image_label is not None
+
+
 def test_live_lab_review_keyboard_shortcuts_navigate_save_and_skip_text_focus(tmp_path, monkeypatch, qapp):
     _qapp()
     source_one = tmp_path / "P070020_1.ORF"
