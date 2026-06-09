@@ -1,6 +1,7 @@
 """Dialog for preparing images before creating an observation."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -63,7 +64,12 @@ from PySide6.QtWidgets import (
 )
 
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG
-from config import LOCAL_IMPORT_IMAGE_FILTER, RAW_FORMATS
+from config import (
+    LOCAL_IMPORT_IMAGE_FILTER,
+    RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+    RAW_FORMATS,
+    SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+)
 from database.schema import (
     load_objectives,
     save_objectives,
@@ -76,10 +82,19 @@ from database.schema import (
 )
 from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
+from utils.image_companion_grouping import normalize_raw_companion_source_preference
+from utils.image_import_candidates import (
+    IMAGE_IMPORT_STATUS_COMMITTED,
+    IMAGE_IMPORT_STATUS_FAILED,
+    IMAGE_IMPORT_STATUS_READY,
+    IMAGE_IMPORT_STATUS_SKIPPED,
+    ImageImportCandidate,
+    build_image_import_candidates,
+    prepare_image_import_candidates,
+)
 from utils.vernacular_utils import normalize_vernacular_language
 from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates, get_camera_model
 from utils.heic_converter import maybe_convert_heic
-from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from .image_gallery_widget import ImageGalleryWidget
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
@@ -173,6 +188,14 @@ class ImageImportResult:
     original_filepath: Optional[str] = None
     source_filepath: Optional[str] = None
     lab_metadata: Optional[dict] = None
+    status: str = IMAGE_IMPORT_STATUS_COMMITTED
+    failure_reason: Optional[str] = None
+    error_detail: Optional[str] = None
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    selected_source_policy: Optional[str] = None
+    source_kind: Optional[str] = None
+    companion_paths: tuple[str, ...] = ()
     scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
     scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
 
@@ -192,6 +215,63 @@ class ImageCropUndoState:
     ai_crop_entry: Optional[tuple[float, float, float, float]]
     had_crop_mode_entry: bool
     crop_mode_entry: Optional[str]
+
+
+def image_import_result_from_candidate(
+    candidate: ImageImportCandidate,
+    *,
+    image_type: str,
+    contrast: str | None,
+    mount_medium: str | None,
+    stain: str | None,
+    sample_type: str | None,
+    resize_to_optimal: bool,
+    store_original: bool,
+) -> ImageImportResult:
+    """Convert a prepared import candidate into a dialog result row."""
+    source_path = candidate.source_path or candidate.selected_path
+    working_path = candidate.working_path or candidate.selected_path or source_path
+    preview_path = candidate.preview_path or working_path or source_path
+    status = str(getattr(candidate, "status", IMAGE_IMPORT_STATUS_READY) or IMAGE_IMPORT_STATUS_READY).strip().lower()
+    captured_at = QDateTime(candidate.captured_at) if candidate.captured_at else None
+    gps_latitude = candidate.gps_latitude
+    gps_longitude = candidate.gps_longitude
+    return ImageImportResult(
+        filepath=str(working_path or source_path),
+        preview_path=str(preview_path or working_path or source_path),
+        image_type=image_type,
+        objective=None,
+        custom_scale=None,
+        contrast=contrast,
+        mount_medium=mount_medium,
+        stain=stain,
+        sample_type=sample_type,
+        captured_at=captured_at,
+        gps_latitude=gps_latitude,
+        gps_longitude=gps_longitude,
+        needs_scale=False,
+        exif_has_gps=bool(gps_latitude is not None or gps_longitude is not None),
+        calibration_id=None,
+        ai_crop_box=None,
+        ai_crop_source_size=None,
+        crop_mode=None,
+        pending_image_crop_offset=None,
+        gps_source=False,
+        resample_scale_factor=None,
+        resize_to_optimal=resize_to_optimal,
+        store_original=store_original,
+        original_filepath=str(source_path or working_path),
+        source_filepath=str(source_path or working_path),
+        lab_metadata=deepcopy(candidate.lab_metadata) if candidate.lab_metadata else None,
+        status=status,
+        failure_reason=candidate.failure_reason,
+        error_detail=candidate.error_detail,
+        fallback_used=bool(getattr(candidate, "fallback_used", False)),
+        fallback_reason=getattr(candidate, "fallback_reason", None),
+        selected_source_policy=getattr(candidate, "selected_source_policy", None),
+        source_kind=getattr(candidate, "source_kind", None),
+        companion_paths=tuple(str(path) for path in getattr(candidate, "companion_paths", ()) or ()),
+    )
 
 
 class AIGuessWorker(QThread):
@@ -2822,6 +2902,24 @@ class ImageImportDialog(GeometryMixin, QDialog):
             tone=self._status_tone_from_color(color, default="info"),
         )
 
+    def _selected_raw_companion_source_preference(self) -> str:
+        saved = SettingsDB.get_setting(
+            SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+            RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+        )
+        return normalize_raw_companion_source_preference(saved)
+
+    @staticmethod
+    def _result_status(result: ImageImportResult | None) -> str:
+        return str(getattr(result, "status", IMAGE_IMPORT_STATUS_COMMITTED) or IMAGE_IMPORT_STATUS_COMMITTED).strip().lower()
+
+    def _accepted_import_results(self) -> list[ImageImportResult]:
+        return [
+            result
+            for result in self.import_results
+            if self._result_status(result) not in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}
+        ]
+
     @staticmethod
     def _rotate_normalized_crop_box_counterclockwise(
         box: tuple[float, float, float, float],
@@ -3167,79 +3265,61 @@ class ImageImportDialog(GeometryMixin, QDialog):
         import_dir.mkdir(parents=True, exist_ok=True)
         default_image_type = "microscope" if self.micro_radio.isChecked() else "field"
         first_new_index = len(self.import_results)
-        show_progress = len(paths) > 1
-        total_paths = len(paths)
+        source_preference = self._selected_raw_companion_source_preference()
+        candidates = build_image_import_candidates(paths, source_preference=source_preference)
+        show_progress = len(candidates) > 1
+        total_candidates = len(candidates)
         if show_progress:
             self._set_hint_progress_visible(True)
             self._set_hint_progress(
-                self.tr("Loading images... ({current}/{total})").format(current=0, total=total_paths),
+                self.tr("Loading images... ({current}/{total})").format(current=0, total=total_candidates),
                 0,
             )
             QCoreApplication.processEvents()
         processed = 0
-        for path in paths:
-            source_path = path
-            if not path:
-                continue
-            try:
-                ingest = prepare_local_ingest_image(
-                    path,
-                    lab_metadata={"image_type": default_image_type},
-                    output_dir=import_dir,
-                )
-            except RawRenderingUnavailableError as exc:
-                print(f"Warning: Could not import RAW image {path}: {exc}")
-                continue
-            except RuntimeError as exc:
-                print(f"Warning: Could not prepare image {path}: {exc}")
-                continue
-            path = ingest.working_path
-            if path and path != source_path:
-                self._converted_import_paths.add(path)
-            self.image_paths.append(path)
-            meta = get_image_metadata(path)
-            if meta.get("missing"):
-                self._register_missing_exif_path(path)
-            captured_at = None
-            dt = meta.get("datetime")
-            if dt:
-                captured_at = QDateTime(dt)
-            lat = meta.get("latitude")
-            lon = meta.get("longitude")
-            if (lat is None or lon is None) and path:
-                lat2, lon2 = get_gps_coordinates(path)
-                if lat is None:
-                    lat = lat2
-                if lon is None:
-                    lon = lon2
-            preview_path = path
-            has_exif_gps = lat is not None or lon is not None
-            result = ImageImportResult(
-                filepath=path,
-                preview_path=preview_path or path,
-                contrast=self._field_tag_value("contrast"),
-                mount_medium=self._field_tag_value("mount"),
-                stain=self._field_tag_value("stain"),
-                sample_type=self._field_tag_value("sample"),
-                captured_at=captured_at,
-                gps_latitude=lat,
-                gps_longitude=lon,
-                gps_source=False,
-                exif_has_gps=has_exif_gps,
+        new_results: list[ImageImportResult] = []
+        failed_descriptions: list[str] = []
+        if candidates:
+            field_contrast = self._field_tag_value("contrast")
+            field_mount = self._field_tag_value("mount")
+            field_stain = self._field_tag_value("stain")
+            field_sample = self._field_tag_value("sample")
+        else:
+            field_contrast = field_mount = field_stain = field_sample = None
+        for candidate in candidates:
+            prepared_batch = prepare_image_import_candidates(
+                [candidate],
+                lab_metadata={"image_type": default_image_type},
+                output_dir=import_dir,
+            )
+            prepared = prepared_batch[0] if prepared_batch else candidate
+            result = image_import_result_from_candidate(
+                prepared,
+                image_type=default_image_type,
+                contrast=field_contrast,
+                mount_medium=field_mount,
+                stain=field_stain,
+                sample_type=field_sample,
                 resize_to_optimal=self.resize_to_optimal_default,
                 store_original=self.store_original_default,
-                original_filepath=source_path,
-                source_filepath=source_path,
-                lab_metadata=ingest.lab_metadata,
             )
             self.import_results.append(result)
+            self.image_paths.append(result.filepath)
+            new_results.append(result)
+            if self._result_status(result) in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}:
+                failure_name = Path(result.filepath or result.original_filepath or result.preview_path or "").name
+                failure_reason = result.failure_reason or result.error_detail or self.tr("image preparation failed")
+                if failure_name:
+                    failed_descriptions.append(f"{failure_name} ({failure_reason})")
+                else:
+                    failed_descriptions.append(str(failure_reason))
             if show_progress:
                 processed += 1
-                progress_value = int(round((processed / total_paths) * 100)) if total_paths > 0 else 100
+                progress_value = int(round((processed / total_candidates) * 100)) if total_candidates > 0 else 100
                 self._set_hint_progress(
                     self.tr("Loading images... ({current}/{total})").format(
                         current=processed,
-                        total=total_paths,
+                        total=total_candidates,
                     ),
                     progress_value,
                 )
@@ -3255,19 +3335,40 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_scale_group_state()
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
-        added_count = max(0, len(self.import_results) - first_new_index)
-        added_names = [Path(p).name for p in (paths or []) if p]
+        added_count = max(0, len(new_results))
+        successful_count = sum(
+            1 for result in new_results if self._result_status(result) not in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}
+        )
+        added_names = [candidate.display_name for candidate in candidates if candidate]
         _debug_import_flow(
             f"add_images finished in {time.perf_counter() - start_time:.3f}s; "
-            f"added={added_count}; total={len(self.import_results)}; "
+            f"added={added_count}; success={successful_count}; failures={len(failed_descriptions)}; total={len(self.import_results)}; "
             f"files={added_names}"
         )
-        if self.image_paths:
-            last_new_index = len(self.import_results) - 1
-            if first_new_index <= last_new_index:
-                self._select_image(last_new_index)
-            elif self.selected_index is None:
-                self._select_image(0)
+        if failed_descriptions:
+            summary_text = (
+                self.tr("Loaded {success} images; {failed} failed to prepare.")
+                if successful_count
+                else self.tr("No images were prepared; {failed} failed to prepare.")
+            ).format(success=successful_count, failed=len(failed_descriptions))
+            if failed_descriptions:
+                details = "; ".join(failed_descriptions[:3])
+                if len(failed_descriptions) > 3:
+                    details += self.tr("; ...and {count} more").format(count=len(failed_descriptions) - 3)
+                summary_text = f"{summary_text} {details}"
+            self._set_settings_hint(summary_text, "#e67e22")
+
+        if len(self.import_results) > first_new_index:
+            target_index = None
+            for idx in range(len(self.import_results) - 1, first_new_index - 1, -1):
+                if self._result_status(self.import_results[idx]) not in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}:
+                    target_index = idx
+                    break
+            if target_index is None:
+                target_index = first_new_index
+            self._select_image(target_index)
+        elif self.selected_index is None and self.import_results:
+            self._select_image(0)
 
     def select_image_by_path(self, path: str) -> None:
         """Select and preview a specific image by its file path."""
@@ -3290,6 +3391,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if not result.preview_path:
                 result.preview_path = result.filepath
             result.gps_source = bool(getattr(result, "gps_source", False))
+            result.status = self._result_status(result)
             if result.original_filepath is None:
                 result.original_filepath = result.filepath
             if not hasattr(result, "pending_image_crop_offset"):
@@ -3511,7 +3613,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.preview_path = preview_path
             pixmap = self._get_cached_pixmap(preview_path)
             preview_scaled = self._pixmap_cache_is_preview.get(preview_path or "", False)
-        if (pixmap is None or pixmap.isNull()) and preview_path:
+        if (
+            (pixmap is None or pixmap.isNull())
+            and preview_path
+            and self._result_status(result) not in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}
+        ):
             # Preview-only fallback: keep this as a leaf helper for cached local previews,
             # not as the persistent ingest path.
             converted_path = maybe_convert_heic(preview_path, get_images_dir() / "imports")
@@ -3756,7 +3862,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.gallery.select_paths([result.filepath])
         self._set_preview_for_result(result)
         self._load_result_into_form(result)
-        self._update_current_image_exif(result)
+        status = self._result_status(result)
+        if status in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}:
+            self._clear_current_image_exif()
+            failure_reason = result.failure_reason or result.error_detail or self.tr("image preparation failed")
+            result_name = Path(result.filepath or result.original_filepath or result.preview_path or "").name
+            if result_name:
+                message = self.tr("Import failed for {name}: {reason}").format(name=result_name, reason=failure_reason)
+            else:
+                message = self.tr("Import failed: {reason}").format(reason=failure_reason)
+            self.set_status(message, tone="warning")
+        else:
+            self._update_current_image_exif(result)
         self._update_scale_group_state()
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
@@ -4286,13 +4403,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         microscope_count = sum(1 for item in self.import_results if item.image_type == "microscope")
         missing_scale = sum(1 for item in self.import_results if item.needs_scale)
-        self.summary_label.setText(
-            self.tr("Images: {total}\nMicroscope: {micro}\nMissing scale: {missing}").format(
-                total=total,
-                micro=microscope_count,
-                missing=missing_scale,
-            )
+        failed_count = sum(
+            1
+            for item in self.import_results
+            if self._result_status(item) in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}
         )
+        summary = self.tr("Images: {total}\nMicroscope: {micro}\nMissing scale: {missing}").format(
+            total=total,
+            micro=microscope_count,
+            missing=missing_scale,
+        )
+        if failed_count:
+            summary += "\n" + self.tr("Failed: {count}").format(count=failed_count)
+        self.summary_label.setText(summary)
 
     def _register_missing_exif_path(self, path: str | None) -> None:
         if not path:
@@ -4849,6 +4972,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 translate=self.tr,
             )
             badges.extend(ImageGalleryWidget.build_raw_source_badges(result.lab_metadata, translate=self.tr))
+            status = self._result_status(result)
+            center_badge = None
+            if status == IMAGE_IMPORT_STATUS_FAILED:
+                center_badge = self.tr("Failed")
+            elif status == IMAGE_IMPORT_STATUS_SKIPPED:
+                center_badge = self.tr("Skipped")
+            elif bool(getattr(result, "fallback_used", False)):
+                badges.append(self.tr("Fallback"))
             has_measurements = bool(result.image_id and int(result.image_id) in measured_image_ids)
             is_source = self._observation_source_index == idx
             gps_highlight = is_source and result.exif_has_gps
@@ -4860,6 +4991,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "preview_path": result.preview_path or result.filepath,
                     "image_number": idx + 1,
                     "badges": badges,
+                    "center_badge": center_badge,
                     "gps_tag_text": gps_tag,
                     "gps_tag_highlight": gps_highlight,
                     "has_measurements": has_measurements,
@@ -4995,6 +5127,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         start_time = time.perf_counter()
         self._apply_to_selected()
         self._save_last_used_tag_settings()
+        accepted_results = self._accepted_import_results()
+        if len(accepted_results) != len(self.import_results):
+            self.import_results = accepted_results
+            self.image_paths = [result.filepath for result in accepted_results]
         self._accepted = True
         _debug_import_flow(
             "accept requested; "
