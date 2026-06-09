@@ -1797,6 +1797,80 @@ def test_live_lab_review_mode_commit_uses_selected_settings_and_keeps_snapshot(t
     assert not pending.preview_path.exists()
 
 
+def test_live_lab_ingest_detected_image_merges_partial_and_current_metadata(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = []
+    state._selected_session_image_id = None
+    state._session_import_count = 0
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "contrast": "phase",
+        "mount_medium": "water",
+        "stain": "none",
+        "sample_type": "spore",
+    }
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: None
+    state._show_session_image = lambda image_id: None
+    state._update_session_controls = lambda: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._update_observation_thumbnail = lambda: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state._raw_processing_preset_context = lambda: {}
+
+    captured_calls: list[dict[str, object]] = []
+    add_image_calls: list[dict[str, object]] = []
+    set_setting_calls: list[tuple[str, str]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: tmp_path / "imports" / f"{source.stem}.jpg",
+        captured_calls=captured_calls,
+        add_image_calls=add_image_calls,
+        set_setting_calls=set_setting_calls,
+    )
+    monkeypatch.setattr(live_lab_tab, "load_objectives", lambda: {"40x": {"microns_per_pixel": 0.5}})
+    monkeypatch.setattr(
+        live_lab_tab.CalibrationDB,
+        "get_active_calibration_id",
+        lambda objective_key: 77 if objective_key == "40x" else None,
+    )
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: {"filepath": str(tmp_path / "imports" / "P070020_1.jpg")},
+    )
+
+    assert live_lab_tab.LiveLabTab._ingest_detected_image(
+        state,
+        str(source_path),
+        lab_metadata={"objective_name": "40x"},
+    )
+
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["lab_metadata"]["objective_name"] == "40x"
+    assert captured_calls[0]["lab_metadata"]["contrast"] == "phase"
+    assert captured_calls[0]["lab_metadata"]["mount_medium"] == "water"
+    assert captured_calls[0]["lab_metadata"]["stain"] == "none"
+    assert captured_calls[0]["lab_metadata"]["sample_type"] == "spore"
+    assert len(add_image_calls) == 1
+    merged = add_image_calls[0]["lab_metadata"]
+    assert merged["image_type"] == "microscope"
+    assert merged["objective_name"] == "40x"
+    assert merged["contrast"] == "phase"
+    assert merged["mount_medium"] == "water"
+    assert merged["stain"] == "none"
+    assert merged["sample_type"] == "spore"
+    assert merged["raw_processing"]["source"]["kind"] == "camera_raw"
+    assert merged["raw_processing"]["source"]["path"] == str(source_path)
+    assert set_setting_calls
+
+
 def test_live_lab_review_mode_discard_drops_pending_without_db_row(tmp_path, monkeypatch):
     _qapp()
     source_path = tmp_path / "P070020_1.ORF"

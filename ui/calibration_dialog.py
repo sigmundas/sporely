@@ -6,6 +6,7 @@ import base64
 import io
 import re
 import shutil
+from copy import deepcopy
 from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
@@ -24,16 +25,31 @@ from PySide6.QtWidgets import (
     QCheckBox, QProgressBar, QGridLayout, QLayout, QDialogButtonBox, QStyle,
 )
 
-from config import RASTER_IMAGE_FILTER
+from config import (
+    LOCAL_IMPORT_IMAGE_FILTER,
+    RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+    SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+)
 from database.schema import (
     load_objectives, save_objectives, get_last_objective_path,
-    get_calibrations_dir, get_app_settings, update_app_settings,
+    get_calibrations_dir, get_images_dir, get_app_settings, update_app_settings,
     format_objective_display, objective_display_name, objective_sort_value,
 )
 from database.models import CalibrationAssetDB, CalibrationDB, ObservationDB, SettingsDB
 import utils.slide_calibration as slide_calibration
 import utils.cloud_sync as cloud_sync
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
+from utils.image_companion_grouping import normalize_raw_companion_source_preference
+from utils.image_import_candidates import (
+    IMAGE_IMPORT_STATUS_FAILED,
+    IMAGE_IMPORT_STATUS_READY,
+    IMAGE_IMPORT_STATUS_SKIPPED,
+    ImageImportCandidate,
+    build_image_import_candidates,
+    prepare_image_import_candidates,
+)
+from utils.raw_detection import is_raw_image_path
+from utils.raw_render import RawRenderSettings
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .section_card import create_section_card
 from .styles import pt, _is_dark
@@ -738,9 +754,13 @@ class _AutoCalibrationWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        if is_raw_image_path(self.image_path):
+            self.failed.emit(self.tr("Calibration worker requires a raster working path."))
+            return
         crop_offset = (0.0, 0.0)
         crop_size = None
         pil_img = None
+        crop_prepared = True
         if self.crop_box:
             try:
                 pil_img = Image.open(self.image_path).convert("RGB")
@@ -754,11 +774,14 @@ class _AutoCalibrationWorker(QObject):
                     crop_offset = (float(x1), float(y1))
                     crop_size = (int(x2 - x1), int(y2 - y1))
                 else:
-                    pil_img = None
+                    crop_prepared = False
             except Exception:
-                pil_img = None
+                crop_prepared = False
                 crop_offset = (0.0, 0.0)
                 crop_size = None
+        if self.crop_box and not crop_prepared:
+            self.failed.emit(self.tr("Could not prepare a raster crop for calibration."))
+            return
         try:
             result = slide_calibration.calibrate_image(
                 pil_img if pil_img is not None else self.image_path,
@@ -2926,7 +2949,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             return
 
         img_data = self.calibration_images[self.current_image_index]
-        image_path = img_data.get("path")
+        image_path = img_data.get("working_path") or img_data.get("path")
         if not image_path or not Path(image_path).exists():
             QMessageBox.warning(
                 self,
@@ -3490,16 +3513,391 @@ class CalibrationDialog(GeometryMixin, QDialog):
         export_dir = str(Path(filepath).parent)
         update_app_settings({"last_export_dir": export_dir})
 
+    @staticmethod
+    def _json_default_for_calibration_data(value):
+        if isinstance(value, datetime):
+            return value.isoformat(timespec="seconds")
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, np.generic):
+            return value.item()
+        to_dict = getattr(value, "to_dict", None)
+        if callable(to_dict):
+            try:
+                return to_dict()
+            except Exception:
+                pass
+        return str(value)
+
+    def _selected_raw_companion_source_preference(self) -> str:
+        saved = SettingsDB.get_setting(
+            SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+            RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
+        )
+        return normalize_raw_companion_source_preference(saved)
+
+    @staticmethod
+    def _coerce_calibration_datetime(value) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            return None
+
+    def _calibration_import_lab_metadata(self) -> dict[str, str]:
+        return {
+            "image_type": "calibration",
+            "file_purpose": "calibration",
+        }
+
+    def _calibration_import_output_dir(self) -> Path:
+        output_dir = get_images_dir() / "imports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    def _calibration_image_entry_from_candidate(
+        self,
+        candidate: ImageImportCandidate,
+    ) -> tuple[dict | None, str | None]:
+        status = str(getattr(candidate, "status", "") or "").strip().lower()
+        if status in {IMAGE_IMPORT_STATUS_FAILED, IMAGE_IMPORT_STATUS_SKIPPED}:
+            name = str(getattr(candidate, "display_name", "") or "").strip()
+            reason = str(candidate.failure_reason or candidate.error_detail or self.tr("image preparation failed")).strip()
+            if not name:
+                source_path = candidate.selected_path or candidate.source_path
+                if source_path:
+                    name = Path(str(source_path)).name
+            if name and reason:
+                return None, f"{name} ({reason})"
+            return None, reason or self.tr("image preparation failed")
+
+        working_path = candidate.working_path or candidate.preview_path or candidate.selected_path or candidate.source_path
+        if working_path is None:
+            reason = candidate.failure_reason or self.tr("missing working path")
+            name = Path(str(candidate.display_name or candidate.selected_path or candidate.source_path or "image")).name
+            return None, f"{name} ({reason})" if name else reason
+
+        working_text = str(working_path).strip()
+        if not working_text or not Path(working_text).exists():
+            reason = candidate.failure_reason or self.tr("missing working path")
+            name = Path(str(candidate.display_name or candidate.selected_path or candidate.source_path or working_text or "image")).name
+            detail = str(candidate.error_detail or working_text).strip()
+            message = f"{name} ({reason})" if name else reason
+            if detail and detail != reason:
+                message = f"{message}: {detail}"
+            return None, message
+
+        pixmap = QPixmap(working_text)
+        if pixmap.isNull():
+            name = Path(working_text).name
+            reason = self.tr("Could not load calibration image")
+            return None, f"{name} ({reason})"
+
+        camera_text = None
+        for camera_source in (candidate.source_path, candidate.selected_path, working_path):
+            if not camera_source:
+                continue
+            camera_text = self._extract_camera_text(str(camera_source))
+            if camera_text:
+                break
+
+        source_path = str(candidate.source_path or candidate.selected_path or working_path)
+        selected_path = str(candidate.selected_path or candidate.source_path or working_path)
+        working_text = str(working_path)
+        derivative_width = candidate.working_width
+        derivative_height = candidate.working_height
+        if derivative_width is None or derivative_height is None:
+            derivative_width = pixmap.width()
+            derivative_height = pixmap.height()
+
+        processing_metadata = deepcopy(candidate.processing_metadata) if candidate.processing_metadata else None
+        raw_processing = None
+        if isinstance(processing_metadata, dict):
+            raw_processing = deepcopy(processing_metadata.get("raw_processing"))
+        image_processing = deepcopy(candidate.lab_metadata.get("image_processing")) if candidate.lab_metadata.get("image_processing") else None
+        processing_settings = candidate.processing_settings.to_dict() if candidate.processing_settings else None
+
+        entry = {
+            "path": working_text,
+            "source_path": source_path,
+            "original_path": selected_path,
+            "selected_path": selected_path,
+            "working_path": working_text,
+            "candidate_status": status or IMAGE_IMPORT_STATUS_READY,
+            "source_kind": candidate.source_kind,
+            "selected_source_policy": candidate.selected_source_policy,
+            "companion_paths": tuple(str(path) for path in candidate.companion_paths),
+            "processing_metadata": processing_metadata,
+            "raw_processing": raw_processing,
+            "image_processing": image_processing,
+            "processing_settings": processing_settings,
+            "derivative_width": int(derivative_width) if derivative_width is not None else None,
+            "derivative_height": int(derivative_height) if derivative_height is not None else None,
+            "captured_at": candidate.captured_at,
+            "gps_latitude": candidate.gps_latitude,
+            "gps_longitude": candidate.gps_longitude,
+            "fallback_used": bool(candidate.fallback_used),
+            "fallback_reason": candidate.fallback_reason,
+            "failure_reason": candidate.failure_reason,
+            "error_detail": candidate.error_detail,
+            "pixmap": pixmap,
+            "measurements": [],
+            "crop_box": None,
+            "crop_source_size": None,
+            "camera": camera_text,
+            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
+        }
+        return entry, None
+
+    def _calibration_image_entry_from_loaded_info(
+        self,
+        img_info: dict,
+        *,
+        fallback_image_path: str | None = None,
+    ) -> dict | None:
+        if not isinstance(img_info, dict):
+            return None
+
+        working_path = str(
+            img_info.get("working_path")
+            or img_info.get("path")
+            or fallback_image_path
+            or ""
+        ).strip()
+        if not working_path or not Path(working_path).exists():
+            return None
+
+        pixmap = QPixmap(working_path)
+        if pixmap.isNull():
+            return None
+
+        source_path = str(
+            img_info.get("source_path")
+            or img_info.get("original_path")
+            or working_path
+            or ""
+        ).strip()
+        selected_path = str(
+            img_info.get("selected_path")
+            or img_info.get("original_path")
+            or source_path
+            or working_path
+            or ""
+        ).strip()
+        source_kind = str(img_info.get("source_kind") or "").strip().lower() or "raster"
+        candidate_status = str(
+            img_info.get("candidate_status")
+            or img_info.get("status")
+            or IMAGE_IMPORT_STATUS_READY
+        ).strip().lower()
+
+        derivative_width = img_info.get("derivative_width")
+        derivative_height = img_info.get("derivative_height")
+        if not (
+            isinstance(derivative_width, (int, float))
+            and isinstance(derivative_height, (int, float))
+            and derivative_width > 0
+            and derivative_height > 0
+        ):
+            derivative_width = pixmap.width()
+            derivative_height = pixmap.height()
+
+        processing_metadata = deepcopy(img_info.get("processing_metadata")) if img_info.get("processing_metadata") else None
+        raw_processing = deepcopy(img_info.get("raw_processing")) if img_info.get("raw_processing") else None
+        if raw_processing is None and isinstance(processing_metadata, dict):
+            raw_processing = deepcopy(processing_metadata.get("raw_processing"))
+        image_processing = deepcopy(img_info.get("image_processing")) if img_info.get("image_processing") else None
+        if image_processing is None:
+            candidate_lab_metadata = img_info.get("lab_metadata")
+            if isinstance(candidate_lab_metadata, dict) and candidate_lab_metadata.get("image_processing"):
+                image_processing = deepcopy(candidate_lab_metadata.get("image_processing"))
+        processing_settings = deepcopy(img_info.get("processing_settings")) if img_info.get("processing_settings") else None
+        if processing_settings is None and isinstance(raw_processing, dict):
+            processing_settings = deepcopy(raw_processing.get("settings"))
+
+        camera_text = str(img_info.get("camera") or "").strip() or None
+        if not camera_text:
+            for camera_source in (source_path, selected_path, working_path):
+                if not camera_source:
+                    continue
+                camera_text = self._extract_camera_text(camera_source)
+                if camera_text:
+                    break
+
+        captured_at = img_info.get("captured_at")
+        gps_latitude = img_info.get("gps_latitude")
+        gps_longitude = img_info.get("gps_longitude")
+        companion_paths = tuple(
+            str(path).strip()
+            for path in (img_info.get("companion_paths") or [])
+            if str(path or "").strip()
+        )
+
+        return {
+            "path": working_path,
+            "working_path": working_path,
+            "source_path": source_path or working_path,
+            "original_path": selected_path or source_path or working_path,
+            "selected_path": selected_path or source_path or working_path,
+            "candidate_status": candidate_status,
+            "source_kind": source_kind,
+            "selected_source_policy": img_info.get("selected_source_policy"),
+            "companion_paths": companion_paths,
+            "processing_metadata": processing_metadata,
+            "raw_processing": raw_processing,
+            "image_processing": image_processing,
+            "processing_settings": processing_settings,
+            "derivative_width": int(derivative_width) if derivative_width is not None else None,
+            "derivative_height": int(derivative_height) if derivative_height is not None else None,
+            "captured_at": captured_at,
+            "gps_latitude": gps_latitude,
+            "gps_longitude": gps_longitude,
+            "fallback_used": bool(img_info.get("fallback_used")),
+            "fallback_reason": img_info.get("fallback_reason"),
+            "failure_reason": img_info.get("failure_reason"),
+            "error_detail": img_info.get("error_detail"),
+            "pixmap": pixmap,
+            "measurements": list(img_info.get("measurements", [])),
+            "crop_box": img_info.get("crop_box"),
+            "crop_source_size": img_info.get("crop_source_size"),
+            "camera": camera_text,
+            "division_distance_mm": float(img_info.get("division_distance_mm") or DEFAULT_DIVISION_DISTANCE_MM),
+        }
+
+    def _load_calibration_image_candidates(self, paths: list[str]) -> list[str]:
+        if not paths:
+            return []
+
+        source_preference = self._selected_raw_companion_source_preference()
+        candidates = build_image_import_candidates(paths, source_preference=source_preference)
+        prepared_candidates = prepare_image_import_candidates(
+            candidates,
+            raw_settings=RawRenderSettings.default(),
+            lab_metadata=self._calibration_import_lab_metadata(),
+            output_dir=self._calibration_import_output_dir(),
+        )
+
+        added_entries: list[dict] = []
+        failures: list[str] = []
+        for candidate in prepared_candidates:
+            entry, failure = self._calibration_image_entry_from_candidate(candidate)
+            if entry is not None:
+                added_entries.append(entry)
+            if failure:
+                failures.append(failure)
+
+        if added_entries:
+            self.calibration_images.extend(added_entries)
+            self._modified = True
+            self._refresh_image_gallery()
+            self.current_image_index = len(self.calibration_images) - 1
+            self._show_current_image()
+
+        if failures:
+            self._show_calibration_load_failures(failures, len(added_entries))
+
+        return failures
+
+    def _show_calibration_load_failures(self, failures: list[str], loaded_count: int) -> None:
+        if not failures:
+            return
+        unique_failures: list[str] = []
+        for failure in failures:
+            if failure and failure not in unique_failures:
+                unique_failures.append(failure)
+
+        preview = "\n".join(f"- {failure}" for failure in unique_failures[:5])
+        if len(unique_failures) > 5:
+            preview += self.tr("\n...and {count} more.").format(count=len(unique_failures) - 5)
+
+        if loaded_count > 0:
+            title = self.tr("Some calibration images could not be loaded")
+            message = self.tr("Loaded {count} calibration image(s), but some files failed:").format(count=loaded_count)
+        else:
+            title = self.tr("No calibration images could be loaded")
+            message = self.tr("The selected calibration images failed to load:")
+
+        QMessageBox.warning(
+            self,
+            title,
+            message + "\n\n" + preview,
+        )
+
+    def _calibration_image_serialization_payload(
+        self,
+        img_data: dict,
+        *,
+        index: int,
+        saved_path: str | None,
+    ) -> dict:
+        source_path = str(
+            img_data.get("source_path")
+            or img_data.get("original_path")
+            or img_data.get("path")
+            or saved_path
+            or ""
+        ).strip()
+        original_path = str(
+            img_data.get("original_path")
+            or img_data.get("selected_path")
+            or source_path
+            or saved_path
+            or ""
+        ).strip()
+        working_path = str(saved_path or img_data.get("working_path") or img_data.get("path") or original_path or "").strip()
+        payload = {
+            "index": index,
+            "source_path": source_path or working_path,
+            "original_path": original_path or source_path or working_path,
+            "selected_path": str(img_data.get("selected_path") or original_path or source_path or working_path).strip(),
+            "path": working_path,
+            "working_path": working_path,
+            "candidate_status": img_data.get("candidate_status"),
+            "source_kind": img_data.get("source_kind"),
+            "selected_source_policy": img_data.get("selected_source_policy"),
+            "companion_paths": [str(path) for path in (img_data.get("companion_paths") or []) if str(path or "").strip()],
+            "measurements": deepcopy(img_data.get("measurements", [])),
+            "crop_box": img_data.get("crop_box"),
+            "crop_source_size": img_data.get("crop_source_size"),
+            "division_distance_mm": self._image_division_distance_mm(img_data),
+            "processing_metadata": deepcopy(img_data.get("processing_metadata")) if img_data.get("processing_metadata") else None,
+            "raw_processing": deepcopy(img_data.get("raw_processing")) if img_data.get("raw_processing") else None,
+            "image_processing": deepcopy(img_data.get("image_processing")) if img_data.get("image_processing") else None,
+            "processing_settings": deepcopy(img_data.get("processing_settings")) if img_data.get("processing_settings") else None,
+            "derivative_width": img_data.get("derivative_width"),
+            "derivative_height": img_data.get("derivative_height"),
+            "captured_at": img_data.get("captured_at"),
+            "gps_latitude": img_data.get("gps_latitude"),
+            "gps_longitude": img_data.get("gps_longitude"),
+            "fallback_used": bool(img_data.get("fallback_used")),
+            "fallback_reason": img_data.get("fallback_reason"),
+            "failure_reason": img_data.get("failure_reason"),
+            "error_detail": img_data.get("error_detail"),
+            "camera": img_data.get("camera"),
+        }
+        if payload["processing_metadata"] is None and isinstance(img_data.get("processing_metadata"), dict):
+            payload["processing_metadata"] = deepcopy(img_data.get("processing_metadata"))
+        if payload["raw_processing"] is None and isinstance(payload["processing_metadata"], dict):
+            payload["raw_processing"] = deepcopy(payload["processing_metadata"].get("raw_processing"))
+        if payload["processing_settings"] is None and isinstance(payload["raw_processing"], dict):
+            payload["processing_settings"] = deepcopy(payload["raw_processing"].get("settings"))
+        return payload
+
     def _on_load_images(self):
         """Load calibration target images (multi-select)."""
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             self.tr("Select Calibration Images"),
             "",
-            self.tr(f"{RASTER_IMAGE_FILTER};;All Files (*)"),
+            self.tr(f"{LOCAL_IMPORT_IMAGE_FILTER};;All Files (*)"),
         )
-        for path in paths:
-            self._add_calibration_image(path)
+        if paths:
+            self._remember_import_dir(paths[0])
+            self._load_calibration_image_candidates(paths)
 
     def _overlay_color_rgba(self, color, alpha: int = 180) -> tuple[int, int, int, int]:
         if isinstance(color, tuple):
@@ -3805,7 +4203,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             return
 
         img_data = self.calibration_images[self.current_image_index]
-        image_path = img_data.get("path")
+        image_path = img_data.get("working_path") or img_data.get("path")
         if not image_path or not Path(image_path).exists():
             QMessageBox.warning(
                 self,
@@ -3828,8 +4226,12 @@ class CalibrationDialog(GeometryMixin, QDialog):
             objective_name = "calibration"
         date_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         crop_box = img_data.get("crop_box")
-        base_w = int(img_data["pixmap"].width()) if img_data.get("pixmap") else 1
-        base_h = int(img_data["pixmap"].height()) if img_data.get("pixmap") else 1
+        derivative_size = self._image_derivative_dimensions(img_data)
+        if derivative_size is not None:
+            base_w, base_h = derivative_size
+        else:
+            base_w = int(img_data["pixmap"].width()) if img_data.get("pixmap") else 1
+            base_h = int(img_data["pixmap"].height()) if img_data.get("pixmap") else 1
         crop_rect = self._crop_rect_from_normalized(base_w, base_h, crop_box)
         if crop_rect is not None:
             base_w = max(1, crop_rect[2] - crop_rect[0])
@@ -3954,33 +4356,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
     def _add_calibration_image(self, path: str):
         """Add a calibration image."""
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            QMessageBox.warning(
-                self,
-                self.tr("Error"),
-                self.tr("Could not load image: {path}").format(path=Path(path).name),
-            )
-            return
-
-        camera_text = self._extract_camera_text(path)
-        self.calibration_images.append({
-            "path": path,
-            "source_path": path,
-            "working_path": path,
-            "pixmap": pixmap,
-            "measurements": [],  # Measurements for this specific image
-            "crop_box": None,
-            "crop_source_size": None,
-            "camera": camera_text,
-            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
-        })
-        self._modified = True  # User added a new image
-        self._refresh_image_gallery()
-
-        # Select the new image
-        self.current_image_index = len(self.calibration_images) - 1
-        self._show_current_image()
+        self._load_calibration_image_candidates([path])
 
     def _refresh_image_gallery(self):
         """Refresh the image gallery with loaded calibration images."""
@@ -4026,12 +4402,59 @@ class CalibrationDialog(GeometryMixin, QDialog):
         cam = img.get("camera")
         if cam:
             return cam
-        path = img.get("path")
-        return self._extract_camera_text(path) if path else None
+        for path in (
+            img.get("source_path"),
+            img.get("original_path"),
+            img.get("working_path"),
+            img.get("path"),
+        ):
+            if path:
+                camera_text = self._extract_camera_text(str(path))
+                if camera_text:
+                    return camera_text
+        return None
+
+    def _image_derivative_dimensions(self, img_data: dict | None) -> tuple[int, int] | None:
+        if not isinstance(img_data, dict):
+            return None
+        width = img_data.get("derivative_width")
+        height = img_data.get("derivative_height")
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)) and width > 0 and height > 0:
+            return int(width), int(height)
+        pixmap = img_data.get("pixmap")
+        if pixmap:
+            try:
+                pixmap_width = int(pixmap.width())
+                pixmap_height = int(pixmap.height())
+            except Exception:
+                return None
+            if pixmap_width > 0 and pixmap_height > 0:
+                return pixmap_width, pixmap_height
+        return None
+
+    def _calibration_provenance_corner_tag(self, img_data: dict | None) -> tuple[str, str] | None:
+        if not isinstance(img_data, dict):
+            return None
+        if img_data.get("fallback_used") and img_data.get("fallback_reason"):
+            return self.tr("Fallback JPEG"), "#c57a1d"
+
+        source_kind = str(img_data.get("source_kind") or "").strip().lower()
+        if source_kind == "raw":
+            return self.tr("RAW-derived"), "#8e44ad"
+        if source_kind == "heic":
+            return self.tr("HEIC-converted"), "#2980b9"
+        if source_kind == "camera_jpeg":
+            return self.tr("Camera JPEG"), "#7f8c8d"
+        return None
 
     def _compute_megapixels(self, img_data: dict) -> float | None:
         if not img_data:
             return None
+        derivative_size = self._image_derivative_dimensions(img_data)
+        if derivative_size is not None:
+            width, height = derivative_size
+            if width > 0 and height > 0:
+                return (float(width) * float(height)) / 1_000_000.0
         crop_source = img_data.get("crop_source_size")
         if crop_source and len(crop_source) == 2:
             try:
@@ -4064,17 +4487,11 @@ class CalibrationDialog(GeometryMixin, QDialog):
         widths = []
         heights = []
         for img in self.calibration_images:
-            crop_source = img.get("crop_source_size")
-            if crop_source and len(crop_source) == 2:
-                try:
-                    source_w = int(crop_source[0])
-                    source_h = int(crop_source[1])
-                except (TypeError, ValueError):
-                    source_w = source_h = 0
-                if source_w > 0 and source_h > 0:
-                    widths.append(source_w)
-                    heights.append(source_h)
-                    continue
+            derivative_size = self._image_derivative_dimensions(img)
+            if derivative_size is not None:
+                widths.append(int(derivative_size[0]))
+                heights.append(int(derivative_size[1]))
+                continue
             pixmap = img.get("pixmap")
             if pixmap:
                 width = pixmap.width()
@@ -4102,6 +4519,16 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 image_entries = loaded.get("images") or []
                 values = []
                 for info in image_entries:
+                    derivative_width = info.get("derivative_width")
+                    derivative_height = info.get("derivative_height")
+                    if (
+                        isinstance(derivative_width, (int, float))
+                        and isinstance(derivative_height, (int, float))
+                        and derivative_width > 0
+                        and derivative_height > 0
+                    ):
+                        values.append((float(derivative_width) * float(derivative_height)) / 1_000_000.0)
+                        continue
                     crop_source = info.get("crop_source_size")
                     if crop_source and len(crop_source) == 2:
                         try:
@@ -4112,7 +4539,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                         if source_w > 0 and source_h > 0:
                             values.append((source_w * source_h) / 1_000_000.0)
                             continue
-                    path = info.get("path")
+                    path = info.get("working_path") or info.get("path")
                     if path and Path(path).exists():
                         try:
                             with Image.open(path) as img:
@@ -4243,6 +4670,12 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.image_viewer.set_crop_box((x1, y1, x2, y2))
         else:
             self.image_viewer.set_crop_box(None)
+        provenance_tag = self._calibration_provenance_corner_tag(img_data)
+        if provenance_tag is not None:
+            label, color = provenance_tag
+            self.image_viewer.set_corner_tag(label, color)
+        else:
+            self.image_viewer.set_corner_tag("")
         self._set_auto_crop_active(False)
         self._render_auto_results(self._current_auto_data())
         self._apply_current_overlay()
@@ -5295,68 +5728,51 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 if isinstance(loaded_data, dict) and "images" in loaded_data:
                     # New format: multiple images with per-image measurements
                     for img_info in loaded_data.get("images", []):
-                        working_path = str(
-                            img_info.get("working_path")
-                            or img_info.get("path")
-                            or ""
-                        ).strip()
-                        source_path = str(
-                            img_info.get("source_path")
-                            or img_info.get("original_path")
-                            or working_path
-                            or ""
-                        ).strip()
-                        img_path = working_path or source_path
-                        if img_path and Path(img_path).exists():
-                            pixmap = QPixmap(img_path)
-                            if not pixmap.isNull():
-                                division_distance_mm = img_info.get("division_distance_mm")
-                                if not isinstance(division_distance_mm, (int, float)) or division_distance_mm <= 0:
-                                    division_distance_mm = DEFAULT_DIVISION_DISTANCE_MM
-                                self.calibration_images.append({
-                                    "path": img_path,
-                                    "source_path": source_path or img_path,
-                                    "working_path": working_path or img_path,
-                                    "pixmap": pixmap,
-                                    "measurements": img_info.get("measurements", []),
-                                    "crop_box": img_info.get("crop_box"),
-                                    "crop_source_size": img_info.get("crop_source_size"),
-                                    "division_distance_mm": float(division_distance_mm),
-                                })
+                        entry = self._calibration_image_entry_from_loaded_info(img_info)
+                        if entry is not None:
+                            self.calibration_images.append(entry)
                 else:
                     # Old format: single image with all measurements
                     image_path = cal.get("image_filepath")
-                    if image_path and Path(image_path).exists():
-                        pixmap = QPixmap(image_path)
-                        if not pixmap.isNull():
-                            measurements = loaded_data if isinstance(loaded_data, list) else []
-                            self.calibration_images.append({
-                                "path": image_path,
-                                "source_path": image_path,
-                                "working_path": image_path,
-                                "pixmap": pixmap,
-                                "measurements": measurements,
-                                "crop_box": None,
-                                "crop_source_size": None,
-                                "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
-                            })
+                    measurements = loaded_data if isinstance(loaded_data, list) else []
+                    entry = self._calibration_image_entry_from_loaded_info(
+                        {
+                            "path": image_path,
+                            "working_path": image_path,
+                            "source_path": image_path,
+                            "original_path": image_path,
+                            "selected_path": image_path,
+                            "measurements": measurements,
+                            "crop_box": None,
+                            "crop_source_size": None,
+                            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
+                            "candidate_status": IMAGE_IMPORT_STATUS_READY,
+                            "source_kind": "raster",
+                        }
+                    )
+                    if entry is not None:
+                        self.calibration_images.append(entry)
 
             except json.JSONDecodeError:
                 # Fallback: try loading single image
                 image_path = cal.get("image_filepath")
-                if image_path and Path(image_path).exists():
-                    pixmap = QPixmap(image_path)
-                    if not pixmap.isNull():
-                        self.calibration_images.append({
-                            "path": image_path,
-                            "source_path": image_path,
-                            "working_path": image_path,
-                            "pixmap": pixmap,
-                            "measurements": [],
-                            "crop_box": None,
-                            "crop_source_size": None,
-                            "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
-                        })
+                entry = self._calibration_image_entry_from_loaded_info(
+                    {
+                        "path": image_path,
+                        "working_path": image_path,
+                        "source_path": image_path,
+                        "original_path": image_path,
+                        "selected_path": image_path,
+                        "measurements": [],
+                        "crop_box": None,
+                        "crop_source_size": None,
+                        "division_distance_mm": DEFAULT_DIVISION_DISTANCE_MM,
+                        "candidate_status": IMAGE_IMPORT_STATUS_READY,
+                        "source_kind": "raster",
+                    }
+                )
+                if entry is not None:
+                    self.calibration_images.append(entry)
 
         # Attach auto calibration data if available
         if isinstance(loaded_data, dict):
@@ -5371,7 +5787,12 @@ class CalibrationDialog(GeometryMixin, QDialog):
                         path = auto_info.get("path")
                         if path:
                             for img_data in self.calibration_images:
-                                if img_data.get("path") == path:
+                                if path in {
+                                    img_data.get("path"),
+                                    img_data.get("working_path"),
+                                    img_data.get("source_path"),
+                                    img_data.get("original_path"),
+                                }:
                                     target = img_data
                                     break
                     if not target:
@@ -5439,10 +5860,19 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _latest_calibration_image_date(self) -> str | None:
         latest_dt: datetime | None = None
         for img_data in self.calibration_images:
-            image_path = img_data.get("path")
-            if not image_path:
-                continue
-            dt = get_image_datetime(image_path)
+            dt = self._coerce_calibration_datetime(img_data.get("captured_at"))
+            if dt is None:
+                for candidate_path in (
+                    img_data.get("source_path"),
+                    img_data.get("original_path"),
+                    img_data.get("working_path"),
+                    img_data.get("path"),
+                ):
+                    if not candidate_path:
+                        continue
+                    dt = get_image_datetime(str(candidate_path))
+                    if dt is not None:
+                        break
             if dt is None:
                 continue
             if latest_dt is None or dt > latest_dt:
@@ -5489,29 +5919,19 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 saved_path = self._save_calibration_image(img_data["path"])
                 if saved_path and first_saved_path is None:
                     first_saved_path = saved_path
-                image_entries.append({
-                    "index": idx,
-                    "source_path": img_data.get("source_path") or img_data["path"],
-                    "path": saved_path,
-                    "working_path": saved_path,
-                    "measurements": img_data.get("measurements", []),
-                    "crop_box": img_data.get("crop_box"),
-                    "crop_source_size": img_data.get("crop_source_size"),
-                    "division_distance_mm": self._image_division_distance_mm(img_data),
-                })
+                image_entry = self._calibration_image_serialization_payload(
+                    img_data,
+                    index=idx,
+                    saved_path=saved_path,
+                )
+                image_entries.append(image_entry)
                 auto_data = img_data.get("auto")
                 if not auto_data:
                     continue
                 result = auto_data["result"]
-                auto_images.append({
-                    "index": idx,
-                    "source_path": img_data.get("source_path") or img_data["path"],
-                    "path": saved_path,
-                    "working_path": saved_path,
-                    "crop_box": img_data.get("crop_box"),
-                    "crop_source_size": img_data.get("crop_source_size"),
+                auto_image = dict(image_entry)
+                auto_image.update({
                     "spacing_um": auto_data.get("spacing_um"),
-                    "division_distance_mm": self._image_division_distance_mm(img_data),
                     "result": {
                         "axis": result.axis,
                         "angle_deg": result.angle_deg,
@@ -5530,6 +5950,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     "overlay_edges": auto_data.get("overlay_edges", []),
                     "overlay_edges_50": auto_data.get("overlay_edges_50", []),
                 })
+                auto_images.append(auto_image)
 
             calibration_data = {
                 "images": image_entries,
@@ -5554,7 +5975,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 calibration_image_date=image_date,
                 microns_per_pixel_std=nm_to_um(std_nm) if std_nm is not None else None,
                 num_measurements=len(auto_images),
-                measurements_json=json.dumps(calibration_data),
+                measurements_json=json.dumps(calibration_data, default=self._json_default_for_calibration_data),
                 image_filepath=image_filepath,
                 camera=self._selected_camera_text(),
                 megapixels=self._collect_megapixels_summary(),
@@ -5608,7 +6029,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     microns_per_pixel=provisional_um,
                     calibration_image_date=self._latest_calibration_image_date(),
                     num_measurements=0,
-                    measurements_json=json.dumps(calibration_data),
+                    measurements_json=json.dumps(calibration_data, default=self._json_default_for_calibration_data),
                     image_filepath=None,
                     camera=self._selected_camera_text(),
                     megapixels=self._collect_megapixels_summary(),
@@ -5669,16 +6090,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
             saved_path = self._save_calibration_image(img_data["path"])
             if saved_path:
                 saved_image_paths.append(saved_path)
-                calibration_data["images"].append({
-                    "index": idx,
-                    "source_path": img_data.get("source_path") or img_data["path"],
-                    "path": saved_path,
-                    "working_path": saved_path,
-                    "measurements": img_data.get("measurements", []),
-                    "crop_box": img_data.get("crop_box"),
-                    "crop_source_size": img_data.get("crop_source_size"),
-                    "division_distance_mm": self._image_division_distance_mm(img_data),
-                })
+            calibration_data["images"].append(
+                self._calibration_image_serialization_payload(
+                    img_data,
+                    index=idx,
+                    saved_path=saved_path,
+                )
+            )
 
         # First image filepath for backward compatibility
         image_filepath = saved_image_paths[0] if saved_image_paths else None
@@ -5702,7 +6120,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             confidence_interval_low=ci_low,
             confidence_interval_high=ci_high,
             num_measurements=len(all_measurements),
-            measurements_json=json.dumps(calibration_data),
+            measurements_json=json.dumps(calibration_data, default=self._json_default_for_calibration_data),
             image_filepath=image_filepath,
             camera=self._selected_camera_text(),
             megapixels=self._collect_megapixels_summary(),

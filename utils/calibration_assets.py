@@ -417,7 +417,27 @@ def extract_calibration_asset_payloads(calibration: dict | None) -> list[dict[st
                 "crop_box": crop_box,
                 "crop_source_size": crop_source_size,
                 "source_path": _normalize_text(source_path),
+                "original_path": _normalize_text(image_info.get("original_path") or image_info.get("selected_path")),
+                "selected_path": _normalize_text(image_info.get("selected_path") or image_info.get("original_path")),
                 "working_path": _normalize_text(working_path),
+                "candidate_status": image_info.get("candidate_status") or image_info.get("status"),
+                "source_kind": image_info.get("source_kind"),
+                "selected_source_policy": image_info.get("selected_source_policy"),
+                "companion_paths": [str(path) for path in (image_info.get("companion_paths") or []) if str(path or "").strip()],
+                "processing_metadata": image_info.get("processing_metadata") or {},
+                "raw_processing": image_info.get("raw_processing") or {},
+                "image_processing": image_info.get("image_processing") or {},
+                "processing_settings": image_info.get("processing_settings") or {},
+                "derivative_width": image_info.get("derivative_width"),
+                "derivative_height": image_info.get("derivative_height"),
+                "captured_at": image_info.get("captured_at"),
+                "gps_latitude": image_info.get("gps_latitude"),
+                "gps_longitude": image_info.get("gps_longitude"),
+                "fallback_used": image_info.get("fallback_used"),
+                "fallback_reason": image_info.get("fallback_reason"),
+                "failure_reason": image_info.get("failure_reason"),
+                "error_detail": image_info.get("error_detail"),
+                "camera": image_info.get("camera"),
             }
             _maybe_add(
                 role="source_photo",
@@ -458,6 +478,14 @@ def extract_calibration_asset_payloads(calibration: dict | None) -> list[dict[st
             if not isinstance(auto_info, dict):
                 continue
             working_path = auto_info.get("path") or record.get("image_filepath")
+            image_info = None
+            image_index = auto_info.get("index", idx)
+            if isinstance(image_index, int):
+                images = loaded.get("images") or []
+                if 0 <= image_index < len(images) and isinstance(images[image_index], dict):
+                    image_info = images[image_index]
+            if image_info is None:
+                image_info = {}
             auto_metadata = {
                 "image_index": auto_info.get("index", idx),
                 "spacing_um": auto_info.get("spacing_um"),
@@ -467,6 +495,26 @@ def extract_calibration_asset_payloads(calibration: dict | None) -> list[dict[st
                 "overlay_edges": auto_info.get("overlay_edges") or [],
                 "overlay_edges_50": auto_info.get("overlay_edges_50") or [],
                 "working_path": _normalize_text(working_path),
+                "source_path": _normalize_text(image_info.get("source_path") or image_info.get("original_path")),
+                "original_path": _normalize_text(image_info.get("original_path") or image_info.get("selected_path")),
+                "selected_path": _normalize_text(image_info.get("selected_path") or image_info.get("original_path")),
+                "candidate_status": image_info.get("candidate_status") or image_info.get("status"),
+                "source_kind": image_info.get("source_kind"),
+                "selected_source_policy": image_info.get("selected_source_policy"),
+                "processing_metadata": image_info.get("processing_metadata") or {},
+                "raw_processing": image_info.get("raw_processing") or {},
+                "image_processing": image_info.get("image_processing") or {},
+                "processing_settings": image_info.get("processing_settings") or {},
+                "derivative_width": image_info.get("derivative_width"),
+                "derivative_height": image_info.get("derivative_height"),
+                "captured_at": image_info.get("captured_at"),
+                "gps_latitude": image_info.get("gps_latitude"),
+                "gps_longitude": image_info.get("gps_longitude"),
+                "fallback_used": image_info.get("fallback_used"),
+                "fallback_reason": image_info.get("fallback_reason"),
+                "failure_reason": image_info.get("failure_reason"),
+                "error_detail": image_info.get("error_detail"),
+                "camera": image_info.get("camera"),
             }
             _maybe_add(
                 role="overlay",
