@@ -1113,7 +1113,7 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     assert tab.pending_raw_count_label.isVisible() is False
     assert tab.pending_raw_save_btn.text() == "Save current"
     assert tab.pending_raw_apply_all_btn.text() == "Apply settings to all pending"
-    assert tab.pending_raw_pick_wb_btn.text() == "Pick background WB"
+    assert not hasattr(tab, "pending_raw_pick_wb_btn")
     assert tab.pending_raw_shortcuts_label.text() == "←/→ select · Delete/Backspace remove current image · Enter save"
     assert tab.session_gallery._items[0]["id"].startswith("pending:")
     assert tab.session_gallery._items[0]["badges"][0] == "UNSAVED RAW"

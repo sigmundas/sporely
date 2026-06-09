@@ -561,10 +561,6 @@ class LiveLabTab(QWidget):
         self.pending_raw_apply_all_btn = QPushButton(self.tr("Apply settings to all pending"))
         self.pending_raw_apply_all_btn.clicked.connect(self._apply_current_raw_settings_to_all_pending)
         pending_raw_top_row_layout.addWidget(self.pending_raw_apply_all_btn)
-        self.pending_raw_pick_wb_btn = QPushButton(self.tr("Pick background WB"))
-        self.pending_raw_pick_wb_btn.setCheckable(True)
-        self.pending_raw_pick_wb_btn.toggled.connect(self._toggle_pending_raw_background_wb_pick)
-        pending_raw_top_row_layout.addWidget(self.pending_raw_pick_wb_btn)
 
         pending_raw_layout.addWidget(pending_raw_top_row)
 
@@ -655,28 +651,9 @@ class LiveLabTab(QWidget):
         self.raw_edit_open_btn.clicked.connect(self._begin_raw_edit_for_selected_image)
         raw_edit_button_layout.addWidget(self.raw_edit_open_btn, 0, 0)
 
-        self.raw_edit_use_copied_btn = QPushButton(self.tr("Use copied RAW settings"))
-        self.raw_edit_use_copied_btn.clicked.connect(self._begin_raw_edit_with_copied_settings)
-        raw_edit_button_layout.addWidget(self.raw_edit_use_copied_btn, 0, 1)
-
         self.raw_edit_apply_btn = QPushButton(self.tr("Apply re-render"))
         self.raw_edit_apply_btn.clicked.connect(self._apply_raw_edit_session)
         raw_edit_button_layout.addWidget(self.raw_edit_apply_btn, 0, 2)
-
-        self.raw_edit_copy_btn = QPushButton(self.tr("Copy settings"))
-        self.raw_edit_copy_btn.clicked.connect(self._copy_raw_edit_settings)
-        raw_edit_button_layout.addWidget(self.raw_edit_copy_btn, 1, 0)
-
-        self.raw_edit_pick_wb_btn = QPushButton(self.tr("Pick background WB"))
-        self.raw_edit_pick_wb_btn.setCheckable(True)
-        self.raw_edit_pick_wb_btn.toggled.connect(
-            lambda checked: self._toggle_raw_background_wb_pick(checked, target="edit")
-        )
-        raw_edit_button_layout.addWidget(self.raw_edit_pick_wb_btn, 1, 1)
-
-        self.raw_edit_cancel_btn = QPushButton(self.tr("Cancel"))
-        self.raw_edit_cancel_btn.clicked.connect(self._cancel_raw_edit_session)
-        raw_edit_button_layout.addWidget(self.raw_edit_cancel_btn, 1, 2)
 
         raw_edit_layout.addWidget(raw_edit_button_row)
         self.raw_edit_frame.setVisible(False)
@@ -812,28 +789,8 @@ class LiveLabTab(QWidget):
             disabled_hint=self.tr("Select a committed RAW-backed session image first."),
         )
         self._register_hint_widget(
-            self.raw_edit_use_copied_btn,
-            self.tr("Start editing the selected RAW-backed image using the copied RAW settings."),
-            disabled_hint=self.tr("Copy RAW settings first, then select a compatible RAW-backed image."),
-        )
-        self._register_hint_widget(
             self.raw_edit_apply_btn,
             self.tr("Render the selected RAW-backed image again using the current settings."),
-            disabled_hint=self.tr("Start a RAW edit session first."),
-        )
-        self._register_hint_widget(
-            self.raw_edit_copy_btn,
-            self.tr("Copy the current RAW settings so they can be reused on another RAW-backed image."),
-            disabled_hint=self.tr("Select or edit a RAW-backed image first."),
-        )
-        self._register_hint_widget(
-            self.raw_edit_pick_wb_btn,
-            self.tr("Click a neutral background point in the current RAW edit preview."),
-            disabled_hint=self.tr("Start a RAW edit session with a preview first."),
-        )
-        self._register_hint_widget(
-            self.raw_edit_cancel_btn,
-            self.tr("Cancel the current RAW edit session without changing the committed image."),
             disabled_hint=self.tr("Start a RAW edit session first."),
         )
         self._register_hint_widget(
@@ -845,11 +802,6 @@ class LiveLabTab(QWidget):
             self.pending_raw_apply_all_btn,
             self.tr("Update all pending RAW captures to use the current RAW settings."),
             disabled_hint=self.tr("No pending RAW captures are waiting to be reviewed."),
-        )
-        self._register_hint_widget(
-            self.pending_raw_pick_wb_btn,
-            self.tr("Click a neutral background point in the current pending RAW preview."),
-            disabled_hint=self.tr("Choose a pending RAW capture with a preview first."),
         )
         self._register_hint_widget(
             self.add_note_btn,
