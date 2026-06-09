@@ -252,6 +252,11 @@ def test_import_match_preserves_original_filepath_for_heic_conversion(monkeypatc
     monkeypatch.setattr(ingestion_hub_tab.CalibrationDB, "get_active_calibration_id", lambda objective_key: None)
     monkeypatch.setattr(ingestion_hub_tab, "generate_all_sizes", lambda *args, **kwargs: None)
     monkeypatch.setattr(ingestion_hub_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ingestion_hub_tab.ImageDB,
+        "get_image",
+        lambda image_id: {"filepath": str(converted_path)},
+    )
 
     class DummyConn:
         def execute(self, *args, **kwargs):
@@ -287,6 +292,106 @@ def test_import_match_preserves_original_filepath_for_heic_conversion(monkeypatc
     assert captured["file_purpose"] == "field"
     assert captured["original_mime_type"] == "image/heic"
     assert captured["working_mime_type"] == "image/jpeg"
+
+
+def test_import_match_merges_session_metadata_with_ingest_metadata(monkeypatch, qapp, tmp_path):
+    tab, _saved_settings = build_tab(monkeypatch)
+    source_path = tmp_path / "source.nef"
+    converted_path = tmp_path / "converted.jpg"
+    source_path.write_bytes(b"raw bytes")
+    converted_path.write_bytes(b"jpeg bytes")
+    captured: dict[str, object] = {}
+
+    class DummyIngestResult:
+        def provenance_kwargs(self):
+            return {
+                "source_role": "converted_local",
+                "file_purpose": "microscope",
+                "original_mime_type": "image/x-raw",
+                "working_mime_type": "image/jpeg",
+            }
+
+    DummyIngestResult.working_path = str(converted_path)
+    DummyIngestResult.original_path = str(source_path)
+    DummyIngestResult.lab_metadata = {
+        "image_type": "microscope",
+        "raw_processing": {
+            "engine": "rawpy",
+            "source": {
+                "kind": "camera_raw",
+                "path": str(source_path),
+                "mime_type": "image/x-raw",
+            },
+            "settings": {
+                "white_balance_mode": "camera",
+                "auto_levels": True,
+            },
+        },
+    }
+
+    monkeypatch.setattr(
+        ingestion_hub_tab,
+        "prepare_local_ingest_image",
+        lambda path, **kwargs: DummyIngestResult(),
+    )
+    monkeypatch.setattr(ingestion_hub_tab, "get_images_dir", lambda: tmp_path / "images")
+    monkeypatch.setattr(
+        ingestion_hub_tab,
+        "load_objectives",
+        lambda: {"40x": {"microns_per_pixel": 0.25}},
+    )
+    monkeypatch.setattr(
+        ingestion_hub_tab,
+        "resolve_objective_key",
+        lambda objective_key, objectives: objective_key if objective_key in objectives else None,
+    )
+    monkeypatch.setattr(ingestion_hub_tab.CalibrationDB, "get_active_calibration_id", lambda objective_key: 77)
+    monkeypatch.setattr(ingestion_hub_tab, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ingestion_hub_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+
+    class DummyConn:
+        def execute(self, *args, **kwargs):
+            return self
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(ingestion_hub_tab, "get_connection", lambda: DummyConn(), raising=False)
+    monkeypatch.setattr(ingestion_hub_tab.ImageDB, "add_image", lambda **kwargs: captured.update(kwargs) or 42)
+
+    result = tab._import_match(
+        1,
+        {
+            "filepath": str(source_path),
+            "image_type": "microscope",
+            "session_id": "session-1",
+            "session_kind": "microscope_session",
+            "state": {
+                "objective_name": "40x",
+                "contrast": "phase",
+                "mount_medium": "water",
+                "stain": "none",
+                "sample_type": "spore",
+            },
+            "adjusted_at": datetime(2026, 5, 1, 12, 0, 0),
+        },
+    )
+
+    assert result == 42
+    assert captured["lab_metadata"]["session_id"] == "session-1"
+    assert captured["lab_metadata"]["session_kind"] == "microscope_session"
+    assert captured["lab_metadata"]["objective_name"] == "40x"
+    assert str(captured["lab_metadata"]["contrast"]).lower() == "phase"
+    assert str(captured["lab_metadata"]["mount_medium"]).lower() == "water"
+    assert str(captured["lab_metadata"]["stain"]).lower() == "none"
+    assert str(captured["lab_metadata"]["sample_type"]).lower() == "spore"
+    assert captured["lab_metadata"]["matched_at"] == "2026-05-01T12:00:00"
+    assert captured["lab_metadata"]["raw_processing"]["source"]["path"] == str(source_path)
+    assert captured["lab_metadata"]["raw_processing"]["source"]["kind"] == "camera_raw"
+    assert captured["lab_metadata"]["raw_processing"]["settings"]["white_balance_mode"] == "camera"
 
 
 def test_recompute_matches_groups_images_by_observation_and_uses_offset(monkeypatch, qapp, tmp_path):

@@ -35,7 +35,15 @@ from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
 from database.schema import get_images_dir, load_objectives, objective_display_name, resolve_objective_key
 from utils.exif_reader import get_image_datetime
+from utils.image_import_candidates import (
+    IMAGE_IMPORT_STATUS_FAILED,
+    IMAGE_IMPORT_STATUS_READY,
+    IMAGE_IMPORT_STATUS_SKIPPED,
+    ImageImportCandidate,
+    prepare_image_import_candidate,
+)
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
+from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.image_utils import cleanup_import_temp_file
 from utils.sync_shot_qr import choose_sync_shot_offset, decode_sync_shot_qr
@@ -822,6 +830,7 @@ class IngestionHubTab(QWidget):
                 {
                     "id": row.get("filepath"),
                     "filepath": row.get("filepath"),
+                    "preview_path": row.get("preview_path") or row.get("filepath"),
                     "image_number": index,
                     "has_measurements": False,
                     "badges": badges,
@@ -920,17 +929,19 @@ class IngestionHubTab(QWidget):
 
     def _show_match(self, match_row: dict) -> None:
         image_path = str(match_row.get("filepath") or "").strip()
+        preview_path = str(match_row.get("preview_path") or image_path or "").strip()
         if not image_path:
             self._clear_viewer()
             return
-        pixmap, preview_scaled = self._load_viewer_pixmap(image_path)
+        load_path = preview_path or image_path
+        pixmap, preview_scaled = self._load_viewer_pixmap(load_path)
         if pixmap is None or pixmap.isNull():
             self._clear_viewer(
                 title=self.tr("Selected image unavailable"),
                 meta=self.tr("Could not load {name}.").format(name=Path(image_path).name),
             )
             return
-        self.image_viewer.set_image_sources(pixmap, image_path, preview_scaled)
+        self.image_viewer.set_image_sources(pixmap, load_path, preview_scaled)
         self.reset_view_btn.setEnabled(True)
 
         scale_mpp = self._matched_scale_microns_per_pixel(match_row.get("state") or {})
@@ -1274,6 +1285,11 @@ class IngestionHubTab(QWidget):
             )
         self.sync_shot_summary_label.setText(" • ".join(parts))
 
+    @staticmethod
+    def _match_row_candidate(match_row: dict) -> ImageImportCandidate | None:
+        candidate = (match_row or {}).get("candidate")
+        return candidate if isinstance(candidate, ImageImportCandidate) else None
+
     def _current_commit_rows(self) -> list[dict]:
         matches = self._matches_for_current_observation()
         if not matches:
@@ -1281,12 +1297,20 @@ class IngestionHubTab(QWidget):
         selected_paths = set(self.staging_gallery.selected_paths())
         if not selected_paths:
             return []
-        return [
-            row
-            for row in matches
-            if str(row.get("filepath") or "").strip() in selected_paths
-            and not bool(row.get("already_imported"))
-        ]
+        rows: list[dict] = []
+        for row in matches:
+            if str(row.get("filepath") or "").strip() not in selected_paths:
+                continue
+            if bool(row.get("already_imported")):
+                continue
+            candidate = self._match_row_candidate(row)
+            if candidate is not None and str(candidate.status or "").strip().lower() in {
+                IMAGE_IMPORT_STATUS_FAILED,
+                IMAGE_IMPORT_STATUS_SKIPPED,
+            }:
+                continue
+            rows.append(row)
+        return rows
 
     def _commit_selected_matches(self) -> None:
         self._add_match_rows(self._current_commit_rows())
@@ -1313,6 +1337,8 @@ class IngestionHubTab(QWidget):
             )
             return
         imported_ids: list[int] = []
+        failed_count = 0
+        skipped_count = 0
         total_rows = len(rows)
         show_progress = total_rows > 1
         if show_progress:
@@ -1328,9 +1354,15 @@ class IngestionHubTab(QWidget):
                         ),
                         int(round(((index - 1) / max(1, total_rows)) * 100)),
                     )
-                image_id = self._import_match(observation_id, row)
+                commit_result = self._commit_match_row(observation_id, row, show_status=not show_progress)
+                image_id = int(commit_result.get("image_id") or 0)
+                commit_status = str(commit_result.get("status") or "").strip().lower()
                 if image_id:
-                    imported_ids.append(int(image_id))
+                    imported_ids.append(image_id)
+                elif commit_status == IMAGE_IMPORT_STATUS_SKIPPED:
+                    skipped_count += 1
+                else:
+                    failed_count += 1
                 if show_progress:
                     self._set_hint_progress(
                         self.tr("Adding image {current} of {total}...").format(
@@ -1344,52 +1376,200 @@ class IngestionHubTab(QWidget):
                 self._set_hint_progress_visible(False)
                 self._set_hint_progress("", 0)
         if not imported_ids:
+            summary_parts = []
+            if failed_count:
+                summary_parts.append(self.tr("{count} failed").format(count=failed_count))
+            if skipped_count:
+                summary_parts.append(self.tr("{count} skipped").format(count=skipped_count))
+            summary_text = " ".join(summary_parts).strip()
             self._show_status(
-                self.tr("No images were added."),
+                self.tr("No images were added.{extra}").format(
+                    extra=(f" {summary_text}." if summary_text else ""),
+                ),
                 tone="warning",
                 timeout_ms=4000,
             )
             return
         self._recompute_matches()
         self._refresh_main_window_after_commit(observation_id, imported_ids[-1])
+        summary_parts = []
+        if failed_count:
+            summary_parts.append(self.tr("{count} failed").format(count=failed_count))
+        if skipped_count:
+            summary_parts.append(self.tr("{count} skipped").format(count=skipped_count))
+        summary_text = " ".join(summary_parts).strip()
+        if summary_text:
+            summary_text = f" {summary_text}."
         self._show_status(
-            self.tr("Added {count} image(s) to the observation.").format(
-                count=len(imported_ids)
+            self.tr("Added {count} image(s) to the observation.{extra}").format(
+                count=len(imported_ids),
+                extra=summary_text,
             ),
             tone="success",
             timeout_ms=5000,
         )
 
     def _import_match(self, observation_id: int, match_row: dict) -> int:
+        commit_result = self._commit_match_row(observation_id, match_row, show_status=True)
+        return int(commit_result.get("image_id") or 0)
+
+    def _commit_match_row(self, observation_id: int, match_row: dict, *, show_status: bool = True) -> dict:
         source_path = str(match_row.get("filepath") or "").strip()
+        result: dict[str, object] = {
+            "image_id": 0,
+            "status": IMAGE_IMPORT_STATUS_FAILED,
+            "failure_reason": "missing source file",
+            "error_detail": "No source path was provided",
+            "source_path": source_path,
+        }
         if not source_path:
-            return 0
+            return result
+
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
         matched_image_type = str(match_row.get("image_type") or "field").strip().lower() or "field"
         ingest_context = {"image_type": matched_image_type}
-        try:
-            ingest = prepare_local_ingest_image(source_path, lab_metadata=ingest_context, output_dir=output_dir)
-        except RawRenderingUnavailableError as exc:
-            self._show_status(
-                self.tr("RAW image {name} cannot be imported yet: {error}").format(
-                    name=Path(source_path).name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
-            return 0
-        except RuntimeError as exc:
-            self._show_status(
-                self.tr("Could not prepare {name}: {error}").format(
-                    name=Path(source_path).name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
-            return 0
+        candidate = self._match_row_candidate(match_row)
+        source_for_cleanup = source_path
+        provenance_kwargs: dict[str, object] = {}
+        ingest_lab_metadata: dict | str | None = None
+        working_path: str | None = None
+        original_filepath: str | None = None
+
+        if candidate is not None:
+            try:
+                prepared_candidate = prepare_image_import_candidate(
+                    candidate,
+                    lab_metadata=ingest_context,
+                    output_dir=output_dir,
+                )
+            except Exception as exc:
+                result.update(
+                    {
+                        "failure_reason": "candidate preparation failed",
+                        "error_detail": str(exc),
+                    }
+                )
+                if show_status:
+                    self._show_status(
+                        self.tr("Could not prepare {name}: {error}").format(
+                            name=Path(source_path).name,
+                            error=str(exc),
+                        ),
+                        tone="warning",
+                        timeout_ms=6000,
+                    )
+                return result
+
+            source_path = str(prepared_candidate.selected_path or source_path).strip()
+            source_for_cleanup = source_path
+            if prepared_candidate.status != IMAGE_IMPORT_STATUS_READY:
+                failure_reason = str(prepared_candidate.failure_reason or "").strip() or "candidate preparation failed"
+                failure_detail = str(prepared_candidate.error_detail or "").strip() or failure_reason
+                result.update(
+                    {
+                        "status": prepared_candidate.status,
+                        "failure_reason": failure_reason,
+                        "error_detail": failure_detail,
+                    }
+                )
+                if show_status:
+                    if failure_reason == "raw rendering unavailable":
+                        self._show_status(
+                            self.tr("RAW image {name} cannot be imported yet: {error}").format(
+                                name=Path(source_path).name,
+                                error=failure_detail,
+                            ),
+                            tone="warning",
+                            timeout_ms=6000,
+                        )
+                    elif prepared_candidate.status == IMAGE_IMPORT_STATUS_SKIPPED:
+                        self._show_status(
+                            self.tr("Skipping {name}: {error}").format(
+                                name=Path(source_path).name,
+                                error=failure_detail,
+                            ),
+                            tone="warning",
+                            timeout_ms=6000,
+                        )
+                    else:
+                        self._show_status(
+                            self.tr("Could not prepare {name}: {error}").format(
+                                name=Path(source_path).name,
+                                error=failure_detail,
+                            ),
+                            tone="warning",
+                            timeout_ms=6000,
+                        )
+                return result
+
+            ingest_lab_metadata = prepared_candidate.lab_metadata
+            provenance_kwargs = dict((prepared_candidate.processing_metadata or {}).get("provenance") or {})
+            working_path = str(prepared_candidate.working_path or "").strip()
+            if not working_path:
+                failure_detail = "prepare_image_import_candidate() did not return a working path"
+                result.update(
+                    {
+                        "status": IMAGE_IMPORT_STATUS_FAILED,
+                        "failure_reason": "missing working path",
+                        "error_detail": failure_detail,
+                    }
+                )
+                if show_status:
+                    self._show_status(
+                        self.tr("Could not prepare {name}: {error}").format(
+                            name=Path(source_path).name,
+                            error=failure_detail,
+                        ),
+                        tone="warning",
+                        timeout_ms=6000,
+                    )
+                return result
+            if prepared_candidate.selected_path != prepared_candidate.working_path:
+                original_filepath = str(prepared_candidate.selected_path)
+        else:
+            try:
+                ingest = prepare_local_ingest_image(source_path, lab_metadata=ingest_context, output_dir=output_dir)
+            except RawRenderingUnavailableError as exc:
+                result.update(
+                    {
+                        "failure_reason": "raw rendering unavailable",
+                        "error_detail": str(exc),
+                    }
+                )
+                if show_status:
+                    self._show_status(
+                        self.tr("RAW image {name} cannot be imported yet: {error}").format(
+                            name=Path(source_path).name,
+                            error=str(exc),
+                        ),
+                        tone="warning",
+                        timeout_ms=6000,
+                    )
+                return result
+            except RuntimeError as exc:
+                result.update(
+                    {
+                        "failure_reason": "prepare failed",
+                        "error_detail": str(exc),
+                    }
+                )
+                if show_status:
+                    self._show_status(
+                        self.tr("Could not prepare {name}: {error}").format(
+                            name=Path(source_path).name,
+                            error=str(exc),
+                        ),
+                        tone="warning",
+                        timeout_ms=6000,
+                    )
+                return result
+
+            working_path = str(ingest.working_path).strip()
+            ingest_lab_metadata = getattr(ingest, "lab_metadata", None)
+            provenance_kwargs = dict(getattr(ingest, "provenance_kwargs", lambda: {})() or {})
+            if str(getattr(ingest, "original_path", "")).strip() != working_path:
+                original_filepath = str(getattr(ingest, "original_path", "")).strip() or None
 
         state = dict(match_row.get("state") or {})
         objectives = load_objectives()
@@ -1409,7 +1589,6 @@ class IngestionHubTab(QWidget):
             if resolved_objective_key
             else None
         )
-        original_filepath = ingest.original_path if ingest.original_path != ingest.working_path else None
         lab_metadata = None
         if matched_image_type == "microscope":
             lab_metadata = {
@@ -1442,48 +1621,76 @@ class IngestionHubTab(QWidget):
                     else None
                 ),
             }
-        image_id = ImageDB.add_image(
-            observation_id=observation_id,
-            filepath=ingest.working_path,
-            image_type="microscope" if matched_image_type == "microscope" else "field",
-            scale=scale if matched_image_type == "microscope" and scale > 0 else None,
-            objective_name=resolved_objective_key if matched_image_type == "microscope" else None,
-            contrast=(
-                DatabaseTerms.canonicalize("contrast", state.get("contrast"))
-                if matched_image_type == "microscope"
-                else None
-            ),
-            mount_medium=(
-                DatabaseTerms.canonicalize("mount", state.get("mount_medium"))
-                if matched_image_type == "microscope"
-                else None
-            ),
-            stain=(
-                DatabaseTerms.canonicalize("stain", state.get("stain"))
-                if matched_image_type == "microscope"
-                else None
-            ),
-            sample_type=(
-                DatabaseTerms.canonicalize("sample", state.get("sample_type"))
-                if matched_image_type == "microscope"
-                else None
-            ),
-            notes=str(match_row.get("notes") or "").strip() or None,
-            captured_at=match_row.get("captured_at"),
-            calibration_id=calibration_id if matched_image_type == "microscope" else None,
-            resample_scale_factor=1.0,
-            original_filepath=original_filepath,
-            lab_metadata=getattr(ingest, "lab_metadata", None) or lab_metadata,
-            **ingest.provenance_kwargs(),
-        )
+        merged_lab_metadata = merge_image_lab_metadata(lab_metadata, ingest_lab_metadata)
+        try:
+            image_id = ImageDB.add_image(
+                observation_id=observation_id,
+                filepath=working_path or source_path,
+                image_type="microscope" if matched_image_type == "microscope" else "field",
+                scale=scale if matched_image_type == "microscope" and scale > 0 else None,
+                objective_name=resolved_objective_key if matched_image_type == "microscope" else None,
+                contrast=(
+                    DatabaseTerms.canonicalize("contrast", state.get("contrast"))
+                    if matched_image_type == "microscope"
+                    else None
+                ),
+                mount_medium=(
+                    DatabaseTerms.canonicalize("mount", state.get("mount_medium"))
+                    if matched_image_type == "microscope"
+                    else None
+                ),
+                stain=(
+                    DatabaseTerms.canonicalize("stain", state.get("stain"))
+                    if matched_image_type == "microscope"
+                    else None
+                ),
+                sample_type=(
+                    DatabaseTerms.canonicalize("sample", state.get("sample_type"))
+                    if matched_image_type == "microscope"
+                    else None
+                ),
+                notes=str(match_row.get("notes") or "").strip() or None,
+                captured_at=match_row.get("captured_at"),
+                calibration_id=calibration_id if matched_image_type == "microscope" else None,
+                resample_scale_factor=1.0,
+                original_filepath=original_filepath,
+                lab_metadata=merged_lab_metadata or None,
+                **provenance_kwargs,
+            )
+        except Exception as exc:
+            result.update(
+                {
+                    "failure_reason": "database insert failed",
+                    "error_detail": str(exc),
+                }
+            )
+            if show_status:
+                self._show_status(
+                    self.tr("Could not add {name}: {error}").format(
+                        name=Path(source_path).name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+            return result
+
         image_data = ImageDB.get_image(image_id)
-        stored_path = str((image_data or {}).get("filepath") or ingest.working_path)
+        stored_path = str((image_data or {}).get("filepath") or working_path or source_path)
         try:
             generate_all_sizes(stored_path, image_id)
         except Exception:
             pass
-        cleanup_import_temp_file(source_path, ingest.working_path, stored_path, output_dir)
-        return int(image_id or 0)
+        cleanup_import_temp_file(source_for_cleanup, working_path or stored_path, stored_path, output_dir)
+        result.update(
+            {
+                "image_id": int(image_id or 0),
+                "status": "added",
+                "failure_reason": None,
+                "error_detail": None,
+            }
+        )
+        return result
 
     def _refresh_main_window_after_commit(self, observation_id: int, image_id: int) -> None:
         try:
