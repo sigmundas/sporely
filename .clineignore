@@ -1,0 +1,23 @@
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.sqlite
+*.sqlite3
+*.db
+database/reference_data/generated/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+*.dng
+*.heic
+*.mp4
+*.mov
+.env
+.env.*
+python.env
+# Local raw reference source dumps
+/database/reference_data/sources/

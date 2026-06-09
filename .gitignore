@@ -1,89 +1,124 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyd
-*.pyo
-*.pkl
-
-# Virtual envs
-.venv/
-venv/
-ENV/
-
-# PySide/Qt
-*.qmlc
-*.qmlcache
-
-# Build artifacts
-build/
-dist/
-*.spec
-test_artsdatabanken.py
-test_nbic.py
-sopp.jpg
-
-# App data / local databases
-*.db-journal
-*.db-wal
-*.db-shm
-*.sqlite3-wal
-*.sqlite3-shm
-*.csv
-*.txt
-
-# Keep required app databases
-!database/vernacular_multilanguage.sqlite3
-!database/parmasto_reference_merged.csv
-!database/reference_values.db
-
-# Local taxonomy DB variants not needed in git
-database/vernacular_multilanguage_unified.sqlite3
-database/vernacular_multilanguage_unified_test.sqlite3
-
-# App local data folders
-/images/
-image_cache/
-thumbnails/
-database/taxon.txt
-database/vernacularnames.txt
-
-# Logs
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-.claude/
-.geminiignore
-SporeApp.code-workspace
-
-# Test artifacts
-.coverage
-.pytest_cache/
-
-# Temp
-*.tmp
-*.temp
-
-# Alt calibration backups
-utils/alt_calibration/
-utils/slide_calibration_feb7.py
-utils/slide_calibration_feb9.py
-
-# Local generated data
-logs/
-database/reference_data/backups/
-database/reference_data/generated/*.sqlite3
-!database/reference_data/generated/vernacular_multilanguage.sqlite3
-database/reference_data/generated/artportalen_scope.sqlite3
-
-# Local secrets / environment
+# Secrets / credentials
 sporely-admin.env
 python.env
 .env
 .env.*
 *.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*secret*
+*secrets*
+*credential*
+*credentials*
+
+# Python environments / caches
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Cline / other agent local state
+.cline/
+.claude/
+.gemini/
+.geminiignore
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.egg-info/
+.eggs/
+
+# Local databases / app data
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Reference databases / generated reference data
+database/vernacular_multilanguage.sqlite3
+database/reference_values.db
+database/vernacular_multilanguage_unified.sqlite3
+database/vernacular_multilanguage_unified_test.sqlite3
+database/reference_data/backups/
+database/reference_data/generated/
+database/reference_data/generated/*.sqlite3
+database/reference_data/generated/artportalen_scope.sqlite3
+
+# Large/reference text and raw data dumps
+*.csv
+*.tsv
+database/taxon.txt
+database/vernacularnames.txt
+
+# App local data folders
+/images/
+image_cache/
+thumbnails/
+
+# Image / media files
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+*.dng
+*.nef
+*.cr2
+*.cr3
+*.arw
+*.orf
+*.rw2
+*.raf
+*.heic
+*.heif
+*.mp4
+*.mov
+*.avi
+
+# Logs / temp
+logs/
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+.local/
+
+# OS / IDE noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+SporeApp.code-workspace
+
+# Old calibration backups / one-off scripts
+utils/alt_calibration/
+utils/slide_calibration_feb7.py
+utils/slide_calibration_feb9.py
+
+# One-off test artifacts
+test_artsdatabanken.py
+test_nbic.py
+sopp.jpg
+# Local raw reference source dumps
+/database/reference_data/sources/
