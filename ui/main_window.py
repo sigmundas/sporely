@@ -157,6 +157,7 @@ from database.schema import (
     resolve_objective_key,
 )
 from utils.annotation_capture import save_spore_annotation
+from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
@@ -10532,7 +10533,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         original_path = image_data['filepath']
         output_dir = Path(__file__).parent.parent / "data" / "imports"
-        ingest_metadata = image_data.get("lab_metadata") or {"image_type": image_data.get("image_type")}
+        ingest_metadata = merge_image_lab_metadata(
+            {"image_type": image_data.get("image_type")},
+            image_data.get("lab_metadata"),
+        )
         try:
             ingest = prepare_local_ingest_image(
                 original_path,
@@ -10561,15 +10565,16 @@ class MainWindow(GeometryMixin, QMainWindow):
                 update_kwargs["original_filepath"] = original_path
             provenance_kwargs = ingest.provenance_kwargs()
             update_kwargs.update({key: value for key, value in provenance_kwargs.items() if value is not None})
-            if ingest.lab_metadata is not None:
-                update_kwargs["lab_metadata"] = ingest.lab_metadata
+            merged_lab_metadata = merge_image_lab_metadata(image_data.get("lab_metadata"), getattr(ingest, "lab_metadata", None))
+            if merged_lab_metadata:
+                update_kwargs["lab_metadata"] = merged_lab_metadata
             ImageDB.update_image(image_data['id'], **update_kwargs)
             image_data = dict(image_data)
             image_data['filepath'] = converted_path
             if not str(image_data.get("original_filepath") or "").strip():
                 image_data["original_filepath"] = original_path
-            if ingest.lab_metadata is not None:
-                image_data["lab_metadata"] = ingest.lab_metadata
+            if merged_lab_metadata:
+                image_data["lab_metadata"] = merged_lab_metadata
 
         self.current_image_path = image_data['filepath']
         self.current_image_id = image_data['id']
@@ -11007,7 +11012,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             try:
                 ingest = prepare_local_ingest_image(
                     path,
-                    lab_metadata={"image_type": "microscope"},
+                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
                     output_dir=output_dir,
                 )
             except RawRenderingUnavailableError as exc:
@@ -11052,7 +11057,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
                 original_filepath=original_filepath,
-                lab_metadata=getattr(ingest, "lab_metadata", None) or {"image_type": "microscope"},
+                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
                 **provenance_kwargs,
             )
 
@@ -18342,7 +18347,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             try:
                 ingest = prepare_local_ingest_image(
                     path,
-                    lab_metadata={"image_type": "microscope"},
+                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
                     output_dir=output_dir,
                 )
             except RawRenderingUnavailableError as exc:
@@ -18387,7 +18392,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 calibration_id=calibration_id,
                 resample_scale_factor=1.0,
                 original_filepath=original_filepath,
-                lab_metadata=getattr(ingest, "lab_metadata", None) or {"image_type": "microscope"},
+                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
                 **provenance_kwargs,
             )
 

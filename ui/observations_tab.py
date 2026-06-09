@@ -72,6 +72,7 @@ from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
 from utils.heic_converter import build_local_image_provenance, save_image_as_webp
+from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_media_policy import (
@@ -9724,7 +9725,7 @@ class ObservationsTab(QWidget):
                     resampled_path,
                     image_type=image_type,
                 )
-            image_lab_metadata = dict(ingest.lab_metadata or image_lab_metadata)
+            image_lab_metadata = merge_image_lab_metadata(image_lab_metadata, getattr(ingest, "lab_metadata", None))
             if image_type:
                 image_lab_metadata["image_type"] = image_type
             image_id = ImageDB.add_image(
