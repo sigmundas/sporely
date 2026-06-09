@@ -1,4 +1,4 @@
-"""Shared local image ingestion façade for HEIC, raster, and future RAW files."""
+"""Shared local image ingestion façade for HEIC, raster, and RAW files."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -130,7 +130,9 @@ def prepare_local_ingest_image(
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
         working_path = maybe_convert_heic(source_text, resolved_output_dir)
         if working_path is None:
-            raise RuntimeError(f"HEIC conversion failed for {source.name}")
+            raise RuntimeError(
+                f"HEIC conversion failed for {source.name}: unable to decode or convert the file"
+            )
     else:
         working_path = source_text
 

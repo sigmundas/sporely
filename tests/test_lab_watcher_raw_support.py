@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject
@@ -143,3 +144,27 @@ def test_live_lab_tab_falls_back_to_jpeg_once_when_raw_rendering_fails(tmp_path,
     assert dummy.calls == [str(raw_path), str(jpeg_path)]
     assert str(raw_path) in dummy._seen_source_paths
     assert dummy._consumed_companion_groups
+
+
+def test_live_lab_tab_rescan_watch_folder_queues_supported_images_only(monkeypatch, tmp_path, qapp):
+    raw_path = tmp_path / "P070020_3.ORF"
+    jpeg_path = tmp_path / "P070020_3.JPG"
+    notes_path = tmp_path / "notes.txt"
+    raw_path.write_bytes(b"raw-bytes")
+    jpeg_path.write_bytes(b"jpeg-bytes")
+    notes_path.write_text("not an image")
+
+    dummy = _DummyLiveTab()
+    dummy.watch_dir_input = SimpleNamespace(text=lambda: str(tmp_path))
+
+    queued_sources: list[str] = []
+    monkeypatch.setattr(
+        LiveLabTab,
+        "_queue_companion_source",
+        lambda self, source: queued_sources.append(str(source)) or True,
+    )
+
+    queued = LiveLabTab.rescan_watch_folder(dummy)
+
+    assert queued == 2
+    assert set(queued_sources) == {str(raw_path.resolve()), str(jpeg_path.resolve())}

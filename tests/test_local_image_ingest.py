@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import sqlite3
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from utils import local_image_ingest
@@ -56,6 +57,20 @@ def test_prepare_local_ingest_image_uses_heic_conversion(tmp_path, monkeypatch):
     assert result.file_purpose == "field"
     assert result.original_mime_type == "image/heic"
     assert result.working_mime_type == "image/jpeg"
+
+
+def test_prepare_local_ingest_image_raises_clear_error_for_heic_conversion_failure(tmp_path, monkeypatch):
+    source_path = tmp_path / "broken.heic"
+    source_path.write_bytes(b"heic-bytes")
+
+    monkeypatch.setattr(
+        local_image_ingest,
+        "maybe_convert_heic",
+        lambda _source, _output_dir: None,
+    )
+
+    with pytest.raises(RuntimeError, match="HEIC conversion failed for broken\\.heic"):
+        prepare_local_ingest_image(source_path, output_dir=tmp_path / "imports")
 
 
 class _DummyRaw:

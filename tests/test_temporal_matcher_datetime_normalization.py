@@ -75,8 +75,15 @@ def test_prepare_image_rows_normalizes_exif_capture_time(monkeypatch, tmp_path):
     image_path.write_bytes(b"")
     exif_dt = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        "utils.image_companion_grouping.get_image_datetime",
-        lambda _path: exif_dt,
+        "utils.image_import_candidates.get_image_metadata",
+        lambda _path: {
+            "missing": False,
+            "datetime": exif_dt,
+            "latitude": None,
+            "longitude": None,
+            "filename": image_path.name,
+            "filepath": str(image_path),
+        },
     )
 
     rows = matcher.prepare_image_rows([image_path])
@@ -85,6 +92,23 @@ def test_prepare_image_rows_normalizes_exif_capture_time(monkeypatch, tmp_path):
     assert rows[0]["captured_at"] == _local_naive(exif_dt)
     assert rows[0]["captured_at"].tzinfo is None
     assert rows[0]["has_capture_time"] is True
+    assert rows[0]["candidate"].selected_path == image_path.resolve()
+    assert rows[0]["preview_path"] == str(image_path.resolve())
+
+
+def test_prepare_image_rows_marks_missing_timestamps(monkeypatch, tmp_path):
+    matcher = TemporalMatcher()
+    image_path = tmp_path / "missing.jpg"
+    image_path.write_bytes(b"")
+    monkeypatch.setattr("utils.image_import_candidates.get_image_metadata", lambda _path: {})
+
+    rows = matcher.prepare_image_rows([image_path])
+
+    assert len(rows) == 1
+    assert rows[0]["captured_at"] is None
+    assert rows[0]["captured_at_reason"] == "timestamp missing"
+    assert rows[0]["captured_at_source_path"] is None
+    assert rows[0]["captured_at_source_kind"] is None
 
 
 def test_prepare_image_rows_groups_raw_and_jpeg_companions(monkeypatch, tmp_path):
@@ -110,6 +134,11 @@ def test_prepare_image_rows_groups_raw_and_jpeg_companions(monkeypatch, tmp_path
     assert rows[0]["filename"] == raw_path.name
     assert rows[0]["captured_at"] == datetime(2026, 5, 16, 19, 44, 11)
     assert rows[0]["has_capture_time"] is True
+    assert rows[0]["candidate"].raw_path == raw_path.resolve()
+    assert rows[0]["candidate"].camera_jpeg_path == jpeg_path.resolve()
+    assert rows[0]["captured_at_source_path"] == str(jpeg_path.resolve())
+    assert rows[0]["captured_at_source_kind"] == "camera_jpeg"
+    assert rows[0]["preview_path"] == str(jpeg_path.resolve())
 
 
 def test_prepare_image_rows_can_prefer_camera_jpeg_for_companion_groups(monkeypatch, tmp_path):
@@ -135,6 +164,11 @@ def test_prepare_image_rows_can_prefer_camera_jpeg_for_companion_groups(monkeypa
     assert rows[0]["filename"] == jpeg_path.name
     assert rows[0]["captured_at"] == datetime(2026, 5, 16, 19, 44, 11)
     assert rows[0]["has_capture_time"] is True
+    assert rows[0]["candidate"].raw_path == raw_path.resolve()
+    assert rows[0]["candidate"].camera_jpeg_path == jpeg_path.resolve()
+    assert rows[0]["captured_at_source_path"] == str(jpeg_path.resolve())
+    assert rows[0]["captured_at_source_kind"] == "camera_jpeg"
+    assert rows[0]["preview_path"] == str(jpeg_path.resolve())
 
 
 def test_observation_window_backfill_normalizes_fallback_capture_time(monkeypatch, tmp_path):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
+from utils.heic_converter import build_local_image_provenance, convert_heic_to_jpeg, maybe_convert_heic
 
 
 class _FakeHeifImage:
@@ -53,6 +53,23 @@ def test_maybe_convert_heic_leaves_non_heic_paths_unchanged(tmp_path):
     result = maybe_convert_heic(str(source_path), tmp_path / "imports")
 
     assert result == str(source_path)
+
+
+def test_convert_heic_to_jpeg_cleans_partial_output_on_failure(tmp_path, monkeypatch):
+    source_path = tmp_path / "sample.heic"
+    source_path.write_bytes(b"fake heic bytes")
+    output_dir = tmp_path / "imports"
+    _install_fake_pillow_heif(monkeypatch, Image.new("RGB", (4, 4), "white"))
+
+    def fake_save_image_as_jpeg(image, output_path, *, exif_bytes=None):
+        Path(output_path).write_bytes(b"partial-bytes")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("utils.heic_converter.save_image_as_jpeg", fake_save_image_as_jpeg)
+
+    assert convert_heic_to_jpeg(str(source_path), output_dir) is None
+    assert output_dir.exists()
+    assert list(output_dir.glob("*.jpg")) == []
 
 
 def test_build_local_image_provenance_accepts_calibration_and_cache_purposes(tmp_path):

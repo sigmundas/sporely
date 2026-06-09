@@ -8,7 +8,10 @@ from typing import Iterable
 
 from database.models import ImageDB, ObservationDB, SessionLogDB
 from utils.exif_reader import get_image_datetime
-from utils.image_companion_grouping import group_companion_paths
+from utils.image_import_candidates import (
+    IMAGE_IMPORT_STATUS_SKIPPED,
+    build_image_import_candidates,
+)
 from utils.raw_detection import SUPPORTED_RAW_SUFFIXES
 
 
@@ -254,20 +257,49 @@ class TemporalMatcher:
         source_preference: str | None = None,
     ) -> list[dict]:
         rows: list[dict] = []
-        for group in group_companion_paths(paths, source_preference=source_preference):
-            filepath = _normalize_path(group.preferred_path)
+        for candidate in build_image_import_candidates(paths, source_preference=source_preference):
+            if candidate.status == IMAGE_IMPORT_STATUS_SKIPPED:
+                continue
+            filepath = _normalize_path(candidate.selected_path)
             if not filepath:
                 continue
             path_obj = Path(filepath)
             if path_obj.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
                 continue
-            captured_at = normalize_timestamp(group.captured_at)
+            captured_at = normalize_timestamp(candidate.captured_at)
+            preview_path = candidate.preview_path or candidate.working_path
+            if preview_path is None and candidate.camera_jpeg_path is not None:
+                preview_path = candidate.camera_jpeg_path
+            if preview_path is None:
+                preview_path = candidate.selected_path
             rows.append(
                 {
                     "filepath": filepath,
                     "filename": path_obj.name,
                     "captured_at": captured_at,
+                    "captured_at_reason": "timestamp missing" if captured_at is None else None,
                     "has_capture_time": bool(captured_at),
+                    "candidate": candidate,
+                    "source_path": str(candidate.source_path),
+                    "selected_path": str(candidate.selected_path),
+                    "source_kind": candidate.source_kind,
+                    "captured_at_source_path": (
+                        str(candidate.captured_at_source_path)
+                        if candidate.captured_at_source_path is not None
+                        else None
+                    ),
+                    "captured_at_source_kind": candidate.captured_at_source_kind,
+                    "raw_path": str(candidate.raw_path) if candidate.raw_path is not None else None,
+                    "camera_jpeg_path": (
+                        str(candidate.camera_jpeg_path)
+                        if candidate.camera_jpeg_path is not None
+                        else None
+                    ),
+                    "companion_paths": [str(path) for path in candidate.companion_paths],
+                    "selected_source_policy": candidate.selected_source_policy,
+                    "has_raw_companion": candidate.has_raw_companion,
+                    "preview_path": str(preview_path) if preview_path is not None else None,
+                    "candidate_status": candidate.status,
                 }
             )
         rows.sort(

@@ -116,6 +116,7 @@ def convert_heic_to_jpeg(filepath, output_dir):
 
     Returns the converted JPEG path as a string, or None on failure.
     """
+    output_path = None
     try:
         import pillow_heif
         from PIL import Image, ImageOps
@@ -156,6 +157,11 @@ def convert_heic_to_jpeg(filepath, output_dir):
             pass
         return str(output_path)
     except Exception:
+        if output_path is not None:
+            try:
+                output_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         return None
 
 

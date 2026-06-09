@@ -69,6 +69,7 @@ from utils.image_companion_grouping import (
     normalize_raw_companion_source_preference,
     select_preferred_companion_path,
 )
+from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.image_processing_pipeline import (
     ProcessingDebugInfo,
     compute_post_decode_transfer_curve,
@@ -397,6 +398,11 @@ class LiveLabTab(QWidget):
         self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.browse_btn.setMinimumWidth(72)
         watch_layout.addWidget(self.browse_btn, 0, Qt.AlignVCenter)
+        self.rescan_btn = QPushButton(self.tr("Rescan folder"))
+        self.rescan_btn.clicked.connect(self._on_rescan_watch_folder)
+        self.rescan_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.rescan_btn.setMinimumWidth(104)
+        watch_layout.addWidget(self.rescan_btn, 0, Qt.AlignVCenter)
         current_text_layout.addWidget(self.watch_group)
         current_text_layout.addStretch(1)
         current_row.addLayout(current_text_layout, 1)
@@ -2855,7 +2861,7 @@ class LiveLabTab(QWidget):
         lab_metadata: dict[str, object] | None = None,
     ) -> PendingRawCapture:
         source = Path(source_path)
-        resolved_lab_metadata = dict(lab_metadata or self._current_lab_metadata())
+        resolved_lab_metadata = merge_image_lab_metadata(self._current_lab_metadata(), lab_metadata)
         resolved_lab_metadata["image_type"] = "microscope"
         resolved_settings = RawRenderSettings.from_dict(raw_settings or self._current_raw_render_settings())
         pending = PendingRawCapture(
@@ -3515,6 +3521,21 @@ class LiveLabTab(QWidget):
             self.watch_dir_input.setCursorPosition(len(chosen))
             self.watch_dir_input.setToolTip(chosen)
 
+    def _on_rescan_watch_folder(self) -> None:
+        queued = self.rescan_watch_folder()
+        if queued > 0:
+            self._show_status(
+                self.tr("Rescanned the watched folder and queued {count} image(s).").format(count=queued),
+                tone="info",
+                timeout_ms=4000,
+            )
+        else:
+            self._show_status(
+                self.tr("No supported images were ready to rescan."),
+                tone="info",
+                timeout_ms=3000,
+            )
+
     def _open_observations_tab(self) -> None:
         self._main_window.tab_widget.setCurrentIndex(0)
         table = getattr(getattr(self._main_window, "observations_tab", None), "table", None)
@@ -3773,6 +3794,11 @@ class LiveLabTab(QWidget):
         self.watch_group.setVisible(mode_is_live if running else selected_mode == self.SESSION_MODE_LIVE)
         self.watch_dir_input.setReadOnly(running or stopping or selected_mode != self.SESSION_MODE_LIVE)
         self.browse_btn.setEnabled(not running and not stopping and selected_mode == self.SESSION_MODE_LIVE)
+        rescan_btn = getattr(self, "rescan_btn", None)
+        if rescan_btn is not None:
+            rescan_btn.setEnabled(
+                bool(running and not stopping and selected_mode == self.SESSION_MODE_LIVE and watch_ok)
+            )
         self.start_stop_btn.setEnabled(bool(running or can_start))
         self.session_note_input.setEnabled(bool(running and not stopping))
         self.add_note_btn.setEnabled(bool(running and not stopping))
@@ -3963,6 +3989,47 @@ class LiveLabTab(QWidget):
             return
         self._queue_companion_source(source)
 
+    def rescan_watch_folder(self) -> int:
+        if not self.is_session_running() or self._active_session_mode != self.SESSION_MODE_LIVE:
+            return 0
+        watch_dir = str(self.watch_dir_input.text() or "").strip()
+        if not watch_dir:
+            return 0
+        watch_path = Path(watch_dir)
+        try:
+            if not watch_path.exists() or not watch_path.is_dir():
+                return 0
+        except Exception:
+            return 0
+
+        supported_suffixes = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif"} | set(
+            SUPPORTED_RAW_SUFFIXES
+        )
+        try:
+            children = sorted(
+                watch_path.iterdir(),
+                key=lambda path: (path.name.casefold(), str(path).casefold()),
+            )
+        except Exception:
+            return 0
+
+        queued = 0
+        for child in children:
+            try:
+                if not child.is_file():
+                    continue
+            except Exception:
+                continue
+            if child.suffix.lower() not in supported_suffixes:
+                continue
+            try:
+                candidate = str(child.resolve())
+            except Exception:
+                candidate = str(child)
+            if self._queue_companion_source(candidate):
+                queued += 1
+        return queued
+
     def _finalize_local_ingest(
         self,
         source_path: str,
@@ -3975,7 +4042,11 @@ class LiveLabTab(QWidget):
         if observation_id <= 0:
             return False
 
-        ingest_lab_metadata = dict(lab_metadata or getattr(ingest, "lab_metadata", None) or self._current_lab_metadata())
+        ingest_lab_metadata = merge_image_lab_metadata(
+            self._current_lab_metadata(),
+            lab_metadata,
+            getattr(ingest, "lab_metadata", None),
+        )
         objective_key = ingest_lab_metadata.get("objective_name") or self.objective_combo.currentData()
         contrast_value = ingest_lab_metadata.get("contrast")
         mount_value = ingest_lab_metadata.get("mount_medium")
@@ -4008,7 +4079,7 @@ class LiveLabTab(QWidget):
             calibration_id=calibration_id,
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
-            lab_metadata=getattr(ingest, "lab_metadata", None) or ingest_lab_metadata or self._current_lab_metadata(),
+            lab_metadata=ingest_lab_metadata or None,
             **ingest.provenance_kwargs(),
         )
 
@@ -4077,7 +4148,7 @@ class LiveLabTab(QWidget):
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
-        ingest_context = dict(lab_metadata or self._current_lab_metadata())
+        ingest_context = merge_image_lab_metadata(self._current_lab_metadata(), lab_metadata)
         ingest_context["image_type"] = "microscope"
         resolved_raw_settings = RawRenderSettings.from_dict(raw_settings or self._current_raw_render_settings())
         try:
