@@ -95,7 +95,28 @@ from utils.image_import_candidates import (
 from utils.vernacular_utils import normalize_vernacular_language
 from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates, get_camera_model
 from utils.heic_converter import maybe_convert_heic
+from utils.raw_render import (
+    RawRenderSettings,
+    build_raw_processing_metadata,
+    render_raw_image,
+    render_raw_preview,
+    render_raw_sampling_rgb,
+)
+from utils.raw_white_balance import estimate_white_balance_from_background
+
+try:  # pragma: no cover - optional capture-time helper
+    from utils.raw_render import read_rawpy_capture_datetime
+except Exception:  # pragma: no cover
+    read_rawpy_capture_datetime = None  # type: ignore
+
+
+def _is_raw_path(path: str | None) -> bool:
+    if not path:
+        return False
+    return Path(path).suffix.lower() in set(RAW_FORMATS)
+
 from .image_gallery_widget import ImageGalleryWidget
+from .raw_processing_controls import RawProcessingControls
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
@@ -198,6 +219,14 @@ class ImageImportResult:
     companion_paths: tuple[str, ...] = ()
     scale_bar_selection: Optional[tuple] = None  # ((p1x, p1y), (p2x, p2y)) in image coords
     scale_bar_length_um: Optional[float] = None  # µm value entered by user for the scale bar
+    # RAW staging / review fields (Prepare Images RAW conversion pass)
+    raw_candidate: bool = False
+    raw_pending: bool = False
+    raw_settings: Optional[dict] = None
+    raw_preview_path: Optional[str] = None
+    raw_unsaved_changes: bool = False
+    processing_status: Optional[str] = None
+
 
 
 @dataclass
@@ -1199,6 +1228,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
         notes_layout.addWidget(self.image_note_input)
         layout.addWidget(notes_group)
+
+        self._build_raw_processing_panel(layout)
 
         self._set_field_tag_defaults_in_form()
         self._sync_field_tag_display(True)
@@ -3327,6 +3358,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if show_progress:
             self._set_hint_progress_visible(False)
             self._set_hint_progress("", 0)
+        self._stage_raw_candidates(new_results)
         self._update_summary()
         self._seed_observation_metadata()
         self._update_observation_source_index()
@@ -3698,7 +3730,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if pixmap and not pixmap.isNull():
             pixmap, preview_resized = self._apply_resize_preview(pixmap, result)
             preview_scaled_for_view = preview_scaled if not preview_resized else False
-            self.preview.set_image_sources(pixmap, result.filepath, preview_scaled_for_view)
+            preview_source_path = result.preview_path or result.filepath
+            self.preview.set_image_sources(pixmap, preview_source_path, preview_scaled_for_view)
         else:
             self.preview.set_image(None)
         self.preview_stack.setCurrentWidget(self.preview)
@@ -3880,8 +3913,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_table()
         self._update_ai_overlay()
         self._restore_scale_bar_overlay(result)
+        self._update_raw_panel_for_result(result)
 
     def _load_result_into_form(self, result: ImageImportResult) -> None:
+
         self._loading_form = True
         is_micro = result.image_type == "microscope"
         if is_micro:
@@ -5225,6 +5260,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview.clear_preview_line()
 
     def _on_preview_clicked(self, pos):
+        if self._handle_raw_wb_pick(pos):
+            return
         if not getattr(self, "_calibration_mode", False):
             # If the user clicks near an existing scale bar selection, open the dialog
             result = (
@@ -5297,9 +5334,316 @@ class ImageImportDialog(GeometryMixin, QDialog):
             # Apply scale immediately — 2nd click is the trigger
             self._apply_scale_bar_inline()
 
+    # ── RAW processing (Prepare Images RAW review/conversion) ──────────────
+    @staticmethod
+    def _default_raw_settings() -> dict:
+        try:
+            return RawRenderSettings().to_dict()  # type: ignore[attr-defined]
+        except Exception:
+            base = RawRenderSettings()
+            return {
+                field: getattr(base, field)
+                for field in base.__dataclass_fields__  # type: ignore[attr-defined]
+            }
+
+    def _result_is_raw_backed(self, result: ImageImportResult | None) -> bool:
+        if result is None:
+            return False
+        if getattr(result, "raw_candidate", False):
+            return True
+        if _is_raw_path(getattr(result, "source_filepath", None)) or _is_raw_path(
+            getattr(result, "original_filepath", None)
+        ):
+            return True
+        lab = getattr(result, "lab_metadata", None) or {}
+        return bool(lab.get("raw_processing"))
+
+    def _raw_source_path_for_result(self, result: ImageImportResult | None) -> str | None:
+        if result is None:
+            return None
+        for candidate in (
+            getattr(result, "source_filepath", None),
+            getattr(result, "original_filepath", None),
+        ):
+            if _is_raw_path(candidate) and Path(candidate).exists():
+                return str(candidate)
+        lab = getattr(result, "lab_metadata", None) or {}
+        raw_meta = lab.get("raw_processing") or {}
+        source = (raw_meta.get("source") or {}).get("path")
+        if _is_raw_path(source) and Path(source).exists():
+            return str(source)
+        return None
+
+    def _ensure_raw_settings(self, result: ImageImportResult) -> dict:
+        settings = getattr(result, "raw_settings", None)
+        if not isinstance(settings, dict) or not settings:
+            settings = self._default_raw_settings()
+            result.raw_settings = settings
+        return settings
+
+    def _build_raw_processing_panel(self, layout: QVBoxLayout) -> None:
+        self.raw_group, raw_layout = create_section_card(
+            self.tr("RAW processing"),
+            body_margins=(8, 8, 8, 8),
+            body_spacing=6,
+        )
+        self.raw_controls = RawProcessingControls(self.raw_group)
+        self.raw_controls.settingsChanged.connect(self._on_raw_settings_changed)
+        self.raw_controls.pickWhiteBalanceToggled.connect(self._on_raw_wb_pick_toggled)
+        raw_layout.addWidget(self.raw_controls)
+
+        self.raw_group.setVisible(False)
+        layout.addWidget(self.raw_group)
+
+    def _ensure_raw_convert_button(self) -> None:
+        if getattr(self, "raw_convert_btn", None) is not None:
+            return
+        if not hasattr(self, "preview"):
+            return
+        self.raw_convert_btn = QPushButton(self.tr("Convert RAW"), self.preview)
+        self.raw_convert_btn.setStyleSheet(
+            "QPushButton { background-color: rgba(39, 174, 96, 230); color: white;"
+            " border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: rgba(33, 150, 83, 245); }"
+        )
+        self.raw_convert_btn.clicked.connect(self._on_raw_convert_clicked)
+        self.raw_convert_btn.hide()
+
+    def _position_raw_convert_button(self) -> None:
+        btn = getattr(self, "raw_convert_btn", None)
+        if btn is None or not hasattr(self, "preview"):
+            return
+        margin = 12
+        x = max(margin, self.preview.width() - btn.sizeHint().width() - margin)
+        btn.move(x, margin)
+
+    def _update_raw_panel_for_result(self, result: ImageImportResult | None) -> None:
+        self._ensure_raw_convert_button()
+        is_raw = self._result_is_raw_backed(result)
+        if hasattr(self, "raw_group"):
+            self.raw_group.setVisible(bool(is_raw))
+        btn = getattr(self, "raw_convert_btn", None)
+        if not is_raw or result is None:
+            if btn is not None:
+                btn.hide()
+            return
+        settings = self._ensure_raw_settings(result)
+        self._load_raw_settings_into_form(settings)
+        if btn is not None:
+            pending = bool(getattr(result, "raw_pending", False)) or bool(
+                getattr(result, "raw_unsaved_changes", False)
+            )
+            if pending:
+                self.raw_convert_btn.setText(self.tr("Convert RAW"))
+                self.raw_convert_btn.show()
+                self.raw_convert_btn.raise_()
+                self._position_raw_convert_button()
+            else:
+                self.raw_convert_btn.setText(self.tr("Converted"))
+                self.raw_convert_btn.hide()
+
+    def _load_raw_settings_into_form(self, settings: dict | RawRenderSettings | None) -> None:
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            controls.set_settings(settings)
+
+    def _collect_raw_settings_from_form(self, base: dict | None = None) -> dict:
+        controls = getattr(self, "raw_controls", None)
+        if controls is None:
+            settings = RawRenderSettings.from_dict(base or getattr(self, "_raw_render_settings", None))
+        else:
+            settings = controls.settings()
+        return settings.to_dict()
+
+    def _on_raw_settings_changed(self, *_args) -> None:
+        if getattr(self, "_raw_loading", False):
+            return
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return
+        result = self.import_results[index]
+        if not self._result_is_raw_backed(result):
+            return
+        result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
+        result.raw_unsaved_changes = True
+        self._refresh_raw_preview(index)
+        self._update_raw_panel_for_result(result)
+
+    def _on_raw_wb_pick_toggled(self, checked: bool) -> None:
+        self._raw_wb_pick_mode = bool(checked)
+        if self._raw_wb_pick_mode:
+            self.set_hint(self.tr("Click the image background to sample white balance"))
+        else:
+            self.set_hint(None)
+
+    def _refresh_raw_preview(self, index: int) -> None:
+        if index < 0 or index >= len(self.import_results):
+            return
+        result = self.import_results[index]
+        source = self._raw_source_path_for_result(result)
+        if not source:
+            return
+        try:
+            import_dir = get_images_dir() / "imports"
+            import_dir.mkdir(parents=True, exist_ok=True)
+            preview_path = render_raw_preview(
+                source,
+                settings=result.raw_settings or self._ensure_raw_settings(result),
+                output_dir=import_dir,
+            )
+        except Exception as exc:
+            result.processing_status = "failed"
+            result.failure_reason = str(exc)
+            self._set_settings_hint(self.tr("RAW preview failed: {err}").format(err=exc), "#e74c3c")
+            return
+        preview_str = str(preview_path)
+        old_preview = result.raw_preview_path
+        if old_preview and old_preview != source:
+            self._invalidate_cached_pixmap(old_preview)
+            self._temp_preview_paths.discard(old_preview)
+        result.raw_preview_path = preview_str
+        result.preview_path = preview_str
+        self._temp_preview_paths.add(preview_str)
+        self._invalidate_cached_pixmap(preview_str)
+        result.processing_status = "preview"
+        if self._current_single_index() == index:
+            self._set_preview_for_result(result, preserve_view=True)
+
+    def _handle_raw_wb_pick(self, pos) -> bool:
+        if not getattr(self, "_raw_wb_pick_mode", False):
+            return False
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return False
+        result = self.import_results[index]
+        source = self._raw_source_path_for_result(result)
+        if not source:
+            return False
+        try:
+            # Derive WB from a stable base (camera WB) array, not the corrected preview.
+            base_settings = dict(self._ensure_raw_settings(result))
+            base_settings["white_balance_mode"] = "camera"
+            rgb = render_raw_sampling_rgb(source, settings=base_settings)
+            h, w = rgb.shape[0], rgb.shape[1]
+            px = int(max(0, min(w - 1, pos.x())))
+            py = int(max(0, min(h - 1, pos.y())))
+            rect_half = max(2, int(min(w, h) * 0.02))
+            rect = (
+                max(0, px - rect_half),
+                max(0, py - rect_half),
+                min(w, px + rect_half),
+                min(h, py + rect_half),
+            )
+            multipliers = estimate_white_balance_from_background(rgb, rect)
+            if multipliers is not None:
+                base = dict(self._ensure_raw_settings(result))
+                base["wb_multipliers"] = list(multipliers)
+                base["white_balance_mode"] = "custom"
+                result.raw_settings = base
+                result.raw_unsaved_changes = True
+                self.raw_controls.set_pick_checked(False)
+                self._raw_wb_pick_mode = False
+                self._load_raw_settings_into_form(base)
+                self._refresh_raw_preview(index)
+                self._update_raw_panel_for_result(result)
+                self.set_hint(None)
+                return True
+        except Exception as exc:
+            self._set_settings_hint(self.tr("RAW WB pick failed: {err}").format(err=exc), "#e74c3c")
+        self.raw_controls.set_pick_checked(False)
+        self._raw_wb_pick_mode = False
+        return False
+
+    def _on_raw_convert_clicked(self) -> None:
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return
+        result = self.import_results[index]
+        source = self._raw_source_path_for_result(result)
+        if not source:
+            self._set_settings_hint(self.tr("RAW source not found"), "#e74c3c")
+            return
+        settings = result.raw_settings or self._ensure_raw_settings(result)
+        try:
+            import_dir = get_images_dir() / "imports"
+            import_dir.mkdir(parents=True, exist_ok=True)
+            derivative = render_raw_image(source, settings=settings, output_dir=import_dir)
+        except Exception as exc:
+            result.processing_status = "failed"
+            result.failure_reason = str(exc)
+            self._set_settings_hint(self.tr("RAW conversion failed: {err}").format(err=exc), "#e74c3c")
+            return
+        derivative_str = str(derivative)
+        size = self._get_image_size(derivative_str) or (0, 0)
+        capture_dt = None
+        if read_rawpy_capture_datetime is not None:
+            try:
+                capture_dt = read_rawpy_capture_datetime(source)
+            except Exception:
+                capture_dt = None
+        try:
+            raw_meta = build_raw_processing_metadata(
+                source,
+                derivative_str,
+                settings,
+                width=int(size[0]),
+                height=int(size[1]),
+                source_capture_datetime=capture_dt,
+            )
+        except Exception:
+            raw_meta = None
+        result.filepath = derivative_str
+        result.preview_path = derivative_str
+        result.source_filepath = str(source)
+        result.original_filepath = str(source)
+        result.raw_pending = False
+        result.raw_unsaved_changes = False
+        result.raw_preview_path = derivative_str
+        result.processing_status = "converted"
+        result.status = IMAGE_IMPORT_STATUS_READY
+        lab = dict(getattr(result, "lab_metadata", None) or {})
+        if raw_meta:
+            lab["raw_processing"] = raw_meta
+        result.lab_metadata = lab
+        if capture_dt is not None and not result.captured_at:
+            result.captured_at = QDateTime(capture_dt)
+        self.image_paths[index] = derivative_str
+        self._converted_import_paths.add(derivative_str)
+        self._invalidate_cached_pixmap(derivative_str)
+        self._refresh_gallery()
+        self._select_image(index)
+        self._set_settings_hint(self.tr("RAW converted to JPEG derivative"), "#27ae60")
+
+    def _stage_raw_candidates(self, new_results: list[ImageImportResult]) -> None:
+        for result in new_results:
+            if not self._result_is_raw_backed(result):
+                continue
+            source = self._raw_source_path_for_result(result)
+            if not source:
+                continue
+            result.raw_candidate = True
+            result.raw_pending = True
+            result.raw_unsaved_changes = False
+            result.processing_status = "pending"
+            result.source_filepath = str(source)
+            result.original_filepath = str(source)
+            self._ensure_raw_settings(result)
+            # The prepared JPEG acts as the temporary preview derivative.
+            if result.preview_path:
+                result.raw_preview_path = result.preview_path
+
+    def _pending_raw_indices(self) -> list[int]:
+        return [
+            idx
+            for idx, result in enumerate(self.import_results)
+            if self._result_is_raw_backed(result)
+            and (bool(getattr(result, "raw_pending", False)) or bool(getattr(result, "raw_unsaved_changes", False)))
+        ]
+
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
         super().done(result)
+
 
     def closeEvent(self, event):
         dialog = getattr(self, "_scale_bar_dialog", None)

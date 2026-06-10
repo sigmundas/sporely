@@ -8,6 +8,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ui import image_import_dialog
@@ -24,6 +25,7 @@ from utils.image_import_candidates import (
     ImageImportCandidate,
 )
 from utils.image_metadata_merge import merge_image_lab_metadata
+from utils.raw_render import RawRenderSettings
 
 
 @pytest.fixture(scope="module")
@@ -123,6 +125,7 @@ def _make_add_images_dummy(*, source_preference: str) -> SimpleNamespace:
     dummy._update_ai_table = lambda: None
     dummy._update_ai_overlay = lambda: None
     dummy._restore_scale_bar_overlay = lambda result: None
+    dummy._stage_raw_candidates = lambda new_results: None
     return dummy
 
 
@@ -189,6 +192,54 @@ def test_image_import_result_from_candidate_preserves_prepared_metadata_and_fail
     assert result.companion_paths == (str(raw_path.resolve()), str(jpeg_path.resolve()))
     assert result.lab_metadata["objective_name"] == "40x"
     assert result.lab_metadata["raw_processing"]["source"]["kind"] == "camera_raw"
+
+
+def test_set_preview_for_result_uses_preview_path_as_full_source_when_preview_is_scaled(qapp):
+    dummy = SimpleNamespace()
+    dummy.preview_calls = []
+    dummy.preview = SimpleNamespace(
+        set_image_sources=lambda pixmap, full_path=None, preview_scaled=False, preserve_view=False: dummy.preview_calls.append(
+            {
+                "full_path": full_path,
+                "preview_scaled": preview_scaled,
+                "preserve_view": preserve_view,
+            }
+        ),
+        set_image=lambda pixmap: None,
+    )
+    dummy.preview_stack = SimpleNamespace(setCurrentWidget=lambda widget: None)
+    dummy._resolve_preview_pixmap = lambda result: (QPixmap(8, 8), True)
+    dummy._apply_resize_preview = lambda pixmap, result: (pixmap, False)
+    dummy._update_resize_preview_tag = lambda result, preview_resized, preview_pixmap=None: None
+    dummy._compute_resample_scale_factor = lambda result, respect_toggle=True: 1.0
+    dummy._format_significant = lambda value, digits: f"{value:.{digits}f}"
+    dummy._get_image_size = lambda path: (8, 8)
+    result = SimpleNamespace(
+        filepath="/tmp/raw_source.nef",
+        preview_path="/tmp/raw_preview.jpg",
+        image_type="microscope",
+    )
+
+    ImageImportDialog._set_preview_for_result(dummy, result, preserve_view=False)
+
+    assert dummy.preview_calls[0]["full_path"] == "/tmp/raw_preview.jpg"
+    assert dummy.preview_calls[0]["preview_scaled"] is True
+
+
+def test_collect_raw_settings_from_form_uses_raw_controls_widget_state():
+    dummy = SimpleNamespace()
+    expected = RawRenderSettings(
+        white_balance_mode="custom",
+        wb_multipliers=(1.2, 1.0, 1.4),
+        tone_curve_enabled=True,
+        tone_curve_strength=0.55,
+        tone_curve_midpoint=0.35,
+    )
+    dummy.raw_controls = SimpleNamespace(settings=lambda: expected)
+
+    collected = ImageImportDialog._collect_raw_settings_from_form(dummy, base={"white_balance_mode": "camera"})
+
+    assert collected == expected.to_dict()
 
 
 def test_add_images_uses_candidates_and_shows_failed_rows_without_stopping_batch(monkeypatch, tmp_path, qapp):

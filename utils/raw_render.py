@@ -534,6 +534,18 @@ def render_raw_preview(
     )
 
 
+def render_raw_sampling_rgb(
+    source_path: str | Path,
+    *,
+    settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None = None,
+) -> np.ndarray:
+    """Render a RAW source to a preview-sized RGB array suitable for sampling."""
+    rawpy_module = import_rawpy()
+    render_settings = RawRenderSettings.from_dict(settings)
+    rgb = _render_raw_array(rawpy_module, source_path, render_settings, preview=True)
+    return to_float_rgb(rgb)
+
+
 __all__ = [
     "RAW_DERIVATIVE_FORMAT",
     "RAW_DERIVATIVE_MIME_TYPE",
@@ -544,4 +556,5 @@ __all__ = [
     "build_raw_processing_metadata",
     "render_raw_image",
     "render_raw_preview",
+    "render_raw_sampling_rgb",
 ]

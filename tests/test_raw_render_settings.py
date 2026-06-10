@@ -13,6 +13,7 @@ from utils.raw_render import (
     RawRenderSettings,
     build_raw_processing_metadata,
     render_raw_image,
+    render_raw_sampling_rgb,
 )
 
 
@@ -309,6 +310,42 @@ def test_render_raw_image_uses_background_multipliers_when_available(tmp_path, m
     assert calls[0].wb_multipliers == (1.2, 1.0, 1.4)
     assert calls[0].wb_multiplier_space == "post_decode_rgb"
     assert calls[0].wb_sample_base_mode == "camera"
+
+
+def test_render_raw_sampling_rgb_uses_the_rawpy_path(tmp_path, monkeypatch):
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    captured: dict[str, object] = {}
+
+    def fake_render_raw_array(rawpy_module, source, settings, *, preview=False, wb_mode=None, user_wb=None):
+        captured["rawpy_module"] = rawpy_module
+        captured["source"] = str(source)
+        captured["preview"] = preview
+        captured["settings"] = RawRenderSettings.from_dict(settings)
+        return np.array(
+            [
+                [[0.10, 0.20, 0.30], [0.40, 0.50, 0.60]],
+                [[0.70, 0.80, 0.90], [0.15, 0.25, 0.35]],
+            ],
+            dtype=np.float64,
+        )
+
+    monkeypatch.setattr("utils.raw_render.import_rawpy", lambda: object())
+    monkeypatch.setattr("utils.raw_render._render_raw_array", fake_render_raw_array)
+
+    rgb = render_raw_sampling_rgb(source_path)
+
+    assert captured["source"] == str(source_path)
+    assert captured["preview"] is True
+    assert isinstance(captured["settings"], RawRenderSettings)
+    assert rgb.shape == (2, 2, 3)
+    assert np.allclose(rgb, np.array(
+        [
+            [[0.10, 0.20, 0.30], [0.40, 0.50, 0.60]],
+            [[0.70, 0.80, 0.90], [0.15, 0.25, 0.35]],
+        ],
+        dtype=np.float64,
+    ))
 
 
 def test_build_raw_processing_metadata_includes_rendered_at(tmp_path):
