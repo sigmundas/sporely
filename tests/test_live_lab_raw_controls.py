@@ -56,18 +56,6 @@ def _build_raw_controls_state() -> SimpleNamespace:
         live_lab_tab.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     )
     state.raw_controls = RawProcessingControls()
-    state.raw_white_balance_selector = state.raw_controls.white_balance_selector
-    state.raw_white_balance_combo = state.raw_white_balance_selector
-    state.raw_pick_wb_btn = state.raw_controls.pick_button
-    state.raw_auto_levels_checkbox = state.raw_controls.auto_levels_checkbox
-    state.raw_preserve_tails_checkbox = state.raw_controls.preserve_tails_checkbox
-    state.raw_tone_curve_checkbox = state.raw_controls.tone_curve_checkbox
-    state.raw_curve_strength_row = state.raw_controls.curve_strength_row
-    state.raw_curve_midpoint_row = state.raw_controls.curve_midpoint_row
-    state.raw_curve_strength_slider = state.raw_controls.curve_strength_slider
-    state.raw_curve_strength_value_label = state.raw_controls.curve_strength_value_label
-    state.raw_curve_midpoint_slider = state.raw_controls.curve_midpoint_slider
-    state.raw_curve_midpoint_value_label = state.raw_controls.curve_midpoint_value_label
     state.objective_combo = QComboBox()
     state.objective_combo.addItem("Not set", None)
     state.contrast_combo = QComboBox()
@@ -481,25 +469,25 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
         state._raw_settings_info_text(RawRenderSettings.default())
         == "Camera WB · Dark cutoff 0.05% · Bright cutoff 0.05% · Shadow lift 0.0% · Soft tails off · Curve strength 50% · Curve midpoint 50%"
     )
-    assert state.raw_curve_strength_row.isEnabled() is False
-    assert state.raw_curve_midpoint_row.isEnabled() is False
-    assert state.raw_curve_strength_slider.isEnabled() is False
-    assert state.raw_curve_midpoint_slider.isEnabled() is False
+    assert state.raw_controls.curve_strength_row.isEnabled() is False
+    assert state.raw_controls.curve_midpoint_row.isEnabled() is False
+    assert state.raw_controls.curve_strength_slider.isEnabled() is False
+    assert state.raw_controls.curve_midpoint_slider.isEnabled() is False
 
-    state.raw_curve_strength_slider.setValue(45)
-    state.raw_curve_midpoint_slider.setValue(48)
-    state.raw_tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(45)
+    state.raw_controls.curve_midpoint_slider.setValue(48)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Camera WB · Auto levels · Curve 45 / mid 48"
-    assert state.raw_curve_strength_row.isEnabled() is True
-    assert state.raw_curve_midpoint_row.isEnabled() is True
-    assert state.raw_curve_strength_slider.isEnabled() is True
-    assert state.raw_curve_midpoint_slider.isEnabled() is True
+    assert state.raw_controls.curve_strength_row.isEnabled() is True
+    assert state.raw_controls.curve_midpoint_row.isEnabled() is True
+    assert state.raw_controls.curve_strength_slider.isEnabled() is True
+    assert state.raw_controls.curve_midpoint_slider.isEnabled() is True
     assert saved_settings
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Auto WB · levels off · Curve 45 / mid 48"
@@ -595,11 +583,11 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", fake_set_setting)
 
-    state.raw_white_balance_combo.setCurrentIndex(0)
-    state.raw_auto_levels_checkbox.setChecked(True)
-    state.raw_tone_curve_checkbox.setChecked(False)
-    state.raw_curve_strength_slider.setValue(45)
-    state.raw_curve_midpoint_slider.setValue(48)
+    state.raw_controls.white_balance_selector.set_selected_value("camera")
+    state.raw_controls.auto_levels_checkbox.setChecked(True)
+    state.raw_controls.tone_curve_checkbox.setChecked(False)
+    state.raw_controls.curve_strength_slider.setValue(45)
+    state.raw_controls.curve_midpoint_slider.setValue(48)
 
     assert live_lab_tab.LiveLabTab._ingest_detected_image(state, str(source_path))
     first_snapshot = add_image_calls[0]["lab_metadata"]["raw_processing"]["settings"]
@@ -608,11 +596,11 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     assert first_snapshot["white_balance_mode"] == "camera"
     assert first_snapshot["auto_levels"] is True
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
 
     assert live_lab_tab.LiveLabTab._ingest_detected_image(state, str(source_path))
     assert captured_calls[1]["raw_settings"]["white_balance_mode"] == "auto"
@@ -733,11 +721,11 @@ def test_live_lab_raw_settings_load_on_startup_context(monkeypatch):
 
     assert loaded_settings == expected_settings
     assert state._raw_render_settings == expected_settings
-    assert state.raw_white_balance_combo.currentData() == "auto"
-    assert state.raw_auto_levels_checkbox.isChecked() is False
-    assert state.raw_tone_curve_checkbox.isChecked() is True
-    assert state.raw_curve_strength_slider.value() == 62
-    assert state.raw_curve_midpoint_slider.value() == 31
+    assert state.raw_controls.white_balance_selector.selected_value("camera") == "auto"
+    assert state.raw_controls.auto_levels_checkbox.isChecked() is False
+    assert state.raw_controls.tone_curve_checkbox.isChecked() is True
+    assert state.raw_controls.curve_strength_slider.value() == 62
+    assert state.raw_controls.curve_midpoint_slider.value() == 31
 
 
 def test_live_lab_raw_controls_round_trip_through_shared_widget(monkeypatch):
@@ -781,11 +769,11 @@ def test_live_lab_raw_control_change_saves_current_context_settings(monkeypatch)
     saved_settings: list[tuple[str, str]] = []
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda key, value: saved_settings.append((key, value)))
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
 
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
@@ -854,11 +842,11 @@ def test_live_lab_committed_raw_edit_preview_apply_updates_existing_row(tmp_path
     assert state.viewer_title_label.text() == "Editing RAW: sample.nef"
     assert "Camera WB" in state.raw_edit_summary_label.text()
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert state._raw_edit_session is not None
@@ -881,11 +869,11 @@ def test_live_lab_committed_raw_edit_preview_apply_updates_existing_row(tmp_path
     assert state._raw_copied_settings.wb_selection is None
     assert state._raw_copied_settings.wb_selection_space == "inherited_multipliers"
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert live_lab_tab.LiveLabTab._apply_raw_edit_session(state) is True
@@ -941,8 +929,8 @@ def test_live_lab_committed_raw_edit_cancel_restores_future_controls_and_deletes
     assert state._raw_edit_session is not None
     preview_path = Path(state._raw_edit_session.preview_path)
     assert preview_path.exists()
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
     assert state._raw_edit_session.dirty is True
 
@@ -951,9 +939,9 @@ def test_live_lab_committed_raw_edit_cancel_restores_future_controls_and_deletes
     assert state._raw_edit_session is None
     assert not preview_path.exists()
     assert state._raw_render_settings == RawRenderSettings.default()
-    assert state.raw_white_balance_combo.currentData() == "camera"
-    assert state.raw_auto_levels_checkbox.isChecked() is True
-    assert state.raw_tone_curve_checkbox.isChecked() is False
+    assert state.raw_controls.white_balance_selector.selected_value("camera") == "camera"
+    assert state.raw_controls.auto_levels_checkbox.isChecked() is True
+    assert state.raw_controls.tone_curve_checkbox.isChecked() is False
     assert state.raw_edit_open_btn.isEnabled() is True
     assert state.raw_edit_apply_btn.isEnabled() is False
 
@@ -1393,7 +1381,7 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
     assert pending.raw_settings.wb_selection == pytest.approx((0.0, 0.0, 5.5, 5.5), rel=1e-3)
     assert pending.raw_settings.wb_multipliers == pytest.approx((2.0, 1.0, 4.0), rel=1e-3)
     assert state.pending_raw_pick_wb_btn.isChecked() is False
-    assert state.raw_white_balance_combo.currentData() == "custom"
+    assert state.raw_controls.white_balance_selector.selected_value("camera") == "custom"
     assert state.viewer_meta_label.text().startswith("Custom WB")
     assert "Dark cutoff" in state.viewer_meta_label.text()
     assert "Bright cutoff" in state.viewer_meta_label.text()
@@ -1613,9 +1601,9 @@ def test_live_lab_committed_raw_edit_background_wb_click_sets_custom_mode_and_ap
     assert "Curve midpoint" in state.raw_edit_summary_label.text()
     assert state.raw_edit_pick_wb_btn.isChecked() is False
 
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert live_lab_tab.LiveLabTab._apply_raw_edit_session(state) is True
@@ -1860,11 +1848,11 @@ def test_live_lab_review_mode_commit_uses_selected_settings_and_keeps_snapshot(t
     state._selected_pending_raw_index = 0
     live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(70)
-    state.raw_curve_midpoint_slider.setValue(35)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    state.raw_controls.curve_midpoint_slider.setValue(35)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert pending.raw_settings.white_balance_mode == "auto"
@@ -2215,11 +2203,11 @@ def test_live_lab_review_mode_apply_current_settings_to_all_pending(tmp_path, mo
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
 
-    state.raw_white_balance_combo.setCurrentIndex(1)
-    state.raw_auto_levels_checkbox.setChecked(False)
-    state.raw_tone_curve_checkbox.setChecked(True)
-    state.raw_curve_strength_slider.setValue(80)
-    state.raw_curve_midpoint_slider.setValue(20)
+    state.raw_controls.white_balance_selector.set_selected_value("auto")
+    state.raw_controls.auto_levels_checkbox.setChecked(False)
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(80)
+    state.raw_controls.curve_midpoint_slider.setValue(20)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     live_lab_tab.LiveLabTab._apply_current_raw_settings_to_all_pending(state)
