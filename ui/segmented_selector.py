@@ -99,6 +99,18 @@ class SegmentedSelector(QFrame):
         value = checked.property("segment_value")
         return fallback if value is None else value
 
+    def currentData(self, fallback: Any | None = None) -> Any | None:  # noqa: N802 - Qt compatibility helper
+        return self.selected_value(fallback)
+
+    def currentIndex(self) -> int:  # noqa: N802 - Qt compatibility helper
+        checked = self.button_group.checkedButton()
+        if checked is None:
+            return -1
+        try:
+            return self._button_order.index(checked)
+        except ValueError:
+            return -1
+
     def set_selected_value(self, value: Any, *, emit: bool = False) -> bool:
         button = self._buttons_by_value.get(value)
         if button is None:
@@ -107,6 +119,13 @@ class SegmentedSelector(QFrame):
         if emit:
             self.selectionChanged.emit(button.property("segment_value"))
         return True
+
+    def setCurrentIndex(self, index: int) -> bool:  # noqa: N802 - Qt compatibility helper
+        try:
+            button = self._button_order[int(index)]
+        except Exception:
+            return False
+        return self.set_selected_value(button.property("segment_value"), emit=True)
 
     def _on_button_clicked(self, button: QPushButton) -> None:
         self.selectionChanged.emit(button.property("segment_value"))

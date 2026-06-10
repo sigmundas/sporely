@@ -90,6 +90,7 @@ from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
 from .hint_status import HintBar, HintStatusController
 from .image_gallery_widget import ImageGalleryWidget
+from .raw_processing_controls import RawProcessingControls
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .splitter_state import (
@@ -462,80 +463,23 @@ class LiveLabTab(QWidget):
         raw_body_layout.setContentsMargins(12, 4, 12, 12)
         raw_body_layout.setSpacing(10)
 
-        raw_form = QFormLayout()
-        raw_form.setContentsMargins(0, 0, 0, 0)
-        raw_form.setHorizontalSpacing(8)
-        raw_form.setVerticalSpacing(8)
-        raw_form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.raw_controls = RawProcessingControls(self.raw_processing_body)
+        self.raw_controls.settingsChanged.connect(self._on_raw_processing_controls_changed)
+        self.raw_controls.pickWhiteBalanceToggled.connect(self._toggle_active_raw_background_wb_pick)
+        raw_body_layout.addWidget(self.raw_controls)
 
-        self.raw_white_balance_selector = SegmentedSelector(self, compact=True, button_height=32, container_height=40)
-        self.raw_white_balance_selector.add_option(self.tr("Camera WB"), "camera", checked=True)
-        self.raw_white_balance_selector.add_option(self.tr("Auto WB"), "auto")
-        self.raw_white_balance_selector.add_option(self.tr("Custom WB"), "custom")
-        self.raw_white_balance_selector.selectionChanged.connect(self._on_raw_processing_controls_changed)
+        self.raw_white_balance_selector = self.raw_controls.white_balance_selector
         self.raw_white_balance_combo = self.raw_white_balance_selector
-        white_balance_row = QWidget()
-        white_balance_row_layout = QHBoxLayout(white_balance_row)
-        white_balance_row_layout.setContentsMargins(0, 4, 0, 4)
-        white_balance_row_layout.setSpacing(8)
-        white_balance_row_layout.addWidget(self.raw_white_balance_selector, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        self.raw_pick_wb_btn = QPushButton(self.tr("Pick"))
-        self.raw_pick_wb_btn.setCheckable(True)
-        self.raw_pick_wb_btn.setMinimumHeight(32)
-        self.raw_pick_wb_btn.toggled.connect(self._toggle_active_raw_background_wb_pick)
-        white_balance_row_layout.addWidget(self.raw_pick_wb_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        white_balance_row_layout.addStretch(1)
-        white_balance_row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        white_balance_row.setMinimumHeight(44)
-        raw_form.addRow(white_balance_row)
-
-        self.raw_auto_levels_checkbox = QCheckBox(self.tr("Auto levels"))
-        self.raw_auto_levels_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
-        raw_form.addRow(self.tr("Levels:"), self.raw_auto_levels_checkbox)
-
-        self.raw_preserve_tails_checkbox = QCheckBox(self.tr("Preserve tails"))
-        self.raw_preserve_tails_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
-        raw_form.addRow(self.tr("Tails:"), self.raw_preserve_tails_checkbox)
-
-        self.raw_tone_curve_checkbox = QCheckBox(self.tr("Tone curve"))
-        self.raw_tone_curve_checkbox.toggled.connect(self._on_raw_processing_controls_changed)
-        raw_form.addRow(self.tr("Tone curve:"), self.raw_tone_curve_checkbox)
-
-        self.raw_curve_strength_row = QWidget()
-        raw_strength_row_layout = QHBoxLayout(self.raw_curve_strength_row)
-        raw_strength_row_layout.setContentsMargins(0, 0, 0, 0)
-        raw_strength_row_layout.setSpacing(8)
-        self.raw_curve_strength_slider = QSlider(Qt.Horizontal)
-        self.raw_curve_strength_slider.setRange(0, 100)
-        self.raw_curve_strength_slider.setSingleStep(1)
-        self.raw_curve_strength_slider.setPageStep(5)
-        self.raw_curve_strength_slider.setValue(int(round(self._raw_render_settings.tone_curve_strength * 100.0)))
-        self.raw_curve_strength_slider.valueChanged.connect(self._on_raw_processing_controls_changed)
-        self.raw_curve_strength_value_label = QLabel("")
-        self.raw_curve_strength_value_label.setMinimumWidth(28)
-        self.raw_curve_strength_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        raw_strength_row_layout.addWidget(self.raw_curve_strength_slider, 1)
-        raw_strength_row_layout.addWidget(self.raw_curve_strength_value_label, 0)
-        raw_form.addRow(self.tr("Curve strength:"), self.raw_curve_strength_row)
-
-        self.raw_curve_midpoint_row = QWidget()
-        raw_midpoint_row_layout = QHBoxLayout(self.raw_curve_midpoint_row)
-        raw_midpoint_row_layout.setContentsMargins(0, 0, 0, 0)
-        raw_midpoint_row_layout.setSpacing(8)
-        self.raw_curve_midpoint_slider = QSlider(Qt.Horizontal)
-        self.raw_curve_midpoint_slider.setRange(0, 100)
-        self.raw_curve_midpoint_slider.setSingleStep(1)
-        self.raw_curve_midpoint_slider.setPageStep(5)
-        self.raw_curve_midpoint_slider.setValue(int(round(self._raw_render_settings.tone_curve_midpoint * 100.0)))
-        self.raw_curve_midpoint_slider.valueChanged.connect(self._on_raw_processing_controls_changed)
-        self.raw_curve_midpoint_value_label = QLabel("")
-        self.raw_curve_midpoint_value_label.setMinimumWidth(28)
-        self.raw_curve_midpoint_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        raw_midpoint_row_layout.addWidget(self.raw_curve_midpoint_slider, 1)
-        raw_midpoint_row_layout.addWidget(self.raw_curve_midpoint_value_label, 0)
-        raw_form.addRow(self.tr("Curve midpoint:"), self.raw_curve_midpoint_row)
-
-        raw_body_layout.addLayout(raw_form)
+        self.raw_pick_wb_btn = self.raw_controls.pick_button
+        self.raw_auto_levels_checkbox = self.raw_controls.auto_levels_checkbox
+        self.raw_preserve_tails_checkbox = self.raw_controls.preserve_tails_checkbox
+        self.raw_tone_curve_checkbox = self.raw_controls.tone_curve_checkbox
+        self.raw_curve_strength_row = self.raw_controls.curve_strength_row
+        self.raw_curve_midpoint_row = self.raw_controls.curve_midpoint_row
+        self.raw_curve_strength_slider = self.raw_controls.curve_strength_slider
+        self.raw_curve_strength_value_label = self.raw_controls.curve_strength_value_label
+        self.raw_curve_midpoint_slider = self.raw_controls.curve_midpoint_slider
+        self.raw_curve_midpoint_value_label = self.raw_controls.curve_midpoint_value_label
 
         self.pending_raw_frame = QFrame()
         self.pending_raw_frame.setFrameShape(QFrame.NoFrame)
@@ -722,31 +666,35 @@ class LiveLabTab(QWidget):
             self.tr("Show or hide the simplified RAW processing controls for future session-level captures."),
         )
         self._register_hint_widget(
-            self.raw_white_balance_selector,
+            self.raw_controls,
+            self.tr("Shared RAW processing controls for future session-level captures."),
+        )
+        self._register_hint_widget(
+            self.raw_controls.white_balance_selector,
             self.tr("Choose the white balance mode for future RAW captures."),
         )
         self._register_hint_widget(
-            self.raw_auto_levels_checkbox,
+            self.raw_controls.auto_levels_checkbox,
             self.tr("Apply automatic levels to future RAW captures."),
         )
         self._register_hint_widget(
-            self.raw_preserve_tails_checkbox,
+            self.raw_controls.preserve_tails_checkbox,
             self.tr("Keep the auto-level curve softer near the ends."),
         )
         self._register_hint_widget(
-            self.raw_tone_curve_checkbox,
+            self.raw_controls.tone_curve_checkbox,
             self.tr("Enable the luminance tone curve for future RAW captures."),
         )
         self._register_hint_widget(
-            self.raw_curve_strength_slider,
+            self.raw_controls.curve_strength_slider,
             self.tr("Adjust the tone curve strength."),
         )
         self._register_hint_widget(
-            self.raw_curve_midpoint_slider,
+            self.raw_controls.curve_midpoint_slider,
             self.tr("Adjust the tone curve midpoint. Lower values automatically increase shadow lift."),
         )
         self._register_hint_widget(
-            self.raw_pick_wb_btn,
+            self.raw_controls.pick_button,
             self.tr("Sample a neutral point from the preview and set the current RAW white balance."),
         )
         self._register_hint_widget(
@@ -938,68 +886,71 @@ class LiveLabTab(QWidget):
 
     def _raw_settings_from_controls(self, *, update_session_settings: bool = True) -> RawRenderSettings:
         base_settings = getattr(self, "_raw_render_settings", RawRenderSettings.default())
-        white_balance_selector = getattr(self, "raw_white_balance_selector", None)
-        white_balance_combo = getattr(self, "raw_white_balance_combo", None)
-        auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
-        preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
-        tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
-        strength_slider = getattr(self, "raw_curve_strength_slider", None)
-        midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
-
-        white_balance_mode = "camera"
-        if white_balance_selector is not None and hasattr(white_balance_selector, "selected_value"):
-            white_balance_mode = str(white_balance_selector.selected_value("camera") or "camera").strip().lower() or "camera"
-        elif white_balance_combo is not None:
-            white_balance_mode = str(white_balance_combo.currentData() or "camera").strip().lower() or "camera"
-
-        auto_levels = True
-        if auto_levels_checkbox is not None:
-            auto_levels = bool(auto_levels_checkbox.isChecked())
-
-        preserve_tails = bool(getattr(preserve_tails_checkbox, "isChecked", lambda: False)())
-
-        tone_curve_enabled = False
-        if tone_curve_checkbox is not None:
-            tone_curve_enabled = bool(tone_curve_checkbox.isChecked())
-
-        tone_curve_strength = float(getattr(base_settings, "tone_curve_strength", 0.5))
-        if strength_slider is not None:
-            tone_curve_strength = max(0.0, min(1.0, float(strength_slider.value()) / 100.0))
-
-        tone_curve_midpoint = float(getattr(base_settings, "tone_curve_midpoint", 0.5))
-        if midpoint_slider is not None:
-            tone_curve_midpoint = max(0.0, min(1.0, float(midpoint_slider.value()) / 100.0))
-
-        preferences_getter = getattr(self, "_raw_processing_preferences", None)
-        if callable(preferences_getter):
-            preferences = preferences_getter()
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            settings = controls.settings()
         else:
-            preferences = {
-                "dark_cutoff": 0.0005,
-                "bright_cutoff": 0.0005,
-                "shadow_lift_enabled": True,
-                "shadow_lift_max": 0.05,
-            }
+            white_balance_selector = getattr(self, "raw_white_balance_selector", None)
+            white_balance_combo = getattr(self, "raw_white_balance_combo", None)
+            auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+            preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
+            tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
+            strength_slider = getattr(self, "raw_curve_strength_slider", None)
+            midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
 
-        settings = raw_settings_from_basic_controls(
-            white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto", "custom"} else "camera",
-            wb_multipliers=getattr(base_settings, "wb_multipliers", None),
-            contrast=tone_curve_strength,
-            midpoint=tone_curve_midpoint,
-            preserve_tails=preserve_tails,
-            dark_cutoff=float(preferences["dark_cutoff"]),
-            bright_cutoff=float(preferences["bright_cutoff"]),
-            shadow_lift_enabled=bool(preferences["shadow_lift_enabled"]),
-            shadow_lift_max=float(preferences["shadow_lift_max"]),
-            existing_settings=base_settings,
-        )
-        settings = replace(
-            settings,
-            auto_levels=auto_levels,
-            tone_curve_enabled=tone_curve_enabled,
-            tone_curve_strength=tone_curve_strength,
-            tone_curve_midpoint=tone_curve_midpoint,
-        )
+            white_balance_mode = "camera"
+            if white_balance_selector is not None and hasattr(white_balance_selector, "selected_value"):
+                white_balance_mode = str(white_balance_selector.selected_value("camera") or "camera").strip().lower() or "camera"
+            elif white_balance_combo is not None:
+                white_balance_mode = str(white_balance_combo.currentData() or "camera").strip().lower() or "camera"
+
+            auto_levels = True
+            if auto_levels_checkbox is not None:
+                auto_levels = bool(auto_levels_checkbox.isChecked())
+
+            preserve_tails = bool(getattr(preserve_tails_checkbox, "isChecked", lambda: False)())
+
+            tone_curve_enabled = False
+            if tone_curve_checkbox is not None:
+                tone_curve_enabled = bool(tone_curve_checkbox.isChecked())
+
+            tone_curve_strength = float(getattr(base_settings, "tone_curve_strength", 0.5))
+            if strength_slider is not None:
+                tone_curve_strength = max(0.0, min(1.0, float(strength_slider.value()) / 100.0))
+
+            tone_curve_midpoint = float(getattr(base_settings, "tone_curve_midpoint", 0.5))
+            if midpoint_slider is not None:
+                tone_curve_midpoint = max(0.0, min(1.0, float(midpoint_slider.value()) / 100.0))
+            preferences_getter = getattr(self, "_raw_processing_preferences", None)
+            if callable(preferences_getter):
+                preferences = preferences_getter()
+            else:
+                preferences = {
+                    "dark_cutoff": 0.0005,
+                    "bright_cutoff": 0.0005,
+                    "shadow_lift_enabled": True,
+                    "shadow_lift_max": 0.05,
+                }
+
+            settings = raw_settings_from_basic_controls(
+                white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto", "custom"} else "camera",
+                wb_multipliers=getattr(base_settings, "wb_multipliers", None),
+                contrast=tone_curve_strength,
+                midpoint=tone_curve_midpoint,
+                preserve_tails=preserve_tails,
+                dark_cutoff=float(preferences["dark_cutoff"]),
+                bright_cutoff=float(preferences["bright_cutoff"]),
+                shadow_lift_enabled=bool(preferences["shadow_lift_enabled"]),
+                shadow_lift_max=float(preferences["shadow_lift_max"]),
+                existing_settings=base_settings,
+            )
+            settings = replace(
+                settings,
+                auto_levels=auto_levels,
+                tone_curve_enabled=tone_curve_enabled,
+                tone_curve_strength=tone_curve_strength,
+                tone_curve_midpoint=tone_curve_midpoint,
+            )
         if update_session_settings:
             self._raw_render_settings = settings
         return settings
@@ -1013,53 +964,59 @@ class LiveLabTab(QWidget):
         settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
         if update_session_settings:
             self._raw_render_settings = settings
-        white_balance_selector = getattr(self, "raw_white_balance_selector", None)
-        combo = getattr(self, "raw_white_balance_combo", None)
-        auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
-        preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
-        tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
-        strength_slider = getattr(self, "raw_curve_strength_slider", None)
-        midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
-        strength_label = getattr(self, "raw_curve_strength_value_label", None)
-        midpoint_label = getattr(self, "raw_curve_midpoint_value_label", None)
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            controls.set_settings(settings)
+        else:
+            white_balance_selector = getattr(self, "raw_white_balance_selector", None)
+            combo = getattr(self, "raw_white_balance_combo", None)
+            auto_levels_checkbox = getattr(self, "raw_auto_levels_checkbox", None)
+            preserve_tails_checkbox = getattr(self, "raw_preserve_tails_checkbox", None)
+            tone_curve_checkbox = getattr(self, "raw_tone_curve_checkbox", None)
+            strength_slider = getattr(self, "raw_curve_strength_slider", None)
+            midpoint_slider = getattr(self, "raw_curve_midpoint_slider", None)
+            strength_label = getattr(self, "raw_curve_strength_value_label", None)
+            midpoint_label = getattr(self, "raw_curve_midpoint_value_label", None)
 
-        target_mode = str(settings.white_balance_mode or "camera").strip().lower() or "camera"
-        if white_balance_selector is not None and hasattr(white_balance_selector, "set_selected_value"):
-            if not white_balance_selector.set_selected_value(target_mode):
-                white_balance_selector.set_selected_value("camera")
-        elif combo is not None:
-            target_index = combo.findData(target_mode)
-            if target_index < 0:
-                target_index = combo.findData("camera")
-            if target_index >= 0:
-                with QSignalBlocker(combo):
-                    combo.setCurrentIndex(target_index)
-        if auto_levels_checkbox is not None:
-            with QSignalBlocker(auto_levels_checkbox):
-                auto_levels_checkbox.setChecked(bool(settings.auto_levels))
-        if preserve_tails_checkbox is not None:
-            with QSignalBlocker(preserve_tails_checkbox):
-                preserve_tails_checkbox.setChecked(bool(settings.auto_levels_soft_tails))
-        if tone_curve_checkbox is not None:
-            with QSignalBlocker(tone_curve_checkbox):
-                tone_curve_checkbox.setChecked(bool(settings.tone_curve_enabled))
-        if strength_slider is not None:
-            with QSignalBlocker(strength_slider):
-                strength_slider.setValue(int(round(float(settings.tone_curve_strength) * 100.0)))
-        if midpoint_slider is not None:
-            with QSignalBlocker(midpoint_slider):
-                midpoint_slider.setValue(int(round(float(settings.tone_curve_midpoint) * 100.0)))
-
-        if strength_label is not None:
-            strength_label.setText(str(int(round(float(settings.tone_curve_strength) * 100.0))))
-        if midpoint_label is not None:
-            midpoint_label.setText(str(int(round(float(settings.tone_curve_midpoint) * 100.0))))
-
+            target_mode = str(settings.white_balance_mode or "camera").strip().lower() or "camera"
+            if white_balance_selector is not None and hasattr(white_balance_selector, "set_selected_value"):
+                if not white_balance_selector.set_selected_value(target_mode):
+                    white_balance_selector.set_selected_value("camera")
+            elif combo is not None:
+                target_index = combo.findData(target_mode)
+                if target_index < 0:
+                    target_index = combo.findData("camera")
+                if target_index >= 0:
+                    with QSignalBlocker(combo):
+                        combo.setCurrentIndex(target_index)
+            if auto_levels_checkbox is not None:
+                with QSignalBlocker(auto_levels_checkbox):
+                    auto_levels_checkbox.setChecked(bool(settings.auto_levels))
+            if preserve_tails_checkbox is not None:
+                with QSignalBlocker(preserve_tails_checkbox):
+                    preserve_tails_checkbox.setChecked(bool(settings.auto_levels_soft_tails))
+            if tone_curve_checkbox is not None:
+                with QSignalBlocker(tone_curve_checkbox):
+                    tone_curve_checkbox.setChecked(bool(settings.tone_curve_enabled))
+            if strength_slider is not None:
+                with QSignalBlocker(strength_slider):
+                    strength_slider.setValue(int(round(float(settings.tone_curve_strength) * 100.0)))
+            if midpoint_slider is not None:
+                with QSignalBlocker(midpoint_slider):
+                    midpoint_slider.setValue(int(round(float(settings.tone_curve_midpoint) * 100.0)))
+            if strength_label is not None:
+                strength_label.setText(str(int(round(float(settings.tone_curve_strength) * 100.0))))
+            if midpoint_label is not None:
+                midpoint_label.setText(str(int(round(float(settings.tone_curve_midpoint) * 100.0))))
         self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
         self._refresh_raw_processing_context_ui()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
 
     def _set_raw_tone_controls_enabled(self, enabled: bool) -> None:
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            controls.set_tone_controls_enabled(bool(enabled))
+            return
         for attr in (
             "raw_curve_strength_row",
             "raw_curve_midpoint_row",
@@ -1197,8 +1154,8 @@ class LiveLabTab(QWidget):
         return None
 
     def _update_raw_processing_pick_button(self) -> None:
-        button = getattr(self, "raw_pick_wb_btn", None)
-        if button is None:
+        controls = getattr(self, "raw_controls", None)
+        if controls is None:
             return
         target = self._raw_processing_pick_target()
         armed = False
@@ -1206,23 +1163,20 @@ class LiveLabTab(QWidget):
             armed = bool(getattr(self, "_raw_edit_background_wb_armed", False))
         elif target == "pending":
             armed = bool(getattr(self, "_pending_raw_background_wb_armed", False))
-        with QSignalBlocker(button):
-            button.setChecked(armed)
-        button.setEnabled(bool(target))
-        button.setText(self.tr("Cancel") if armed else self.tr("Pick"))
+        controls.set_pick_enabled(bool(target))
+        controls.set_pick_checked(armed)
 
     def _toggle_active_raw_background_wb_pick(self, checked: bool) -> None:
         target = self._raw_processing_pick_target()
-        button = getattr(self, "raw_pick_wb_btn", None)
+        controls = getattr(self, "raw_controls", None)
         if not checked:
             if target is not None:
                 self._cancel_raw_background_wb_selection(target=target)
             self._refresh_raw_processing_context_ui()
             return
         if target is None:
-            if button is not None:
-                with QSignalBlocker(button):
-                    button.setChecked(False)
+            if controls is not None:
+                controls.set_pick_checked(False)
             self._show_status(
                 self.tr("Choose a pending RAW capture or a RAW edit session before sampling background WB."),
                 tone="warning",

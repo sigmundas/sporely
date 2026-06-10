@@ -130,14 +130,18 @@ class RawProcessingControls(QWidget):
     def set_controls_enabled(self, enabled: bool) -> None:
         self.setEnabled(bool(enabled))
 
+    def set_tone_controls_enabled(self, enabled: bool) -> None:
+        self._set_tone_controls_enabled(bool(enabled))
+
     def _sync_controls_from_settings(self, settings: RawRenderSettings) -> None:
         self._loading = True
         try:
             mode = str(settings.white_balance_mode or "camera").strip().lower() or "camera"
             if mode not in {"camera", "auto", "custom"}:
                 mode = "camera"
-            if not self.white_balance_selector.set_selected_value(mode):
-                self.white_balance_selector.set_selected_value("camera")
+            with QSignalBlocker(self.white_balance_selector):
+                if not self.white_balance_selector.set_selected_value(mode):
+                    self.white_balance_selector.set_selected_value("camera")
             with QSignalBlocker(self.auto_levels_checkbox):
                 self.auto_levels_checkbox.setChecked(bool(settings.auto_levels))
             with QSignalBlocker(self.preserve_tails_checkbox):

@@ -16,6 +16,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QLabel, QLineEdit, QPushButton, QSlider, QToolButton, QWidget
 
 import ui.live_lab_tab as live_lab_tab
+from ui.raw_processing_controls import RawProcessingControls
 from ui.segmented_selector import SegmentedSelector
 from utils.raw_render import RawRenderSettings, RawRenderingUnavailableError
 
@@ -54,24 +55,19 @@ def _build_raw_controls_state() -> SimpleNamespace:
         "Use camera JPEG",
         live_lab_tab.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     )
-    state.raw_white_balance_combo = QComboBox()
-    state.raw_white_balance_combo.addItem("Camera WB", "camera")
-    state.raw_white_balance_combo.addItem("Auto WB", "auto")
-    state.raw_white_balance_combo.addItem("Custom WB", "custom")
-    state.raw_auto_levels_checkbox = QCheckBox("Auto levels")
-    state.raw_auto_levels_checkbox.setChecked(True)
-    state.raw_tone_curve_checkbox = QCheckBox("Tone curve")
-    state.raw_tone_curve_checkbox.setChecked(False)
-    state.raw_curve_strength_row = QWidget()
-    state.raw_curve_midpoint_row = QWidget()
-    state.raw_curve_strength_slider = QSlider(Qt.Horizontal)
-    state.raw_curve_strength_slider.setRange(0, 100)
-    state.raw_curve_strength_slider.setValue(50)
-    state.raw_curve_strength_value_label = QLabel()
-    state.raw_curve_midpoint_slider = QSlider(Qt.Horizontal)
-    state.raw_curve_midpoint_slider.setRange(0, 100)
-    state.raw_curve_midpoint_slider.setValue(50)
-    state.raw_curve_midpoint_value_label = QLabel()
+    state.raw_controls = RawProcessingControls()
+    state.raw_white_balance_selector = state.raw_controls.white_balance_selector
+    state.raw_white_balance_combo = state.raw_white_balance_selector
+    state.raw_pick_wb_btn = state.raw_controls.pick_button
+    state.raw_auto_levels_checkbox = state.raw_controls.auto_levels_checkbox
+    state.raw_preserve_tails_checkbox = state.raw_controls.preserve_tails_checkbox
+    state.raw_tone_curve_checkbox = state.raw_controls.tone_curve_checkbox
+    state.raw_curve_strength_row = state.raw_controls.curve_strength_row
+    state.raw_curve_midpoint_row = state.raw_controls.curve_midpoint_row
+    state.raw_curve_strength_slider = state.raw_controls.curve_strength_slider
+    state.raw_curve_strength_value_label = state.raw_controls.curve_strength_value_label
+    state.raw_curve_midpoint_slider = state.raw_controls.curve_midpoint_slider
+    state.raw_curve_midpoint_value_label = state.raw_controls.curve_midpoint_value_label
     state.objective_combo = QComboBox()
     state.objective_combo.addItem("Not set", None)
     state.contrast_combo = QComboBox()
@@ -742,6 +738,31 @@ def test_live_lab_raw_settings_load_on_startup_context(monkeypatch):
     assert state.raw_tone_curve_checkbox.isChecked() is True
     assert state.raw_curve_strength_slider.value() == 62
     assert state.raw_curve_midpoint_slider.value() == 31
+
+
+def test_live_lab_raw_controls_round_trip_through_shared_widget(monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    state._raw_processing_preset_context = lambda: {}
+    settings = RawRenderSettings(
+        white_balance_mode="custom",
+        wb_multipliers=(1.2, 1.0, 1.4),
+        wb_selection=(5.0, 6.0, 7.0, 8.0),
+        wb_multiplier_space="post_decode_rgb",
+        wb_sample_point=(6.0, 7.0),
+        wb_sample_size=8,
+        wb_sample_base_mode="camera",
+        wb_selection_space="preview_pixels",
+        auto_levels=False,
+        tone_curve_enabled=True,
+        tone_curve_strength=0.63,
+        tone_curve_midpoint=0.29,
+    )
+
+    live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(state, settings)
+    round_tripped = live_lab_tab.LiveLabTab._raw_settings_from_controls(state, update_session_settings=False)
+
+    assert round_tripped == settings
 
 
 def test_live_lab_raw_control_change_saves_current_context_settings(monkeypatch):
