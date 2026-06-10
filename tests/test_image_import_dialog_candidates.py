@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox
 
 from ui import image_import_dialog
 from ui.image_import_dialog import (
@@ -240,6 +240,63 @@ def test_collect_raw_settings_from_form_uses_raw_controls_widget_state():
     collected = ImageImportDialog._collect_raw_settings_from_form(dummy, base={"white_balance_mode": "camera"})
 
     assert collected == expected.to_dict()
+
+
+def test_prepare_images_combo_alerts_track_unset_and_custom_objective_state(qapp):
+    dummy = SimpleNamespace()
+    dummy.tr = lambda text: text
+    dummy.objectives = {}
+    dummy.default_objective = None
+    dummy.CUSTOM_OBJECTIVE_KEY = ImageImportDialog.CUSTOM_OBJECTIVE_KEY
+    dummy._FIELD_TAG_DEFAULTS = ImageImportDialog._FIELD_TAG_DEFAULTS
+    dummy._canonicalize_tag = lambda category, value: ImageImportDialog._canonicalize_tag(dummy, category, value)
+    dummy._field_tag_value = lambda category: ImageImportDialog._field_tag_value(dummy, category)
+    dummy._set_combo_tag_value = lambda combo, category, value: ImageImportDialog._set_combo_tag_value(dummy, combo, category, value)
+    dummy._update_lab_state_combo_alerts = lambda *_args: ImageImportDialog._update_lab_state_combo_alerts(dummy, *_args)
+    dummy._set_field_tag_defaults_in_form = lambda: ImageImportDialog._set_field_tag_defaults_in_form(dummy)
+    dummy._populate_objectives = lambda selected_key=None: ImageImportDialog._populate_objectives(dummy, selected_key)
+
+    dummy.objective_combo = QComboBox()
+    dummy.objective_combo.addItem("Not set", None)
+    dummy.objective_combo.addItem("From scalebar", dummy.CUSTOM_OBJECTIVE_KEY)
+    dummy.objective_combo.addItem("40x", "40x")
+
+    dummy.contrast_combo = QComboBox()
+    dummy.contrast_combo.addItem("Not set", "Not_set")
+    dummy.contrast_combo.addItem("Phase", "phase")
+    dummy.mount_combo = QComboBox()
+    dummy.mount_combo.addItem("Not set", "Not_set")
+    dummy.mount_combo.addItem("Water", "water")
+    dummy.stain_combo = QComboBox()
+    dummy.stain_combo.addItem("Not set", "Not_set")
+    dummy.stain_combo.addItem("None", "none")
+    dummy.sample_combo = QComboBox()
+    dummy.sample_combo.addItem("Not set", "Not_set")
+    dummy.sample_combo.addItem("Spore", "spore")
+
+    dummy._populate_objectives(selected_key=None)
+    assert dummy.objective_combo.property("labStateAlert") is True
+
+    dummy._populate_objectives(selected_key=dummy.CUSTOM_OBJECTIVE_KEY)
+    assert dummy.objective_combo.currentData() == dummy.CUSTOM_OBJECTIVE_KEY
+    assert dummy.objective_combo.property("labStateAlert") is False
+
+    dummy._set_field_tag_defaults_in_form()
+    assert dummy.contrast_combo.property("labStateAlert") is True
+    assert dummy.mount_combo.property("labStateAlert") is True
+    assert dummy.stain_combo.property("labStateAlert") is True
+    assert dummy.sample_combo.property("labStateAlert") is True
+
+    dummy.contrast_combo.setCurrentIndex(1)
+    dummy.mount_combo.setCurrentIndex(1)
+    dummy.stain_combo.setCurrentIndex(1)
+    dummy.sample_combo.setCurrentIndex(1)
+    dummy._update_lab_state_combo_alerts()
+
+    assert dummy.contrast_combo.property("labStateAlert") is False
+    assert dummy.mount_combo.property("labStateAlert") is False
+    assert dummy.stain_combo.property("labStateAlert") is False
+    assert dummy.sample_combo.property("labStateAlert") is False
 
 
 def test_add_images_uses_candidates_and_shows_failed_rows_without_stopping_batch(monkeypatch, tmp_path, qapp):

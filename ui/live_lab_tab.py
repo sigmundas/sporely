@@ -89,6 +89,7 @@ from utils.raw_white_balance import estimate_white_balance_from_background
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
 from .hint_status import HintBar, HintStatusController
+from .combo_alerts import combo_is_unset, lab_state_combo_alert_stylesheet, update_combo_alert, update_combo_alerts
 from .image_gallery_widget import ImageGalleryWidget
 from .raw_processing_controls import RawProcessingControls
 from .section_card import create_section_card
@@ -3056,83 +3057,25 @@ class LiveLabTab(QWidget):
             SettingsDB.set_setting(DatabaseTerms.last_used_key(category), str(value))
 
     def _lab_state_combo_alert_stylesheet(self) -> str:
-        app = QApplication.instance()
-        palette = app.palette() if app is not None else QApplication.palette()
-        dark = bool(palette.window().color().lightness() < 128)
-        if dark:
-            background = "#4b1f24"
-            background_hover = "#5d262d"
-            border = "#d65a63"
-            text = "#ffecec"
-        else:
-            background = "#ffe1e1"
-            background_hover = "#ffd3d3"
-            border = "#d64545"
-            text = "#7f1d1d"
-        view_base = palette.base().color().name()
-        view_text = palette.text().color().name()
-        view_highlight = palette.highlight().color().name()
-        view_highlight_text = palette.highlightedText().color().name()
-        return (
-            'QComboBox[labStateAlert="true"] {'
-            f" background-color: {background};"
-            f" color: {text};"
-            f" border: 1px solid {border};"
-            " border-radius: 6px;"
-            " }"
-            "QComboBox[labStateAlert=\"true\"] QAbstractItemView {"
-            f" background-color: {view_base};"
-            f" color: {view_text};"
-            f" selection-background-color: {view_highlight};"
-            f" selection-color: {view_highlight_text};"
-            " }"
-            f'QComboBox[labStateAlert="true"]:hover {{ background-color: {background_hover}; }}'
-            f'QComboBox[labStateAlert="true"]::drop-down {{ border-left: 1px solid {border}; }}'
-        )
+        return lab_state_combo_alert_stylesheet(True)
 
     @staticmethod
     def _combo_is_unset(combo) -> bool:
-        if combo is None:
-            return False
-        try:
-            if combo.count() <= 0 or combo.currentIndex() < 0:
-                return True
-        except Exception:
-            return True
-        try:
-            data = combo.currentData()
-        except Exception:
-            data = None
-        if data is None:
-            return True
-        data_text = str(data or "").strip().lower()
-        if data_text in {"not_set", "not set"}:
-            return True
-        text = str(combo.currentText() or "").strip().lower()
-        return not text or text in {"not_set", "not set"}
+        return combo_is_unset(combo)
 
     def _set_lab_state_combo_alert(self, combo, alert: bool) -> None:
-        if combo is None:
-            return
-        combo.setProperty("labStateAlert", bool(alert))
-        combo.setStyleSheet(self._lab_state_combo_alert_stylesheet())
-        style = combo.style()
-        try:
-            style.unpolish(combo)
-            style.polish(combo)
-        except Exception:
-            pass
-        combo.update()
+        update_combo_alert(combo, alert)
 
     def _update_lab_state_combo_alerts(self, *_args) -> None:
-        for combo in (
-            getattr(self, "objective_combo", None),
-            getattr(self, "contrast_combo", None),
-            getattr(self, "mount_combo", None),
-            getattr(self, "stain_combo", None),
-            getattr(self, "sample_combo", None),
-        ):
-            self._set_lab_state_combo_alert(combo, self._combo_is_unset(combo))
+        update_combo_alerts(
+            (
+                getattr(self, "objective_combo", None),
+                getattr(self, "contrast_combo", None),
+                getattr(self, "mount_combo", None),
+                getattr(self, "stain_combo", None),
+                getattr(self, "sample_combo", None),
+            )
+        )
 
     def _should_preserve_live_image_view(self, image_path: str | None) -> bool:
         label = getattr(self, "live_image_label", None)

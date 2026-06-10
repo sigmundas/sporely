@@ -116,6 +116,7 @@ def _is_raw_path(path: str | None) -> bool:
     return Path(path).suffix.lower() in set(RAW_FORMATS)
 
 from .image_gallery_widget import ImageGalleryWidget
+from .combo_alerts import update_combo_alerts
 from .raw_processing_controls import RawProcessingControls
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
@@ -1082,6 +1083,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _field_tag_value(self, category: str) -> str:
         return self._FIELD_TAG_DEFAULTS[category]
 
+    def _update_lab_state_combo_alerts(self, *_args) -> None:
+        update_combo_alerts(
+            (
+                getattr(self, "objective_combo", None),
+                getattr(self, "contrast_combo", None),
+                getattr(self, "mount_combo", None),
+                getattr(self, "stain_combo", None),
+                getattr(self, "sample_combo", None),
+            )
+        )
+
     def _set_field_tag_defaults_in_form(self) -> None:
         combos = (
             (self.contrast_combo, "contrast"),
@@ -1099,6 +1111,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         finally:
             for combo, _category in combos:
                 combo.blockSignals(False)
+        self._update_lab_state_combo_alerts()
 
     def _build_left_panel(self) -> QWidget:
         container = QWidget()
@@ -1138,6 +1151,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._apply_combo_popup_style(self.objective_combo)
         self._populate_objectives()
         self.objective_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         scale_layout.addWidget(self.objective_combo)
         self.calibrate_btn = QPushButton(self.tr("Set from scalebar"))
         calibrate_hint = self.tr("Select start and end on the image")
@@ -1186,6 +1200,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._populate_tag_combo(self.contrast_combo, "contrast", self.contrast_options)
         self._set_combo_tag_value(self.contrast_combo, "contrast", self.contrast_default)
         self.contrast_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
         self.mount_combo = QComboBox()
@@ -1193,6 +1208,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._populate_tag_combo(self.mount_combo, "mount", self.mount_options)
         self._set_combo_tag_value(self.mount_combo, "mount", self.mount_default)
         self.mount_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Mount:"), self.mount_combo)
 
         self.stain_combo = QComboBox()
@@ -1200,6 +1216,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._populate_tag_combo(self.stain_combo, "stain", self.stain_options)
         self._set_combo_tag_value(self.stain_combo, "stain", self.stain_default)
         self.stain_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Stain:"), self.stain_combo)
 
         self.sample_combo = QComboBox()
@@ -1207,6 +1224,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._populate_tag_combo(self.sample_combo, "sample", self.sample_options)
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Sample type:"), self.sample_combo)
 
         layout.addWidget(self.micro_settings_group)
@@ -1504,6 +1522,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.objective_combo.setCurrentIndex(idx)
         self._last_objective_key = self.objective_combo.currentData()
         self.objective_combo.blockSignals(False)
+        self._update_lab_state_combo_alerts()
 
     def _open_calibration_dialog(self, previous_key: str | None = None) -> None:
         if previous_key is None:
@@ -3976,6 +3995,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._loading_form = False
         self._last_objective_key = self.objective_combo.currentData()
         self._sync_observation_metadata_inputs()
+        self._update_lab_state_combo_alerts()
 
     def _on_settings_changed(self) -> None:
         if self.selected_index is None and not self.selected_indices:
