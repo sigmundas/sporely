@@ -1,7 +1,7 @@
 from ui.image_gallery_widget import ImageGalleryWidget
 
 
-def test_build_raw_source_badges_only_uses_persisted_raw_metadata():
+def test_build_raw_source_badges_marks_raw_backed_derivatives():
     metadata = {
         "raw_processing": {
             "source": {
@@ -12,6 +12,6 @@ def test_build_raw_source_badges_only_uses_persisted_raw_metadata():
         }
     }
 
-    assert ImageGalleryWidget.build_raw_source_badges(metadata) == ["RAW"]
+    assert ImageGalleryWidget.build_raw_source_badges(metadata) == ["RAW-derived"]
     assert ImageGalleryWidget.build_raw_source_badges({"raw_processing": {"source": {"kind": "local_derivative"}}}) == []
     assert ImageGalleryWidget.build_raw_source_badges({"image_type": "microscope"}) == []

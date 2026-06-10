@@ -635,7 +635,7 @@ class ImageGalleryWidget(QGroupBox):
         if not isinstance(source, dict):
             return []
         if str(source.get("kind") or "").strip().lower() == "camera_raw":
-            return [tr("RAW")]
+            return [tr("RAW-derived")]
         return []
 
     def select_image(self, image_id: int | None) -> None:

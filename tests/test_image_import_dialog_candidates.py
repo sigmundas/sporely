@@ -350,7 +350,7 @@ def test_add_images_uses_candidates_and_shows_failed_rows_without_stopping_batch
     assert "failed to prepare" in dialog.set_status_messages[-1][0].lower()
     assert dialog.gallery.items[0]["center_badge"] is None
     assert dialog.gallery.items[1]["center_badge"] == "Failed"
-    assert "RAW" in dialog.gallery.items[0]["badges"]
+    assert "RAW-derived" in dialog.gallery.items[0]["badges"]
 
 
 def test_accept_and_close_filters_failed_and_skipped_results_before_continue(monkeypatch):
