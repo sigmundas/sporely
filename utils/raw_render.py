@@ -315,6 +315,13 @@ def _build_postprocess_kwargs(
     return kwargs
 
 
+def _resolve_preview_rawpy_mode(settings: RawRenderSettings) -> str:
+    sample_base_mode = str(settings.wb_sample_base_mode or "").strip().lower() or None
+    if sample_base_mode not in {"camera", "auto"}:
+        sample_base_mode = "auto" if settings.white_balance_mode == "auto" else "camera"
+    return sample_base_mode if sample_base_mode in {"camera", "auto"} else "camera"
+
+
 def _to_float_rgb(rgb: Any) -> np.ndarray:
     return to_float_rgb(rgb)
 
@@ -466,10 +473,7 @@ def render_raw_image(
     destination_had_file = destination.exists()
 
     try:
-        sample_base_mode = str(render_settings.wb_sample_base_mode or "").strip().lower() or None
-        if sample_base_mode not in {"camera", "auto"}:
-            sample_base_mode = "auto" if render_settings.white_balance_mode == "auto" else "camera"
-        rawpy_mode = sample_base_mode if sample_base_mode in {"camera", "auto"} else "camera"
+        rawpy_mode = _resolve_preview_rawpy_mode(render_settings)
         rgb = _render_raw_array(
             rawpy_module,
             source,
@@ -509,6 +513,34 @@ def render_raw_image(
     except Exception as exc:
         _cleanup_partial_output(destination, destination_had_file)
         raise RuntimeError(f"RAW rendering failed for {source.name}: {exc}") from exc
+
+
+def render_raw_preview_proxy_rgb(
+    source_path: str | Path,
+    *,
+    settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None = None,
+) -> np.ndarray:
+    """Decode a low-resolution RAW preview frame for reuse across preview updates."""
+    rawpy_module = import_rawpy()
+    render_settings = RawRenderSettings.from_dict(settings)
+    rawpy_mode = _resolve_preview_rawpy_mode(render_settings)
+    rgb = _render_raw_array(rawpy_module, source_path, render_settings, preview=True, wb_mode=rawpy_mode)
+    return to_float_rgb(rgb)
+
+
+def save_raw_preview_jpeg(
+    rgb: np.ndarray,
+    destination: str | Path,
+    source_path: str | Path,
+    source_capture_datetime: datetime | str | None = None,
+) -> None:
+    """Persist a processed RAW preview frame as a JPEG file."""
+    _save_local_derivative_jpeg(
+        rgb,
+        Path(destination),
+        Path(source_path),
+        source_capture_datetime=source_capture_datetime,
+    )
 
 
 def render_raw_preview(
@@ -556,5 +588,7 @@ __all__ = [
     "build_raw_processing_metadata",
     "render_raw_image",
     "render_raw_preview",
+    "render_raw_preview_proxy_rgb",
     "render_raw_sampling_rgb",
+    "save_raw_preview_jpeg",
 ]

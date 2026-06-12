@@ -13308,10 +13308,19 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         current = self.gallery_filter_combo.currentData()
         saved_measurement_type = None
+        has_spore_measurements = False
         if self.active_observation_id:
             saved_settings = self._load_gallery_settings()
             if isinstance(saved_settings, dict):
                 saved_measurement_type = saved_settings.get("measurement_type")
+            try:
+                measurement_types = MeasurementDB.get_measurement_types_for_observation(self.active_observation_id)
+            except Exception:
+                measurement_types = []
+            has_spore_measurements = any(
+                self.normalize_measurement_category(entry) == "spores"
+                for entry in measurement_types
+            )
         self.gallery_filter_combo.blockSignals(True)
         self.gallery_filter_combo.clear()
         self.gallery_filter_combo.addItem(self.tr("All except spores"), "all_except_spores")
@@ -13347,6 +13356,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         desired = pending_category
         if desired is None:
             desired = saved_measurement_type
+        if (
+            desired == "all_except_spores"
+            and has_spore_measurements
+            and not pending_category
+        ):
+            desired = "spores"
         if str(desired).strip().lower() == "spore":
             desired = "spores"
         if str(desired).strip().lower() == "all":
@@ -17722,11 +17737,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._sync_gallery_kde_controls()
         if hasattr(self, "orient_checkbox"):
             self.orient_checkbox.blockSignals(True)
-            self.orient_checkbox.setChecked(bool(settings.get("orient", False)))
+            self.orient_checkbox.setChecked(bool(settings.get("orient", True)))
             self.orient_checkbox.blockSignals(False)
         if hasattr(self, "uniform_scale_checkbox"):
             self.uniform_scale_checkbox.blockSignals(True)
-            self.uniform_scale_checkbox.setChecked(bool(settings.get("uniform_scale", False)))
+            self.uniform_scale_checkbox.setChecked(bool(settings.get("uniform_scale", True)))
             self.uniform_scale_checkbox.blockSignals(False)
         if hasattr(self, "gallery_sort_combo"):
             self.gallery_sort_combo.blockSignals(True)

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import hashlib
 from pathlib import Path
 from typing import Optional
 import math
@@ -10,6 +11,8 @@ import json
 import shutil
 import os
 import time
+
+import numpy as np
 
 from PySide6.QtCore import (
     Qt,
@@ -99,9 +102,11 @@ from utils.raw_render import (
     RawRenderSettings,
     build_raw_processing_metadata,
     render_raw_image,
-    render_raw_preview,
+    render_raw_preview_proxy_rgb,
     render_raw_sampling_rgb,
+    save_raw_preview_jpeg,
 )
+from utils.image_processing_pipeline import apply_post_decode_processing
 from utils.raw_white_balance import estimate_white_balance_from_background
 
 try:  # pragma: no cover - optional capture-time helper
@@ -116,7 +121,7 @@ def _is_raw_path(path: str | None) -> bool:
     return Path(path).suffix.lower() in set(RAW_FORMATS)
 
 from .image_gallery_widget import ImageGalleryWidget
-from .combo_alerts import update_combo_alerts
+from .combo_alerts import update_combo_alert, update_combo_alerts
 from .raw_processing_controls import RawProcessingControls
 from .zoomable_image_widget import ZoomableImageLabel
 from .spore_preview_widget import SporePreviewWidget
@@ -655,6 +660,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._observation_lon: float | None = observation_lon
         self._observation_source_index: int | None = None
         self._converted_import_paths: set[str] = set()
+        self._raw_preview_proxy_cache: dict[tuple[str, int, int, str], np.ndarray] = {}
+        self._pending_raw_preview_result: ImageImportResult | None = None
+        self._raw_preview_refresh_timer = QTimer(self)
+        self._raw_preview_refresh_timer.setSingleShot(True)
+        self._raw_preview_refresh_timer.setInterval(250)
+        self._raw_preview_refresh_timer.timeout.connect(self._flush_pending_raw_preview)
         self._accepted = False
         self._close_cleanup_done = False
         self._setting_from_image_source = False
@@ -1083,10 +1094,46 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _field_tag_value(self, category: str) -> str:
         return self._FIELD_TAG_DEFAULTS[category]
 
+    def _active_image_type(self) -> str | None:
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return None
+        result = self.import_results[index]
+        return str(getattr(result, "image_type", "") or "").strip().lower() or None
+
     def _update_lab_state_combo_alerts(self, *_args) -> None:
+        active_image_type = None
+        active_image_type_fn = getattr(self, "_active_image_type", None)
+        if callable(active_image_type_fn):
+            try:
+                active_image_type = active_image_type_fn()
+            except Exception:
+                active_image_type = None
+        if active_image_type is None:
+            index_fn = getattr(self, "_current_single_index", None)
+            try:
+                index = index_fn() if callable(index_fn) else None
+            except Exception:
+                index = None
+            if index is not None and 0 <= index < len(getattr(self, "import_results", ())):
+                result = self.import_results[index]
+                active_image_type = str(getattr(result, "image_type", "") or "").strip().lower() or None
+        field_active = active_image_type == "field"
+        update_combo_alert(
+            getattr(self, "objective_combo", None),
+            alert=False if field_active else None,
+        )
+        if field_active:
+            for combo in (
+                getattr(self, "contrast_combo", None),
+                getattr(self, "mount_combo", None),
+                getattr(self, "stain_combo", None),
+                getattr(self, "sample_combo", None),
+            ):
+                update_combo_alert(combo, alert=False)
+            return
         update_combo_alerts(
             (
-                getattr(self, "objective_combo", None),
                 getattr(self, "contrast_combo", None),
                 getattr(self, "mount_combo", None),
                 getattr(self, "stain_combo", None),
@@ -1124,7 +1171,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self.image_type_selector = SegmentedSelector(self, compact=False)
+        self.image_type_selector = SegmentedSelector(self, compact=False, fill_width=True)
         self.image_type_group = self.image_type_selector.button_group
         self.field_radio = self.image_type_selector.add_option(self.tr("Field Image (F)"), "field", checked=True)
         self.micro_radio = self.image_type_selector.add_option(self.tr("Microscope Image (M)"), "microscope")
@@ -5401,6 +5448,83 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.raw_settings = settings
         return settings
 
+    @staticmethod
+    def _raw_preview_decode_mode(settings: RawRenderSettings) -> str:
+        sample_base_mode = str(settings.wb_sample_base_mode or "").strip().lower() or None
+        if sample_base_mode not in {"camera", "auto"}:
+            sample_base_mode = "auto" if settings.white_balance_mode == "auto" else "camera"
+        return sample_base_mode if sample_base_mode in {"camera", "auto"} else "camera"
+
+    def _raw_preview_proxy_cache_key(
+        self,
+        source: str,
+        settings: dict | RawRenderSettings | None,
+    ) -> tuple[str, int, int, str] | None:
+        path = Path(source)
+        try:
+            stat = path.stat()
+        except Exception:
+            return None
+        render_settings = RawRenderSettings.from_dict(settings)
+        decode_mode = self._raw_preview_decode_mode(render_settings)
+        try:
+            source_key = str(path.resolve())
+        except Exception:
+            source_key = str(path)
+        return (source_key, int(stat.st_mtime_ns), int(stat.st_size), decode_mode)
+
+    def _raw_preview_proxy_for_result(
+        self,
+        source: str,
+        settings: dict | RawRenderSettings | None,
+    ) -> np.ndarray:
+        cache_key = self._raw_preview_proxy_cache_key(source, settings)
+        if cache_key is None:
+            return render_raw_preview_proxy_rgb(source, settings=settings)
+        cached = self._raw_preview_proxy_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        proxy = render_raw_preview_proxy_rgb(source, settings=settings)
+        self._raw_preview_proxy_cache[cache_key] = proxy
+        return proxy
+
+    @staticmethod
+    def _raw_preview_output_path(source: str) -> Path:
+        digest = hashlib.sha1(str(Path(source).resolve()).encode("utf-8")).hexdigest()[:12]
+        return get_images_dir() / "imports" / f"{Path(source).stem}_{digest}_raw_preview.jpg"
+
+    def _schedule_raw_preview_refresh(self, result: ImageImportResult) -> None:
+        if not self._result_is_raw_backed(result):
+            return
+        self._pending_raw_preview_result = result
+        timer = getattr(self, "_raw_preview_refresh_timer", None)
+        if timer is None:
+            return
+        if not timer.isActive():
+            self.set_hint(self.tr("Updating RAW preview..."))
+        timer.start()
+
+    def _cancel_pending_raw_preview(self, result: ImageImportResult | None = None) -> None:
+        pending = self._pending_raw_preview_result
+        if result is not None and pending is not result:
+            return
+        self._pending_raw_preview_result = None
+        timer = getattr(self, "_raw_preview_refresh_timer", None)
+        if timer is not None:
+            timer.stop()
+        self.set_hint(None)
+
+    def _flush_pending_raw_preview(self) -> None:
+        result = self._pending_raw_preview_result
+        self._pending_raw_preview_result = None
+        if result is None:
+            self.set_hint(None)
+            return
+        try:
+            self._refresh_raw_preview(result)
+        finally:
+            self.set_hint(None)
+
     def _build_raw_processing_panel(self, layout: QVBoxLayout) -> None:
         self.raw_group, raw_layout = create_section_card(
             self.tr("RAW processing"),
@@ -5486,7 +5610,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
         result.raw_unsaved_changes = True
-        self._refresh_raw_preview(index)
+        self._schedule_raw_preview_refresh(result)
         self._update_raw_panel_for_result(result)
 
     def _on_raw_wb_pick_toggled(self, checked: bool) -> None:
@@ -5496,21 +5620,49 @@ class ImageImportDialog(GeometryMixin, QDialog):
         else:
             self.set_hint(None)
 
-    def _refresh_raw_preview(self, index: int) -> None:
-        if index < 0 or index >= len(self.import_results):
-            return
-        result = self.import_results[index]
+    def _refresh_raw_preview(self, target: int | ImageImportResult) -> None:
+        if isinstance(target, ImageImportResult):
+            result = target
+            if result not in self.import_results:
+                return
+            index = self.import_results.index(result)
+        else:
+            index = int(target)
+            if index < 0 or index >= len(self.import_results):
+                return
+            result = self.import_results[index]
         source = self._raw_source_path_for_result(result)
         if not source:
             return
         try:
             import_dir = get_images_dir() / "imports"
             import_dir.mkdir(parents=True, exist_ok=True)
-            preview_path = render_raw_preview(
-                source,
-                settings=result.raw_settings or self._ensure_raw_settings(result),
-                output_dir=import_dir,
-            )
+            settings = RawRenderSettings.from_dict(result.raw_settings or self._ensure_raw_settings(result))
+            preview_rgb = self._raw_preview_proxy_for_result(source, settings)
+            processing_settings = settings
+            if (
+                processing_settings.white_balance_mode in {"background", "custom"}
+                and processing_settings.wb_multipliers is None
+                and processing_settings.wb_selection is not None
+            ):
+                background_wb = estimate_white_balance_from_background(
+                    preview_rgb,
+                    rect=processing_settings.wb_selection,
+                )
+                processing_settings = replace(
+                    processing_settings,
+                    white_balance_mode="custom",
+                    wb_multipliers=(
+                        float(background_wb[0]),
+                        float(background_wb[1]),
+                        float(background_wb[2]),
+                    ),
+                    wb_multiplier_space="post_decode_rgb",
+                    wb_sample_base_mode=self._raw_preview_decode_mode(settings),
+                )
+            preview_float = apply_post_decode_processing(preview_rgb, processing_settings)
+            preview_path = self._raw_preview_output_path(source)
+            save_raw_preview_jpeg(preview_float, preview_path, source)
         except Exception as exc:
             result.processing_status = "failed"
             result.failure_reason = str(exc)
@@ -5564,7 +5716,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.raw_controls.set_pick_checked(False)
                 self._raw_wb_pick_mode = False
                 self._load_raw_settings_into_form(base)
-                self._refresh_raw_preview(index)
+                self._schedule_raw_preview_refresh(result)
                 self._update_raw_panel_for_result(result)
                 self.set_hint(None)
                 return True
@@ -5621,6 +5773,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         result.raw_preview_path = derivative_str
         result.processing_status = "converted"
         result.status = IMAGE_IMPORT_STATUS_READY
+        self._cancel_pending_raw_preview(result)
         lab = dict(getattr(result, "lab_metadata", None) or {})
         if raw_meta:
             lab["raw_processing"] = raw_meta
@@ -5670,6 +5823,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if dialog and dialog.isVisible():
             dialog.close()
         self._scale_bar_dialog = None
+        self._cancel_pending_raw_preview()
         self._cleanup_dialog_threads()
         for path in list(self._temp_preview_paths):
             try:
@@ -5685,4 +5839,5 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 except Exception:
                     pass
             self._converted_import_paths.clear()
+        self._raw_preview_proxy_cache.clear()
         super().closeEvent(event)
