@@ -79,6 +79,9 @@ from utils.thumbnail_generator import generate_all_sizes
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
+_SUPABASE_AUTH_TIMEOUT = 30
+_SUPABASE_REST_TIMEOUT = 60
+_SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
 _CLOUD_KEYRING_SERVICE = 'Sporely.Cloud'
 _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
 _profile_suffix = runtime_profile_scope()
@@ -2192,7 +2195,23 @@ def _save_linked_cloud_user_id(user_id: str) -> None:
 
 def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
     """Bind this local DB to the active cloud account, or reject a mismatch."""
-    current_user_id = _normalize_cloud_user_id(client.fetch_current_user_id())
+    current_user_id = ""
+    token_user_id = ""
+    try:
+        token_user_id = _normalize_cloud_user_id(_decode_jwt_subject(getattr(client, 'access_token', None)))
+    except Exception:
+        token_user_id = ""
+    if token_user_id:
+        current_user_id = token_user_id
+        try:
+            if getattr(client, 'user_id', '') != token_user_id:
+                client.user_id = token_user_id
+        except Exception:
+            pass
+    if not current_user_id:
+        current_user_id = _normalize_cloud_user_id(getattr(client, 'user_id', ''))
+    if not current_user_id and hasattr(client, 'fetch_current_user_id'):
+        current_user_id = _normalize_cloud_user_id(client.fetch_current_user_id())
     if not current_user_id:
         raise CloudSyncError("Could not verify the active Sporely Cloud account before syncing.")
     linked_user_id = _load_linked_cloud_user_id()
@@ -6288,7 +6307,7 @@ class SporelyCloudClient:
             f'{SUPABASE_URL}/auth/v1/token?grant_type=password',
             json={'email': email, 'password': password},
             headers={'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
-            timeout=15,
+            timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'Login failed: {resp.text}')
@@ -6308,7 +6327,7 @@ class SporelyCloudClient:
             f'{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token',
             json={'refresh_token': token},
             headers={'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
-            timeout=15,
+            timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'Refresh failed: {resp.text}')
@@ -6325,13 +6344,15 @@ class SporelyCloudClient:
         token = settings.get('cloud_access_token')
         user_id = settings.get('cloud_user_id')
         refresh_token = settings.get('cloud_refresh_token')
-        if token and user_id:
-            client = cls(access_token=token, user_id=user_id, refresh_token=refresh_token)
-            try:
-                client._get('observations?limit=1&select=id')
-                return client
-            except CloudSyncError:
-                pass
+        token_text = str(token or '').strip()
+        user_id_text = _normalize_cloud_user_id(user_id)
+        if token_text and user_id_text:
+            token_user_id = _decode_jwt_subject(token_text)
+            return cls(
+                access_token=token_text,
+                user_id=token_user_id or user_id_text,
+                refresh_token=refresh_token,
+            )
         if refresh_token:
             try:
                 client = cls.refresh_login(str(refresh_token))
@@ -6361,7 +6382,7 @@ class SporelyCloudClient:
 
     def fetch_current_user_info(self) -> dict:
         """Return the authenticated Supabase user record."""
-        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/auth/v1/user', timeout=15)
+        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/auth/v1/user', timeout=_SUPABASE_AUTH_TIMEOUT)
         if resp.ok:
             try:
                 data = resp.json()
@@ -6429,9 +6450,9 @@ class SporelyCloudClient:
             'Content-Type': 'image/jpeg',
             'x-upsert': 'true',
         }
-        resp = self._request_with_refresh('POST', url, data=content, headers=headers, timeout=30)
+        resp = self._request_with_refresh('POST', url, data=content, headers=headers, timeout=_SUPABASE_PROFILE_UPLOAD_TIMEOUT)
         if not resp.ok:
-            resp = self._request_with_refresh('PUT', url, data=content, headers=headers, timeout=30)
+            resp = self._request_with_refresh('PUT', url, data=content, headers=headers, timeout=_SUPABASE_PROFILE_UPLOAD_TIMEOUT)
         if not resp.ok:
             raise CloudSyncError(f'Avatar upload failed: {resp.text}')
         public_url = f'{SUPABASE_URL}/storage/v1/object/public/avatars/{path}'
@@ -6472,7 +6493,7 @@ class SporelyCloudClient:
     # ── REST helpers ─────────────────────────────────────────────────────
 
     def _get(self, path: str) -> list:
-        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/rest/v1/{path}', timeout=20)
+        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/rest/v1/{path}', timeout=_SUPABASE_REST_TIMEOUT)
         if not resp.ok:
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
@@ -6483,7 +6504,7 @@ class SporelyCloudClient:
             f'{SUPABASE_URL}/rest/v1/{path}',
             json=payload,
             headers={'Prefer': 'return=representation'},
-            timeout=20,
+            timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'POST {path}: {resp.text}')
@@ -6497,7 +6518,7 @@ class SporelyCloudClient:
             'POST',
             f'{SUPABASE_URL}/rest/v1/rpc/{rpc_name}',
             json=dict(payload or {}),
-            timeout=20,
+            timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'RPC {rpc_name}: {resp.text}')
@@ -6511,7 +6532,7 @@ class SporelyCloudClient:
             f'{SUPABASE_URL}/rest/v1/{path}',
             json=payload,
             headers={'Prefer': 'return=minimal'},
-            timeout=20,
+            timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'PATCH {path}: {resp.text}')
@@ -6521,7 +6542,7 @@ class SporelyCloudClient:
             'DELETE',
             f'{SUPABASE_URL}/rest/v1/{path}',
             headers={'Prefer': 'return=minimal'},
-            timeout=20,
+            timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
             raise CloudSyncError(f'DELETE {path}: {resp.text}')

@@ -18,12 +18,12 @@ def qapp():
     return app
 
 
-def _build_dialog(monkeypatch) -> CalibrationDialog:
+def _build_dialog(monkeypatch, cloud_client_factory=None) -> CalibrationDialog:
     monkeypatch.setattr(calibration_dialog, "load_objectives", lambda: {})
     monkeypatch.setattr(
         calibration_dialog.cloud_sync.SporelyCloudClient,
         "from_stored_credentials",
-        lambda: None,
+        cloud_client_factory or (lambda: None),
     )
     monkeypatch.setattr(
         calibration_dialog.SettingsDB,
@@ -114,6 +114,7 @@ def test_history_rows_show_cloud_icon_for_synced_calibrations(qapp, monkeypatch)
         lambda: _FakeCloudClient(),
     )
 
+    dialog._cloud_client = _FakeCloudClient()
     dialog.current_objective_key = "objective_1"
     dialog._update_history_table()
 
@@ -127,6 +128,14 @@ def test_history_rows_show_cloud_icon_for_synced_calibrations(qapp, monkeypatch)
     assert dialog.history_table.item(0, 4).text() == "13"
     assert dialog.history_table.item(1, 4).text() == "8"
 
+    dialog.deleteLater()
+
+
+def test_history_view_does_not_probe_stored_credentials_on_build(qapp, monkeypatch):
+    def _should_not_be_called():
+        raise AssertionError("from_stored_credentials() should not run during dialog startup")
+
+    dialog = _build_dialog(monkeypatch, cloud_client_factory=_should_not_be_called)
     dialog.deleteLater()
 
 

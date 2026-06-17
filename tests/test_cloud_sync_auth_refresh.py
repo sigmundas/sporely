@@ -56,6 +56,29 @@ def test_cloud_client_refreshes_expired_token_and_retries_get(monkeypatch):
     ]
 
 
+def test_from_stored_credentials_returns_cached_client_without_probing(monkeypatch):
+    settings = {
+        "cloud_access_token": "cached-token",
+        "cloud_user_id": "user-123",
+        "cloud_refresh_token": "refresh-token",
+    }
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+    monkeypatch.setattr(cloud_sync, "load_saved_cloud_password", lambda: ("", None, False))
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "_get",
+        lambda self, path: pytest.fail("from_stored_credentials() should not probe the API"),
+    )
+
+    client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+
+    assert client is not None
+    assert client.access_token == "cached-token"
+    assert client.user_id == "user-123"
+    assert client.refresh_token == "refresh-token"
+
+
 def test_push_images_for_observation_surfaces_auth_errors(monkeypatch):
     class DummyClient:
         def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):

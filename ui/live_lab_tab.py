@@ -119,6 +119,7 @@ class PendingRawCapture:
     wb_sample_base_pixmap: QPixmap | None = None
     status: str = "pending"
     group_key: str | None = None
+    observation_id: int | None = None
     created_at: datetime | None = None
 
 
@@ -490,6 +491,9 @@ class LiveLabTab(QWidget):
         self.pending_raw_save_btn = QPushButton(self.tr("Save current"))
         self.pending_raw_save_btn.clicked.connect(self._commit_selected_pending_raw_capture)
         pending_raw_top_row_layout.addWidget(self.pending_raw_save_btn)
+        self.pending_raw_save_all_btn = QPushButton(self.tr("Save all"))
+        self.pending_raw_save_all_btn.clicked.connect(self._commit_all_pending_raw_captures)
+        pending_raw_top_row_layout.addWidget(self.pending_raw_save_all_btn)
         self.pending_raw_apply_all_btn = QPushButton(self.tr("Apply settings to all pending"))
         self.pending_raw_apply_all_btn.clicked.connect(self._apply_current_raw_settings_to_all_pending)
         pending_raw_top_row_layout.addWidget(self.pending_raw_apply_all_btn)
@@ -689,6 +693,11 @@ class LiveLabTab(QWidget):
             self.pending_raw_save_btn,
             self.tr("Commit the selected pending RAW capture using the current RAW settings."),
             disabled_hint=self.tr("Choose a pending RAW capture first."),
+        )
+        self._register_hint_widget(
+            self.pending_raw_save_all_btn,
+            self.tr("Commit every pending RAW capture using its current RAW settings."),
+            disabled_hint=self.tr("No pending RAW captures are waiting to be saved."),
         )
         self._register_hint_widget(
             self.pending_raw_apply_all_btn,
@@ -994,9 +1003,12 @@ class LiveLabTab(QWidget):
 
     def _pending_raw_review_hint_text(self) -> str:
         return self.tr(
-            "Review mode: use ←/→ to move between RAW captures, Delete or Backspace to remove the current image, "
-            "and Enter to save the selected render."
+            "Review mode: use ←/→ to move between RAW captures, Delete/Backspace/Cmd/Ctrl+D to remove the current image, "
+            "and Enter to save current."
         )
+
+    def _committed_raw_review_hint_text(self) -> str:
+        return self.tr("Delete/Backspace/Cmd/Ctrl+D remove the selected saved image.")
 
     def _raw_edit_hint_text(self) -> str:
         return self.tr(
@@ -1008,6 +1020,8 @@ class LiveLabTab(QWidget):
             return self._raw_edit_hint_text()
         if self._current_pending_raw_capture() is not None:
             return self._pending_raw_review_hint_text()
+        if self._selected_committed_image_id() is not None:
+            return self._committed_raw_review_hint_text()
         raw_body = getattr(self, "raw_processing_body", None)
         if raw_body is not None and raw_body.isVisible():
             return self._raw_processing_hint_text()
@@ -1160,8 +1174,10 @@ class LiveLabTab(QWidget):
         active_capture = capture or self._current_pending_raw_capture()
         if self._raw_settings_has_sampled_background_wb(active_capture.raw_settings if active_capture is not None else None):
             readout = self._raw_white_balance_readout_text(active_capture.raw_settings if active_capture is not None else None)
-            return self.tr("{readout} · ←/→ select · Delete/Backspace remove current image · Enter save").format(readout=readout)
-        return self.tr("←/→ select · Delete/Backspace remove current image · Enter save")
+            return self.tr(
+                "{readout} · ←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current"
+            ).format(readout=readout)
+        return self.tr("←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current")
 
     def _set_pending_raw_background_wb_armed(self, armed: bool) -> None:
         self._set_raw_background_wb_armed(armed, target="pending")
@@ -2161,9 +2177,9 @@ class LiveLabTab(QWidget):
         return isinstance(widget, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QAbstractSlider, QComboBox, QAbstractButton))
 
     def _raw_review_shortcut_allowed(self) -> bool:
-        if not self.is_session_running():
+        if self._raw_edit_session is not None:
             return False
-        if self._current_pending_raw_capture() is None:
+        if self._current_pending_raw_capture() is None and self._selected_committed_image_id() is None:
             return False
         if self._pending_raw_background_wb_armed:
             return False
@@ -2181,7 +2197,7 @@ class LiveLabTab(QWidget):
         elif normalized in {"next", "right"}:
             self._show_next_pending_raw_capture()
         elif normalized in {"discard", "delete", "backspace"}:
-            self._discard_selected_pending_raw_capture()
+            self._delete_current_raw_review_item()
         elif normalized in {"save", "enter", "return"}:
             self._commit_selected_pending_raw_capture()
 
@@ -2197,6 +2213,8 @@ class LiveLabTab(QWidget):
             (QKeySequence(Qt.Key_Right), "next"),
             (QKeySequence(Qt.Key_Delete), "discard"),
             (QKeySequence(Qt.Key_Backspace), "discard"),
+            (QKeySequence("Ctrl+D"), "discard"),
+            (QKeySequence("Meta+D"), "discard"),
             (QKeySequence(Qt.Key_Return), "save"),
             (QKeySequence(Qt.Key_Enter), "save"),
         ]
@@ -2470,6 +2488,10 @@ class LiveLabTab(QWidget):
         if save_btn is not None:
             save_btn.setEnabled(bool(has_selection and not self._pending_raw_background_wb_armed))
 
+        save_all_btn = getattr(self, "pending_raw_save_all_btn", None)
+        if save_all_btn is not None:
+            save_all_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed))
+
         apply_btn = getattr(self, "pending_raw_apply_all_btn", None)
         if apply_btn is not None:
             apply_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed))
@@ -2579,6 +2601,12 @@ class LiveLabTab(QWidget):
             )
             capture.preview_path = Path(preview_path)
             capture.status = "pending"
+            gallery = getattr(self, "session_gallery", None)
+            if gallery is not None:
+                try:
+                    gallery.invalidate_pixmap_cache(capture.preview_path)
+                except Exception:
+                    pass
             self._refresh_session_gallery()
             self._show_pending_raw_capture(self._selected_pending_raw_index)
         except RawRenderingUnavailableError as exc:
@@ -2621,6 +2649,7 @@ class LiveLabTab(QWidget):
             lab_metadata=resolved_lab_metadata,
             raw_settings=resolved_settings,
             group_key=group_key,
+            observation_id=int(self._session_observation_id or 0) or None,
             created_at=datetime.now(),
         )
         preview_path = render_raw_preview(
@@ -2660,10 +2689,12 @@ class LiveLabTab(QWidget):
         if pending is None:
             return False
         try:
+            observation_id = int(getattr(pending, "observation_id", 0) or self._session_observation_id or 0)
             committed = self._ingest_detected_image(
                 str(pending.source_path),
                 raw_settings=pending.raw_settings,
                 lab_metadata=pending.lab_metadata,
+                observation_id=observation_id,
             )
         except Exception:
             committed = False
@@ -2671,56 +2702,26 @@ class LiveLabTab(QWidget):
             pending.status = "committed"
         return committed
 
-    def _commit_selected_pending_raw_capture(self) -> None:
-        pending = self._current_pending_raw_capture()
-        if pending is None:
-            return
-        self._cancel_pending_raw_background_wb_selection()
+    def _remove_pending_raw_capture(self, pending: PendingRawCapture, *, status: str, refresh_ui: bool = True) -> bool:
         captures = getattr(self, "_pending_raw_captures", [])
-        index = self._selected_pending_raw_index_value()
+        if pending not in captures:
+            return False
+        index = captures.index(pending)
         preview_path = Path(pending.preview_path) if pending.preview_path else None
-        if self._commit_pending_raw_capture(pending):
-            if preview_path is not None:
-                try:
-                    preview_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            if 0 <= index < len(captures):
-                captures.pop(index)
-            self._pending_raw_captures = captures
-            if captures:
-                self._selected_pending_raw_index = min(index, len(captures) - 1)
-            else:
-                self._selected_pending_raw_index = -1
-            self._update_pending_raw_controls()
-            if captures:
-                self._show_pending_raw_capture(self._selected_pending_raw_index)
-            else:
-                if self._session_image_ids:
-                    self._show_session_image(self._session_image_ids[-1])
-                else:
-                    self._clear_session_viewer(
-                        title=self.tr("Waiting for first import"),
-                        meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
-                    )
-
-    def _discard_selected_pending_raw_capture(self) -> None:
-        pending = self._current_pending_raw_capture()
-        if pending is None:
-            return
-        self._cancel_pending_raw_background_wb_selection()
-        captures = getattr(self, "_pending_raw_captures", [])
-        index = self._selected_pending_raw_index_value()
-        preview_path = Path(pending.preview_path) if pending.preview_path else None
-        pending.status = "discarded"
+        pending.status = status
         if preview_path is not None:
             try:
                 preview_path.unlink(missing_ok=True)
             except Exception:
                 pass
-        if 0 <= index < len(captures):
-            captures.pop(index)
+        captures.pop(index)
         self._pending_raw_captures = captures
+        if not refresh_ui:
+            if captures:
+                self._selected_pending_raw_index = min(index, len(captures) - 1)
+            else:
+                self._selected_pending_raw_index = -1
+            return True
         if captures:
             self._selected_pending_raw_index = min(index, len(captures) - 1)
             self._show_pending_raw_capture(self._selected_pending_raw_index)
@@ -2734,6 +2735,159 @@ class LiveLabTab(QWidget):
                     title=self.tr("Waiting for first import"),
                     meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
                 )
+        return True
+
+    def _commit_selected_pending_raw_capture(self) -> bool:
+        pending = self._current_pending_raw_capture()
+        if pending is None:
+            return False
+        self._cancel_pending_raw_background_wb_selection()
+        if self._commit_pending_raw_capture(pending):
+            self._remove_pending_raw_capture(pending, status="committed", refresh_ui=True)
+            self._show_status(
+                self.tr("Saved pending RAW capture {name}.").format(name=pending.source_path.name),
+                tone="success",
+                timeout_ms=3500,
+            )
+            return True
+        self._show_status(
+            self.tr("Could not save pending RAW capture {name}.").format(name=pending.source_path.name),
+            tone="warning",
+            timeout_ms=5000,
+        )
+        return False
+
+    def _commit_all_pending_raw_captures(self) -> bool:
+        captures = list(getattr(self, "_pending_raw_captures", []) or [])
+        if not captures:
+            return False
+        saved = 0
+        failed = 0
+        for pending in captures:
+            if pending not in getattr(self, "_pending_raw_captures", []):
+                continue
+            if self._commit_pending_raw_capture(pending):
+                saved += 1
+                self._remove_pending_raw_capture(pending, status="committed", refresh_ui=False)
+            else:
+                failed += 1
+        self._update_pending_raw_controls()
+        if self._current_pending_raw_capture() is not None:
+            self._show_pending_raw_capture(self._selected_pending_raw_index)
+        elif self._session_image_ids:
+            self._show_session_image(self._session_image_ids[-1])
+        else:
+            self._clear_session_viewer(
+                title=self.tr("Waiting for first import"),
+                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
+            )
+        if saved == 0:
+            self._show_status(
+                self.tr("Could not save any pending RAW captures."),
+                tone="warning",
+                timeout_ms=5000,
+            )
+            return False
+        if failed:
+            self._show_status(
+                self.tr("Saved {saved} RAW capture(s), but {failed} failed.").format(saved=saved, failed=failed),
+                tone="warning",
+                timeout_ms=5000,
+            )
+        else:
+            self._show_status(
+                self.tr("Saved {count} RAW capture(s).").format(count=saved),
+                tone="success",
+                timeout_ms=3500,
+            )
+        return True
+
+    def _discard_selected_pending_raw_capture(self) -> bool:
+        pending = self._current_pending_raw_capture()
+        if pending is None:
+            return False
+        self._cancel_pending_raw_background_wb_selection()
+        if self._remove_pending_raw_capture(pending, status="discarded", refresh_ui=True):
+            self._show_status(
+                self.tr("Removed pending RAW capture {name}.").format(name=pending.source_path.name),
+                tone="info",
+                timeout_ms=3500,
+            )
+            return True
+        return False
+
+    def _delete_current_raw_review_item(self) -> bool:
+        if self._raw_edit_session is not None:
+            return False
+
+        pending = self._current_pending_raw_capture()
+        if pending is not None:
+            return self._discard_selected_pending_raw_capture()
+
+        image_id = self._selected_committed_image_id()
+        if image_id is None:
+            return False
+
+        image = ImageDB.get_image(image_id)
+        image_name = Path(str((image or {}).get("filepath") or "")).name or self.tr("selected image")
+        session_image_ids = list(getattr(self, "_session_image_ids", []) or [])
+        try:
+            image_index = session_image_ids.index(image_id)
+        except ValueError:
+            image_index = -1
+
+        try:
+            ImageDB.delete_image(image_id)
+        except Exception as exc:
+            self._show_status(
+                self.tr("Could not delete local processed image {name}: {error}").format(
+                    name=image_name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+            return False
+
+        self._session_image_ids = [existing_id for existing_id in session_image_ids if int(existing_id) != int(image_id)]
+        if self._session_image_ids:
+            next_index = image_index if image_index >= 0 else 0
+            if next_index >= len(self._session_image_ids):
+                next_index = len(self._session_image_ids) - 1
+            next_image_id = int(self._session_image_ids[next_index])
+            self._selected_session_image_id = next_image_id
+            self._refresh_session_gallery()
+            self._show_session_image(next_image_id)
+        else:
+            self._selected_session_image_id = None
+            self._refresh_session_gallery()
+            self._clear_session_viewer(
+                title=self.tr("Waiting for first import"),
+                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
+            )
+        self._update_pending_raw_controls()
+
+        observation_id = int(self._session_observation_id or 0)
+        if observation_id > 0 and int(getattr(self._main_window, "active_observation_id", 0) or 0) == observation_id:
+            try:
+                if hasattr(self._main_window, "observations_tab"):
+                    self._main_window.observations_tab.refresh_observations(show_status=False)
+            except Exception:
+                pass
+            try:
+                self._main_window.refresh_observation_images(select_image_id=self._selected_session_image_id)
+                self._main_window.update_measurements_table()
+                if getattr(self._main_window, "is_analysis_visible", None) and self._main_window.is_analysis_visible():
+                    self._main_window.schedule_gallery_refresh()
+            except Exception:
+                pass
+
+        self._show_status(
+            self.tr("Deleted local processed image {name}.").format(name=image_name),
+            tone="success",
+            timeout_ms=3500,
+        )
+        return True
 
     def _apply_current_raw_settings_to_all_pending(self) -> None:
         captures = list(getattr(self, "_pending_raw_captures", []) or [])
@@ -2754,6 +2908,12 @@ class LiveLabTab(QWidget):
                     )
                 )
                 capture.status = "pending"
+                gallery = getattr(self, "session_gallery", None)
+                if gallery is not None:
+                    try:
+                        gallery.invalidate_pixmap_cache(capture.preview_path)
+                    except Exception:
+                        pass
             except Exception as exc:
                 capture.status = "failed"
                 self._show_status(
@@ -3631,8 +3791,6 @@ class LiveLabTab(QWidget):
         self._session_id = None
         self._active_session_mode = None
         self._session_stop_pending = False
-        self._session_observation_id = None
-        self._session_observation_snapshot = None
         self._cancel_raw_edit_session(restore_selection=False)
         self._reset_companion_dedupe_state()
         self._update_session_controls()
@@ -3834,8 +3992,9 @@ class LiveLabTab(QWidget):
         *,
         raw_settings: RawRenderSettings | None = None,
         lab_metadata: dict[str, object] | None = None,
+        observation_id: int | None = None,
     ) -> bool:
-        observation_id = int(self._session_observation_id or 0)
+        observation_id = int(observation_id or self._session_observation_id or 0)
         if observation_id <= 0:
             return False
 

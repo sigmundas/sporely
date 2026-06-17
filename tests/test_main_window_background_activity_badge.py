@@ -162,6 +162,7 @@ def test_background_activity_badge_shows_sync_pending_when_idle(monkeypatch, qap
     monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
     monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", lambda self: [390, 389, 385])
     monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", lambda self: [])
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {})
 
     window._refresh_background_activity_badge()
 

@@ -109,29 +109,31 @@ def test_cloud_auto_sync_worker_skips_without_saved_credentials(monkeypatch, qap
     assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True}]
 
 
-def test_metadata_sync_timeout_starts_metadata_only_sync(monkeypatch):
+def test_metadata_sync_timeout_is_disabled(monkeypatch):
     calls: dict[str, object] = {}
 
     class _FakeTimer:
+        def __init__(self):
+            self.starts: list[int] = []
+            self.stops = 0
+
         def start(self, interval_ms):
-            calls["timer_start"] = int(interval_ms)
+            self.starts.append(int(interval_ms))
 
         def stop(self):
-            calls["timer_stop"] = True
+            self.stops += 1
 
     fake_tab = SimpleNamespace(
         _metadata_sync_timer=_FakeTimer(),
-        _metadata_sync_delay_ms=8000,
-        _metadata_sync_should_pause=lambda: False,
-        _cloud_sync_pending_ids=lambda: [17],
         _start_cloud_sync=lambda **kwargs: calls.setdefault("start", kwargs) or True,
     )
 
+    observations_tab.ObservationsTab.schedule_metadata_cloud_sync(fake_tab, 17)
     observations_tab.ObservationsTab._on_metadata_sync_timeout(fake_tab)
 
-    assert calls["start"]["sync_images"] is False
-    assert calls["start"]["materialize_remote_images"] is False
-    assert calls.get("timer_stop") is True
+    assert calls == {}
+    assert fake_tab._metadata_sync_timer.starts == []
+    assert fake_tab._metadata_sync_timer.stops == 0
 
 
 def test_metadata_sync_timeout_defers_while_measurement_active():
@@ -156,7 +158,7 @@ def test_metadata_sync_timeout_defers_while_measurement_active():
 
     observations_tab.ObservationsTab._on_metadata_sync_timeout(fake_tab)
 
-    assert fake_timer.starts == [8000]
+    assert fake_timer.starts == []
 
 
 def test_cloud_sync_finished_skipped_hides_progress_widget():

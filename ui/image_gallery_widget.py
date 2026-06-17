@@ -222,6 +222,21 @@ class ImageGalleryWidget(QGroupBox):
         self._publish_checked_by_key = {}
         self._clear_widgets()
 
+    def invalidate_pixmap_cache(self, path: str | Path | None = None) -> None:
+        if path is None:
+            self._pixmap_cache.clear()
+            return
+        try:
+            target = str(Path(path))
+        except Exception:
+            target = str(path or "").strip()
+        if not target:
+            return
+        prefix = f"{target}|"
+        stale_keys = [key for key in self._pixmap_cache.keys() if key.startswith(prefix)]
+        for key in stale_keys:
+            self._pixmap_cache.pop(key, None)
+
     def _clear_widgets(self) -> None:
         while self._grid.count():
             item = self._grid.takeAt(0)

@@ -1,3 +1,6 @@
+import base64
+import json
+
 import pytest
 
 from utils import cloud_sync
@@ -9,6 +12,12 @@ class DummyClient:
 
     def fetch_current_user_id(self) -> str:
         return self.user_id
+
+
+def _jwt_with_subject(subject: str) -> str:
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode("utf-8")).decode("ascii").rstrip("=")
+    payload = base64.urlsafe_b64encode(json.dumps({"sub": subject}).encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{header}.{payload}.signature"
 
 
 def test_cloud_account_lock_binds_first_sync(monkeypatch):
@@ -59,3 +68,23 @@ def test_cloud_account_lock_blocks_different_account(monkeypatch):
 
     assert str(exc_info.value) == cloud_sync.ACCOUNT_MISMATCH_MESSAGE
 
+
+def test_cloud_account_lock_uses_local_token_subject_without_network(monkeypatch):
+    settings = {"linked_cloud_user_id": "user-a"}
+
+    class _TokenClient:
+        def __init__(self):
+            self.access_token = _jwt_with_subject("user-a")
+            self.user_id = "user-a"
+
+        def fetch_current_user_id(self) -> str:
+            raise AssertionError("network lookup should not be needed")
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+    monkeypatch.setattr(
+        cloud_sync,
+        "update_app_settings",
+        lambda update: pytest.fail("linked account should not be rewritten"),
+    )
+
+    assert cloud_sync.ensure_database_linked_to_cloud_user(_TokenClient()) == "user-a"

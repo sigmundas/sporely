@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -115,6 +115,10 @@ def _build_settings_hub_dialog(
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
 
     dialog = main_window.SettingsHubDialog(fake_parent)
+    fake_parent._cloud_client = fake_client
+    dialog._cloud_client = fake_client
+    if hasattr(dialog, "_artsobs_dialog") and dialog._artsobs_dialog is not None:
+        dialog._artsobs_dialog._cloud_client = fake_client
     dialog.show()
     qapp.processEvents()
     dialog.refresh_cloud_sync_status()
@@ -273,6 +277,108 @@ def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
 
     dialog.deleteLater()
     parent.deleteLater()
+
+
+def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
+    events: list[str] = []
+    settings_payload: dict[str, object] = {}
+    warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    main_window_fake = SimpleNamespace(
+        _refresh_background_activity_badge=lambda: events.append("badge_refresh"),
+    )
+    settings_hub_fake = SimpleNamespace(
+        refresh_cloud_sync_status=lambda: events.append("settings_refresh"),
+        parent=lambda: main_window_fake,
+    )
+    fake_dialog = SimpleNamespace(
+        tr=lambda text: text,
+        parent=lambda: settings_hub_fake,
+        observations_tab=SimpleNamespace(
+            _reset_status_progress=lambda: events.append("reset_progress"),
+            _set_status_progress_visible=lambda visible: events.append(f"progress_visible:{bool(visible)}"),
+            set_status_message=lambda message, **kwargs: events.append(f"status:{message}:{kwargs.get('level')}"),
+            _refresh_cloud_sync_idle_hint=lambda: events.append("idle_hint"),
+        ),
+    )
+    fake_dialog._refresh_cloud_sync_ui = MethodType(
+        main_window.ArtsobservasjonerSettingsDialog._refresh_cloud_sync_ui,
+        fake_dialog,
+    )
+
+    monkeypatch.setattr(
+        main_window,
+        "update_app_settings",
+        lambda payload: settings_payload.update(payload),
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: warning_calls.append((args, kwargs)),
+    )
+
+    main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_failure(fake_dialog, "Connection closed")
+
+    assert settings_payload["cloud_last_sync_status"] == "error"
+    assert settings_payload["cloud_last_sync_error_count"] == 1
+    assert events[:4] == [
+        "reset_progress",
+        "progress_visible:False",
+        "status:Cloud sync sign-in failed. Please check your email and password.:warning",
+        "idle_hint",
+    ]
+    assert "settings_refresh" in events
+    assert "badge_refresh" in events
+    assert warning_calls
+
+
+def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
+    events: list[str] = []
+    settings_payload: dict[str, object] = {}
+    set_setting_calls: list[tuple[str, object]] = []
+    save_calls: list[dict[str, object]] = []
+    sync_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    client = SimpleNamespace(
+        save_credentials=lambda **kwargs: save_calls.append(dict(kwargs)),
+    )
+
+    main_window_fake = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _start_cloud_sync=lambda *args, **kwargs: sync_calls.append((args, kwargs)),
+        ),
+    )
+    settings_hub_fake = SimpleNamespace(
+        parent=lambda: main_window_fake,
+        _on_cloud_login_changed=lambda *args, **kwargs: events.append("login_changed"),
+    )
+    fake_dialog = SimpleNamespace(
+        tr=lambda text: text,
+        parent=lambda: settings_hub_fake,
+        _cloud_login_password="secret",
+        _cloud_login_remember=True,
+        set_hint=lambda text, tone="info": events.append(f"hint:{tone}:{text}"),
+        _refresh_cloud_sync_ui=lambda: events.append("refresh_ui"),
+    )
+
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda client: "user-123")
+    monkeypatch.setattr(main_window, "update_app_settings", lambda payload: settings_payload.update(payload))
+    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda key, value: set_setting_calls.append((key, value)))
+
+    main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_success(fake_dialog, client, "sigmund.as@gmail.com")
+
+    assert settings_payload["cloud_user_email"] == "sigmund.as@gmail.com"
+    assert set_setting_calls == [("profile_email", "sigmund.as@gmail.com")]
+    assert save_calls == [
+        {
+            "email": "sigmund.as@gmail.com",
+            "password": "secret",
+            "remember_password": True,
+        }
+    ]
+    assert sync_calls == []
+    assert "login_changed" in events
+    assert "refresh_ui" in events
 
 
 def test_profile_cloud_offline_media_action_starts_materializing_sync(monkeypatch, qapp):

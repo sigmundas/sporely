@@ -1368,11 +1368,6 @@ class ObservationsTab(QWidget):
         self._cloud_sync_worker: _CloudAutoSyncWorker | None = None
         self._cloud_sync_show_status = False
         self._cloud_sync_run_refresh_flow = False
-        self._cloud_sync_startup_scheduled = False
-        self._metadata_sync_delay_ms = 8000
-        self._metadata_sync_timer = QTimer(self)
-        self._metadata_sync_timer.setSingleShot(True)
-        self._metadata_sync_timer.timeout.connect(self._on_metadata_sync_timeout)
         self._delete_in_progress = False
         self._thumb_loader: _ThumbnailLoaderWorker | None = None
         self._thumb_pending_paths: set = set()
@@ -1394,13 +1389,6 @@ class ObservationsTab(QWidget):
             sc = QShortcut(QKeySequence(_seq), self)
             sc.setContext(Qt.WidgetWithChildrenShortcut)
             sc.activated.connect(self._on_direct_edit_shortcut)
-            
-        self._auto_sync_timer = QTimer(self)
-        self._auto_sync_timer.setInterval(300 * 1000)  # 5 minutes
-        self._auto_sync_timer.timeout.connect(self._on_auto_sync_timeout)
-        self._auto_sync_timer.start()
-
-        self._schedule_startup_cloud_sync()
 
     def _load_tag_options(self, category: str) -> list[str]:
         from database.models import SettingsDB
@@ -2390,25 +2378,13 @@ class ObservationsTab(QWidget):
         self._call_main_window_db_action("import_database_bundle")
 
     def _schedule_startup_cloud_sync(self) -> None:
-        if self._cloud_sync_startup_scheduled:
-            return
-        self._cloud_sync_startup_scheduled = True
-        QTimer.singleShot(900, self._run_startup_cloud_sync)
+        return
 
     def _run_startup_cloud_sync(self) -> None:
-        self._cloud_sync_startup_scheduled = False
-        self._start_cloud_sync(show_status=True, run_refresh_flow=False)
+        return
 
     def _on_auto_sync_timeout(self) -> None:
-        """Triggered periodically to run a silent background sync."""
-        if self._is_cloud_sync_running():
-            return
-        if QApplication.activeModalWidget() is not None:
-            return
-        try:
-            self._start_cloud_sync(show_status=False, run_refresh_flow=False)
-        except Exception as e:
-            print(f"Background auto-sync failed: {e}")
+        return
 
     def _current_window(self):
         try:
@@ -2416,57 +2392,11 @@ class ObservationsTab(QWidget):
         except Exception:
             return None
 
-    def _cloud_sync_pending_ids(self) -> list[int]:
-        window = self._current_window()
-        getter = getattr(window, "_cloud_sync_pending_observation_ids", None) if window is not None else None
-        if not callable(getter):
-            return []
-        try:
-            return [int(obs_id) for obs_id in getter() if int(obs_id) > 0]
-        except Exception:
-            return []
-
-    def _metadata_sync_should_pause(self) -> bool:
-        if self._is_cloud_sync_running():
-            return True
-        if QApplication.activeModalWidget() is not None:
-            return True
-        window = self._current_window()
-        if window is not None and bool(getattr(window, "measurement_active", False)):
-            return True
-        return False
-
     def schedule_metadata_cloud_sync(self, observation_id: int | None = None) -> None:
-        try:
-            obs_id = int(observation_id or 0)
-        except Exception:
-            obs_id = 0
-        if obs_id > 0:
-            obs = ObservationDB.get_observation(obs_id)
-            if not obs or not str(obs.get("cloud_id") or "").strip():
-                return
-        self._metadata_sync_timer.start(self._metadata_sync_delay_ms)
+        return
 
     def _on_metadata_sync_timeout(self) -> None:
-        if self._metadata_sync_should_pause():
-            self._metadata_sync_timer.start(self._metadata_sync_delay_ms)
-            return
-        pending_ids = self._cloud_sync_pending_ids()
-        if not pending_ids:
-            self._metadata_sync_timer.stop()
-            return
-        try:
-            started = self._start_cloud_sync(
-                show_status=False,
-                run_refresh_flow=False,
-                sync_images=False,
-                materialize_remote_images=False,
-            )
-        except Exception as exc:
-            print(f"Background metadata sync failed: {exc}")
-            return
-        if started:
-            self._metadata_sync_timer.stop()
+        return
 
     def _is_cloud_sync_running(self) -> bool:
         worker = getattr(self, "_cloud_sync_worker", None)

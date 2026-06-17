@@ -1695,6 +1695,22 @@ class SettingsHubDialog(QDialog):
         except Exception:
             return None
 
+    def _cached_cloud_client(self):
+        main_window = self._settings_hub_main_window()
+        if main_window is not None:
+            client = getattr(main_window, "_cloud_client", None)
+            if client is not None:
+                return client
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
+        cloud_dialog = getattr(self, "_artsobs_dialog", None)
+        if cloud_dialog is not None:
+            client = getattr(cloud_dialog, "_cloud_client", None)
+            if client is not None:
+                return client
+        return None
+
     def _profile_email_for_save(self) -> str:
         cloud_email = str(get_app_settings().get("cloud_user_email") or "").strip()
         return cloud_email or self._profile_email.text().strip()
@@ -1785,6 +1801,7 @@ class SettingsHubDialog(QDialog):
             self._profile_avatar_network = QNetworkAccessManager(self)
         self._profile_avatar_pending_url = url
         request = QNetworkRequest(QUrl(url))
+        request.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
         request.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
         request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
         reply = self._profile_avatar_network.get(request)
@@ -1883,12 +1900,11 @@ class SettingsHubDialog(QDialog):
         if not hasattr(self, "_profile_email"):
             return
         cloud_dialog = getattr(self, "_artsobs_dialog", None)
-        client = self._cloud_client()
+        client = self._cached_cloud_client()
         if client is None:
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
             if cloud_dialog is not None:
-                cloud_dialog._cloud_client = None
                 cloud_dialog._cloud_account_email = ""
                 cloud_dialog._cloud_usage_summary = {}
                 cloud_dialog._cloud_usage_summary_user_id = ""
@@ -2021,8 +2037,14 @@ class SettingsHubDialog(QDialog):
         if not hasattr(self, "cloud_sync_status_label"):
             return
         settings = get_app_settings()
-        client = self._cloud_client()
-        logged_in = bool(client)
+        client = self._cached_cloud_client()
+        logged_in = bool(
+            client
+            or str(settings.get("cloud_access_token") or "").strip()
+            or str(settings.get("cloud_refresh_token") or "").strip()
+            or str(settings.get("cloud_user_email") or "").strip()
+            or str(settings.get("cloud_user_id") or "").strip()
+        )
         running = self._settings_cloud_sync_running()
         sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
         main_window = self._settings_hub_main_window()
@@ -2141,14 +2163,25 @@ class SettingsHubDialog(QDialog):
 
     def _on_cloud_login_changed(self, client=None, email: str | None = None) -> None:
         self._cloud_profile_loaded_user_id = ""
+        self._cloud_client = client
         if email:
             self._profile_email.setText(str(email or "").strip())
             SettingsDB.set_setting("profile_email", str(email or "").strip())
+        main_window = self._settings_hub_main_window()
+        if main_window is not None:
+            setattr(main_window, "_cloud_client", client)
+            updater = getattr(main_window, "_update_corner_ui", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
         self._refresh_cloud_profile_fields(force=True)
         self.refresh_cloud_sync_status()
 
     def _on_cloud_logout_changed(self) -> None:
         self._cloud_profile_loaded_user_id = ""
+        self._cloud_client = None
         if hasattr(self, "_profile_email"):
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
@@ -2161,6 +2194,15 @@ class SettingsHubDialog(QDialog):
             cloud_dialog._cloud_usage_summary_user_id = ""
             if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
                 cloud_dialog._update_cloud_account_summary_labels()
+        main_window = self._settings_hub_main_window()
+        if main_window is not None:
+            setattr(main_window, "_cloud_client", None)
+            updater = getattr(main_window, "_update_corner_ui", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
         self._render_profile_avatar()
         self.refresh_cloud_sync_status()
 
@@ -2496,6 +2538,35 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             SettingsDB.set_setting(self.SETTING_MO_APP_API_KEY, app_key_edit.text().strip())
         SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
         return True
+
+    def _refresh_cloud_sync_ui(self) -> None:
+        """Refresh cloud sync status surfaces that may be visible above this dialog."""
+        settings_hub = None
+        main_window = None
+        current = self
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if settings_hub is None:
+                refresh_status = getattr(current, "refresh_cloud_sync_status", None)
+                if callable(refresh_status):
+                    settings_hub = current
+            refresh_badge = getattr(current, "_refresh_background_activity_badge", None)
+            if callable(refresh_badge):
+                main_window = current
+                break
+            parent = current.parent() if hasattr(current, "parent") else None
+            current = parent
+        if settings_hub is not None:
+            try:
+                settings_hub.refresh_cloud_sync_status()
+            except Exception:
+                pass
+        if main_window is not None:
+            try:
+                main_window._refresh_background_activity_badge()
+            except Exception:
+                pass
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -3181,12 +3252,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.set_hint(self.tr("Not logged in"), tone="warning")
 
     def _refresh_cloud_status(self) -> None:
-        try:
-            from utils.cloud_sync import SporelyCloudClient
-
-            self._cloud_client = SporelyCloudClient.from_stored_credentials()
-        except Exception:
-            self._cloud_client = None
+        if getattr(self, "_cloud_client", None) is not None:
+            return
+        self._cloud_client = None
 
     def _update_cloud_account_summary_labels(self) -> None:
         if not hasattr(self, "cloud_status_label"):
@@ -3438,14 +3506,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     settings_hub._on_cloud_login_changed(client, str(email or "").strip())
                 except Exception:
                     pass
-            main_window = settings_hub.parent() if settings_hub is not None and hasattr(settings_hub, "parent") else None
-            if main_window is None:
-                main_window = self.parent()
-            if main_window is not None and hasattr(main_window, "observations_tab"):
-                try:
-                    main_window.observations_tab._start_cloud_sync(show_status=True, run_refresh_flow=True)
-                except Exception:
-                    pass
+            self._refresh_cloud_sync_ui()
         except Exception as exc:
             QMessageBox.warning(
                 self,
@@ -3468,12 +3529,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             )
         except Exception:
             pass
-        settings_hub = getattr(self, "_active_settings_hub_dialog", None)
-        if settings_hub is not None and hasattr(settings_hub, "refresh_cloud_sync_status"):
-            try:
-                settings_hub.refresh_cloud_sync_status()
-            except Exception:
-                pass
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is not None:
             reset_progress = getattr(observations_tab, "_reset_status_progress", None)
@@ -3500,7 +3555,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     updater()
                 except Exception:
                     pass
-        self._refresh_background_activity_badge()
+        self._refresh_cloud_sync_ui()
         QMessageBox.warning(
             self,
             self.tr("Login Failed"),
@@ -5488,18 +5543,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             (settings.get("cloud_access_token") and settings.get("cloud_user_id"))
             or settings.get("cloud_refresh_token")
             or settings.get("cloud_user_email")
+            or settings.get("linked_cloud_user_id")
         )
         if cloud_client is not None and not has_stored_cloud_credentials:
             cloud_client = None
             self._cloud_client = None
-        if cloud_client is None:
-            try:
-                from utils.cloud_sync import SporelyCloudClient
-
-                cloud_client = SporelyCloudClient.from_stored_credentials()
-            except Exception:
-                cloud_client = None
-            self._cloud_client = cloud_client
         cloud_email = str(settings.get("cloud_user_email") or "").strip()
         cloud_user_id = str(
             getattr(cloud_client, "user_id", "")
@@ -5507,7 +5555,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             or settings.get("linked_cloud_user_id")
             or ""
         ).strip()
-        if cloud_client is not None:
+        if cloud_client is not None or has_stored_cloud_credentials:
             self._avatar_corner_btn.setVisible(True)
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
             profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
@@ -5536,13 +5584,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._avatar_corner_btn.setIcon(QIcon(pixmap))
             self._avatar_corner_btn.setIconSize(QSize(26, 26))
 
-            try:
-                # Ensure uid is correctly linked during cloud login
-                uid = cloud_user_id
-                if uid:
-                    self._fetch_and_set_cloud_avatar(uid)
-            except Exception:
-                pass
+            if cloud_user_id:
+                try:
+                    # Fetch the avatar asynchronously when we know which user is signed in.
+                    self._fetch_and_set_cloud_avatar(cloud_user_id)
+                except Exception:
+                    pass
         else:
             self._avatar_corner_btn.setVisible(True)
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud: Not logged in"))
@@ -6061,13 +6108,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         import time
 
         token = ""
-        try:
-            from utils.cloud_sync import SporelyCloudClient
-            client = SporelyCloudClient.from_stored_credentials()
-            if client and hasattr(client, "access_token"):
-                token = client.access_token
-        except Exception:
-            pass
+        cached_client = getattr(self, "_cloud_client", None)
+        if cached_client is not None and hasattr(cached_client, "access_token"):
+            token = str(getattr(cached_client, "access_token", "") or "").strip()
+        if not token:
+            token = str(get_app_settings().get("cloud_access_token") or "").strip()
 
         # Use authenticated endpoint if we have a token, to bypass 400 errors on misconfigured public buckets
         if token:
@@ -6076,6 +6121,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             url = f"https://zkpjklzfwzefhjluvhfw.supabase.co/storage/v1/object/public/avatars/{user_id}/avatar.jpg?t={int(time.time() / 3600)}"
 
         req = QNetworkRequest(QUrl(url))
+        req.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
         req.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
         req.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
         if token:
@@ -6136,6 +6182,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         
         # Use Atom feed instead of API - no rate limits!
         req = QNetworkRequest(QUrl("https://github.com/sigmundas/mycolog/releases.atom"))
+        req.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
         req.setHeader(QNetworkRequest.UserAgentHeader, f"{APP_NAME}/{self.app_version}")
         
         reply = self._update_network.get(req)

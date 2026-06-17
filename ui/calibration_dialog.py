@@ -5599,11 +5599,27 @@ class CalibrationDialog(GeometryMixin, QDialog):
             notes = cal.get("notes", "") or ""
             self.history_table.setItem(row_idx, 13, QTableWidgetItem(notes))
 
-    def _load_cloud_synced_calibration_uuids(self) -> set[str]:
+    def _cached_cloud_client(self):
+        parent = self.parent()
+        if parent is not None:
+            client = getattr(parent, "_cloud_client", None)
+            if client is not None:
+                return client
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
         try:
-            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+            window = self.window()
         except Exception:
-            client = None
+            window = None
+        if window is not None:
+            client = getattr(window, "_cloud_client", None)
+            if client is not None:
+                return client
+        return None
+
+    def _load_cloud_synced_calibration_uuids(self) -> set[str]:
+        client = self._cached_cloud_client()
         if client is None:
             return set()
 
