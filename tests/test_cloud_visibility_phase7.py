@@ -1130,6 +1130,95 @@ def test_push_all_keeps_optional_original_upload_failure_out_of_top_level_errors
     assert len(client.upload_original_calls) == 1
 
 
+def test_push_all_announces_cloud_media_check_before_skip_message(tmp_path, monkeypatch):
+    db_path = _init_push_all_sync_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, cloud_id, sync_status, synced_at, sync_error_code,
+                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "cloud-obs-1",
+                "dirty",
+                "2026-05-01T00:00:00Z",
+                None,
+                None,
+                None,
+                None,
+                "user-1",
+                "2026-05-02",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    remote_current = {
+        "id": "cloud-obs-1",
+        "desktop_id": 1,
+        "date": "2026-05-02",
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "Agaricus campestris",
+        "notes": "baseline note",
+        "sharing_scope": "public",
+        "location_public": True,
+        "location_precision": "exact",
+        "spore_data_visibility": "public",
+        "is_draft": False,
+    }
+    stored_snapshot = cloud_sync._cloud_observation_snapshot(remote_current, [], [])
+    progress_messages: list[str] = []
+
+    class DummyClient:
+        def push_observation(self, obs):
+            return "cloud-obs-1"
+
+        def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
+            return []
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            return []
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda local_id: "sig")
+    monkeypatch.setattr(cloud_sync, "_local_cloud_media_signature", lambda local_id: "sig")
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: "sig")
+    monkeypatch.setattr(cloud_sync, "_store_local_cloud_media_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+
+    result = cloud_sync.push_all(
+        DummyClient(),
+        progress_cb=lambda text, current, total: progress_messages.append(text),
+        remote_obs=[dict(remote_current)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    check_index = next(
+        i for i, message in enumerate(progress_messages)
+        if message.startswith("Checking cloud media for observation 1/1:")
+    )
+    skip_index = next(
+        i for i, message in enumerate(progress_messages)
+        if message.startswith("Skipping unchanged cloud media for observation 1/1:")
+    )
+
+    assert result["pushed"] == 1
+    assert check_index < skip_index
+
+
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):
     local_obs = {
         "id": 1,

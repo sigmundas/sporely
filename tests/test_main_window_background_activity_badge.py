@@ -173,6 +173,70 @@ def test_background_activity_badge_shows_sync_pending_when_idle(monkeypatch, qap
     window.deleteLater()
 
 
+def test_background_activity_badge_shows_sync_blocked_when_login_failed(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    badge = _DummyBadge()
+    window._background_activity_badge = badge
+    window._cloud_client = None
+    monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", lambda self: [390, 389, 385])
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", lambda self: [])
+    monkeypatch.setattr(
+        main_window,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Cloud sync sign-in failed. Please check your email and password.",
+            ]),
+        },
+    )
+
+    opened: list[str] = []
+    monkeypatch.setattr(window, "_show_cloud_sync_details_dialog", lambda: opened.append("open"))
+
+    window._refresh_background_activity_badge()
+    badge.mousePressEvent(None)
+
+    assert badge.visible is True
+    assert badge.text == window.tr("Sync blocked")
+    assert "Cloud sync sign-in failed. Please check your email and password." in badge.tooltip
+    assert "Cloud sync pending" not in badge.tooltip
+    assert "Sign in again, then click Sync now to retry uploads." in badge.tooltip
+    assert badge.cursor_shape == Qt.PointingHandCursor
+    assert opened == ["open"]
+    window.deleteLater()
+
+
+def test_background_activity_badge_prefers_blocked_over_pending_when_login_failed(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    badge = _DummyBadge()
+    window._background_activity_badge = badge
+    window._cloud_client = None
+    monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", lambda self: [390, 389, 385])
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", lambda self: [401])
+    monkeypatch.setattr(
+        main_window,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Cloud sync sign-in failed. Please check your email and password.",
+            ]),
+        },
+    )
+
+    window._refresh_background_activity_badge()
+
+    assert badge.visible is True
+    assert badge.text == window.tr("Sync blocked")
+    assert "Cloud sync sign-in failed. Please check your email and password." in badge.tooltip
+    window.deleteLater()
+
+
 def test_background_activity_badge_shows_sync_blocked_when_only_blocked(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     badge = _DummyBadge()

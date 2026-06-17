@@ -2137,6 +2137,31 @@ def is_webp_support_required_for_cloud_media_upload_error(error) -> bool:
     return WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in str(error or '').lower()
 
 
+_CLOUD_AUTH_ERROR_HINTS = (
+    'jwt expired',
+    'invalid jwt',
+    'expired access token',
+    'access token expired',
+    'token expired',
+    'session expired',
+    'authentication failed',
+    'invalid_grant',
+    'not logged in',
+    'unauthorized',
+    'pgrst301',
+    'pgrst303',
+)
+
+
+def is_cloud_auth_error(error) -> bool:
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    code_text = str(code or '').strip().lower()
+    if code_text in {'401', '403'}:
+        return True
+    return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
+
+
 def _normalize_cloud_user_id(value: str | None) -> str:
     return str(value or '').strip()
 
@@ -2878,17 +2903,19 @@ def _is_generated_cloud_image(image_row: dict | None) -> bool:
 
 
 def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
-    return not _is_generated_cloud_image(image_row)
+    row = dict(image_row or {})
+    if _is_generated_cloud_image(row):
+        return False
+    source_role = str(row.get('source_role') or '').strip().lower()
+    file_purpose = str(row.get('file_purpose') or '').strip().lower()
+    if source_role == 'cloud_recovery_cache' or file_purpose == 'cache':
+        return False
+    return True
 
 
 def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
     row = dict(image_row or {})
-    if _is_generated_cloud_image(row):
-        return False
-    image_type = str(row.get('image_type') or '').strip().lower()
-    if image_type == 'microscope':
-        return False
-    return True
+    return not _is_generated_cloud_image(row)
 
 
 def _cloud_observation_snapshot(
@@ -3725,8 +3752,12 @@ def push_calibrations(
                 if warning:
                     errors.append(warning)
         except CloudSyncError as exc:
+            if is_cloud_auth_error(exc):
+                raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         except Exception as exc:
+            if is_cloud_auth_error(exc):
+                raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
             _advance_progress(progress_state, 1)
@@ -3792,8 +3823,12 @@ def pull_calibrations(
             except Exception as exc:
                 errors.append(f'calibration {calibration_uuid}: {exc}')
         except CloudSyncError as exc:
+            if is_cloud_auth_error(exc):
+                raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         except Exception as exc:
+            if is_cloud_auth_error(exc):
+                raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
             _advance_progress(progress_state, 1)
@@ -4320,6 +4355,60 @@ def _mark_cloud_observations_dirty_for_media_changes() -> None:
     # Persist the new signature so future comparisons are stable, but don't mark
     # every linked observation dirty just because a global render preference changed.
     SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
+
+
+def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
+    """Mark synced observations dirty when they still have cloud-eligible local images.
+
+    This catches older observations that were left in a synced state after a
+    previous sync skipped microscope images or otherwise failed to assign a
+    cloud_id to newly added local media.
+    """
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        rows = cursor.execute(
+            """
+            SELECT DISTINCT o.id AS observation_id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            WHERE o.cloud_id IS NOT NULL
+              AND i.cloud_id IS NULL
+              AND i.image_type IN ('field', 'microscope')
+            ORDER BY o.id
+            """
+        ).fetchall()
+        dirty_ids: list[int] = []
+        for row in rows or []:
+            obs_id = _safe_int(dict(row or {}).get("observation_id"))
+            if obs_id <= 0:
+                continue
+            image_rows = cursor.execute(
+                """
+                SELECT id, image_type, notes, source_role, file_purpose
+                FROM images
+                WHERE observation_id = ?
+                  AND cloud_id IS NULL
+                  AND image_type IN ('field', 'microscope')
+                ORDER BY
+                    CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                    sort_order,
+                    id
+                """,
+                (obs_id,),
+            ).fetchall()
+            if any(should_push_local_image_to_cloud(dict(image_row or {})) for image_row in image_rows):
+                dirty_ids.append(obs_id)
+        if not dirty_ids:
+            return
+        for obs_id in dirty_ids:
+            mark_observation_sync_dirty(cursor, obs_id)
+        conn.commit()
+    except Exception as exc:
+        print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
+    finally:
+        conn.close()
 
 
 def _has_pending_local_push_work() -> bool:
@@ -6083,6 +6172,46 @@ class SporelyCloudClient:
             return False
         return type(self)._get_r2 is SporelyCloudClient._get_r2
 
+    def _response_indicates_auth_error(self, response: requests.Response) -> bool:
+        try:
+            status_code = int(getattr(response, 'status_code', 0) or 0)
+        except Exception:
+            status_code = 0
+        if status_code in {401, 403}:
+            return True
+        try:
+            return is_cloud_auth_error(getattr(response, 'text', ''))
+        except Exception:
+            return False
+
+    def _refresh_session_if_possible(self) -> bool:
+        refresh_token = str(self.refresh_token or '').strip()
+        if not refresh_token:
+            return False
+        try:
+            refreshed = type(self).refresh_login(refresh_token)
+        except CloudSyncError:
+            return False
+        self.access_token = refreshed.access_token
+        self.user_id = refreshed.user_id
+        self.refresh_token = refreshed.refresh_token
+        self._s.headers.update({
+            'Authorization': f'Bearer {self.access_token}',
+        })
+        self._media_worker = None
+        try:
+            self.save_credentials()
+        except Exception:
+            pass
+        return True
+
+    def _request_with_refresh(self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs):
+        response = self._s.request(method, url, **kwargs)
+        if refresh_on_auth_error and not response.ok and self._response_indicates_auth_error(response):
+            if self._refresh_session_if_possible():
+                response = self._s.request(method, url, **kwargs)
+        return response
+
     def _has_column(self, table_name: str, column_name: str) -> bool:
         cache_key = (str(table_name or '').strip(), str(column_name or '').strip())
         if not all(cache_key):
@@ -6232,7 +6361,7 @@ class SporelyCloudClient:
 
     def fetch_current_user_info(self) -> dict:
         """Return the authenticated Supabase user record."""
-        resp = self._s.get(f'{SUPABASE_URL}/auth/v1/user', timeout=15)
+        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/auth/v1/user', timeout=15)
         if resp.ok:
             try:
                 data = resp.json()
@@ -6243,11 +6372,12 @@ class SporelyCloudClient:
                 if user_id != self.user_id:
                     self.user_id = user_id
                 return data if isinstance(data, dict) else {'id': user_id}
-        token_user_id = _decode_jwt_subject(self.access_token)
-        if token_user_id:
-            if token_user_id != self.user_id:
-                self.user_id = token_user_id
-            return {'id': token_user_id}
+        if not self._response_indicates_auth_error(resp):
+            token_user_id = _decode_jwt_subject(self.access_token)
+            if token_user_id:
+                if token_user_id != self.user_id:
+                    self.user_id = token_user_id
+                return {'id': token_user_id}
         raise CloudSyncError(f'Could not fetch current cloud user: {resp.text if resp is not None else ""}')
 
     def fetch_profile(self) -> dict:
@@ -6299,9 +6429,9 @@ class SporelyCloudClient:
             'Content-Type': 'image/jpeg',
             'x-upsert': 'true',
         }
-        resp = self._s.post(url, data=content, headers=headers, timeout=30)
+        resp = self._request_with_refresh('POST', url, data=content, headers=headers, timeout=30)
         if not resp.ok:
-            resp = self._s.put(url, data=content, headers=headers, timeout=30)
+            resp = self._request_with_refresh('PUT', url, data=content, headers=headers, timeout=30)
         if not resp.ok:
             raise CloudSyncError(f'Avatar upload failed: {resp.text}')
         public_url = f'{SUPABASE_URL}/storage/v1/object/public/avatars/{path}'
@@ -6342,13 +6472,14 @@ class SporelyCloudClient:
     # ── REST helpers ─────────────────────────────────────────────────────
 
     def _get(self, path: str) -> list:
-        resp = self._s.get(f'{SUPABASE_URL}/rest/v1/{path}', timeout=20)
+        resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/rest/v1/{path}', timeout=20)
         if not resp.ok:
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
 
     def _post(self, path: str, payload: dict) -> list:
-        resp = self._s.post(
+        resp = self._request_with_refresh(
+            'POST',
             f'{SUPABASE_URL}/rest/v1/{path}',
             json=payload,
             headers={'Prefer': 'return=representation'},
@@ -6362,7 +6493,8 @@ class SporelyCloudClient:
         rpc_name = str(function_name or '').strip()
         if not rpc_name:
             raise CloudSyncError('Missing RPC function name')
-        resp = self._s.post(
+        resp = self._request_with_refresh(
+            'POST',
             f'{SUPABASE_URL}/rest/v1/rpc/{rpc_name}',
             json=dict(payload or {}),
             timeout=20,
@@ -6374,7 +6506,8 @@ class SporelyCloudClient:
         return resp.json()
 
     def _patch(self, path: str, payload: dict) -> None:
-        resp = self._s.patch(
+        resp = self._request_with_refresh(
+            'PATCH',
             f'{SUPABASE_URL}/rest/v1/{path}',
             json=payload,
             headers={'Prefer': 'return=minimal'},
@@ -6384,7 +6517,8 @@ class SporelyCloudClient:
             raise CloudSyncError(f'PATCH {path}: {resp.text}')
 
     def _delete(self, path: str) -> None:
-        resp = self._s.delete(
+        resp = self._request_with_refresh(
+            'DELETE',
             f'{SUPABASE_URL}/rest/v1/{path}',
             headers={'Prefer': 'return=minimal'},
             timeout=20,
@@ -7902,6 +8036,8 @@ def push_all(
     cursor = conn.cursor()
 
     _mark_cloud_observations_dirty_for_media_changes()
+    if sync_images:
+        _mark_cloud_observations_dirty_for_pending_local_images()
 
     calibration_result = {'pushed': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
@@ -7952,6 +8088,12 @@ def push_all(
                 continue
             push_payload = dict(obs)
             if cloud_id and stored_snapshot and remote:
+                if sync_images:
+                    _emit_progress(
+                        progress_cb,
+                        f"Checking cloud media for observation {i + 1}/{max(1, total)}: {name}…",
+                        progress_state,
+                    )
                 remote_images = client.pull_image_metadata(cloud_id) or []
                 remote_measurements = _pull_remote_measurements_for_images(
                     client,
@@ -8036,6 +8178,8 @@ def push_all(
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
                         except Exception as e:
+                            if is_cloud_auth_error(e):
+                                raise
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 else:
                     original_upload_warnings: list[str] = []
@@ -8055,6 +8199,8 @@ def push_all(
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
                         except Exception as e:
+                            if is_cloud_auth_error(e):
+                                raise
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 if local_obs_id > 0:
                     if images_synced:
@@ -8068,6 +8214,8 @@ def push_all(
 
             pushed += 1
         except CloudSyncError as e:
+            if is_cloud_auth_error(e):
+                raise
             raw_error = f"obs {obs['id']}: {e}"
             if is_privacy_slot_limit_error(raw_error):
                 _set_observation_privacy_blocked(int(obs['id']), raw_error)
@@ -8240,6 +8388,8 @@ def _push_images_for_observation(
     try:
         existing_rows = client.pull_image_metadata(obs_cloud_id) or []
     except Exception as e:
+        if is_cloud_auth_error(e):
+            raise
         print(f'[cloud_sync] Could not fetch existing cloud images for observation {obs["id"]}: {e}')
         existing_rows = []
     existing_by_id = {
@@ -8498,6 +8648,8 @@ def _push_images_for_observation(
                                             f'was {source_kind}'
                                         )
             except CloudSyncError as e:
+                if is_cloud_auth_error(e):
+                    raise
                 if is_image_too_large_for_plan_error(e):
                     raise
                 had_failures = True
@@ -8525,12 +8677,16 @@ def _push_images_for_observation(
                 try:
                     client._storage_remove([stale_storage_path])
                 except Exception as e:
+                    if is_cloud_auth_error(e):
+                        raise
                     print(
                         f'[cloud_sync] Could not remove old cloud storage file for observation {obs["id"]}: {e}'
                     )
             try:
                 client._delete(f'observation_images?id=eq.{stale_cloud_id}')
             except Exception as e:
+                if is_cloud_auth_error(e):
+                    raise
                 print(f'[cloud_sync] Could not remove old cloud image row for observation {obs["id"]}: {e}')
             stale_desktop_id = _safe_int(stale_row.get('desktop_id'))
             if stale_desktop_id > 0:
@@ -8628,6 +8784,8 @@ def _push_measurements_for_observation(
                 finally:
                     conn.close()
         except Exception as e:
+            if is_cloud_auth_error(e):
+                raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
 
 
@@ -9014,6 +9172,8 @@ def pull_all(
                         remote_measurements=remote_measurements,
                     )
         except Exception as e:
+            if is_cloud_auth_error(e):
+                raise
             errors.append(f"cloud {remote.get('id')}: {e}")
         finally:
             _advance_progress(progress_state, 1)
@@ -9264,6 +9424,8 @@ def _import_remote_images(
                     _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
 
             except Exception as e:
+                if is_cloud_auth_error(e):
+                    raise
                 print(f'[cloud_sync] Failed image import: {e}')
             finally:
                 _advance_progress(progress_state, 1)

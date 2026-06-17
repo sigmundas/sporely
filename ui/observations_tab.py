@@ -114,8 +114,10 @@ from utils.cloud_sync import (
     build_cloud_ai_state_from_observation_identifications,
     format_original_upload_summary,
     fetch_cloud_usage_summary,
+    is_cloud_auth_error,
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
+    load_saved_cloud_password,
     sanitize_image_too_large_for_plan_error_message,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
@@ -149,6 +151,7 @@ from .dialog_helpers import (
 )
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
+from .delegates import StatusTagDelegate
 from .styles import (
     RED_LIST_BADGE_COLORS,
     pt,
@@ -206,6 +209,67 @@ def normalize_sharing_scope(value: str | None, fallback: str = SHARING_SCOPE_PUB
 
 def sharing_scope_location_public(value: str | None) -> bool:
     return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
+
+
+_OBSERVATION_STATUS_LABELS = {
+    "draft": "Draft",
+    "private": "Private",
+    "friends": "Friends",
+    "public": "Public",
+}
+
+_OBSERVATION_STATUS_SORT_ORDER = {
+    "draft": 1,
+    "private": 2,
+    "friends": 3,
+    "public": 4,
+}
+
+
+def _coerce_observation_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "f", "no", "n", "off", ""}:
+        return False
+    return bool(text)
+
+
+def _observation_status_info(obs: dict | None) -> tuple[str, str, int]:
+    if not isinstance(obs, dict):
+        return "", "", 0
+
+    raw_is_draft = obs.get("is_draft")
+    if raw_is_draft is not None and _coerce_observation_bool(raw_is_draft):
+        return (
+            _OBSERVATION_STATUS_LABELS["draft"],
+            "draft",
+            _OBSERVATION_STATUS_SORT_ORDER["draft"],
+        )
+
+    scope_value = obs.get("sharing_scope")
+    if scope_value is None or not str(scope_value).strip():
+        scope_value = obs.get("visibility")
+    scope = str(scope_value or "").strip().lower()
+    if not scope:
+        return "", "", 0
+    if scope == "draft":
+        return (
+            _OBSERVATION_STATUS_LABELS["draft"],
+            "draft",
+            _OBSERVATION_STATUS_SORT_ORDER["draft"],
+        )
+    if scope in _OBSERVATION_STATUS_LABELS:
+        return (
+            _OBSERVATION_STATUS_LABELS[scope],
+            scope,
+            _OBSERVATION_STATUS_SORT_ORDER[scope],
+        )
+    return "", "", 0
 
 
 def normalize_location_precision(value: str | None, fallback: str = LOCATION_PRECISION_EXACT) -> str:
@@ -294,7 +358,17 @@ class _CloudAutoSyncWorker(QThread):
         try:
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
-                self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
+                settings = get_app_settings()
+                saved_email, saved_password, _ = load_saved_cloud_password()
+                has_saved_credentials = bool(
+                    settings.get("cloud_access_token")
+                    or settings.get("cloud_refresh_token")
+                    or (saved_email and saved_password)
+                )
+                if has_saved_credentials:
+                    self.error.emit("Cloud sync sign-in failed. Please check your email and password.")
+                else:
+                    self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
                 return
             result = sync_all(
                 client,
@@ -1518,7 +1592,7 @@ class ObservationsTab(QWidget):
         # Observations table
         self.table = QTableWidget()
         self.table.setFocusPolicy(Qt.NoFocus)
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
             self._observation_first_column_title(),
             self._common_name_column_title(),
@@ -1527,6 +1601,7 @@ class ObservationsTab(QWidget):
             self._spore_stats_column_title(),
             self.tr("Date"),
             self.tr("Location"),
+            self.tr("Status"),
             self.tr("Map"),
             self.tr("Publish")
         ])
@@ -1542,6 +1617,7 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
         self.table.setColumnWidth(1, 115)  # Name
@@ -1550,8 +1626,10 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(4, 290)  # Spores
         self.table.setColumnWidth(5, 132)  # Date
         self.table.setColumnWidth(6, 170)  # Location
-        self.table.setColumnWidth(7, 56)   # Map
-        self.table.setColumnWidth(8, 140)  # Publish
+        self.table.setColumnWidth(7, 86)   # Status
+        self.table.setColumnWidth(8, 56)   # Map
+        self.table.setColumnWidth(9, 140)  # Publish
+        self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -1833,6 +1911,7 @@ class ObservationsTab(QWidget):
             lat = obs.get("gps_latitude")
             lon = obs.get("gps_longitude")
             has_coords = lat is not None and lon is not None
+            status_text, status_kind, status_sort = _observation_status_info(obs)
 
             row = {
                 "row_kind": "cloud",
@@ -1845,6 +1924,12 @@ class ObservationsTab(QWidget):
                 "spore_short": "",
                 "date": obs.get("date") or obs.get("created_at") or "-",
                 "location": obs.get("location") or "-",
+                "status_text": status_text,
+                "status_kind": status_kind,
+                "status_sort": status_sort,
+                "is_draft": obs.get("is_draft"),
+                "sharing_scope": obs.get("sharing_scope") or obs.get("visibility"),
+                "visibility": obs.get("visibility"),
                 "lat": lat,
                 "lon": lon,
                 "has_coords": bool(has_coords),
@@ -1855,6 +1940,8 @@ class ObservationsTab(QWidget):
                 "raw": obs,
             }
             search_parts = [str(v) for v in obs.values() if v is not None]
+            if status_text:
+                search_parts.append(status_text)
             search_parts.extend([common_name, row["genus"], species_display, row["location"]])
             row["search_text"] = " ".join(search_parts).lower()
             rows.append(row)
@@ -2138,6 +2225,18 @@ class ObservationsTab(QWidget):
     def _refresh_cloud_sync_idle_hint(self) -> None:
         if not hasattr(self, "_status_hint_controller") or self._status_hint_controller is None:
             return
+        settings = get_app_settings()
+        last_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
+        last_summary = str(settings.get("cloud_last_sync_summary") or "").strip()
+        error_messages: list[str] = []
+        raw_errors = str(settings.get("cloud_last_sync_errors_json") or "").strip()
+        if raw_errors:
+            try:
+                loaded = json.loads(raw_errors)
+                if isinstance(loaded, list):
+                    error_messages = [str(item or "").strip() for item in loaded if str(item or "").strip()]
+            except Exception:
+                error_messages = [raw_errors]
         main_window = self.window() if hasattr(self, "window") else None
         pending_ids: list[int] = []
         blocked_ids: list[int] = []
@@ -2166,7 +2265,16 @@ class ObservationsTab(QWidget):
             noun = self.tr("observation ID") if len(ids) == 1 else self.tr("observation IDs")
             return f"{noun} {ids_text}" if ids_text else noun
 
-        if blocked_ids and pending_ids:
+        if last_status in {"error", "blocked"} and not blocked_ids:
+            failure = last_summary or (error_messages[0] if error_messages else self.tr("Cloud sync failed."))
+            action = (
+                self.tr("Click Sync now to retry uploads.")
+                if logged_in
+                else self.tr("Sign in again, then click Sync now to retry uploads.")
+            )
+            message = f"{failure}\n{action}" if action else failure
+            tone = "warning"
+        elif blocked_ids and pending_ids:
             message = self.tr(
                 "Cloud sync blocked for {blocked_ids}.\n"
                 "Cloud sync pending for {pending_ids}.\n"
@@ -2462,6 +2570,18 @@ class ObservationsTab(QWidget):
 
     def _summarize_sync_error(self, message: str) -> str:
         text = str(message or "").strip()
+        lower = text.lower()
+        if (
+            "sign-in failed" in lower
+            or "sign in failed" in lower
+            or "login failed" in lower
+            or "invalid credentials" in lower
+            or "invalid_grant" in lower
+            or is_cloud_auth_error(text)
+            or "authentication failed" in lower
+            or "no valid cloud credentials" in lower
+        ):
+            return self.tr("Cloud sync sign-in failed. Please check your email and password.")
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return self.tr("Cloud sync blocked: this database is linked to another account.")
         if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
@@ -2659,6 +2779,9 @@ class ObservationsTab(QWidget):
                 blocked_messages.append(message)
         deleted_count = len(deleted_remote)
         if result.get("skipped"):
+            if self._cloud_sync_show_status:
+                self._set_status_progress_visible(False)
+                self._reset_status_progress()
             return
         if errors:
             print(
@@ -3008,13 +3131,13 @@ class ObservationsTab(QWidget):
         artportalen_id: int | None,
         inaturalist_id: int | None = None,
     ) -> None:
-        self.table.removeCellWidget(row, 8)
+        self.table.removeCellWidget(row, 9)
         has_any_id = bool(arts_id or artportalen_id or inaturalist_id)
         has_dead_artsobs = bool(self._artsobs_dead_by_observation_id.get(observation_id))
         arts_item = SortableTableWidgetItem("" if has_any_id else "-")
         arts_item.setData(Qt.UserRole, int(arts_id or 0))
         arts_item.setFlags(arts_item.flags() & ~Qt.ItemIsEditable)
-        self.table.setItem(row, 8, arts_item)
+        self.table.setItem(row, 9, arts_item)
         if not has_any_id and not has_dead_artsobs:
             return
 
@@ -3064,7 +3187,7 @@ class ObservationsTab(QWidget):
         )
         self._status_hint_controller.register_widget(arts_label, link_tooltip)
         arts_label.setToolTip(link_tooltip)
-        self.table.setCellWidget(row, 8, arts_label)
+        self.table.setCellWidget(row, 9, arts_label)
 
     def _start_artsobs_link_check(self) -> None:
         try:
@@ -3115,7 +3238,7 @@ class ObservationsTab(QWidget):
         row = self._find_table_row_for_observation(observation_id)
         if row < 0:
             return
-        arts_item = self.table.item(row, 8)
+        arts_item = self.table.item(row, 9)
         if not arts_item:
             return
         value = arts_item.data(Qt.UserRole)
@@ -3416,7 +3539,7 @@ class ObservationsTab(QWidget):
             return False
         for index in selection_model.selectedRows():
             observation_id = self._observation_id_for_row(index.row())
-            arts_item = self.table.item(index.row(), 8)
+            arts_item = self.table.item(index.row(), 9)
             if not arts_item:
                 continue
             value = arts_item.data(Qt.UserRole)
@@ -3931,6 +4054,7 @@ class ObservationsTab(QWidget):
             spore_short = self._spore_stats_for_observation_row(obs) or "-"
             date_text = obs.get("date") or "-"
             location_text = obs.get("location") or "-"
+            status_text, status_kind, status_sort = _observation_status_info(obs)
             lat = obs.get("gps_latitude")
             lon = obs.get("gps_longitude")
             has_coords = lat is not None and lon is not None
@@ -3945,6 +4069,8 @@ class ObservationsTab(QWidget):
                 search_parts.append(common_name_display)
             if spore_short and spore_short != "-":
                 search_parts.append(spore_short)
+            if status_text:
+                search_parts.append(status_text)
             search_text = " ".join(search_parts).lower()
 
             rows.append(
@@ -3959,6 +4085,12 @@ class ObservationsTab(QWidget):
                     "spore_short": spore_short,
                     "date": date_text,
                     "location": location_text,
+                    "status_text": status_text,
+                    "status_kind": status_kind,
+                    "status_sort": status_sort,
+                    "is_draft": obs.get("is_draft"),
+                    "sharing_scope": obs.get("sharing_scope"),
+                    "visibility": obs.get("visibility"),
                     "lat": lat,
                     "lon": lon,
                     "has_coords": bool(has_coords),
@@ -4171,12 +4303,24 @@ class ObservationsTab(QWidget):
                 table.setItem(row_index, 5, QTableWidgetItem(str(row_data.get("date") or "-")))
                 table.setItem(row_index, 6, QTableWidgetItem(str(row_data.get("location") or "-")))
 
-                has_coords = bool(row_data.get("has_coords"))
                 table.removeCellWidget(row_index, 7)
+                status_text = str(row_data.get("status_text") or "")
+                status_kind = str(row_data.get("status_kind") or "")
+                status_sort = row_data.get("status_sort")
+                status_item = SortableTableWidgetItem(status_text)
+                status_item.setData(Qt.UserRole, int(status_sort or 0))
+                status_item.setData(Qt.UserRole + 1, status_text)
+                status_item.setData(Qt.UserRole + 2, status_kind)
+                status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+                status_item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row_index, 7, status_item)
+
+                has_coords = bool(row_data.get("has_coords"))
                 map_item = SortableTableWidgetItem("" if has_coords else "-")
                 map_item.setData(Qt.UserRole, 1 if has_coords else 0)
                 map_item.setFlags(map_item.flags() & ~Qt.ItemIsEditable)
-                table.setItem(row_index, 7, map_item)
+                table.removeCellWidget(row_index, 8)
+                table.setItem(row_index, 8, map_item)
                 if has_coords:
                     lat = row_data.get("lat")
                     lon = row_data.get("lon")
@@ -4192,9 +4336,9 @@ class ObservationsTab(QWidget):
                     _map_hint = self.tr("Open map service")
                     self._status_hint_controller.register_widget(map_label, _map_hint)
                     map_label.setToolTip(_map_hint)
-                    table.setCellWidget(row_index, 7, map_label)
+                    table.setCellWidget(row_index, 8, map_label)
 
-                table.removeCellWidget(row_index, 8)
+                table.removeCellWidget(row_index, 9)
                 if isinstance(local_obs_id, int):
                     self._render_publish_cell(
                         row_index,
@@ -4207,7 +4351,7 @@ class ObservationsTab(QWidget):
                 else:
                     publish_item = SortableTableWidgetItem("-")
                     publish_item.setFlags(publish_item.flags() & ~Qt.ItemIsEditable)
-                    table.setItem(row_index, 8, publish_item)
+                    table.setItem(row_index, 9, publish_item)
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
@@ -5502,6 +5646,32 @@ class ObservationsTab(QWidget):
             ordered.append(image)
         return ordered
 
+    def _collect_cloud_sync_image_rows(self, observation_id: int) -> list[dict]:
+        """Return canonical local images that should be mirrored to Sporely Cloud.
+
+        Cloud sync intentionally ignores the Artsobservasjoner publish-selection state;
+        it mirrors the local field/microscope images that are part of the observation.
+        """
+
+        images = ImageDB.get_images_for_observation(observation_id)
+        ordered: list[dict] = []
+        seen_paths: set[str] = set()
+        for image in images:
+            image_type = (image.get("image_type") or "").strip().lower()
+            if image_type not in {"field", "microscope"}:
+                continue
+            if not should_push_local_image_to_cloud(image):
+                continue
+            filepath = image.get("filepath") or image.get("original_filepath")
+            if not filepath or not Path(filepath).exists():
+                continue
+            path_key = self._publish_path_key(filepath)
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+            ordered.append(image)
+        return ordered
+
     @staticmethod
     def _scale_pixmap_to_max_pixels(pixmap: QPixmap, max_pixels: int) -> QPixmap:
         if not pixmap or pixmap.isNull():
@@ -5573,8 +5743,7 @@ class ObservationsTab(QWidget):
 
         selected_images = [
             dict(image_row or {})
-            for image_row in self._collect_publish_selected_image_rows(int(observation_id))
-            if should_push_local_image_to_cloud(image_row)
+            for image_row in self._collect_cloud_sync_image_rows(int(observation_id))
         ]
         if not selected_images:
             return [], None, []
@@ -5746,8 +5915,7 @@ class ObservationsTab(QWidget):
 
         selected_images = [
             dict(image_row or {})
-            for image_row in self._collect_publish_selected_image_rows(int(observation_id))
-            if should_push_local_image_to_cloud(image_row)
+            for image_row in self._collect_cloud_sync_image_rows(int(observation_id))
         ]
         if not selected_images:
             return [], None, []

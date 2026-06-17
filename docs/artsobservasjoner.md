@@ -48,11 +48,12 @@ The local database is linked to the first Sporely Cloud account it syncs with. L
 The Profile & Cloud page also edits the shared Sporely profile (`username`, display name, bio, and avatar). When signed in, the local profile email follows the Sporely Cloud account email.
 
 Cloud sync does not use the online-publishing overlay options. On desktop:
-- only checked observation-gallery images are uploaded
+- canonical local field and microscope images are uploaded
+- publish-overlay exclusions do not block cloud sync
 - synced images can be sent either at full size or, under the public 20 MP tier, resized only when the source image exceeds `21 MP` or `5300 px` on the longest edge
 - images and thumbnails uploaded to Sporely Cloud stay clean: no watermark, scale bar, measure overlay, plot, plate, or gallery mosaic is added
 
-If you change publish-image selection, image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
+If you change image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
 
 After the first clean cloud media sync for an observation, later startup syncs try a lightweight local signature check first. If the selected images, measurements, and relevant publish settings have not changed, Sporely skips gallery/plot/media preparation and does not re-upload unchanged cloud media.
 

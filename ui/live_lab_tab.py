@@ -2321,6 +2321,20 @@ class LiveLabTab(QWidget):
                 return index
         return None
 
+    def _pending_raw_capture_exists(self, source_path: str | Path, *, group_key: str | None = None) -> bool:
+        source_text = str(source_path or "").strip()
+        if not source_text:
+            return False
+        candidate_group_key = str(group_key or "").strip() or companion_group_key(source_text)
+        for capture in getattr(self, "_pending_raw_captures", []) or []:
+            if not isinstance(capture, PendingRawCapture):
+                continue
+            if str(capture.source_path).strip() == source_text:
+                return True
+            if candidate_group_key and str(capture.group_key or "").strip() == candidate_group_key:
+                return True
+        return False
+
     def _pending_raw_gallery_items(self) -> tuple[list[dict[str, object]], str | int | None]:
         items: list[dict[str, object]] = []
         selected_key: str | int | None = None
@@ -2771,15 +2785,6 @@ class LiveLabTab(QWidget):
         pending.clear()
         getattr(self, "_consumed_companion_groups", set()).clear()
         self._cancel_pending_raw_background_wb_selection()
-        for capture in list(getattr(self, "_pending_raw_captures", []) or []):
-            preview_path = Path(capture.preview_path) if capture.preview_path else None
-            if preview_path is not None:
-                try:
-                    preview_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-        self._pending_raw_captures = []
-        self._selected_pending_raw_index = -1
         timer = getattr(self, "_pending_raw_preview_timer", None)
         if isinstance(timer, QTimer):
             timer.stop()
@@ -2935,10 +2940,13 @@ class LiveLabTab(QWidget):
             return False
         if source in self._seen_source_paths:
             return False
-        self._seen_source_paths.add(source)
-
         if not Path(source).exists():
             return False
+        group_key = companion_group_key(source)
+        if self._pending_raw_capture_exists(source, group_key=group_key):
+            self._seen_source_paths.add(source)
+            return False
+        self._seen_source_paths.add(source)
         group_key, state = self._companion_state_for_path(source)
         if group_key in self._consumed_companion_groups:
             return False
@@ -3582,6 +3590,9 @@ class LiveLabTab(QWidget):
         self._log_initial_lab_state()
         self._show_status(status_text, tone="success", timeout_ms=4000)
         self._update_session_controls()
+        self._update_pending_raw_controls()
+        if self._current_pending_raw_capture() is not None:
+            self._show_pending_raw_capture(self._selected_pending_raw_index)
 
     def stop_session(self) -> None:
         if not self.is_session_running():
@@ -3625,6 +3636,9 @@ class LiveLabTab(QWidget):
         self._cancel_raw_edit_session(restore_selection=False)
         self._reset_companion_dedupe_state()
         self._update_session_controls()
+        self._update_pending_raw_controls()
+        if self._current_pending_raw_capture() is not None:
+            self._show_pending_raw_capture(self._selected_pending_raw_index)
 
         if self._pending_stop_status is not None:
             message, tone, timeout_ms = self._pending_stop_status

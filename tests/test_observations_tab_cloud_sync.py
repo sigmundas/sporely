@@ -1,12 +1,26 @@
 from __future__ import annotations
 
+import json
 import os
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
+
 from ui import observations_tab
 import ui.main_window as main_window
+import utils.cloud_sync as cloud_sync
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 def test_cloud_auto_sync_worker_disables_remote_media_materialization(monkeypatch):
@@ -47,6 +61,52 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["sync_images"] is False
     assert sync_kwargs["prepare_images_cb"] is None
     assert sync_kwargs["materialize_remote_images"] is False
+
+
+def test_cloud_auto_sync_worker_reports_auth_failure_when_saved_credentials_are_invalid(monkeypatch, qapp):
+    errors: list[str] = []
+    results: list[dict] = []
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: None)
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: {"cloud_access_token": "expired-token"})
+    monkeypatch.setattr(observations_tab, "load_saved_cloud_password", lambda: ("", None, False))
+    monkeypatch.setattr(
+        observations_tab,
+        "sync_all",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("sync_all should not run")),
+    )
+
+    worker = observations_tab._CloudAutoSyncWorker()
+    worker.error.connect(errors.append)
+    worker.sync_finished.connect(results.append)
+
+    worker.run()
+
+    assert errors == ["Cloud sync sign-in failed. Please check your email and password."]
+    assert results == []
+
+
+def test_cloud_auto_sync_worker_skips_without_saved_credentials(monkeypatch, qapp):
+    errors: list[str] = []
+    results: list[dict] = []
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: None)
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: {})
+    monkeypatch.setattr(observations_tab, "load_saved_cloud_password", lambda: ("", None, False))
+    monkeypatch.setattr(
+        observations_tab,
+        "sync_all",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("sync_all should not run")),
+    )
+
+    worker = observations_tab._CloudAutoSyncWorker()
+    worker.error.connect(errors.append)
+    worker.sync_finished.connect(results.append)
+
+    worker.run()
+
+    assert errors == []
+    assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True}]
 
 
 def test_metadata_sync_timeout_starts_metadata_only_sync(monkeypatch):
@@ -97,6 +157,34 @@ def test_metadata_sync_timeout_defers_while_measurement_active():
     observations_tab.ObservationsTab._on_metadata_sync_timeout(fake_tab)
 
     assert fake_timer.starts == [8000]
+
+
+def test_cloud_sync_finished_skipped_hides_progress_widget():
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: calls.setdefault("refresh", bool(show_status)),
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _reset_status_progress=lambda: calls.setdefault("reset", True),
+        _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
+        _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {"pushed": 0, "pulled": 0, "errors": [], "skipped": True},
+    )
+
+    assert calls["visible"] == [False]
+    assert calls["reset"] is True
+    assert "record" not in calls
+    assert "progress" not in calls
 
 
 def test_cloud_media_detail_view_auto_launches_lazy_materialization(monkeypatch):
@@ -169,6 +257,121 @@ def test_cloud_sync_plan_limit_error_opens_detail_dialog(monkeypatch):
     assert status_kwargs["level"] == "warning"
 
 
+def test_cloud_sync_error_for_invalid_login_clears_progress_and_reports_sign_in_failure():
+    calls: dict[str, object] = {}
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: calls.setdefault("refresh", bool(show_status)),
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
+        _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+    tab._summarize_sync_error = lambda message: observations_tab.ObservationsTab._summarize_sync_error(tab, message)
+
+    observations_tab.ObservationsTab._on_cloud_sync_error(tab, "invalid_grant")
+
+    assert calls["visible"] == [False]
+    assert calls["progress"] == (("", 0, 1), {})
+    record_args, record_kwargs = calls["record"]
+    assert record_args == ("Cloud sync sign-in failed. Please check your email and password.",)
+    assert record_kwargs["errors"] == ["invalid_grant"]
+    assert record_kwargs["status"] == "error"
+    status_args, status_kwargs = calls["status_message"]
+    assert status_args == ("Cloud sync sign-in failed. Please check your email and password.",)
+    assert status_kwargs["level"] == "warning"
+
+
+def test_cloud_sync_error_for_jwt_expired_reports_sign_in_failure():
+    tab = SimpleNamespace(tr=lambda text: text)
+
+    summary = observations_tab.ObservationsTab._summarize_sync_error(
+        tab,
+        'GET observation_images?...: {"code":"PGRST303","message":"JWT expired"}',
+    )
+
+    assert summary == "Cloud sync sign-in failed. Please check your email and password."
+
+
+def test_cloud_sync_helpers_include_microscope_media_and_skip_recovery_cache():
+    assert cloud_sync.should_pull_cloud_image_to_desktop({"image_type": "microscope"}) is True
+    assert cloud_sync.should_pull_cloud_image_to_desktop({"image_type": "field"}) is True
+    assert cloud_sync.should_push_local_image_to_cloud(
+        {
+            "image_type": "microscope",
+            "source_role": "local_canonical",
+            "file_purpose": "microscope",
+        }
+    ) is True
+    assert cloud_sync.should_push_local_image_to_cloud(
+        {
+            "image_type": "microscope",
+            "source_role": "cloud_recovery_cache",
+            "file_purpose": "cache",
+        }
+    ) is False
+
+
+def test_prepare_cloud_sync_image_uploads_uses_cloud_image_selection_not_publish_exclusions(tmp_path):
+    field_path = tmp_path / "field.jpg"
+    microscope_path = tmp_path / "microscope.jpg"
+    field_path.write_bytes(b"field")
+    microscope_path.write_bytes(b"microscope")
+
+    field_row = {
+        "id": 1,
+        "filepath": str(field_path),
+        "original_filepath": None,
+        "image_type": "field",
+        "source_role": "local_canonical",
+        "file_purpose": "field",
+    }
+    microscope_row = {
+        "id": 2,
+        "filepath": str(microscope_path),
+        "original_filepath": None,
+        "image_type": "microscope",
+        "source_role": "local_canonical",
+        "file_purpose": "microscope",
+    }
+
+    def _fake_prepare_clean_cloud_image_file(*, source_path, temp_dir, image_id, upload_policy):
+        out_path = temp_dir / f"cloud_{image_id}.webp"
+        out_path.write_bytes(b"webp")
+        return out_path, 100, 100, 100, 100, "image/webp", 80
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        _is_main_gui_thread=lambda: True,
+        _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
+        _collect_cloud_sync_image_rows=lambda observation_id: [field_row, microscope_row],
+        _collect_publish_selected_image_rows=lambda observation_id: (_ for _ in ()).throw(
+            AssertionError("publish selection should not drive cloud sync")
+        ),
+        _publish_excluded_image_ids=lambda observation_id: {2},
+        _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
+        _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
+        _cleanup_publish_temp_dir=lambda temp_dir: None,
+        _yield_background_sync_ui=lambda: None,
+    )
+
+    prepared, cleanup, warnings = observations_tab.ObservationsTab.prepare_cloud_sync_image_uploads(
+        fake_tab,
+        {"id": 631},
+    )
+
+    assert [item["image_row"]["id"] for item in prepared] == [1, 2]
+    assert warnings == []
+    assert cleanup is not None
+    cleanup()
+
+
 def test_cloud_sync_webp_support_error_uses_clear_summary():
     tab = SimpleNamespace(tr=lambda text: text)
 
@@ -210,3 +413,137 @@ def test_cloud_sync_idle_hint_lists_observation_ids(monkeypatch):
     assert "Cloud sync blocked for observation ID 401." in message
     assert "Cloud sync pending for observation IDs 390, 389, 385." in message
     assert "Open Sync now to review the error details, then click Sync now to retry uploads." in message
+
+
+def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
+    hint_controller = _DummyHintController()
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [390, 389, 385],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Cloud sync sign-in failed. Please check your email and password.",
+            ]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert hint_controller.calls
+    message, tone = hint_controller.calls[-1]
+    assert tone == "warning"
+    assert "Cloud sync sign-in failed. Please check your email and password." in message
+    assert "Sign in again, then click Sync now to retry uploads." in message
+    assert "Cloud sync pending" not in message
+
+
+def test_observation_status_info_maps_draft_private_friends_public():
+    assert observations_tab._observation_status_info({"is_draft": True, "sharing_scope": "public"}) == (
+        "Draft",
+        "draft",
+        1,
+    )
+    assert observations_tab._observation_status_info({"is_draft": False, "sharing_scope": "private"}) == (
+        "Private",
+        "private",
+        2,
+    )
+    assert observations_tab._observation_status_info({"is_draft": False, "visibility": "friends"}) == (
+        "Friends",
+        "friends",
+        3,
+    )
+    assert observations_tab._observation_status_info({"is_draft": False, "sharing_scope": "public"}) == (
+        "Public",
+        "public",
+        4,
+    )
+    assert observations_tab._observation_status_info({"is_draft": False}) == ("", "", 0)
+    assert observations_tab._observation_status_info({}) == ("", "", 0)
+
+
+def test_render_observations_table_places_status_before_map_and_publish(qapp):
+    table = QTableWidget()
+    table.setColumnCount(10)
+
+    fake_tab = SimpleNamespace(
+        table=table,
+        selected_observation_id=None,
+        tr=lambda text: text,
+        _show_new_imports_only=lambda: False,
+        _show_observation_table_thumbnails=lambda: False,
+        _observation_table_thumbnail_size=lambda: 48,
+        _update_observations_table_geometry=lambda: None,
+        _observation_thumb_icon_cache={},
+        _status_hint_controller=SimpleNamespace(register_widget=lambda *args, **kwargs: None),
+        rename_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        delete_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        export_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        gallery_widget=SimpleNamespace(clear=lambda: None),
+        _update_publish_controls=lambda: None,
+        set_status_message=lambda *args, **kwargs: None,
+        show_map_service_dialog=lambda *args, **kwargs: None,
+        _render_publish_cell=lambda row, observation_id, publish_target, arts_id, artportalen_id, inaturalist_id: table.setItem(
+            row,
+            9,
+            QTableWidgetItem("Publish"),
+        ),
+    )
+
+    row_cache = [
+        {
+            "row_kind": "local",
+            "local_id": 389,
+            "id_display": "389",
+            "thumbnail_path": None,
+            "genus": "Agaricus",
+            "species": "campestris",
+            "common_name": "Field mushroom",
+            "spore_short": "-",
+            "date": "2026-06-15",
+            "location": "Meadow",
+            "status_text": "Draft",
+            "status_kind": "draft",
+            "status_sort": 1,
+            "lat": 59.0,
+            "lon": 10.0,
+            "has_coords": True,
+            "species_name": "Agaricus campestris",
+            "arts_id": None,
+            "artportalen_id": None,
+            "inaturalist_id": None,
+            "publish_target": "artsobs_no",
+            "mark_star": False,
+            "search_text": "field mushroom agaricus campestris draft meadow",
+        }
+    ]
+
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+
+    assert table.columnCount() == 10
+    assert table.item(0, 7).text() == "Draft"
+    assert table.item(0, 7).data(Qt.UserRole) == 1
+    assert table.item(0, 7).data(Qt.UserRole + 2) == "draft"
+    assert table.cellWidget(0, 8) is not None
+    assert table.item(0, 8).text() == ""
+    assert table.item(0, 9).text() == "Publish"

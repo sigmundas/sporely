@@ -33,6 +33,7 @@ from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
     CloudSyncError,
+    is_cloud_auth_error,
     is_image_too_large_for_plan_error,
     format_original_upload_summary,
     sanitize_image_too_large_for_plan_error_message,
@@ -549,6 +550,8 @@ class CloudSyncDialog(QDialog):
         text = str(msg or '').strip()
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return 'Cloud sync blocked: this database is linked to another account.'
+        if is_cloud_auth_error(text):
+            return 'Cloud sync sign-in failed. Please check your email and password.'
         if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
             return 'Cloud sync failed because WebP support is required for cloud media uploads.'
         if is_image_too_large_for_plan_error(text):

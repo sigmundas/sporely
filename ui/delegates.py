@@ -158,3 +158,76 @@ class RedListCircleWidget(QWidget):
             painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._text)
             
         painter.end()
+
+
+class StatusTagDelegate(QStyledItemDelegate):
+    """Paints short observation status values as colored rounded tags."""
+
+    _STYLE_BY_KIND = {
+        "draft": ("#e67e22", "#ffffff"),
+        "private": ("#e74c3c", "#ffffff"),
+        "friends": ("#f1c40f", "#2c3e50"),
+        "public": ("#27ae60", "#ffffff"),
+    }
+
+    def _style_for_kind(self, kind: str) -> tuple[QColor, QColor]:
+        bg_hex, fg_hex = self._STYLE_BY_KIND.get(str(kind or "").strip().lower(), ("#95a5a6", "#ffffff"))
+        return QColor(bg_hex), QColor(fg_hex)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        text = str(index.data(Qt.DisplayRole) or "").strip()
+        opt.text = ""
+        super().paint(painter, opt, index)
+        if not text:
+            return
+
+        kind = str(index.data(Qt.UserRole + 2) or "").strip().lower()
+        bg_color, fg_color = self._style_for_kind(kind)
+        rect = QRect(opt.rect).adjusted(7, 4, -7, -4)
+        if rect.width() <= 4 or rect.height() <= 4:
+            return
+
+        metrics = opt.fontMetrics
+        horizontal_padding = 12
+        vertical_padding = 4
+        text_width = metrics.horizontalAdvance(text)
+        text_height = metrics.height()
+        chip_height = min(max(text_height + vertical_padding, 18), rect.height())
+        chip_width = min(rect.width(), text_width + horizontal_padding)
+        if chip_width <= 0 or chip_height <= 0:
+            return
+        if chip_width < text_width + horizontal_padding:
+            elide_width = max(0, chip_width - horizontal_padding)
+            text = metrics.elidedText(text, Qt.ElideRight, elide_width) if elide_width > 0 else ""
+
+        chip_rect = QRect(0, 0, chip_width, chip_height)
+        chip_rect.moveCenter(rect.center())
+        chip_rect = chip_rect.intersected(rect)
+        if chip_rect.width() <= 0 or chip_rect.height() <= 0:
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QPen(bg_color.darker(135), 1))
+        painter.setBrush(QBrush(bg_color))
+        painter.drawRoundedRect(chip_rect, chip_rect.height() / 2, chip_rect.height() / 2)
+
+        font = opt.font
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(fg_color)
+        painter.drawText(chip_rect.adjusted(8, 0, -8, 0), Qt.AlignCenter, text)
+        painter.restore()
+
+    def sizeHint(self, option: QStyleOptionViewItem, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        base = super().sizeHint(option, index)
+        text = str(index.data(Qt.DisplayRole) or "").strip()
+        if not text:
+            return QSize(base.width(), max(base.height(), 24))
+        width = opt.fontMetrics.horizontalAdvance(text) + 28
+        return QSize(max(base.width(), width), max(base.height(), 24))

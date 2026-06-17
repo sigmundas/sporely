@@ -148,3 +148,14 @@ def test_cloud_sync_dialog_stays_quiet_when_original_sync_disabled(monkeypatch, 
     )
 
     assert "Original uploads:" not in dialog._status_label.text()
+
+
+def test_cloud_sync_dialog_treats_jwt_expired_as_sign_in_failure(monkeypatch, qapp):
+    dialog = _build_cloud_dialog(monkeypatch)
+
+    assert (
+        dialog._summarize_sync_error(
+            'GET observation_images?...: {"code":"PGRST303","message":"JWT expired"}'
+        )
+        == "Cloud sync sign-in failed. Please check your email and password."
+    )

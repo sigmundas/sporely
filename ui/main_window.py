@@ -1216,13 +1216,23 @@ class SettingsHubDialog(QDialog):
         cloud_sync_button_row.setContentsMargins(0, 0, 0, 0)
         cloud_sync_button_row.setSpacing(8)
         self.cloud_sync_now_button = QPushButton(self.tr("Sync now"), cloud_sync_group)
-        self.cloud_sync_now_button.clicked.connect(lambda: self._request_settings_cloud_sync(False))
+        self.cloud_sync_now_button.clicked.connect(
+            lambda: self._request_settings_cloud_sync(
+                sync_images=True,
+                materialize_remote_images=False,
+            )
+        )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
         self.cloud_offline_media_button = QPushButton(
             self.tr("Download missing cloud media for offline use"),
             cloud_sync_group,
         )
-        self.cloud_offline_media_button.clicked.connect(lambda: self._request_settings_cloud_sync(True))
+        self.cloud_offline_media_button.clicked.connect(
+            lambda: self._request_settings_cloud_sync(
+                sync_images=False,
+                materialize_remote_images=True,
+            )
+        )
         cloud_sync_button_row.addWidget(self.cloud_offline_media_button)
         self.cloud_sync_details_button = QPushButton(self.tr("Details"), cloud_sync_group)
         self.cloud_sync_details_button.clicked.connect(self._show_cloud_sync_details)
@@ -2014,6 +2024,7 @@ class SettingsHubDialog(QDialog):
         client = self._cloud_client()
         logged_in = bool(client)
         running = self._settings_cloud_sync_running()
+        sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
         main_window = self._settings_hub_main_window()
         blocked_ids: list[int] = []
         if main_window is not None:
@@ -2031,6 +2042,8 @@ class SettingsHubDialog(QDialog):
         )
         if running:
             status_text = self.tr("Syncing cloud metadata and media…")
+        elif sync_status in {"error", "blocked"} and (summary or error_messages):
+            status_text = summary or self.tr("Cloud sync failed.")
         elif not logged_in:
             status_text = self.tr("Sign in to use cloud sync.")
         elif last_sync_at:
@@ -2056,7 +2069,12 @@ class SettingsHubDialog(QDialog):
             self.cloud_sync_now_button.setToolTip("")
             self.cloud_offline_media_button.setToolTip("")
 
-    def _request_settings_cloud_sync(self, materialize_remote_images: bool) -> None:
+    def _request_settings_cloud_sync(
+        self,
+        *,
+        sync_images: bool,
+        materialize_remote_images: bool,
+    ) -> None:
         main_window = self._settings_hub_main_window()
         if main_window is None:
             QMessageBox.warning(
@@ -2079,7 +2097,7 @@ class SettingsHubDialog(QDialog):
                 starter(
                     show_status=True,
                     run_refresh_flow=False,
-                    sync_images=False,
+                    sync_images=bool(sync_images),
                     materialize_remote_images=bool(materialize_remote_images),
                 )
             )
@@ -3437,6 +3455,52 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._cloud_client = None
 
     def _on_cloud_login_failure(self, message: str) -> None:
+        summary = self.tr("Cloud sync sign-in failed. Please check your email and password.")
+        raw_error = str(message or "").strip() or summary
+        try:
+            update_app_settings(
+                {
+                    "cloud_last_sync_status": "error",
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_error_count": 1,
+                    "cloud_last_sync_errors_json": json.dumps([raw_error]),
+                }
+            )
+        except Exception:
+            pass
+        settings_hub = getattr(self, "_active_settings_hub_dialog", None)
+        if settings_hub is not None and hasattr(settings_hub, "refresh_cloud_sync_status"):
+            try:
+                settings_hub.refresh_cloud_sync_status()
+            except Exception:
+                pass
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is not None:
+            reset_progress = getattr(observations_tab, "_reset_status_progress", None)
+            if callable(reset_progress):
+                try:
+                    reset_progress()
+                except Exception:
+                    pass
+            hide_progress = getattr(observations_tab, "_set_status_progress_visible", None)
+            if callable(hide_progress):
+                try:
+                    hide_progress(False)
+                except Exception:
+                    pass
+            set_status = getattr(observations_tab, "set_status_message", None)
+            if callable(set_status):
+                try:
+                    set_status(summary, level="warning", auto_clear_ms=12000)
+                except Exception:
+                    pass
+            updater = getattr(observations_tab, "_refresh_cloud_sync_idle_hint", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
+        self._refresh_background_activity_badge()
         QMessageBox.warning(
             self,
             self.tr("Login Failed"),
@@ -5820,7 +5884,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._build_cloud_sync_details_dialog().exec()
 
     def _on_background_activity_badge_clicked(self, _event) -> None:
-        if not self._cloud_sync_blocked_observation_ids():
+        settings = get_app_settings()
+        sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
+        if not self._cloud_sync_blocked_observation_ids() and sync_status not in {"error", "blocked"}:
             return
         self._show_cloud_sync_details_dialog()
 
@@ -5843,6 +5909,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         pending_count = len(pending_ids)
         blocked_count = len(blocked_ids)
         logged_in = bool(getattr(self, "_cloud_client", None))
+        settings = get_app_settings()
+        cloud_sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
+        cloud_sync_summary = str(settings.get("cloud_last_sync_summary") or "").strip()
+        cloud_sync_errors = SettingsHubDialog._cloud_sync_error_messages(settings)
         cloud_sync_running = False
         checker = getattr(self, "is_cloud_sync_running", None)
         if callable(checker):
@@ -5889,9 +5959,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                 tooltip_parts.append(self.tr("Background work running."))
         elif blocked_count > 0 and pending_count <= 0:
             badge.setText(self.tr("Sync blocked"))
+        elif cloud_sync_status in {"error", "blocked"}:
+            badge.setText(self.tr("Sync blocked"))
+            failure = cloud_sync_summary or (cloud_sync_errors[0] if cloud_sync_errors else self.tr("Cloud sync failed."))
+            tooltip_parts.append(failure)
+            tooltip_parts.append(
+                self.tr("Click Sync now to retry uploads.")
+                if logged_in
+                else self.tr("Sign in again, then click Sync now to retry uploads.")
+            )
+            tooltip_parts.append(self.tr("Click Sync blocked to review the error details."))
+            badge.setCursor(Qt.PointingHandCursor)
+            badge.mousePressEvent = self._on_background_activity_badge_clicked
         else:
             badge.setText(self.tr("Sync pending"))
-        if pending_count > 0:
+        if pending_count > 0 and not (cloud_sync_status in {"error", "blocked"} and not blocked_count):
             ids_text = self._format_cloud_sync_observation_ids(pending_ids)
             ids_phrase = (
                 self.tr("observation ID {ids}").format(ids=ids_text)
@@ -5921,6 +6003,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.tr("Cloud sync blocked for {ids}.").format(ids=ids_phrase)
             )
             tooltip_parts.append(self.tr("Click Sync blocked to review the error details."))
+            badge.setCursor(Qt.PointingHandCursor)
+            badge.mousePressEvent = self._on_background_activity_badge_clicked
+        elif cloud_sync_status in {"error", "blocked"} and not blocked_count:
             badge.setCursor(Qt.PointingHandCursor)
             badge.mousePressEvent = self._on_background_activity_badge_clicked
         else:

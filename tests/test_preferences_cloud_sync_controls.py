@@ -256,7 +256,7 @@ def test_profile_cloud_sync_details_window_shows_raw_errors(monkeypatch, qapp):
     parent.deleteLater()
 
 
-def test_profile_cloud_sync_now_starts_metadata_first_sync(monkeypatch, qapp):
+def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
 
     dialog.cloud_sync_now_button.click()
@@ -266,7 +266,7 @@ def test_profile_cloud_sync_now_starts_metadata_first_sync(monkeypatch, qapp):
         {
             "show_status": True,
             "run_refresh_flow": False,
-            "sync_images": False,
+            "sync_images": True,
             "materialize_remote_images": False,
         }
     ]
