@@ -1328,7 +1328,7 @@ _SNAPSHOT_OBS_FIELDS = [
     'inaturalist_id', 'mushroomobserver_id',
     'spore_statistics', 'auto_threshold',
     'source_type', 'citation', 'data_provider', 'author',
-    'visibility', 'sharing_scope',
+    'visibility',
     'spore_data_visibility',
 ]
 
