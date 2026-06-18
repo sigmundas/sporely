@@ -83,6 +83,7 @@ def _build_window(monkeypatch) -> main_window.MainWindow:
     monkeypatch.setattr(main_window.MainWindow, "_populate_scale_combo", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
+    monkeypatch.setattr(main_window.MainWindow, "_get_cloud_client", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "init_ui", lambda self: self.create_menu_bar())
     return main_window.MainWindow()
 
@@ -137,6 +138,34 @@ def test_background_activity_badge_summarizes_running_threads(monkeypatch, qapp)
     window.deleteLater()
 
 
+def test_background_activity_badge_restores_logged_in_copy_from_cached_client(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    badge = _DummyBadge()
+    window._background_activity_badge = badge
+    restored_client = SimpleNamespace(user_id="user-123")
+    monkeypatch.setattr(main_window.MainWindow, "_get_cloud_client", lambda self: restored_client)
+    monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", lambda self: [390])
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", lambda self: [])
+    monkeypatch.setattr(
+        main_window,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+        },
+    )
+
+    window._cloud_client = None
+    window._refresh_background_activity_badge()
+
+    assert window._cloud_client is restored_client
+    assert badge.visible is True
+    assert badge.text == window.tr("Sync blocked")
+    assert "Logged in, click Sync now to sync." in badge.tooltip
+    window.deleteLater()
+
+
 def test_background_activity_badge_shows_syncing_for_active_cloud_sync(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     badge = _DummyBadge()
@@ -169,7 +198,7 @@ def test_background_activity_badge_shows_sync_pending_when_idle(monkeypatch, qap
     assert badge.visible is True
     assert badge.text == window.tr("Sync pending")
     assert "Cloud sync pending for observation IDs 390, 389, 385." in badge.tooltip
-    assert "Click Sync now to retry uploads." in badge.tooltip
+    assert "Logged in, click Sync now to sync." in badge.tooltip
     assert "observation IDs 390, 389, 385" in badge.tooltip
     window.deleteLater()
 

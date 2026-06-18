@@ -452,6 +452,42 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
     assert "Cloud sync pending" not in message
 
 
+def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkeypatch):
+    hint_controller = _DummyHintController()
+    fake_client = SimpleNamespace(user_id="user-123")
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cached_cloud_client=lambda: fake_client,
+        _cloud_sync_pending_observation_ids=lambda: [390, 389, 385],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Cloud sync sign-in failed. Please check your email and password.",
+            ]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert hint_controller.calls
+    message, tone = hint_controller.calls[-1]
+    assert tone == "warning"
+    assert "Logged in, click Sync now to sync." in message
+    assert "Sign in again, then click Sync now to retry uploads." not in message
+
+
 def test_observation_status_info_maps_draft_private_friends_public():
     assert observations_tab._observation_status_info({"is_draft": True, "sharing_scope": "public"}) == (
         "Draft",

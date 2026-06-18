@@ -2263,7 +2263,11 @@ class ObservationsTab(QWidget):
         if not callable(formatter):
             formatter = lambda values: ", ".join(str(int(value)) for value in values if int(value) > 0)  # noqa: E731
 
-        logged_in = bool(getattr(main_window, "_cloud_client", None)) if main_window is not None else False
+        cached_client_getter = getattr(main_window, "_cached_cloud_client", None) if main_window is not None else None
+        if callable(cached_client_getter):
+            logged_in = bool(cached_client_getter())
+        else:
+            logged_in = bool(getattr(main_window, "_cloud_client", None)) if main_window is not None else False
 
         def _ids_phrase(ids: list[int]) -> str:
             ids_text = str(formatter(ids) or "").strip()
@@ -2273,7 +2277,7 @@ class ObservationsTab(QWidget):
         if last_status in {"error", "blocked"} and not blocked_ids:
             failure = last_summary or (error_messages[0] if error_messages else self.tr("Cloud sync failed."))
             action = (
-                self.tr("Click Sync now to retry uploads.")
+                self.tr("Logged in, click Sync now to sync.")
                 if logged_in
                 else self.tr("Sign in again, then click Sync now to retry uploads.")
             )
@@ -2302,7 +2306,7 @@ class ObservationsTab(QWidget):
             ).format(
                 pending_ids=_ids_phrase(pending_ids),
                 action=(
-                    self.tr("Click Sync now to retry uploads.")
+                    self.tr("Logged in, click Sync now to sync.")
                     if logged_in
                     else self.tr("Sign in, then click Sync now to retry uploads.")
                 ),

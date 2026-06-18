@@ -1219,7 +1219,7 @@ class SettingsHubDialog(QDialog):
         self.cloud_sync_now_button.clicked.connect(
             lambda: self._request_settings_cloud_sync(
                 sync_images=True,
-                materialize_remote_images=False,
+                materialize_remote_images=True,
             )
         )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
@@ -1704,12 +1704,32 @@ class SettingsHubDialog(QDialog):
     def _cached_cloud_client(self):
         main_window = self._settings_hub_main_window()
         if main_window is not None:
+            getter = getattr(main_window, "_cached_cloud_client", None)
+            if callable(getter):
+                try:
+                    client = getter()
+                except Exception:
+                    client = None
+                if client is not None:
+                    if hasattr(main_window, "__dict__") and main_window.__dict__.get("_cloud_client") is None:
+                        main_window._cloud_client = client
+                    return client
             client = main_window.__dict__.get("_cloud_client") if hasattr(main_window, "__dict__") else getattr(main_window, "_cloud_client", None)
             if client is not None:
                 return client
         client = self.__dict__.get("_cloud_client") if hasattr(self, "__dict__") else getattr(self, "_cloud_client", None)
         if client is not None:
             return client
+        getter = getattr(self, "_get_cloud_client", None)
+        if callable(getter):
+            try:
+                client = getter()
+            except Exception:
+                client = None
+            if client is not None:
+                if getattr(self, "_cloud_client", None) is None:
+                    self._cloud_client = client
+                return client
         cloud_dialog = getattr(self, "_artsobs_dialog", None)
         if cloud_dialog is not None:
             client = cloud_dialog.__dict__.get("_cloud_client") if hasattr(cloud_dialog, "__dict__") else getattr(cloud_dialog, "_cloud_client", None)
@@ -2091,7 +2111,7 @@ class SettingsHubDialog(QDialog):
         self.cloud_sync_now_button.setEnabled(logged_in and not running)
         self.cloud_offline_media_button.setEnabled(logged_in and not running)
         if not logged_in:
-            self.cloud_sync_now_button.setToolTip(self.tr("Sign in to sync cloud metadata."))
+            self.cloud_sync_now_button.setToolTip(self.tr("Sign in to sync cloud metadata and images."))
             self.cloud_offline_media_button.setToolTip(self.tr("Sign in to download cloud media for offline use."))
         else:
             self.cloud_sync_now_button.setToolTip("")
@@ -5951,6 +5971,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._close_after_cloud_sync = False
         QTimer.singleShot(0, self.close)
 
+    def _get_cloud_client(self):
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is not None:
+                self._cloud_client = client
+            return client
+        except Exception:
+            return None
+
+    def _cached_cloud_client(self):
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
+        getter = getattr(self, "_get_cloud_client", None)
+        if callable(getter):
+            try:
+                client = getter()
+            except Exception:
+                client = None
+            if client is not None:
+                if getattr(self, "_cloud_client", None) is None:
+                    self._cloud_client = client
+                return client
+        return None
+
     def _refresh_background_activity_badge(self) -> None:
         badge = getattr(self, "_background_activity_badge", None)
         if badge is None:
@@ -5961,7 +6011,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         blocked_ids = self._cloud_sync_blocked_observation_ids()
         pending_count = len(pending_ids)
         blocked_count = len(blocked_ids)
-        logged_in = bool(getattr(self, "_cloud_client", None))
+        logged_in = bool(self._cached_cloud_client())
         settings = get_app_settings()
         cloud_sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
         cloud_sync_summary = str(settings.get("cloud_last_sync_summary") or "").strip()
@@ -6017,7 +6067,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             failure = cloud_sync_summary or (cloud_sync_errors[0] if cloud_sync_errors else self.tr("Cloud sync failed."))
             tooltip_parts.append(failure)
             tooltip_parts.append(
-                self.tr("Click Sync now to retry uploads.")
+                self.tr("Logged in, click Sync now to sync.")
                 if logged_in
                 else self.tr("Sign in again, then click Sync now to retry uploads.")
             )
@@ -6039,7 +6089,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             tooltip_parts.append(pending_line)
             if total <= 0:
                 tooltip_parts.append(
-                    self.tr("Click Sync now to retry uploads.")
+                    self.tr("Logged in, click Sync now to sync.")
                     if logged_in
                     else self.tr("Sign in, then click Sync now to retry uploads.")
                 )
