@@ -7837,7 +7837,9 @@ class SporelyCloudClient:
             for i in range(0, len(obs_cloud_ids), 50):
                 chunk = obs_cloud_ids[i:i+50]
                 ids_str = ','.join(chunk)
-                rows = self._get(f'observation_images?observation_id=in.({ids_str})&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}')
+                rows = self._get(
+                    f'observation_images?observation_id=in.({ids_str})&user_id=eq.{self.user_id}&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
+                )
                 all_images.extend(rows)
             success = True
             return all_images
@@ -9433,7 +9435,16 @@ def pull_all(
 
     total = len(candidates)
     _extend_progress_total(progress_state, total)
-    bulk_images = client.pull_bulk_image_metadata(candidate_cloud_ids)
+    bulk_fetcher = getattr(client, 'pull_bulk_image_metadata', None)
+    if callable(bulk_fetcher):
+        bulk_images = [dict(row or {}) for row in (bulk_fetcher(candidate_cloud_ids) or [])]
+    else:
+        bulk_images = []
+        for cloud_id in candidate_cloud_ids:
+            bulk_images.extend(
+                dict(row or {})
+                for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])
+            )
     remote_images_by_obs = {}
     for img in bulk_images:
         obs_id = str(img.get('observation_id') or '').strip()
@@ -9505,10 +9516,7 @@ def pull_all(
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs
                     local_dirty = False
-                remote_images_raw = [
-                    dict(row or {})
-                    for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])
-                ] if cloud_id else []
+                remote_images_raw = [dict(row or {}) for row in remote_images_by_obs.get(cloud_id, [])] if cloud_id else []
                 _record_remote_image_tombstones(
                     remote_images_raw,
                     local_observation_id=local_id,

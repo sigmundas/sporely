@@ -1582,16 +1582,13 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
     finally:
         conn.close()
 
-    fetched_calls: list[tuple[str, bool]] = []
+    bulk_calls: list[tuple[str, ...]] = []
     download_calls: list[str] = []
     add_calls: list[dict] = []
 
     class DummyClient:
         def pull_bulk_image_metadata(self, obs_cloud_ids):
-            return []
-
-        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
-            fetched_calls.append((cloud_id, include_deleted_for_sync))
+            bulk_calls.append(tuple(obs_cloud_ids))
             return [
                 {
                     "id": "cloud-image-deleted",
@@ -1612,6 +1609,9 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
                     "sort_order": 1,
                 },
             ]
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            raise AssertionError("pull_image_metadata should not be called when bulk image metadata is available")
 
         def set_desktop_id(self, *args, **kwargs):
             pass
@@ -1699,7 +1699,7 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
         conn.close()
 
     assert result["pulled"] == 1
-    assert fetched_calls == [("cloud-obs-1", True)]
+    assert bulk_calls == [("cloud-obs-1",)]
     assert download_calls == ["user/cloud-obs-1/cloud-image-active.jpg"]
     assert len(add_calls) == 1
     assert add_calls[0]["source_role"] == "cloud_recovery_cache"
@@ -1883,16 +1883,16 @@ def test_pull_all_ignores_cloud_tombstone_even_when_local_media_changed(monkeypa
         "measurements": [],
     }
 
+    bulk_calls: list[tuple[str, ...]] = []
+
     class DummyClient:
         def pull_bulk_image_metadata(self, obs_cloud_ids):
-            return []
-
-        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            bulk_calls.append(tuple(obs_cloud_ids))
             return [
                 {
                     "id": "cloud-image-1",
                     "desktop_id": 1,
-                    "observation_id": cloud_id,
+                    "observation_id": "cloud-obs-1",
                     "deleted_at": "2026-05-29 10:22:16.824+00",
                     "storage_path": "8c471394-b274-4933-b830-59805820d93c/614/0_1780049894442.webp",
                     "original_filename": "image.jpg",
@@ -1900,6 +1900,9 @@ def test_pull_all_ignores_cloud_tombstone_even_when_local_media_changed(monkeypa
                     "sort_order": 0,
                 }
             ]
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            raise AssertionError("pull_image_metadata should not be called when bulk image metadata is available")
 
         def set_desktop_id(self, *args, **kwargs):
             pass
@@ -1958,6 +1961,7 @@ def test_pull_all_ignores_cloud_tombstone_even_when_local_media_changed(monkeypa
 
     assert result["errors"] == []
     assert result["pulled"] == 1
+    assert bulk_calls == [("cloud-obs-1",)]
     assert tombstone == ("cloud-image-1", "2026-05-29 10:22:16", 1, 11)
     assert image_row == 1
     assert observation == ("cloud-obs-1", "dirty")
@@ -2000,16 +2004,16 @@ def test_pull_all_records_unmatched_cloud_tombstone_without_conflict(monkeypatch
         "measurements": [],
     }
 
+    bulk_calls: list[tuple[str, ...]] = []
+
     class DummyClient:
         def pull_bulk_image_metadata(self, obs_cloud_ids):
-            return []
-
-        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            bulk_calls.append(tuple(obs_cloud_ids))
             return [
                 {
                     "id": "cloud-image-1",
                     "desktop_id": 11,
-                    "observation_id": cloud_id,
+                    "observation_id": "cloud-obs-1",
                     "deleted_at": "2026-05-29 10:22:16.824+00",
                     "storage_path": "8c471394-b274-4933-b830-59805820d93c/614/0_1780049894442.webp",
                     "original_filename": "image.jpg",
@@ -2017,6 +2021,9 @@ def test_pull_all_records_unmatched_cloud_tombstone_without_conflict(monkeypatch
                     "sort_order": 0,
                 }
             ]
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            raise AssertionError("pull_image_metadata should not be called when bulk image metadata is available")
 
         def set_desktop_id(self, *args, **kwargs):
             pass
@@ -2067,6 +2074,7 @@ def test_pull_all_records_unmatched_cloud_tombstone_without_conflict(monkeypatch
 
     assert result["errors"] == []
     assert result["pulled"] == 1
+    assert bulk_calls == [("cloud-obs-1",)]
     assert tombstone == ("cloud-image-1", "2026-05-29 10:22:16", 1, None)
 
 
