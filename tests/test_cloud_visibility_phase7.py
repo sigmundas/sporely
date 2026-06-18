@@ -273,6 +273,20 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     assert patched_payloads[0][1]["location_precision"] == "exact"
 
 
+def test_narrow_select_projection_constants_match_live_schema():
+    assert "sharing_scope" not in cloud_sync._OBSERVATION_SELECT_COLUMNS
+
+    assert "captured_at" not in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
+    assert "updated_at" not in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
+    assert "deleted_at" in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
+
+    assert "top_species_url" in cloud_sync._OBSERVATION_IDENTIFICATION_SELECT_COLUMNS
+    assert "top_speciesUrl" not in cloud_sync._OBSERVATION_IDENTIFICATION_SELECT_COLUMNS
+    assert "top_adbUrl" not in cloud_sync._OBSERVATION_IDENTIFICATION_SELECT_COLUMNS
+
+    assert "gallery_rotation" in cloud_sync._SPORE_MEASUREMENT_SELECT_COLUMNS
+
+
 def test_set_image_desktop_id_scopes_patch_to_user(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     patched_payloads = []

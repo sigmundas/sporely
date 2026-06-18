@@ -4437,9 +4437,7 @@ _OBSERVATION_IMAGE_SELECT_COLUMNS = _join_select_columns(
     'id',
     'desktop_id',
     'observation_id',
-    'captured_at',
     'created_at',
-    'updated_at',
     'deleted_at',
     *_SNAPSHOT_IMG_FIELDS,
     *_SNAPSHOT_IMG_PASSIVE_FIELDS,
@@ -4454,8 +4452,6 @@ _OBSERVATION_IDENTIFICATION_SELECT_COLUMNS = _join_select_columns(
     'top_vernacular_name',
     'top_taxon_id',
     'top_species_url',
-    'top_speciesUrl',
-    'top_adbUrl',
     'top_probability',
 )
 
