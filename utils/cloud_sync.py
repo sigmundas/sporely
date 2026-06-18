@@ -3125,12 +3125,12 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     _store_local_media_signature_if_equivalent(local_id, stored_media_sig, current_media_sig)
 
     try:
-        local_measurements = MeasurementDB.get_measurements_for_observation(local_id)
+        _, local_measurements_by_id = _load_local_measurement_lookup(local_id)
     except Exception:
         return True
     local_measurement_payloads = [
         _local_measurement_snapshot_payload(row)
-        for row in (local_measurements or [])
+        for row in (local_measurements_by_id.values() if local_measurements_by_id else [])
     ]
     baseline_measurements = [dict(row or {}) for row in (snapshot.get('measurements') or [])]
     if _analyze_measurement_changes(local_measurement_payloads, baseline_measurements).get('changed'):
@@ -4651,21 +4651,8 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
         ],
         'measurements': [
             {
-                'id': _safe_int(row.get('id')),
-                'image_id': _safe_int(row.get('image_id')),
-                'length_um': _normalize_snapshot_value(row.get('length_um')),
-                'width_um': _normalize_snapshot_value(row.get('width_um')),
-                'measurement_type': _normalize_snapshot_value(row.get('measurement_type')),
+                **_measurement_compare_payload(row, local=False),
                 'notes': _normalize_snapshot_value(row.get('notes')),
-                'p1_x': _normalize_snapshot_value(row.get('p1_x')),
-                'p1_y': _normalize_snapshot_value(row.get('p1_y')),
-                'p2_x': _normalize_snapshot_value(row.get('p2_x')),
-                'p2_y': _normalize_snapshot_value(row.get('p2_y')),
-                'p3_x': _normalize_snapshot_value(row.get('p3_x')),
-                'p3_y': _normalize_snapshot_value(row.get('p3_y')),
-                'p4_x': _normalize_snapshot_value(row.get('p4_x')),
-                'p4_y': _normalize_snapshot_value(row.get('p4_y')),
-                'gallery_rotation': _normalize_snapshot_value(row.get('gallery_rotation')),
             }
             for row in measurement_rows
         ],
@@ -4831,6 +4818,8 @@ _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
     'p4_x',
     'p4_y',
     'measured_at',
+    'image_key',
+    'thumb_key',
 )
 
 
@@ -4845,6 +4834,107 @@ def _normalize_measurement_timestamp_value(value) -> str | None:
         return parsed.isoformat()
     text = str(value or '').strip()
     return text or None
+
+
+_MEASUREMENT_FLOAT_FIELDS = {
+    'length_um',
+    'width_um',
+    'p1_x',
+    'p1_y',
+    'p2_x',
+    'p2_y',
+    'p3_x',
+    'p3_y',
+    'p4_x',
+    'p4_y',
+}
+_MEASUREMENT_FLOAT_ABS_TOL = 1e-9
+_MEASUREMENT_FLOAT_REL_TOL = 1e-9
+_MEASUREMENT_SYNC_FIELDS = [
+    'desktop_id',
+    'image_id',
+    'length_um',
+    'width_um',
+    'measurement_type',
+    'gallery_rotation',
+    'p1_x',
+    'p1_y',
+    'p2_x',
+    'p2_y',
+    'p3_x',
+    'p3_y',
+    'p4_x',
+    'p4_y',
+    'measured_at',
+]
+_MEASUREMENT_SYNC_MEDIA_FIELDS = ['image_key', 'thumb_key']
+
+
+def _normalize_measurement_identity_value(value) -> str | None:
+    text = str(value or '').strip()
+    return text or None
+
+
+def _normalize_measurement_int_value(value, *, default: int | None = None) -> int | None:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        try:
+            return int(value)
+        except Exception:
+            return default
+    text = str(value or '').strip()
+    if not text:
+        return default
+    try:
+        return int(float(text))
+    except Exception:
+        return default
+
+
+def _normalize_measurement_float_value(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def _measurement_field_values_match(field: str, left, right) -> bool:
+    if field in _MEASUREMENT_FLOAT_FIELDS:
+        left_float = _normalize_measurement_float_value(left)
+        right_float = _normalize_measurement_float_value(right)
+        if left_float is None or right_float is None:
+            return left_float is None and right_float is None
+        return math.isclose(
+            left_float,
+            right_float,
+            rel_tol=_MEASUREMENT_FLOAT_REL_TOL,
+            abs_tol=_MEASUREMENT_FLOAT_ABS_TOL,
+        )
+    if field == 'measurement_type':
+        return _normalize_measurement_type_value(left) == _normalize_measurement_type_value(right)
+    if field == 'measured_at':
+        return _normalize_measurement_timestamp_value(left) == _normalize_measurement_timestamp_value(right)
+    if field == 'gallery_rotation':
+        return _normalize_measurement_int_value(left, default=0) == _normalize_measurement_int_value(right, default=0)
+    if field == 'desktop_id':
+        return _normalize_measurement_int_value(left) == _normalize_measurement_int_value(right)
+    if field in {'id', 'image_id', 'image_key', 'thumb_key'}:
+        return _normalize_measurement_identity_value(left) == _normalize_measurement_identity_value(right)
+    return _normalize_snapshot_value(left) == _normalize_snapshot_value(right)
 
 
 def _measurement_compare_key(measurement_row: dict | None) -> str:
@@ -4865,35 +4955,46 @@ def _measurement_compare_payload(
     measurement_row: dict | None,
     *,
     local: bool,
+    cloud_image_id: str | None = None,
+    include_media_keys: bool = False,
+    image_storage_key: str | None = None,
 ) -> dict:
     row = dict(measurement_row or {})
     payload: dict = {}
     if local:
-        payload['id'] = _normalize_snapshot_value(
+        payload['id'] = _normalize_measurement_identity_value(
             str(row.get('cloud_id') or '').strip() or row.get('id')
         )
-        payload['desktop_id'] = _normalize_snapshot_value(row.get('id'))
-        payload['image_id'] = _normalize_snapshot_value(
-            str(row.get('image_cloud_id') or '').strip() or row.get('image_id')
+        payload['desktop_id'] = _normalize_measurement_int_value(row.get('id'))
+        payload['image_id'] = _normalize_measurement_identity_value(
+            cloud_image_id or str(row.get('image_cloud_id') or '').strip() or row.get('image_id')
         )
     else:
-        payload['id'] = _normalize_snapshot_value(row.get('id'))
-        payload['desktop_id'] = _normalize_snapshot_value(row.get('desktop_id'))
-        payload['image_id'] = _normalize_snapshot_value(row.get('image_id'))
+        payload['id'] = _normalize_measurement_identity_value(row.get('id'))
+        payload['desktop_id'] = _normalize_measurement_int_value(row.get('desktop_id'))
+        payload['image_id'] = _normalize_measurement_identity_value(row.get('image_id'))
 
-    payload['length_um'] = _normalize_snapshot_value(row.get('length_um'))
-    payload['width_um'] = _normalize_snapshot_value(row.get('width_um'))
+    payload['length_um'] = _normalize_measurement_float_value(row.get('length_um'))
+    payload['width_um'] = _normalize_measurement_float_value(row.get('width_um'))
     payload['measurement_type'] = _normalize_measurement_type_value(row.get('measurement_type'))
-    payload['gallery_rotation'] = _safe_int(row.get('gallery_rotation'))
-    payload['p1_x'] = _normalize_snapshot_value(row.get('p1_x'))
-    payload['p1_y'] = _normalize_snapshot_value(row.get('p1_y'))
-    payload['p2_x'] = _normalize_snapshot_value(row.get('p2_x'))
-    payload['p2_y'] = _normalize_snapshot_value(row.get('p2_y'))
-    payload['p3_x'] = _normalize_snapshot_value(row.get('p3_x'))
-    payload['p3_y'] = _normalize_snapshot_value(row.get('p3_y'))
-    payload['p4_x'] = _normalize_snapshot_value(row.get('p4_x'))
-    payload['p4_y'] = _normalize_snapshot_value(row.get('p4_y'))
+    payload['gallery_rotation'] = _normalize_measurement_int_value(row.get('gallery_rotation'), default=0)
+    payload['p1_x'] = _normalize_measurement_float_value(row.get('p1_x'))
+    payload['p1_y'] = _normalize_measurement_float_value(row.get('p1_y'))
+    payload['p2_x'] = _normalize_measurement_float_value(row.get('p2_x'))
+    payload['p2_y'] = _normalize_measurement_float_value(row.get('p2_y'))
+    payload['p3_x'] = _normalize_measurement_float_value(row.get('p3_x'))
+    payload['p3_y'] = _normalize_measurement_float_value(row.get('p3_y'))
+    payload['p4_x'] = _normalize_measurement_float_value(row.get('p4_x'))
+    payload['p4_y'] = _normalize_measurement_float_value(row.get('p4_y'))
     payload['measured_at'] = _normalize_measurement_timestamp_value(row.get('measured_at'))
+    if include_media_keys:
+        if local:
+            storage_key = _normalize_cloud_media_key(image_storage_key)
+            payload['image_key'] = storage_key or None
+            payload['thumb_key'] = media_variant_key(storage_key, 'thumb') if storage_key else None
+        else:
+            payload['image_key'] = _normalize_cloud_media_key(row.get('image_key')) or None
+            payload['thumb_key'] = _normalize_cloud_media_key(row.get('thumb_key')) or None
     return payload
 
 
@@ -4906,18 +5007,85 @@ def _remote_measurement_snapshot_payload(measurement_row: dict | None) -> dict:
 
 
 def _baseline_measurement_compare_payload(record: dict | None) -> dict:
-    row = dict(record or {})
-    payload: dict = {}
-    for field in _SNAPSHOT_MEAS_FIELDS:
-        if field == 'gallery_rotation':
-            payload[field] = _safe_int(row.get(field))
-        elif field == 'measurement_type':
-            payload[field] = _normalize_measurement_type_value(row.get(field))
-        elif field == 'measured_at':
-            payload[field] = _normalize_measurement_timestamp_value(row.get(field))
-        else:
-            payload[field] = _normalize_snapshot_value(row.get(field))
+    return _measurement_compare_payload(record, local=False)
+
+
+def _measurement_sync_payload(
+    measurement_row: dict | None,
+    *,
+    local: bool,
+    cloud_image_id: str | None = None,
+    image_storage_key: str | None = None,
+    include_media_keys: bool = False,
+) -> dict:
+    payload = _measurement_compare_payload(
+        measurement_row,
+        local=local,
+        cloud_image_id=cloud_image_id,
+        include_media_keys=include_media_keys,
+        image_storage_key=image_storage_key,
+    )
+    payload.pop('id', None)
     return payload
+
+
+def _measurement_payloads_match(
+    local_row: dict | None,
+    remote_row: dict | None,
+    *,
+    cloud_image_id: str | None = None,
+    image_storage_key: str | None = None,
+    include_media_keys: bool = False,
+) -> bool:
+    local_payload = _measurement_sync_payload(
+        local_row,
+        local=True,
+        cloud_image_id=cloud_image_id,
+        image_storage_key=image_storage_key,
+        include_media_keys=include_media_keys,
+    )
+    remote_payload = _measurement_sync_payload(
+        remote_row,
+        local=False,
+        include_media_keys=include_media_keys,
+    )
+    compare_fields = list(_MEASUREMENT_SYNC_FIELDS)
+    if include_media_keys:
+        compare_fields.extend(_MEASUREMENT_SYNC_MEDIA_FIELDS)
+    for field in compare_fields:
+        if not _measurement_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
+            return False
+    return True
+
+
+def _measurement_push_diff_fields(
+    local_row: dict | None,
+    remote_row: dict | None,
+    *,
+    cloud_image_id: str | None = None,
+    image_storage_key: str | None = None,
+    include_media_keys: bool = False,
+) -> list[str]:
+    local_payload = _measurement_sync_payload(
+        local_row,
+        local=True,
+        cloud_image_id=cloud_image_id,
+        image_storage_key=image_storage_key,
+        include_media_keys=include_media_keys,
+    )
+    remote_payload = _measurement_sync_payload(
+        remote_row,
+        local=False,
+        include_media_keys=include_media_keys,
+    )
+    diff_fields: list[str] = []
+    compare_fields = list(_MEASUREMENT_SYNC_FIELDS)
+    if include_media_keys:
+        compare_fields.extend(_MEASUREMENT_SYNC_MEDIA_FIELDS)
+    for field in compare_fields:
+        if not _measurement_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
+            diff_fields.append(field)
+    return diff_fields
 
 
 def _analyze_measurement_changes(current_measurements: list[dict], baseline_measurements: list[dict]) -> dict:
@@ -4931,12 +5099,19 @@ def _analyze_measurement_changes(current_measurements: list[dict], baseline_meas
     added_keys = [key for key in current_keys if key not in baseline_map]
     removed_keys = [key for key in baseline_keys if key not in current_map]
     shared_keys = [key for key in current_keys if key in baseline_map]
-    changed_keys = [
-        key
-        for key in shared_keys
-        if _measurement_compare_payload(current_map[key], local=False)
-        != _measurement_compare_payload(baseline_map[key], local=False)
-    ]
+    changed_keys: list[str] = []
+    for key in shared_keys:
+        current_payload = _measurement_compare_payload(current_map[key], local=False)
+        baseline_payload = _measurement_compare_payload(baseline_map[key], local=False)
+        if any(
+            not _measurement_field_values_match(
+                field,
+                current_payload.get(field),
+                baseline_payload.get(field),
+            )
+            for field in _SNAPSHOT_MEAS_FIELDS
+        ):
+            changed_keys.append(key)
 
     return {
         'added_keys': added_keys,
@@ -8074,17 +8249,20 @@ class SporelyCloudClient:
         remote_measurement_cache: dict[str, dict] | None = None,
     ) -> str:
         """Upsert one spore measurement row. Returns cloud UUID."""
-        payload = {col: meas.get(col) for col in _MEAS_PUSH_COLS}
-        payload['image_id'] = cloud_image_id
-        payload['user_id'] = self.user_id
-        payload['desktop_id'] = int(meas['id'])
+        storage_key = ''
+        include_media_keys = False
         if self._measurement_supports_media_keys():
             storage_key = self._cloud_image_storage_key(cloud_image_id)
-            if storage_key:
-                if self._has_column('spore_measurements', 'image_key'):
-                    payload['image_key'] = storage_key
-                if self._has_column('spore_measurements', 'thumb_key'):
-                    payload['thumb_key'] = media_variant_key(storage_key, 'thumb')
+            include_media_keys = bool(storage_key)
+
+        payload = _measurement_sync_payload(
+            meas,
+            local=True,
+            cloud_image_id=cloud_image_id,
+            image_storage_key=storage_key,
+            include_media_keys=include_media_keys,
+        )
+        payload['user_id'] = self.user_id
 
         if remote_measurement_cache is not None:
             for lookup_key in _measurement_push_lookup_keys(meas):
@@ -8093,18 +8271,60 @@ class SporelyCloudClient:
                     continue
                 existing_id = str(cached_row.get('id') or '').strip()
                 if existing_id:
+                    if _measurement_payloads_match(
+                        meas,
+                        cached_row,
+                        cloud_image_id=cloud_image_id,
+                        image_storage_key=storage_key,
+                        include_media_keys=include_media_keys,
+                    ):
+                        return existing_id
+                    diff_fields = _measurement_push_diff_fields(
+                        meas,
+                        cached_row,
+                        cloud_image_id=cloud_image_id,
+                        image_storage_key=storage_key,
+                        include_media_keys=include_media_keys,
+                    )
+                    if diff_fields:
+                        print(
+                            f'[cloud_sync] Measurement {int(meas.get("id") or 0)} '
+                            f'push diff fields: {", ".join(diff_fields)}'
+                        )
                     self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
                     return existing_id
             rows = self._post('spore_measurements', payload)
             return rows[0]['id']
 
         rows = self._get(
-            f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select=id'
+            f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
         )
         if rows:
-            existing_id = rows[0]['id']
-            self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
-            return existing_id
+            remote_row = dict(rows[0] or {})
+            existing_id = str(remote_row.get('id') or '').strip()
+            if existing_id:
+                if _measurement_payloads_match(
+                    meas,
+                    remote_row,
+                    cloud_image_id=cloud_image_id,
+                    image_storage_key=storage_key,
+                    include_media_keys=include_media_keys,
+                ):
+                    return existing_id
+                diff_fields = _measurement_push_diff_fields(
+                    meas,
+                    remote_row,
+                    cloud_image_id=cloud_image_id,
+                    image_storage_key=storage_key,
+                    include_media_keys=include_media_keys,
+                )
+                if diff_fields:
+                    print(
+                        f'[cloud_sync] Measurement {int(meas.get("id") or 0)} '
+                        f'push diff fields: {", ".join(diff_fields)}'
+                    )
+                self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
+                return existing_id
         rows = self._post('spore_measurements', payload)
         return rows[0]['id']
 
