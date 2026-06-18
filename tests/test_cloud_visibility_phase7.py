@@ -110,7 +110,7 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         self.push_metadata_calls: list[dict] = []
         self.original_patch_calls: list[dict] = []
 
-    def push_observation(self, obs):
+    def push_observation(self, obs, remote_obs=None, **kwargs):
         return "cloud-obs-1"
 
     def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
@@ -271,6 +271,126 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     assert patched_payloads[0][1]["location_public"] is True
     assert patched_payloads[0][1]["is_draft"] is False
     assert patched_payloads[0][1]["location_precision"] == "exact"
+
+
+def test_observation_push_diff_fields_normalize_bool_float_json_and_visibility():
+    local_obs = {
+        "id": 7,
+        "date": "2026-05-01T12:34:56Z",
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "Agaricus campestris",
+        "sharing_scope": "public",
+        "location_public": "1",
+        "is_draft": "0",
+        "uncertain": "0",
+        "unspontaneous": "1",
+        "interesting_comment": "0",
+        "location_precision": "Exact",
+        "spore_data_visibility": "Public",
+        "gps_latitude": "63.0000000001",
+        "gps_longitude": "10.0",
+        "ai_selected_probability": "0.9700000001",
+        "spore_statistics": '{"b": 2, "a": 1}',
+        "auto_threshold": "0.25",
+    }
+    remote_obs = {
+        "id": "cloud-obs-1",
+        "desktop_id": 7,
+        "date": "2026-05-01",
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "Agaricus campestris",
+        "visibility": "public",
+        "location_public": True,
+        "is_draft": False,
+        "uncertain": False,
+        "unspontaneous": True,
+        "interesting_comment": False,
+        "location_precision": "exact",
+        "spore_data_visibility": "public",
+        "gps_latitude": 63.0,
+        "gps_longitude": 10.0,
+        "ai_selected_probability": 0.97,
+        "spore_statistics": {"a": 1, "b": 2},
+        "auto_threshold": 0.25,
+    }
+
+    assert cloud_sync._observation_push_diff_fields(local_obs, remote_obs) == []
+    local_payload = cloud_sync._observation_compare_payload(local_obs, local=True)
+    remote_payload = cloud_sync._observation_compare_payload(remote_obs, local=False)
+    for field in (
+        "visibility",
+        "location_public",
+        "is_draft",
+        "uncertain",
+        "unspontaneous",
+        "interesting_comment",
+        "location_precision",
+        "spore_data_visibility",
+        "gps_latitude",
+        "gps_longitude",
+        "ai_selected_probability",
+        "spore_statistics",
+        "auto_threshold",
+    ):
+        assert cloud_sync._observation_field_values_match(field, local_payload[field], remote_payload[field])
+
+
+def test_push_observation_skips_noop_patch_when_remote_matches_after_normalization(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    patched_payloads = []
+
+    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-1")
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patched_payloads.append((path, dict(payload))))
+    monkeypatch.setattr(client, "_post", lambda *args, **kwargs: pytest.fail("no-op observation sync should not POST"))
+
+    cloud_id = client.push_observation(
+        {
+            "id": 7,
+            "date": "2026-05-01T12:34:56Z",
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "Agaricus campestris",
+            "sharing_scope": "public",
+            "location_public": "1",
+            "is_draft": "0",
+            "uncertain": "0",
+            "unspontaneous": "1",
+            "interesting_comment": "0",
+            "location_precision": "Exact",
+            "spore_data_visibility": "Public",
+            "gps_latitude": "63.0000000001",
+            "gps_longitude": "10.0",
+            "ai_selected_probability": "0.9700000001",
+            "spore_statistics": '{"b": 2, "a": 1}',
+            "auto_threshold": "0.25",
+        },
+        remote_obs={
+            "id": "cloud-obs-1",
+            "desktop_id": 7,
+            "date": "2026-05-01",
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "Agaricus campestris",
+            "visibility": "public",
+            "location_public": True,
+            "is_draft": False,
+            "uncertain": False,
+            "unspontaneous": True,
+            "interesting_comment": False,
+            "location_precision": "exact",
+            "spore_data_visibility": "public",
+            "gps_latitude": 63.0,
+            "gps_longitude": 10.0,
+            "ai_selected_probability": 0.97,
+            "spore_statistics": {"a": 1, "b": 2},
+            "auto_threshold": 0.25,
+        },
+    )
+
+    assert cloud_id == "cloud-obs-1"
+    assert patched_payloads == []
 
 
 def test_narrow_select_projection_constants_match_live_schema():
@@ -820,7 +940,7 @@ def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, 
     conn.close()
 
     class DummyClient:
-        def push_observation(self, obs):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             if int(obs.get("id") or 0) == 1:
                 raise cloud_sync.CloudSyncError(
                     'POST observations: {"code":"23514","message":"Free Sporely accounts can keep up to 20 privacy slot observations. Publish or use exact public location to continue."}'
@@ -903,7 +1023,7 @@ def test_push_all_marks_image_too_large_as_retryable_and_keeps_next_row_moving(t
     conn.close()
 
     class DummyClient:
-        def push_observation(self, obs):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             if int(obs.get("id") or 0) == 1:
                 raise cloud_sync.CloudSyncError(
                     'Image is too large for your plan. Make it smaller or upgrade to Pro.'
@@ -1194,7 +1314,7 @@ def test_push_all_announces_cloud_media_check_before_skip_message(tmp_path, monk
     progress_messages: list[str] = []
 
     class DummyClient:
-        def push_observation(self, obs):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             return "cloud-obs-1"
 
         def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
@@ -2663,7 +2783,7 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
     set_desktop_calls: list[tuple[str, int]] = []
 
     class DummyClient:
-        def push_observation(self, local_obs):
+        def push_observation(self, local_obs, remote_obs=None, **kwargs):
             return "cloud-obs-1"
 
         def get_observation(self, cloud_id):

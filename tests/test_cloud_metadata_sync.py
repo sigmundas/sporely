@@ -307,7 +307,7 @@ def test_sync_all_refreshes_remote_after_push_and_preserves_remote_only_metadata
         def set_desktop_id(self, *args, **kwargs):
             return None
 
-        def push_observation(self, obs):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             payload = dict(obs)
             push_calls.append(payload)
             for key, value in payload.items():
@@ -351,6 +351,103 @@ def test_sync_all_refreshes_remote_after_push_and_preserves_remote_only_metadata
     assert result["pushed"] == 1
     assert result["pulled"] == 1
     assert result["errors"] == []
+
+
+def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match(monkeypatch, tmp_path):
+    db_path = _init_metadata_sync_db(tmp_path)
+    _insert_observation(
+        db_path,
+        cloud_id="cloud-obs-1",
+        sync_status="dirty",
+        synced_at="2026-05-01T00:00:00Z",
+        date="2026-05-01T12:34:56Z",
+        genus="Agaricus",
+        species="campestris",
+        species_guess="Agaricus campestris",
+        notes="baseline note",
+        sharing_scope="public",
+        location_public="1",
+        location_precision="Exact",
+        spore_data_visibility="Public",
+        is_draft="0",
+        interesting_comment="0",
+        uncertain="0",
+        unspontaneous="1",
+        gps_latitude="63.0000000001",
+        gps_longitude="10.0",
+        ai_selected_probability="0.9700000001",
+    )
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_load_linked_cloud_user_id", lambda: "user-123")
+    monkeypatch.setattr(cloud_sync, "_save_linked_cloud_user_id", lambda user_id: None)
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+
+    remote_state = {
+        "id": "cloud-obs-1",
+        "desktop_id": 1,
+        "date": "2026-05-01",
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "Agaricus campestris",
+        "notes": "baseline note",
+        "sharing_scope": "public",
+        "visibility": "public",
+        "location_public": True,
+        "location_precision": "exact",
+        "spore_data_visibility": "public",
+        "is_draft": False,
+        "interesting_comment": False,
+        "uncertain": False,
+        "unspontaneous": True,
+        "gps_latitude": 63.0,
+        "gps_longitude": 10.0,
+        "ai_selected_probability": 0.97,
+    }
+    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: _snapshot_observation(remote_state))
+
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    patch_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(client, "fetch_current_user_id", lambda: "user-123")
+    monkeypatch.setattr(client, "list_remote_observations", lambda: [dict(remote_state)])
+    monkeypatch.setattr(client, "list_remote_calibrations", lambda: [])
+    monkeypatch.setattr(client, "pull_bulk_image_metadata", lambda obs_cloud_ids: [])
+    monkeypatch.setattr(client, "pull_image_metadata", lambda cloud_id, include_deleted_for_sync=False: [])
+    monkeypatch.setattr(client, "pull_measurements_for_images", lambda image_cloud_ids: [])
+    monkeypatch.setattr(client, "set_desktop_id", lambda *args, **kwargs: None)
+    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-1")
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patch_calls.append((path, dict(payload))))
+    monkeypatch.setattr(client, "_post", lambda *args, **kwargs: pytest.fail("no-op push should not POST"))
+
+    first_result = cloud_sync.push_all(
+        client,
+        sync_images=False,
+        sync_calibrations=False,
+        remote_obs=[dict(remote_state)],
+    )
+    second_result = cloud_sync.push_all(
+        client,
+        sync_images=False,
+        sync_calibrations=False,
+        remote_obs=[dict(remote_state)],
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT cloud_id, sync_status FROM observations WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert patch_calls == []
+    assert row == ("cloud-obs-1", "synced")
+    assert first_result["pushed"] == 1
+    assert second_result["pushed"] == 0
 
 
 def test_pull_all_keeps_conflict_fields_local_and_reports_review_needed(monkeypatch, tmp_path):

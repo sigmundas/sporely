@@ -68,6 +68,7 @@ from utils.original_sync_policy import (
     resolve_full_original_upload_source,
     should_download_full_original,
 )
+from utils.publish_targets import normalize_publish_target
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -170,6 +171,107 @@ def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'priva
 def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'private') -> str:
     """Map Phase 7 cloud visibility back to the local desktop sharing scope."""
     return _normalize_sharing_scope(value, fallback=fallback)
+
+
+_OBSERVATION_BOOL_FIELDS = {
+    'location_public',
+    'uncertain',
+    'unspontaneous',
+    'interesting_comment',
+    'is_draft',
+}
+_OBSERVATION_INT_FIELDS = {
+    'artsdata_id',
+    'artportalen_id',
+    'inaturalist_id',
+    'mushroomobserver_id',
+    'determination_method',
+}
+_OBSERVATION_FLOAT_FIELDS = {
+    'gps_latitude',
+    'gps_longitude',
+    'ai_selected_probability',
+    'auto_threshold',
+}
+_OBSERVATION_FLOAT_ABS_TOL = 1e-9
+_OBSERVATION_FLOAT_REL_TOL = 1e-9
+
+
+def _normalize_observation_bool_value(value, *, default: bool | None = None) -> bool | None:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, float):
+        return value != 0.0
+    text = str(value or '').strip().lower()
+    if not text:
+        return default
+    if text in {'true', '1', 'yes', 'on'}:
+        return True
+    if text in {'false', '0', 'no', 'off'}:
+        return False
+    if text in {'none', 'null'}:
+        return default
+    return bool(value)
+
+
+def _normalize_observation_int_value(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def _normalize_observation_float_value(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+
+def _normalize_observation_json_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, tuple)):
+        normalized = _normalize_snapshot_value(value)
+        if normalized in ({}, [], ''):
+            return None
+        return normalized
+    if isinstance(value, (bool, int, float)):
+        return value
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except Exception:
+        return text
+    if data in ({}, [], ''):
+        return None
+    return _normalize_snapshot_value(data)
 
 
 def _encode_postgrest_filter_value(value: str | None) -> str:
@@ -2548,9 +2650,60 @@ def _normalize_observation_field_value(field: str, value):
         if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
             return text[:10]
         return text
-    if field in {'location_public', 'uncertain', 'unspontaneous', 'interesting_comment', 'is_draft'}:
-        return None if value is None else bool(value)
+    if field in {'location_public', 'uncertain', 'unspontaneous', 'interesting_comment'}:
+        return _normalize_observation_bool_value(value, default=None)
+    if field == 'is_draft':
+        return _normalize_observation_bool_value(value, default=True)
+    if field in _OBSERVATION_FLOAT_FIELDS:
+        return _normalize_observation_float_value(value)
+    if field in _OBSERVATION_INT_FIELDS:
+        return _normalize_observation_int_value(value)
+    if field == 'location_precision':
+        return ObservationDB._normalize_location_precision(value)
+    if field == 'spore_data_visibility':
+        raw = str(value or 'public').strip().lower()
+        return raw if raw in {'private', 'friends', 'public'} else 'public'
+    if field == 'spore_statistics':
+        return _normalize_observation_json_value(value)
     return _normalize_snapshot_value(value)
+
+
+def _observation_field_values_match(field: str, left, right) -> bool:
+    if field in _OBSERVATION_FLOAT_FIELDS:
+        left_value = _normalize_observation_float_value(left)
+        right_value = _normalize_observation_float_value(right)
+        if left_value is None or right_value is None:
+            return left_value == right_value
+        return math.isclose(
+            left_value,
+            right_value,
+            rel_tol=_OBSERVATION_FLOAT_REL_TOL,
+            abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+        )
+    return left == right
+
+
+def _observation_push_payload(record: dict | None, *, local: bool) -> dict:
+    row = dict(record or {})
+    payload = {col: row.get(col) for col in _OBS_PUSH_COLS}
+    payload['date'] = _normalize_observation_field_value('date', payload.get('date'))
+    scope_source = row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope'))
+    payload['visibility'] = _sharing_scope_to_cloud_visibility(scope_source, fallback='private')
+    raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
+    payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
+    payload['location_precision'] = ObservationDB._normalize_location_precision(payload.get('location_precision'))
+    payload['is_draft'] = _normalize_observation_bool_value(payload.get('is_draft'), default=True)
+    for field in ('location_public', 'uncertain', 'unspontaneous', 'interesting_comment'):
+        payload[field] = _normalize_observation_bool_value(payload.get(field), default=None)
+    for field in _OBSERVATION_INT_FIELDS:
+        payload[field] = _normalize_observation_int_value(payload.get(field))
+    for field in _OBSERVATION_FLOAT_FIELDS:
+        payload[field] = _normalize_observation_float_value(payload.get(field))
+    payload['spore_statistics'] = _normalize_observation_json_value(payload.get('spore_statistics'))
+    raw_publish_target = str(payload.get('publish_target') or '').strip()
+    if raw_publish_target:
+        payload['publish_target'] = normalize_publish_target(raw_publish_target)
+    return payload
 
 
 def _parse_sync_timestamp(value) -> datetime | None:
@@ -2569,31 +2722,19 @@ def _parse_sync_timestamp(value) -> datetime | None:
 
 def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
     row = dict(record or {})
-    payload: dict = {}
+    payload = _observation_push_payload(row, local=local)
+    payload['id'] = _normalize_observation_field_value(
+        'id',
+        row.get('cloud_id') if local else row.get('id'),
+    )
+    payload['desktop_id'] = _normalize_observation_field_value(
+        'desktop_id',
+        row.get('id') if local else row.get('desktop_id'),
+    )
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field == 'id':
-            payload[field] = _normalize_observation_field_value(field, (
-                (row.get('cloud_id') if local else row.get('id'))
-            ))
-        elif field == 'desktop_id':
-            payload[field] = _normalize_observation_field_value(field, (
-                (row.get('id') if local else row.get('desktop_id'))
-            ))
-        elif field == 'visibility':
-            payload[field] = _normalize_observation_field_value(field, (
-                _normalize_sharing_scope(
-                    row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='private',
-                )
-            ))
-        elif field == 'sharing_scope':
-            payload[field] = _normalize_observation_field_value(field, (
-                _normalize_sharing_scope(
-                    row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope')),
-                    fallback='private',
-                )
-            ))
-        else:
+        if field in {'id', 'desktop_id'}:
+            continue
+        if field not in payload:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
     genus = str(payload.get('genus') or '').strip()
     species = str(payload.get('species') or '').strip()
@@ -2607,19 +2748,13 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
 def _baseline_observation_compare_payload(record: dict | None) -> dict:
     """Normalize a stored snapshot observation for fair comparison with live rows."""
     row = dict(record or {})
-    payload: dict = {}
+    payload = _observation_push_payload(row, local=False)
+    payload['id'] = _normalize_observation_field_value('id', row.get('id'))
+    payload['desktop_id'] = _normalize_observation_field_value('desktop_id', row.get('desktop_id'))
     for field in _SNAPSHOT_OBS_FIELDS:
         if field in {'id', 'desktop_id'}:
-            payload[field] = _normalize_observation_field_value(field, row.get(field))
-        elif field in {'visibility', 'sharing_scope'}:
-            payload[field] = _normalize_observation_field_value(
-                field,
-                _normalize_sharing_scope(
-                    row.get('visibility') or row.get('sharing_scope'),
-                    fallback='private',
-                ),
-            )
-        else:
+            continue
+        if field not in payload:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
     genus = str(payload.get('genus') or '').strip()
     species = str(payload.get('species') or '').strip()
@@ -2628,6 +2763,18 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     if species_guess and derived_guess and species_guess == derived_guess:
         payload['species_guess'] = None
     return payload
+
+
+def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | None) -> list[str]:
+    local_payload = _observation_compare_payload(local_obs, local=True)
+    remote_payload = _observation_compare_payload(remote_obs, local=False)
+    diff_fields: list[str] = []
+    for field in _SNAPSHOT_OBS_FIELDS:
+        if field in {'id', 'desktop_id'}:
+            continue
+        if not _observation_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
+            diff_fields.append(field)
+    return diff_fields
 
 
 def _local_image_snapshot_payload(image_row: dict | None) -> dict:
@@ -2875,10 +3022,10 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
         baseline_value = baseline_payload.get(field)
         local_value = local_payload.get(field)
         remote_value = remote_payload.get(field)
-        local_changed = local_value != baseline_value
-        remote_changed = remote_value != baseline_value
+        local_changed = not _observation_field_values_match(field, local_value, baseline_value)
+        remote_changed = not _observation_field_values_match(field, remote_value, baseline_value)
         if local_changed and remote_changed:
-            if local_value == remote_value:
+            if _observation_field_values_match(field, local_value, remote_value):
                 shared_same_fields.append(field)
             else:
                 conflict_fields.append(field)
@@ -2961,7 +3108,7 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     for field in _SNAPSHOT_OBS_FIELDS:
         if field in {'id', 'desktop_id'}:
             continue
-        if local_payload.get(field) != baseline_obs.get(field):
+        if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
             return True
 
     local_id = _safe_int(local_obs.get('id'))
@@ -5047,7 +5194,7 @@ def _remote_snapshot_has_meaningful_changes(
     for field in _SNAPSHOT_OBS_FIELDS:
         if field in {'id', 'desktop_id'}:
             continue
-        if remote_payload.get(field) != baseline_obs.get(field):
+        if not _observation_field_values_match(field, remote_payload.get(field), baseline_obs.get(field)):
             return True
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
     remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
@@ -5143,7 +5290,8 @@ def _set_observation_plan_image_blocked(local_id: int, raw_error: str) -> str:
 
 def _remote_observation_update_kwargs(remote: dict) -> dict:
     raw_location_public = remote.get('location_public')
-    location_public = None if raw_location_public is None else bool(raw_location_public)
+    location_public = _normalize_observation_bool_value(raw_location_public, default=None)
+    raw_publish_target = str(remote.get('publish_target') or '').strip()
     return {
         'date': remote.get('date'),
         'genus': remote.get('genus'),
@@ -5154,32 +5302,32 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat': remote.get('habitat'),
         'notes': remote.get('notes'),
         'open_comment': remote.get('open_comment'),
-        'interesting_comment': bool(remote.get('interesting_comment', False)),
+        'interesting_comment': _normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
         'sharing_scope': _cloud_visibility_to_sharing_scope(
             remote.get('visibility') or remote.get('sharing_scope'),
             fallback='friends' if location_public else 'private',
         ),
         'location_public': location_public,
-        'is_draft': True if remote.get('is_draft') is None else bool(remote.get('is_draft')),
+        'is_draft': _normalize_observation_bool_value(remote.get('is_draft'), default=True),
         'location_precision': ObservationDB._normalize_location_precision(
             remote.get('location_precision')
         ),
         'ai_selected_service': remote.get('ai_selected_service'),
         'ai_selected_taxon_id': remote.get('ai_selected_taxon_id'),
         'ai_selected_scientific_name': remote.get('ai_selected_scientific_name'),
-        'ai_selected_probability': remote.get('ai_selected_probability'),
+        'ai_selected_probability': _normalize_observation_float_value(remote.get('ai_selected_probability')),
         'ai_selected_at': remote.get('ai_selected_at'),
         'spore_data_visibility': (lambda v: v if v in {'private', 'friends', 'public'} else 'public')(
             str(remote.get('spore_data_visibility') or 'public').strip().lower()
         ),
-        'uncertain': bool(remote.get('uncertain', False)),
-        'unspontaneous': bool(remote.get('unspontaneous', False)),
-        'gps_latitude': remote.get('gps_latitude'),
-        'gps_longitude': remote.get('gps_longitude'),
-        'artsdata_id': remote.get('artsdata_id'),
-        'artportalen_id': remote.get('artportalen_id'),
-        'publish_target': remote.get('publish_target'),
-        'determination_method': remote.get('determination_method'),
+        'uncertain': _normalize_observation_bool_value(remote.get('uncertain'), default=False),
+        'unspontaneous': _normalize_observation_bool_value(remote.get('unspontaneous'), default=False),
+        'gps_latitude': _normalize_observation_float_value(remote.get('gps_latitude')),
+        'gps_longitude': _normalize_observation_float_value(remote.get('gps_longitude')),
+        'artsdata_id': _normalize_observation_int_value(remote.get('artsdata_id')),
+        'artportalen_id': _normalize_observation_int_value(remote.get('artportalen_id')),
+        'publish_target': normalize_publish_target(raw_publish_target) if raw_publish_target else None,
+        'determination_method': _normalize_observation_int_value(remote.get('determination_method')),
         'habitat_nin2_path': remote.get('habitat_nin2_path'),
         'habitat_substrate_path': remote.get('habitat_substrate_path'),
         'habitat_host_genus': remote.get('habitat_host_genus'),
@@ -5193,15 +5341,20 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
 
 
 def _remote_observation_extra_values(remote: dict) -> dict:
+    raw_spore_stats = remote.get('spore_statistics')
+    serialized_spore_stats = _normalize_observation_json_value(raw_spore_stats)
+    if serialized_spore_stats is not None and not isinstance(serialized_spore_stats, str):
+        serialized_spore_stats = json.dumps(serialized_spore_stats, ensure_ascii=False, sort_keys=True)
+    raw_auto_threshold = _normalize_observation_float_value(remote.get('auto_threshold'))
     return {
-        'inaturalist_id': remote.get('inaturalist_id'),
-        'mushroomobserver_id': remote.get('mushroomobserver_id'),
+        'inaturalist_id': _normalize_observation_int_value(remote.get('inaturalist_id')),
+        'mushroomobserver_id': _normalize_observation_int_value(remote.get('mushroomobserver_id')),
         'source_type': remote.get('source_type'),
         'citation': remote.get('citation'),
         'data_provider': remote.get('data_provider'),
         'author': remote.get('author'),
-        'spore_statistics': remote.get('spore_statistics'),
-        'auto_threshold': remote.get('auto_threshold'),
+        'spore_statistics': serialized_spore_stats,
+        'auto_threshold': raw_auto_threshold,
     }
 
 
@@ -6360,7 +6513,10 @@ def resolve_conflict_keep_local(
             remote_obs = None
 
     try:
-        cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(local_obs, remote_obs))
+        cloud_id = client.push_observation(
+            _merge_cloud_selected_ai_fields(local_obs, remote_obs),
+            remote_obs=remote_obs,
+        )
     except Exception as exc:
         if not is_privacy_slot_limit_error(exc):
             raise
@@ -6530,7 +6686,10 @@ def resolve_conflict_merge(
 
     # Then push the local observation (which now includes merged images)
     try:
-        cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(local_obs, remote_obs))
+        cloud_id = client.push_observation(
+            _merge_cloud_selected_ai_fields(local_obs, remote_obs),
+            remote_obs=remote_obs,
+        )
     except Exception as exc:
         if not is_privacy_slot_limit_error(exc):
             raise
@@ -7243,33 +7402,18 @@ class SporelyCloudClient:
 
         return str(rows[0]['id'])
 
-    def push_observation(self, obs: dict) -> str:
+    def push_observation(self, obs: dict, remote_obs: dict | None = None) -> str:
         """Upsert observation to cloud. Returns cloud UUID."""
-        payload = {col: obs.get(col) for col in _OBS_PUSH_COLS}
+        payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
         payload['desktop_id'] = obs['id']
-        payload['visibility'] = _sharing_scope_to_cloud_visibility(obs.get('sharing_scope'), fallback='private')
-        raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
-        payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
-        payload['location_precision'] = ObservationDB._normalize_location_precision(
-            obs.get('location_precision')
-        )
-        payload['is_draft'] = True if payload.get('is_draft') is None else bool(payload['is_draft'])
-
-        # Normalise SQLite 0/1 integers to proper JSON booleans
-        for col in ('uncertain', 'unspontaneous', 'interesting_comment', 'location_public'):
-            if payload.get(col) is not None:
-                payload[col] = bool(payload[col])
-
-        # spore_statistics is stored as JSON text in SQLite; send as object
-        if isinstance(payload.get('spore_statistics'), str):
-            try:
-                payload['spore_statistics'] = json.loads(payload['spore_statistics'])
-            except (json.JSONDecodeError, TypeError):
-                pass
 
         existing_id = self._find_cloud_observation(obs['id'])
         if existing_id:
+            if remote_obs is not None:
+                diff_fields = _observation_push_diff_fields(dict(obs or {}), remote_obs)
+                if not diff_fields:
+                    return existing_id
             self._patch(f'observations?id=eq.{existing_id}', payload)
             return existing_id
         rows = self._post('observations', payload)
@@ -8505,12 +8649,14 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     field_rows = []
     for field in _CONFLICT_COMPARE_FIELDS:
         l_val, r_val, b_val = local_payload.get(field), remote_payload.get(field), baseline_obs.get(field)
-        if l_val == r_val: continue
+        if _observation_field_values_match(field, l_val, r_val):
+            continue
         field_rows.append({
             'field': field,
             'label': _CONFLICT_FIELD_LABELS.get(field, field.replace('_', ' ').title()),
             'baseline': b_val, 'local': l_val, 'remote': r_val,
-            'local_changed': l_val != b_val, 'remote_changed': r_val != b_val,
+            'local_changed': not _observation_field_values_match(field, l_val, b_val),
+            'remote_changed': not _observation_field_values_match(field, r_val, b_val),
         })
 
     # 2. Detailed Image Differences
@@ -8657,7 +8803,10 @@ def push_all(
                         if field in remote_update_kwargs:
                             push_payload[field] = remote_update_kwargs[field]
 
-            cloud_id = client.push_observation(_merge_cloud_selected_ai_fields(push_payload, remote))
+            cloud_id = client.push_observation(
+                _merge_cloud_selected_ai_fields(push_payload, remote),
+                remote_obs=remote,
+            )
 
             # Update local record with cloud_id and sync_status
             conn2 = get_connection()
@@ -9769,13 +9918,14 @@ def _create_local_from_remote(
 ) -> int:
     """Insert a cloud observation into local SQLite. Returns new local ID."""
     raw_location_public = remote.get('location_public')
-    location_public = None if raw_location_public is None else bool(raw_location_public)
+    location_public = _normalize_observation_bool_value(raw_location_public, default=None)
     sharing_scope = _cloud_visibility_to_sharing_scope(
         remote.get('visibility') or remote.get('sharing_scope'),
         fallback='friends' if location_public else 'private',
     )
     raw_spore_vis = str(remote.get('spore_data_visibility') or 'public').strip().lower()
     spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
+    raw_publish_target = str(remote.get('publish_target') or '').strip()
 
     # Map cloud columns to create_observation kwargs
     remote_captured_at = str(remote.get('captured_at') or '').strip()
@@ -9792,16 +9942,16 @@ def _create_local_from_remote(
         sharing_scope=sharing_scope,
         location_public=location_public,
         spore_data_visibility=spore_data_visibility,
-        uncertain=bool(remote.get('uncertain', False)),
-        unspontaneous=bool(remote.get('unspontaneous', False)),
-        gps_latitude=remote.get('gps_latitude'),
-        gps_longitude=remote.get('gps_longitude'),
-        is_draft=True if remote.get('is_draft') is None else bool(remote.get('is_draft')),
-        location_precision=remote.get('location_precision'),
+        uncertain=_normalize_observation_bool_value(remote.get('uncertain'), default=False),
+        unspontaneous=_normalize_observation_bool_value(remote.get('unspontaneous'), default=False),
+        gps_latitude=_normalize_observation_float_value(remote.get('gps_latitude')),
+        gps_longitude=_normalize_observation_float_value(remote.get('gps_longitude')),
+        is_draft=_normalize_observation_bool_value(remote.get('is_draft'), default=True),
+        location_precision=ObservationDB._normalize_location_precision(remote.get('location_precision')),
         ai_selected_service=remote.get('ai_selected_service'),
         ai_selected_taxon_id=remote.get('ai_selected_taxon_id'),
         ai_selected_scientific_name=remote.get('ai_selected_scientific_name'),
-        ai_selected_probability=remote.get('ai_selected_probability'),
+        ai_selected_probability=_normalize_observation_float_value(remote.get('ai_selected_probability')),
         ai_selected_at=remote.get('ai_selected_at'),
         source_type=remote.get('source_type') or 'personal',
         author=remote.get('author'),
@@ -9813,8 +9963,8 @@ def _create_local_from_remote(
         habitat_nin2_note=remote.get('habitat_nin2_note'),
         habitat_substrate_note=remote.get('habitat_substrate_note'),
         habitat_grows_on_note=remote.get('habitat_grows_on_note'),
-        publish_target=remote.get('publish_target'),
-        interesting_comment=bool(remote.get('interesting_comment', False)),
+        publish_target=normalize_publish_target(raw_publish_target) if raw_publish_target else None,
+        interesting_comment=_normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
     )
     local_id = ObservationDB.create_observation(**kwargs)
 
