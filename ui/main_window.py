@@ -1239,6 +1239,20 @@ class SettingsHubDialog(QDialog):
         cloud_sync_button_row.addWidget(self.cloud_sync_details_button)
         cloud_sync_button_row.addStretch()
         cloud_sync_layout.addLayout(cloud_sync_button_row)
+
+        repair_row = QHBoxLayout()
+        repair_row.setContentsMargins(0, 0, 0, 0)
+        repair_row.setSpacing(8)
+        self.cloud_repair_calibration_conflicts_button = QPushButton(
+            self.tr("Repair calibration conflicts (local wins)"),
+            cloud_sync_group,
+        )
+        self.cloud_repair_calibration_conflicts_button.clicked.connect(
+            self._request_settings_calibration_conflict_repair
+        )
+        repair_row.addWidget(self.cloud_repair_calibration_conflicts_button)
+        repair_row.addStretch()
+        cloud_sync_layout.addLayout(repair_row)
         layout.addWidget(cloud_sync_group)
 
         layout.addStretch()
@@ -2110,12 +2124,17 @@ class SettingsHubDialog(QDialog):
         self.cloud_sync_details_button.setEnabled(has_details and not running)
         self.cloud_sync_now_button.setEnabled(logged_in and not running)
         self.cloud_offline_media_button.setEnabled(logged_in and not running)
+        self.cloud_repair_calibration_conflicts_button.setEnabled(logged_in and not running)
         if not logged_in:
             self.cloud_sync_now_button.setToolTip(self.tr("Sign in to sync cloud metadata and images."))
             self.cloud_offline_media_button.setToolTip(self.tr("Sign in to download cloud media for offline use."))
+            self.cloud_repair_calibration_conflicts_button.setToolTip(
+                self.tr("Sign in to repair calibration conflicts in cloud metadata.")
+            )
         else:
             self.cloud_sync_now_button.setToolTip("")
             self.cloud_offline_media_button.setToolTip("")
+            self.cloud_repair_calibration_conflicts_button.setToolTip("")
 
     def _request_settings_cloud_sync(
         self,
@@ -2157,6 +2176,162 @@ class SettingsHubDialog(QDialog):
                 self.tr("Cloud Sync"),
                 self.tr("Cloud sync is already running or could not start."),
             )
+
+    def _request_settings_calibration_conflict_repair(self) -> None:
+        main_window = self._settings_hub_main_window()
+        if main_window is None:
+            QMessageBox.warning(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("Calibration repair is not available right now."),
+            )
+            return
+        try:
+            from utils import cloud_sync as cloud_sync_module
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("Calibration repair is not available right now.\n\n{error}").format(error=exc),
+            )
+            return
+
+        client = None
+        getter = getattr(main_window, "_cached_cloud_client", None)
+        if callable(getter):
+            try:
+                client = getter()
+            except Exception:
+                client = None
+        if client is None:
+            client = getattr(main_window, "_cloud_client", None)
+        if client is None:
+            try:
+                client = cloud_sync_module.SporelyCloudClient.from_stored_credentials()
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Calibration Repair"),
+                    self.tr("Could not load cloud credentials.\n\n{error}").format(error=exc),
+                )
+                return
+            if client is not None:
+                setattr(main_window, "_cloud_client", client)
+
+        if client is None:
+            QMessageBox.information(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("Sign in first, then click Repair calibration conflicts (local wins)."),
+            )
+            return
+
+        try:
+            conflicts = cloud_sync_module.list_calibration_conflicts(client)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("Could not inspect calibration conflicts.\n\n{error}").format(error=exc),
+            )
+            return
+
+        conflict_uuids = [
+            str((row or {}).get("calibration_uuid") or "").strip()
+            for row in conflicts
+            if str((row or {}).get("calibration_uuid") or "").strip()
+        ]
+        if not conflict_uuids:
+            QMessageBox.information(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("No calibration conflicts were found."),
+            )
+            return
+
+        preview_lines = []
+        for row in conflicts[:10]:
+            fields = ", ".join(str(field) for field in (row.get("fields") or []) if str(field).strip())
+            preview_lines.append(
+                self.tr("{uuid}: {fields}").format(
+                    uuid=str(row.get("calibration_uuid") or "").strip(),
+                    fields=fields or self.tr("metadata"),
+                )
+            )
+        if len(conflicts) > len(preview_lines):
+            preview_lines.append(self.tr("…and {count} more.").format(count=len(conflicts) - len(preview_lines)))
+
+        reply = QMessageBox.question(
+            self,
+            self.tr("Calibration Repair"),
+            self.tr(
+                "Repair {count} calibration conflict(s) using local wins?\n\n"
+                "This will overwrite the cloud metadata fields listed below.\n\n{details}"
+            ).format(count=len(conflict_uuids), details="\n".join(preview_lines)),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            result = cloud_sync_module.repair_calibrations_local_wins(
+                client,
+                calibration_uuids=conflict_uuids,
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Calibration Repair"),
+                self.tr("Calibration repair failed.\n\n{error}").format(error=exc),
+            )
+            return
+        finally:
+            self.refresh_cloud_sync_status()
+
+        repaired_lines = []
+        for row in result.get("repairs", []):
+            fields = ", ".join(str(field) for field in (row.get("fields") or []) if str(field).strip())
+            repaired_lines.append(
+                self.tr("{uuid}: {fields}").format(
+                    uuid=str(row.get("calibration_uuid") or "").strip(),
+                    fields=fields or self.tr("metadata"),
+                )
+            )
+            if row.get("remaining_fields") and row.get("normalized_local_measurements_json") is not None:
+                repaired_lines.append(
+                    self.tr("  measurements_json still differs after repair:")
+                )
+                repaired_lines.append(
+                    self.tr("  local: {value}").format(
+                        value=json.dumps(row.get("normalized_local_measurements_json"), ensure_ascii=False, sort_keys=True)
+                    )
+                )
+                repaired_lines.append(
+                    self.tr("  cloud: {value}").format(
+                        value=json.dumps(row.get("normalized_remote_measurements_json"), ensure_ascii=False, sort_keys=True)
+                    )
+                )
+
+        message_lines = [
+            self.tr("Repaired {count} calibration conflict(s) with local wins.").format(
+                count=int(result.get("repaired", 0) or 0)
+            )
+        ]
+        if int(result.get("repaired", 0) or 0) > 0:
+            message_lines.append(self.tr("Run Sync now again to confirm the skipped warnings are gone."))
+        if repaired_lines:
+            message_lines.extend(repaired_lines)
+        if result.get("errors"):
+            message_lines.append("")
+            message_lines.append(self.tr("Errors:"))
+            message_lines.extend(str(error) for error in result.get("errors", []))
+
+        message = "\n".join(message_lines)
+        if result.get("errors"):
+            QMessageBox.warning(self, self.tr("Calibration Repair"), message)
+        else:
+            QMessageBox.information(self, self.tr("Calibration Repair"), message)
 
     def _build_cloud_sync_details_dialog(self, error_messages: list[str]) -> QDialog:
         dialog = QDialog(self)

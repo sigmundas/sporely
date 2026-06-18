@@ -132,10 +132,12 @@ def test_profile_cloud_controls_expose_sync_actions(monkeypatch, qapp):
 
     assert dialog.cloud_sync_now_button.text() == "Sync now"
     assert dialog.cloud_offline_media_button.text() == "Download missing cloud media for offline use"
+    assert dialog.cloud_repair_calibration_conflicts_button.text() == "Repair calibration conflicts (local wins)"
     assert dialog._hub_cancel_button.text() == "Cancel"
     assert dialog._hub_save_button.text() == "Save"
     assert dialog.cloud_sync_now_button.isEnabled() is True
     assert dialog.cloud_offline_media_button.isEnabled() is True
+    assert dialog.cloud_repair_calibration_conflicts_button.isEnabled() is True
     assert dialog._artsobs_dialog._cloud_section.objectName() == "sectionCard"
     assert dialog.cloud_sync_group.objectName() == "sectionCard"
     cloud_card = dialog._artsobs_dialog
@@ -276,6 +278,69 @@ def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
             "materialize_remote_images": True,
         }
     ]
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_repair_button_repairs_explicit_conflicts(monkeypatch, qapp):
+    conflicts = [
+        {
+            "calibration_uuid": "09dac379-76eb-4513-892e-cd1df532f682",
+            "fields": ["measurements_json", "is_active"],
+            "label": "10X_0.25_N_Plan_PH • 2026-02-27",
+            "cloud_row_id": "cloud-cal-1",
+        }
+    ]
+    repair_calls: list[tuple[str, list[str]]] = []
+    info_messages: list[str] = []
+    question_prompts: list[str] = []
+
+    monkeypatch.setattr(cloud_sync, "list_calibration_conflicts", lambda client: [dict(row) for row in conflicts])
+    monkeypatch.setattr(
+        cloud_sync,
+        "repair_calibrations_local_wins",
+        lambda client, calibration_uuids=None: repair_calls.append(
+            (str(getattr(client, "user_id", "")), [str(value) for value in (calibration_uuids or [])])
+        )
+        or {
+            "repaired": 1,
+            "repairs": [
+                {
+                    "calibration_uuid": conflicts[0]["calibration_uuid"],
+                    "fields": conflicts[0]["fields"],
+                    "message": "repaired",
+                }
+            ],
+            "errors": [],
+        },
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "question",
+        lambda *args, **kwargs: question_prompts.append(str(args[2])) or main_window.QMessageBox.Yes,
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "information",
+        lambda *args, **kwargs: info_messages.append(str(args[2])) or main_window.QMessageBox.Ok,
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: info_messages.append(str(args[2])) or main_window.QMessageBox.Ok,
+    )
+
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
+
+    dialog.cloud_repair_calibration_conflicts_button.click()
+    qapp.processEvents()
+
+    assert question_prompts
+    assert "09dac379-76eb-4513-892e-cd1df532f682" in question_prompts[0]
+    assert repair_calls == [("user-123", ["09dac379-76eb-4513-892e-cd1df532f682"])]
+    assert info_messages
+    assert "Repaired 1 calibration conflict(s) with local wins." in info_messages[0]
 
     dialog.deleteLater()
     parent.deleteLater()

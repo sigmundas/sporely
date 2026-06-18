@@ -63,6 +63,28 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["materialize_remote_images"] is False
 
 
+def test_refresh_clicked_materializes_remote_images(monkeypatch):
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        _invalidate_publish_login_status_cache=lambda: calls.setdefault("invalidate", True),
+        _start_cloud_sync=lambda **kwargs: calls.setdefault("start", kwargs) or True,
+        refresh_observations=lambda show_status=False: calls.setdefault("refresh", bool(show_status)),
+        _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
+    )
+
+    observations_tab.ObservationsTab._on_refresh_clicked(fake_tab)
+
+    assert calls["invalidate"] is True
+    assert calls["start"] == {
+        "show_status": True,
+        "run_refresh_flow": True,
+        "materialize_remote_images": True,
+    }
+    assert "refresh" not in calls
+    assert "finish" not in calls
+
+
 def test_cloud_auto_sync_worker_reports_auth_failure_when_saved_credentials_are_invalid(monkeypatch, qapp):
     errors: list[str] = []
     results: list[dict] = []

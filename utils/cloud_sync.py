@@ -12,6 +12,7 @@ One-time Supabase SQL to run in the SQL editor for optimal upsert performance:
 from __future__ import annotations
 
 import base64
+import math
 import os
 import hashlib
 import io
@@ -284,6 +285,20 @@ _CALIBRATION_SYNC_COLS = [
     'is_active',
 ]
 
+# Float fields can drift by tiny amounts across database versions or JSON
+# serialization paths. Treat those as equivalent during conflict detection.
+_CALIBRATION_FLOAT_FIELDS = {
+    'microns_per_pixel',
+    'microns_per_pixel_std',
+    'confidence_interval_low',
+    'confidence_interval_high',
+    'megapixels',
+    'target_sampling_pct',
+    'resample_scale_factor',
+}
+_CALIBRATION_FLOAT_ABS_TOL = 1e-9
+_CALIBRATION_FLOAT_REL_TOL = 1e-9
+
 _CALIBRATION_SELECT_COLUMNS = _join_select_columns(
     'id',
     'created_at',
@@ -418,6 +433,33 @@ def _serialize_calibration_measurements_json(value) -> str | None:
     return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
 
 
+def _calibration_field_values_match(field: str, local_value, remote_value) -> bool:
+    if field in _CALIBRATION_FLOAT_FIELDS:
+        local_float = _normalize_calibration_float(local_value)
+        remote_float = _normalize_calibration_float(remote_value)
+        if local_float is None or remote_float is None:
+            return local_float == remote_float
+        return math.isclose(
+            local_float,
+            remote_float,
+            rel_tol=_CALIBRATION_FLOAT_REL_TOL,
+            abs_tol=_CALIBRATION_FLOAT_ABS_TOL,
+        )
+    return local_value == remote_value
+
+
+def _calibration_field_changes(local_row: dict | None, remote_row: dict | None) -> dict[str, tuple[object, object]]:
+    local_payload = _calibration_sync_payload(local_row)
+    remote_payload = _calibration_sync_payload(remote_row)
+    changes: dict[str, tuple[object, object]] = {}
+    for field in _CALIBRATION_SYNC_COLS:
+        local_value = local_payload.get(field)
+        remote_value = remote_payload.get(field)
+        if not _calibration_field_values_match(field, local_value, remote_value):
+            changes[field] = (local_value, remote_value)
+    return changes
+
+
 def _calibration_sync_payload(row: dict | None) -> dict:
     record = dict(row or {})
     return {
@@ -467,17 +509,19 @@ def _calibration_insert_kwargs(row: dict | None) -> dict:
 
 
 def _calibration_payloads_match(local_row: dict | None, remote_row: dict | None) -> bool:
-    return _calibration_sync_payload(local_row) == _calibration_sync_payload(remote_row)
+    return not _calibration_field_changes(local_row, remote_row)
 
 
 def _calibration_diff_fields(local_row: dict | None, remote_row: dict | None) -> list[str]:
+    return list(_calibration_field_changes(local_row, remote_row).keys())
+
+
+def _calibration_local_wins_patch_payload(local_row: dict | None, remote_row: dict | None) -> dict:
     local_payload = _calibration_sync_payload(local_row)
-    remote_payload = _calibration_sync_payload(remote_row)
-    return [
-        field
-        for field in _CALIBRATION_SYNC_COLS
-        if local_payload.get(field) != remote_payload.get(field)
-    ]
+    return {
+        field: local_payload.get(field)
+        for field in _calibration_diff_fields(local_row, remote_row)
+    }
 
 
 def _calibration_display_name(row: dict | None) -> str:
@@ -4033,6 +4077,174 @@ def pull_calibrations(
         errors.append(f'calibration reconciliation: {exc}')
 
     return {'pulled': pulled, 'total': total, 'errors': errors}
+
+
+def list_calibration_conflicts(
+    client: SporelyCloudClient,
+    calibration_uuids: list[str] | None = None,
+    remote_calibrations: list[dict] | None = None,
+) -> list[dict]:
+    """Return explicit calibration UUID conflicts between the local DB and cloud."""
+    remote_source = remote_calibrations if remote_calibrations is not None else client.list_remote_calibrations()
+    remote_rows = [dict(row or {}) for row in remote_source]
+    remote_map = {
+        _normalize_calibration_uuid(row.get('calibration_uuid')): row
+        for row in remote_rows
+        if _normalize_calibration_uuid(row.get('calibration_uuid'))
+    }
+    target_uuids = None
+    if calibration_uuids is not None:
+        target_uuids = {
+            _normalize_calibration_uuid(value)
+            for value in calibration_uuids
+            if _normalize_calibration_uuid(value)
+        }
+    local_rows = _load_local_calibration_rows()
+    if target_uuids is not None:
+        local_rows = [
+            row
+            for row in local_rows
+            if _normalize_calibration_uuid(row.get('calibration_uuid')) in target_uuids
+        ]
+
+    conflicts: list[dict] = []
+    for local_row in local_rows:
+        calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
+        if not calibration_uuid:
+            continue
+        remote_row = remote_map.get(calibration_uuid)
+        if remote_row is None:
+            continue
+        changes = _calibration_field_changes(local_row, remote_row)
+        if not changes:
+            continue
+        conflict = {
+            'calibration_uuid': calibration_uuid,
+            'cloud_row_id': str(remote_row.get('id') or '').strip() or None,
+            'label': _calibration_display_name(local_row),
+            'fields': list(changes.keys()),
+            'local_row': dict(local_row),
+            'remote_row': dict(remote_row),
+        }
+        if 'measurements_json' in changes:
+            conflict['normalized_local_measurements_json'] = _normalize_calibration_measurements_json(
+                local_row.get('measurements_json')
+            )
+            conflict['normalized_remote_measurements_json'] = _normalize_calibration_measurements_json(
+                remote_row.get('measurements_json')
+            )
+        conflicts.append(conflict)
+    return conflicts
+
+
+def repair_calibrations_local_wins(
+    client: SporelyCloudClient,
+    calibration_uuids: list[str] | None = None,
+    progress_cb: ProgressCallback | None = None,
+    progress_state: dict | None = None,
+    remote_calibrations: list[dict] | None = None,
+) -> dict:
+    """Repair conflicting cloud calibration metadata using the local desktop rows as source of truth."""
+    conflicts = list_calibration_conflicts(
+        client,
+        calibration_uuids=calibration_uuids,
+        remote_calibrations=remote_calibrations,
+    )
+    total = len(conflicts)
+    repaired = 0
+    repairs: list[dict] = []
+    errors: list[str] = []
+    progress_state = progress_state if isinstance(progress_state, dict) else {}
+    _extend_progress_total(progress_state, total)
+
+    for index, conflict in enumerate(conflicts, start=1):
+        calibration_uuid = _normalize_calibration_uuid(conflict.get('calibration_uuid'))
+        local_row = dict(conflict.get('local_row') or {})
+        remote_row = dict(conflict.get('remote_row') or {})
+        label = str(conflict.get('label') or _calibration_display_name(local_row))
+        _emit_progress(
+            progress_cb,
+            f"Repairing calibration {index}/{max(1, total)}: {label}…",
+            progress_state,
+        )
+        try:
+            if not calibration_uuid:
+                errors.append('calibration ?: skipped repair because calibration_uuid is missing')
+                continue
+
+            fields = list(conflict.get('fields') or [])
+            if not fields:
+                continue
+
+            cloud_row_id = str(conflict.get('cloud_row_id') or remote_row.get('id') or '').strip()
+            if not cloud_row_id:
+                current_remote = client.find_remote_calibration(calibration_uuid)
+                remote_row = dict(current_remote or {})
+                cloud_row_id = str(remote_row.get('id') or '').strip()
+            if not cloud_row_id:
+                errors.append(
+                    f'calibration {calibration_uuid}: skipped repair because the cloud row id is unavailable'
+                )
+                continue
+
+            patch_payload = _calibration_local_wins_patch_payload(local_row, remote_row)
+            if not patch_payload:
+                continue
+
+            client._patch(
+                f'calibrations?user_id=eq.{client.user_id}&id=eq.{cloud_row_id}',
+                patch_payload,
+            )
+            repaired += 1
+            fields = list(fields or _calibration_diff_fields(local_row, remote_row))
+            repair_entry = {
+                'calibration_uuid': calibration_uuid,
+                'cloud_row_id': cloud_row_id,
+                'fields': fields,
+                'message': (
+                    f'calibration {calibration_uuid}: repaired local-wins cloud row {cloud_row_id} '
+                    f'overwrote fields ({", ".join(fields)})'
+                ),
+            }
+            refreshed_remote = None
+            if 'measurements_json' in fields:
+                try:
+                    refreshed_remote = client.find_remote_calibration(calibration_uuid)
+                except Exception as exc:
+                    if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                        raise
+                    errors.append(
+                        f'calibration {calibration_uuid}: could not re-read cloud row after repair ({exc})'
+                    )
+                else:
+                    remaining_changes = _calibration_field_changes(local_row, refreshed_remote or remote_row)
+                    if 'measurements_json' in remaining_changes:
+                        repair_entry['remaining_fields'] = list(remaining_changes.keys())
+                        repair_entry['normalized_local_measurements_json'] = _normalize_calibration_measurements_json(
+                            local_row.get('measurements_json')
+                        )
+                        repair_entry['normalized_remote_measurements_json'] = _normalize_calibration_measurements_json(
+                            (refreshed_remote or remote_row).get('measurements_json')
+                        )
+                        print(
+                            '[cloud_sync] '
+                            f'calibration {calibration_uuid}: measurements_json still differs after local-wins repair '
+                            f'(local={json.dumps(repair_entry["normalized_local_measurements_json"], ensure_ascii=False, sort_keys=True)}, '
+                            f'remote={json.dumps(repair_entry["normalized_remote_measurements_json"], ensure_ascii=False, sort_keys=True)})'
+                        )
+            repairs.append(repair_entry)
+        except CloudSyncError as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
+        finally:
+            _advance_progress(progress_state, 1)
+
+    return {'repaired': repaired, 'total': total, 'repairs': repairs, 'errors': errors}
 
 
 def unlink_local_observation_from_cloud(local_id: int) -> dict:

@@ -187,6 +187,66 @@ def test_push_calibration_metadata_treats_normalized_same_uuid_payload_as_safe_n
     assert posted_payloads == []
 
 
+def test_calibration_metadata_compare_ignores_json_key_order_and_tiny_float_rounding():
+    calibration_uuid = str(uuid.uuid4())
+    local_row = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "calibration_image_date": "2026-05-07 12:00:00",
+        "microns_per_pixel": 0.031500000000000004,
+        "microns_per_pixel_std": "0.00010000000000000002",
+        "measurements_json": json.dumps(
+            {
+                "meta": {"b": 2, "a": 1},
+                "images": [{"y": 2, "x": 1}],
+            }
+        ),
+        "is_active": 1,
+    }
+    remote_row = {
+        "calibration_uuid": calibration_uuid.upper(),
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08",
+        "calibration_image_date": "2026-05-07",
+        "microns_per_pixel": 0.0315,
+        "microns_per_pixel_std": 0.0001,
+        "measurements_json": {
+            "images": [{"x": 1, "y": 2}],
+            "meta": {"a": 1, "b": 2},
+        },
+        "is_active": True,
+    }
+
+    assert cloud_sync._calibration_payloads_match(local_row, remote_row)
+    assert cloud_sync._calibration_diff_fields(local_row, remote_row) == []
+
+
+def test_calibration_metadata_compare_reports_real_float_difference():
+    calibration_uuid = str(uuid.uuid4())
+    local_row = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "microns_per_pixel_std": 0.0001,
+        "measurements_json": {"images": [{"id": 1}]},
+        "is_active": True,
+    }
+    remote_row = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08",
+        "microns_per_pixel": 0.0325,
+        "microns_per_pixel_std": 0.0001,
+        "measurements_json": {"images": [{"id": 1}]},
+        "is_active": True,
+    }
+
+    assert not cloud_sync._calibration_payloads_match(local_row, remote_row)
+    assert cloud_sync._calibration_diff_fields(local_row, remote_row) == ["microns_per_pixel"]
+
+
 def test_push_calibration_metadata_rejects_invalid_uuid(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     posted_payloads = []
@@ -692,6 +752,301 @@ def test_push_calibrations_skips_conflicting_same_uuid(monkeypatch, tmp_path):
     assert client.pushed_payloads == []
     assert result["errors"]
     assert "skipped push" in result["errors"][0]
+
+
+def test_push_calibrations_treats_semantically_equivalent_remote_rows_as_no_op(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    calibration_uuid = str(uuid.uuid4())
+
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.031500000000000004,
+        microns_per_pixel_std=0.00010000000000000002,
+        calibration_date="2026-05-08 08:30:00",
+        calibration_image_date="2026-05-07 12:00:00",
+        measurements_json=json.dumps({"meta": {"b": 2, "a": 1}, "images": [{"y": 2, "x": 1}]}),
+        notes="local note",
+        set_active=False,
+        calibration_uuid=calibration_uuid,
+    )
+
+    remote_rows = [
+        {
+            "id": "cloud-cal-1",
+            "calibration_uuid": calibration_uuid.upper(),
+            "objective_key": "100X",
+            "calibration_date": "2026-05-08",
+            "calibration_image_date": "2026-05-07",
+            "microns_per_pixel": 0.0315,
+            "microns_per_pixel_std": 0.0001,
+            "measurements_json": {"images": [{"x": 1, "y": 2}], "meta": {"a": 1, "b": 2}},
+            "notes": "local note",
+            "is_active": False,
+        }
+    ]
+
+    class DummyClient:
+        def __init__(self):
+            self.pushed_payloads = []
+
+        def list_remote_calibrations(self):
+            return [dict(row) for row in remote_rows]
+
+        def find_remote_calibration(self, calibration_uuid):
+            return None
+
+        def push_calibration_metadata(self, calibration):
+            self.pushed_payloads.append(dict(calibration))
+            return "cloud-cal-2"
+
+    client = DummyClient()
+    result = cloud_sync.push_calibrations(client, remote_calibrations=remote_rows)
+
+    assert result["pushed"] == 0
+    assert client.pushed_payloads == []
+    assert result["errors"] == []
+
+
+def test_repair_calibrations_local_wins_updates_only_conflicting_fields(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    calibration_uuid = str(uuid.uuid4())
+
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.0315,
+        microns_per_pixel_std=0.0001,
+        calibration_date="2026-05-08 08:30:00",
+        calibration_image_date="2026-05-07 12:00:00",
+        measurements_json=json.dumps({"meta": {"b": 2, "a": 1}, "images": [{"y": 2, "x": 1}]}),
+        notes="local note",
+        set_active=True,
+        calibration_uuid=calibration_uuid,
+    )
+
+    remote_rows = [
+        {
+            "id": "cloud-cal-1",
+            "calibration_uuid": calibration_uuid,
+            "objective_key": "100X",
+            "calibration_date": "2026-05-08",
+            "calibration_image_date": "2026-05-07",
+            "microns_per_pixel": 0.0400,
+            "microns_per_pixel_std": 0.0002,
+            "measurements_json": {"images": [{"x": 1, "y": 2}], "meta": {"a": 1, "b": 2}},
+            "notes": "local note",
+            "is_active": False,
+            "image_storage_path": "user-123/existing/reference.webp",
+        }
+    ]
+
+    class DummyClient:
+        def __init__(self):
+            self.user_id = "user-123"
+            self.patches = []
+
+        def list_remote_calibrations(self):
+            return [dict(row) for row in remote_rows]
+
+        def find_remote_calibration(self, calibration_uuid):
+            return dict(remote_rows[0]) if calibration_uuid == remote_rows[0]["calibration_uuid"] else None
+
+        def _patch(self, path, payload):
+            self.patches.append((path, dict(payload)))
+
+    client = DummyClient()
+    result = cloud_sync.repair_calibrations_local_wins(
+        client,
+        calibration_uuids=[calibration_uuid],
+        remote_calibrations=remote_rows,
+    )
+
+    assert result["repaired"] == 1
+    assert result["errors"] == []
+    assert result["repairs"][0]["calibration_uuid"] == calibration_uuid
+    assert result["repairs"][0]["fields"] == [
+        "microns_per_pixel",
+        "microns_per_pixel_std",
+        "is_active",
+    ]
+    assert calibration_uuid in result["repairs"][0]["message"]
+    assert "microns_per_pixel" in result["repairs"][0]["message"]
+    assert client.patches == [
+        (
+            "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1",
+            {
+                "microns_per_pixel": 0.0315,
+                "microns_per_pixel_std": 0.0001,
+                "is_active": True,
+            },
+        )
+    ]
+    assert "image_storage_path" not in client.patches[0][1]
+    assert "measurements_json" not in client.patches[0][1]
+
+
+def test_measurements_json_conflict_is_cleared_by_local_wins_repair_and_followup_sync(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    calibration_uuid = str(uuid.uuid4())
+
+    local_measurements = {"images": [{"id": 1, "x": 1, "y": 2}], "meta": {"note": "local"}}
+    remote_measurements = {"images": [{"id": 1, "x": 9, "y": 9}], "meta": {"note": "remote"}}
+
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.0315,
+        calibration_date="2026-05-08 08:30:00",
+        calibration_image_date="2026-05-07 12:00:00",
+        measurements_json=json.dumps(local_measurements),
+        notes="local note",
+        set_active=False,
+        calibration_uuid=calibration_uuid,
+    )
+
+    remote_rows = [
+        {
+            "id": "cloud-cal-1",
+            "calibration_uuid": calibration_uuid,
+            "objective_key": "100X",
+            "calibration_date": "2026-05-08",
+            "calibration_image_date": "2026-05-07",
+            "microns_per_pixel": 0.0315,
+            "measurements_json": copy.deepcopy(remote_measurements),
+            "notes": "local note",
+            "is_active": False,
+        }
+    ]
+
+    class DummyClient:
+        def __init__(self):
+            self.user_id = "user-123"
+            self.patches = []
+
+        def list_remote_calibrations(self):
+            return [dict(row) for row in remote_rows]
+
+        def find_remote_calibration(self, calibration_uuid):
+            return dict(remote_rows[0]) if calibration_uuid == remote_rows[0]["calibration_uuid"] else None
+
+        def _patch(self, path, payload):
+            self.patches.append((path, dict(payload)))
+            if "measurements_json" in payload:
+                remote_rows[0]["measurements_json"] = copy.deepcopy(payload["measurements_json"])
+
+    client = DummyClient()
+
+    conflicts = cloud_sync.list_calibration_conflicts(client, remote_calibrations=remote_rows)
+    assert len(conflicts) == 1
+    assert conflicts[0]["calibration_uuid"] == calibration_uuid
+    assert conflicts[0]["fields"] == ["measurements_json"]
+    assert conflicts[0]["normalized_local_measurements_json"] == local_measurements
+    assert conflicts[0]["normalized_remote_measurements_json"] == remote_measurements
+
+    repair_result = cloud_sync.repair_calibrations_local_wins(
+        client,
+        calibration_uuids=[calibration_uuid],
+        remote_calibrations=remote_rows,
+    )
+    assert repair_result["repaired"] == 1
+    assert repair_result["errors"] == []
+    assert repair_result["repairs"][0]["fields"] == ["measurements_json"]
+    assert repair_result["repairs"][0]["calibration_uuid"] == calibration_uuid
+    assert client.patches == [
+        (
+            "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1",
+            {
+                "measurements_json": local_measurements,
+            },
+        )
+    ]
+    assert remote_rows[0]["measurements_json"] == local_measurements
+
+    push_result = cloud_sync.push_calibrations(client, remote_calibrations=remote_rows)
+    pull_result = cloud_sync.pull_calibrations(client, remote_calibrations=remote_rows)
+    assert push_result["errors"] == []
+    assert pull_result["errors"] == []
+    assert push_result["pushed"] == 0
+    assert pull_result["pulled"] == 0
+
+
+def test_is_active_conflict_is_cleared_by_local_wins_repair_and_followup_sync(monkeypatch, tmp_path):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    calibration_uuid = str(uuid.uuid4())
+
+    models.CalibrationDB.add_calibration(
+        objective_key="20X",
+        microns_per_pixel=0.015,
+        calibration_date="2026-06-01 09:00:00",
+        calibration_image_date="2026-05-31 12:00:00",
+        measurements_json=json.dumps({"images": [{"id": 1}]}),
+        notes="local note",
+        set_active=True,
+        calibration_uuid=calibration_uuid,
+    )
+
+    remote_rows = [
+        {
+            "id": "cloud-cal-9",
+            "calibration_uuid": calibration_uuid,
+            "objective_key": "20X",
+            "calibration_date": "2026-06-01",
+            "calibration_image_date": "2026-05-31",
+            "microns_per_pixel": 0.015,
+            "measurements_json": {"images": [{"id": 1}]},
+            "notes": "local note",
+            "is_active": False,
+        }
+    ]
+
+    class DummyClient:
+        def __init__(self):
+            self.user_id = "user-123"
+            self.patches = []
+
+        def list_remote_calibrations(self):
+            return [dict(row) for row in remote_rows]
+
+        def find_remote_calibration(self, calibration_uuid):
+            return dict(remote_rows[0]) if calibration_uuid == remote_rows[0]["calibration_uuid"] else None
+
+        def _patch(self, path, payload):
+            self.patches.append((path, dict(payload)))
+            if "is_active" in payload:
+                remote_rows[0]["is_active"] = payload["is_active"]
+
+    client = DummyClient()
+
+    conflicts = cloud_sync.list_calibration_conflicts(client, remote_calibrations=remote_rows)
+    assert len(conflicts) == 1
+    assert conflicts[0]["fields"] == ["is_active"]
+
+    repair_result = cloud_sync.repair_calibrations_local_wins(
+        client,
+        calibration_uuids=[calibration_uuid],
+        remote_calibrations=remote_rows,
+    )
+    assert repair_result["repaired"] == 1
+    assert repair_result["errors"] == []
+    assert repair_result["repairs"][0]["fields"] == ["is_active"]
+    assert client.patches == [
+        (
+            "calibrations?user_id=eq.user-123&id=eq.cloud-cal-9",
+            {
+                "is_active": True,
+            },
+        )
+    ]
+    assert remote_rows[0]["is_active"] is True
+
+    push_result = cloud_sync.push_calibrations(client, remote_calibrations=remote_rows)
+    pull_result = cloud_sync.pull_calibrations(client, remote_calibrations=remote_rows)
+    assert push_result["errors"] == []
+    assert pull_result["errors"] == []
+    assert push_result["pushed"] == 0
+    assert pull_result["pulled"] == 0
 
 
 def test_push_calibrations_keeps_same_objective_date_separate_by_uuid(monkeypatch, tmp_path):

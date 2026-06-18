@@ -2905,7 +2905,7 @@ class ObservationsTab(QWidget):
 
     def _on_refresh_clicked(self) -> None:
         self._invalidate_publish_login_status_cache()
-        if self._start_cloud_sync(show_status=True, run_refresh_flow=True):
+        if self._start_cloud_sync(show_status=True, run_refresh_flow=True, materialize_remote_images=True):
             return
         self.refresh_observations(show_status=False)
         self._finish_manual_refresh_flow()
