@@ -1940,9 +1940,7 @@ class ObservationsTab(QWidget):
         show_status: bool = False,
     ) -> tuple[list[dict], str | None]:
         try:
-            from utils.cloud_sync import SporelyCloudClient
-
-            client = SporelyCloudClient.from_stored_credentials()
+            client = self._window_cloud_client()
             if client is not None:
                 remote_rows = client.pull_web_observations(after_iso=None) or []
             else:
@@ -1982,6 +1980,27 @@ class ObservationsTab(QWidget):
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
+    def _window_cloud_client(self) -> SporelyCloudClient | None:
+        window = self.window() if hasattr(self, "window") else None
+        if window is not None and hasattr(window, "__dict__"):
+            if "_cloud_client" in window.__dict__:
+                return window.__dict__.get("_cloud_client")
+            getter = getattr(window, "_get_cloud_client", None)
+            if callable(getter):
+                try:
+                    client = getter()
+                except Exception:
+                    client = None
+                window.__dict__["_cloud_client"] = client
+                return client
+        try:
+            client = SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+        if window is not None and hasattr(window, "__dict__"):
+            window.__dict__["_cloud_client"] = client
+        return client
+
     def _download_cloud_observation_images(
         self,
         row_data: dict,
@@ -2005,9 +2024,7 @@ class ObservationsTab(QWidget):
             row_data["cloud_images"] = []
             return []
         try:
-            from utils.cloud_sync import SporelyCloudClient
-
-            client = SporelyCloudClient.from_stored_credentials()
+            client = self._window_cloud_client()
             if client is None:
                 row_data["cloud_images"] = []
                 return []
@@ -4655,7 +4672,7 @@ class ObservationsTab(QWidget):
         if not cloud_id:
             return None
 
-        client = SporelyCloudClient.from_stored_credentials()
+        client = self._window_cloud_client()
         if client is None:
             return None
 
@@ -4723,7 +4740,7 @@ class ObservationsTab(QWidget):
         if not cloud_id:
             return None
 
-        client = SporelyCloudClient.from_stored_credentials()
+        client = self._window_cloud_client()
         if client is None:
             return None
 
@@ -5635,19 +5652,7 @@ class ObservationsTab(QWidget):
                 "is_pro": override == "pro",
             })
 
-        client = None
-        window = self.window() if hasattr(self, "window") else None
-        getter = getattr(window, "_cloud_client", None) if window is not None else None
-        if callable(getter):
-            try:
-                client = getter()
-            except Exception:
-                client = None
-        if client is None:
-            try:
-                client = SporelyCloudClient.from_stored_credentials()
-            except Exception:
-                client = None
+        client = self._window_cloud_client()
         if client is not None:
             try:
                 return normalize_cloud_plan_profile(client.fetch_cloud_plan_profile())
@@ -9926,21 +9931,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         field_layout.addWidget(widget, 0, Qt.AlignLeft)
         return field
 
-    def _cloud_privacy_usage_client(self) -> SporelyCloudClient | None:
-        window = self.window() if hasattr(self, "window") else None
-        getter = getattr(window, "_cloud_client", None) if window is not None else None
-        client = None
-        if callable(getter):
-            try:
-                client = getter()
-            except Exception:
-                client = None
-        if client is None:
-            try:
-                client = SporelyCloudClient.from_stored_credentials()
-            except Exception:
-                client = None
+    def _window_cloud_client(self) -> SporelyCloudClient | None:
+        try:
+            window = self.window()
+        except Exception:
+            window = None
+        if window is not None and hasattr(window, "__dict__"):
+            if "_cloud_client" in window.__dict__:
+                return window.__dict__.get("_cloud_client")
+            getter = getattr(window, "_get_cloud_client", None)
+            if callable(getter):
+                try:
+                    client = getter()
+                except Exception:
+                    client = None
+                window.__dict__["_cloud_client"] = client
+                return client
+        try:
+            client = SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+        if window is not None and hasattr(window, "__dict__"):
+            window.__dict__["_cloud_client"] = client
         return client
+
+    def _cloud_privacy_usage_client(self) -> SporelyCloudClient | None:
+        return self._window_cloud_client()
 
     def _refresh_cloud_privacy_slots_summary(self, force: bool = False) -> None:
         client = self._cloud_privacy_usage_client()

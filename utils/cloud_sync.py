@@ -18,6 +18,7 @@ import io
 import json
 import mimetypes
 import re
+import random
 import sqlite3
 import shutil
 import tempfile
@@ -82,6 +83,27 @@ SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
 _SUPABASE_AUTH_TIMEOUT = 30
 _SUPABASE_REST_TIMEOUT = 60
 _SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
+_SUPABASE_REQUEST_MAX_ATTEMPTS = 4
+_SUPABASE_REQUEST_BACKOFF_BASE_SECONDS = 0.5
+_SUPABASE_REQUEST_BACKOFF_MAX_SECONDS = 8.0
+_SUPABASE_TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
+_SUPABASE_TRANSIENT_ERROR_HINTS = (
+    'bad gateway',
+    'connection aborted',
+    'connection refused',
+    'connection reset',
+    'could not connect to server',
+    'gateway timeout',
+    'postgrest unavailable',
+    'schema cache',
+    'service unavailable',
+    'temporarily unavailable',
+    'timed out',
+    'timeout',
+)
+_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
+    'Supabase/cloud sync is temporarily unavailable; local data was not overwritten.'
+)
 _CLOUD_KEYRING_SERVICE = 'Sporely.Cloud'
 _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
 _profile_suffix = runtime_profile_scope()
@@ -161,6 +183,18 @@ def _encode_postgrest_filter_value(value: str | None) -> str:
 def _normalize_cloud_media_key(value: str | None) -> str:
     """Normalize cloud media references to the stored relative key form."""
     return normalize_media_key(value)
+
+
+def _join_select_columns(*columns: str) -> str:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for column in columns:
+        text = str(column or '').strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ','.join(ordered)
 
 
 def _direct_r2_unavailable_warning(context: str | None = None) -> str:
@@ -249,6 +283,13 @@ _CALIBRATION_SYNC_COLS = [
     'notes',
     'is_active',
 ]
+
+_CALIBRATION_SELECT_COLUMNS = _join_select_columns(
+    'id',
+    'created_at',
+    'image_storage_path',
+    *_CALIBRATION_SYNC_COLS,
+)
 
 
 def _normalize_calibration_uuid(value) -> str | None:
@@ -1679,6 +1720,10 @@ class AccountMismatchError(CloudSyncError):
     pass
 
 
+class CloudTemporarilyUnavailableError(CloudSyncError):
+    pass
+
+
 ACCOUNT_MISMATCH_MESSAGE = (
     "This local database is permanently linked to another Sporely Cloud account. "
     "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
@@ -1985,11 +2030,24 @@ def count_cloud_privacy_slots(remote_observations: list[dict] | None) -> int:
     return sum(1 for row in list(remote_observations or []) if cloud_observation_uses_privacy_slot(row))
 
 
+def _parse_postgrest_content_range_total(content_range: str | None) -> int | None:
+    text = str(content_range or '').strip()
+    if not text or '/' not in text:
+        return None
+    total_text = text.rsplit('/', 1)[-1].strip()
+    if total_text == '*':
+        return None
+    try:
+        return int(total_text)
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_cloud_usage_summary(client) -> dict:
     profile = normalize_cloud_plan_profile({})
-    remote_observations: list[dict] = []
     profile_loaded = False
     remote_loaded = False
+    privacy_slots_used = 0
     if client is not None:
         try:
             profile = normalize_cloud_plan_profile(client.fetch_cloud_plan_profile())
@@ -1997,11 +2055,12 @@ def fetch_cloud_usage_summary(client) -> dict:
         except Exception:
             profile = normalize_cloud_plan_profile({})
         try:
-            remote_observations = list(client.list_remote_observations() or [])
-            remote_loaded = True
+            count_method = getattr(client, 'count_remote_privacy_slots', None)
+            if callable(count_method):
+                privacy_slots_used = int(count_method())
+                remote_loaded = True
         except Exception:
-            remote_observations = []
-    privacy_slots_used = count_cloud_privacy_slots(remote_observations)
+            privacy_slots_used = 0
     has_pro_access = bool(profile.get('has_pro_access') or str(profile.get('cloud_plan') or '').strip().lower() == 'pro')
     privacy_slots_limit = None if has_pro_access else FREE_TIER_PRIVACY_SLOT_LIMIT
     privacy_slots_available = None if privacy_slots_limit is None else max(
@@ -2163,6 +2222,122 @@ def is_cloud_auth_error(error) -> bool:
     if code_text in {'401', '403'}:
         return True
     return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
+
+
+def _sleep_supabase_backoff(attempt: int) -> None:
+    delay = min(
+        _SUPABASE_REQUEST_BACKOFF_MAX_SECONDS,
+        _SUPABASE_REQUEST_BACKOFF_BASE_SECONDS * (2 ** max(0, int(attempt))),
+    )
+    if delay <= 0:
+        return
+    time.sleep(random.uniform(0.0, delay))
+
+
+def _request_exception_is_transient(error: Exception) -> bool:
+    if isinstance(error, (requests.Timeout, requests.ConnectionError)):
+        return True
+    _, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    return any(hint in haystack for hint in _SUPABASE_TRANSIENT_ERROR_HINTS)
+
+
+def _response_indicates_transient_supabase_error(response: requests.Response) -> bool:
+    try:
+        status_code = int(getattr(response, 'status_code', 0) or 0)
+    except Exception:
+        status_code = 0
+    if status_code in _SUPABASE_TRANSIENT_STATUS_CODES:
+        return True
+    try:
+        text = str(getattr(response, 'text', '') or '').strip().lower()
+    except Exception:
+        text = ''
+    if not text:
+        return False
+    return any(hint in text for hint in _SUPABASE_TRANSIENT_ERROR_HINTS)
+
+
+def _response_indicates_auth_error(response: requests.Response) -> bool:
+    try:
+        status_code = int(getattr(response, 'status_code', 0) or 0)
+    except Exception:
+        status_code = 0
+    if status_code in {401, 403}:
+        return True
+    try:
+        return is_cloud_auth_error(getattr(response, 'text', ''))
+    except Exception:
+        return False
+
+
+def is_cloud_temporary_unavailable_error(error) -> bool:
+    if isinstance(error, CloudTemporarilyUnavailableError):
+        return True
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    code_text = str(code or '').strip().lower()
+    if code_text in {'pgrst000', 'pgrst001', 'pgrst002', 'pgrst003'}:
+        return True
+    if code_text in {str(status) for status in _SUPABASE_TRANSIENT_STATUS_CODES}:
+        return True
+    if _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE.lower() in haystack:
+        return True
+    return any(hint in haystack for hint in _SUPABASE_TRANSIENT_ERROR_HINTS)
+
+
+def _request_with_transient_retry(
+    request_callable,
+    method: str,
+    url: str,
+    *,
+    refresh_on_auth_error: bool = False,
+    refresh_callback: Callable[[], bool] | None = None,
+    **kwargs,
+):
+    last_response: requests.Response | None = None
+    refreshed = False
+    for attempt in range(_SUPABASE_REQUEST_MAX_ATTEMPTS):
+        try:
+            response = request_callable(method, url, **kwargs)
+        except Exception as exc:
+            if isinstance(exc, requests.RequestException) and _request_exception_is_transient(exc):
+                if attempt < _SUPABASE_REQUEST_MAX_ATTEMPTS - 1:
+                    _sleep_supabase_backoff(attempt)
+                    continue
+                raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
+            raise
+
+        last_response = response
+        if getattr(response, 'ok', False):
+            return response
+
+        if refresh_on_auth_error and not refreshed and _response_indicates_auth_error(response):
+            refreshed = True
+            try:
+                refreshed_ok = bool(refresh_callback()) if callable(refresh_callback) else False
+            except CloudTemporarilyUnavailableError:
+                raise
+            except Exception as exc:
+                raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
+            if refreshed_ok:
+                continue
+            raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
+                f'{method} {url}: auth refresh failed'
+            )
+
+        if _response_indicates_transient_supabase_error(response):
+            if attempt < _SUPABASE_REQUEST_MAX_ATTEMPTS - 1:
+                _sleep_supabase_backoff(attempt)
+                continue
+            raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
+                f'{method} {url}: {getattr(response, "text", "")}'
+            )
+        return response
+
+    if last_response is not None:
+        return last_response
+    raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE)
 
 
 def _normalize_cloud_user_id(value: str | None) -> str:
@@ -3771,11 +3946,11 @@ def push_calibrations(
                 if warning:
                     errors.append(warning)
         except CloudSyncError as exc:
-            if is_cloud_auth_error(exc):
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         except Exception as exc:
-            if is_cloud_auth_error(exc):
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
@@ -3842,11 +4017,11 @@ def pull_calibrations(
             except Exception as exc:
                 errors.append(f'calibration {calibration_uuid}: {exc}')
         except CloudSyncError as exc:
-            if is_cloud_auth_error(exc):
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         except Exception as exc:
-            if is_cloud_auth_error(exc):
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
@@ -4248,6 +4423,60 @@ _SNAPSHOT_MEAS_FIELDS = [
     'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
     'p4_x', 'p4_y', 'measured_at',
 ]
+
+_OBSERVATION_SELECT_COLUMNS = _join_select_columns(
+    'id',
+    'desktop_id',
+    'captured_at',
+    'created_at',
+    'updated_at',
+    *_SNAPSHOT_OBS_FIELDS,
+)
+
+_OBSERVATION_IMAGE_SELECT_COLUMNS = _join_select_columns(
+    'id',
+    'desktop_id',
+    'observation_id',
+    'captured_at',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    *_SNAPSHOT_IMG_FIELDS,
+    *_SNAPSHOT_IMG_PASSIVE_FIELDS,
+)
+
+_OBSERVATION_IDENTIFICATION_SELECT_COLUMNS = _join_select_columns(
+    'id',
+    'service',
+    'created_at',
+    'results',
+    'top_scientific_name',
+    'top_vernacular_name',
+    'top_taxon_id',
+    'top_species_url',
+    'top_speciesUrl',
+    'top_adbUrl',
+    'top_probability',
+)
+
+_SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
+    'id',
+    'desktop_id',
+    'image_id',
+    'length_um',
+    'width_um',
+    'measurement_type',
+    'gallery_rotation',
+    'p1_x',
+    'p1_y',
+    'p2_x',
+    'p2_y',
+    'p3_x',
+    'p3_y',
+    'p4_x',
+    'p4_y',
+    'measured_at',
+)
 
 
 def _normalize_measurement_type_value(value) -> str:
@@ -6192,16 +6421,7 @@ class SporelyCloudClient:
         return type(self)._get_r2 is SporelyCloudClient._get_r2
 
     def _response_indicates_auth_error(self, response: requests.Response) -> bool:
-        try:
-            status_code = int(getattr(response, 'status_code', 0) or 0)
-        except Exception:
-            status_code = 0
-        if status_code in {401, 403}:
-            return True
-        try:
-            return is_cloud_auth_error(getattr(response, 'text', ''))
-        except Exception:
-            return False
+        return _response_indicates_auth_error(response)
 
     def _refresh_session_if_possible(self) -> bool:
         refresh_token = str(self.refresh_token or '').strip()
@@ -6209,6 +6429,8 @@ class SporelyCloudClient:
             return False
         try:
             refreshed = type(self).refresh_login(refresh_token)
+        except CloudTemporarilyUnavailableError:
+            raise
         except CloudSyncError:
             return False
         self.access_token = refreshed.access_token
@@ -6225,11 +6447,14 @@ class SporelyCloudClient:
         return True
 
     def _request_with_refresh(self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs):
-        response = self._s.request(method, url, **kwargs)
-        if refresh_on_auth_error and not response.ok and self._response_indicates_auth_error(response):
-            if self._refresh_session_if_possible():
-                response = self._s.request(method, url, **kwargs)
-        return response
+        return _request_with_transient_retry(
+            self._s.request,
+            method,
+            url,
+            refresh_on_auth_error=refresh_on_auth_error,
+            refresh_callback=self._refresh_session_if_possible if refresh_on_auth_error else None,
+            **kwargs,
+        )
 
     def _has_column(self, table_name: str, column_name: str) -> bool:
         cache_key = (str(table_name or '').strip(), str(column_name or '').strip())
@@ -6303,7 +6528,9 @@ class SporelyCloudClient:
 
     @classmethod
     def login(cls, email: str, password: str) -> 'SporelyCloudClient':
-        resp = requests.post(
+        resp = _request_with_transient_retry(
+            requests.request,
+            'POST',
             f'{SUPABASE_URL}/auth/v1/token?grant_type=password',
             json={'email': email, 'password': password},
             headers={'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
@@ -6323,7 +6550,9 @@ class SporelyCloudClient:
         token = str(refresh_token or '').strip()
         if not token:
             raise CloudSyncError('Missing refresh token')
-        resp = requests.post(
+        resp = _request_with_transient_retry(
+            requests.request,
+            'POST',
             f'{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token',
             json={'refresh_token': token},
             headers={'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
@@ -6358,6 +6587,8 @@ class SporelyCloudClient:
                 client = cls.refresh_login(str(refresh_token))
                 client.save_credentials()
                 return client
+            except CloudTemporarilyUnavailableError:
+                raise
             except CloudSyncError:
                 pass
         email, password, _ = load_saved_cloud_password()
@@ -6366,6 +6597,8 @@ class SporelyCloudClient:
                 client = cls.login(email, password)
                 client.save_credentials(email=email)
                 return client
+            except CloudTemporarilyUnavailableError:
+                raise
             except CloudSyncError:
                 return None
         return None
@@ -6581,27 +6814,45 @@ class SporelyCloudClient:
         if not cloud_value:
             return None
         rows = self._get(
-            f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select=*'
+            f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select={_OBSERVATION_SELECT_COLUMNS}'
         )
         return rows[0] if rows else None
 
     def list_remote_observations(self) -> list[dict]:
         return self._get(
-            f'observations?user_id=eq.{self.user_id}&order=created_at.asc&select=*'
+            f'observations?user_id=eq.{self.user_id}&order=created_at.asc&select={_OBSERVATION_SELECT_COLUMNS}'
         )
+
+    def count_remote_privacy_slots(self) -> int:
+        resp = self._request_with_refresh(
+            'GET',
+            (
+                f'{SUPABASE_URL}/rest/v1/observations?user_id=eq.{self.user_id}'
+                '&or=(visibility.is.null,visibility.neq.public,location_precision.eq.fuzzed)'
+                '&select=id&limit=1'
+            ),
+            headers={'Prefer': 'count=exact'},
+            timeout=_SUPABASE_REST_TIMEOUT,
+        )
+        if not resp.ok:
+            raise CloudSyncError(f'GET observations count failed: {resp.text}')
+        total = _parse_postgrest_content_range_total(getattr(resp, 'headers', {}).get('Content-Range'))
+        if total is None:
+            raise CloudSyncError('Could not determine privacy slot count from cloud response.')
+        return total
 
     def find_remote_calibration(self, calibration_uuid: str) -> dict | None:
         calibration_id = _normalize_calibration_uuid(calibration_uuid)
         if not calibration_id:
             return None
         rows = self._get(
-            f'calibrations?user_id=eq.{self.user_id}&calibration_uuid=eq.{calibration_id}&select=*'
+            f'calibrations?user_id=eq.{self.user_id}&calibration_uuid=eq.{calibration_id}&select={_CALIBRATION_SELECT_COLUMNS}'
         )
         return rows[0] if rows else None
 
     def list_remote_calibrations(self) -> list[dict]:
         return self._get(
-            f'calibrations?user_id=eq.{self.user_id}&order=created_at.asc&select=*'
+            f'calibrations?user_id=eq.{self.user_id}&order=created_at.asc&select={_CALIBRATION_SELECT_COLUMNS}'
         )
 
     def push_calibration_reference_image(
@@ -7248,7 +7499,7 @@ class SporelyCloudClient:
 
     def pull_web_observations(self, after_iso: str | None = None) -> list[dict]:
         """Fetch observations created on mobile/web (desktop_id IS NULL)."""
-        qs = f'observations?desktop_id=is.null&user_id=eq.{self.user_id}&order=created_at.asc&select=*'
+        qs = f'observations?desktop_id=is.null&user_id=eq.{self.user_id}&order=created_at.asc&select={_OBSERVATION_SELECT_COLUMNS}'
         if after_iso:
             qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
         return self._get(qs)
@@ -7265,7 +7516,7 @@ class SporelyCloudClient:
         path = f'observation_images?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}'
         if not include_deleted_for_sync:
             path += '&deleted_at=is.null'
-        path += '&select=*'
+        path += f'&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
 
         rows = self._get(path)
         image_rows = [dict(row or {}) for row in (rows or [])]
@@ -7285,17 +7536,18 @@ class SporelyCloudClient:
             return [
                 dict(row or {})
                 for row in self._get(
-                    f'observation_identifications?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}&order=created_at.desc,id.desc&select=*'
+                    f'observation_identifications?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}&order=created_at.desc,id.desc&select={_OBSERVATION_IDENTIFICATION_SELECT_COLUMNS}'
                 )
             ]
         except Exception as exc:
             message = str(exc or '').lower()
             if 'observation_identifications' in message and (
                 'could not find the table' in message
-                or 'schema cache' in message
                 or 'does not exist' in message
             ):
                 return []
+            if 'schema cache' in message or 'pgrst002' in message or 'pgrst003' in message:
+                raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
             raise
 
     def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
@@ -7318,7 +7570,7 @@ class SporelyCloudClient:
                 chunk = image_ids[i:i + 50]
                 ids_str = ','.join(chunk)
                 rows = self._get(
-                    f'spore_measurements?image_id=in.({ids_str})&user_id=eq.{self.user_id}&order=measured_at.asc,id.asc&select=*'
+                    f'spore_measurements?image_id=in.({ids_str})&user_id=eq.{self.user_id}&order=measured_at.asc,id.asc&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
                 )
                 all_rows.extend(rows)
             success = True
@@ -7341,7 +7593,7 @@ class SporelyCloudClient:
             for i in range(0, len(obs_cloud_ids), 50):
                 chunk = obs_cloud_ids[i:i+50]
                 ids_str = ','.join(chunk)
-                rows = self._get(f'observation_images?observation_id=in.({ids_str})&select=*')
+                rows = self._get(f'observation_images?observation_id=in.({ids_str})&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}')
                 all_images.extend(rows)
             success = True
             return all_images
@@ -8199,7 +8451,7 @@ def push_all(
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
                         except Exception as e:
-                            if is_cloud_auth_error(e):
+                            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                                 raise
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 else:
@@ -8220,7 +8472,7 @@ def push_all(
                         try:
                             _push_measurements_for_observation(client, local_obs_id)
                         except Exception as e:
-                            if is_cloud_auth_error(e):
+                            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                                 raise
                             print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
                 if local_obs_id > 0:
@@ -8235,7 +8487,7 @@ def push_all(
 
             pushed += 1
         except CloudSyncError as e:
-            if is_cloud_auth_error(e):
+            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             raw_error = f"obs {obs['id']}: {e}"
             if is_privacy_slot_limit_error(raw_error):
@@ -8409,7 +8661,7 @@ def _push_images_for_observation(
     try:
         existing_rows = client.pull_image_metadata(obs_cloud_id) or []
     except Exception as e:
-        if is_cloud_auth_error(e):
+        if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
             raise
         print(f'[cloud_sync] Could not fetch existing cloud images for observation {obs["id"]}: {e}')
         existing_rows = []
@@ -8669,7 +8921,7 @@ def _push_images_for_observation(
                                             f'was {source_kind}'
                                         )
             except CloudSyncError as e:
-                if is_cloud_auth_error(e):
+                if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
                 if is_image_too_large_for_plan_error(e):
                     raise
@@ -8698,7 +8950,7 @@ def _push_images_for_observation(
                 try:
                     client._storage_remove([stale_storage_path])
                 except Exception as e:
-                    if is_cloud_auth_error(e):
+                    if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                         raise
                     print(
                         f'[cloud_sync] Could not remove old cloud storage file for observation {obs["id"]}: {e}'
@@ -8706,7 +8958,7 @@ def _push_images_for_observation(
             try:
                 client._delete(f'observation_images?id=eq.{stale_cloud_id}')
             except Exception as e:
-                if is_cloud_auth_error(e):
+                if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
                 print(f'[cloud_sync] Could not remove old cloud image row for observation {obs["id"]}: {e}')
             stale_desktop_id = _safe_int(stale_row.get('desktop_id'))
@@ -8805,7 +9057,7 @@ def _push_measurements_for_observation(
                 finally:
                     conn.close()
         except Exception as e:
-            if is_cloud_auth_error(e):
+            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
 
@@ -8969,8 +9221,9 @@ def pull_all(
                 if cloud_id and int(remote.get('desktop_id') or 0) != local_id:
                     try:
                         client.set_desktop_id(cloud_id, local_id)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                            raise
                 local_dirty = str(local_obs.get('sync_status') or '').strip().lower() == 'dirty'
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs
@@ -9193,7 +9446,7 @@ def pull_all(
                         remote_measurements=remote_measurements,
                     )
         except Exception as e:
-            if is_cloud_auth_error(e):
+            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             errors.append(f"cloud {remote.get('id')}: {e}")
         finally:
@@ -9435,8 +9688,9 @@ def _import_remote_images(
                     try:
                         set_image_desktop_id(cloud_image_id, int(local_image_id))
                         image_row['desktop_id'] = int(local_image_id)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                            raise
 
                 # Generate thumbnails and signature
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
@@ -9445,7 +9699,7 @@ def _import_remote_images(
                     _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
 
             except Exception as e:
-                if is_cloud_auth_error(e):
+                if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
                 print(f'[cloud_sync] Failed image import: {e}')
             finally:
@@ -9585,6 +9839,15 @@ def _import_remote_measurements_for_observation(
                 )
                 continue
 
+            remote_image_type = str(remote_image.get('image_type') or '').strip().lower()
+            local_image_type = str(local_image.get('image_type') or '').strip().lower()
+            if remote_image_type == 'microscope' or local_image_type == 'microscope':
+                warnings.append(
+                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
+                    f"on excluded image {remote_image_id or '?'}"
+                )
+                continue
+
             local_image_id = _safe_int(local_image.get('id'))
             if local_image_id <= 0:
                 warnings.append(
@@ -9637,8 +9900,9 @@ def _import_remote_measurements_for_observation(
                         try:
                             set_measurement_desktop_id(remote_measurement_id, new_local_measurement_id)
                             remote_row['desktop_id'] = new_local_measurement_id
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                                raise
                 local_measurements_by_cloud_id[remote_measurement_id] = {
                     'id': new_local_measurement_id,
                     'cloud_id': remote_measurement_id,
@@ -9710,8 +9974,9 @@ def _import_remote_measurements_for_observation(
                     try:
                         set_measurement_desktop_id(remote_measurement_id, local_measurement_id)
                         remote_row['desktop_id'] = local_measurement_id
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                            raise
     finally:
         conn.commit()
         conn.close()
@@ -9824,6 +10089,8 @@ def materialize_cloud_media_for_observation(
             try:
                 live_remote = get_observation(cloud_id)
             except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
                 summary['warnings'].append(
                     f'obs {local_id}: could not fetch live cloud observation metadata: {exc}'
                 )
@@ -9836,6 +10103,8 @@ def materialize_cloud_media_for_observation(
                 for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])
             ]
         except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
             summary['errors'].append(f'obs {local_id}: could not fetch cloud image metadata: {exc}')
             remote_images_raw = []
         image_cloud_ids = [
@@ -9846,6 +10115,8 @@ def materialize_cloud_media_for_observation(
         try:
             remote_measurements_source = _pull_remote_measurements_for_images(client, image_cloud_ids)
         except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
             summary['errors'].append(f'obs {local_id}: could not fetch cloud measurements: {exc}')
             remote_measurements_source = []
 
@@ -9935,6 +10206,8 @@ def materialize_cloud_media_for_observation(
                     set_image_desktop_id(cloud_image_id, local_image_id)
                     remote_image['desktop_id'] = local_image_id
                 except Exception as exc:
+                    if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                        raise
                     summary['warnings'].append(
                         f'obs {local_id}: could not link cloud image {cloud_image_id} to local image {local_image_id}: {exc}'
                     )
@@ -9980,6 +10253,8 @@ def materialize_cloud_media_for_observation(
                     materialize_remote_images=True,
                 )
             except CloudSyncError as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
                 summary['failed'] += 1
                 summary['errors'].append(
                     f'obs {local_id}: could not repair cloud image {cloud_image_id}: {exc}'
@@ -9987,6 +10262,8 @@ def materialize_cloud_media_for_observation(
                 _advance_progress(progress_state, 1)
                 continue
             except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
                 summary['failed'] += 1
                 summary['errors'].append(
                     f'obs {local_id}: could not repair cloud image {cloud_image_id}: {exc}'
@@ -10010,7 +10287,18 @@ def materialize_cloud_media_for_observation(
             )
             if warnings:
                 summary['warnings'].extend(warnings)
+        except CloudSyncError as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            summary['failed'] += 1
+            summary['errors'].append(
+                f'obs {local_id}: could not materialize cloud image {cloud_image_id}: {exc}'
+            )
+            _advance_progress(progress_state, 1)
+            continue
         except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
             summary['failed'] += 1
             summary['errors'].append(
                 f'obs {local_id}: could not materialize cloud image {cloud_image_id}: {exc}'
@@ -10075,11 +10363,15 @@ def materialize_cloud_media_for_observation(
             remote_measurements=remote_measurements_source,
         )
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         summary['warnings'].append(f'obs {local_id}: could not refresh cloud snapshot: {exc}')
 
     try:
         _refresh_local_cloud_media_signature(local_id)
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         summary['warnings'].append(f'obs {local_id}: could not refresh local media signature: {exc}')
 
     if summary['failed'] > 0 or summary['errors']:

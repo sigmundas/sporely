@@ -2161,10 +2161,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         cache_path = _find_cached_calibration_reference_path(calibration_uuid)
 
         remote_storage_path = None
-        try:
-            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
-        except Exception:
-            client = None
+        client = self._window_cloud_client()
 
         if client and calibration_uuid:
             try:
@@ -2233,10 +2230,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             return
 
         if not image_storage_path:
-            try:
-                client = cloud_sync.SporelyCloudClient.from_stored_credentials()
-            except Exception:
-                client = None
+            client = self._window_cloud_client()
             if client:
                 try:
                     remote = client.find_remote_calibration(calibration_uuid)
@@ -2256,11 +2250,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             )
             return
 
-        client = None
-        try:
-            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
-        except Exception:
-            client = None
+        client = self._window_cloud_client()
         if not client:
             self._set_cloud_reference_status(
                 self.tr("Calibration usable; photo missing"),
@@ -5602,10 +5592,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _cached_cloud_client(self):
         parent = self.parent()
         if parent is not None:
-            client = getattr(parent, "_cloud_client", None)
+            client = parent.__dict__.get("_cloud_client") if hasattr(parent, "__dict__") else getattr(parent, "_cloud_client", None)
             if client is not None:
                 return client
-        client = getattr(self, "_cloud_client", None)
+        client = self.__dict__.get("_cloud_client") if hasattr(self, "__dict__") else getattr(self, "_cloud_client", None)
         if client is not None:
             return client
         try:
@@ -5613,13 +5603,37 @@ class CalibrationDialog(GeometryMixin, QDialog):
         except Exception:
             window = None
         if window is not None:
-            client = getattr(window, "_cloud_client", None)
+            client = window.__dict__.get("_cloud_client") if hasattr(window, "__dict__") else getattr(window, "_cloud_client", None)
             if client is not None:
                 return client
         return None
 
+    def _window_cloud_client(self):
+        try:
+            window = self.window()
+        except Exception:
+            window = None
+        if window is not None and hasattr(window, "__dict__"):
+            if "_cloud_client" in window.__dict__:
+                return window.__dict__.get("_cloud_client")
+            getter = getattr(window, "_get_cloud_client", None)
+            if callable(getter):
+                try:
+                    client = getter()
+                except Exception:
+                    client = None
+                window.__dict__["_cloud_client"] = client
+                return client
+        try:
+            client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+        except Exception:
+            client = None
+        if window is not None and hasattr(window, "__dict__"):
+            window.__dict__["_cloud_client"] = client
+        return client
+
     def _load_cloud_synced_calibration_uuids(self) -> set[str]:
-        client = self._cached_cloud_client()
+        client = self._window_cloud_client()
         if client is None:
             return set()
 

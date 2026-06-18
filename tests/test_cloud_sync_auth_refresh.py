@@ -56,6 +56,66 @@ def test_cloud_client_refreshes_expired_token_and_retries_get(monkeypatch):
     ]
 
 
+def test_cloud_client_retries_transient_503_with_backoff(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("access-token", "user-123")
+    responses = iter(
+        [
+            _FakeResponse(False, 503, '{"message":"Service Unavailable"}'),
+            _FakeResponse(True, 200, '[{"id":"obs-1"}]', payload=[{"id": "obs-1"}]),
+        ]
+    )
+    sleep_calls: list[float] = []
+
+    def fake_request(method, url, **kwargs):
+        return next(responses)
+
+    monkeypatch.setattr(client._s, "request", fake_request)
+    monkeypatch.setattr(cloud_sync.random, "uniform", lambda low, high: high)
+    monkeypatch.setattr(cloud_sync.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    rows = client._get("observations?limit=1&select=id")
+
+    assert rows == [{"id": "obs-1"}]
+    assert sleep_calls == [0.5]
+
+
+def test_cloud_request_auth_refresh_failure_is_temporarily_unavailable(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("expired-token", "user-123", "refresh-token")
+    responses = iter(
+        [
+            _FakeResponse(
+                False,
+                401,
+                '{"code":"PGRST303","message":"JWT expired"}',
+            ),
+        ]
+    )
+
+    def fake_request(method, url, **kwargs):
+        return next(responses)
+
+    monkeypatch.setattr(client._s, "request", fake_request)
+    monkeypatch.setattr(client, "_refresh_session_if_possible", lambda: False)
+
+    with pytest.raises(cloud_sync.CloudTemporarilyUnavailableError):
+        client._get("observations?limit=1&select=id")
+
+
+def test_pull_observation_identifications_schema_cache_error_is_temporarily_unavailable(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("access-token", "user-123")
+
+    def fake_get(path):
+        raise cloud_sync.CloudSyncError(
+            'GET observation_identifications?observation_id=eq.obs-1&select=*: '
+            '{"code":"PGRST002","message":"schema cache is not loaded"}'
+        )
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    with pytest.raises(cloud_sync.CloudTemporarilyUnavailableError):
+        client.pull_observation_identifications("obs-1")
+
+
 def test_from_stored_credentials_returns_cached_client_without_probing(monkeypatch):
     settings = {
         "cloud_access_token": "cached-token",

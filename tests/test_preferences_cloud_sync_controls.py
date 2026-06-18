@@ -80,6 +80,7 @@ def _build_settings_hub_dialog(
             "avatar_url": "",
         },
         "fetch_cloud_plan_profile": lambda: {"cloud_plan": "free", "is_pro": False},
+        "count_remote_privacy_slots": lambda: 1,
         "list_remote_observations": lambda: [
             {"visibility": "private", "location_precision": "exact"},
             {"visibility": "public", "location_precision": "exact"},
@@ -173,6 +174,7 @@ def test_profile_cloud_controls_hide_privacy_slot_count_for_pro(monkeypatch, qap
             "avatar_url": "",
         },
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "pro", "is_pro": True},
+        count_remote_privacy_slots=lambda: 1,
         list_remote_observations=lambda: [
             {"visibility": "private", "location_precision": "fuzzed"},
             {"visibility": "friends", "location_precision": "exact"},

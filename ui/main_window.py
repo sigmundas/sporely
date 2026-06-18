@@ -1687,26 +1687,32 @@ class SettingsHubDialog(QDialog):
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 
-    def _cloud_client(self):
+    def _get_cloud_client(self):
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
         try:
             from utils.cloud_sync import SporelyCloudClient
 
-            return SporelyCloudClient.from_stored_credentials()
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is not None:
+                self._cloud_client = client
+            return client
         except Exception:
             return None
 
     def _cached_cloud_client(self):
         main_window = self._settings_hub_main_window()
         if main_window is not None:
-            client = getattr(main_window, "_cloud_client", None)
+            client = main_window.__dict__.get("_cloud_client") if hasattr(main_window, "__dict__") else getattr(main_window, "_cloud_client", None)
             if client is not None:
                 return client
-        client = getattr(self, "_cloud_client", None)
+        client = self.__dict__.get("_cloud_client") if hasattr(self, "__dict__") else getattr(self, "_cloud_client", None)
         if client is not None:
             return client
         cloud_dialog = getattr(self, "_artsobs_dialog", None)
         if cloud_dialog is not None:
-            client = getattr(cloud_dialog, "_cloud_client", None)
+            client = cloud_dialog.__dict__.get("_cloud_client") if hasattr(cloud_dialog, "__dict__") else getattr(cloud_dialog, "_cloud_client", None)
             if client is not None:
                 return client
         return None
@@ -1853,7 +1859,7 @@ class SettingsHubDialog(QDialog):
         return bytes(data)
 
     def _choose_profile_avatar(self) -> None:
-        client = self._cloud_client()
+        client = self._get_cloud_client()
         if client is None:
             QMessageBox.information(
                 self,
@@ -2226,7 +2232,7 @@ class SettingsHubDialog(QDialog):
             parent._update_measure_copyright_overlay()
         if parent and hasattr(parent, "_update_corner_ui"):
             parent._update_corner_ui()
-        client = self._cloud_client()
+        client = self._get_cloud_client()
         if client is not None:
             try:
                 client.update_profile(
@@ -3252,9 +3258,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self.set_hint(self.tr("Not logged in"), tone="warning")
 
     def _refresh_cloud_status(self) -> None:
-        if getattr(self, "_cloud_client", None) is not None:
+        if self.__dict__.get("_cloud_client") is not None:
             return
-        self._cloud_client = None
 
     def _update_cloud_account_summary_labels(self) -> None:
         if not hasattr(self, "cloud_status_label"):
@@ -3350,11 +3355,12 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._refresh_cloud_status()
         email = str(get_app_settings().get("cloud_user_email") or "").strip()
         self._cloud_account_email = email
-        logged_in = bool(self._cloud_client)
+        client = self.__dict__.get("_cloud_client")
+        logged_in = bool(client)
         debug_override = self._selected_debug_cloud_plan_override()
         if hasattr(self, "cloud_status_label"):
             if logged_in:
-                shown = email or f"{self._cloud_client.user_id[:8]}..."
+                shown = email or f"{str(getattr(client, 'user_id', '') or '')[:8]}..."
                 text = self.tr("Signed in as: {account}").format(account=shown)
             else:
                 text = self.tr("Not logged in")

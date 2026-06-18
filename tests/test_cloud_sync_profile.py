@@ -93,7 +93,7 @@ def test_sync_all_profile_emits_structured_lines_and_phase_metrics(monkeypatch, 
 
     result = cloud_sync.sync_all(client, sync_images=False, materialize_remote_images=False)
     output_lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith('[cloud_sync_profile]')]
-    assert len(output_lines) == 8
+    assert len(output_lines) == 9
 
     phase_events = []
     summary_event = None
@@ -110,6 +110,7 @@ def test_sync_all_profile_emits_structured_lines_and_phase_metrics(monkeypatch, 
         'list_remote_calibrations',
         'push_calibrations',
         'push_all',
+        'refresh_remote_observations_after_push',
         'pull_all',
         'pull_calibrations',
     ]

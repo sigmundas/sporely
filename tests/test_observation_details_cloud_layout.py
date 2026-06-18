@@ -23,6 +23,7 @@ def test_edit_observation_cloud_controls_share_one_inline_row(monkeypatch, qapp)
     fake_client = SimpleNamespace(
         user_id="user-123",
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
+        count_remote_privacy_slots=lambda: 0,
         list_remote_observations=lambda: [],
     )
     monkeypatch.setattr(observations_tab.SettingsDB, "get_setting", lambda key, default=None: default)
@@ -103,6 +104,7 @@ def test_edit_observation_cloud_controls_hide_private_slot_summary_for_pro(monke
     fake_client = SimpleNamespace(
         user_id="user-123",
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "pro", "is_pro": True},
+        count_remote_privacy_slots=lambda: 1,
         list_remote_observations=lambda: [
             {"visibility": "private", "location_precision": "fuzzed"},
         ],
@@ -148,6 +150,7 @@ def test_edit_observation_cloud_controls_show_selected_ai_summary(monkeypatch, q
     fake_client = SimpleNamespace(
         user_id="user-123",
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
+        count_remote_privacy_slots=lambda: 0,
         list_remote_observations=lambda: [],
     )
     monkeypatch.setattr(observations_tab.SettingsDB, "get_setting", lambda key, default=None: default)

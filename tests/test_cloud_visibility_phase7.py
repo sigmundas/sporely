@@ -331,7 +331,11 @@ def test_pull_image_metadata_filters_deleted_rows_by_default(monkeypatch):
     rows = client.pull_image_metadata("cloud-obs-1")
 
     assert fetched_paths == [
-        "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&deleted_at=is.null&select=*"
+        (
+            "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123"
+            "&deleted_at=is.null&select="
+            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+        )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1"]
     assert rows[0]["deleted_at"] is None
@@ -357,7 +361,10 @@ def test_pull_image_metadata_include_deleted_for_sync_returns_deleted_rows(monke
     rows = client.pull_image_metadata("cloud-obs-1", include_deleted_for_sync=True)
 
     assert fetched_paths == [
-        "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&select=*"
+        (
+            "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&select="
+            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+        )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1", "cloud-img-2"]
     assert rows[1]["deleted_at"] == "2026-05-01 10:00:00"
@@ -756,11 +763,8 @@ def test_privacy_slot_limit_error_classifier_matches_supabase_payload():
 def test_fetch_cloud_usage_summary_counts_private_and_fuzzed_slots():
     client = SimpleNamespace(
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
-        list_remote_observations=lambda: [
-            {"visibility": "private", "location_precision": "exact"},
-            {"visibility": "public", "location_precision": "fuzzed"},
-            {"visibility": "public", "location_precision": "exact"},
-        ],
+        count_remote_privacy_slots=lambda: 2,
+        list_remote_observations=lambda: pytest.fail("usage summary should not fetch the full observation list"),
     )
 
     summary = cloud_sync.fetch_cloud_usage_summary(client)
