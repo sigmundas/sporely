@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from database import models, schema
 from utils import cloud_sync
 
@@ -818,7 +820,10 @@ def test_push_measurements_for_observation_skips_tombstoned_image_measurements(
     pushed_calls: list[tuple[int, str]] = []
 
     class DummyClient:
-        def push_measurement(self, meas, cloud_image_id):
+        def pull_measurements_for_images(self, image_cloud_ids):
+            return []
+
+        def push_measurement(self, meas, cloud_image_id, remote_measurement_cache=None):
             pushed_calls.append((int(meas["id"]), str(cloud_image_id)))
             return f"cloud-measurement-{int(meas['id'])}"
 
@@ -839,3 +844,431 @@ def test_push_measurements_for_observation_skips_tombstoned_image_measurements(
         (22, 12, "cloud-measurement-22"),
     ]
     assert "skipped cloud measurement 21 because cloud image cloud-image-1 has a local tombstone" in output
+
+
+def test_push_measurements_for_observation_prefetches_identity_cache_once(monkeypatch, tmp_path):
+    db_path = _init_measurement_sync_db(tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", None),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _patch_test_db_connections(monkeypatch, db_path)
+    _insert_image(
+        db_path,
+        id=11,
+        observation_id=1,
+        cloud_id="cloud-image-1",
+        filepath="/local/micro-image-1.jpg",
+        image_type="microscope",
+        sort_order=0,
+        created_at="2026-05-01T10:00:00Z",
+        scale_microns_per_pixel=0.5,
+    )
+    _insert_measurement(
+        db_path,
+        id=21,
+        image_id=11,
+        cloud_id="cloud-measurement-1",
+        desktop_id=21,
+        length_um=10.0,
+        width_um=5.0,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T12:00:00Z",
+    )
+    _insert_measurement(
+        db_path,
+        id=22,
+        image_id=11,
+        cloud_id=None,
+        desktop_id=22,
+        length_um=11.0,
+        width_um=5.5,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T13:00:00Z",
+    )
+    _insert_measurement(
+        db_path,
+        id=23,
+        image_id=11,
+        cloud_id=None,
+        desktop_id=23,
+        length_um=12.0,
+        width_um=6.0,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T14:00:00Z",
+    )
+
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-1",
+            "desktop_id": 21,
+            "image_id": "cloud-image-1",
+            "length_um": 10.0,
+            "width_um": 5.0,
+            "measurement_type": "manual",
+            "gallery_rotation": 0,
+            "p1_x": 1.0,
+            "p1_y": 2.0,
+            "p2_x": 3.0,
+            "p2_y": 4.0,
+            "p3_x": 5.0,
+            "p4_x": 7.0,
+            "p4_y": 8.0,
+            "p3_y": 6.0,
+            "measured_at": "2026-05-01T12:00:00Z",
+        },
+        {
+            "id": "cloud-measurement-2",
+            "desktop_id": 22,
+            "image_id": "cloud-image-1",
+            "length_um": 11.0,
+            "width_um": 5.5,
+            "measurement_type": "manual",
+            "gallery_rotation": 0,
+            "p1_x": 1.0,
+            "p1_y": 2.0,
+            "p2_x": 3.0,
+            "p2_y": 4.0,
+            "p3_x": 5.0,
+            "p4_x": 7.0,
+            "p4_y": 8.0,
+            "p3_y": 6.0,
+            "measured_at": "2026-05-01T13:00:00Z",
+        },
+    ]
+
+    class TrackingClient(cloud_sync.SporelyCloudClient):
+        def __init__(self):
+            super().__init__("access-token", "user-123")
+            self.pull_calls = []
+            self.patch_calls = []
+            self.post_calls = []
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            self.pull_calls.append(list(image_cloud_ids))
+            return [dict(row) for row in remote_measurements]
+
+    client = TrackingClient()
+    client._measurement_supports_media_keys = lambda: False
+    client._get = lambda path: pytest.fail(f"unexpected remote select: {path}")
+    client._patch = lambda path, payload: client.patch_calls.append((path, dict(payload)))
+
+    def fake_post(path, payload):
+        client.post_calls.append((path, dict(payload)))
+        return [{"id": f"cloud-post-{int(payload['desktop_id'])}"}]
+
+    client._post = fake_post
+
+    cloud_sync._push_measurements_for_observation(client, 1)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, cloud_id FROM spore_measurements ORDER BY id",
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert client.pull_calls == [["cloud-image-1"]]
+    assert client.patch_calls == [
+        (
+            "spore_measurements?id=eq.cloud-measurement-1",
+            {
+                "image_id": "cloud-image-1",
+                "user_id": "user-123",
+                "desktop_id": 21,
+                "length_um": 10.0,
+                "width_um": 5.0,
+                "measurement_type": "manual",
+                "gallery_rotation": None,
+                "p1_x": 1.0,
+                "p1_y": 2.0,
+                "p2_x": 3.0,
+                "p2_y": 4.0,
+                "p3_x": 5.0,
+                "p3_y": 6.0,
+                "p4_x": 7.0,
+                "p4_y": 8.0,
+                "measured_at": "2026-05-01T12:00:00Z",
+            },
+        ),
+        (
+            "spore_measurements?id=eq.cloud-measurement-2",
+            {
+                "image_id": "cloud-image-1",
+                "user_id": "user-123",
+                "desktop_id": 22,
+                "length_um": 11.0,
+                "width_um": 5.5,
+                "measurement_type": "manual",
+                "gallery_rotation": None,
+                "p1_x": 1.0,
+                "p1_y": 2.0,
+                "p2_x": 3.0,
+                "p2_y": 4.0,
+                "p3_x": 5.0,
+                "p3_y": 6.0,
+                "p4_x": 7.0,
+                "p4_y": 8.0,
+                "measured_at": "2026-05-01T13:00:00Z",
+            },
+        ),
+    ]
+    assert client.post_calls == [
+        (
+            "spore_measurements",
+            {
+                "image_id": "cloud-image-1",
+                "user_id": "user-123",
+                "desktop_id": 23,
+                "length_um": 12.0,
+                "width_um": 6.0,
+                "measurement_type": "manual",
+                "gallery_rotation": None,
+                "p1_x": 1.0,
+                "p1_y": 2.0,
+                "p2_x": 3.0,
+                "p2_y": 4.0,
+                "p3_x": 5.0,
+                "p3_y": 6.0,
+                "p4_x": 7.0,
+                "p4_y": 8.0,
+                "measured_at": "2026-05-01T14:00:00Z",
+            },
+        )
+    ]
+    assert rows == [
+        (21, "cloud-measurement-1"),
+        (22, "cloud-measurement-2"),
+        (23, "cloud-post-23"),
+    ]
+
+
+def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypatch, tmp_path):
+    db_path = _init_measurement_sync_db(tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", None),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _patch_test_db_connections(monkeypatch, db_path)
+    _insert_image(
+        db_path,
+        id=11,
+        observation_id=1,
+        cloud_id="cloud-image-1",
+        filepath="/local/micro-image-1.jpg",
+        image_type="microscope",
+        sort_order=0,
+        created_at="2026-05-01T10:00:00Z",
+        scale_microns_per_pixel=0.5,
+    )
+    _insert_measurement(
+        db_path,
+        id=21,
+        image_id=11,
+        cloud_id="cloud-measurement-1",
+        desktop_id=21,
+        length_um=10.0,
+        width_um=5.0,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T12:00:00Z",
+    )
+    _insert_measurement(
+        db_path,
+        id=22,
+        image_id=11,
+        cloud_id=None,
+        desktop_id=22,
+        length_um=11.0,
+        width_um=5.5,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T13:00:00Z",
+    )
+    _insert_measurement(
+        db_path,
+        id=23,
+        image_id=11,
+        cloud_id=None,
+        desktop_id=23,
+        length_um=12.0,
+        width_um=6.0,
+        measurement_type="manual",
+        gallery_rotation=0,
+        p1_x=1.0,
+        p1_y=2.0,
+        p2_x=3.0,
+        p2_y=4.0,
+        p3_x=5.0,
+        p3_y=6.0,
+        p4_x=7.0,
+        p4_y=8.0,
+        measured_at="2026-05-01T14:00:00Z",
+    )
+
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-1",
+            "desktop_id": 21,
+            "image_id": "cloud-image-1",
+            "length_um": 10.0,
+            "width_um": 5.0,
+            "measurement_type": "manual",
+            "gallery_rotation": 0,
+            "p1_x": 1.0,
+            "p1_y": 2.0,
+            "p2_x": 3.0,
+            "p2_y": 4.0,
+            "p3_x": 5.0,
+            "p4_x": 7.0,
+            "p4_y": 8.0,
+            "p3_y": 6.0,
+            "measured_at": "2026-05-01T12:00:00Z",
+        }
+    ]
+
+    class TrackingClient(cloud_sync.SporelyCloudClient):
+        def __init__(self):
+            super().__init__("access-token", "user-123")
+            self.pull_calls = []
+            self.patch_calls = []
+            self.post_calls = []
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            self.pull_calls.append(list(image_cloud_ids))
+            return [dict(row) for row in remote_measurements]
+
+    client = TrackingClient()
+    client._measurement_supports_media_keys = lambda: False
+    client._get = lambda path: pytest.fail(f"unexpected remote select: {path}")
+    client._patch = lambda path, payload: client.patch_calls.append((path, dict(payload)))
+
+    def fake_post(path, payload):
+        client.post_calls.append((path, dict(payload)))
+        raise cloud_sync.CloudTemporarilyUnavailableError(
+            "Supabase/cloud sync is temporarily unavailable; local data was not overwritten."
+        )
+
+    client._post = fake_post
+
+    with pytest.raises(cloud_sync.CloudTemporarilyUnavailableError):
+        cloud_sync._push_measurements_for_observation(client, 1)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, cloud_id FROM spore_measurements ORDER BY id",
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert client.pull_calls == [["cloud-image-1"]]
+    assert client.patch_calls == [
+        (
+            "spore_measurements?id=eq.cloud-measurement-1",
+            {
+                "image_id": "cloud-image-1",
+                "user_id": "user-123",
+                "desktop_id": 21,
+                "length_um": 10.0,
+                "width_um": 5.0,
+                "measurement_type": "manual",
+                "gallery_rotation": None,
+                "p1_x": 1.0,
+                "p1_y": 2.0,
+                "p2_x": 3.0,
+                "p2_y": 4.0,
+                "p3_x": 5.0,
+                "p3_y": 6.0,
+                "p4_x": 7.0,
+                "p4_y": 8.0,
+                "measured_at": "2026-05-01T12:00:00Z",
+            },
+        )
+    ]
+    assert client.post_calls == [
+        (
+            "spore_measurements",
+            {
+                "image_id": "cloud-image-1",
+                "user_id": "user-123",
+                "desktop_id": 22,
+                "length_um": 11.0,
+                "width_um": 5.5,
+                "measurement_type": "manual",
+                "gallery_rotation": None,
+                "p1_x": 1.0,
+                "p1_y": 2.0,
+                "p2_x": 3.0,
+                "p2_y": 4.0,
+                "p3_x": 5.0,
+                "p3_y": 6.0,
+                "p4_x": 7.0,
+                "p4_y": 8.0,
+                "measured_at": "2026-05-01T13:00:00Z",
+            },
+        )
+    ]
+    assert rows == [
+        (21, "cloud-measurement-1"),
+        (22, None),
+        (23, None),
+    ]

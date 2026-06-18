@@ -4749,6 +4749,42 @@ def _load_local_measurement_lookup(observation_id: int) -> tuple[dict[str, dict]
     return by_cloud_id, by_local_id
 
 
+def _build_remote_measurement_identity_cache(remote_measurements: list[dict] | None) -> dict[str, dict]:
+    cache: dict[str, dict] = {}
+    for row in remote_measurements or []:
+        remote_row = dict(row or {})
+        cloud_id = str(remote_row.get('id') or '').strip()
+        if cloud_id:
+            cache[f'cloud:{cloud_id}'] = remote_row
+        desktop_id = _safe_int(remote_row.get('desktop_id'))
+        if desktop_id > 0:
+            cache[f'desktop:{desktop_id}'] = remote_row
+    return cache
+
+
+def _measurement_push_lookup_keys(measurement_row: dict | None) -> list[str]:
+    row = dict(measurement_row or {})
+    keys: list[str] = []
+    cloud_id = str(row.get('cloud_id') or '').strip()
+    if cloud_id:
+        keys.append(f'cloud:{cloud_id}')
+    desktop_id = _safe_int(row.get('id'))
+    if desktop_id > 0:
+        keys.append(f'desktop:{desktop_id}')
+    return keys
+
+
+def fetch_remote_measurement_identity_cache(
+    client,
+    image_cloud_ids: list[str],
+) -> dict[str, dict]:
+    fetcher = getattr(client, 'pull_measurements_for_images', None)
+    if not callable(fetcher):
+        return {}
+    remote_measurements = fetcher(image_cloud_ids)
+    return _build_remote_measurement_identity_cache(remote_measurements)
+
+
 def _load_local_image_lookup(observation_id: int) -> tuple[dict[str, dict], dict[int, dict]]:
     local_images = ImageDB.get_images_for_observation(int(observation_id))
     by_cloud_id: dict[str, dict] = {}
@@ -7676,7 +7712,13 @@ class SporelyCloudClient:
             {'deleted_at': deleted_at_text},
         )
 
-    def push_measurement(self, meas: dict, cloud_image_id: str) -> str:
+    def push_measurement(
+        self,
+        meas: dict,
+        cloud_image_id: str,
+        *,
+        remote_measurement_cache: dict[str, dict] | None = None,
+    ) -> str:
         """Upsert one spore measurement row. Returns cloud UUID."""
         payload = {col: meas.get(col) for col in _MEAS_PUSH_COLS}
         payload['image_id'] = cloud_image_id
@@ -7689,6 +7731,19 @@ class SporelyCloudClient:
                     payload['image_key'] = storage_key
                 if self._has_column('spore_measurements', 'thumb_key'):
                     payload['thumb_key'] = media_variant_key(storage_key, 'thumb')
+
+        if remote_measurement_cache is not None:
+            for lookup_key in _measurement_push_lookup_keys(meas):
+                cached_row = remote_measurement_cache.get(lookup_key)
+                if cached_row is None:
+                    continue
+                existing_id = str(cached_row.get('id') or '').strip()
+                if existing_id:
+                    self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
+                    return existing_id
+            rows = self._post('spore_measurements', payload)
+            return rows[0]['id']
+
         rows = self._get(
             f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select=id'
         )
@@ -7696,9 +7751,8 @@ class SporelyCloudClient:
             existing_id = rows[0]['id']
             self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
             return existing_id
-        else:
-            rows = self._post('spore_measurements', payload)
-            return rows[0]['id']
+        rows = self._post('spore_measurements', payload)
+        return rows[0]['id']
 
     def delete_cloud_measurements_for_image(self, cloud_image_id: str) -> None:
         """Delete all cloud spore_measurements rows for one image."""
@@ -9038,13 +9092,28 @@ def _push_measurements_for_observation(
             filtered_measurements.append(meas)
         measurements = filtered_measurements
 
+    remote_measurement_cache = fetch_remote_measurement_identity_cache(
+        client,
+        sorted(
+            {
+                str(row.get('image_cloud_id') or '').strip()
+                for row in measurements
+                if str(row.get('image_cloud_id') or '').strip()
+            }
+        ),
+    )
+
     pushed_cloud_ids: set[str] = set()
     for meas in measurements:
         cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
         if not cloud_image_id:
             continue
         try:
-            cloud_meas_id = client.push_measurement(meas, cloud_image_id)
+            cloud_meas_id = client.push_measurement(
+                meas,
+                cloud_image_id,
+                remote_measurement_cache=remote_measurement_cache,
+            )
             pushed_cloud_ids.add(cloud_meas_id)
             if str(meas.get('cloud_id') or '').strip() != cloud_meas_id:
                 conn = get_connection()
