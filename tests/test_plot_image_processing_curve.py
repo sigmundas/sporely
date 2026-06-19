@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -32,6 +33,13 @@ def _make_low_contrast_16bit_tiff(path: Path) -> None:
     image.save(path, format="TIFF")
 
 
+def test_parse_args_without_input_path_launches_blank_interactive_mode():
+    args = curve_tool.parse_args([])
+
+    assert args.input_path is None
+    assert args.interactive is True
+
+
 def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
     input_path = tmp_path / "low_contrast.tiff"
     plot_out = tmp_path / "curve_plot.png"
@@ -44,6 +52,8 @@ def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
             sys.executable,
             str(script_path),
             str(input_path),
+            "--exposure-ev",
+            "0.50",
             "--auto-levels",
             "--auto-levels-strength",
             "0.65",
@@ -51,7 +61,7 @@ def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
             "--tail-size",
             "0.03",
             "--shadow-lift",
-            "0.10",
+            "0.05",
             "--dark-cutoff",
             "0.001",
             "--bright-cutoff",
@@ -83,9 +93,10 @@ def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
         assert preview.size == (8, 8)
 
     assert "settings JSON:" in result.stdout
+    assert '"exposure_ev": 0.5' in result.stdout
     assert '"auto_levels_strength": 0.65' in result.stdout
     assert '"auto_levels_soft_tails": true' in result.stdout
-    assert '"auto_levels_shadow_lift": 0.1' in result.stdout
+    assert '"shadow_lift": 0.05' in result.stdout
     assert f"plot out: {plot_out}" in result.stdout
     assert f"preview out: {preview_out}" in result.stdout
 
@@ -107,49 +118,68 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     assert window.figure.axes[0].get_ylabel() == "Output luminance"
     assert isinstance(window.preview_label, ZoomableImageLabel)
     assert window.preview_label.pan_without_shift is True
+    assert isinstance(window.light_slider, QSlider)
+    assert isinstance(window.dark_slider, QSlider)
     assert isinstance(window.dark_cutoff_slider, QSlider)
     assert isinstance(window.bright_cutoff_slider, QSlider)
     assert isinstance(window.auto_levels_strength_slider, QSlider)
     assert isinstance(window.shadow_lift_slider, QSlider)
     assert isinstance(window.curve_strength_slider, QSlider)
     assert isinstance(window.curve_midpoint_slider, QSlider)
+    assert window.contrast_label.text() == "Contrast"
+    assert window.midpoint_label.text() == "Midpoint"
+    assert window.light_slider.minimum() == 0
+    assert window.light_slider.maximum() == 20
+    assert window.light_value_label.text() == "+0.00 EV"
+    assert window.dark_slider.minimum() == 0
+    assert window.dark_slider.maximum() == 10
+    assert window.dark_value_label.text() == "0.00 EV"
+    assert window.shadow_lift_label.text() == "Dark boost:"
     assert window.dark_cutoff_slider.minimum() == 0
-    assert window.dark_cutoff_slider.maximum() == 50
-    assert window.dark_cutoff_value_label.text() == "0.05%"
-    assert window.bright_cutoff_value_label.text() == "0.05%"
+    assert window.dark_cutoff_slider.maximum() == 20
+    assert window.dark_cutoff_value_label.text() == "0.010%"
+    assert window.bright_cutoff_value_label.text() == "0.010%"
     assert window.auto_levels_strength_slider.minimum() == 0
     assert window.auto_levels_strength_slider.maximum() == 100
     assert window.auto_levels_strength_value_label.text() == "100%"
     assert window.shadow_lift_slider.minimum() == 0
-    assert window.shadow_lift_slider.maximum() == 200
+    assert window.shadow_lift_slider.maximum() == 100
     assert window.shadow_lift_value_label.text() == "0.0%"
     assert window.curve_strength_value_label.text() == "0.50"
     assert window.curve_midpoint_value_label.text() == "0.50"
+    assert "light +0.00 EV" in window.settings_label.text()
+    assert "dark 0.00 EV" in window.settings_label.text()
     assert "auto levels on" in window.settings_label.text()
     assert "strength 100%" in window.settings_label.text()
     assert "soft tails off" in window.settings_label.text()
-    assert "shadow lift 0.0%" in window.settings_label.text()
+    assert "dark boost 0.0%" in window.settings_label.text()
     assert "dark cutoff" in window.settings_label.text()
     assert "bright cutoff" in window.settings_label.text()
 
+    window.light_slider.setValue(10)
+    window.dark_slider.setValue(5)
     window.tone_curve_checkbox.setChecked(True)
-    window.soft_tails_checkbox.setChecked(True)
     window.auto_levels_strength_slider.setValue(65)
-    window.shadow_lift_slider.setValue(50)
+    window.shadow_lift_slider.setValue(100)
     window.dark_cutoff_slider.setValue(15)
     window.bright_cutoff_slider.setValue(15)
     window.curve_strength_slider.setValue(75)
     window.curve_midpoint_slider.setValue(35)
+    window.raw_controls.set_settings(replace(window.raw_controls.settings(), auto_levels_soft_tails=True))
     window._refresh_outputs()
 
+    assert "light +0.50 EV" in window.settings_label.text()
+    assert "dark 0.25 EV" in window.settings_label.text()
     assert "tone curve on" in window.settings_label.text()
     assert "strength 65%" in window.settings_label.text()
-    assert "soft tails on" in window.settings_label.text()
-    assert "shadow lift 5.0%" in window.settings_label.text()
-    assert window.dark_cutoff_value_label.text() == "0.15%"
-    assert window.bright_cutoff_value_label.text() == "0.15%"
+    assert "soft tails off" in window.settings_label.text()
+    assert "dark boost 10.0%" in window.settings_label.text()
+    assert window.dark_cutoff_value_label.text() == "0.015%"
+    assert window.bright_cutoff_value_label.text() == "0.015%"
     assert window.auto_levels_strength_value_label.text() == "65%"
-    assert window.shadow_lift_value_label.text() == "5.0%"
+    assert window.shadow_lift_value_label.text() == "10.0%"
+    assert window.light_value_label.text() == "+0.50 EV"
+    assert window.dark_value_label.text() == "0.25 EV"
     assert window.curve_strength_value_label.text() == "0.75"
     assert window.curve_midpoint_value_label.text() == "0.35"
     assert window.black_level_label.text() != "—"
@@ -199,6 +229,7 @@ def test_processing_curve_window_uses_real_chart_transfer_mapping(qapp):
     white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
     assert float(curve.hard_target[black_idx]) == pytest.approx(0.0, abs=1e-6)
     assert float(curve.hard_target[white_idx]) == pytest.approx(1.0, abs=1e-6)
+    assert float(curve.manual_levels_output[black_idx]) == pytest.approx(float(curve.auto_levels_output[black_idx]), abs=1e-6)
 
     window.tone_curve_checkbox.setChecked(True)
     window.curve_strength_slider.setValue(75)
@@ -216,6 +247,9 @@ def test_processing_curve_window_uses_real_chart_transfer_mapping(qapp):
     white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
     assert float(curve.auto_levels_output[black_idx]) == pytest.approx(0.0, abs=1e-6)
     assert float(curve.auto_levels_output[white_idx]) == pytest.approx(1.0, abs=1e-6)
+    assert np.all(np.diff(curve.manual_levels_output) >= -1e-9)
+    assert np.all(np.diff(curve.auto_levels_output) >= -1e-9)
+    assert np.all(np.diff(curve.shadow_toe_output) >= -1e-9)
     assert float(curve.final_output[0]) == pytest.approx(0.0, abs=1e-6)
     assert float(curve.final_output[-1]) == pytest.approx(1.0, abs=1e-6)
     assert float(processed_toned.min()) <= 0.05
@@ -225,12 +259,14 @@ def test_processing_curve_window_uses_real_chart_transfer_mapping(qapp):
     lines = {line.get_label(): line for line in axes.lines}
     assert np.allclose(lines["identity"].get_xdata(), curve.input_values)
     assert np.allclose(lines["identity"].get_ydata(), curve.input_values)
-    assert np.allclose(lines["hard auto-level target"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["hard auto-level target"].get_ydata(), curve.hard_target)
-    assert np.allclose(lines["strength-blended auto-level output"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["strength-blended auto-level output"].get_ydata(), curve.auto_levels_output)
-    assert np.allclose(lines["final output after tone curve"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["final output after tone curve"].get_ydata(), curve.final_output)
+    assert np.allclose(lines["after auto-levels"].get_xdata(), curve.input_values)
+    assert np.allclose(lines["after auto-levels"].get_ydata(), curve.auto_levels_output)
+    assert np.allclose(lines["after light / dark"].get_xdata(), curve.input_values)
+    assert np.allclose(lines["after light / dark"].get_ydata(), curve.manual_levels_output)
+    assert np.allclose(lines["after dark boost"].get_xdata(), curve.input_values)
+    assert np.allclose(lines["after dark boost"].get_ydata(), curve.shadow_toe_output)
+    assert np.allclose(lines["final after tone curve"].get_xdata(), curve.input_values)
+    assert np.allclose(lines["final after tone curve"].get_ydata(), curve.final_output)
     assert axes.get_xlim() == pytest.approx((0.0, 1.0))
     assert axes.get_ylim() == pytest.approx((0.0, 1.0))
 
@@ -241,10 +277,10 @@ def test_processing_curve_window_soft_target_is_continuous(tmp_path, qapp):
     Image.fromarray(ramp, mode="I;16").save(input_path, format="TIFF")
 
     window = curve_tool.ProcessingCurveWindow(input_path)
-    window.soft_tails_checkbox.setChecked(True)
-    window.shadow_lift_slider.setValue(50)
+    window.shadow_lift_slider.setValue(100)
     window.dark_cutoff_slider.setValue(0)
     window.bright_cutoff_slider.setValue(0)
+    window.raw_controls.set_settings(replace(window.raw_controls.settings(), auto_levels_soft_tails=True))
     window._refresh_outputs()
 
     processed_rgb, debug = curve_tool.apply_post_decode_processing(window._source.rgb, window._settings, return_debug=True)
@@ -256,10 +292,10 @@ def test_processing_curve_window_soft_target_is_continuous(tmp_path, qapp):
 
     black_idx = int(np.where(np.isclose(curve.input_values, curve.debug.black_level))[0][0])
     white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
-    assert float(curve.soft_target[black_idx]) == pytest.approx(0.05, abs=1e-6)
+    assert float(curve.soft_target[black_idx]) == pytest.approx(0.0, abs=1e-6)
     assert float(curve.soft_target[white_idx]) == pytest.approx(1.0, abs=1e-6)
     assert float(np.max(np.abs(np.diff(curve.soft_target)))) < 0.05
-    assert float(processed_rgb.min()) == pytest.approx(0.05, abs=1e-6)
+    assert 0.0 < float(processed_rgb.min()) < 0.05
     assert float(processed_rgb.max()) == pytest.approx(1.0, abs=1e-6)
 
 
@@ -299,7 +335,7 @@ def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp
     assert window.wb_readout_label.text().startswith("Custom WB")
 
 
-def test_processing_curve_window_can_open_a_new_file(tmp_path, qapp, monkeypatch):
+def test_processing_curve_window_can_open_a_new_file_from_blank_start(tmp_path, qapp, monkeypatch):
     initial_path = tmp_path / "initial.tiff"
     opened_path = tmp_path / "opened.orf"
     ramp = np.linspace(12000, 18000, 64, dtype=np.uint16).reshape(8, 8)
@@ -324,16 +360,19 @@ def test_processing_curve_window_can_open_a_new_file(tmp_path, qapp, monkeypatch
 
     monkeypatch.setattr(curve_tool.QFileDialog, "getOpenFileName", fake_get_open_file_name)
 
-    window = curve_tool.ProcessingCurveWindow(initial_path)
-    assert window.source_kind_label.text() == "Raster"
-    assert window.source_path_label.text() == str(initial_path)
+    window = curve_tool.ProcessingCurveWindow(None)
+    assert window.source_kind_label.text() == "Blank"
+    assert window.source_path_label.text() == "No file loaded"
+    assert window.preview_label.original_pixmap is not None
+    assert window.preview_label.original_pixmap.isNull() is True
+    assert window.raw_controls.isEnabled() is False
 
     window.open_file_btn.click()
 
     assert window.source_kind_label.text() == "RAW"
     assert window.source_path_label.text() == str(opened_path)
     assert window.raw_base_mode_combo.currentData() == "camera"
-    assert window.wb_mode_combo.currentData() == "camera"
+    assert window.raw_controls.white_balance_selector.selected_value("camera") == "camera"
     assert window.preview_label.original_pixmap is not None
     zoom_before = window.preview_label.zoom_level
     window.preview_label.zoom_in()

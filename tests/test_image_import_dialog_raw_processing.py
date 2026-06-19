@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from ui import image_import_dialog
 from ui.image_import_dialog import ImageImportDialog, ImageImportResult
+from ui.raw_processing_controls import RawProcessingControls
 from utils.raw_render import RawRenderSettings
 
 
@@ -206,7 +207,102 @@ def test_raw_preview_cache_is_reused_across_tone_changes(monkeypatch, qapp, tmp_
         tone_curve_enabled=True,
         tone_curve_strength=0.80,
         tone_curve_midpoint=0.30,
+        exposure_ev=0.5,
+        shadow_lift=0.03,
     ).to_dict()
     ImageImportDialog._raw_preview_proxy_for_result(dummy, result.filepath, result.raw_settings)
 
     assert len(proxy_calls) == 1
+
+
+def test_raw_settings_changes_preserve_custom_wb_and_serialise_exposure_and_shadows(qapp, tmp_path):
+    result = _build_raw_result(tmp_path)
+    dummy = _build_raw_dialog_dummy(result)
+    controls = RawProcessingControls()
+    controls.set_settings(
+        RawRenderSettings(
+            white_balance_mode="custom",
+            wb_multipliers=(1.2, 1.0, 1.4),
+            wb_selection=(10.0, 12.0, 20.0, 22.0),
+            wb_multiplier_space="post_decode_rgb",
+            exposure_ev=0.25,
+            auto_levels=True,
+            tone_curve_enabled=True,
+            tone_curve_strength=0.60,
+            tone_curve_midpoint=0.40,
+            shadow_lift=0.02,
+        )
+    )
+    dummy.raw_controls = controls
+
+    initial = ImageImportDialog._collect_raw_settings_from_form(dummy, base=result.raw_settings)
+    assert initial["white_balance_mode"] == "custom"
+    assert initial["wb_multipliers"] == [1.2, 1.0, 1.4]
+    assert initial["exposure_ev"] == pytest.approx(0.25)
+    assert initial["shadow_lift"] == pytest.approx(0.02)
+
+    controls.exposure_slider.setValue(10)
+    controls.dark_slider.setValue(5)
+    controls.curve_strength_slider.setValue(60)
+    controls.curve_midpoint_slider.setValue(40)
+
+    updated = ImageImportDialog._collect_raw_settings_from_form(dummy, base=initial)
+
+    assert updated["white_balance_mode"] == "custom"
+    assert updated["wb_multipliers"] == [1.2, 1.0, 1.4]
+    assert updated["exposure_ev"] == pytest.approx(0.25)
+    assert updated["shadow_lift"] == pytest.approx(0.02)
+    assert updated["tone_curve_strength"] == pytest.approx(0.60)
+    assert updated["tone_curve_midpoint"] == pytest.approx(0.40)
+
+
+def test_raw_convert_stores_exposure_and_shadow_metadata(monkeypatch, qapp, tmp_path):
+    result = _build_raw_result(tmp_path)
+    dummy = _build_raw_dialog_dummy(result)
+    source_path = Path(result.filepath)
+    converted_path = tmp_path / "converted.jpg"
+    converted_path.write_bytes(b"jpeg-bytes")
+
+    captured = {}
+
+    def fake_render(source, *, settings=None, output_dir=None):
+        captured["render_settings"] = RawRenderSettings.from_dict(settings)
+        return converted_path
+
+    def fake_metadata(source_path, derivative_path, settings, **kwargs):
+        captured["metadata_settings"] = RawRenderSettings.from_dict(settings)
+        return {
+            "source": {"path": str(source_path)},
+            "local_derivative": {"path": str(derivative_path)},
+            "settings": RawRenderSettings.from_dict(settings).to_dict(),
+        }
+
+    monkeypatch.setattr(image_import_dialog, "render_raw_image", fake_render)
+    monkeypatch.setattr(image_import_dialog, "build_raw_processing_metadata", fake_metadata)
+    monkeypatch.setattr(image_import_dialog, "read_rawpy_capture_datetime", None, raising=False)
+    dummy._raw_source_path_for_result = lambda candidate: str(source_path)
+    dummy._get_image_size = lambda *_args, **_kwargs: (2, 2)
+    dummy._refresh_gallery = lambda: None
+    dummy._select_image = lambda *_args, **_kwargs: None
+    dummy._set_settings_hint = lambda *_args, **_kwargs: None
+    result.raw_settings = RawRenderSettings(
+        white_balance_mode="custom",
+        wb_multipliers=(1.2, 1.0, 1.4),
+        wb_selection=(10.0, 12.0, 20.0, 22.0),
+        wb_multiplier_space="post_decode_rgb",
+        exposure_ev=0.5,
+        auto_levels=True,
+        tone_curve_enabled=True,
+        tone_curve_strength=0.60,
+        tone_curve_midpoint=0.40,
+        shadow_lift=0.03,
+    ).to_dict()
+
+    ImageImportDialog._on_raw_convert_clicked(dummy)
+
+    assert captured["render_settings"].exposure_ev == pytest.approx(0.5)
+    assert captured["render_settings"].shadow_lift == pytest.approx(0.03)
+    assert captured["metadata_settings"].exposure_ev == pytest.approx(0.5)
+    assert captured["metadata_settings"].shadow_lift == pytest.approx(0.03)
+    assert result.lab_metadata["raw_processing"]["settings"]["exposure_ev"] == pytest.approx(0.5)
+    assert result.lab_metadata["raw_processing"]["settings"]["shadow_lift"] == pytest.approx(0.03)

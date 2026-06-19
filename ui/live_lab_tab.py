@@ -670,10 +670,6 @@ class LiveLabTab(QWidget):
             self.tr("Apply automatic levels to future RAW captures."),
         )
         self._register_hint_widget(
-            self.raw_controls.preserve_tails_checkbox,
-            self.tr("Keep the auto-level curve softer near the ends."),
-        )
-        self._register_hint_widget(
             self.raw_controls.tone_curve_checkbox,
             self.tr("Enable the luminance tone curve for future RAW captures."),
         )
@@ -683,7 +679,7 @@ class LiveLabTab(QWidget):
         )
         self._register_hint_widget(
             self.raw_controls.curve_midpoint_slider,
-            self.tr("Adjust the tone curve midpoint. Lower values automatically increase shadow lift."),
+            self.tr("Adjust the tone curve midpoint. Lower values automatically increase dark boost."),
         )
         self._register_hint_widget(
             self.raw_controls.pick_button,
@@ -859,25 +855,15 @@ class LiveLabTab(QWidget):
         return {
             "dark_cutoff": self._raw_processing_setting_float(
                 SETTING_RAW_PROCESSING_DARK_CUTOFF,
-                0.0005,
+                0.0,
                 0.0,
                 0.02,
             ),
             "bright_cutoff": self._raw_processing_setting_float(
                 SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
-                0.0005,
+                0.0,
                 0.0,
                 0.02,
-            ),
-            "shadow_lift_enabled": self._raw_processing_setting_bool(
-                SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
-                True,
-            ),
-            "shadow_lift_max": self._raw_processing_setting_float(
-                SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
-                0.05,
-                0.0,
-                0.05,
             ),
         }
 
@@ -976,7 +962,6 @@ class LiveLabTab(QWidget):
         resolved = RawRenderSettings.from_dict(settings)
         dark_cutoff = LiveLabTab._format_raw_percent(resolved.black_percentile, decimals=2)
         bright_cutoff = LiveLabTab._format_raw_percent(1.0 - float(resolved.white_percentile), decimals=2)
-        shadow_lift = LiveLabTab._format_raw_percent(resolved.auto_levels_shadow_lift, decimals=1)
         soft_tails_label = self.tr("on") if resolved.auto_levels_soft_tails else self.tr("off")
         curve_strength = LiveLabTab._format_raw_percent(resolved.tone_curve_strength, decimals=0)
         curve_midpoint = LiveLabTab._format_raw_percent(resolved.tone_curve_midpoint, decimals=0)
@@ -985,7 +970,6 @@ class LiveLabTab(QWidget):
                 self._raw_white_balance_label(resolved),
                 self.tr("Dark cutoff {value}").format(value=dark_cutoff),
                 self.tr("Bright cutoff {value}").format(value=bright_cutoff),
-                self.tr("Shadow lift {value}").format(value=shadow_lift),
                 self.tr("Soft tails {state}").format(state=soft_tails_label),
                 self.tr("Curve strength {value}").format(value=curve_strength),
                 self.tr("Curve midpoint {value}").format(value=curve_midpoint),
@@ -998,7 +982,7 @@ class LiveLabTab(QWidget):
     def _raw_processing_hint_text(self) -> str:
         return self.tr(
             "Pick Camera, Auto, or Custom WB, then click Pick to sample a neutral patch from the preview. "
-            "Preserve tails keeps the auto-level curve softer near the ends, and low midpoint values lift shadows."
+            "Low midpoint values lift shadows."
         )
 
     def _pending_raw_review_hint_text(self) -> str:

@@ -48,9 +48,11 @@ from config import LOCAL_IMPORT_IMAGE_FILTER  # noqa: E402
 from utils.raw_detection import is_raw_image_path  # noqa: E402
 from utils.raw_render import RawRenderSettings, RawRenderingUnavailableError, render_raw_preview  # noqa: E402
 from utils.raw_white_balance import estimate_white_balance_from_background  # noqa: E402
+from ui.raw_processing_controls import RawProcessingControls  # noqa: E402
 from ui.zoomable_image_widget import ZoomableImageLabel  # noqa: E402
 
-_CURVE_CUTOFF_SCALE = 50
+_CURVE_CUTOFF_SCALE = 20
+_EXPOSURE_SCALE = 20
 _CURVE_STRENGTH_SCALE = 100
 _CURVE_TONE_SCALE = 100
 
@@ -121,14 +123,23 @@ def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
 
 
 def _build_settings(args: argparse.Namespace) -> RawRenderSettings:
+    if args.light_ev is None and args.dark_ev is None and args.exposure_ev is not None:
+        light_ev = max(0.0, float(args.exposure_ev))
+        dark_ev = min(0.0, float(args.exposure_ev))
+    else:
+        light_ev = 0.0 if args.light_ev is None else float(args.light_ev)
+        dark_ev = 0.0 if args.dark_ev is None else float(args.dark_ev)
     return RawRenderSettings(
+        exposure_ev=light_ev + dark_ev,
+        light_ev=light_ev,
+        dark_ev=dark_ev,
         auto_levels=bool(args.auto_levels),
         black_percentile=float(args.dark_cutoff),
         white_percentile=1.0 - float(args.bright_cutoff),
         auto_levels_strength=float(args.auto_levels_strength),
         auto_levels_soft_tails=bool(args.soft_tails),
         auto_levels_tail_size=float(args.tail_size),
-        auto_levels_shadow_lift=max(0.0, min(0.25, float(args.shadow_lift))),
+        shadow_lift=max(0.0, min(0.10, float(args.shadow_lift))),
         tone_curve_enabled=bool(args.tone_curve),
         tone_curve_strength=float(args.curve_strength),
         tone_curve_midpoint=float(args.curve_midpoint),
@@ -153,25 +164,31 @@ def _draw_processing_figure(
 
     input_values = curve.input_values
     ax.plot(input_values, input_values, label="identity", linewidth=1.0, color="#95a5a6", linestyle="--")
-    ax.plot(input_values, curve.hard_target, label="hard auto-level target", linewidth=1.8, color="#7f8c8d", linestyle=":")
-    if (
-        settings.auto_levels
-        and settings.auto_levels_soft_tails
-        and curve.debug.black_level is not None
-        and curve.debug.white_level is not None
-    ):
-        ax.plot(input_values, curve.soft_target, label="soft-tail target", linewidth=2.0, color="#e67e22", linestyle="--")
     ax.plot(
         input_values,
         curve.auto_levels_output,
-        label="strength-blended auto-level output",
-        linewidth=2.4,
+        label="after auto-levels",
+        linewidth=2.0,
         color="#2980b9",
     )
     ax.plot(
         input_values,
+        curve.manual_levels_output,
+        label="after light / dark",
+        linewidth=2.4,
+        color="#8e44ad",
+    )
+    ax.plot(
+        input_values,
+        curve.shadow_toe_output,
+        label="after dark boost",
+        linewidth=2.4,
+        color="#e67e22",
+    )
+    ax.plot(
+        input_values,
         curve.final_output,
-        label="final output after tone curve",
+        label="final after tone curve",
         linewidth=2.4,
         color="#16a085",
     )
@@ -220,18 +237,20 @@ def _settings_summary(settings: RawRenderSettings) -> str:
     wb_desc = str(settings.white_balance_mode or "camera").strip() or "camera"
     if settings.wb_multipliers is not None:
         wb_desc = f"custom {settings.wb_multipliers[0]:.2f}/{settings.wb_multipliers[1]:.2f}/{settings.wb_multipliers[2]:.2f}"
-    dark_cutoff = max(0.0, min(0.5, float(settings.black_percentile) * 100.0))
-    bright_cutoff = max(0.0, min(0.5, (1.0 - float(settings.white_percentile)) * 100.0))
+    dark_cutoff = max(0.0, min(0.02, float(settings.black_percentile) * 100.0))
+    bright_cutoff = max(0.0, min(0.02, (1.0 - float(settings.white_percentile)) * 100.0))
     auto_levels_strength = max(0.0, min(100.0, float(settings.auto_levels_strength) * 100.0))
-    shadow_lift = max(0.0, min(25.0, float(settings.auto_levels_shadow_lift) * 100.0))
+    dark_ev = max(0.0, min(0.5, -float(settings.dark_ev)))
     parts = [
         f"WB {wb_desc}",
+        f"light {float(settings.light_ev):+.2f} EV",
+        f"dark {dark_ev:.2f} EV",
         "auto levels on" if settings.auto_levels else "auto levels off",
         f"strength {auto_levels_strength:.0f}%",
         "soft tails on" if settings.auto_levels_soft_tails else "soft tails off",
-        f"shadow lift {shadow_lift:.1f}%",
-        f"dark cutoff {dark_cutoff:.2f}%",
-        f"bright cutoff {bright_cutoff:.2f}%",
+        f"dark boost {float(settings.shadow_lift) * 100.0:.1f}%",
+        f"dark cutoff {dark_cutoff:.3f}%",
+        f"bright cutoff {bright_cutoff:.3f}%",
         "tone curve on" if settings.tone_curve_enabled else "tone curve off",
         f"curve strength {float(settings.tone_curve_strength):.2f}",
         f"curve midpoint {float(settings.tone_curve_midpoint):.2f}",
@@ -248,27 +267,31 @@ class ProcessingCurveWindow(QMainWindow):
 
     def __init__(
         self,
-        source_path: Path,
+        source_path: Path | None = None,
         *,
         plot_out: Path | None = None,
         preview_out: Path | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self._source_path = source_path
+        self._source_path = source_path.expanduser().resolve() if source_path is not None else None
         self._plot_out = plot_out
         self._preview_out = preview_out
-        self._is_raw = is_raw_image_path(source_path)
+        self._is_raw = bool(self._source_path is not None and is_raw_image_path(self._source_path))
         self._raw_base_mode = "camera"
         self._raw_tempdir = tempfile.TemporaryDirectory(prefix="sporely_curve_") if self._is_raw else None
-        self._source = self._load_source()
+        self._has_source = self._source_path is not None
+        self._source = self._load_source() if self._has_source else LoadedSource("blank", np.zeros((0, 0, 3), dtype=np.float64))
         self._settings = RawRenderSettings.default()
         self._wb_pick_armed = False
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._refresh_outputs)
         self._build_ui()
-        self._refresh_outputs()
+        if self._has_source:
+            self._refresh_outputs()
+        else:
+            self._set_blank_outputs()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         try:
@@ -279,13 +302,18 @@ class ProcessingCurveWindow(QMainWindow):
             super().closeEvent(event)
 
     def _load_source(self) -> LoadedSource:
+        if self._source_path is None:
+            return LoadedSource("blank", np.zeros((0, 0, 3), dtype=np.float64))
         if self._is_raw:
             scratch_dir = Path(self._raw_tempdir.name) if self._raw_tempdir is not None else None
             return _load_source_image(self._source_path, raw_base_mode=self._raw_base_mode, scratch_dir=scratch_dir)
         return _load_source_image(self._source_path)
 
     def _build_ui(self) -> None:
-        self.setWindowTitle(f"Sporely curve inspector - {self._source_path.name}")
+        if self._source_path is not None:
+            self.setWindowTitle(f"Sporely curve inspector - {self._source_path.name}")
+        else:
+            self.setWindowTitle("Sporely curve inspector")
         self.resize(1500, 920)
 
         central = QWidget(self)
@@ -322,98 +350,86 @@ class ProcessingCurveWindow(QMainWindow):
         self.raw_base_mode_combo.currentIndexChanged.connect(self._on_raw_base_mode_changed)
         source_form.addRow(self.raw_base_mode_label, self.raw_base_mode_combo)
 
-        self.open_file_btn = QPushButton("Open file...")
-        self.open_file_btn.clicked.connect(self._open_source_dialog)
-        source_form.addRow(self.open_file_btn)
-        layout.addWidget(source_group)
-        self._update_source_widgets()
-
-        wb_group = QGroupBox("White balance")
-        wb_form = QFormLayout(wb_group)
-        wb_form.setLabelAlignment(Qt.AlignRight)
-
-        self.wb_mode_combo = QComboBox()
-        self.wb_mode_combo.addItem("Camera", "camera")
-        self.wb_mode_combo.addItem("Auto", "auto")
-        self.wb_mode_combo.addItem("Custom", "custom")
-        self._set_combo_data(self.wb_mode_combo, "camera")
-        self.wb_mode_combo.currentIndexChanged.connect(self._on_wb_mode_changed)
-        wb_form.addRow("Mode", self.wb_mode_combo)
-
         self.wb_sample_size_spin = QSpinBox()
         self.wb_sample_size_spin.setRange(1, 128)
         self.wb_sample_size_spin.setValue(10)
         self.wb_sample_size_spin.valueChanged.connect(self._queue_refresh)
-        wb_form.addRow("Sample size", self.wb_sample_size_spin)
+        source_form.addRow("WB sample size", self.wb_sample_size_spin)
 
-        self.wb_pick_btn = QPushButton("Pick background WB")
-        self.wb_pick_btn.setCheckable(True)
-        self.wb_pick_btn.toggled.connect(self._toggle_wb_pick)
-        wb_form.addRow(self.wb_pick_btn)
-
+        self.open_file_btn = QPushButton("Open file...")
+        self.open_file_btn.clicked.connect(self._open_source_dialog)
+        source_form.addRow(self.open_file_btn)
         self.wb_readout_label = QLabel("Camera WB")
         self.wb_readout_label.setWordWrap(True)
-        wb_form.addRow("Readout", self.wb_readout_label)
-        layout.addWidget(wb_group)
+        source_form.addRow("Readout", self.wb_readout_label)
+        layout.addWidget(source_group)
+        self._update_source_widgets()
 
-        controls_group = QGroupBox("Adjustments")
-        controls_form = QFormLayout(controls_group)
-        controls_form.setLabelAlignment(Qt.AlignRight)
+        raw_group = QGroupBox("RAW processing")
+        raw_layout = QVBoxLayout(raw_group)
+        raw_layout.setContentsMargins(8, 8, 8, 8)
+        raw_layout.setSpacing(8)
+        self.raw_controls = RawProcessingControls(raw_group, show_shadow_lift=True)
+        self.raw_controls.settingsChanged.connect(self._queue_refresh)
+        self.raw_controls.pickWhiteBalanceToggled.connect(self._toggle_wb_pick)
+        raw_layout.addWidget(self.raw_controls)
+        layout.addWidget(raw_group)
 
-        self.auto_levels_checkbox = QCheckBox("Enable auto-levels")
-        self.auto_levels_checkbox.setChecked(True)
-        self.auto_levels_checkbox.toggled.connect(self._queue_refresh)
-        controls_form.addRow(self.auto_levels_checkbox)
+        self.wb_pick_btn = self.raw_controls.pick_button
+
+        self.light_slider = self.raw_controls.light_slider
+        self.light_value_label = self.raw_controls.light_value_label
+        self.dark_slider = self.raw_controls.dark_slider
+        self.dark_value_label = self.raw_controls.dark_value_label
+        self.exposure_slider = self.light_slider
+        self.exposure_value_label = self.light_value_label
+        self.auto_levels_checkbox = self.raw_controls.auto_levels_checkbox
+        self.tone_curve_checkbox = self.raw_controls.tone_curve_checkbox
+        self.shadow_lift_label = self.raw_controls.shadow_lift_label
+        self.shadow_lift_slider = self.raw_controls.shadow_lift_slider
+        self.shadow_lift_value_label = self.raw_controls.shadow_lift_value_label
+        self.shadows_label = self.raw_controls.shadow_lift_label
+        self.shadows_slider = self.raw_controls.shadow_lift_slider
+        self.shadows_value_label = self.raw_controls.shadow_lift_value_label
+        self.curve_strength_row = self.raw_controls.curve_strength_row
+        self.curve_strength_slider = self.raw_controls.curve_strength_slider
+        self.curve_strength_value_label = self.raw_controls.curve_strength_value_label
+        self.contrast_label = QLabel("Contrast")
+        self.contrast_slider = self.curve_strength_slider
+        self.contrast_value_label = self.curve_strength_value_label
+
+        self.curve_midpoint_row = self.raw_controls.curve_midpoint_row
+        self.curve_midpoint_slider = self.raw_controls.curve_midpoint_slider
+        self.curve_midpoint_value_label = self.raw_controls.curve_midpoint_value_label
+        self.midpoint_label = QLabel("Midpoint")
+        self.midpoint_slider = self.curve_midpoint_slider
+        self.midpoint_value_label = self.curve_midpoint_value_label
+
+        advanced_group = QGroupBox("Advanced auto-levels")
+        advanced_form = QFormLayout(advanced_group)
+        advanced_form.setLabelAlignment(Qt.AlignRight)
 
         auto_levels_strength_row, self.auto_levels_strength_slider, self.auto_levels_strength_value_label = self._create_percent_slider_row(
             value=1.0,
             label_formatter=lambda value: f"{value:.0f}%",
         )
-        controls_form.addRow("Auto-level strength", auto_levels_strength_row)
-
-        self.soft_tails_checkbox = QCheckBox("Enable soft tails")
-        self.soft_tails_checkbox.setChecked(False)
-        self.soft_tails_checkbox.toggled.connect(self._queue_refresh)
-        controls_form.addRow(self.soft_tails_checkbox)
-
-        shadow_lift_row, self.shadow_lift_slider, self.shadow_lift_value_label = self._create_shadow_lift_slider_row(
-            value=0.0,
-        )
-        controls_form.addRow("Shadow lift", shadow_lift_row)
+        advanced_form.addRow("Auto-level strength", auto_levels_strength_row)
 
         dark_cutoff_row, self.dark_cutoff_slider, self.dark_cutoff_value_label = self._create_cutoff_slider_row(
-            cutoff_percent=0.05,
+            cutoff_percent=0.01,
         )
         self.black_quantile_slider = self.dark_cutoff_slider
         self.black_quantile_value_label = self.dark_cutoff_value_label
-        controls_form.addRow("Dark cutoff", dark_cutoff_row)
+        advanced_form.addRow("Dark cutoff", dark_cutoff_row)
 
         bright_cutoff_row, self.bright_cutoff_slider, self.bright_cutoff_value_label = self._create_cutoff_slider_row(
-            cutoff_percent=0.05,
+            cutoff_percent=0.01,
         )
         self.white_quantile_slider = self.bright_cutoff_slider
         self.white_quantile_value_label = self.bright_cutoff_value_label
-        controls_form.addRow("Bright cutoff", bright_cutoff_row)
-
-        self.tone_curve_checkbox = QCheckBox("Enable tone curve")
-        self.tone_curve_checkbox.setChecked(False)
-        self.tone_curve_checkbox.toggled.connect(self._queue_refresh)
-        controls_form.addRow(self.tone_curve_checkbox)
-
-        curve_strength_row, self.curve_strength_slider, self.curve_strength_value_label = self._create_float_slider_row(
-            value=0.50,
-            scale=_CURVE_TONE_SCALE,
-            decimals=2,
-        )
-        controls_form.addRow("Curve strength", curve_strength_row)
-
-        curve_midpoint_row, self.curve_midpoint_slider, self.curve_midpoint_value_label = self._create_float_slider_row(
-            value=0.50,
-            scale=_CURVE_TONE_SCALE,
-            decimals=2,
-        )
-        controls_form.addRow("Curve midpoint", curve_midpoint_row)
-        layout.addWidget(controls_group)
+        advanced_form.addRow("Bright cutoff", bright_cutoff_row)
+        layout.addWidget(advanced_group)
+        self.raw_controls.set_tone_controls_enabled(bool(self.tone_curve_checkbox.isChecked()))
 
         stats_group = QGroupBox("Current output")
         stats_form = QFormLayout(stats_group)
@@ -432,6 +448,7 @@ class ProcessingCurveWindow(QMainWindow):
         layout.addWidget(stats_group)
 
         layout.addStretch(1)
+        self._set_processing_controls_enabled(self._has_source)
         return panel
 
     def _build_display_panel(self) -> QWidget:
@@ -516,6 +533,32 @@ class ProcessingCurveWindow(QMainWindow):
         slider.valueChanged.connect(_sync_slider_value)
         return row, slider, value_label
 
+    def _create_ev_slider_row(self, *, value: float) -> tuple[QWidget, QSlider, QLabel]:
+        row = QWidget(self)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        slider = QSlider(Qt.Horizontal, row)
+        slider.setRange(-20, 30)
+        slider.setSingleStep(1)
+        slider.setPageStep(5)
+        slider.setValue(self._ev_to_slider_value(value))
+        row_layout.addWidget(slider, 1)
+
+        value_label = QLabel(row)
+        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        value_label.setMinimumWidth(72)
+        value_label.setText(self._ev_slider_value_text(slider.value()))
+        row_layout.addWidget(value_label, 0)
+
+        def _sync_slider_value(slider_value: int) -> None:
+            value_label.setText(self._ev_slider_value_text(slider_value))
+            self._queue_refresh()
+
+        slider.valueChanged.connect(_sync_slider_value)
+        return row, slider, value_label
+
     def _create_cutoff_slider_row(self, *, cutoff_percent: float) -> tuple[QWidget, QSlider, QLabel]:
         row = QWidget(self)
         row_layout = QHBoxLayout(row)
@@ -525,7 +568,7 @@ class ProcessingCurveWindow(QMainWindow):
         slider = QSlider(Qt.Horizontal, row)
         slider.setRange(0, _CURVE_CUTOFF_SCALE)
         slider.setSingleStep(1)
-        slider.setPageStep(5)
+        slider.setPageStep(1)
         slider.setValue(self._cutoff_percent_to_slider_value(cutoff_percent))
         row_layout.addWidget(slider, 1)
 
@@ -549,7 +592,7 @@ class ProcessingCurveWindow(QMainWindow):
         row_layout.setSpacing(8)
 
         slider = QSlider(Qt.Horizontal, row)
-        slider.setRange(0, 200)
+        slider.setRange(0, 100)
         slider.setSingleStep(1)
         slider.setPageStep(10)
         slider.setValue(self._shadow_lift_fraction_to_slider_value(value))
@@ -599,8 +642,16 @@ class ProcessingCurveWindow(QMainWindow):
         return int(round(max(0.0, min(1.0, float(value))) * float(scale)))
 
     @staticmethod
+    def _ev_to_slider_value(value: float) -> int:
+        return int(round(max(-2.0, min(2.0, float(value))) * 20.0))
+
+    @staticmethod
     def _slider_value_float(value: int, scale: int) -> float:
         return max(0.0, min(1.0, float(value) / float(scale)))
+
+    @staticmethod
+    def _slider_value_ev(value: int) -> float:
+        return max(-2.0, min(2.0, float(value) / 20.0))
 
     @classmethod
     def _slider_value_text(cls, value: int, scale: int, decimals: int) -> str:
@@ -608,27 +659,31 @@ class ProcessingCurveWindow(QMainWindow):
 
     @staticmethod
     def _cutoff_percent_to_slider_value(cutoff_percent: float) -> int:
-        return int(round(max(0.0, min(0.5, float(cutoff_percent))) * 100.0))
+        return int(round(max(0.0, min(0.02, float(cutoff_percent))) * 1000.0))
 
     @staticmethod
     def _cutoff_slider_value_to_percent(value: int) -> float:
-        return max(0.0, min(0.5, float(value) / 100.0))
+        return max(0.0, min(0.02, float(value) / 1000.0))
 
     @classmethod
     def _cutoff_slider_value_text(cls, value: int) -> str:
-        return f"{cls._cutoff_slider_value_to_percent(value):.2f}%"
+        return f"{cls._cutoff_slider_value_to_percent(value):.3f}%"
 
     @staticmethod
     def _shadow_lift_fraction_to_slider_value(value: float) -> int:
-        return int(round(max(0.0, min(0.2, float(value))) * 1000.0))
+        return int(round(max(0.0, min(0.10, float(value))) * 1000.0))
 
     @staticmethod
     def _shadow_lift_slider_value_to_fraction(value: int) -> float:
-        return max(0.0, min(0.2, float(value) / 1000.0))
+        return max(0.0, min(0.10, float(value) / 1000.0))
 
     @classmethod
     def _shadow_lift_slider_value_text(cls, value: int) -> str:
         return f"{cls._shadow_lift_slider_value_to_fraction(value) * 100.0:.1f}%"
+
+    @classmethod
+    def _ev_slider_value_text(cls, value: int) -> str:
+        return f"{cls._slider_value_ev(value):+.2f} EV"
 
     def _set_combo_data(self, combo: QComboBox, data: str) -> None:
         index = combo.findData(data)
@@ -637,28 +692,40 @@ class ProcessingCurveWindow(QMainWindow):
                 combo.setCurrentIndex(index)
 
     def _sync_wb_controls_from_settings(self, settings: RawRenderSettings) -> None:
-        self._set_combo_data(self.wb_mode_combo, settings.white_balance_mode if settings.white_balance_mode in {"camera", "auto", "custom"} else "camera")
+        resolved = RawRenderSettings.from_dict(settings)
+        self.raw_controls.set_settings(resolved)
         if self._is_raw and hasattr(self, "raw_base_mode_combo"):
-            base_mode = settings.wb_sample_base_mode or self._raw_base_mode
+            base_mode = resolved.wb_sample_base_mode or self._raw_base_mode
             self._set_combo_data(self.raw_base_mode_combo, base_mode)
-        self.wb_sample_size_spin.setValue(int(settings.wb_sample_size or 10))
-        self._update_wb_readout(settings)
+        self.wb_sample_size_spin.setValue(int(resolved.wb_sample_size or 10))
+        self._update_wb_readout(resolved)
 
     def _update_source_widgets(self) -> None:
+        if self._source_path is None:
+            self.setWindowTitle("Sporely curve inspector")
+            self.source_path_label.setText("No file loaded")
+            self.source_kind_label.setText("Blank")
+            self.raw_base_mode_label.setVisible(False)
+            self.raw_base_mode_combo.setVisible(False)
+            self.wb_sample_size_spin.setEnabled(False)
+            self.wb_readout_label.setText("No file loaded")
+            return
+
         self.setWindowTitle(f"Sporely curve inspector - {self._source_path.name}")
         self.source_path_label.setText(str(self._source_path))
         self.source_kind_label.setText("RAW" if self._is_raw else "Raster")
         self.raw_base_mode_label.setVisible(self._is_raw)
         self.raw_base_mode_combo.setVisible(self._is_raw)
+        self.wb_sample_size_spin.setEnabled(True)
         if self._is_raw:
             self._set_combo_data(self.raw_base_mode_combo, self._raw_base_mode)
 
     def _reset_white_balance_controls(self) -> None:
-        self._set_combo_data(self.wb_mode_combo, "camera")
         if self._is_raw:
             self._set_combo_data(self.raw_base_mode_combo, self._raw_base_mode)
-        self._settings = replace(
-            self._settings,
+        current = RawRenderSettings.from_dict(self.raw_controls.settings())
+        reset = replace(
+            current,
             white_balance_mode="camera",
             wb_multipliers=None,
             wb_selection=None,
@@ -666,10 +733,14 @@ class ProcessingCurveWindow(QMainWindow):
             wb_sample_point=None,
             wb_selection_space=None,
             wb_sample_base_mode=self._raw_base_mode if self._is_raw else None,
+            wb_sample_size=int(self.wb_sample_size_spin.value()),
         )
-        self._update_wb_readout(self._settings)
+        self.raw_controls.set_settings(reset)
+        self._settings = reset
+        self._update_wb_readout(reset)
         if self.wb_pick_btn.isChecked():
-            self.wb_pick_btn.setChecked(False)
+            self.raw_controls.set_pick_checked(False)
+        self._wb_pick_armed = False
 
     def _update_wb_readout(self, settings: RawRenderSettings | None = None) -> None:
         resolved = RawRenderSettings.from_dict(settings or self._settings)
@@ -690,19 +761,17 @@ class ProcessingCurveWindow(QMainWindow):
         return "Camera WB"
 
     def _settings_from_controls(self) -> RawRenderSettings:
-        base_settings = self._settings if isinstance(self._settings, RawRenderSettings) else RawRenderSettings.default()
-        wb_mode = str(self.wb_mode_combo.currentData() or "camera").strip().lower() or "camera"
+        base_settings = RawRenderSettings.from_dict(self.raw_controls.settings())
+        wb_mode = str(base_settings.white_balance_mode or "camera").strip().lower() or "camera"
         raw_base_mode = self._raw_base_mode if self._is_raw else None
         if self._is_raw and wb_mode in {"camera", "auto"}:
             raw_base_mode = wb_mode
         settings = replace(
             base_settings,
             white_balance_mode=wb_mode if wb_mode in {"camera", "auto", "custom"} else "camera",
-            auto_levels=bool(self.auto_levels_checkbox.isChecked()),
             black_percentile=self._cutoff_slider_value_to_percent(self.dark_cutoff_slider.value()) / 100.0,
             white_percentile=1.0 - (self._cutoff_slider_value_to_percent(self.bright_cutoff_slider.value()) / 100.0),
             auto_levels_strength=self._slider_value_float(self.auto_levels_strength_slider.value(), _CURVE_STRENGTH_SCALE),
-            auto_levels_soft_tails=bool(self.soft_tails_checkbox.isChecked()),
             auto_levels_tail_size=float(base_settings.auto_levels_tail_size),
             auto_levels_shadow_lift=self._shadow_lift_slider_value_to_fraction(self.shadow_lift_slider.value()),
             tone_curve_enabled=bool(self.tone_curve_checkbox.isChecked()),
@@ -728,6 +797,21 @@ class ProcessingCurveWindow(QMainWindow):
         if not self._is_raw:
             return
         self._source = self._load_source()
+
+    def _set_processing_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.raw_controls,
+            self.raw_base_mode_combo,
+            self.wb_sample_size_spin,
+            self.light_slider,
+            self.dark_slider,
+            self.auto_levels_strength_slider,
+            self.dark_cutoff_slider,
+            self.bright_cutoff_slider,
+            self.curve_strength_slider,
+            self.curve_midpoint_slider,
+        ):
+            widget.setEnabled(bool(enabled))
 
     def _load_source_path(self, source_path: Path) -> None:
         resolved_path = source_path.expanduser().resolve()
@@ -761,13 +845,14 @@ class ProcessingCurveWindow(QMainWindow):
 
         self._update_source_widgets()
         self._reset_white_balance_controls()
+        self._set_processing_controls_enabled(True)
         self._refresh_outputs()
 
     def _open_source_dialog(self) -> None:
         file_path, _selected_filter = QFileDialog.getOpenFileName(
             self,
             "Open image",
-            str(self._source_path.parent),
+            str(self._source_path.parent if self._source_path is not None else Path.cwd()),
             _open_file_filter(),
         )
         if not file_path:
@@ -791,43 +876,17 @@ class ProcessingCurveWindow(QMainWindow):
         if not self._is_raw:
             return
         self._raw_base_mode = str(self.raw_base_mode_combo.currentData() or "camera").strip().lower() or "camera"
-        if str(self.wb_mode_combo.currentData() or "camera").strip().lower() in {"camera", "auto"}:
-            self._set_combo_data(self.wb_mode_combo, self._raw_base_mode)
+        current = RawRenderSettings.from_dict(self.raw_controls.settings())
+        if str(current.white_balance_mode or "camera").strip().lower() in {"camera", "auto"}:
+            self.raw_controls.set_settings(
+                replace(current, white_balance_mode=self._raw_base_mode, wb_sample_base_mode=self._raw_base_mode)
+            )
         self._source = self._load_source()
-        self._queue_refresh()
-
-    def _on_wb_mode_changed(self, *_args) -> None:
-        mode = str(self.wb_mode_combo.currentData() or "camera").strip().lower() or "camera"
-        if self._is_raw and mode in {"camera", "auto"} and hasattr(self, "raw_base_mode_combo"):
-            self._set_combo_data(self.raw_base_mode_combo, mode)
-            self._raw_base_mode = mode
-            self._source = self._load_source()
-        if mode != "custom":
-            self._settings = replace(
-                self._settings,
-                white_balance_mode=mode,
-                wb_multipliers=None,
-                wb_selection=None,
-                wb_multiplier_space=None,
-                wb_sample_point=None,
-                wb_selection_space=None,
-                wb_sample_size=int(self.wb_sample_size_spin.value()),
-                wb_sample_base_mode=self._raw_base_mode if self._is_raw else None,
-            )
-        else:
-            self._settings = replace(
-                self._settings,
-                white_balance_mode="custom",
-                wb_sample_size=int(self.wb_sample_size_spin.value()),
-                wb_sample_base_mode=self._raw_base_mode if self._is_raw else None,
-            )
-        self._update_wb_readout(self._settings)
         self._queue_refresh()
 
     def _toggle_wb_pick(self, checked: bool) -> None:
         self._wb_pick_armed = bool(checked)
         self.preview_label.setCursor(Qt.CrossCursor if checked else Qt.ArrowCursor)
-        self.wb_pick_btn.setText("Cancel background WB" if checked else "Pick background WB")
         if checked:
             self.statusBar().showMessage("Click neutral background to sample WB")
         else:
@@ -865,8 +924,8 @@ class ProcessingCurveWindow(QMainWindow):
             return False
 
         base_mode = self._raw_base_mode if self._is_raw else None
-        self._settings = replace(
-            self._settings,
+        updated = replace(
+            RawRenderSettings.from_dict(self.raw_controls.settings()),
             white_balance_mode="custom",
             wb_multipliers=(float(multipliers[0]), float(multipliers[1]), float(multipliers[2])),
             wb_selection=(float(sample_rect[0]), float(sample_rect[1]), float(sample_rect[2]), float(sample_rect[3])),
@@ -876,10 +935,12 @@ class ProcessingCurveWindow(QMainWindow):
             wb_sample_base_mode=base_mode,
             wb_selection_space="preview_pixels",
         )
-        self._set_combo_data(self.wb_mode_combo, "custom")
+        self.raw_controls.set_settings(updated)
+        self._settings = updated
         self._update_wb_readout(self._settings)
         if self.wb_pick_btn.isChecked():
-            self.wb_pick_btn.setChecked(False)
+            self.raw_controls.set_pick_checked(False)
+        self._wb_pick_armed = False
         self._refresh_outputs()
         return True
 
@@ -887,6 +948,9 @@ class ProcessingCurveWindow(QMainWindow):
         self._apply_wb_pick_from_point(point)
 
     def _refresh_outputs(self) -> None:
+        if self._source_path is None:
+            self._set_blank_outputs()
+            return
         self._settings = self._settings_from_controls()
         source_rgb = self._source.rgb
         processed_rgb, debug = apply_post_decode_processing(source_rgb, self._settings, return_debug=True)
@@ -912,13 +976,33 @@ class ProcessingCurveWindow(QMainWindow):
         if self._plot_out is not None:
             _save_plot(self._plot_out, source_rgb, self._settings, debug=debug)
 
+    def _set_blank_outputs(self) -> None:
+        self.preview_label.set_image_sources(QPixmap())
+        self.figure.clear()
+        self.canvas.draw()
+        self.input_min_label.setText("—")
+        self.input_max_label.setText("—")
+        self.black_level_label.setText("—")
+        self.white_level_label.setText("—")
+        self.settings_label.setText("Open a file to inspect RAW processing")
+        self.wb_readout_label.setText("No file loaded")
+        self.statusBar().showMessage("Open a file to inspect RAW processing")
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input_path", type=Path, help="Source image to analyze")
+    parser.add_argument("input_path", type=Path, nargs="?", default=None, help="Source image to analyze")
     parser.add_argument("--plot-out", type=Path, help="Path for the curve plot PNG snapshot")
     parser.add_argument("--preview-out", type=Path, help="Path for the processed preview PNG snapshot")
     parser.add_argument("--interactive", action="store_true", help="Open an interactive window with live controls")
+    parser.add_argument("--light-ev", type=float, default=None, help="Light adjustment in EV from 0 to +2")
+    parser.add_argument("--dark-ev", type=float, default=None, help="Dark adjustment in EV from 0 to -2")
+    parser.add_argument(
+        "--exposure-ev",
+        type=float,
+        default=None,
+        help="Deprecated alias for light/dark when only one side is needed",
+    )
     parser.add_argument(
         "--auto-levels",
         action=argparse.BooleanOptionalAction,
@@ -949,13 +1033,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--curve-strength", type=float, default=0.5, help="Tone curve strength")
     parser.add_argument("--curve-midpoint", type=float, default=0.5, help="Tone curve midpoint")
     args = parser.parse_args(argv)
+    if args.input_path is None:
+        if args.plot_out is not None or args.preview_out is not None:
+            parser.error("input_path is required when using --plot-out or --preview-out")
+        args.interactive = True
     if not args.interactive and (args.plot_out is None or args.preview_out is None):
         parser.error("--plot-out and --preview-out are required unless --interactive is set")
     return args
 
 
 def _run_snapshot_mode(args: argparse.Namespace) -> int:
-    source_path = args.input_path.expanduser().resolve()
+    source_path = Path(args.input_path).expanduser().resolve()
     if not source_path.exists():
         raise FileNotFoundError(f"Input image not found: {source_path}")
 
@@ -980,8 +1068,8 @@ def _run_snapshot_mode(args: argparse.Namespace) -> int:
 
 
 def _run_interactive_mode(args: argparse.Namespace) -> int:
-    source_path = args.input_path.expanduser().resolve()
-    if not source_path.exists():
+    source_path = Path(args.input_path).expanduser().resolve() if args.input_path is not None else None
+    if source_path is not None and not source_path.exists():
         raise FileNotFoundError(f"Input image not found: {source_path}")
 
     app = QApplication.instance() or QApplication([])

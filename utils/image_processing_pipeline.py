@@ -16,8 +16,8 @@ _EPSILON = np.finfo(np.float64).eps
 class ProcessingDebugInfo:
     """Debug snapshot for the shared post-decode processing pipeline.
 
-    `input_min` and `input_max` are measured after post-decode white balance and
-    before auto-levels, which is the luminance range the auto-level stage sees.
+    `input_min` and `input_max` are measured after post-decode white balance
+    and before auto-levels / exposure.
     """
 
     input_min: float
@@ -34,7 +34,11 @@ class PostDecodeTransferCurve:
     input_values: np.ndarray
     hard_target: np.ndarray
     soft_target: np.ndarray
+    exposure_output: np.ndarray
+    manual_levels_output: np.ndarray
+    light_dark_output: np.ndarray
     auto_levels_output: np.ndarray
+    shadow_toe_output: np.ndarray
     final_output: np.ndarray
     debug: ProcessingDebugInfo
 
@@ -106,10 +110,10 @@ def raw_settings_from_basic_controls(
     contrast: float,
     midpoint: float,
     preserve_tails: bool,
-    dark_cutoff: float = 0.0005,
-    bright_cutoff: float = 0.0005,
+    dark_cutoff: float = 0.0,
+    bright_cutoff: float = 0.0,
     shadow_lift_enabled: bool = True,
-    shadow_lift_max: float = 0.05,
+    shadow_lift_max: float = 0.10,
     existing_settings: Any | None = None,
 ) -> Any:
     """Map simplified Live Lab controls into a full RAW settings snapshot."""
@@ -142,14 +146,6 @@ def raw_settings_from_basic_controls(
     curve_strength = 0.08 + 0.72 * (contrast_value ** 1.35)
     dark_cutoff_value = _clamp_range(dark_cutoff, 0.0005, 0.0, 0.02)
     bright_cutoff_value = _clamp_range(bright_cutoff, 0.0005, 0.0, 0.02)
-    lift_enabled = bool(shadow_lift_enabled)
-    lift_max = _clamp_range(shadow_lift_max, 0.05, 0.0, 0.05)
-    if lift_enabled and midpoint_value < 0.20:
-        lift_ratio = float(smoothstep((0.20 - midpoint_value) / 0.20))
-        shadow_lift = float(np.clip(lift_max * lift_ratio, 0.0, lift_max))
-    else:
-        shadow_lift = 0.0
-
     resolved = replace(
         base_settings,
         white_balance_mode=mode,
@@ -166,7 +162,7 @@ def raw_settings_from_basic_controls(
         auto_levels_strength=1.0,
         auto_levels_soft_tails=bool(preserve_tails),
         auto_levels_tail_size=0.03,
-        auto_levels_shadow_lift=float(np.clip(shadow_lift, 0.0, 0.05)),
+        auto_levels_shadow_lift=float(base_settings.auto_levels_shadow_lift),
         tone_curve_enabled=bool(contrast_value > 0.02),
         tone_curve_strength=float(np.clip(curve_strength, 0.0, 1.0)),
         tone_curve_midpoint=float(np.clip(curve_midpoint, 0.0, 1.0)),
@@ -197,8 +193,12 @@ def _settings_to_dict(settings: Any) -> dict[str, Any]:
         return mapping
 
 
-def to_float_rgb(rgb: Any) -> np.ndarray:
-    """Normalize an RGB array to float64 in the 0..1 range."""
+def to_float_rgb(rgb: Any, *, clip: bool = True) -> np.ndarray:
+    """Normalize an RGB array to float64.
+
+    By default the result is clipped to 0..1. Callers that need to preserve
+    temporary headroom can pass ``clip=False``.
+    """
     arr = np.asarray(rgb)
     if arr.ndim == 2:
         arr = np.repeat(arr[..., None], 3, axis=2)
@@ -212,26 +212,26 @@ def to_float_rgb(rgb: Any) -> np.ndarray:
         max_value = float(np.iinfo(source.dtype).max)
         if max_value > 0:
             arr = arr / max_value
-    elif arr.max(initial=0.0) > 1.0:
+    elif clip and arr.max(initial=0.0) > 1.0:
         arr = arr / float(arr.max(initial=1.0))
-    return np.clip(arr, 0.0, 1.0)
+    return np.clip(arr, 0.0, 1.0) if clip else arr
 
 
 def compute_luminance(rgb: Any) -> np.ndarray:
     """Return the luminance channel for an RGB array."""
-    arr = to_float_rgb(rgb)
+    arr = to_float_rgb(rgb, clip=False)
     return np.tensordot(arr, _LUMA_WEIGHTS, axes=([-1], [0]))
 
 
 def apply_custom_white_balance(rgb: Any, multipliers: tuple[float, float, float] | None) -> np.ndarray:
     """Apply post-decode RGB channel gains."""
-    arr = to_float_rgb(rgb)
+    arr = to_float_rgb(rgb, clip=False)
     if multipliers is None:
         return arr
     if len(multipliers) != 3:
         raise ValueError("Expected three RGB multipliers")
     gains = np.asarray([float(multipliers[0]), float(multipliers[1]), float(multipliers[2])], dtype=np.float64)
-    balanced = np.clip(arr[..., :3] * gains, 0.0, 1.0)
+    balanced = np.maximum(arr[..., :3] * gains, 0.0)
     if arr.shape[-1] > 3:
         alpha = np.clip(arr[..., 3:], 0.0, 1.0)
         return np.concatenate([balanced, alpha], axis=-1)
@@ -242,10 +242,61 @@ def _clamp01(values: Any) -> np.ndarray:
     return np.clip(np.asarray(values, dtype=np.float64), 0.0, 1.0)
 
 
-def smoothstep(values: Any) -> np.ndarray:
-    """Return a smoothstep interpolation over the 0..1 range."""
-    z = _clamp01(values)
+def smoothstep(edge0: Any, edge1: Any | None = None, x: Any | None = None) -> np.ndarray:
+    """Return a smoothstep interpolation.
+
+    With one argument, the input is interpreted as values already normalized to
+    the 0..1 range. With three arguments, the range is mapped from
+    ``edge0..edge1`` to 0..1.
+    """
+    if x is None and edge1 is None:
+        z = _clamp01(edge0)
+    else:
+        if x is None or edge1 is None:
+            raise TypeError("smoothstep() expects either 1 or 3 arguments")
+        edge0_value = float(edge0)
+        edge1_value = float(edge1)
+        span = max(edge1_value - edge0_value, 1e-6)
+        z = _clamp01((np.asarray(x, dtype=np.float64) - edge0_value) / span)
     return z * z * (3.0 - 2.0 * z)
+
+
+def apply_exposure_compensation(rgb: Any, exposure_ev: float) -> np.ndarray:
+    """Apply exposure compensation in linear space."""
+    arr = to_float_rgb(rgb, clip=False)
+    gain = float(2.0 ** _clamp_range(exposure_ev, 0.0, -2.0, 2.0))
+    exposed = np.maximum(arr[..., :3] * gain, 0.0)
+    if arr.shape[-1] > 3:
+        alpha = np.clip(arr[..., 3:], 0.0, 1.0)
+        return np.concatenate([exposed, alpha], axis=-1)
+    return exposed
+
+
+def apply_light_dark_levels(values: Any, light_ev: float, dark_ev: float) -> np.ndarray:
+    """Apply manual black/white endpoint shifts in normalized luminance space."""
+    normalized = _clamp01(values)
+    light = float(_clamp_range(light_ev, 0.0, 0.0, 2.0))
+    dark = float(_clamp_range(dark_ev, 0.0, -2.0, 0.0))
+    white_shift = 1.0 - float(2.0 ** (-light)) if light > 0.0 else 0.0
+    black_shift = 1.0 - float(2.0 ** dark) if dark < 0.0 else 0.0
+    span = max(_EPSILON, 1.0 - black_shift - white_shift)
+    return _clamp01((normalized - black_shift) / span)
+
+
+def apply_shadow_toe_lift(x: Any, amount: float, *, cutoff: float) -> np.ndarray:
+    """Apply a linear dark boost below a luminance cutoff."""
+    values = _clamp01(x)
+    boost = float(np.clip(amount, 0.0, 0.10))
+    cutoff_value = float(np.clip(cutoff, 0.0, 1.0))
+    if boost <= 0.0 or cutoff_value <= _EPSILON:
+        return values
+
+    output = values.copy()
+    low_mask = values < cutoff_value
+    if np.any(low_mask):
+        progress = values[low_mask] / cutoff_value
+        output[low_mask] = values[low_mask] + (cutoff_value * boost) * (1.0 - progress)
+    return _clamp01(output)
 
 
 def _resolve_auto_level_output_anchors(
@@ -257,7 +308,8 @@ def _resolve_auto_level_output_anchors(
     shadow_lift: float,
     tail_size: float,
 ) -> tuple[float, float, float, float, float, bool, bool]:
-    output_min = float(np.clip(shadow_lift, 0.0, 0.25))
+    _ = shadow_lift
+    output_min = 0.0
     output_max = 1.0
     has_dark_tail = (
         black_level is not None
@@ -296,6 +348,7 @@ def hard_luminance_levels(
     shadow_lift: float = 0.0,
 ) -> np.ndarray:
     """Return the hard auto-level luminance transfer."""
+    _ = shadow_lift
     values = np.asarray(x, dtype=np.float64)
     if black_level is None or white_level is None:
         return _clamp01(values)
@@ -306,9 +359,8 @@ def hard_luminance_levels(
     span = white - black
     if span <= _EPSILON:
         return _clamp01(values)
-    output_min = float(np.clip(shadow_lift, 0.0, 0.25))
     mapped = _clamp01((values - black) / span)
-    return _clamp01(output_min + mapped * (1.0 - output_min))
+    return mapped
 
 
 def soft_luminance_levels(
@@ -322,6 +374,7 @@ def soft_luminance_levels(
     shadow_lift: float = 0.0,
 ) -> np.ndarray:
     """Return the soft-tail luminance transfer."""
+    _ = shadow_lift
     values = np.asarray(x, dtype=np.float64)
     if black_level is None or white_level is None:
         return _clamp01(values)
@@ -383,7 +436,7 @@ def blend_luminance_levels(original: Any, target: Any, strength: float) -> np.nd
 
 def apply_luminance_transfer(rgb: Any, source_luminance: Any, target_luminance: Any) -> np.ndarray:
     """Apply a luminance transfer while preserving RGB hue."""
-    arr = to_float_rgb(rgb)
+    arr = to_float_rgb(rgb, clip=False)
     source = np.asarray(source_luminance, dtype=np.float64)
     target = np.asarray(target_luminance, dtype=np.float64)
     if source.shape != target.shape:
@@ -392,7 +445,10 @@ def apply_luminance_transfer(rgb: Any, source_luminance: Any, target_luminance: 
     scale = np.ones_like(source, dtype=np.float64)
     usable = source > _EPSILON
     scale[usable] = target[usable] / source[usable]
-    balanced = np.clip(arr[..., :3] * scale[..., None], 0.0, 1.0)
+    balanced = np.maximum(arr[..., :3] * scale[..., None], 0.0)
+    low_mask = ~usable
+    if np.any(low_mask):
+        balanced[low_mask] = np.clip(target[low_mask][..., None], 0.0, 1.0)
     if arr.shape[-1] > 3:
         alpha = np.clip(arr[..., 3:], 0.0, 1.0)
         return np.concatenate([balanced, alpha], axis=-1)
@@ -405,7 +461,7 @@ def compute_auto_level_bounds(
     white_percentile: float,
 ) -> tuple[float | None, float | None]:
     """Return the luminance bounds used by the auto-level stage."""
-    arr = to_float_rgb(rgb)
+    arr = to_float_rgb(rgb, clip=False)
     luminance = compute_luminance(arr)
     black_percentile = float(np.clip(black_percentile, 0.0, 1.0))
     white_percentile = float(np.clip(white_percentile, 0.0, 1.0))
@@ -427,7 +483,7 @@ def apply_auto_levels_from_bounds(
     shadow_lift: float = 0.0,
 ) -> np.ndarray:
     """Apply the same luminance auto-level mapping used by Sporely."""
-    arr = to_float_rgb(rgb)
+    arr = to_float_rgb(rgb, clip=False)
     if black_level is None or white_level is None or not np.isfinite(black_level) or not np.isfinite(white_level):
         return np.clip(arr, 0.0, 1.0)
     if white_level <= black_level:
@@ -473,9 +529,9 @@ def apply_post_decode_processing(
     *,
     return_debug: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, ProcessingDebugInfo]:
-    """Apply post-decode custom WB, auto-levels, and tone curve in order."""
+    """Apply post-decode WB, auto-levels, light/dark, dark boost, and tone curve in order."""
     normalized_settings = _settings_to_dict(settings)
-    input_rgb = to_float_rgb(rgb)
+    input_rgb = to_float_rgb(rgb, clip=False)
 
     working = input_rgb
     wb_multipliers = normalized_settings.get("wb_multipliers")
@@ -492,27 +548,52 @@ def apply_post_decode_processing(
     input_min = float(np.min(working_luminance)) if working_luminance.size else 0.0
     input_max = float(np.max(working_luminance)) if working_luminance.size else 0.0
 
+    shadow_black_level, shadow_white_level = compute_auto_level_bounds(
+        working,
+        float(normalized_settings.get("black_percentile", 0.001)),
+        float(normalized_settings.get("white_percentile", 0.999)),
+    )
+
     black_level = None
     white_level = None
-    if bool(normalized_settings.get("auto_levels", True)):
-        black_level, white_level = compute_auto_level_bounds(
-            working,
-            float(normalized_settings.get("black_percentile", 0.001)),
-            float(normalized_settings.get("white_percentile", 0.999)),
+    if bool(normalized_settings.get("auto_levels", True)) and shadow_black_level is not None and shadow_white_level is not None:
+        black_level = shadow_black_level
+        white_level = shadow_white_level
+        _hard_target, _soft_target, auto_levels_output = compute_auto_levels_transfer(
+            working_luminance,
+            input_min=input_min,
+            input_max=input_max,
+            black_level=black_level,
+            white_level=white_level,
+            strength=float(normalized_settings.get("auto_levels_strength", 1.0)),
+            soft_tails=bool(normalized_settings.get("auto_levels_soft_tails", False)),
+            tail_size=float(normalized_settings.get("auto_levels_tail_size", 0.03)),
+            shadow_lift=float(
+                normalized_settings.get("shadow_lift", normalized_settings.get("auto_levels_shadow_lift", 0.0))
+            ),
         )
-        if black_level is not None and white_level is not None:
-            _hard_target, _soft_target, auto_levels_output = compute_auto_levels_transfer(
-                working_luminance,
-                input_min=input_min,
-                input_max=input_max,
-                black_level=black_level,
-                white_level=white_level,
-                strength=float(normalized_settings.get("auto_levels_strength", 1.0)),
-                soft_tails=bool(normalized_settings.get("auto_levels_soft_tails", False)),
-                tail_size=float(normalized_settings.get("auto_levels_tail_size", 0.03)),
-                shadow_lift=float(normalized_settings.get("auto_levels_shadow_lift", 0.0)),
-            )
-            working = apply_luminance_transfer(working, working_luminance, auto_levels_output)
+        working = apply_luminance_transfer(working, working_luminance, auto_levels_output)
+
+    working = np.clip(working, 0.0, 1.0)
+
+    light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
+    dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
+    if light_ev > 0.0 or dark_ev < 0.0:
+        working_luminance = compute_luminance(working)
+        manual_levels_output = apply_light_dark_levels(working_luminance, light_ev, dark_ev)
+        working = apply_luminance_transfer(working, working_luminance, manual_levels_output)
+        working = np.clip(working, 0.0, 1.0)
+
+    shadow_lift = _clamp_range(
+        normalized_settings.get("shadow_lift", normalized_settings.get("auto_levels_shadow_lift", 0.0)),
+        0.0,
+        0.0,
+        0.10,
+    )
+    if shadow_lift > 0.0 and shadow_black_level is not None:
+        working_luminance = compute_luminance(working)
+        shadow_toe_output = apply_shadow_toe_lift(working_luminance, shadow_lift, cutoff=shadow_black_level)
+        working = apply_luminance_transfer(working, working_luminance, shadow_toe_output)
 
     if bool(normalized_settings.get("tone_curve_enabled", False)):
         working = apply_luminance_tone_curve(
@@ -520,6 +601,8 @@ def apply_post_decode_processing(
             float(normalized_settings.get("tone_curve_strength", 0.5)),
             float(normalized_settings.get("tone_curve_midpoint", 0.5)),
         )
+
+    working = np.clip(working, 0.0, 1.0)
 
     if not return_debug:
         return working
@@ -552,6 +635,12 @@ def compute_post_decode_transfer_curve(
 
     sample_count = max(2, int(samples))
     ramp = np.linspace(0.0, 1.0, sample_count, dtype=np.float64)
+    sample_values = ramp
+    shadow_black_level, shadow_white_level = compute_auto_level_bounds(
+        rgb,
+        float(normalized_settings.get("black_percentile", 0.001)),
+        float(normalized_settings.get("white_percentile", 0.999)),
+    )
     black_level = resolved_debug.black_level if bool(normalized_settings.get("auto_levels", True)) else None
     white_level = resolved_debug.white_level if bool(normalized_settings.get("auto_levels", True)) else None
 
@@ -562,16 +651,16 @@ def compute_post_decode_transfer_curve(
         and np.isfinite(white_level)
         and float(white_level) > float(black_level)
     ):
-        ramp = np.unique(
+        sample_values = np.unique(
             np.concatenate(
                 [
-                    ramp,
+                    sample_values,
                     np.asarray([float(black_level), float(white_level)], dtype=np.float64),
                 ]
             )
         )
         hard_target, soft_target, auto_levels_output = compute_auto_levels_transfer(
-            ramp,
+            sample_values,
             input_min=resolved_debug.input_min,
             input_max=resolved_debug.input_max,
             black_level=black_level,
@@ -579,26 +668,45 @@ def compute_post_decode_transfer_curve(
             strength=float(normalized_settings.get("auto_levels_strength", 1.0)),
             soft_tails=bool(normalized_settings.get("auto_levels_soft_tails", False)),
             tail_size=float(normalized_settings.get("auto_levels_tail_size", 0.03)),
-            shadow_lift=float(normalized_settings.get("auto_levels_shadow_lift", 0.0)),
+            shadow_lift=float(
+                normalized_settings.get("shadow_lift", normalized_settings.get("auto_levels_shadow_lift", 0.0))
+            ),
         )
     else:
-        hard_target = ramp.copy()
-        soft_target = ramp.copy()
-        auto_levels_output = ramp.copy()
+        hard_target = sample_values.copy()
+        soft_target = sample_values.copy()
+        auto_levels_output = sample_values.copy()
 
-    final_output = auto_levels_output.copy()
+    light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
+    dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
+    manual_levels_output = apply_light_dark_levels(auto_levels_output, light_ev, dark_ev)
+
+    shadow_lift = _clamp_range(
+        normalized_settings.get("shadow_lift", normalized_settings.get("auto_levels_shadow_lift", 0.0)),
+        0.0,
+        0.0,
+        0.10,
+    )
+    shadow_cutoff = shadow_black_level if shadow_black_level is not None else black_level
+    shadow_toe_output = apply_shadow_toe_lift(manual_levels_output, shadow_lift, cutoff=float(shadow_cutoff or 0.0))
+
+    final_output = shadow_toe_output.copy()
     if bool(normalized_settings.get("tone_curve_enabled", False)):
         final_output = normalized_sigmoid_curve(
-            auto_levels_output,
+            shadow_toe_output,
             float(normalized_settings.get("tone_curve_strength", 0.5)),
             float(normalized_settings.get("tone_curve_midpoint", 0.5)),
         )
 
     return PostDecodeTransferCurve(
-        input_values=ramp,
+        input_values=sample_values,
         hard_target=hard_target,
         soft_target=soft_target,
+        exposure_output=manual_levels_output,
+        manual_levels_output=manual_levels_output,
+        light_dark_output=manual_levels_output,
         auto_levels_output=auto_levels_output,
+        shadow_toe_output=shadow_toe_output,
         final_output=final_output,
         debug=resolved_debug,
     )
@@ -610,8 +718,11 @@ __all__ = [
     "PostDecodeTransferCurve",
     "apply_auto_levels_from_bounds",
     "apply_custom_white_balance",
+    "apply_exposure_compensation",
+    "apply_light_dark_levels",
     "apply_luminance_transfer",
     "apply_post_decode_processing",
+    "apply_shadow_toe_lift",
     "blend_luminance_levels",
     "compute_auto_level_bounds",
     "compute_auto_levels_transfer",

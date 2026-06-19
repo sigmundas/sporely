@@ -146,7 +146,7 @@ def _format_capture_datetime(value: datetime | str | None) -> str | None:
     return text or None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class RawRenderSettings:
     """Serializable RAW rendering parameters."""
 
@@ -158,9 +158,12 @@ class RawRenderSettings:
     wb_sample_size: int | None = None
     wb_sample_base_mode: str | None = None
     wb_selection_space: str | None = None
+    exposure_ev: float = 0.0
+    light_ev: float = 0.0
+    dark_ev: float = 0.0
     auto_levels: bool = True
-    black_percentile: float = 0.0005
-    white_percentile: float = 0.9995
+    black_percentile: float = 0.0
+    white_percentile: float = 1.0
     auto_levels_strength: float = 1.0
     auto_levels_soft_tails: bool = False
     auto_levels_tail_size: float = 0.03
@@ -170,9 +173,71 @@ class RawRenderSettings:
     tone_curve_midpoint: float = 0.5
     output_bps: int = 16
 
+    def __init__(
+        self,
+        white_balance_mode: str = "camera",
+        wb_multipliers: tuple[float, float, float] | None = None,
+        wb_selection: tuple[float, float, float, float] | None = None,
+        wb_multiplier_space: str | None = None,
+        wb_sample_point: tuple[float, float] | None = None,
+        wb_sample_size: int | None = None,
+        wb_sample_base_mode: str | None = None,
+        wb_selection_space: str | None = None,
+        exposure_ev: float = 0.0,
+        light_ev: float | None = None,
+        dark_ev: float | None = None,
+        auto_levels: bool = True,
+        black_percentile: float = 0.0,
+        white_percentile: float = 1.0,
+        auto_levels_strength: float = 1.0,
+        auto_levels_soft_tails: bool = False,
+        auto_levels_tail_size: float = 0.03,
+        auto_levels_shadow_lift: float = 0.0,
+        shadow_lift: float | None = None,
+        tone_curve_enabled: bool = False,
+        tone_curve_strength: float = 0.5,
+        tone_curve_midpoint: float = 0.5,
+        output_bps: int = 16,
+    ) -> None:
+        resolved_shadow_lift = auto_levels_shadow_lift if shadow_lift is None else shadow_lift
+        if light_ev is None and dark_ev is None:
+            resolved_light_ev = max(0.0, float(exposure_ev))
+            resolved_dark_ev = min(0.0, float(exposure_ev))
+            resolved_exposure_ev = float(exposure_ev)
+        else:
+            resolved_light_ev = 0.0 if light_ev is None else float(light_ev)
+            resolved_dark_ev = 0.0 if dark_ev is None else float(dark_ev)
+            resolved_exposure_ev = resolved_light_ev + resolved_dark_ev
+        object.__setattr__(self, "white_balance_mode", str(white_balance_mode or "camera"))
+        object.__setattr__(self, "wb_multipliers", wb_multipliers)
+        object.__setattr__(self, "wb_selection", wb_selection)
+        object.__setattr__(self, "wb_multiplier_space", wb_multiplier_space)
+        object.__setattr__(self, "wb_sample_point", wb_sample_point)
+        object.__setattr__(self, "wb_sample_size", wb_sample_size)
+        object.__setattr__(self, "wb_sample_base_mode", wb_sample_base_mode)
+        object.__setattr__(self, "wb_selection_space", wb_selection_space)
+        object.__setattr__(self, "exposure_ev", _coerce_float_in_range(resolved_exposure_ev, 0.0, -2.0, 2.0))
+        object.__setattr__(self, "light_ev", _coerce_float_in_range(resolved_light_ev, 0.0, 0.0, 2.0))
+        object.__setattr__(self, "dark_ev", _coerce_float_in_range(resolved_dark_ev, 0.0, -2.0, 0.0))
+        object.__setattr__(self, "auto_levels", bool(auto_levels))
+        object.__setattr__(self, "black_percentile", _coerce_float_in_range(black_percentile, 0.0, 0.0, 1.0))
+        object.__setattr__(self, "white_percentile", _coerce_float_in_range(white_percentile, 1.0, 0.0, 1.0))
+        object.__setattr__(self, "auto_levels_strength", _coerce_float_in_range(auto_levels_strength, 1.0, 0.0, 1.0))
+        object.__setattr__(self, "auto_levels_soft_tails", bool(auto_levels_soft_tails))
+        object.__setattr__(self, "auto_levels_tail_size", _coerce_float_in_range(auto_levels_tail_size, 0.03, 0.0, 0.5))
+        object.__setattr__(self, "auto_levels_shadow_lift", _coerce_float_in_range(resolved_shadow_lift, 0.0, 0.0, 0.10))
+        object.__setattr__(self, "tone_curve_enabled", bool(tone_curve_enabled))
+        object.__setattr__(self, "tone_curve_strength", _coerce_float_in_range(tone_curve_strength, 0.5, 0.0, 1.0))
+        object.__setattr__(self, "tone_curve_midpoint", _coerce_float_in_range(tone_curve_midpoint, 0.5, 0.0, 1.0))
+        object.__setattr__(self, "output_bps", _coerce_int(output_bps, 16))
+
     @classmethod
     def default(cls) -> "RawRenderSettings":
         return cls()
+
+    @property
+    def shadow_lift(self) -> float:
+        return float(self.auto_levels_shadow_lift)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -184,6 +249,9 @@ class RawRenderSettings:
             "wb_sample_size": int(self.wb_sample_size) if self.wb_sample_size is not None else None,
             "wb_sample_base_mode": self.wb_sample_base_mode,
             "wb_selection_space": self.wb_selection_space,
+            "exposure_ev": float(self.light_ev + self.dark_ev),
+            "light_ev": float(self.light_ev),
+            "dark_ev": float(self.dark_ev),
             "auto_levels": bool(self.auto_levels),
             "black_percentile": float(self.black_percentile),
             "white_percentile": float(self.white_percentile),
@@ -191,6 +259,7 @@ class RawRenderSettings:
             "auto_levels_soft_tails": bool(self.auto_levels_soft_tails),
             "auto_levels_tail_size": float(self.auto_levels_tail_size),
             "auto_levels_shadow_lift": float(self.auto_levels_shadow_lift),
+            "shadow_lift": float(self.shadow_lift),
             "tone_curve_enabled": bool(self.tone_curve_enabled),
             "tone_curve_strength": float(self.tone_curve_strength),
             "tone_curve_midpoint": float(self.tone_curve_midpoint),
@@ -228,6 +297,16 @@ class RawRenderSettings:
             wb_multipliers=wb_multipliers,
         )
         wb_selection_space = str(mapping.get("wb_selection_space") or "").strip() or None
+        shadow_lift_value = mapping.get("shadow_lift")
+        if shadow_lift_value is None:
+            shadow_lift_value = mapping.get("auto_levels_shadow_lift", 0.0)
+        has_light_dark = "light_ev" in mapping or "dark_ev" in mapping
+        light_ev_value = mapping.get("light_ev") if has_light_dark else None
+        dark_ev_value = mapping.get("dark_ev") if has_light_dark else None
+        if not has_light_dark:
+            legacy_exposure_ev = _coerce_float_in_range(mapping.get("exposure_ev"), 0.0, -2.0, 2.0)
+            light_ev_value = max(0.0, legacy_exposure_ev)
+            dark_ev_value = min(0.0, legacy_exposure_ev)
         return cls(
             white_balance_mode=white_balance_mode,
             wb_multipliers=wb_multipliers,  # type: ignore[arg-type]
@@ -237,13 +316,16 @@ class RawRenderSettings:
             wb_sample_size=wb_sample_size,
             wb_sample_base_mode=wb_sample_base_mode,
             wb_selection_space=wb_selection_space,
+            exposure_ev=_coerce_float_in_range(mapping.get("exposure_ev"), 0.0, -2.0, 2.0),
+            light_ev=_coerce_float_in_range(light_ev_value, 0.0, 0.0, 2.0),
+            dark_ev=_coerce_float_in_range(dark_ev_value, 0.0, -2.0, 0.0),
             auto_levels=_coerce_bool(mapping.get("auto_levels"), True),
-            black_percentile=_coerce_float(mapping.get("black_percentile"), 0.0005),
-            white_percentile=_coerce_float(mapping.get("white_percentile"), 0.9995),
+            black_percentile=_coerce_float(mapping.get("black_percentile"), 0.0),
+            white_percentile=_coerce_float(mapping.get("white_percentile"), 1.0),
             auto_levels_strength=_coerce_float_in_range(mapping.get("auto_levels_strength"), 1.0, 0.0, 1.0),
             auto_levels_soft_tails=_coerce_bool(mapping.get("auto_levels_soft_tails"), False),
             auto_levels_tail_size=_coerce_float_in_range(mapping.get("auto_levels_tail_size"), 0.03, 0.0, 0.5),
-            auto_levels_shadow_lift=_coerce_float_in_range(mapping.get("auto_levels_shadow_lift"), 0.0, 0.0, 0.25),
+            auto_levels_shadow_lift=_coerce_float_in_range(shadow_lift_value, 0.0, 0.0, 0.10),
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),
             tone_curve_strength=_coerce_float(mapping.get("tone_curve_strength"), 0.5),
             tone_curve_midpoint=_coerce_float(mapping.get("tone_curve_midpoint"), 0.5),

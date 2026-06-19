@@ -54,13 +54,16 @@ def test_raw_render_settings_round_trip():
         wb_sample_size=10,
         wb_sample_base_mode="camera",
         wb_selection_space="preview_pixels",
+        exposure_ev=0.75,
+        light_ev=0.75,
+        dark_ev=0.0,
         auto_levels=True,
         black_percentile=0.01,
         white_percentile=0.99,
         auto_levels_strength=0.65,
         auto_levels_soft_tails=True,
         auto_levels_tail_size=0.04,
-        auto_levels_shadow_lift=0.12,
+        shadow_lift=0.04,
         tone_curve_enabled=True,
         tone_curve_strength=0.75,
         tone_curve_midpoint=0.42,
@@ -87,11 +90,15 @@ def test_raw_render_settings_default_uses_camera_wb_and_auto_levels():
     settings = RawRenderSettings.default()
 
     assert settings.white_balance_mode == "camera"
+    assert settings.exposure_ev == 0.0
+    assert settings.light_ev == 0.0
+    assert settings.dark_ev == 0.0
     assert settings.auto_levels is True
     assert settings.auto_levels_strength == 1.0
     assert settings.auto_levels_soft_tails is False
     assert settings.auto_levels_tail_size == 0.03
     assert settings.auto_levels_shadow_lift == 0.0
+    assert settings.shadow_lift == 0.0
     assert settings.tone_curve_enabled is False
     assert settings.wb_selection_space is None
 
@@ -103,15 +110,31 @@ def test_raw_render_settings_from_legacy_dict_uses_new_defaults():
             "auto_levels": False,
             "black_percentile": 0.002,
             "white_percentile": 0.998,
+            "auto_levels_shadow_lift": 0.12,
+            "exposure_ev": 3.0,
         }
     )
 
     assert settings.white_balance_mode == "camera"
     assert settings.auto_levels is False
+    assert settings.exposure_ev == 2.0
+    assert settings.light_ev == 2.0
+    assert settings.dark_ev == 0.0
     assert settings.auto_levels_strength == 1.0
     assert settings.auto_levels_soft_tails is False
     assert settings.auto_levels_tail_size == 0.03
-    assert settings.auto_levels_shadow_lift == 0.0
+    assert settings.auto_levels_shadow_lift == 0.10
+    assert settings.shadow_lift == 0.10
+
+
+def test_raw_render_settings_clamps_shadow_lift_aliases():
+    settings = RawRenderSettings.from_dict({"shadow_lift": 0.25, "exposure_ev": -3.0})
+
+    assert settings.exposure_ev == -2.0
+    assert settings.light_ev == 0.0
+    assert settings.dark_ev == -2.0
+    assert settings.auto_levels_shadow_lift == 0.10
+    assert settings.shadow_lift == 0.10
 
 
 def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeypatch):

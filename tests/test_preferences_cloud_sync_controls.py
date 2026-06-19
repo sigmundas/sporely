@@ -475,28 +475,17 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
     qapp.processEvents()
 
     assert dialog._nav.item(main_window.SettingsHubDialog.PAGE_RAW_PROCESSING).text() == "RAW processing"
-    assert dialog._raw_dark_cutoff_spin.value() == pytest.approx(0.05)
-    assert dialog._raw_dark_cutoff_slider.value() == 5
+    assert dialog._raw_dark_cutoff_spin.value() == pytest.approx(0.0)
+    assert dialog._raw_dark_cutoff_slider.value() == 0
     assert dialog._raw_dark_cutoff_slider.maximum() == 200
-    assert dialog._raw_bright_cutoff_spin.value() == pytest.approx(0.05)
-    assert dialog._raw_bright_cutoff_slider.value() == 5
+    assert dialog._raw_bright_cutoff_spin.value() == pytest.approx(0.0)
+    assert dialog._raw_bright_cutoff_slider.value() == 0
     assert dialog._raw_bright_cutoff_slider.maximum() == 200
-    assert dialog._raw_shadow_lift_checkbox.isChecked() is True
-    assert dialog._raw_shadow_lift_max_spin.value() == pytest.approx(5.0)
-    assert dialog._raw_shadow_lift_slider.value() == 100
-    assert dialog._raw_shadow_lift_slider.maximum() == 100
-    assert dialog._raw_shadow_lift_max_spin.isEnabled() is True
-    assert dialog._raw_shadow_lift_slider.isEnabled() is True
     assert dialog._raw_companion_source_selector.selected_value() == main_window.RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW
     assert dialog._raw_capture_mode_selector.selected_value() == main_window.LiveLabTab.RAW_CAPTURE_MODE_REVIEW
 
     dialog._raw_dark_cutoff_slider.setValue(12)
     dialog._raw_bright_cutoff_slider.setValue(34)
-    dialog._raw_shadow_lift_checkbox.setChecked(False)
-    dialog._raw_shadow_lift_checkbox.setChecked(True)
-    dialog._raw_shadow_lift_max_spin.setValue(4.0)
-    assert dialog._raw_shadow_lift_slider.value() == 80
-    dialog._raw_shadow_lift_slider.setValue(70)
     dialog._raw_companion_source_selector.set_selected_value(main_window.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG)
     dialog._raw_capture_mode_selector.set_selected_value(main_window.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE)
     dialog._save_raw_processing_preferences()
@@ -504,8 +493,6 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
 
     assert (main_window.SETTING_RAW_PROCESSING_DARK_CUTOFF, pytest.approx(0.12 / 100.0)) in saved_settings
     assert (main_window.SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, pytest.approx(0.34 / 100.0)) in saved_settings
-    assert (main_window.SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED, False) in saved_settings
-    assert (main_window.SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX, pytest.approx(3.5 / 100.0)) in saved_settings
     assert (main_window.SETTING_RAW_COMPANION_SOURCE_PREFERENCE, main_window.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG) in saved_settings
     assert (main_window.LiveLabTab.SETTING_RAW_CAPTURE_MODE, main_window.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE) in saved_settings
 

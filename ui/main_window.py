@@ -1414,41 +1414,6 @@ class SettingsHubDialog(QDialog):
         bright_row_layout.addWidget(self._raw_bright_cutoff_spin, 0)
         form.addRow(self.tr("Bright cutoff:"), bright_row)
 
-        shadow_row = QWidget(group)
-        shadow_row_layout = QHBoxLayout(shadow_row)
-        shadow_row_layout.setContentsMargins(0, 0, 0, 0)
-        shadow_row_layout.setSpacing(8)
-        self._raw_shadow_lift_checkbox = QCheckBox(self.tr("Enable shadow lift"), shadow_row)
-        self._raw_shadow_lift_checkbox.setToolTip(
-            self.tr("Automatically lifts the shadows when the curve midpoint is below 20.")
-        )
-        self._raw_shadow_lift_checkbox.toggled.connect(self._on_raw_shadow_lift_toggled)
-        shadow_row_layout.addWidget(self._raw_shadow_lift_checkbox, 0)
-        self._raw_shadow_lift_slider = QSlider(Qt.Horizontal, shadow_row)
-        self._configure_raw_percent_slider(self._raw_shadow_lift_slider, minimum=0, maximum=100, page_step=5)
-        self._raw_shadow_lift_slider.valueChanged.connect(
-            lambda _value: self._sync_raw_percent_slider_to_spinbox(
-                self._raw_shadow_lift_slider,
-                self._raw_shadow_lift_max_spin,
-                units_per_percent=20.0,
-            )
-        )
-        shadow_row_layout.addWidget(self._raw_shadow_lift_slider, 1)
-        self._raw_shadow_lift_max_spin = QDoubleSpinBox(shadow_row)
-        self._configure_raw_percent_spinbox(self._raw_shadow_lift_max_spin, minimum=0.0, maximum=5.0, single_step=0.05)
-        self._raw_shadow_lift_max_spin.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._raw_shadow_lift_max_spin.setMinimumWidth(96)
-        self._raw_shadow_lift_max_spin.valueChanged.connect(
-            lambda _value: self._sync_raw_percent_spinbox_to_slider(
-                self._raw_shadow_lift_max_spin,
-                self._raw_shadow_lift_slider,
-                units_per_percent=20.0,
-            )
-        )
-        shadow_row_layout.addWidget(self._raw_shadow_lift_max_spin, 0)
-        shadow_row_layout.addStretch(1)
-        form.addRow(self.tr("Shadow lift:"), shadow_row)
-
         self._raw_companion_source_selector = SegmentedSelector(self, compact=True)
         self._raw_companion_source_selector.add_option(
             self.tr("Prefer RAW"),
@@ -1585,25 +1550,15 @@ class SettingsHubDialog(QDialog):
     def _load_raw_processing_settings(self) -> None:
         dark_cutoff = self._raw_processing_setting_float(
             SETTING_RAW_PROCESSING_DARK_CUTOFF,
-            0.0005,
+            0.0,
             0.0,
             0.02,
         )
         bright_cutoff = self._raw_processing_setting_float(
             SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
-            0.0005,
+            0.0,
             0.0,
             0.02,
-        )
-        shadow_lift_enabled = self._raw_processing_setting_bool(
-            SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED,
-            True,
-        )
-        shadow_lift_max = self._raw_processing_setting_float(
-            SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX,
-            0.05,
-            0.0,
-            0.05,
         )
         raw_source = self._normalize_raw_companion_source_preference(
             SettingsDB.get_setting(
@@ -1623,9 +1578,6 @@ class SettingsHubDialog(QDialog):
             (getattr(self, "_raw_dark_cutoff_spin", None), dark_cutoff * 100.0),
             (getattr(self, "_raw_bright_cutoff_slider", None), int(round(bright_cutoff * 100.0 * 100.0))),
             (getattr(self, "_raw_bright_cutoff_spin", None), bright_cutoff * 100.0),
-            (getattr(self, "_raw_shadow_lift_checkbox", None), shadow_lift_enabled),
-            (getattr(self, "_raw_shadow_lift_slider", None), int(round(shadow_lift_max * 100.0 * 20.0))),
-            (getattr(self, "_raw_shadow_lift_max_spin", None), shadow_lift_max * 100.0),
         ):
             if widget is None:
                 continue
@@ -1649,25 +1601,9 @@ class SettingsHubDialog(QDialog):
                 if not capture_selector.set_selected_value(capture_mode):
                     capture_selector.set_selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
 
-        self._update_raw_shadow_lift_max_enabled()
-
-    def _update_raw_shadow_lift_max_enabled(self) -> None:
-        slider = getattr(self, "_raw_shadow_lift_slider", None)
-        spinbox = getattr(self, "_raw_shadow_lift_max_spin", None)
-        checkbox = getattr(self, "_raw_shadow_lift_checkbox", None)
-        if checkbox is None:
-            return
-        enabled = bool(checkbox.isChecked())
-        if slider is not None:
-            slider.setEnabled(enabled)
-        if spinbox is not None:
-            spinbox.setEnabled(enabled)
-
     def _save_raw_processing_preferences(self, *_args) -> None:
         dark_spin = getattr(self, "_raw_dark_cutoff_spin", None)
         bright_spin = getattr(self, "_raw_bright_cutoff_spin", None)
-        shadow_checkbox = getattr(self, "_raw_shadow_lift_checkbox", None)
-        shadow_spin = getattr(self, "_raw_shadow_lift_max_spin", None)
         source_selector = getattr(self, "_raw_companion_source_selector", None)
         capture_selector = getattr(self, "_raw_capture_mode_selector", None)
 
@@ -1675,10 +1611,6 @@ class SettingsHubDialog(QDialog):
             SettingsDB.set_setting(SETTING_RAW_PROCESSING_DARK_CUTOFF, float(dark_spin.value()) / 100.0)
         if bright_spin is not None:
             SettingsDB.set_setting(SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, float(bright_spin.value()) / 100.0)
-        if shadow_checkbox is not None:
-            SettingsDB.set_setting(SETTING_RAW_PROCESSING_SHADOW_LIFT_ENABLED, bool(shadow_checkbox.isChecked()))
-        if shadow_spin is not None:
-            SettingsDB.set_setting(SETTING_RAW_PROCESSING_SHADOW_LIFT_MAX, float(shadow_spin.value()) / 100.0)
         if source_selector is not None:
             SettingsDB.set_setting(
                 SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
@@ -1693,11 +1625,6 @@ class SettingsHubDialog(QDialog):
                     capture_selector.selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW),
                 ),
             )
-        self._update_raw_shadow_lift_max_enabled()
-
-    def _on_raw_shadow_lift_toggled(self, checked: bool) -> None:
-        self._update_raw_shadow_lift_max_enabled()
-        self._save_raw_processing_preferences()
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 

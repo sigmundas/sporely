@@ -492,10 +492,10 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Camera WB · Auto levels · Curve off"
     assert (
         state._raw_settings_info_text(RawRenderSettings.default())
-        == "Camera WB · Dark cutoff 0.05% · Bright cutoff 0.05% · Shadow lift 0.0% · Soft tails off · Curve strength 50% · Curve midpoint 50%"
+        == "Camera WB · Dark cutoff 0.00% · Bright cutoff 0.00% · Soft tails off · Curve strength 50% · Curve midpoint 50%"
     )
-    assert state.raw_controls.curve_strength_row.isEnabled() is False
-    assert state.raw_controls.curve_midpoint_row.isEnabled() is False
+    assert state.raw_controls.curve_strength_row.isEnabled() is True
+    assert state.raw_controls.curve_midpoint_row.isEnabled() is True
     assert state.raw_controls.curve_strength_slider.isEnabled() is False
     assert state.raw_controls.curve_midpoint_slider.isEnabled() is False
 
@@ -1411,7 +1411,7 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
     assert state.viewer_meta_label.text().startswith("Custom WB")
     assert "Dark cutoff" in state.viewer_meta_label.text()
     assert "Bright cutoff" in state.viewer_meta_label.text()
-    assert "Shadow lift" in state.viewer_meta_label.text()
+    assert "Dark boost" not in state.viewer_meta_label.text()
     assert "Soft tails" in state.viewer_meta_label.text()
     assert "Curve strength" in state.viewer_meta_label.text()
     assert "Curve midpoint" in state.viewer_meta_label.text()
@@ -1621,7 +1621,7 @@ def test_live_lab_committed_raw_edit_background_wb_click_sets_custom_mode_and_ap
     assert "Custom WB" in state.raw_edit_summary_label.text()
     assert "Dark cutoff" in state.raw_edit_summary_label.text()
     assert "Bright cutoff" in state.raw_edit_summary_label.text()
-    assert "Shadow lift" in state.raw_edit_summary_label.text()
+    assert "Dark boost" not in state.raw_edit_summary_label.text()
     assert "Soft tails" in state.raw_edit_summary_label.text()
     assert "Curve strength" in state.raw_edit_summary_label.text()
     assert "Curve midpoint" in state.raw_edit_summary_label.text()
