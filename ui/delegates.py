@@ -191,7 +191,8 @@ class StatusTagDelegate(QStyledItemDelegate):
             return
 
         metrics = opt.fontMetrics
-        horizontal_padding = 12
+        horizontal_padding = 24
+        text_inset = 10
         vertical_padding = 4
         text_width = metrics.horizontalAdvance(text)
         text_height = metrics.height()
@@ -200,7 +201,7 @@ class StatusTagDelegate(QStyledItemDelegate):
         if chip_width <= 0 or chip_height <= 0:
             return
         if chip_width < text_width + horizontal_padding:
-            elide_width = max(0, chip_width - horizontal_padding)
+            elide_width = max(0, chip_width - (text_inset * 2))
             text = metrics.elidedText(text, Qt.ElideRight, elide_width) if elide_width > 0 else ""
 
         chip_rect = QRect(0, 0, chip_width, chip_height)
@@ -219,7 +220,7 @@ class StatusTagDelegate(QStyledItemDelegate):
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(fg_color)
-        painter.drawText(chip_rect.adjusted(8, 0, -8, 0), Qt.AlignCenter, text)
+        painter.drawText(chip_rect.adjusted(text_inset, 0, -text_inset, 0), Qt.AlignCenter, text)
         painter.restore()
 
     def sizeHint(self, option: QStyleOptionViewItem, index):
@@ -229,5 +230,5 @@ class StatusTagDelegate(QStyledItemDelegate):
         text = str(index.data(Qt.DisplayRole) or "").strip()
         if not text:
             return QSize(base.width(), max(base.height(), 24))
-        width = opt.fontMetrics.horizontalAdvance(text) + 28
+        width = opt.fontMetrics.horizontalAdvance(text) + 36
         return QSize(max(base.width(), width), max(base.height(), 24))

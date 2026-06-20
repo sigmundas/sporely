@@ -542,6 +542,90 @@ def _normalized_observation_datetime_minute(value: str | None) -> str | None:
     return dt_value.toString("yyyy-MM-dd HH:mm")
 
 
+def _format_observation_datetime_for_table(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+
+    dt_value = _parse_observation_datetime(text)
+    if dt_value and dt_value.isValid():
+        return dt_value.toString("yyyy-MM-dd HH:mm")
+
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return text
+
+
+def _spore_count_from_value(value: object) -> str | None:
+    if value is None:
+        return None
+
+    if isinstance(value, dict):
+        for key in ("count", "n"):
+            raw_count = value.get(key)
+            if raw_count is None:
+                continue
+            try:
+                return str(int(raw_count))
+            except (TypeError, ValueError):
+                text = str(raw_count or "").strip()
+                if text:
+                    return text
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    if text.startswith("{") or text.startswith("["):
+        try:
+            loaded = json.loads(text)
+        except Exception:
+            loaded = None
+        if isinstance(loaded, dict):
+            for key in ("count", "n"):
+                raw_count = loaded.get(key)
+                if raw_count is None:
+                    continue
+                try:
+                    return str(int(raw_count))
+                except (TypeError, ValueError):
+                    loaded_text = str(raw_count or "").strip()
+                    if loaded_text:
+                        return loaded_text
+
+    n_match = re.search(r"\bn\s*=\s*(\d+)\b", text, re.IGNORECASE)
+    if n_match:
+        return n_match.group(1)
+
+    count_match = re.search(r"\bcount\s*[:=]\s*(\d+)\b", text, re.IGNORECASE)
+    if count_match:
+        return count_match.group(1)
+
+    return None
+
+
+def _spore_count_for_observation_row(observation: dict | None) -> str | None:
+    if not isinstance(observation, dict):
+        return None
+
+    count = _spore_count_from_value(observation.get("spore_statistics"))
+    if count is not None:
+        return count
+
+    try:
+        obs_id = int(observation.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+    stats = MeasurementDB.get_statistics_for_observation(obs_id, measurement_category="spores")
+    if isinstance(stats, dict):
+        count = _spore_count_from_value(stats)
+        if count is not None:
+            return count
+    return None
+
+
 def _debug_import_flow_enabled() -> bool:
     value = (
         os.environ.get("SPORELY_DEBUG_IMPORT_FLOW", "")
@@ -1598,23 +1682,23 @@ class ObservationsTab(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.Fixed)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.Fixed)
+        header.setSectionResizeMode(7, QHeaderView.Fixed)
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
-        self.table.setColumnWidth(1, 115)  # Name
-        self.table.setColumnWidth(2, 78)   # Genus
-        self.table.setColumnWidth(3, 95)   # Species
-        self.table.setColumnWidth(4, 290)  # Spores
-        self.table.setColumnWidth(5, 132)  # Date
-        self.table.setColumnWidth(6, 170)  # Location
-        self.table.setColumnWidth(7, 86)   # Status
+        self.table.setColumnWidth(1, 210)  # Name
+        self.table.setColumnWidth(2, 72)   # Genus
+        self.table.setColumnWidth(3, 120)  # Species
+        self.table.setColumnWidth(4, 72)   # Spores
+        self.table.setColumnWidth(5, 128)  # Date
+        self.table.setColumnWidth(6, 108)  # Location
+        self.table.setColumnWidth(7, 138)  # Status
         self.table.setColumnWidth(8, 56)   # Map
         self.table.setColumnWidth(9, 140)  # Publish
         self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
@@ -1909,8 +1993,8 @@ class ObservationsTab(QWidget):
                 "genus": genus_raw or "-",
                 "species": species_display,
                 "common_name": common_name,
-                "spore_short": "",
-                "date": obs.get("date") or obs.get("created_at") or "-",
+                "spore_short": _spore_count_for_observation_row(obs) or "-",
+                "date": _format_observation_datetime_for_table(obs.get("date") or obs.get("created_at")),
                 "location": obs.get("location") or "-",
                 "status_text": status_text,
                 "status_kind": status_kind,
@@ -4002,8 +4086,8 @@ class ObservationsTab(QWidget):
                 else:
                     common_name_display = "-"
 
-            spore_short = self._spore_stats_for_observation_row(obs) or "-"
-            date_text = obs.get("date") or "-"
+            spore_short = _spore_count_for_observation_row(obs) or "-"
+            date_text = _format_observation_datetime_for_table(obs.get("date") or obs.get("created_at"))
             location_text = obs.get("location") or "-"
             status_text, status_kind, status_sort = _observation_status_info(obs)
             lat = obs.get("gps_latitude")

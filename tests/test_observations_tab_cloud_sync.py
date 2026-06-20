@@ -607,3 +607,53 @@ def test_render_observations_table_places_status_before_map_and_publish(qapp):
     assert table.cellWidget(0, 8) is not None
     assert table.item(0, 8).text() == ""
     assert table.item(0, 9).text() == "Publish"
+
+
+def test_observation_table_row_cache_formats_date_and_spore_count():
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: None,
+        _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip() or None,
+    )
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(
+        fake_tab,
+        [
+            {
+                "id": 389,
+                "genus": "Agaricus",
+                "species": "campestris",
+                "species_guess": "Agaricus campestris",
+                "spore_statistics": "Spores: 12.0-15.0 x 4.0-5.0 um  n = 18",
+                "date": "2026-06-16T10:57:17+00:00",
+                "location": "Meadow",
+            }
+        ],
+    )
+
+    assert rows[0]["spore_short"] == "18"
+    assert rows[0]["date"] == "2026-06-16 10:57"
+
+
+def test_cloud_observation_table_row_cache_formats_date_and_spore_count():
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(
+        SimpleNamespace(),
+        [
+            {
+                "id": "cloud-1",
+                "genus": "Agaricus",
+                "species": "campestris",
+                "species_guess": "Agaricus campestris",
+                "spore_statistics": {"count": 9},
+                "date": "2026-06-16 07:55:26",
+                "location": "Meadow",
+                "visibility": "public",
+            }
+        ],
+    )
+
+    assert rows[0]["spore_short"] == "9"
+    assert rows[0]["date"] == "2026-06-16 07:55"
