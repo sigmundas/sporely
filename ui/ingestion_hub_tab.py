@@ -818,12 +818,13 @@ class IngestionHubTab(QWidget):
             if objective_key:
                 objective = objectives.get(objective_key)
                 objective_label = objective_display_name(objective, objective_key) if objective else objective_key
-            badges = ImageGalleryWidget.build_image_type_badges(
+            badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=image_type,
                 objective_name=objective_label,
                 contrast=state.get("contrast"),
                 scale_microns_per_pixel=self._matched_scale_microns_per_pixel(state),
                 needs_scale=image_type == "microscope" and not bool(objective_key),
+                lab_metadata=state.get("lab_metadata"),
                 translate=self.tr,
             )
             items.append(

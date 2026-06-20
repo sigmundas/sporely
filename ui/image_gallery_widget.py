@@ -452,7 +452,7 @@ class ImageGalleryWidget(QGroupBox):
                 and not objective_name
                 and not scale_value
             )
-            badges = self.build_image_type_badges(
+            badges = self.build_gallery_badges(
                 image_type=image_type,
                 objective_name=objective_short,
                 contrast=contrast,
@@ -464,6 +464,7 @@ class ImageGalleryWidget(QGroupBox):
                     and img.get("resample_scale_factor") is not None
                     and float(img.get("resample_scale_factor")) < 0.999
                 ),
+                lab_metadata=img.get("lab_metadata"),
                 translate=self.tr,
             )
             items.append(
@@ -636,6 +637,31 @@ class ImageGalleryWidget(QGroupBox):
         else:
             badges.append(tr("Field"))
 
+        return badges
+
+    @staticmethod
+    def build_gallery_badges(
+        image_type: str | None,
+        objective_name: str | None = None,
+        contrast: str | None = None,
+        scale_microns_per_pixel: float | None = None,
+        custom_scale: bool = False,
+        needs_scale: bool = False,
+        resize_to_optimal: bool = False,
+        lab_metadata=None,
+        translate=None,
+    ) -> list[str]:
+        badges = ImageGalleryWidget.build_image_type_badges(
+            image_type=image_type,
+            objective_name=objective_name,
+            contrast=contrast,
+            scale_microns_per_pixel=scale_microns_per_pixel,
+            custom_scale=custom_scale,
+            needs_scale=needs_scale,
+            resize_to_optimal=resize_to_optimal,
+            translate=translate,
+        )
+        badges.extend(ImageGalleryWidget.build_raw_source_badges(lab_metadata, translate=translate))
         return badges
 
     @staticmethod

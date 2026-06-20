@@ -2834,7 +2834,7 @@ class SpeciesPlateDialog(QDialog):
                 and not obj_name
                 and not scale_val
             )
-            badges = _IGW.build_image_type_badges(
+            badges = _IGW.build_gallery_badges(
                 image_type=image_type,
                 objective_name=obj_short,
                 contrast=img.get("contrast"),
@@ -2842,9 +2842,9 @@ class SpeciesPlateDialog(QDialog):
                 custom_scale=custom_scale,
                 needs_scale=needs_scale,
                 resize_to_optimal=False,
+                lab_metadata=img.get("lab_metadata"),
                 translate=self.tr,
             )
-            badges.extend(_IGW.build_raw_source_badges(img.get("lab_metadata"), translate=self.tr))
             items.append({
                 "id": img.get("id"),
                 "filepath": img.get("filepath", ""),

@@ -2389,7 +2389,7 @@ class LiveLabTab(QWidget):
                     if objective_obj
                     else str(objective_name)
                 )
-            badges = ImageGalleryWidget.build_image_type_badges(
+            badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=image.get("image_type"),
                 objective_name=objective_label,
                 contrast=image.get("contrast"),
@@ -2405,9 +2405,9 @@ class LiveLabTab(QWidget):
                     and image.get("resample_scale_factor") is not None
                     and float(image.get("resample_scale_factor")) < 0.999
                 ),
+                lab_metadata=image.get("lab_metadata"),
                 translate=self.tr,
             )
-            badges.extend(ImageGalleryWidget.build_raw_source_badges(image.get("lab_metadata"), translate=self.tr))
             items.append(
                 {
                     "id": image_id,

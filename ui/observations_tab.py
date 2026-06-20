@@ -2192,7 +2192,7 @@ class ObservationsTab(QWidget):
             custom_scale = bool(scale_value) and (
                 not objective_name or str(objective_name).strip().lower() == "custom"
             )
-            badges = ImageGalleryWidget.build_image_type_badges(
+            badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=image_type,
                 objective_name=objective_name,
                 contrast=contrast,
@@ -2200,6 +2200,7 @@ class ObservationsTab(QWidget):
                 custom_scale=custom_scale,
                 needs_scale=False,
                 resize_to_optimal=False,
+                lab_metadata=image_row.get("lab_metadata"),
                 translate=self.tr,
             )
             items.append(
@@ -13887,15 +13888,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     item.objective,
                 ) or item.objective
             objective_short = ImageGalleryWidget._short_objective_label(objective_label, self.tr) or objective_label
-            badges = ImageGalleryWidget.build_image_type_badges(
+            badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=item.image_type,
                 objective_name=objective_short,
                 contrast=item.contrast,
                 custom_scale=bool(item.custom_scale),
                 needs_scale=needs_scale,
+                lab_metadata=item.lab_metadata,
                 translate=self.tr,
             )
-            badges.extend(ImageGalleryWidget.build_raw_source_badges(item.lab_metadata, translate=self.tr))
             has_measurements = False
             if item.image_id:
                 has_measurements = bool(MeasurementDB.get_measurements_for_image(item.image_id))

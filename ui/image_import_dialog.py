@@ -5064,16 +5064,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 bool(getattr(result, "resize_to_optimal", False))
                 and self._compute_resample_scale_factor(result) < 0.999
             )
-            badges = ImageGalleryWidget.build_image_type_badges(
+            badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=result.image_type,
                 objective_name=objective_label,
                 contrast=result.contrast,
                 custom_scale=bool(result.custom_scale),
                 needs_scale=bool(result.needs_scale),
                 resize_to_optimal=resize_suggested,
+                lab_metadata=result.lab_metadata,
                 translate=self.tr,
             )
-            badges.extend(ImageGalleryWidget.build_raw_source_badges(result.lab_metadata, translate=self.tr))
             status = self._result_status(result)
             center_badge = None
             if status == IMAGE_IMPORT_STATUS_FAILED:
