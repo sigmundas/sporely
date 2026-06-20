@@ -110,7 +110,10 @@ def test_observation_gallery_rows_show_cloud_badge_for_uploaded_images(monkeypat
 
     assert widget._items[0]["cloud_uploaded"] is True
     assert widget._items[0]["cloud_tombstone_synced"] is False
-    assert getattr(widget._frames[0], "cloud_badge", None) is not None
+    cloud_badge = getattr(widget._frames[0], "cloud_badge", None)
+    assert cloud_badge is not None
+    assert "background-color: transparent" in cloud_badge.styleSheet()
+    assert "border-radius" not in cloud_badge.styleSheet()
 
 
 def test_observation_gallery_rows_hide_cloud_badge_for_synced_tombstones(monkeypatch, tmp_path):

@@ -36,7 +36,7 @@ _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
 
 @lru_cache(maxsize=1)
 def _cloud_status_icon() -> QIcon:
-    icon_path = Path(__file__).parent.parent / "assets" / "icons" / "cloud.svg"
+    icon_path = Path(__file__).parent.parent / "assets" / "icons" / "cloud_badge.svg"
     if icon_path.exists():
         return QIcon(str(icon_path))
     return QIcon()
@@ -986,10 +986,10 @@ class ImageGalleryWidget(QGroupBox):
                 cloud_badge.setFixedSize(20, 20)
                 cloud_badge.setAlignment(Qt.AlignCenter)
                 cloud_badge.setStyleSheet(
-                    "QLabel { background-color: rgba(255, 255, 255, 90); border-radius: 10px; border: none; }"
+                    "QLabel { background-color: transparent; border: none; }"
                 )
                 cloud_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-                cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(16, 16)))
+                cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(18, 18)))
                 cloud_badge.setToolTip(self.tr("Uploaded to Sporely Cloud"))
                 top_center_layout.addWidget(cloud_badge, 0, Qt.AlignHCenter)
 
