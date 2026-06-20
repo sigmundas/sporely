@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
 from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QThread
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 
-from database.models import ImageDB, MeasurementDB
+from database.models import ImageDB, MeasurementDB, get_image_tombstones_by_deleted_cloud_id
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
@@ -31,6 +32,14 @@ from utils.image_utils import load_oriented_pixmap
 from .styles import pt
 
 _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
+
+
+@lru_cache(maxsize=1)
+def _cloud_status_icon() -> QIcon:
+    icon_path = Path(__file__).parent.parent / "assets" / "icons" / "cloud.svg"
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    return QIcon()
 
 
 class _PublishToggle(QLabel):
@@ -211,6 +220,22 @@ class ImageGalleryWidget(QGroupBox):
         self._previous_image_shortcut.activated.connect(lambda: self._select_adjacent_image(-1))
         self.set_plain_container(True)
 
+    @staticmethod
+    def _item_key_for_publish(item: dict):
+        return item.get("id") if item.get("id") is not None else item.get("filepath")
+
+    def _resolve_publish_checked_state(self, item: dict) -> bool:
+        key = self._item_key_for_publish(item)
+        if key in self._publish_checked_by_key:
+            return bool(self._publish_checked_by_key.get(key))
+        explicit_publish_selected = item.get("publish_selected")
+        if explicit_publish_selected is not None:
+            return bool(explicit_publish_selected)
+        default_publish_selected = item.get("publish_selected_default")
+        if default_publish_selected is not None:
+            return bool(default_publish_selected)
+        return True
+
     def clear(self) -> None:
         self._render_generation += 1
         self._observation_load_generation += 1
@@ -346,11 +371,7 @@ class ImageGalleryWidget(QGroupBox):
             item_id = item.get("id")
             item_path = str(filepath)
             item_key = item_id if item_id is not None else item_path
-            explicit_publish_selected = item.get("publish_selected")
-            if explicit_publish_selected is None:
-                publish_selected = self._publish_checked_by_key.get(item_key, True)
-            else:
-                publish_selected = bool(explicit_publish_selected)
+            publish_selected = self._resolve_publish_checked_state(item)
             self._publish_checked_by_key[item_key] = publish_selected
             self._items.append(
                 {
@@ -364,7 +385,11 @@ class ImageGalleryWidget(QGroupBox):
                     "gps_tag_text": item.get("gps_tag_text"),
                     "gps_tag_highlight": item.get("gps_tag_highlight", False),
                     "publish_selected": publish_selected,
+                    "publish_selected_default": item.get("publish_selected_default"),
                     "frame_border_color": item.get("frame_border_color"),
+                    "cloud_id": item.get("cloud_id"),
+                    "cloud_uploaded": item.get("cloud_uploaded"),
+                    "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
                 }
             )
         self._render()
@@ -421,8 +446,15 @@ class ImageGalleryWidget(QGroupBox):
             return
         objectives = self._get_objectives_cache()
         objective_label_cache: dict[str, str | None] = {}
+        image_rows = list(images or [])
+        cloud_ids = [
+            str(img.get("cloud_id") or "").strip()
+            for img in image_rows
+            if str(img.get("cloud_id") or "").strip()
+        ]
+        cloud_tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_ids) if cloud_ids else {}
         items = []
-        for idx, img in enumerate(images):
+        for idx, img in enumerate(image_rows):
             img_id = img.get("id")
             image_type = (img.get("image_type") or "field").strip().lower()
             objective_name = img.get("objective_name")
@@ -467,6 +499,9 @@ class ImageGalleryWidget(QGroupBox):
                 lab_metadata=img.get("lab_metadata"),
                 translate=self.tr,
             )
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            cloud_tombstone = cloud_tombstones.get(cloud_id) if cloud_id else None
+            cloud_tombstone_synced = bool(str((cloud_tombstone or {}).get("delete_synced_at") or "").strip())
             items.append(
                 {
                     "id": img_id,
@@ -474,10 +509,29 @@ class ImageGalleryWidget(QGroupBox):
                     "has_measurements": bool(img_id and int(img_id) in measurement_image_ids),
                     "image_number": idx + 1,
                     "badges": badges,
+                    "cloud_id": cloud_id or None,
+                    "cloud_uploaded": bool(cloud_id and not cloud_tombstone_synced),
+                    "cloud_tombstone_synced": cloud_tombstone_synced,
+                    "publish_selected_default": image_type != "microscope",
                 }
             )
         self._items = items
         self._render()
+
+    @staticmethod
+    def _cloud_badge_visible(item: dict) -> bool:
+        if not item:
+            return False
+        explicit_state = item.get("cloud_uploaded")
+        if explicit_state is not None:
+            return bool(explicit_state)
+        cloud_id = str(item.get("cloud_id") or "").strip()
+        if not cloud_id:
+            return False
+        tombstone_synced = item.get("cloud_tombstone_synced")
+        if tombstone_synced is not None:
+            return not bool(tombstone_synced)
+        return True
 
     @staticmethod
     def _item_key(item: dict) -> str | int | None:
@@ -704,8 +758,7 @@ class ImageGalleryWidget(QGroupBox):
             item_id = item.get("id")
             if item_id is None:
                 continue
-            key = item_id
-            if bool(self._publish_checked_by_key.get(key, item.get("publish_selected", True))):
+            if bool(self._resolve_publish_checked_state(item)):
                 try:
                     selected.add(int(item_id))
                 except Exception:
@@ -918,22 +971,45 @@ class ImageGalleryWidget(QGroupBox):
             number_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             image_layout.addWidget(number_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignLeft)
 
+        cloud_badge = None
+        cloud_badge_visible = self._cloud_badge_visible(item)
         gps_tag_text = item.get("gps_tag_text")
-        if gps_tag_text:
-            gps_label = QLabel(str(gps_tag_text))
-            gps_highlight = bool(item.get("gps_tag_highlight"))
-            color = "#ffffff" if gps_highlight else "#000000"
-            background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
-            weight = "bold" if gps_highlight else "normal"
-            gps_label.setStyleSheet(
-                f"color: {color}; background-color: {background};"
-                f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: {weight};"
-                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
-            )
-            if self._compact_overlay:
-                gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
-            gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            image_layout.addWidget(gps_label, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
+        if cloud_badge_visible or gps_tag_text:
+            top_center = QWidget()
+            top_center.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            top_center_layout = QVBoxLayout(top_center)
+            top_center_layout.setContentsMargins(0, 0, 0, 0)
+            top_center_layout.setSpacing(2)
+
+            if cloud_badge_visible:
+                cloud_badge = QLabel()
+                cloud_badge.setFixedSize(20, 20)
+                cloud_badge.setAlignment(Qt.AlignCenter)
+                cloud_badge.setStyleSheet(
+                    "QLabel { background-color: rgba(255, 255, 255, 90); border-radius: 10px; border: none; }"
+                )
+                cloud_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(16, 16)))
+                cloud_badge.setToolTip(self.tr("Uploaded to Sporely Cloud"))
+                top_center_layout.addWidget(cloud_badge, 0, Qt.AlignHCenter)
+
+            if gps_tag_text:
+                gps_label = QLabel(str(gps_tag_text))
+                gps_highlight = bool(item.get("gps_tag_highlight"))
+                color = "#ffffff" if gps_highlight else "#000000"
+                background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
+                weight = "bold" if gps_highlight else "normal"
+                gps_label.setStyleSheet(
+                    f"color: {color}; background-color: {background};"
+                    f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: {weight};"
+                    f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
+                )
+                if self._compact_overlay:
+                    gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
+                gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                top_center_layout.addWidget(gps_label, 0, Qt.AlignHCenter)
+
+            image_layout.addWidget(top_center, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
 
         center_badge = str(item.get("center_badge") or "").strip()
         if center_badge:
@@ -1025,7 +1101,7 @@ class ImageGalleryWidget(QGroupBox):
         if self._show_publish_checkbox:
             publish_checkbox = _PublishToggle()
             key = item.get("id") if item.get("id") is not None else item.get("filepath")
-            checked = bool(self._publish_checked_by_key.get(key, item.get("publish_selected", True)))
+            checked = bool(self._resolve_publish_checked_state(item))
             self._publish_checked_by_key[key] = checked
             publish_checkbox.setChecked(checked)
             if self._publish_checkbox_hint:
@@ -1043,6 +1119,7 @@ class ImageGalleryWidget(QGroupBox):
         frame.frame_border_color = item.get("frame_border_color")
         frame.thumb_label = thumb_label
         frame.publish_checkbox = publish_checkbox
+        frame.cloud_badge = cloud_badge
         if self._thumbnail_tooltip:
             frame.setToolTip(self._thumbnail_tooltip)
         frame.mousePressEvent = lambda e, f=frame: self._on_frame_mouse_press(e, f)

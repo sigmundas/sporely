@@ -323,7 +323,7 @@ def test_cloud_sync_error_for_jwt_expired_reports_sign_in_failure():
     assert summary == "Cloud sync sign-in failed. Please check your email and password."
 
 
-def test_cloud_sync_helpers_include_microscope_media_and_skip_recovery_cache():
+def test_cloud_sync_helpers_include_microscope_media_and_allow_recovery_cache():
     assert cloud_sync.should_pull_cloud_image_to_desktop({"image_type": "microscope"}) is True
     assert cloud_sync.should_pull_cloud_image_to_desktop({"image_type": "field"}) is True
     assert cloud_sync.should_push_local_image_to_cloud(
@@ -339,10 +339,10 @@ def test_cloud_sync_helpers_include_microscope_media_and_skip_recovery_cache():
             "source_role": "cloud_recovery_cache",
             "file_purpose": "cache",
         }
-    ) is False
+    ) is True
 
 
-def test_prepare_cloud_sync_image_uploads_uses_cloud_image_selection_not_publish_exclusions(tmp_path):
+def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_path, monkeypatch):
     field_path = tmp_path / "field.jpg"
     microscope_path = tmp_path / "microscope.jpg"
     field_path.write_bytes(b"field")
@@ -370,19 +370,25 @@ def test_prepare_cloud_sync_image_uploads_uses_cloud_image_selection_not_publish
         out_path.write_bytes(b"webp")
         return out_path, 100, 100, 100, 100, "image/webp", 80
 
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [field_row, microscope_row],
+    )
+
     fake_tab = SimpleNamespace(
         tr=lambda text: text,
         _is_main_gui_thread=lambda: True,
         _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
-        _collect_cloud_sync_image_rows=lambda observation_id: [field_row, microscope_row],
-        _collect_publish_selected_image_rows=lambda observation_id: (_ for _ in ()).throw(
-            AssertionError("publish selection should not drive cloud sync")
-        ),
         _publish_excluded_image_ids=lambda observation_id: {2},
         _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
         _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
         _cleanup_publish_temp_dir=lambda temp_dir: None,
         _yield_background_sync_ui=lambda: None,
+    )
+    fake_tab._collect_cloud_sync_image_rows = lambda observation_id, _tab=fake_tab: observations_tab.ObservationsTab._collect_cloud_sync_image_rows(
+        _tab,
+        observation_id,
     )
 
     prepared, cleanup, warnings = observations_tab.ObservationsTab.prepare_cloud_sync_image_uploads(
@@ -390,10 +396,239 @@ def test_prepare_cloud_sync_image_uploads_uses_cloud_image_selection_not_publish
         {"id": 631},
     )
 
-    assert [item["image_row"]["id"] for item in prepared] == [1, 2]
+    assert [item["image_row"]["id"] for item in prepared] == [1]
     assert warnings == []
     assert cleanup is not None
     cleanup()
+
+
+def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
+    calls: dict[str, list] = {
+        "queue": [],
+        "clear": [],
+        "cloud": [],
+        "excluded": [],
+        "dirty": [],
+    }
+
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {"id": 1, "cloud_id": "cloud-1"},
+            {"id": 2, "cloud_id": "cloud-2"},
+        ],
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "queue_image_tombstone_for_local_image",
+        lambda image_id: calls["queue"].append(int(image_id)) or "cloud-1",
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_cloud_sync_state",
+        lambda image_id: calls["cloud"].append(int(image_id)) or True,
+    )
+    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+
+    tab = SimpleNamespace(
+        selected_observation_id=7,
+        _publish_excluded_image_ids=lambda observation_id: set(),
+        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+        window=lambda: None,
+        parent=lambda: None,
+    )
+
+    observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {2})
+
+    assert calls["queue"] == [1]
+    assert calls["clear"] == []
+    assert calls["cloud"] == []
+    assert calls["excluded"] == [(7, (1,))]
+    assert calls["dirty"] == [7]
+
+
+def test_gallery_publish_recheck_clears_synced_tombstone(monkeypatch):
+    calls: dict[str, list] = {
+        "queue": [],
+        "clear": [],
+        "cloud": [],
+        "excluded": [],
+        "dirty": [],
+    }
+
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {"id": 1, "cloud_id": "cloud-1"},
+            {"id": 2, "cloud_id": "cloud-2"},
+        ],
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "queue_image_tombstone_for_local_image",
+        lambda image_id: calls["queue"].append(int(image_id)) or "cloud-1",
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: {
+            "deleted_cloud_id": str(cloud_id),
+            "delete_synced_at": "2026-06-01T10:00:00+00:00",
+        }
+        if str(cloud_id) == "cloud-1"
+        else None,
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_cloud_sync_state",
+        lambda image_id: calls["cloud"].append(int(image_id)) or True,
+    )
+    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+
+    tab = SimpleNamespace(
+        selected_observation_id=7,
+        _publish_excluded_image_ids=lambda observation_id: {1},
+        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+        window=lambda: None,
+        parent=lambda: None,
+    )
+
+    observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {1, 2})
+
+    assert calls["queue"] == []
+    assert calls["clear"] == ["cloud-1"]
+    assert calls["cloud"] == [1]
+    assert calls["excluded"] == [(7, ())]
+    assert calls["dirty"] == [7]
+
+
+def test_default_publish_selection_leaves_all_microscope_images_unchecked():
+    selected0, next0 = observations_tab._default_publish_selected_for_new_image("microscope", 0)
+    selected1, next1 = observations_tab._default_publish_selected_for_new_image("microscope", next0)
+    selected2, next2 = observations_tab._default_publish_selected_for_new_image("microscope", next1)
+    selected_field, next_field = observations_tab._default_publish_selected_for_new_image("field", next2)
+
+    assert selected0 is False
+    assert selected1 is False
+    assert selected2 is False
+    assert selected_field is True
+
+
+def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_default(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(observations_tab.ImageGalleryWidget, "build_gallery_badges", lambda **kwargs: [])
+    monkeypatch.setattr(observations_tab.MeasurementDB, "get_measurements_for_image", lambda image_id: [])
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_image",
+        lambda image_id: {"id": image_id, "cloud_id": None},
+    )
+
+    fake_dialog = SimpleNamespace(
+        image_results=[
+            SimpleNamespace(
+                image_id=1,
+                filepath="/tmp/micro.jpg",
+                image_type="microscope",
+                exif_has_gps=False,
+                needs_scale=False,
+                objective=None,
+                custom_scale=False,
+                contrast=None,
+                lab_metadata=None,
+                ai_crop_box=None,
+                ai_crop_source_size=None,
+            ),
+            SimpleNamespace(
+                image_id=2,
+                filepath="/tmp/field.jpg",
+                image_type="field",
+                exif_has_gps=False,
+                needs_scale=False,
+                objective=None,
+                custom_scale=False,
+                contrast=None,
+                lab_metadata=None,
+                ai_crop_box=None,
+                ai_crop_source_size=None,
+            ),
+        ],
+        _gps_source_index=None,
+        objectives={},
+        tr=lambda text: text,
+        image_gallery=SimpleNamespace(set_items=lambda items: captured.setdefault("items", items)),
+        _image_gallery_preview_path=lambda item: item.filepath,
+    )
+
+    observations_tab.ObservationDetailsDialog._refresh_image_gallery_summary(fake_dialog)
+
+    items = captured["items"]
+    assert items[0]["publish_selected_default"] is False
+    assert items[1]["publish_selected_default"] is True
+
+
+def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"image")
+
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_pending_artsobs_web_uploads",
+        lambda: [
+            {
+                "observation_id": 7,
+                "artsdata_id": 9,
+                "image_id": 11,
+                "filepath": str(image_path),
+                "original_filepath": None,
+            }
+        ],
+    )
+
+    class _FakeAuth:
+        def get_valid_cookies(self, target="web"):
+            return {"cookie": "ok"}
+
+    class _FakeClient:
+        def set_cookies_from_browser(self, cookies):
+            self.cookies = cookies
+
+        def upload_images_web(self, sighting_id: int, image_paths: list[str], progress_cb=None):
+            assert sighting_id == 9
+            assert image_paths == [str(image_path)]
+
+    monkeypatch.setattr("utils.artsobservasjoner_auto_login.ArtsObservasjonerAuth", _FakeAuth)
+    monkeypatch.setattr("utils.artsobservasjoner_submit.ArtsObservasjonerWebClient", _FakeClient)
+
+    calls: list[tuple[str, str, int]] = []
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        set_status_message=lambda message, level="info", auto_clear_ms=8000: calls.append(
+            (str(message), str(level), int(auto_clear_ms))
+        ),
+    )
+
+    result = observations_tab.ObservationsTab._upload_pending_artsobs_web_images(fake_tab)
+
+    assert result == "uploaded"
+    assert any("Uploading..." in message and timeout == 8000 for message, _, timeout in calls)
 
 
 def test_cloud_sync_webp_support_error_uses_clear_summary():
@@ -409,10 +644,13 @@ def test_cloud_sync_webp_support_error_uses_clear_summary():
 
 class _DummyHintController:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str, int | None]] = []
 
     def set_hint(self, text: str, tone: str = "info") -> None:
-        self.calls.append((str(text), str(tone)))
+        self.calls.append(("hint", str(text), str(tone), None))
+
+    def set_status(self, text: str, timeout_ms: int = 4000, tone: str = "info") -> None:
+        self.calls.append(("status", str(text), str(tone), int(timeout_ms)))
 
 
 def test_cloud_sync_idle_hint_lists_observation_ids(monkeypatch):
@@ -432,8 +670,10 @@ def test_cloud_sync_idle_hint_lists_observation_ids(monkeypatch):
     observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
 
     assert hint_controller.calls
-    message, tone = hint_controller.calls[-1]
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert kind == "status"
     assert tone == "warning"
+    assert timeout_ms and timeout_ms > 0
     assert "Cloud sync blocked for observation ID 401." in message
     assert "Cloud sync pending for observation IDs 390, 389, 385." in message
     assert "Open Sync now to review the error details, then click Sync now to retry uploads." in message
@@ -467,8 +707,10 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
     observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
 
     assert hint_controller.calls
-    message, tone = hint_controller.calls[-1]
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert kind == "status"
     assert tone == "warning"
+    assert timeout_ms and timeout_ms > 0
     assert "Cloud sync sign-in failed. Please check your email and password." in message
     assert "Sign in again, then click Sync now to retry uploads." in message
     assert "Cloud sync pending" not in message
@@ -504,8 +746,10 @@ def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkey
     observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
 
     assert hint_controller.calls
-    message, tone = hint_controller.calls[-1]
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert kind == "status"
     assert tone == "warning"
+    assert timeout_ms and timeout_ms > 0
     assert "Logged in, click Sync now to sync." in message
     assert "Sign in again, then click Sync now to retry uploads." not in message
 

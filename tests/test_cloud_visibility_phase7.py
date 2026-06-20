@@ -2749,6 +2749,110 @@ def test_push_images_for_observation_skips_tombstoned_cloud_image_and_keeps_unre
     assert "cloud-image-1 because it has a local tombstone" not in output
 
 
+def test_push_images_for_observation_keeps_cloud_recovery_cache_image(monkeypatch, tmp_path):
+    db_path = _init_push_all_sync_db(tmp_path)
+    images_root = tmp_path / "images"
+    images_root.mkdir()
+
+    image_path = images_root / "cloud-imported.jpg"
+    image_path.write_bytes(b"cloud-imported")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (1, "cloud-obs-1", "synced"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, image_type, sort_order,
+                source_role, file_purpose, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                11,
+                1,
+                "cloud-image-1",
+                str(image_path),
+                "field",
+                0,
+                "cloud_recovery_cache",
+                "cache",
+                "2026-05-01 10:00:00",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    delete_calls: list[str] = []
+    storage_remove_calls: list[list[str]] = []
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    monkeypatch.setattr(
+        client,
+        "pull_image_metadata",
+        lambda obs_cloud_id: [
+            {
+                "id": "cloud-image-1",
+                "desktop_id": 11,
+                "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
+            }
+        ],
+    )
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        client,
+        "_storage_remove",
+        lambda paths: storage_remove_calls.append(list(paths)),
+    )
+    monkeypatch.setattr(
+        client,
+        "_delete",
+        lambda path: delete_calls.append(str(path)),
+    )
+    monkeypatch.setattr(
+        client,
+        "upload_image_file",
+        lambda local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None: (
+            storage_path or client._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
+        ),
+    )
+    monkeypatch.setattr(
+        client,
+        "push_image_metadata",
+        lambda img, obs_cloud_id, storage_path: "cloud-image-1",
+    )
+    monkeypatch.setattr(cloud_sync, "_push_pending_image_tombstones", lambda client: [])
+    monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
+
+    result = cloud_sync._push_images_for_observation(
+        client,
+        {"id": 1},
+        "cloud-obs-1",
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        image_row = conn.execute(
+            "SELECT cloud_id FROM images WHERE id = ?",
+            (11,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result is True
+    assert delete_calls == []
+    assert storage_remove_calls == []
+    assert image_row == ("cloud-image-1",)
+
+
 def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
     monkeypatch,
     tmp_path,

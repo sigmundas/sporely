@@ -69,6 +69,8 @@ def _build_settings_hub_dialog(
     client=None,
     running: bool = False,
     set_setting_sink: list[tuple[str, object]] | None = None,
+    uploaders: list | None = None,
+    patch_controls: bool = True,
 ):
     default_client = {
         "user_id": "user-123",
@@ -111,8 +113,9 @@ def _build_settings_hub_dialog(
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: None)
     monkeypatch.setattr(main_window, "get_app_settings", lambda: dict(app_settings or {}))
     monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_status", lambda self: None)
-    monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
-    monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: [])
+    if patch_controls:
+        monkeypatch.setattr(main_window.ArtsobservasjonerSettingsDialog, "_update_controls", lambda self: None)
+    monkeypatch.setattr("utils.artsobs_uploaders.list_uploaders", lambda: list(uploaders or []))
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
 
     dialog = main_window.SettingsHubDialog(fake_parent)
@@ -160,6 +163,40 @@ def test_profile_cloud_controls_expose_sync_actions(monkeypatch, qapp):
     checkbox_texts = {checkbox.text() for checkbox in dialog.findChildren(QCheckBox)}
     assert "Upload desktop images to cloud" not in checkbox_texts
     assert "Download cloud images to this device" not in checkbox_texts
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_sign_in_buttons_follow_cached_login_state(monkeypatch, qapp):
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, patch_controls=False)
+    cloud_card = dialog._artsobs_dialog
+
+    cloud_card._update_cloud_controls()
+
+    assert cloud_card.cloud_status_label.text() == "Signed in as: sigmund.as@gmail.com"
+    assert cloud_card.cloud_login_button.isEnabled() is False
+    assert cloud_card.cloud_logout_button.isEnabled() is True
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_uploader_login_buttons_follow_selected_target_state(monkeypatch, qapp):
+    uploaders = [SimpleNamespace(key="web", label="Artsobservasjoner")]
+    parent, dialog = _build_settings_hub_dialog(
+        monkeypatch,
+        qapp,
+        uploaders=uploaders,
+        patch_controls=False,
+    )
+    artsobs_dialog = dialog._artsobs_dialog
+
+    artsobs_dialog._target_status = {"web": True}
+    artsobs_dialog._update_controls()
+
+    assert artsobs_dialog.login_button.isEnabled() is False
+    assert artsobs_dialog.logout_button.isEnabled() is True
 
     dialog.deleteLater()
     parent.deleteLater()

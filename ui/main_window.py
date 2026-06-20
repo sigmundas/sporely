@@ -2062,6 +2062,14 @@ class SettingsHubDialog(QDialog):
             self.cloud_sync_now_button.setToolTip("")
             self.cloud_offline_media_button.setToolTip("")
             self.cloud_repair_calibration_conflicts_button.setToolTip("")
+        cloud_dialog = getattr(self, "_artsobs_dialog", None)
+        if cloud_dialog is not None:
+            updater = getattr(cloud_dialog, "_update_cloud_controls", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
 
     def _request_settings_cloud_sync(
         self,
@@ -2305,6 +2313,13 @@ class SettingsHubDialog(QDialog):
                 except Exception:
                     pass
         self._refresh_cloud_profile_fields(force=True)
+        if hasattr(self, "_artsobs_dialog") and self._artsobs_dialog is not None:
+            updater = getattr(self._artsobs_dialog, "_update_cloud_controls", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
         self.refresh_cloud_sync_status()
 
     def _on_cloud_logout_changed(self) -> None:
@@ -2332,6 +2347,13 @@ class SettingsHubDialog(QDialog):
                 except Exception:
                     pass
         self._render_profile_avatar()
+        if hasattr(self, "_artsobs_dialog") and self._artsobs_dialog is not None:
+            updater = getattr(self._artsobs_dialog, "_update_cloud_controls", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
         self.refresh_cloud_sync_status()
 
     def _profile_sync_error_message(self, exc: Exception) -> str:
@@ -2695,6 +2717,27 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 main_window._refresh_background_activity_badge()
             except Exception:
                 pass
+
+    def _cached_cloud_client(self):
+        client = getattr(self, "_cloud_client", None)
+        if client is not None:
+            return client
+        parent = self.parent() if hasattr(self, "parent") else None
+        if parent is not None:
+            getter = getattr(parent, "_cached_cloud_client", None)
+            if callable(getter):
+                try:
+                    client = getter()
+                except Exception:
+                    client = None
+                if client is not None:
+                    self._cloud_client = client
+                    return client
+            client = getattr(parent, "_cloud_client", None)
+            if client is not None:
+                self._cloud_client = client
+                return client
+        return None
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -3387,7 +3430,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if not hasattr(self, "cloud_status_label"):
             return
 
-        client = getattr(self, "_cloud_client", None)
+        client = self._cached_cloud_client()
+        if client is not None:
+            self._cloud_client = client
         logged_in = bool(client)
         summary = dict(getattr(self, "_cloud_usage_summary", {}) or {})
         summary_loaded = bool(summary.get("cloud_usage_loaded") or summary.get("cloudUsageLoaded"))
@@ -3477,7 +3522,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._refresh_cloud_status()
         email = str(get_app_settings().get("cloud_user_email") or "").strip()
         self._cloud_account_email = email
-        client = self.__dict__.get("_cloud_client")
+        client = self._cached_cloud_client()
+        if client is not None:
+            self._cloud_client = client
         logged_in = bool(client)
         debug_override = self._selected_debug_cloud_plan_override()
         if hasattr(self, "cloud_status_label"):
@@ -3502,6 +3549,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     def _update_controls(self):
         uploader = self._selected_uploader()
         selected_logged_in = self._is_logged_in(uploader.key if uploader else None)
+        self.login_button.setEnabled(bool(uploader) and not selected_logged_in)
         self.logout_button.setEnabled(bool(uploader) and selected_logged_in)
         self.login_button.setText(self.tr("Log in"))
         self._update_watermark_controls()
@@ -5270,6 +5318,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._background_activity_manual: dict[int, str] = {}
         self._background_activity_seq = 0
         self._background_activity_badge: QLabel | None = None
+        self._cloud_sync_status_hint_active = False
         self._background_activity_timer: QTimer | None = None
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_order: list[str] = []
@@ -5431,6 +5480,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def eventFilter(self, obj, event):
         """Show certain tooltips immediately on hover."""
+        badge = getattr(self, "_background_activity_badge", None)
+        if obj is badge:
+            if event.type() == QEvent.Enter:
+                self._show_cloud_sync_status_hint()
+            elif event.type() == QEvent.Leave:
+                self._restore_observations_default_hint()
         if obj.property("instant_tooltip"):
             if event.type() == QEvent.Enter:
                 tip = obj.toolTip()
@@ -5520,6 +5575,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._background_activity_badge.setMinimumHeight(22)
         self._background_activity_badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._background_activity_badge.setVisible(False)
+        self._background_activity_badge.installEventFilter(self)
         corner_layout.addWidget(self._background_activity_badge, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self._avatar_corner_btn = QToolButton()
@@ -6065,6 +6121,30 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self._show_cloud_sync_details_dialog()
 
+    def _show_cloud_sync_status_hint(self) -> None:
+        tab = getattr(self, "observations_tab", None)
+        if tab is None:
+            return
+        self._cloud_sync_status_hint_active = True
+        updater = getattr(tab, "_refresh_cloud_sync_idle_hint", None)
+        if callable(updater):
+            try:
+                updater()
+            except Exception:
+                pass
+
+    def _restore_observations_default_hint(self) -> None:
+        if not getattr(self, "_cloud_sync_status_hint_active", False):
+            return
+        self._cloud_sync_status_hint_active = False
+        tab = getattr(self, "observations_tab", None)
+        setter = getattr(tab, "_set_hint", None) if tab is not None else None
+        if callable(setter):
+            try:
+                setter(self.tr("Ready."))
+            except Exception:
+                pass
+
     def _refresh_cloud_sync_close_state(self) -> None:
         if not getattr(self, "_close_after_cloud_sync", False):
             return
@@ -6129,14 +6209,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             badge.clear()
             badge.setToolTip("")
             badge.setVisible(False)
+            self._restore_observations_default_hint()
             self._refresh_cloud_sync_close_state()
-            tab = getattr(self, "observations_tab", None)
-            updater = getattr(tab, "_refresh_cloud_sync_idle_hint", None) if tab is not None else None
-            if callable(updater):
-                try:
-                    updater()
-                except Exception:
-                    pass
             return
         tooltip_parts: list[str] = []
         if cloud_sync_running:
@@ -6221,13 +6295,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             badge.mousePressEvent = lambda _event: None
         badge.setToolTip("\n".join(tooltip_parts))
         badge.setVisible(True)
-        tab = getattr(self, "observations_tab", None)
-        updater = getattr(tab, "_refresh_cloud_sync_idle_hint", None) if tab is not None else None
-        if callable(updater):
-            try:
-                updater()
-            except Exception:
-                pass
         self._refresh_cloud_sync_close_state()
 
     def begin_background_activity(self, label: str) -> int:
@@ -7060,7 +7127,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for online publishing"),
+            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
@@ -11020,17 +11087,59 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _on_measure_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.active_observation_id:
             return
+        image_by_id = {
+            int(image.get("id")): dict(image)
+            for image in (self.observation_images or [])
+            if image.get("id") is not None
+        }
         all_image_ids = {
             int(image.get("id"))
             for image in (self.observation_images or [])
             if image.get("id") is not None
         }
+        previous_excluded = self._get_publish_excluded_image_ids_for_observation(self.active_observation_id)
+        previous_excluded = {img_id for img_id in previous_excluded if img_id in all_image_ids}
+        previous_selected = set(all_image_ids) - previous_excluded
         try:
             selected_set = {int(v) for v in (selected_ids or set())}
         except Exception:
             selected_set = set()
         excluded = set(all_image_ids) - set(selected_set)
+        unchecked_ids = previous_selected - selected_set
+        rechecked_ids = selected_set - previous_selected
+        for image_id in unchecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                ImageDB.queue_image_tombstone_for_local_image(image_id)
+            except Exception:
+                pass
+        for image_id in rechecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            if not tombstone:
+                continue
+            try:
+                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                pass
+            if str(tombstone.get("delete_synced_at") or "").strip():
+                try:
+                    ImageDB.clear_image_cloud_sync_state(image_id)
+                except Exception:
+                    pass
         self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
+        try:
+            from utils.cloud_sync import mark_observation_dirty
+
+            mark_observation_dirty(int(self.active_observation_id))
+        except Exception:
+            pass
         if hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id, excluded)
 

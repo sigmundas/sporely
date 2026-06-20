@@ -211,6 +211,13 @@ def sharing_scope_location_public(value: str | None) -> bool:
     return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
 
 
+def _default_publish_selected_for_new_image(image_type: str | None, microscope_index: int) -> tuple[bool, int]:
+    normalized_type = (image_type or "field").strip().lower()
+    if normalized_type == "microscope":
+        return False, microscope_index + 1
+    return True, microscope_index
+
+
 _OBSERVATION_STATUS_LABELS = {
     "draft": "Draft",
     "private": "Private",
@@ -1681,8 +1688,8 @@ class ObservationsTab(QWidget):
         # Set column properties
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
         header.setSectionResizeMode(3, QHeaderView.Fixed)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
@@ -1692,8 +1699,8 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
-        self.table.setColumnWidth(1, 210)  # Name
-        self.table.setColumnWidth(2, 72)   # Genus
+        self.table.setColumnWidth(1, 170)  # Name
+        self.table.setColumnWidth(2, 120)  # Genus
         self.table.setColumnWidth(3, 120)  # Species
         self.table.setColumnWidth(4, 72)   # Spores
         self.table.setColumnWidth(5, 128)  # Date
@@ -1726,7 +1733,7 @@ class ObservationsTab(QWidget):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for online publishing"),
+            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
         self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
@@ -2401,7 +2408,7 @@ class ObservationsTab(QWidget):
             message = self.tr("Ready.")
             tone = "info"
 
-        self._status_hint_controller.set_hint(message, tone=tone)
+        self._status_hint_controller.set_status(message, tone=tone)
 
     def _set_status_progress_visible(self, visible: bool) -> None:
         visible = bool(visible)
@@ -2674,7 +2681,7 @@ class ObservationsTab(QWidget):
     def _finish_manual_refresh_flow(self) -> None:
         pending_status = self._upload_pending_artsobs_web_images()
         if pending_status == "none":
-            self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=0)
+            self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=8000)
         self._start_artsobs_link_check()
 
     def _show_cloud_conflict_dialog(self, conflicts: list[dict]) -> bool:
@@ -3060,7 +3067,7 @@ class ObservationsTab(QWidget):
         if not grouped:
             return "none"
 
-        self.set_status_message(uploading_msg, level="info", auto_clear_ms=0)
+        self.set_status_message(uploading_msg, level="info", auto_clear_ms=8000)
         QApplication.processEvents()
 
         client = ArtsObservasjonerWebClient()
@@ -4009,7 +4016,7 @@ class ObservationsTab(QWidget):
             self.set_status_message(
                 self.tr("Publishing {current}/{total}...").format(current=idx, total=total),
                 level="info",
-                auto_clear_ms=0,
+                auto_clear_ms=8000,
             )
             ok, _uploaded_id, error = self.upload_observation_to_artsobs(
                 observation_id,
@@ -4557,7 +4564,6 @@ class ObservationsTab(QWidget):
             show_status=show_status,
             status_message=status_message,
         )
-        self._refresh_cloud_sync_idle_hint()
 
     def _get_vernacular_db_for_active_language(self):
         stored = SettingsDB.get_setting("vernacular_language", "no")
@@ -5399,7 +5405,7 @@ class ObservationsTab(QWidget):
             return
         if not hasattr(self, "gallery_widget"):
             return
-        hint = self.tr("Select image for online publishing")
+        hint = self.tr("Select image for publishing and cloud sync")
         for checkbox in self.gallery_widget.publish_checkbox_widgets():
             self._status_hint_controller.register_widget(checkbox, hint)
 
@@ -5448,17 +5454,53 @@ class ObservationsTab(QWidget):
         if not self.selected_observation_id:
             return
         images = ImageDB.get_images_for_observation(int(self.selected_observation_id))
+        image_by_id = {
+            int(img.get("id")): dict(img)
+            for img in images
+            if img.get("id") is not None
+        }
         all_ids = {
             int(img.get("id"))
             for img in images
             if img.get("id") is not None
         }
+        previous_excluded = self._publish_excluded_image_ids(int(self.selected_observation_id))
+        previous_excluded = {img_id for img_id in previous_excluded if img_id in all_ids}
+        previous_selected = all_ids - previous_excluded
         try:
             selected_set = {int(v) for v in (selected_ids or set())}
         except Exception:
             selected_set = set()
         excluded = all_ids - selected_set
         obs_id = int(self.selected_observation_id)
+        unchecked_ids = previous_selected - selected_set
+        rechecked_ids = selected_set - previous_selected
+        for image_id in unchecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                ImageDB.queue_image_tombstone_for_local_image(image_id)
+            except Exception:
+                pass
+        for image_id in rechecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            if not tombstone:
+                continue
+            try:
+                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                pass
+            if str(tombstone.get("delete_synced_at") or "").strip():
+                try:
+                    ImageDB.clear_image_cloud_sync_state(image_id)
+                except Exception:
+                    pass
         self._set_publish_excluded_image_ids(obs_id, excluded)
         try:
             from utils.cloud_sync import mark_observation_dirty
@@ -5573,7 +5615,7 @@ class ObservationsTab(QWidget):
         pending_notice = self._pending_published_image_upload_notice_for_observation(obs_id)
         if pending_notice:
             msg, level = pending_notice
-            self.set_status_message(msg, level=level, auto_clear_ms=0)
+            self.set_status_message(msg, level=level, auto_clear_ms=8000)
 
     def on_row_double_clicked(self, item):
         """Double-click to open edit dialog for the observation."""
@@ -5685,14 +5727,22 @@ class ObservationsTab(QWidget):
     def _collect_cloud_sync_image_rows(self, observation_id: int) -> list[dict]:
         """Return canonical local images that should be mirrored to Sporely Cloud.
 
-        Cloud sync intentionally ignores the Artsobservasjoner publish-selection state;
-        it mirrors the local field/microscope images that are part of the observation.
+        Cloud sync follows the same thumbnail checkmark selection as the other
+        upload paths and only mirrors selected field/microscope images.
         """
 
         images = ImageDB.get_images_for_observation(observation_id)
+        excluded_ids = self._publish_excluded_image_ids(observation_id)
         ordered: list[dict] = []
         seen_paths: set[str] = set()
         for image in images:
+            image_id = image.get("id")
+            if image_id is not None:
+                try:
+                    if int(image_id) in excluded_ids:
+                        continue
+                except Exception:
+                    pass
             image_type = (image.get("image_type") or "").strip().lower()
             if image_type not in {"field", "microscope"}:
                 continue
@@ -9559,6 +9609,9 @@ class ObservationsTab(QWidget):
         existing_ids = {img.get("id") for img in (existing_images or []) if img.get("id")}
         result_ids = {res.image_id for res in results if res.image_id}
         removed_ids = existing_ids - result_ids
+        existing_publish_excluded_ids = self._publish_excluded_image_ids(obs_id)
+        seed_publish_excluded_ids: set[int] = set(existing_publish_excluded_ids)
+        new_microscope_index = 0
         for image_id in removed_ids:
             ImageDB.delete_image(image_id)
 
@@ -9943,6 +9996,14 @@ class ObservationsTab(QWidget):
                 lab_metadata=image_lab_metadata or None,
                 **provenance_kwargs,
             )
+            result.image_id = image_id
+            if image_id and image_id not in existing_ids:
+                publish_selected, new_microscope_index = _default_publish_selected_for_new_image(
+                    image_type,
+                    new_microscope_index,
+                )
+                if not publish_selected:
+                    seed_publish_excluded_ids.add(int(image_id))
             stored_scale_bar_selection = self._scale_scale_bar_selection(
                 getattr(result, "scale_bar_selection", None),
                 resample_factor
@@ -9975,6 +10036,9 @@ class ObservationsTab(QWidget):
             cleanup_import_temp_file(filepath, final_path, stored_path, output_dir)
             if resampled_path and resampled_path != final_path:
                 cleanup_import_temp_file(filepath, resampled_path, stored_path, output_dir)
+
+        if seed_publish_excluded_ids != existing_publish_excluded_ids:
+            self._set_publish_excluded_image_ids(obs_id, seed_publish_excluded_ids)
 
 
 class ObservationDetailsDialog(GeometryMixin, QDialog):
@@ -13549,7 +13613,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_cloud_media_status(
                 self.tr("Cloud media available. Downloading…"),
                 level="info",
-                auto_clear_ms=0,
+                auto_clear_ms=8000,
             )
             self._start_cloud_media_materialization(auto_start=True)
             return state
@@ -13561,7 +13625,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._set_cloud_media_status(
                     self.tr("Cloud media available. Downloading…"),
                     level="info",
-                    auto_clear_ms=0,
+                    auto_clear_ms=8000,
                 )
             return state
 
@@ -13574,7 +13638,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._set_cloud_media_status(
                     self.tr("Cloud media available on this observation."),
                     level="info",
-                    auto_clear_ms=0,
+                    auto_clear_ms=8000,
                 )
         else:
             self.download_cloud_media_btn.setVisible(False)
@@ -13614,7 +13678,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._set_cloud_media_status(
             self.tr("Cloud media available. Downloading…"),
             level="info",
-            auto_clear_ms=0,
+            auto_clear_ms=8000,
         )
         worker.start()
 
@@ -13629,7 +13693,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 message=progress_message,
             ),
             level="info",
-            auto_clear_ms=0,
+            auto_clear_ms=8000,
         )
 
     def _on_cloud_media_materialization_finished(self, result: dict) -> None:
@@ -13872,6 +13936,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         start_time = time.perf_counter()
         items = []
+        new_microscope_index = 0
+        cloud_state_cache: dict[int, tuple[str | None, bool, bool]] = {}
+
+        def _cloud_state_for_image_id(image_id: int | None) -> tuple[str | None, bool, bool]:
+            try:
+                parsed_id = int(image_id)
+            except (TypeError, ValueError):
+                return None, False, False
+            if parsed_id in cloud_state_cache:
+                return cloud_state_cache[parsed_id]
+            cloud_id = None
+            cloud_uploaded = False
+            cloud_tombstone_synced = False
+            try:
+                image_row = ImageDB.get_image(parsed_id)
+            except Exception:
+                image_row = None
+            if image_row:
+                cloud_id = str(image_row.get("cloud_id") or "").strip() or None
+                if cloud_id:
+                    tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+                    cloud_tombstone_synced = bool(str((tombstone or {}).get("delete_synced_at") or "").strip())
+                    cloud_uploaded = not cloud_tombstone_synced
+            cloud_state_cache[parsed_id] = (cloud_id, cloud_uploaded, cloud_tombstone_synced)
+            return cloud_state_cache[parsed_id]
+
         for idx, item in enumerate(self.image_results):
             gps_match = idx == self._gps_source_index and item.exif_has_gps
             needs_scale = bool(item.needs_scale)
@@ -13888,6 +13978,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     item.objective,
                 ) or item.objective
             objective_short = ImageGalleryWidget._short_objective_label(objective_label, self.tr) or objective_label
+            publish_selected = None
+            if item.image_id is None:
+                publish_selected, new_microscope_index = _default_publish_selected_for_new_image(
+                    item.image_type,
+                    new_microscope_index,
+                )
             badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=item.image_type,
                 objective_name=objective_short,
@@ -13900,6 +13996,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             has_measurements = False
             if item.image_id:
                 has_measurements = bool(MeasurementDB.get_measurements_for_image(item.image_id))
+            cloud_id = None
+            cloud_uploaded = None
+            cloud_tombstone_synced = None
+            if item.image_id:
+                cloud_id, cloud_uploaded, cloud_tombstone_synced = _cloud_state_for_image_id(item.image_id)
             items.append(
                 {
                     "id": item.image_id,
@@ -13911,7 +14012,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     "gps_tag_text": self.tr("GPS") if gps_match else None,
                     "gps_tag_highlight": gps_match,
                     "badges": badges,
+                    "publish_selected": publish_selected,
+                    "publish_selected_default": (item.image_type or "field").strip().lower() != "microscope",
                     "has_measurements": has_measurements,
+                    "cloud_id": cloud_id,
+                    "cloud_uploaded": cloud_uploaded,
+                    "cloud_tombstone_synced": cloud_tombstone_synced,
                 }
             )
         self.image_gallery.set_items(items)

@@ -8,10 +8,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QLabel
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 
 import ui.main_window as main_window
+import utils.cloud_sync as cloud_sync
 
 
 @pytest.fixture(scope="module")
@@ -200,6 +202,145 @@ def test_background_activity_badge_shows_sync_pending_when_idle(monkeypatch, qap
     assert "Cloud sync pending for observation IDs 390, 389, 385." in badge.tooltip
     assert "Logged in, click Sync now to sync." in badge.tooltip
     assert "observation IDs 390, 389, 385" in badge.tooltip
+    window.deleteLater()
+
+
+def test_background_activity_badge_hover_updates_observation_hint(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    badge = QLabel()
+    window._background_activity_badge = badge
+    window._taxon_controller = None
+    window._cloud_client = SimpleNamespace(user_id="user-123")
+    monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", lambda self: [390])
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", lambda self: [])
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {})
+
+    events: list[tuple[str, str]] = []
+    window.observations_tab = SimpleNamespace(
+        _refresh_cloud_sync_idle_hint=lambda: events.append(("hover", "info")),
+        _set_hint=lambda text, tone="info": events.append((str(text), str(tone))),
+        tr=lambda text: text,
+    )
+
+    window._refresh_background_activity_badge()
+    assert events == []
+
+    window.eventFilter(badge, QEvent(QEvent.Enter))
+    window.eventFilter(badge, QEvent(QEvent.Leave))
+
+    assert events == [("hover", "info"), ("Ready.", "info")]
+    window.deleteLater()
+
+
+def test_measure_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    window.active_observation_id = 7
+    window.observation_images = [
+        {"id": 1, "cloud_id": "cloud-1"},
+        {"id": 2, "cloud_id": "cloud-2"},
+    ]
+
+    calls: dict[str, list] = {
+        "queue": [],
+        "clear": [],
+        "cloud": [],
+        "excluded": [],
+        "dirty": [],
+    }
+
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "queue_image_tombstone_for_local_image",
+        lambda image_id: calls["queue"].append(int(image_id)) or "cloud-1",
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "get_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: None,
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "clear_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "clear_image_cloud_sync_state",
+        lambda image_id: calls["cloud"].append(int(image_id)) or True,
+    )
+    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    window._get_publish_excluded_image_ids_for_observation = lambda observation_id: set()
+    window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
+        (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+    )
+    window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
+
+    main_window.MainWindow._on_measure_gallery_publish_selection_changed(window, {2})
+
+    assert calls["queue"] == [1]
+    assert calls["clear"] == []
+    assert calls["cloud"] == []
+    assert calls["excluded"] == [(7, (1,))]
+    assert calls["dirty"] == [7]
+    window.deleteLater()
+
+
+def test_measure_gallery_publish_recheck_clears_synced_tombstone(monkeypatch, qapp):
+    window = _build_window(monkeypatch)
+    window.active_observation_id = 7
+    window.observation_images = [
+        {"id": 1, "cloud_id": "cloud-1"},
+        {"id": 2, "cloud_id": "cloud-2"},
+    ]
+
+    calls: dict[str, list] = {
+        "queue": [],
+        "clear": [],
+        "cloud": [],
+        "excluded": [],
+        "dirty": [],
+    }
+
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "queue_image_tombstone_for_local_image",
+        lambda image_id: calls["queue"].append(int(image_id)) or "cloud-1",
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "get_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: {
+            "deleted_cloud_id": "cloud-1",
+            "delete_synced_at": "2026-06-01T10:00:00+00:00",
+        }
+        if str(cloud_id) == "cloud-1"
+        else None,
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "clear_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
+    )
+    monkeypatch.setattr(
+        main_window.ImageDB,
+        "clear_image_cloud_sync_state",
+        lambda image_id: calls["cloud"].append(int(image_id)) or True,
+    )
+    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    window._get_publish_excluded_image_ids_for_observation = lambda observation_id: {1}
+    window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
+        (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+    )
+    window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
+
+    main_window.MainWindow._on_measure_gallery_publish_selection_changed(window, {1, 2})
+
+    assert calls["queue"] == []
+    assert calls["clear"] == ["cloud-1"]
+    assert calls["cloud"] == [1]
+    assert calls["excluded"] == [(7, ())]
+    assert calls["dirty"] == [7]
     window.deleteLater()
 
 

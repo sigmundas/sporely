@@ -293,6 +293,65 @@ def test_mark_image_tombstone_synced_sets_delete_synced_at(monkeypatch, tmp_path
     assert delete_synced_at is not None
 
 
+def test_queue_image_tombstone_for_local_image_keeps_local_row_visible(monkeypatch, tmp_path):
+    db_path = tmp_path / "queue_tombstone.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    queued_cloud_id = models.ImageDB.queue_image_tombstone_for_local_image(fixture["image_id"])
+
+    conn = sqlite3.connect(db_path)
+    try:
+        tombstone = conn.execute(
+            """
+            SELECT deleted_cloud_id, delete_synced_at, local_image_id
+            FROM image_tombstones
+            WHERE deleted_cloud_id = ?
+            """,
+            (fixture["image_cloud_id"],),
+        ).fetchone()
+        image_count = conn.execute("SELECT COUNT(*) FROM images WHERE id = ?", (fixture["image_id"],)).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert queued_cloud_id == fixture["image_cloud_id"]
+    assert tombstone == (fixture["image_cloud_id"], None, None)
+    assert image_count == 1
+    assert models.ImageDB.get_images_for_observation(fixture["observation_id"])
+
+
+def test_clear_image_cloud_sync_state_removes_cloud_link(monkeypatch, tmp_path):
+    db_path = tmp_path / "clear_cloud_state.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cleared = models.ImageDB.clear_image_cloud_sync_state(fixture["image_id"])
+
+    conn = sqlite3.connect(db_path)
+    try:
+        image_row = conn.execute(
+            "SELECT cloud_id, synced_at FROM images WHERE id = ?",
+            (fixture["image_id"],),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert cleared is True
+    assert image_row == (None, None)
+
+
 def test_record_remote_image_tombstones_ignores_active_rows_and_writes_deleted_remote_rows(
     monkeypatch,
     tmp_path,

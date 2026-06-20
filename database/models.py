@@ -1930,6 +1930,147 @@ class ImageDB:
         return _hydrate_image_row(row)
 
     @staticmethod
+    def get_image_tombstone_by_deleted_cloud_id(deleted_cloud_id: str) -> dict | None:
+        """Return the local tombstone record for one deleted cloud image, if any."""
+        cloud_id = str(deleted_cloud_id or "").strip()
+        if not cloud_id:
+            return None
+        return get_image_tombstones_by_deleted_cloud_id([cloud_id]).get(cloud_id)
+
+    @staticmethod
+    def queue_image_tombstone_for_local_image(image_id: int) -> str | None:
+        """Queue a cloud tombstone for one synced local image without deleting it."""
+        try:
+            image_id = int(image_id)
+        except (TypeError, ValueError):
+            return None
+        if image_id <= 0:
+            return None
+
+        conn = get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            image_columns = _table_columns(cursor, "images")
+            observation_columns = _table_columns(cursor, "observations")
+            select_columns = ["observation_id", "filepath", "original_filepath", "image_type"]
+            has_image_cloud_id = "cloud_id" in image_columns
+            if has_image_cloud_id:
+                select_columns.append("cloud_id")
+            cursor.execute(
+                f'SELECT {", ".join(select_columns)} FROM images WHERE id = ?',
+                (image_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cloud_id = str(row["cloud_id"] or "").strip() if has_image_cloud_id else ""
+            if not cloud_id:
+                return None
+            try:
+                observation_id = int(row["observation_id"]) if row["observation_id"] is not None else None
+            except Exception:
+                observation_id = None
+            deleted_observation_cloud_id = None
+            if observation_id and "cloud_id" in observation_columns:
+                obs_row = cursor.execute(
+                    "SELECT cloud_id FROM observations WHERE id = ?",
+                    (observation_id,),
+                ).fetchone()
+                if obs_row:
+                    deleted_observation_cloud_id = str(obs_row[0] or "").strip() or None
+            filepath = str(row["filepath"] or "").strip() or None
+            original_filepath = str(row["original_filepath"] or "").strip() or None
+            _upsert_image_tombstone(
+                cursor,
+                deleted_cloud_id=cloud_id,
+                deleted_storage_path=filepath or original_filepath,
+                deleted_observation_cloud_id=deleted_observation_cloud_id,
+                local_observation_id=observation_id,
+                image_type=str(row["image_type"] or "").strip() or None,
+                filepath=filepath,
+                original_filepath=original_filepath,
+            )
+            if observation_id:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
+            conn.commit()
+            return cloud_id
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def clear_image_tombstone_by_deleted_cloud_id(deleted_cloud_id: str) -> bool:
+        """Forget one pending or synced cloud-image tombstone."""
+        cloud_id = str(deleted_cloud_id or "").strip()
+        if not cloud_id:
+            return False
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "DELETE FROM image_tombstones WHERE deleted_cloud_id = ?",
+                    (cloud_id,),
+                )
+            except sqlite3.OperationalError:
+                return False
+            conn.commit()
+            return bool(cursor.rowcount and cursor.rowcount > 0)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def clear_image_cloud_sync_state(image_id: int) -> bool:
+        """Clear the cloud link from a local image so it can be republished."""
+        try:
+            image_id = int(image_id)
+        except (TypeError, ValueError):
+            return False
+        if image_id <= 0:
+            return False
+
+        conn = get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT observation_id FROM images WHERE id = ?", (image_id,))
+            image_row = cursor.fetchone()
+            if image_row is None:
+                return False
+            try:
+                observation_id = int(image_row["observation_id"]) if image_row["observation_id"] is not None else None
+            except Exception:
+                observation_id = None
+            cursor.execute("PRAGMA table_info(images)")
+            image_columns = {row[1] for row in cursor.fetchall()}
+            updates: list[str] = []
+            if "cloud_id" in image_columns:
+                updates.append("cloud_id = NULL")
+            if "synced_at" in image_columns:
+                updates.append("synced_at = NULL")
+            if not updates:
+                return False
+            cursor.execute(
+                f'UPDATE images SET {", ".join(updates)} WHERE id = ?',
+                (image_id,),
+            )
+            if observation_id:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
+            conn.commit()
+            return bool(cursor.rowcount and cursor.rowcount > 0)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
     def get_images_for_observation(observation_id: int) -> List[dict]:
         """Get all images for an observation"""
         conn = get_connection()

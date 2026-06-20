@@ -3294,7 +3294,10 @@ def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
     source_role = str(row.get('source_role') or '').strip().lower()
     file_purpose = str(row.get('file_purpose') or '').strip().lower()
     if source_role == 'cloud_recovery_cache' or file_purpose == 'cache':
-        return False
+        # Cloud-imported rows are cached locally, but they are still the
+        # canonical syncable image rows and must remain publishable so the
+        # cloud copy can be preserved or restored.
+        return True
     return True
 
 
@@ -5142,6 +5145,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
     previous sync skipped microscope images or otherwise failed to assign a
     cloud_id to newly added local media.
     """
+    dirty_ids: list[int] = []
     conn = get_connection()
     try:
         conn.row_factory = sqlite3.Row
@@ -5157,7 +5161,6 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
             ORDER BY o.id
             """
         ).fetchall()
-        dirty_ids: list[int] = []
         for row in rows or []:
             obs_id = _safe_int(dict(row or {}).get("observation_id"))
             if obs_id <= 0:
@@ -5178,13 +5181,30 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
             ).fetchall()
             if any(should_push_local_image_to_cloud(dict(image_row or {})) for image_row in image_rows):
                 dirty_ids.append(obs_id)
-        if not dirty_ids:
-            return
+    except Exception as exc:
+        print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
+    finally:
+        conn.close()
+    if not dirty_ids:
+        return
+
+    for obs_id in dirty_ids:
+        try:
+            _clear_local_cloud_media_signature(obs_id)
+        except Exception as exc:
+            print(
+                f"[cloud_sync] Could not clear local media signature for observation {obs_id}: {exc}"
+            )
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
         for obs_id in dirty_ids:
             mark_observation_sync_dirty(cursor, obs_id)
         conn.commit()
     except Exception as exc:
-        print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
+        conn.rollback()
+        print(f"[cloud_sync] Could not update dirty state for pending local images: {exc}")
     finally:
         conn.close()
 
@@ -9324,7 +9344,16 @@ def _push_images_for_observation(
                 processed_items += 1
                 _advance_progress(progress_state, 1)
                 continue
+            local_image_id = _safe_int(img.get('id'))
+            local_cloud_id = str(img.get('cloud_id') or '').strip()
+            remote_row = existing_by_desktop_id.get(local_image_id)
+            if remote_row is None and local_cloud_id:
+                remote_row = existing_by_id.get(local_cloud_id)
+            remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
             if not should_push_local_image_to_cloud(img):
+                selected_cloud_id = remote_cloud_id or local_cloud_id
+                if selected_cloud_id:
+                    kept_cloud_ids.add(selected_cloud_id)
                 processed_items += 1
                 _advance_progress(progress_state, 1)
                 continue
@@ -9343,13 +9372,6 @@ def _push_images_for_observation(
                         ),
                         progress_state,
                     )
-                local_image_id = _safe_int(img.get('id'))
-                remote_row = existing_by_desktop_id.get(local_image_id)
-                local_cloud_id = str(img.get('cloud_id') or '').strip()
-                if remote_row is None and local_cloud_id:
-                    remote_row = existing_by_id.get(local_cloud_id)
-
-                remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
                 existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
                 storage_path = existing_storage_path or _build_worker_storage_path(
                     client.user_id,
