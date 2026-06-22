@@ -70,6 +70,19 @@ If no observation is selected, or the watched folder is missing, the start butto
 
 ---
 
+## RAW Processing
+
+Live Lab keeps a separate RAW processing panel in the left sidebar when RAW-backed captures are active.
+
+- RAW capture settings are persisted per microscope context in the local SQLite `settings` table, so the tab can remember different RAW presets for different objective / contrast / mount / stain / sample combinations.
+- In review mode, incoming RAW files stay pending until you save them. In auto-save mode, the rendered JPEG derivative is committed immediately.
+- RAW sources are decoded with `rawpy` and shown in the viewer as compressed working copies, not as live raw sensor data.
+- When you edit a committed RAW-backed image and click **Apply re-render**, Sporely reopens the source RAW file and replaces the current JPEG derivative in place.
+- The committed image keeps a `lab_metadata.raw_processing` snapshot with the source path, derivative path, render settings, and render timestamp.
+- If the source RAW file is missing later, RAW-specific editing is unavailable for that image.
+
+---
+
 ## Main Viewer
 
 The large viewer behaves like the image area in the Measure tab:
@@ -116,8 +129,8 @@ The bar is used for:
 When a new file appears in the watched folder:
 
 1. The folder watcher waits for the file to finish writing.
-2. HEIC files are converted when needed.
-3. The image is inserted into the database as a microscope image for the current observation.
+2. RAW files are rendered through `rawpy` to a JPEG derivative; HEIC files are converted when needed.
+3. The rendered image is inserted into the database as a microscope image for the current observation.
 4. Objective, contrast, mount, stain, sample, and scale metadata are stored on the new image.
 5. Thumbnails are generated.
 6. The image is added to the session gallery and loaded into the main viewer.

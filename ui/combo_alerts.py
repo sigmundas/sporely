@@ -6,6 +6,25 @@ from collections.abc import Iterable
 from PySide6.QtWidgets import QApplication, QComboBox
 
 
+def lab_state_alert_colors() -> dict[str, str]:
+    app = QApplication.instance()
+    palette = app.palette() if app is not None else QApplication.palette()
+    dark = bool(palette.window().color().lightness() < 128)
+    if dark:
+        return {
+            "background": "#4b1f24",
+            "background_hover": "#5d262d",
+            "border": "#d65a63",
+            "text": "#ffecec",
+        }
+    return {
+        "background": "#ffe1e1",
+        "background_hover": "#ffd3d3",
+        "border": "#d64545",
+        "text": "#7f1d1d",
+    }
+
+
 def combo_is_unset(combo) -> bool:
     if combo is None:
         return False
@@ -21,13 +40,7 @@ def combo_is_unset(combo) -> bool:
     if data is None:
         return True
     data_text = str(data or "").strip().lower()
-    if data_text in {"", "not_set", "not set"}:
-        return True
-    try:
-        text = str(combo.currentText() or "").strip().lower()
-    except Exception:
-        text = ""
-    return not text or text in {"not_set", "not set"}
+    return data_text in {"", "not_set", "not set"}
 
 
 def lab_state_combo_alert_stylesheet(alert: bool = True) -> str:
@@ -35,17 +48,11 @@ def lab_state_combo_alert_stylesheet(alert: bool = True) -> str:
         return ""
     app = QApplication.instance()
     palette = app.palette() if app is not None else QApplication.palette()
-    dark = bool(palette.window().color().lightness() < 128)
-    if dark:
-        background = "#4b1f24"
-        background_hover = "#5d262d"
-        border = "#d65a63"
-        text = "#ffecec"
-    else:
-        background = "#ffe1e1"
-        background_hover = "#ffd3d3"
-        border = "#d64545"
-        text = "#7f1d1d"
+    colors = lab_state_alert_colors()
+    background = colors["background"]
+    background_hover = colors["background_hover"]
+    border = colors["border"]
+    text = colors["text"]
     view_base = palette.base().color().name()
     view_text = palette.text().color().name()
     view_highlight = palette.highlight().color().name()

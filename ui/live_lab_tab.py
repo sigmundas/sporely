@@ -1523,6 +1523,7 @@ class LiveLabTab(QWidget):
                     tone="warning",
                     timeout_ms=5000,
                 )
+            self._invalidate_thumbnail_caches_for_raw_image(int(session.image_id), final_path)
             preview_cleanup = Path(session.preview_path) if session.preview_path else None
             self._raw_edit_session = None
             self._raw_edit_background_wb_armed = False
@@ -1535,6 +1536,7 @@ class LiveLabTab(QWidget):
             self._refresh_session_gallery()
             self._show_session_image(session.image_id)
             self._refresh_main_window_after_import(session.image_id)
+            self._update_observation_thumbnail()
             if preview_cleanup is not None:
                 try:
                     preview_cleanup.unlink(missing_ok=True)
@@ -1570,6 +1572,40 @@ class LiveLabTab(QWidget):
             except Exception:
                 pass
         return False
+
+    def _invalidate_thumbnail_caches_for_raw_image(self, image_id: int, final_path: Path) -> None:
+        thumb_path = str(get_thumbnail_path(int(image_id), "small") or "").strip()
+        if thumb_path:
+            gallery = getattr(self, "session_gallery", None)
+            invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
+            if callable(invalidate_gallery):
+                try:
+                    invalidate_gallery(thumb_path)
+                except Exception:
+                    pass
+
+        main_window = getattr(self, "_main_window", None)
+        if main_window is None:
+            return
+
+        invalidate_main_window = getattr(main_window, "invalidate_pixmap_cache", None)
+        if callable(invalidate_main_window):
+            try:
+                invalidate_main_window(str(final_path))
+            except Exception:
+                pass
+            return
+
+        target = str(final_path)
+        cache = getattr(main_window, "_pixmap_cache", None)
+        if isinstance(cache, dict):
+            cache.pop(target, None)
+        order = getattr(main_window, "_pixmap_cache_order", None)
+        if isinstance(order, list) and target in order:
+            order[:] = [item for item in order if item != target]
+        gallery_cache = getattr(main_window, "_gallery_pixmap_cache", None)
+        if isinstance(gallery_cache, dict):
+            gallery_cache.pop(target, None)
 
     def _raw_background_wb_selection_state(self, target: str) -> tuple[bool, QPushButton | None]:
         if target == "edit":

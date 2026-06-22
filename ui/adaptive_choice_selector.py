@@ -16,9 +16,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QStackedLayout,
     QWidget,
-    QApplication,
 )
 
+from .combo_alerts import lab_state_alert_colors
 from .styles import get_design_tokens
 
 
@@ -240,29 +240,7 @@ class AdaptiveChoiceSelector(QWidget):
         self._lab_state_alert = bool(alert)
         self.setProperty("labStateAlert", self._lab_state_alert)
         self._combo.setProperty("labStateAlert", self._lab_state_alert)
-        if self._mode == "combo":
-            if self._lab_state_alert:
-                from .combo_alerts import lab_state_combo_alert_stylesheet
-
-                self._combo.setStyleSheet(lab_state_combo_alert_stylesheet(True))
-            else:
-                self._combo.setStyleSheet("")
-        else:
-            if self._lab_state_alert:
-                dark = bool(QApplication.instance().palette().window().color().lightness() < 128) if QApplication.instance() else False
-                border = "#d65a63" if dark else "#d64545"
-                background = "#4b1f24" if dark else "#ffe1e1"
-                self._pill_container.setStyleSheet(
-                    "QWidget#adaptiveChoicePillContainer {"
-                    f" background-color: {background};"
-                    f" border: 1px solid {border};"
-                    " border-radius: 10px;"
-                    " }"
-                )
-            else:
-                self._apply_container_style()
-            self._update_pill_button_widths()
-        self.update()
+        self._refresh_theme_styles()
 
     def set_unselected_border_visible(self, visible: bool) -> None:
         self._show_unselected_border = bool(visible)
@@ -286,6 +264,7 @@ class AdaptiveChoiceSelector(QWidget):
     def changeEvent(self, event) -> None:  # type: ignore[override]
         super().changeEvent(event)
         if event.type() in {QEvent.FontChange, QEvent.StyleChange, QEvent.PaletteChange}:
+            self._refresh_theme_styles()
             self._schedule_fit_update(0)
 
     def sizeHint(self):  # type: ignore[override]
@@ -315,6 +294,33 @@ class AdaptiveChoiceSelector(QWidget):
             " }"
         )
 
+    def _refresh_theme_styles(self) -> None:
+        for index, button in enumerate(self._buttons):
+            if button is None:
+                continue
+            self._apply_button_style(button, self._items[index])
+        if self._mode == "pill":
+            if self._lab_state_alert:
+                colors = lab_state_alert_colors()
+                self._pill_container.setStyleSheet(
+                    "QWidget#adaptiveChoicePillContainer {"
+                    f" background-color: {colors['background']};"
+                    f" border: 1px solid {colors['border']};"
+                    " border-radius: 10px;"
+                    " }"
+                )
+            else:
+                self._apply_container_style()
+            self._update_pill_button_widths()
+        else:
+            if self._lab_state_alert:
+                from .combo_alerts import lab_state_combo_alert_stylesheet
+
+                self._combo.setStyleSheet(lab_state_combo_alert_stylesheet(True))
+            else:
+                self._combo.setStyleSheet("")
+        self.update()
+
     def _item_at(self, index: int) -> ChoiceItem | None:
         if index < 0 or index >= len(self._items):
             return None
@@ -322,13 +328,13 @@ class AdaptiveChoiceSelector(QWidget):
 
     def _style_color(self, color: str | QColor | None) -> QColor:
         if color is None:
-            palette = QApplication.instance().palette() if QApplication.instance() is not None else self.palette()
-            return palette.highlight().color()
+            tokens = get_design_tokens()
+            return QColor(tokens["accent"])
         qcolor = QColor(color)
         if qcolor.isValid():
             return qcolor
-        palette = QApplication.instance().palette() if QApplication.instance() is not None else self.palette()
-        return palette.highlight().color()
+        tokens = get_design_tokens()
+        return QColor(tokens["accent"])
 
     def _contrast_text_color(self, background: QColor) -> str:
         dark = QColor("#1f2937")
@@ -356,33 +362,60 @@ class AdaptiveChoiceSelector(QWidget):
     def _rgba(self, color: QColor, alpha: int) -> str:
         return f"rgba({color.red()}, {color.green()}, {color.blue()}, {alpha})"
 
+    def _is_unset_choice_item(self, item: ChoiceItem) -> bool:
+        for part in (item.pill_text, item.display_text, item.tooltip):
+            text = str(part or "").strip().lower()
+            if text in {"-", "—", "not set", "not_set"}:
+                return True
+        return False
+
+    def _selected_item_is_unset(self) -> bool:
+        item = self._item_at(self._current_index)
+        if item is None:
+            return False
+        return self._is_unset_choice_item(item)
+
     def _apply_button_style(self, button: QPushButton, item: ChoiceItem) -> None:
-        palette = QApplication.instance().palette() if QApplication.instance() is not None else self.palette()
-        base_text = palette.text().color().name()
+        tokens = get_design_tokens()
+        base_text = tokens["text"]
         accent = self._style_color(item.color)
         border = accent.darker(125)
-        selected_text = self._contrast_text_color(accent)
         hover_fill = self._rgba(accent, 36 if accent.lightness() < 180 else 48)
-        border_fill = self._rgba(accent, 110 if item.color is not None else 70) if self._show_unselected_border else "transparent"
+        is_unset = self._is_unset_choice_item(item)
+        alert_colors = lab_state_alert_colors()
+        border_fill = "transparent"
+        selected_bg = alert_colors["border"] if is_unset else accent.name()
+        selected_text = "#ffffff" if is_unset else self._contrast_text_color(accent)
+        selected_border = alert_colors["border"] if is_unset else border.name()
+        selected_hover = self._rgba(QColor(alert_colors["border"]), 48) if is_unset else hover_fill
         button.setStyleSheet(
             "QPushButton#adaptiveChoicePill {"
             f" color: {base_text};"
             f" border: 1px solid {border_fill};"
             " border-radius: 10px;"
-            f" padding: {'4px 11px' if self._compact else '6px 13px'};"
+            f" padding: {'4px 8px' if self._compact else '6px 10px'};"
             " min-height: 0px;"
             " font-family: 'Manrope', sans-serif;"
             " font-size: 10pt;"
             " font-weight: 700;"
             " background-color: transparent;"
             " }"
+            "QPushButton#adaptiveChoicePill:disabled {"
+            f" color: {base_text};"
+            " background-color: transparent;"
+            " }"
+            "QPushButton#adaptiveChoicePill:checked:disabled {"
+            f" color: {selected_text};"
+            f" background-color: {selected_bg};"
+            f" border-color: {selected_border};"
+            " }"
             "QPushButton#adaptiveChoicePill:hover:!checked {"
-            f" background-color: {hover_fill};"
+            f" background-color: {selected_hover};"
             " }"
             "QPushButton#adaptiveChoicePill:checked {"
-            f" background-color: {accent.name()};"
+            f" background-color: {selected_bg};"
             f" color: {selected_text};"
-            f" border-color: {border.name()};"
+            f" border-color: {selected_border};"
             " }"
         )
 
@@ -434,8 +467,12 @@ class AdaptiveChoiceSelector(QWidget):
         spacing = max(0, self._pill_container_layout.spacing())
         total_spacing = spacing * max(0, len(buttons) - 1)
         required = total_spacing
-        for button in buttons:
-            required += button.sizeHint().width()
+        for index, button in enumerate(buttons):
+            item = self._items[index]
+            if self._is_unset_choice_item(item):
+                required += max(36, button.sizeHint().width())
+            else:
+                required += button.sizeHint().width()
         return required
 
     def _update_pill_button_widths(self) -> None:
@@ -452,10 +489,29 @@ class AdaptiveChoiceSelector(QWidget):
         usable = max(0, available - total_spacing)
         if usable <= 0:
             return
-        base_width = usable // len(buttons)
-        remainder = usable - (base_width * len(buttons))
+        fixed_widths: dict[int, int] = {}
+        remaining_indices: list[int] = []
         for index, button in enumerate(buttons):
-            width = base_width + (1 if index < remainder else 0)
+            if self._is_unset_choice_item(self._items[index]):
+                fixed_widths[index] = max(36, button.sizeHint().width())
+            else:
+                remaining_indices.append(index)
+        remaining_space = usable - sum(fixed_widths.values())
+        if remaining_space < 0:
+            remaining_space = 0
+        if remaining_indices:
+            base_width = remaining_space // len(remaining_indices) if remaining_space > 0 else 0
+            remainder = remaining_space - (base_width * len(remaining_indices))
+        else:
+            base_width = 0
+            remainder = 0
+        for index, button in enumerate(buttons):
+            if index in fixed_widths:
+                width = fixed_widths[index]
+            else:
+                remaining_pos = remaining_indices.index(index) if index in remaining_indices else -1
+                width = base_width + (1 if 0 <= remaining_pos < remainder else 0)
+                width = max(button.sizeHint().width(), width)
             button.setFixedWidth(max(0, width))
 
     def _apply_index(self, index: int, *, emit: bool) -> None:
@@ -600,6 +656,8 @@ def objective_color(obj: Any, fallback_key: str | None = None) -> str:
     bands = (
         (1.5, "#1f1f1f"),
         (3.0, "#8f9398"),
+        # Keep 4x in the neutral band; reserve red for the slightly higher low-power range.
+        (4.5, "#4d7c7a"),
         (5.5, "#d64545"),
         (12.0, "#f1c40f"),
         (22.0, "#2ecc71"),

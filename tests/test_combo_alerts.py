@@ -29,6 +29,14 @@ def test_combo_is_unset_recognizes_not_set_sentinels(qapp):
     assert combo_is_unset(combo) is False
 
 
+def test_combo_is_unset_ignores_blank_display_text_when_value_is_set(qapp):
+    combo = QComboBox()
+    combo.addItem("", "phase")
+    combo.setCurrentIndex(0)
+
+    assert combo_is_unset(combo) is False
+
+
 def test_update_combo_alerts_marks_and_clears_alert_state(qapp):
     alert_combo = QComboBox()
     alert_combo.addItem("Not set", "Not_set")

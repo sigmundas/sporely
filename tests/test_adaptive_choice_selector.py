@@ -6,6 +6,8 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QWidget
 
@@ -17,6 +19,7 @@ from ui.adaptive_choice_selector import (
     objective_color,
     objective_short_label,
 )
+from ui.combo_alerts import update_combo_alert
 from ui.image_import_dialog import ImageImportDialog
 from ui.live_lab_tab import LiveLabTab
 
@@ -49,6 +52,7 @@ def test_objective_short_labels_cover_common_objectives(objective, expected_labe
     [
         ({"magnification": 1.25}, "#1f1f1f"),
         ({"magnification": 2.5}, "#8f9398"),
+        ({"magnification": 4.0}, "#4d7c7a"),
         ({"magnification": 5.0}, "#d64545"),
         ({"magnification": 10.0}, "#f1c40f"),
         ({"magnification": 20.0}, "#2ecc71"),
@@ -65,6 +69,89 @@ def test_objective_color_uses_standard_magnification_bands(objective, expected_c
 
 def test_objective_color_prefers_stored_color():
     assert objective_color({"magnification": 40.0, "color": "#123456"}) == "#123456"
+
+
+def test_adaptive_choice_selector_uses_theme_tokens_for_neutral_pills(monkeypatch, qapp):
+    from ui import adaptive_choice_selector as selector_module
+
+    old_palette = QPalette(qapp.palette())
+    palette = QPalette(qapp.palette())
+    palette.setColor(QPalette.ButtonText, QColor("#e8e8e8"))
+    qapp.setPalette(palette)
+    try:
+        monkeypatch.setattr(
+            selector_module,
+            "get_design_tokens",
+            lambda: {
+                "surface": "#131313",
+                "surface_low": "#252423",
+                "data_brd": "#334155",
+                "text": "#e8e8e8",
+                "text_dim": "#a1a1aa",
+                "accent": "#4d7c7a",
+            },
+        )
+        selector = AdaptiveChoiceSelector(compact=True)
+        selector.addItem("Contrast", "contrast")
+        button = selector.button_for_value("contrast")
+        assert button is not None
+        style = button.styleSheet()
+        assert "background-color: #4d7c7a;" in style
+        assert "border: 1px solid transparent;" in style
+        assert "color: #e8e8e8;" in style
+    finally:
+        qapp.setPalette(old_palette)
+
+
+def test_adaptive_choice_selector_reserves_red_for_explicit_unset(monkeypatch, qapp):
+    from ui import adaptive_choice_selector as selector_module
+
+    monkeypatch.setattr(
+        selector_module,
+        "get_design_tokens",
+        lambda: {
+            "surface": "#131313",
+            "surface_low": "#252423",
+            "data_brd": "#334155",
+            "text": "#e8e8e8",
+            "text_dim": "#a1a1aa",
+            "accent": "#4d7c7a",
+        },
+    )
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", None, pillText="—")
+    selector.addItem("Phase", "phase")
+    selector.setCurrentIndex(0)
+    update_combo_alert(selector)
+    button = selector.button_for_value(None)
+    assert button is not None
+    style = button.styleSheet()
+    assert "background-color: #d64545;" in style or "background-color: #d65a63;" in style
+    assert "color: #ffffff;" in style
+
+
+def test_adaptive_choice_selector_rebuilds_theme_styles_on_palette_change(qapp):
+    old_palette = QPalette(qapp.palette())
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Contrast", "contrast")
+    button = selector.button_for_value("contrast")
+    assert button is not None
+    assert "color: #1e293b;" in button.styleSheet()
+
+    dark_palette = QPalette(qapp.palette())
+    dark_palette.setColor(QPalette.Window, QColor("#131313"))
+    dark_palette.setColor(QPalette.WindowText, QColor("#e8e8e8"))
+    dark_palette.setColor(QPalette.Base, QColor("#1c1b1b"))
+    dark_palette.setColor(QPalette.AlternateBase, QColor("#252423"))
+    dark_palette.setColor(QPalette.Button, QColor("#1c1b1b"))
+    dark_palette.setColor(QPalette.ButtonText, QColor("#e8e8e8"))
+    qapp.setPalette(dark_palette)
+    try:
+        selector.changeEvent(QEvent(QEvent.PaletteChange))
+        assert "color: #e8e8e8;" in button.styleSheet()
+        assert "background-color: #4d7c7a;" in button.styleSheet()
+    finally:
+        qapp.setPalette(old_palette)
 
 
 def _build_selector_container() -> tuple[QWidget, AdaptiveChoiceSelector]:
@@ -100,7 +187,8 @@ def test_adaptive_choice_selector_switches_between_pills_and_dropdown(qapp):
     assert selector.itemData(1) == "phase"
     assert selector.itemText(1) == "Phase"
     pill_widths = [button.width() for button in selector.buttons()]
-    assert max(pill_widths) - min(pill_widths) <= 1
+    assert pill_widths[0] < min(pill_widths[1:])
+    assert max(pill_widths[1:]) - min(pill_widths[1:]) <= 1
     first_button, second_button = selector.buttons()[:2]
     assert second_button.geometry().x() - (first_button.geometry().x() + first_button.width()) == 2
 
@@ -125,7 +213,8 @@ def test_adaptive_choice_selector_switches_between_pills_and_dropdown(qapp):
     assert selector.currentData() == "40x"
     assert selector.button_for_value("40x").isChecked() is True
     pill_widths = [button.width() for button in selector.buttons()]
-    assert max(pill_widths) - min(pill_widths) <= 1
+    assert pill_widths[0] < min(pill_widths[1:])
+    assert max(pill_widths[1:]) - min(pill_widths[1:]) <= 1
 
 
 def test_adaptive_choice_selector_blocked_signals_still_sync_visible_state(qapp):

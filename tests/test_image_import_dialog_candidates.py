@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QWidget
 
 from ui import image_import_dialog
 from ui.image_import_dialog import (
@@ -150,6 +150,13 @@ def test_image_import_result_from_candidate_preserves_prepared_metadata_and_fail
         captured_at=captured_at,
         gps_latitude=59.91,
         gps_longitude=10.75,
+        processing_settings=RawRenderSettings(
+            white_balance_mode="auto",
+            auto_levels=False,
+            tone_curve_enabled=True,
+            tone_curve_strength=0.72,
+            tone_curve_midpoint=0.31,
+        ),
         lab_metadata={
             "objective_name": "40x",
             "raw_processing": {"source": {"kind": "camera_raw"}},
@@ -192,6 +199,9 @@ def test_image_import_result_from_candidate_preserves_prepared_metadata_and_fail
     assert result.companion_paths == (str(raw_path.resolve()), str(jpeg_path.resolve()))
     assert result.lab_metadata["objective_name"] == "40x"
     assert result.lab_metadata["raw_processing"]["source"]["kind"] == "camera_raw"
+    assert result.raw_settings["white_balance_mode"] == "auto"
+    assert result.raw_settings["auto_levels"] is False
+    assert result.raw_settings["tone_curve_enabled"] is True
 
 
 def test_set_preview_for_result_uses_preview_path_as_full_source_when_preview_is_scaled(qapp):
@@ -332,6 +342,26 @@ def test_prepare_images_combo_alerts_are_suppressed_for_field_images(qapp):
     assert dummy.mount_combo.property("labStateAlert") is False
     assert dummy.stain_combo.property("labStateAlert") is False
     assert dummy.sample_combo.property("labStateAlert") is False
+
+
+def test_update_micro_settings_state_collapses_microscope_body_for_field_images(qapp):
+    dummy = SimpleNamespace(
+        contrast_combo=QComboBox(),
+        mount_combo=QComboBox(),
+        stain_combo=QComboBox(),
+        sample_combo=QComboBox(),
+        micro_settings_group=QWidget(),
+        micro_settings_body=QWidget(),
+        field_radio=_FakeRadio(True),
+        _sync_field_tag_display=lambda blank: None,
+    )
+
+    dummy.micro_settings_body.setVisible(True)
+
+    ImageImportDialog._update_micro_settings_state(dummy, False)
+
+    assert dummy.micro_settings_group.isEnabled() is False
+    assert dummy.micro_settings_body.isHidden() is True
 
 
 def test_add_images_uses_candidates_and_shows_failed_rows_without_stopping_batch(monkeypatch, tmp_path, qapp):

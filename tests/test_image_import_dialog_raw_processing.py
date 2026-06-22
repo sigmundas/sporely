@@ -75,6 +75,9 @@ def _build_raw_dialog_dummy(result: ImageImportResult) -> SimpleNamespace:
     dummy._raw_preview_proxy_for_result = lambda source, settings: ImageImportDialog._raw_preview_proxy_for_result(dummy, source, settings)
     dummy._raw_preview_output_path = lambda source: ImageImportDialog._raw_preview_output_path(source)
     dummy._raw_preview_decode_mode = lambda settings: ImageImportDialog._raw_preview_decode_mode(settings)
+    dummy._ensure_raw_settings = lambda result: ImageImportDialog._ensure_raw_settings(dummy, result)
+    dummy._load_raw_settings_into_form = lambda settings: ImageImportDialog._load_raw_settings_into_form(dummy, settings)
+    dummy._ensure_raw_convert_button = lambda: None
     dummy._refresh_raw_preview_calls = []
     return dummy
 
@@ -145,6 +148,42 @@ def test_raw_preview_refresh_redirects_when_selection_changes(qapp, tmp_path):
 
     assert len(calls) == 1
     assert calls[0] is second
+
+
+def test_raw_panel_uses_metadata_settings_when_result_raw_settings_missing(qapp, tmp_path):
+    result = ImageImportResult(
+        filepath=str(tmp_path / "sample.nef"),
+        preview_path=str(tmp_path / "sample.nef"),
+        image_type="field",
+        raw_candidate=True,
+        raw_pending=True,
+        raw_settings=None,
+        lab_metadata={
+            "raw_processing": {
+                "settings": RawRenderSettings(
+                    white_balance_mode="auto",
+                    auto_levels=False,
+                    tone_curve_enabled=True,
+                    tone_curve_strength=0.72,
+                    tone_curve_midpoint=0.31,
+                ).to_dict(),
+            }
+        },
+    )
+    Path(result.filepath).write_bytes(b"raw-bytes")
+    dummy = _build_raw_dialog_dummy(result)
+    controls = RawProcessingControls()
+    dummy.raw_controls = controls
+
+    ImageImportDialog._update_raw_panel_for_result(dummy, result)
+
+    assert result.raw_settings is not None
+    assert result.raw_settings["white_balance_mode"] == "auto"
+    assert controls.white_balance_selector.selected_value("camera") == "auto"
+    assert controls.auto_levels_checkbox.isChecked() is False
+    assert controls.tone_curve_checkbox.isChecked() is True
+    assert controls.curve_strength_slider.value() == 72
+    assert controls.curve_midpoint_slider.value() == 31
 
 
 def test_raw_convert_still_calls_final_render_immediately(monkeypatch, qapp, tmp_path):

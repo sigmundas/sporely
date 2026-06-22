@@ -336,6 +336,14 @@ def image_import_result_from_candidate(
     captured_at = QDateTime(candidate.captured_at) if candidate.captured_at else None
     gps_latitude = candidate.gps_latitude
     gps_longitude = candidate.gps_longitude
+    raw_settings = None
+    processing_settings = getattr(candidate, "processing_settings", None)
+    if processing_settings is not None:
+        raw_settings = RawRenderSettings.from_dict(processing_settings).to_dict()
+    elif isinstance(candidate.lab_metadata, dict):
+        raw_processing = candidate.lab_metadata.get("raw_processing")
+        if isinstance(raw_processing, dict):
+            raw_settings = RawRenderSettings.from_dict(raw_processing.get("settings")).to_dict()
     return ImageImportResult(
         filepath=str(working_path or source_path),
         preview_path=str(preview_path or working_path or source_path),
@@ -363,6 +371,7 @@ def image_import_result_from_candidate(
         original_filepath=str(source_path or working_path),
         source_filepath=str(source_path or working_path),
         lab_metadata=deepcopy(candidate.lab_metadata) if candidate.lab_metadata else None,
+        raw_settings=raw_settings,
         status=status,
         failure_reason=candidate.failure_reason,
         error_detail=candidate.error_detail,
@@ -1355,12 +1364,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         scale_layout.addWidget(self.scale_warning_label)
         layout.addWidget(self.scale_group)
 
-        # ── Microscope details group (disabled for field images) ───────────
+        # ── Microscope details group (collapsed for field images) ───────────
         self.micro_settings_group, micro_form = create_section_card(
             self.tr("Microscope"),
             QFormLayout,
             body_margins=(8, 8, 8, 8),
         )
+        self.micro_settings_body = micro_form.parentWidget()
         micro_form.setSpacing(6)
         micro_form.setLabelAlignment(Qt.AlignLeft)
         micro_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
@@ -2176,6 +2186,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     for idx in indices
                     if 0 <= idx < len(self.import_results)
                 )
+        if hasattr(self, "micro_settings_body"):
+            try:
+                self.micro_settings_body.setVisible(bool(enable))
+            except Exception:
+                pass
         if hasattr(self, "micro_settings_group"):
             self.micro_settings_group.setEnabled(enable)
         self._sync_field_tag_display(not enable and bool(getattr(self, "field_radio", None) and self.field_radio.isChecked()))
@@ -5767,8 +5782,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _ensure_raw_settings(self, result: ImageImportResult) -> dict:
         settings = getattr(result, "raw_settings", None)
         if not isinstance(settings, dict) or not settings:
+            lab_metadata = getattr(result, "lab_metadata", None)
+            if isinstance(lab_metadata, dict):
+                raw_processing = lab_metadata.get("raw_processing")
+                if isinstance(raw_processing, dict):
+                    settings = raw_processing.get("settings")
+        if not isinstance(settings, dict) or not settings:
             settings = self._default_raw_settings()
-            result.raw_settings = settings
+        else:
+            settings = RawRenderSettings.from_dict(settings).to_dict()
+        result.raw_settings = settings
         return settings
 
     @staticmethod

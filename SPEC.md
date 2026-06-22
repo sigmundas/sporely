@@ -8,6 +8,16 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 - `database/`: SQLite schemas and access models (`schema.py`, `models.py`). Handles local CRUD.
 - `utils/`: Integrations. Includes `cloud_sync.py` (REST sync) and `artsobs_uploaders.py` (external publishing).
 
+## RAW Processing
+- RAW detection is suffix-based (`utils/raw_detection.py`), while decoding is lazy-imported through `rawpy`/LibRaw (`utils/rawpy_import.py`).
+- `utils/raw_render.py` uses `rawpy`, `numpy`, and `Pillow` to decode RAW data, then applies the shared post-decode pipeline in `utils/image_processing_pipeline.py`.
+- RAW sources render to a local JPEG derivative: `.jpg`, quality `95`, subsampling `0`, with `optimize=True`. Preview renders use the same pipeline with `half_size=True`.
+- Capture timestamps are pulled from `rawpy` when available and written into EXIF on the JPEG derivative. `RawRenderSettings` stores the render snapshot, including white balance, exposure, auto-levels, tone-curve settings, and output bit depth.
+- The source path and render snapshot are persisted with the image record. `images.original_filepath` keeps the original/source location or copied original, and `images.lab_metadata.raw_processing` stores the source metadata, derivative metadata, and settings JSON.
+- Live Lab also stores per-context RAW presets in the local SQLite `settings` table under `live_lab_raw_processing_preset::<context>`.
+- HEIC/HEIF import uses `pillow_heif` and is converted to JPEG (`quality=90`). Optional microscope resampling writes WebP derivatives (`quality=65`, `method=4`) when the optimal-size path is enabled.
+- RAW-backed edits reopen the source RAW file and replace the compressed working derivative. They do not edit the JPEG derivative in isolation, and if the RAW source file is missing the RAW edit path is unavailable.
+
 ## Data Flow & Sync Engine
 - **Local-First Database:** All data is initially written to the local SQLite database.
 - **Cloud Syncing:** `cloud_sync.py` manages bidirectional REST sync with the Supabase PostgreSQL database.

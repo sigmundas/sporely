@@ -232,6 +232,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._schedule_raw_edit_preview_refresh = lambda: live_lab_tab.LiveLabTab._schedule_raw_edit_preview_refresh(state)
     state._refresh_raw_edit_preview = lambda: live_lab_tab.LiveLabTab._refresh_raw_edit_preview(state)
     state._apply_raw_edit_session = lambda: live_lab_tab.LiveLabTab._apply_raw_edit_session(state)
+    state._invalidate_thumbnail_caches_for_raw_image = lambda image_id, final_path: live_lab_tab.LiveLabTab._invalidate_thumbnail_caches_for_raw_image(
+        state,
+        image_id,
+        final_path,
+    )
     state._pixmap_rgb_array = lambda pixmap: live_lab_tab.LiveLabTab._pixmap_rgb_array(state, pixmap)
     state._apply_pending_raw_background_wb_selection = lambda crop_box: live_lab_tab.LiveLabTab._apply_pending_raw_background_wb_selection(state, crop_box)
     state._on_pending_raw_background_wb_crop_changed = lambda crop_box: live_lab_tab.LiveLabTab._on_pending_raw_background_wb_crop_changed(state, crop_box)
@@ -829,6 +834,11 @@ def test_live_lab_committed_raw_edit_preview_apply_updates_existing_row(tmp_path
     state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
     state._update_session_controls = lambda: None
     state._refresh_main_window_after_import = lambda *args, **kwargs: None
+    state._invalidate_thumbnail_caches_for_raw_image = lambda image_id, final_path: live_lab_tab.LiveLabTab._invalidate_thumbnail_caches_for_raw_image(
+        state,
+        image_id,
+        final_path,
+    )
     state._update_observation_thumbnail = lambda: None
     state._log_session_event = lambda *args, **kwargs: None
     state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
@@ -923,6 +933,59 @@ def test_live_lab_committed_raw_edit_preview_apply_updates_existing_row(tmp_path
     assert state.raw_edit_apply_btn.isEnabled() is False
 
 
+def test_live_lab_committed_raw_edit_refreshes_thumbnail_caches_after_apply(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    derivative_path = tmp_path / "imports" / "sample.jpg"
+    derivative_path.parent.mkdir(parents=True, exist_ok=True)
+    _fake_render_raw_jpeg(source_path, output_path=derivative_path)
+
+    state = _build_raw_controls_state()
+    state._session_image_ids = [101]
+    state._selected_session_image_id = 101
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
+    state._update_session_controls = lambda: None
+    state._refresh_main_window_after_import = lambda *args, **kwargs: None
+    state._invalidate_thumbnail_caches_for_raw_image = lambda image_id, final_path: live_lab_tab.LiveLabTab._invalidate_thumbnail_caches_for_raw_image(
+        state,
+        image_id,
+        final_path,
+    )
+    thumb_updates: list[bool] = []
+    state._update_observation_thumbnail = lambda: thumb_updates.append(True)
+    state._log_session_event = lambda *args, **kwargs: None
+    state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
+    state._load_viewer_pixmap = lambda path: (QPixmap(12, 8), False)
+
+    main_invalidations: list[str | None] = []
+    state._main_window = SimpleNamespace(
+        invalidate_pixmap_cache=lambda path=None: main_invalidations.append(str(path) if path is not None else None)
+    )
+
+    images = {101: _make_raw_image_row(101, source_path=source_path, derivative_path=derivative_path)}
+    generate_calls: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None)
+    monkeypatch.setattr(live_lab_tab.ImageDB, "update_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
+    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
+    assert live_lab_tab.LiveLabTab._apply_raw_edit_session(state) is True
+
+    thumb_path = live_lab_tab.get_thumbnail_path(101, "small")
+    assert generate_calls == [(str(derivative_path), 101)]
+    assert state.session_gallery.invalidated_paths == [str(thumb_path)]
+    assert main_invalidations == [str(derivative_path)]
+    assert thumb_updates == [True]
+
+
 def test_live_lab_committed_raw_edit_cancel_restores_future_controls_and_deletes_preview(tmp_path, monkeypatch):
     _qapp()
     source_path = tmp_path / "sample.nef"
@@ -940,6 +1003,11 @@ def test_live_lab_committed_raw_edit_cancel_restores_future_controls_and_deletes
     state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
     state._update_session_controls = lambda: None
     state._refresh_main_window_after_import = lambda *args, **kwargs: None
+    state._invalidate_thumbnail_caches_for_raw_image = lambda image_id, final_path: live_lab_tab.LiveLabTab._invalidate_thumbnail_caches_for_raw_image(
+        state,
+        image_id,
+        final_path,
+    )
     state._update_observation_thumbnail = lambda: None
     state._log_session_event = lambda *args, **kwargs: None
     state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
