@@ -429,12 +429,14 @@ def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match
         sync_calibrations=False,
         remote_obs=[dict(remote_state)],
     )
-    second_result = cloud_sync.push_all(
-        client,
-        sync_images=False,
-        sync_calibrations=False,
-        remote_obs=[dict(remote_state)],
-    )
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        second_result = cloud_sync.push_all(
+            client,
+            sync_images=False,
+            sync_calibrations=False,
+            remote_obs=[dict(remote_state)],
+        )
 
     conn = sqlite3.connect(db_path)
     try:
@@ -448,6 +450,8 @@ def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match
     assert row == ("cloud-obs-1", "synced")
     assert first_result["pushed"] == 1
     assert second_result["pushed"] == 0
+    assert second_result["sync_summary"]["observations_checked"] == 0
+    assert second_result["sync_summary"]["observations_skipped_noop"] == 0
 
 
 def test_pull_all_keeps_conflict_fields_local_and_reports_review_needed(monkeypatch, tmp_path):
@@ -526,3 +530,95 @@ def test_pull_all_keeps_conflict_fields_local_and_reports_review_needed(monkeypa
 
     assert row == ("Local genus", "campestris", "dirty")
     assert any("needs review" in str(error) for error in result["errors"])
+
+
+def test_pull_all_reports_deleted_remote_observations_in_sync_summary(monkeypatch, tmp_path):
+    db_path = _init_metadata_sync_db(tmp_path)
+    _insert_observation(db_path, cloud_id="cloud-obs-1")
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_store_local_media_signature_if_equivalent", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_local_cloud_media_signature", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_detect_deleted_remote_observations",
+        lambda remote_obs: [
+            {
+                "local_id": 1,
+                "cloud_id": "cloud-obs-deleted",
+                "title": "Agaricus campestris",
+                "date": "2026-05-01",
+                "location": None,
+                "sync_status": "synced",
+                "observation": {"id": "cloud-obs-deleted"},
+            }
+        ],
+    )
+
+    baseline_remote = {
+        "id": "cloud-obs-1",
+        "desktop_id": 1,
+        "date": "2026-05-01",
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "Agaricus campestris",
+        "notes": "baseline note",
+        "sharing_scope": "public",
+        "location_public": True,
+        "location_precision": "exact",
+        "spore_data_visibility": "public",
+        "is_draft": True,
+    }
+    remote_current = dict(baseline_remote, notes="remote note")
+
+    class DummyClient:
+        def fetch_current_user_id(self):
+            return "user-123"
+
+        def list_remote_observations(self):
+            return [dict(remote_current)]
+
+        def pull_bulk_image_metadata(self, obs_cloud_ids):
+            return []
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            return []
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            return []
+
+        def set_desktop_id(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(
+        cloud_sync,
+        "_load_cloud_observation_snapshot",
+        lambda cloud_id: _snapshot_observation(baseline_remote),
+    )
+
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        result = cloud_sync.pull_all(
+            DummyClient(),
+            remote_obs=[dict(remote_current)],
+            sync_calibrations=False,
+        )
+
+    assert result["deleted_remote"] == [
+        {
+            "local_id": 1,
+            "cloud_id": "cloud-obs-deleted",
+            "title": "Agaricus campestris",
+            "date": "2026-05-01",
+            "location": None,
+            "sync_status": "synced",
+            "observation": {"id": "cloud-obs-deleted"},
+        }
+    ]
+    assert result["sync_summary"]["observations_deleted_remote"] == 1

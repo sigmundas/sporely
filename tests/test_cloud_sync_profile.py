@@ -118,15 +118,15 @@ def test_sync_all_profile_emits_structured_lines_and_phase_metrics(monkeypatch, 
     assert summary_event['status'] == 'ok'
     assert set(summary_event['phases_ms']) == set(phase_events)
     assert summary_event['metrics']['download_image_file']['calls'] == 0
+    assert summary_event['result']['sync_summary'] == cloud_sync._new_sync_summary()
     assert pull_all_kwargs['materialize_remote_images'] is False
-    assert result == {
-        'pushed': 2,
-        'pulled': 3,
-        'calibrations_pushed': 1,
-        'calibrations_pulled': 4,
-        'errors': [],
-        'deleted_remote': ['cloud-obs-removed'],
-    }
+    assert result['pushed'] == 2
+    assert result['pulled'] == 3
+    assert result['calibrations_pushed'] == 1
+    assert result['calibrations_pulled'] == 4
+    assert result['errors'] == []
+    assert result['deleted_remote'] == ['cloud-obs-removed']
+    assert result['sync_summary'] == cloud_sync._new_sync_summary()
 
 
 def test_cloud_sync_profiler_records_media_metrics_and_snapshot_fetches(monkeypatch, tmp_path):

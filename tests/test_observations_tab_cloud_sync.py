@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -131,6 +131,34 @@ def test_cloud_auto_sync_worker_skips_without_saved_credentials(monkeypatch, qap
     assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True}]
 
 
+def test_cloud_auto_sync_worker_cancels_during_sync(monkeypatch, qapp):
+    fake_client = SimpleNamespace(user_id="user-123")
+    sync_kwargs: dict[str, object] = {}
+    results: list[dict] = []
+    errors: list[str] = []
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
+    monkeypatch.setattr(observations_tab._CloudAutoSyncWorker, "isInterruptionRequested", lambda self: True)
+
+    def _fake_sync_all(*args, **kwargs):
+        sync_kwargs.update(kwargs)
+        with pytest.raises(KeyboardInterrupt):
+            kwargs["progress_cb"]("Observation 17 (Agaricus campestris): Uploading cloud image 1/1...", 0, 1)
+        return {"pushed": 1, "pulled": 0, "errors": []}
+
+    monkeypatch.setattr(observations_tab, "sync_all", _fake_sync_all)
+
+    worker = observations_tab._CloudAutoSyncWorker()
+    worker.sync_finished.connect(results.append)
+    worker.error.connect(errors.append)
+    worker.requestInterruption()
+    worker.run()
+
+    assert sync_kwargs["sync_images"] is True
+    assert errors == []
+    assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True, "cancelled": True}]
+
+
 def test_metadata_sync_timeout_is_disabled(monkeypatch):
     calls: dict[str, object] = {}
 
@@ -192,6 +220,7 @@ def test_cloud_sync_finished_skipped_hides_progress_widget():
         _cloud_sync_run_refresh_flow=False,
         _cloud_sync_show_status=True,
         _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _set_status_progress_cancel_visible=lambda visible: calls.setdefault("cancel_visible", []).append(bool(visible)),
         _reset_status_progress=lambda: calls.setdefault("reset", True),
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
@@ -209,6 +238,40 @@ def test_cloud_sync_finished_skipped_hides_progress_widget():
     assert calls["reset"] is True
     assert "record" not in calls
     assert "progress" not in calls
+
+
+def test_cloud_sync_finished_cancelled_hides_progress_widget():
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: calls.setdefault("refresh", []).append(bool(show_status)),
+        _cloud_sync_run_refresh_flow=True,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _set_status_progress_cancel_visible=lambda visible: calls.setdefault("cancel_visible", []).append(bool(visible)),
+        _reset_status_progress=lambda: calls.setdefault("reset", True),
+        _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
+        _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {"pushed": 0, "pulled": 0, "errors": [], "skipped": True, "cancelled": True},
+    )
+
+    assert calls["refresh"] == [False]
+    assert calls["visible"] == [False]
+    assert calls["cancel_visible"] == [False]
+    assert calls["reset"] is True
+    assert calls["status_message"] == (("Cloud sync cancelled.",), {"level": "info", "auto_clear_ms": 8000})
+    assert "record" not in calls
+    assert "progress" not in calls
+    assert "finish" not in calls
 
 
 def test_cloud_media_detail_view_auto_launches_lazy_materialization(monkeypatch):
@@ -237,6 +300,29 @@ def test_cloud_media_detail_view_auto_launches_lazy_materialization(monkeypatch)
     assert launched == [True]
 
 
+def test_cloud_media_materialization_progress_keeps_prefixed_message():
+    calls: list[tuple[str, str, int]] = []
+
+    dialog = SimpleNamespace(
+        observation={"id": 17, "genus": "Agaricus", "species": "campestris"},
+        tr=lambda text: text,
+        _set_cloud_media_status=lambda message, level="info", auto_clear_ms=8000: calls.append(
+            (str(message), str(level), int(auto_clear_ms))
+        ),
+    )
+
+    observations_tab.ObservationDetailsDialog._on_cloud_media_materialization_progress(
+        dialog,
+        "Observation 17 (Agaricus campestris): Importing cloud image 1/2…",
+        0,
+        2,
+    )
+
+    assert calls == [
+        ("Observation 17 (Agaricus campestris): Importing cloud image 1/2…", "info", 8000)
+    ]
+
+
 def test_cloud_sync_plan_limit_error_opens_detail_dialog(monkeypatch):
     calls: dict[str, object] = {}
 
@@ -257,6 +343,7 @@ def test_cloud_sync_plan_limit_error_opens_detail_dialog(monkeypatch):
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("recorded", (args, kwargs)),
         _cloud_sync_show_status=True,
         _set_status_progress_visible=lambda *args, **kwargs: None,
+        _set_status_progress_cancel_visible=lambda *args, **kwargs: None,
         _set_status_progress=lambda *args, **kwargs: None,
         set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
     )
@@ -290,6 +377,7 @@ def test_cloud_sync_error_for_invalid_login_clears_progress_and_reports_sign_in_
         _cloud_sync_run_refresh_flow=False,
         _cloud_sync_show_status=True,
         _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _set_status_progress_cancel_visible=lambda visible: calls.setdefault("cancel_visible", []).append(bool(visible)),
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
@@ -400,6 +488,115 @@ def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_pa
     assert warnings == []
     assert cleanup is not None
     cleanup()
+
+
+def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, monkeypatch):
+    field_path = tmp_path / "field.jpg"
+    field_path.write_bytes(b"field")
+
+    field_row = {
+        "id": 1,
+        "filepath": str(field_path),
+        "original_filepath": None,
+        "image_type": "field",
+        "source_role": "local_canonical",
+        "file_purpose": "field",
+    }
+
+    def _fake_prepare_clean_cloud_image_file(*, source_path, temp_dir, image_id, upload_policy):
+        out_path = temp_dir / f"cloud_{image_id}.webp"
+        out_path.write_bytes(b"webp")
+        return out_path, 100, 100, 100, 100, "image/webp", 80
+
+    progress_calls: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [field_row],
+    )
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        _is_main_gui_thread=lambda: True,
+        _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
+        _publish_excluded_image_ids=lambda observation_id: set(),
+        _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
+        _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
+        _cleanup_publish_temp_dir=lambda temp_dir: None,
+        _yield_background_sync_ui=lambda: None,
+    )
+    fake_tab._collect_cloud_sync_image_rows = lambda observation_id, _tab=fake_tab: observations_tab.ObservationsTab._collect_cloud_sync_image_rows(
+        _tab,
+        observation_id,
+    )
+
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        prepared, cleanup, warnings = observations_tab.ObservationsTab.prepare_cloud_sync_image_uploads(
+            fake_tab,
+            {"id": 631, "genus": "Agaricus", "species": "campestris"},
+            progress_cb=lambda message, current, total: progress_calls.append((str(message), int(current), int(total))),
+        )
+
+    assert [item["image_row"]["id"] for item in prepared] == [1]
+    assert progress_calls == [("Observation 631 (Agaricus campestris): Preparing upload 1/1...", 1, 1)]
+    assert summary["images_prepared_local"] == 1
+    assert warnings == []
+    assert cleanup is not None
+    cleanup()
+
+
+def test_cloud_sync_finished_success_uses_neutral_completion_text():
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: calls.setdefault("refresh", bool(show_status)),
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: calls.setdefault("visible", []).append(bool(visible)),
+        _set_status_progress_cancel_visible=lambda visible: calls.setdefault("cancel_visible", []).append(bool(visible)),
+        _reset_status_progress=lambda: calls.setdefault("reset", True),
+        _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
+        _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {
+            "pushed": 1,
+            "pulled": 2,
+            "errors": [],
+            "sync_summary": {
+                "observations_checked": 1,
+                "observations_redirtied_pending_local_images": 1,
+                "observations_patched": 1,
+                "observations_skipped_noop": 1,
+                "images_checked": 1,
+                "images_prepared_local": 1,
+                "images_uploaded": 1,
+                "images_skipped_already_synced": 1,
+                "images_deleted_remote": 1,
+                "measurements_checked": 1,
+                "measurements_patched": 1,
+                "measurements_skipped_noop": 1,
+                "storage_quota_delta_rpc_calls": 2,
+            },
+        },
+    )
+
+    status_args, status_kwargs = calls["status_message"]
+    message = status_args[0]
+    assert message.splitlines()[0] == "Cloud sync complete."
+    assert "Sporely Cloud synced:" not in message
+    assert "1 re-dirtied due to pending local images" in message
+    assert "1 prepared for upload" in message
+    assert "1 uploaded" in message
+    assert status_kwargs["level"] == "success"
 
 
 def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):

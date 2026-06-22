@@ -25,7 +25,8 @@ def _create_image_tombstone_test_db(conn: sqlite3.Connection) -> None:
             image_type TEXT,
             sort_order INTEGER,
             micro_category TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            synced_at TEXT
         );
         CREATE TABLE spore_measurements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

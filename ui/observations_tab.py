@@ -113,11 +113,15 @@ from utils.cloud_sync import (
     cloud_media_materialization_state_for_observation,
     build_cloud_ai_state_from_observation_identifications,
     format_original_upload_summary,
+    format_sync_summary,
     fetch_cloud_usage_summary,
     is_cloud_auth_error,
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     load_saved_cloud_password,
+    _format_cloud_sync_observation_status,
+    _cloud_sync_current_summary,
+    _increment_sync_summary,
     sanitize_image_too_large_for_plan_error_message,
     should_pull_cloud_image_to_desktop,
     should_push_local_image_to_cloud,
@@ -352,6 +356,8 @@ class _CloudAutoSyncWorker(QThread):
                 request.get("observation") or {},
                 progress_cb=request.get("progress_cb"),
             )
+        except KeyboardInterrupt as exc:
+            request["error"] = exc
         except Exception as exc:
             request["error"] = exc
         finally:
@@ -377,16 +383,24 @@ class _CloudAutoSyncWorker(QThread):
                 else:
                     self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
                 return
+            def _progress_cb(msg, cur, tot):
+                if self.isInterruptionRequested():
+                    raise KeyboardInterrupt
+                self.progress.emit(msg, cur, tot)
             result = sync_all(
                 client,
-                progress_cb=lambda msg, cur, tot: self.progress.emit(msg, cur, tot),
+                progress_cb=_progress_cb,
                 sync_images=self._sync_images,
                 materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images if self._sync_images else None,
             )
+            if self.isInterruptionRequested():
+                raise KeyboardInterrupt
             if "skipped" not in result:
                 result["skipped"] = False
             self.sync_finished.emit(result)
+        except KeyboardInterrupt:
+            self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True, "cancelled": True})
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
@@ -1798,6 +1812,29 @@ class ObservationsTab(QWidget):
         self.status_progress_pct = QLabel("0%")
         self.status_progress_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.status_progress_pct.setFixedWidth(34)
+        self.status_progress_cancel_btn = QToolButton(self.status_progress_widget)
+        self.status_progress_cancel_btn.setObjectName("cloudSyncCancelButton")
+        self.status_progress_cancel_btn.setText("✕")
+        self.status_progress_cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.status_progress_cancel_btn.setToolTip(self.tr("Cancel cloud sync"))
+        self.status_progress_cancel_btn.setAutoRaise(True)
+        self.status_progress_cancel_btn.setFixedSize(22, 22)
+        self.status_progress_cancel_btn.setVisible(False)
+        self.status_progress_cancel_btn.setEnabled(False)
+        self.status_progress_cancel_btn.setStyleSheet(
+            "QToolButton#cloudSyncCancelButton {"
+            "background-color: #e74c3c;"
+            "color: white;"
+            "border: none;"
+            "border-radius: 11px;"
+            "font-weight: 700;"
+            "padding: 0px;"
+            "}"
+            "QToolButton#cloudSyncCancelButton:hover { background-color: #c0392b; }"
+            "QToolButton#cloudSyncCancelButton:pressed { background-color: #922b21; }"
+            "QToolButton#cloudSyncCancelButton:disabled { background-color: #f0b4ae; color: white; }"
+        )
+        self.status_progress_cancel_btn.clicked.connect(self._cancel_cloud_sync)
         self.status_progress_text = QLabel("")
         self.status_progress_text.setWordWrap(True)
         self.status_progress_text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -1808,6 +1845,7 @@ class ObservationsTab(QWidget):
         )
         status_progress_bar_row.addWidget(self.status_progress_bar, 1)
         status_progress_bar_row.addWidget(self.status_progress_pct, 0, Qt.AlignRight)
+        status_progress_bar_row.addWidget(self.status_progress_cancel_btn, 0, Qt.AlignRight)
         status_progress_layout.addLayout(status_progress_bar_row)
         status_progress_layout.addWidget(self.status_progress_text)
         self.status_progress_widget.setVisible(False)
@@ -2416,6 +2454,20 @@ class ObservationsTab(QWidget):
             self.status_label.setVisible(not visible)
         if hasattr(self, "status_progress_widget"):
             self.status_progress_widget.setVisible(visible)
+        if not visible:
+            self._set_status_progress_cancel_visible(False)
+
+    def _set_status_progress_cancel_visible(self, visible: bool) -> None:
+        if hasattr(self, "status_progress_cancel_btn"):
+            try:
+                self.status_progress_cancel_btn.setVisible(bool(visible))
+            except Exception:
+                pass
+            if not visible:
+                try:
+                    self.status_progress_cancel_btn.setEnabled(False)
+                except Exception:
+                    pass
 
     def _reset_status_progress(self) -> None:
         if hasattr(self, "status_progress_bar"):
@@ -2428,6 +2480,26 @@ class ObservationsTab(QWidget):
             self.status_progress_pct.setText("0%")
         if hasattr(self, "status_progress_text"):
             self.status_progress_text.setText("")
+
+    def _cancel_cloud_sync(self) -> None:
+        worker = getattr(self, "_cloud_sync_worker", None)
+        if worker is None:
+            return
+        try:
+            if worker.isRunning():
+                worker.requestInterruption()
+        except Exception:
+            pass
+        if hasattr(self, "status_progress_cancel_btn"):
+            try:
+                self.status_progress_cancel_btn.setEnabled(False)
+            except Exception:
+                pass
+        if hasattr(self, "status_progress_text"):
+            try:
+                self._set_status_progress(self.tr("Cancelling cloud sync..."))
+            except Exception:
+                pass
 
     def _set_status_progress(
         self,
@@ -2554,6 +2626,9 @@ class ObservationsTab(QWidget):
         if self._cloud_sync_worker is not None:
             if show_status and not self._cloud_sync_show_status:
                 self._set_status_progress_visible(True)
+                self._set_status_progress_cancel_visible(True)
+                if hasattr(self, "status_progress_cancel_btn"):
+                    self.status_progress_cancel_btn.setEnabled(True)
                 self._set_status_progress(self.tr("Sporely Cloud sync already running..."), 0, 1)
             self._cloud_sync_show_status = self._cloud_sync_show_status or bool(show_status)
             self._cloud_sync_run_refresh_flow = self._cloud_sync_run_refresh_flow or bool(run_refresh_flow)
@@ -2574,6 +2649,9 @@ class ObservationsTab(QWidget):
         self._cloud_sync_worker.error.connect(self._on_cloud_sync_worker_done)
         if show_status:
             self._set_status_progress_visible(True)
+            self._set_status_progress_cancel_visible(True)
+            if hasattr(self, "status_progress_cancel_btn"):
+                self.status_progress_cancel_btn.setEnabled(True)
             progress_text = (
                 self.tr("Preparing Sporely Cloud metadata sync...")
                 if not sync_images
@@ -2803,6 +2881,17 @@ class ObservationsTab(QWidget):
 
     def _on_cloud_sync_finished(self, result: dict) -> None:
         self.refresh_observations(show_status=False)
+        if result.get("cancelled"):
+            if self._cloud_sync_show_status:
+                self._set_status_progress_visible(False)
+                self._set_status_progress_cancel_visible(False)
+                self._reset_status_progress()
+            self.set_status_message(
+                self.tr("Cloud sync cancelled."),
+                level="info",
+                auto_clear_ms=8000,
+            )
+            return
         if self._cloud_sync_run_refresh_flow:
             self._finish_manual_refresh_flow()
         pushed = int(result.get("pushed", 0) or 0)
@@ -2824,6 +2913,7 @@ class ObservationsTab(QWidget):
         if result.get("skipped"):
             if self._cloud_sync_show_status:
                 self._set_status_progress_visible(False)
+                self._set_status_progress_cancel_visible(False)
                 self._reset_status_progress()
             return
         if errors:
@@ -2851,17 +2941,8 @@ class ObservationsTab(QWidget):
                 )
             for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
                 print(f"[cloud_sync] other issue {idx}: {error}")
-        parts = []
         if pushed or pulled:
-            if pushed:
-                parts.append(
-                    self.tr("{count} uploaded").format(count=pushed)
-                )
-            if pulled:
-                parts.append(
-                    self.tr("{count} imported").format(count=pulled)
-                )
-            message = self.tr("Sporely Cloud synced: {summary}.").format(summary=", ".join(parts))
+            message = self.tr("Cloud sync complete.")
             level = "warning" if errors else "success"
             if errors:
                 issue_parts = []
@@ -2917,6 +2998,9 @@ class ObservationsTab(QWidget):
             else:
                 message = self.tr("Sporely Cloud already up to date.")
                 level = "success"
+        sync_summary_text = format_sync_summary(result.get("sync_summary"))
+        if sync_summary_text:
+            message = f"{message}\n{sync_summary_text}"
         original_summary = format_original_upload_summary(result.get("original_sync"))
         if original_summary:
             message = f"{message}\n{original_summary}"
@@ -2924,6 +3008,7 @@ class ObservationsTab(QWidget):
         if not self._cloud_sync_show_status:
             return
         self._set_status_progress_visible(False)
+        self._set_status_progress_cancel_visible(False)
         self._set_status_progress("", 0, 1)
         self.set_status_message(message, level=level, auto_clear_ms=12000 if level != "success" else 5000)
         if deleted_remote:
@@ -2941,6 +3026,7 @@ class ObservationsTab(QWidget):
         if not self._cloud_sync_show_status:
             return
         self._set_status_progress_visible(False)
+        self._set_status_progress_cancel_visible(False)
         self._set_status_progress("", 0, 1)
         if is_account_mismatch:
             QMessageBox.critical(
@@ -2969,6 +3055,7 @@ class ObservationsTab(QWidget):
         self._cloud_sync_worker = None
         self._cloud_sync_show_status = False
         self._cloud_sync_run_refresh_flow = False
+        self._set_status_progress_cancel_visible(False)
         if worker is not None:
             app = QApplication.instance()
             if app:
@@ -5830,9 +5917,12 @@ class ObservationsTab(QWidget):
         for idx, image_row in enumerate(selected_images, start=1):
             if progress_cb:
                 progress_cb(
-                    self.tr("Preparing cloud image {current}/{total}...").format(
-                        current=idx,
-                        total=total,
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        self.tr("Preparing upload {current}/{total}...").format(
+                            current=idx,
+                            total=total,
+                        ),
                     ),
                     idx,
                     max(1, total),
@@ -5884,6 +5974,17 @@ class ObservationsTab(QWidget):
                     ),
                 }
             )
+            try:
+                resized = int(stored_width) != int(source_width) or int(stored_height) != int(source_height)
+            except Exception:
+                resized = False
+            print(
+                f'[cloud_sync] Observation {obs.get("id")}: prepared upload candidate image '
+                f'{int(image_row.get("id") or idx)} '
+                f'(resized={resized}, encoding_format={encoding_format}, '
+                f'encoding_quality={encoding_quality}, upload_path={upload_path})'
+            )
+            _increment_sync_summary(_cloud_sync_current_summary(), 'images_prepared_local')
 
         if not prepared:
             self._cleanup_publish_temp_dir(temp_dir)
@@ -6003,9 +6104,12 @@ class ObservationsTab(QWidget):
             self._yield_background_sync_ui()
             if progress_cb:
                 progress_cb(
-                    self.tr("Preparing cloud image {current}/{total}...").format(
-                        current=idx,
-                        total=total,
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        self.tr("Preparing upload {current}/{total}...").format(
+                            current=idx,
+                            total=total,
+                        ),
                     ),
                     idx,
                     max(1, total),
@@ -6057,6 +6161,17 @@ class ObservationsTab(QWidget):
                     ),
                 }
             )
+            try:
+                resized = int(stored_width) != int(source_width) or int(stored_height) != int(source_height)
+            except Exception:
+                resized = False
+            print(
+                f'[cloud_sync] Observation {obs.get("id")}: prepared upload candidate image '
+                f'{int(image_row.get("id") or idx)} '
+                f'(resized={resized}, encoding_format={encoding_format}, '
+                f'encoding_quality={encoding_quality}, upload_path={upload_path})'
+            )
+            _increment_sync_summary(_cloud_sync_current_summary(), 'images_prepared_local')
             self._yield_background_sync_ui()
 
         if not prepared:
@@ -13696,12 +13811,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         total_i = max(1, int(total or 0))
         current_i = max(1, min(total_i, int(current or 0) + 1))
         progress_message = str(message or "").strip() or self.tr("Downloading cloud media…")
+        if progress_message.startswith("Observation "):
+            display_message = progress_message
+        else:
+            display_message = _format_cloud_sync_observation_status(
+                self.observation if isinstance(self.observation, dict) else None,
+                self.tr("Downloading cloud media {current}/{total}: {message}").format(
+                    current=current_i,
+                    total=total_i,
+                    message=progress_message,
+                ),
+            )
         self._set_cloud_media_status(
-            self.tr("Downloading cloud media {current}/{total}: {message}").format(
-                current=current_i,
-                total=total_i,
-                message=progress_message,
-            ),
+            display_message,
             level="info",
             auto_clear_ms=8000,
         )

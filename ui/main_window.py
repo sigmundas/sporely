@@ -11209,6 +11209,31 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "next_image_btn"):
             self.next_image_btn.setEnabled(self.current_image_index < total - 1)
 
+    def invalidate_pixmap_cache(self, path: str | Path | None = None) -> None:
+        """Invalidate cached pixmaps for a file path, or clear all image caches."""
+        if path is None:
+            self._pixmap_cache.clear()
+            self._pixmap_cache_order.clear()
+            gallery_cache = getattr(self, "_gallery_pixmap_cache", None)
+            if isinstance(gallery_cache, dict):
+                gallery_cache.clear()
+            return
+
+        try:
+            target = str(Path(path))
+        except Exception:
+            target = str(path or "").strip()
+        if not target:
+            return
+
+        self._pixmap_cache.pop(target, None)
+        if target in self._pixmap_cache_order:
+            self._pixmap_cache_order = [item for item in self._pixmap_cache_order if item != target]
+
+        gallery_cache = getattr(self, "_gallery_pixmap_cache", None)
+        if isinstance(gallery_cache, dict):
+            gallery_cache.pop(target, None)
+
     def _cache_pixmap(self, path: str, pixmap: QPixmap) -> None:
         if not path or pixmap is None or pixmap.isNull():
             return

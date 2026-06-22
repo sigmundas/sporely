@@ -1545,6 +1545,10 @@ _CLOUD_SYNC_PROFILE_CONTEXT: ContextVar['CloudSyncProfiler | None'] = ContextVar
     'cloud_sync_profiler',
     default=None,
 )
+_CLOUD_SYNC_SUMMARY_CONTEXT: ContextVar[dict[str, int] | None] = ContextVar(
+    'cloud_sync_summary',
+    default=None,
+)
 
 
 def _cloud_sync_profile_enabled() -> bool:
@@ -1558,6 +1562,13 @@ def _cloud_sync_current_profiler() -> 'CloudSyncProfiler | None':
         return None
 
 
+def _cloud_sync_current_summary() -> dict[str, int] | None:
+    try:
+        return _CLOUD_SYNC_SUMMARY_CONTEXT.get()
+    except Exception:
+        return None
+
+
 @contextmanager
 def _cloud_sync_profile_scope(profiler: 'CloudSyncProfiler'):
     token = _CLOUD_SYNC_PROFILE_CONTEXT.set(profiler)
@@ -1566,6 +1577,18 @@ def _cloud_sync_profile_scope(profiler: 'CloudSyncProfiler'):
     finally:
         try:
             _CLOUD_SYNC_PROFILE_CONTEXT.reset(token)
+        except Exception:
+            pass
+
+
+@contextmanager
+def _cloud_sync_summary_scope(sync_summary: dict[str, int]):
+    token = _CLOUD_SYNC_SUMMARY_CONTEXT.set(sync_summary)
+    try:
+        yield sync_summary
+    finally:
+        try:
+            _CLOUD_SYNC_SUMMARY_CONTEXT.reset(token)
         except Exception:
             pass
 
@@ -1826,6 +1849,12 @@ class CloudSyncProfiler:
                     'deleted_remote': len(result.get('deleted_remote') or []),
                     'error_count': len(result.get('errors') or []),
                 }
+                sync_summary = result.get('sync_summary')
+                if isinstance(sync_summary, dict):
+                    payload['result']['sync_summary'] = {
+                        str(key): _safe_int(value)
+                        for key, value in sync_summary.items()
+                    }
             if error is not None:
                 error_text = str(error or '').strip()
                 if error_text:
@@ -3210,6 +3239,122 @@ def _extend_progress_total(
     return _progress_done(state), _progress_total(state)
 
 
+_SYNC_SUMMARY_KEYS = (
+    'observations_checked',
+    'observations_redirtied_pending_local_images',
+    'observations_patched',
+    'observations_skipped_noop',
+    'observations_deleted_remote',
+    'images_checked',
+    'images_prepared_local',
+    'images_uploaded',
+    'images_skipped_already_synced',
+    'images_deleted_remote',
+    'measurements_checked',
+    'measurements_patched',
+    'measurements_skipped_noop',
+    'storage_quota_delta_rpc_calls',
+    'remote_media_downloads',
+    'remote_media_materializations',
+)
+
+
+def _new_sync_summary() -> dict[str, int]:
+    return {key: 0 for key in _SYNC_SUMMARY_KEYS}
+
+
+def _sync_summary_value(sync_summary: dict | None, key: str) -> int:
+    try:
+        return max(0, int((sync_summary or {}).get(key, 0) or 0))
+    except Exception:
+        return 0
+
+
+def _increment_sync_summary(sync_summary: dict | None, key: str, amount: int = 1) -> None:
+    if not isinstance(sync_summary, dict):
+        return
+    try:
+        increment = max(0, int(amount))
+    except Exception:
+        increment = 0
+    if increment <= 0:
+        return
+    sync_summary[key] = _sync_summary_value(sync_summary, key) + increment
+
+
+def format_sync_summary(sync_summary: dict | None) -> str | None:
+    summary = dict(sync_summary or {})
+    if not summary:
+        return None
+
+    lines: list[str] = []
+
+    observation_bits = []
+    observations_checked = _sync_summary_value(summary, 'observations_checked')
+    if observations_checked:
+        observation_bits.append(f'{observations_checked} checked')
+    observations_redirtied = _sync_summary_value(summary, 'observations_redirtied_pending_local_images')
+    if observations_redirtied:
+        observation_bits.append(f'{observations_redirtied} re-dirtied due to pending local images')
+    observations_patched = _sync_summary_value(summary, 'observations_patched')
+    if observations_patched:
+        observation_bits.append(f'{observations_patched} patched')
+    observations_noop = _sync_summary_value(summary, 'observations_skipped_noop')
+    if observations_noop:
+        observation_bits.append(f'{observations_noop} skipped as no-op')
+    observations_deleted = _sync_summary_value(summary, 'observations_deleted_remote')
+    if observations_deleted:
+        observation_bits.append(f'{observations_deleted} deleted remotely')
+    if observation_bits:
+        lines.append(f"Observations: {'; '.join(observation_bits)}.")
+
+    image_bits = []
+    images_checked = _sync_summary_value(summary, 'images_checked')
+    if images_checked:
+        image_bits.append(f'{images_checked} checked')
+    images_prepared = _sync_summary_value(summary, 'images_prepared_local')
+    if images_prepared:
+        image_bits.append(f'{images_prepared} prepared for upload')
+    images_uploaded = _sync_summary_value(summary, 'images_uploaded')
+    if images_uploaded:
+        image_bits.append(f'{images_uploaded} uploaded')
+    images_skipped = _sync_summary_value(summary, 'images_skipped_already_synced')
+    if images_skipped:
+        image_bits.append(f'{images_skipped} skipped as already synced')
+    images_deleted = _sync_summary_value(summary, 'images_deleted_remote')
+    if images_deleted:
+        image_bits.append(f'{images_deleted} deleted remotely')
+    if image_bits:
+        lines.append(f"Images: {'; '.join(image_bits)}.")
+
+    measurement_bits = []
+    measurements_checked = _sync_summary_value(summary, 'measurements_checked')
+    if measurements_checked:
+        measurement_bits.append(f'{measurements_checked} checked')
+    measurements_patched = _sync_summary_value(summary, 'measurements_patched')
+    if measurements_patched:
+        measurement_bits.append(f'{measurements_patched} patched')
+    measurements_noop = _sync_summary_value(summary, 'measurements_skipped_noop')
+    if measurements_noop:
+        measurement_bits.append(f'{measurements_noop} skipped as no-op')
+    if measurement_bits:
+        lines.append(f"Measurements: {'; '.join(measurement_bits)}.")
+
+    storage_quota_delta_calls = _sync_summary_value(summary, 'storage_quota_delta_rpc_calls')
+    if storage_quota_delta_calls:
+        lines.append(f'Storage quota delta RPC calls: {storage_quota_delta_calls}.')
+
+    remote_downloads = _sync_summary_value(summary, 'remote_media_downloads')
+    remote_materializations = _sync_summary_value(summary, 'remote_media_materializations')
+    if remote_downloads or remote_materializations:
+        lines.append(
+            'Remote media downloads/materializations: '
+            f'{remote_downloads} downloads; {remote_materializations} materializations.'
+        )
+
+    return '\n'.join(lines) if lines else None
+
+
 def _observation_display_name(obs: dict | None) -> str:
     record = obs or {}
     parts = [
@@ -3432,6 +3577,18 @@ def _record_remote_image_tombstones(
     if not tombstone_rows:
         return set()
 
+    tombstone_cloud_ids = [
+        str(row.get("id") or "").strip()
+        for row in tombstone_rows
+        if str(row.get("id") or "").strip()
+    ]
+    existing_tombstones = get_image_tombstones_by_deleted_cloud_id(tombstone_cloud_ids)
+    new_tombstone_cloud_ids = [
+        cloud_id
+        for cloud_id in dict.fromkeys(tombstone_cloud_ids)
+        if cloud_id not in existing_tombstones
+    ]
+    _increment_sync_summary(_cloud_sync_current_summary(), 'images_deleted_remote', len(new_tombstone_cloud_ids))
     deleted_cloud_ids: set[str] = set()
     conn = get_connection()
     try:
@@ -3652,6 +3809,8 @@ def sync_all(
     profile_token = None
     if profiler is not None:
         profile_token = _CLOUD_SYNC_PROFILE_CONTEXT.set(profiler)
+    sync_summary = _new_sync_summary()
+    summary_token = _CLOUD_SYNC_SUMMARY_CONTEXT.set(sync_summary)
 
     sync_error: Exception | None = None
     result: dict | None = None
@@ -3732,6 +3891,7 @@ def sync_all(
         original_sync = push_result.get('original_sync')
         if original_sync is not None:
             result['original_sync'] = original_sync
+        result['sync_summary'] = dict(sync_summary)
         return result
     except Exception as exc:
         sync_error = exc
@@ -3747,6 +3907,10 @@ def sync_all(
                     _CLOUD_SYNC_PROFILE_CONTEXT.reset(profile_token)
                 except Exception:
                     pass
+        try:
+            _CLOUD_SYNC_SUMMARY_CONTEXT.reset(summary_token)
+        except Exception:
+            pass
 
 def _parsed_local_media_signature(signature: str | None) -> dict:
     text = str(signature or '').strip()
@@ -4466,6 +4630,40 @@ def _safe_int(value, default: int = 0) -> int:
         return default
 
 
+def _observation_sync_species_label(obs: dict | None) -> str:
+    record = dict(obs or {})
+    parts = [
+        str(record.get('genus') or '').strip(),
+        str(record.get('species') or '').strip(),
+    ]
+    label = " ".join(part for part in parts if part).strip()
+    if label:
+        return label
+    common_name = str(record.get('common_name') or '').strip()
+    if common_name:
+        return common_name
+    species_guess = str(record.get('species_guess') or '').strip()
+    if species_guess:
+        return species_guess
+    return ''
+
+
+def _format_cloud_sync_observation_status(obs: dict | None, message: str) -> str:
+    record = dict(obs or {})
+    obs_id = _safe_int(record.get('id'))
+    label = _observation_sync_species_label(record)
+    if obs_id > 0 and label:
+        prefix = f'Observation {obs_id} ({label})'
+    elif obs_id > 0:
+        prefix = f'Observation {obs_id}'
+    elif label:
+        prefix = label
+    else:
+        prefix = 'Observation'
+    text = str(message or '').strip()
+    return f'{prefix}: {text}' if text else prefix
+
+
 def _file_content_signature(path: str | Path) -> str:
     file_path = Path(path)
     if not file_path.exists() or not file_path.is_file():
@@ -5180,6 +5378,16 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
                 (obs_id,),
             ).fetchall()
             if any(should_push_local_image_to_cloud(dict(image_row or {})) for image_row in image_rows):
+                pending_count = sum(
+                    1
+                    for image_row in image_rows
+                    if should_push_local_image_to_cloud(dict(image_row or {}))
+                )
+                if pending_count > 0:
+                    print(
+                        f"[cloud_sync] Observation {obs_id}: re-dirtied because "
+                        f"{pending_count} cloud-eligible local image row(s) still have cloud_id IS NULL"
+                    )
                 dirty_ids.append(obs_id)
     except Exception as exc:
         print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
@@ -5187,6 +5395,12 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
         conn.close()
     if not dirty_ids:
         return
+
+    _increment_sync_summary(
+        _cloud_sync_current_summary(),
+        'observations_redirtied_pending_local_images',
+        len(dirty_ids),
+    )
 
     for obs_id in dirty_ids:
         try:
@@ -6444,6 +6658,7 @@ def _sync_existing_remote_image_to_local(
                 _store_cloud_image_file_signature(int(local_image.get('observation_id') or 0), image_id, file_sig)
         except Exception:
             pass
+        _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -6581,6 +6796,7 @@ def _apply_remote_images_to_local(
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
             except Exception:
                 pass
+            _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -7396,6 +7612,7 @@ class SporelyCloudClient:
                 self._get_r2().delete_objects(cleaned)
             else:
                 self._get_media_worker().delete_objects(cleaned)
+                _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
         except Exception as exc:
             raise CloudSyncError(f'Media delete failed: {exc}') from exc
 
@@ -7544,6 +7761,7 @@ class SporelyCloudClient:
                     },
                     timeout=120,
                 )
+                _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
         except Exception as exc:
             return (
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
@@ -7597,8 +7815,15 @@ class SporelyCloudClient:
 
         return str(rows[0]['id'])
 
-    def push_observation(self, obs: dict, remote_obs: dict | None = None) -> str:
+    def push_observation(
+        self,
+        obs: dict,
+        remote_obs: dict | None = None,
+        *,
+        sync_summary: dict[str, int] | None = None,
+    ) -> str:
         """Upsert observation to cloud. Returns cloud UUID."""
+        summary = sync_summary or _cloud_sync_current_summary()
         payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
         payload['desktop_id'] = obs['id']
@@ -7608,10 +7833,13 @@ class SporelyCloudClient:
             if remote_obs is not None:
                 diff_fields = _observation_push_diff_fields(dict(obs or {}), remote_obs)
                 if not diff_fields:
+                    _increment_sync_summary(summary, 'observations_skipped_noop')
                     return existing_id
             self._patch(f'observations?id=eq.{existing_id}', payload)
+            _increment_sync_summary(summary, 'observations_patched')
             return existing_id
         rows = self._post('observations', payload)
+        _increment_sync_summary(summary, 'observations_patched')
         return rows[0]['id']
 
     # ── Image push ───────────────────────────────────────────────────────
@@ -7713,6 +7941,12 @@ class SporelyCloudClient:
         )
         cache_control = 'public, max-age=31536000, immutable'
         meta = dict(upload_meta or {})
+        print(
+            '[cloud_sync] Uploading cloud image request '
+            f'obs={_safe_int(meta.get("observation_id")) or obs_cloud_id or "?"} '
+            f'image={_safe_int(meta.get("image_id")) or img_cloud_id or "?"} '
+            f'storage_path={storage_path}'
+        )
 
         with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
             temp_dir = Path(temp_dir_name)
@@ -7797,6 +8031,7 @@ class SporelyCloudClient:
                             'storedHeight': stored_height,
                         },
                     )
+                    _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
                     confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
                     if not confirmed_key:
                         raise CloudSyncError('Worker upload did not return a storage key')
@@ -7897,6 +8132,7 @@ class SporelyCloudClient:
                                 'storedHeight': target_h,
                             },
                         )
+                        _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
                         confirmed_thumb_key = _normalize_cloud_media_key(str((thumb_response or {}).get('key') or variant_path))
                         if confirmed_thumb_key != _normalize_cloud_media_key(variant_path):
                             raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
@@ -7916,6 +8152,7 @@ class SporelyCloudClient:
                     ) from e
                 raise CloudSyncError(f'Media thumbnail upload failed: {e}') from e
 
+        _increment_sync_summary(_cloud_sync_current_summary(), 'images_uploaded')
         return storage_path
 
     def upload_original_image_file(
@@ -7939,6 +8176,12 @@ class SporelyCloudClient:
 
         cache_control = 'public, max-age=31536000, immutable'
         meta = dict(upload_meta or {})
+        print(
+            '[cloud_sync] Uploading cloud original image request '
+            f'obs={_safe_int(meta.get("observation_id")) or obs_cloud_id or "?"} '
+            f'image={_safe_int(meta.get("image_id")) or img_cloud_id or "?"} '
+            f'storage_path={storage_path}'
+        )
         with tempfile.TemporaryDirectory(prefix='sporely_cloud_upload_') as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             worker_base_url = media_worker_base_url()
@@ -8026,6 +8269,7 @@ class SporelyCloudClient:
                             'storedHeight': stored_height,
                         },
                     )
+                    _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
                     confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
                     if not confirmed_key:
                         raise CloudSyncError('Worker upload did not return a storage key')
@@ -8267,8 +8511,10 @@ class SporelyCloudClient:
         cloud_image_id: str,
         *,
         remote_measurement_cache: dict[str, dict] | None = None,
+        sync_summary: dict[str, int] | None = None,
     ) -> str:
         """Upsert one spore measurement row. Returns cloud UUID."""
+        summary = sync_summary or _cloud_sync_current_summary()
         storage_key = ''
         include_media_keys = False
         if self._measurement_supports_media_keys():
@@ -8298,6 +8544,7 @@ class SporelyCloudClient:
                         image_storage_key=storage_key,
                         include_media_keys=include_media_keys,
                     ):
+                        _increment_sync_summary(summary, 'measurements_skipped_noop')
                         return existing_id
                     diff_fields = _measurement_push_diff_fields(
                         meas,
@@ -8312,8 +8559,10 @@ class SporelyCloudClient:
                             f'push diff fields: {", ".join(diff_fields)}'
                         )
                     self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
+                    _increment_sync_summary(summary, 'measurements_patched')
                     return existing_id
             rows = self._post('spore_measurements', payload)
+            _increment_sync_summary(summary, 'measurements_patched')
             return rows[0]['id']
 
         rows = self._get(
@@ -8330,6 +8579,7 @@ class SporelyCloudClient:
                     image_storage_key=storage_key,
                     include_media_keys=include_media_keys,
                 ):
+                    _increment_sync_summary(summary, 'measurements_skipped_noop')
                     return existing_id
                 diff_fields = _measurement_push_diff_fields(
                     meas,
@@ -8344,8 +8594,10 @@ class SporelyCloudClient:
                         f'push diff fields: {", ".join(diff_fields)}'
                     )
                 self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
+                _increment_sync_summary(summary, 'measurements_patched')
                 return existing_id
         rows = self._post('spore_measurements', payload)
+        _increment_sync_summary(summary, 'measurements_patched')
         return rows[0]['id']
 
     def delete_cloud_measurements_for_image(self, cloud_image_id: str) -> None:
@@ -8424,6 +8676,11 @@ class SporelyCloudClient:
                     )
                 except Exception:
                     pass
+            try:
+                if downloaded_path is not None and Path(downloaded_path).exists():
+                    _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_downloads')
+            except Exception:
+                pass
 
 def _format_size(size_bytes: int) -> str:
     if size_bytes < 1024: return f"{size_bytes} B"
@@ -8990,10 +9247,13 @@ def push_all(
     }
 
     for i, obs in enumerate(observations):
-        name = _observation_display_name(obs)
+        _increment_sync_summary(_cloud_sync_current_summary(), 'observations_checked')
         _emit_progress(
             progress_cb,
-            f"Syncing observation {i + 1}/{max(1, total)}: {name}…",
+            _format_cloud_sync_observation_status(
+                obs,
+                f"Syncing observation {i + 1}/{max(1, total)}…",
+            ),
             progress_state,
         )
         try:
@@ -9005,7 +9265,10 @@ def push_all(
                 _advance_progress(progress_state, 1)
                 _emit_progress(
                     progress_cb,
-                    f"Cloud copy was deleted for observation {i + 1}/{max(1, total)}: {name}",
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        f"Cloud copy was deleted for observation {i + 1}/{max(1, total)}",
+                    ),
                     progress_state,
                 )
                 continue
@@ -9014,7 +9277,10 @@ def push_all(
                 if sync_images:
                     _emit_progress(
                         progress_cb,
-                        f"Checking cloud media for observation {i + 1}/{max(1, total)}: {name}…",
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            f"Checking cloud media for observation {i + 1}/{max(1, total)}…",
+                        ),
                         progress_state,
                     )
                 remote_images = client.pull_image_metadata(cloud_id) or []
@@ -9027,7 +9293,10 @@ def push_all(
                     _advance_progress(progress_state, 1)
                     _emit_progress(
                         progress_cb,
-                        f"Skipped stale local change for observation {i + 1}/{max(1, total)}: {name}",
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            f"Skipped stale local change for observation {i + 1}/{max(1, total)}",
+                        ),
                         progress_state,
                     )
                     continue
@@ -9065,7 +9334,10 @@ def push_all(
             _advance_progress(progress_state, 1)
             _emit_progress(
                 progress_cb,
-                f"Observation {i + 1}/{max(1, total)} synced: {name}",
+                _format_cloud_sync_observation_status(
+                    obs,
+                    f"Observation {i + 1}/{max(1, total)} synced",
+                ),
                 progress_state,
             )
 
@@ -9096,7 +9368,10 @@ def push_all(
                     )
                     _emit_progress(
                         progress_cb,
-                        f"Skipping unchanged cloud media for observation {i + 1}/{max(1, total)}: {name}",
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            f"Skipping unchanged cloud media for observation {i + 1}/{max(1, total)}",
+                        ),
                         progress_state,
                     )
                     # Images unchanged but measurements may have been added/updated
@@ -9147,9 +9422,12 @@ def push_all(
                 _set_observation_privacy_blocked(int(obs['id']), raw_error)
                 _emit_progress(
                     progress_cb,
-                    (
-                        f"Observation {i + 1}/{max(1, total)} blocked: "
-                        f"{privacy_slot_limit_user_message()}"
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        (
+                            f"Observation {i + 1}/{max(1, total)} blocked: "
+                            f"{privacy_slot_limit_user_message()}"
+                        ),
                     ),
                     progress_state,
                 )
@@ -9157,25 +9435,34 @@ def push_all(
                 _set_observation_plan_image_retryable(int(obs['id']), raw_error)
                 _emit_progress(
                     progress_cb,
-                    (
-                        f"Observation {i + 1}/{max(1, total)} needs retry: "
-                        f"{summarize_image_too_large_for_plan_error(raw_error)}"
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        (
+                            f"Observation {i + 1}/{max(1, total)} needs retry: "
+                            f"{summarize_image_too_large_for_plan_error(raw_error)}"
+                        ),
                     ),
                     progress_state,
                 )
             elif is_webp_support_required_for_cloud_media_upload_error(raw_error):
                 _emit_progress(
                     progress_cb,
-                    (
-                        f"Observation {i + 1}/{max(1, total)} failed: "
-                        f"{WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE}"
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        (
+                            f"Observation {i + 1}/{max(1, total)} failed: "
+                            f"{WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE}"
+                        ),
                     ),
                     progress_state,
                 )
             else:
                 _emit_progress(
                     progress_cb,
-                    f"Observation {i + 1}/{max(1, total)} failed: {name}",
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        f"Observation {i + 1}/{max(1, total)} failed",
+                    ),
                     progress_state,
                 )
             errors.append(raw_error)
@@ -9190,6 +9477,9 @@ def push_all(
     }
     if format_original_upload_summary(original_upload_summary):
         result['original_sync'] = original_upload_summary
+    sync_summary = _cloud_sync_current_summary()
+    if sync_summary is not None:
+        result['sync_summary'] = dict(sync_summary)
     return result
 
 
@@ -9211,7 +9501,6 @@ def _push_images_for_observation(
     prepared_items: list[dict] = []
     cleanup = None
     preparation_failed = False
-    observation_name = _observation_display_name(obs)
     if callable(prepare_images_cb):
         try:
             def prepare_progress(message: str, _current: int | None = None, _total: int | None = None) -> None:
@@ -9298,7 +9587,10 @@ def _push_images_for_observation(
         if observation_index and observation_total:
             _emit_progress(
                 progress_cb,
-                f"Prepared {len(prepared_items)} cloud image(s) for observation {observation_index}/{max(1, observation_total)}: {observation_name}",
+                _format_cloud_sync_observation_status(
+                    obs,
+                    f"Prepared {len(prepared_items)} image(s) for upload in observation {observation_index}/{max(1, observation_total)}",
+                ),
                 progress_state,
             )
 
@@ -9306,7 +9598,10 @@ def _push_images_for_observation(
         if observation_index and observation_total:
             _emit_progress(
                 progress_cb,
-                f"Cloud media preparation failed for observation {observation_index}/{max(1, observation_total)}: {observation_name}",
+                _format_cloud_sync_observation_status(
+                    obs,
+                    f"Cloud media preparation failed for observation {observation_index}/{max(1, observation_total)}",
+                ),
                 progress_state,
             )
         return False
@@ -9338,11 +9633,20 @@ def _push_images_for_observation(
         include_upload_meta = client._observation_images_support_upload_metadata()
         original_sync_enabled = is_full_resolution_original_sync_enabled()
         for item_index, item in enumerate(prepared_items, start=1):
+            _increment_sync_summary(_cloud_sync_current_summary(), 'images_checked')
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
+            if observation_index and observation_total:
+                _emit_progress(
+                    progress_cb,
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        f"Checking cloud image {item_index}/{max(1, total_items)}…",
+                    ),
+                    progress_state,
+                )
             if not img:
-                processed_items += 1
-                _advance_progress(progress_state, 1)
+                print(f'[cloud_sync] Observation {obs["id"]}: skipped empty cloud image item {item_index}')
                 continue
             local_image_id = _safe_int(img.get('id'))
             local_cloud_id = str(img.get('cloud_id') or '').strip()
@@ -9354,24 +9658,19 @@ def _push_images_for_observation(
                 selected_cloud_id = remote_cloud_id or local_cloud_id
                 if selected_cloud_id:
                     kept_cloud_ids.add(selected_cloud_id)
-                processed_items += 1
-                _advance_progress(progress_state, 1)
+                print(
+                    f'[cloud_sync] Observation {obs["id"]}: skipped cloud image '
+                    f'{local_image_id or item_index} because it is not eligible for upload'
+                )
                 continue
             upload_path = str(item.get('upload_path') or img.get('filepath') or '').strip()
             if not upload_path:
-                processed_items += 1
-                _advance_progress(progress_state, 1)
+                print(
+                    f'[cloud_sync] Observation {obs["id"]}: skipped cloud image '
+                    f'{local_image_id or item_index} because upload_path is missing'
+                )
                 continue
             try:
-                if observation_index and observation_total:
-                    _emit_progress(
-                        progress_cb,
-                        (
-                            f"Uploading cloud image {item_index}/{max(1, total_items)} "
-                            f"for observation {observation_index}/{max(1, observation_total)}: {observation_name}…"
-                        ),
-                        progress_state,
-                    )
                 existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
                 storage_path = existing_storage_path or _build_worker_storage_path(
                     client.user_id,
@@ -9413,6 +9712,42 @@ def _push_images_for_observation(
                         )
                         ):
                             file_matches = True
+
+                if file_matches and metadata_matches:
+                    _increment_sync_summary(_cloud_sync_current_summary(), 'images_skipped_already_synced')
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: skipped already synced cloud image '
+                        f'{local_image_id or item_index} (storage_path={storage_path})'
+                    )
+                    if remote_cloud_id:
+                        kept_cloud_ids.add(remote_cloud_id)
+                    elif local_cloud_id:
+                        kept_cloud_ids.add(local_cloud_id)
+                    continue
+
+                if not file_matches:
+                    if observation_index and observation_total:
+                        _emit_progress(
+                            progress_cb,
+                            _format_cloud_sync_observation_status(
+                                obs,
+                                f"Uploading cloud image {item_index}/{max(1, total_items)}…",
+                            ),
+                            progress_state,
+                        )
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: Uploading cloud image request '
+                        f'actual_upload=True image_id={local_image_id or item_index} '
+                        f'cloud_image_id={local_cloud_id or remote_cloud_id or "new"} '
+                        f'storage_path={storage_path} (uploading cloud image bytes)'
+                    )
+                else:
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: metadata patch for cloud image '
+                        f'actual_upload=False image_id={local_image_id or item_index} '
+                        f'cloud_image_id={local_cloud_id or remote_cloud_id or "new"} '
+                        f'storage_path={storage_path}'
+                    )
 
                 img_cloud_id = remote_cloud_id
                 if not file_matches:
@@ -9585,15 +9920,6 @@ def _push_images_for_observation(
             finally:
                 processed_items += 1
                 _advance_progress(progress_state, 1)
-                if observation_index and observation_total:
-                    _emit_progress(
-                        progress_cb,
-                        (
-                            f"Processed cloud image {item_index}/{max(1, total_items)} "
-                            f"for observation {observation_index}/{max(1, observation_total)}: {observation_name}"
-                        ),
-                        progress_state,
-                    )
         stale_rows = [
             row for row in existing_rows
             if str(row.get('id') or '').strip() and str(row.get('id') or '').strip() not in kept_cloud_ids
@@ -9601,6 +9927,10 @@ def _push_images_for_observation(
         for stale_row in stale_rows:
             stale_cloud_id = str(stale_row.get('id') or '').strip()
             stale_storage_path = _normalize_cloud_media_key(stale_row.get('storage_path'))
+            print(
+                f'[cloud_sync] Observation {obs["id"]}: deleting stale cloud image '
+                f'{stale_cloud_id} (storage_path={stale_storage_path})'
+            )
             if stale_storage_path:
                 try:
                     client._storage_remove([stale_storage_path])
@@ -9851,11 +10181,13 @@ def pull_all(
     )
 
     for i, (remote, local_obs, stored_snapshot) in enumerate(candidates):
-        name = _observation_display_name(remote)
         cloud_id = str(remote.get('id') or '').strip()
         _emit_progress(
             progress_cb,
-            f"Checking cloud observation {i + 1}/{max(1, total)}: {name}…",
+            _format_cloud_sync_observation_status(
+                remote,
+                f"Checking cloud observation {i + 1}/{max(1, total)}…",
+            ),
             progress_state,
         )
 
@@ -9930,7 +10262,10 @@ def pull_all(
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
                         progress_cb,
-                        f"Applying cloud changes to local observation {local_id}: {name}…",
+                        _format_cloud_sync_observation_status(
+                            remote,
+                            f"Applying cloud changes to local observation {local_id}…",
+                        ),
                         progress_state,
                     )
                     _apply_remote_observation_fields(local_id, remote)
@@ -9999,7 +10334,10 @@ def pull_all(
                         continue
                     _emit_progress(
                         progress_cb,
-                        f"Applying cloud changes to local observation {local_id}: {name}…",
+                        _format_cloud_sync_observation_status(
+                            remote,
+                            f"Applying cloud changes to local observation {local_id}…",
+                        ),
                         progress_state,
                     )
                     remote_only_fields = {
@@ -10085,7 +10423,10 @@ def pull_all(
                                 pass
                         _emit_progress(
                             progress_cb,
-                            f"Retrying missing cloud media for local observation {local_id}: {name}…",
+                            _format_cloud_sync_observation_status(
+                                remote,
+                                f"Retrying missing cloud media for local observation {local_id}…",
+                            ),
                             progress_state,
                         )
                         warnings = _apply_remote_images_to_local(
@@ -10129,7 +10470,10 @@ def pull_all(
             _advance_progress(progress_state, 1)
             _emit_progress(
                 progress_cb,
-                f"Processed cloud observation {i + 1}/{max(1, total)}: {name}",
+                _format_cloud_sync_observation_status(
+                    remote,
+                    f"Processed cloud observation {i + 1}/{max(1, total)}",
+                ),
                 progress_state,
             )
 
@@ -10137,13 +10481,16 @@ def pull_all(
     if imported_local_ids:
         updates['cloud_recent_import_local_ids'] = json.dumps(imported_local_ids)
     update_app_settings(updates)
+    deleted_remote = _detect_deleted_remote_observations(remote_obs)
+    _increment_sync_summary(_cloud_sync_current_summary(), 'observations_deleted_remote', len(deleted_remote))
     return {
         'pulled': pulled,
         'total': total,
         'calibrations_pulled': calibration_result.get('pulled', 0),
         'calibrations_total': calibration_result.get('total', 0),
         'errors': errors,
-        'deleted_remote': _detect_deleted_remote_observations(remote_obs),
+        'deleted_remote': deleted_remote,
+        'sync_summary': dict(_cloud_sync_current_summary() or {}),
     }
 
 
@@ -10297,8 +10644,6 @@ def _import_remote_images(
     _extend_progress_total(progress_state, len(images_to_pull))
     temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
     synced_at = datetime.now(timezone.utc).isoformat()
-    observation_name = _observation_display_name(remote)
-
     try:
         for idx, image_row in enumerate(images_to_pull, start=1):
             try:
@@ -10308,7 +10653,14 @@ def _import_remote_images(
                     print(f'[cloud_sync] Warning: {warning}')
                     continue
                 if remote_index and remote_total:
-                    _emit_progress(progress_cb, f"Importing image {idx}/{len(images_to_pull)}: {observation_name}…", progress_state)
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            remote,
+                            f"Importing cloud image {idx}/{len(images_to_pull)}…",
+                        ),
+                        progress_state,
+                    )
                 
                 storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
                 if not storage_path: continue
@@ -10374,6 +10726,7 @@ def _import_remote_images(
                 file_sig = _file_content_signature(download_path)
                 if file_sig:
                     _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
+                _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
 
             except Exception as e:
                 if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
@@ -10901,7 +11254,10 @@ def materialize_cloud_media_for_observation(
 
         _emit_progress(
             progress_cb,
-            f"Materializing cloud image {idx}/{len(active_remote_images)}: {cloud_image_id}…",
+            _format_cloud_sync_observation_status(
+                remote,
+                f"Materializing cloud image {idx}/{len(active_remote_images)}: {cloud_image_id}…",
+            ),
             progress_state,
         )
 

@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QDialogButtonBox
 from PySide6.QtWidgets import QPlainTextEdit
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Signal
 
 import ui.main_window as main_window
 import utils.cloud_sync as cloud_sync
@@ -24,6 +24,8 @@ def qapp():
 
 
 class _StubDatabaseSettingsDialog(QWidget):
+    microscopeTagsChanged = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
