@@ -2,6 +2,14 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-06-22
+
+### Performance
+- **Cloud sync preflight**: instrumented and sped up the no-change sync pause. EXIF backfill now uses a per-file signature cache (skips unchanged files without opening them); remote measurement/image fetches batch by 100 IDs instead of 50 (halves request count); added scoped timing logs and truthful UI progress text for each preflight sub-step.
+
+### Fixed
+- **QThread shutdown**: `ObservationsTab.shutdown()` now interrupts, waits for, and parks the Artsobs mobile-link-check worker, fixing the "QThread: Destroyed while thread is still running" warning on close.
+
 ## 2026-04-21 (v0.7.6)
 
 ### Removed
