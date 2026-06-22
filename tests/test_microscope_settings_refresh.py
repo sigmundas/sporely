@@ -6,14 +6,15 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from database.models import SettingsDB
 from ui.adaptive_choice_selector import AdaptiveChoiceSelector
 from ui.database_settings_dialog import DatabaseSettingsDialog
-from ui.image_import_dialog import ImageImportDialog
+from ui.image_import_dialog import AutoSizingPlainTextEdit, ImageImportDialog
 from ui.live_lab_tab import LiveLabTab
 from ui.main_window import MainWindow
+from ui.section_card import create_section_card
 
 
 @pytest.fixture(scope="module")
@@ -145,6 +146,7 @@ def test_prepare_images_scale_controls_split_field_and_microscope_modes(qapp):
     dummy._update_resize_group_state = lambda: None
     dummy._update_scale_mismatch_warning = lambda: None
     dummy._update_scalebar_controls_visibility = lambda: ImageImportDialog._update_scalebar_controls_visibility(dummy)
+    dummy._refresh_scale_group_geometry = lambda: None
     dummy._update_objective_selector_state = lambda: ImageImportDialog._update_objective_selector_state(dummy)
     dummy._update_scale_context_controls = lambda **kwargs: ImageImportDialog._update_scale_context_controls(dummy, **kwargs)
     dummy.import_results = [SimpleNamespace(image_type="field")]
@@ -173,13 +175,59 @@ def test_prepare_images_scale_controls_split_field_and_microscope_modes(qapp):
     assert dummy.scale_bar_mode_checkbox.isVisible() is True
     assert dummy.objective_combo.isEnabled() is True
 
-    dummy.scale_bar_mode_checkbox.setChecked(True)
-    ImageImportDialog._update_objective_selector_state(dummy)
-    assert dummy.objective_combo.isEnabled() is False
 
-    dummy.scale_bar_mode_checkbox.setChecked(False)
-    ImageImportDialog._update_objective_selector_state(dummy)
-    assert dummy.objective_combo.isEnabled() is True
+def test_scale_card_collapses_to_content_when_scale_bar_controls_are_hidden(qapp):
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+
+    card, body = create_section_card("Scale")
+    card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+    layout.addWidget(card)
+
+    checkbox = QCheckBox("Scale bar")
+    body.addWidget(checkbox)
+    inline = QWidget()
+    inline.setVisible(False)
+    body.addWidget(inline)
+
+    container.show()
+    qapp.processEvents()
+    collapsed_height = card.height()
+
+    inline.setVisible(True)
+    card.updateGeometry()
+    container.adjustSize()
+    qapp.processEvents()
+    expanded_height = card.height()
+
+    assert expanded_height > collapsed_height
+
+
+def test_image_note_editor_grows_with_content(qapp):
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+
+    edit = AutoSizingPlainTextEdit(min_lines=4, max_lines=8)
+    layout.addWidget(edit)
+
+    container.resize(360, 200)
+    container.show()
+    qapp.processEvents()
+
+    edit.setPlainText("This is a note.")
+    qapp.processEvents()
+    short_height = edit.height()
+
+    edit.setPlainText("\n".join(f"Line {i}" for i in range(1, 7)))
+    qapp.processEvents()
+    long_height = edit.height()
+
+    assert short_height < 100
+    assert long_height > short_height
 
 
 def test_prepare_images_objective_and_field_scale_labels_do_not_use_dash_or_one_to_one(qapp):

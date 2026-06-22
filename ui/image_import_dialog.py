@@ -170,6 +170,64 @@ def _debug_import_flow(message: str) -> None:
         print(f"[{APP_NAME} debug][prepare-images] {message}", flush=True)
 
 
+class AutoSizingPlainTextEdit(QPlainTextEdit):
+    """Plain text edit that grows to fit a small amount of wrapped content."""
+
+    def __init__(self, parent=None, *, min_lines: int = 4, max_lines: int = 8) -> None:
+        super().__init__(parent)
+        self._min_lines = max(1, int(min_lines))
+        self._max_lines = max(self._min_lines, int(max_lines))
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._update_height_for_contents)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.textChanged.connect(self._schedule_height_update)
+
+    def setPlainText(self, text: str) -> None:  # type: ignore[override]
+        super().setPlainText(text)
+        self._schedule_height_update()
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._schedule_height_update()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._schedule_height_update()
+
+    def _schedule_height_update(self) -> None:
+        self._resize_timer.start(0)
+
+    def _line_height(self) -> int:
+        return max(1, int(self.fontMetrics().lineSpacing()))
+
+    def _height_for_lines(self, line_count: int) -> int:
+        margins = self.contentsMargins()
+        extra = margins.top() + margins.bottom() + max(0, self.frameWidth() * 2) + 4
+        return self._line_height() * max(1, int(line_count)) + extra
+
+    def _update_height_for_contents(self) -> None:
+        width = self.viewport().width()
+        if width <= 0:
+            width = self.width()
+        if width <= 0:
+            return
+        doc = self.document()
+        doc.setTextWidth(max(1.0, float(width)))
+        doc.adjustSize()
+        content_height = int(math.ceil(doc.size().height()))
+        line_height = self._line_height()
+        wrapped_lines = max(1, int(math.ceil(content_height / max(1, line_height))))
+        line_count = max(doc.blockCount(), wrapped_lines)
+        line_count = max(self._min_lines, min(self._max_lines, line_count))
+        target = self._height_for_lines(line_count)
+        if target != self.height():
+            self.setFixedHeight(target)
+
+
 def dropped_image_paths_from_mime_data(mime_data) -> list[str]:
     """Return unique local image paths from a drag/drop payload."""
     if mime_data is None or not mime_data.hasUrls():
@@ -1249,6 +1307,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         outer.addWidget(add_btn_row)
 
         self.scale_group, scale_layout = create_section_card(self.tr("Scale"))
+        self.scale_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.field_scale_row = QWidget()
         field_scale_layout = QHBoxLayout(self.field_scale_row)
         field_scale_layout.setContentsMargins(0, 0, 0, 0)
@@ -1349,17 +1408,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
             body_margins=(8, 8, 8, 8),
             body_spacing=6,
         )
-        self.image_note_input = QPlainTextEdit()
+        self.image_note_input = AutoSizingPlainTextEdit(self, min_lines=4, max_lines=8)
         self.image_note_input.setObjectName("imageNoteInput")
         self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
-        self.image_note_input.setFixedHeight(56)
-        self.image_note_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.image_note_input.textChanged.connect(self._on_settings_changed)
         self._register_hint_widget(
             self.image_note_input,
             self.tr("Store a per-image note alongside the selected image."),
         )
         notes_layout.addWidget(self.image_note_input)
+        notes_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         layout.addWidget(notes_group)
 
         self._build_raw_processing_panel(layout)
@@ -1998,6 +2056,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_resize_group_state()
         self._update_scalebar_controls_visibility()
         self._update_scale_mismatch_warning()
+        self._refresh_scale_group_geometry()
 
     def _update_scale_context_controls(self, *, all_field: bool, all_micro: bool) -> None:
         if hasattr(self, "field_scale_row"):
@@ -2031,6 +2090,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if hasattr(self, "_scale_bar_inline"):
             self._scale_bar_inline.setVisible(active and is_micro)
             self._scale_bar_inline.setEnabled(is_micro)
+        self._refresh_scale_group_geometry()
+
+    def _refresh_scale_group_geometry(self) -> None:
+        if not hasattr(self, "scale_group"):
+            return
+        layout = self.scale_group.layout() if hasattr(self.scale_group, "layout") else None
+        if layout is not None:
+            layout.invalidate()
+        self.scale_group.updateGeometry()
+        self.scale_group.adjustSize()
 
     def _update_resize_group_state(self) -> None:
         if not hasattr(self, "resize_group"):
@@ -4265,6 +4334,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.image_note_input.blockSignals(True)
             self.image_note_input.setPlainText(str(result.notes or ""))
             self.image_note_input.blockSignals(False)
+            if hasattr(self.image_note_input, "_schedule_height_update"):
+                self.image_note_input._schedule_height_update()
         if result.scale_bar_length_um:
             display_len = (
                 float(result.scale_bar_length_um) / 1000.0
