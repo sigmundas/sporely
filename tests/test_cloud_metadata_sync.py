@@ -824,3 +824,62 @@ def test_pull_all_reports_deleted_remote_observations_in_sync_summary(monkeypatc
         }
     ]
     assert result["sync_summary"]["observations_deleted_remote"] == 1
+
+
+class _RecordingMeasurementClient(cloud_sync.SporelyCloudClient):
+    """Real client with `_get` stubbed to record the batched fetch requests."""
+
+    def __init__(self, rows_by_image=None):
+        super().__init__("access-token", "user-id")
+        self._rows_by_image = dict(rows_by_image or {})
+        self.requested_paths = []
+        self.requested_chunks = []
+
+    def _get(self, path: str):
+        self.requested_paths.append(path)
+        if str(path or "").startswith("spore_measurements?"):
+            # Extract the image_id=in.(...) chunk so we can assert batch sizes.
+            marker = "image_id=in.("
+            start = path.index(marker) + len(marker)
+            end = path.index(")", start)
+            ids = [piece for piece in path[start:end].split(",") if piece]
+            self.requested_chunks.append(ids)
+            rows = []
+            for image_id in ids:
+                rows.extend(self._rows_by_image.get(image_id, []))
+            return rows
+        return []
+
+
+def test_pull_measurements_for_images_batches_by_configured_size():
+    # More IDs than one batch: 250 IDs with batch size 100 => 3 requests.
+    image_ids = [f"img-{n:04d}" for n in range(250)]
+    client = _RecordingMeasurementClient()
+
+    client.pull_measurements_for_images(image_ids)
+
+    batch_size = cloud_sync._CLOUD_SYNC_IN_BATCH_SIZE
+    expected_requests = (len(image_ids) + batch_size - 1) // batch_size
+    assert len(client.requested_chunks) == expected_requests
+    # No batch exceeds the configured size, and every ID is covered exactly once.
+    assert all(len(chunk) <= batch_size for chunk in client.requested_chunks)
+    flattened = [image_id for chunk in client.requested_chunks for image_id in chunk]
+    assert flattened == image_ids
+
+
+def test_pull_measurements_for_images_returns_all_rows_with_full_projection():
+    image_ids = ["img-a", "img-b"]
+    rows_by_image = {
+        "img-a": [{"id": "m1", "image_id": "img-a", "length_um": 10.0}],
+        "img-b": [{"id": "m2", "image_id": "img-b", "width_um": 5.0}],
+    }
+    client = _RecordingMeasurementClient(rows_by_image)
+
+    result = client.pull_measurements_for_images(image_ids)
+
+    assert [row["id"] for row in result] == ["m1", "m2"]
+    # The projection must still select every column the hydration path consumes.
+    select_path = client.requested_paths[0]
+    required_columns = list(cloud_sync._SNAPSHOT_MEAS_FIELDS) + ["image_key", "thumb_key"]
+    for column in required_columns:
+        assert column in select_path

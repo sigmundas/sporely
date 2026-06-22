@@ -5360,6 +5360,14 @@ _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
     'thumb_key',
 )
 
+# Batch size for PostgREST `id=in.(...)` fetches (measurements + image metadata).
+# IDs are UUIDs (~36 chars), so 100 IDs keep the `in.(...)` clause under ~3.7KB,
+# well below any reasonable proxy URL limit (nginx default request line is 8KB),
+# while halving the request count vs the previous size of 50 (e.g. 866 image IDs
+# go from 18 requests to 9). Kept conservative on purpose; do not raise without
+# re-checking the proxy URL limit for the longest realistic ID list.
+_CLOUD_SYNC_IN_BATCH_SIZE = 100
+
 
 def _normalize_measurement_type_value(value) -> str:
     text = str(value or 'manual').strip().lower()
@@ -8841,20 +8849,45 @@ class SporelyCloudClient:
         image_ids = [str(image_id or '').strip() for image_id in (image_cloud_ids or []) if str(image_id or '').strip()]
         all_rows: list[dict] = []
         success = False
+        batch_size = _CLOUD_SYNC_IN_BATCH_SIZE
+        request_count = 0
+        fetch_start = _cloud_sync_perf_counter()
         try:
             if not image_ids:
                 success = True
                 return []
-            for i in range(0, len(image_ids), 50):
-                chunk = image_ids[i:i + 50]
+            batch_total = (len(image_ids) + batch_size - 1) // batch_size
+            print(
+                f'[cloud_sync] measurement fetch: start image_ids={len(image_ids)} '
+                f'batch_size={batch_size} batches={batch_total}',
+                flush=True,
+            )
+            for batch_index, i in enumerate(range(0, len(image_ids), batch_size)):
+                chunk = image_ids[i:i + batch_size]
                 ids_str = ','.join(chunk)
+                batch_start = _cloud_sync_perf_counter()
                 rows = self._get(
                     f'spore_measurements?image_id=in.({ids_str})&user_id=eq.{self.user_id}&order=measured_at.asc,id.asc&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
                 )
+                request_count += 1
                 all_rows.extend(rows)
+                batch_elapsed = _cloud_sync_perf_counter() - batch_start
+                if batch_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
+                    print(
+                        f'[cloud_sync] measurement fetch: slow batch '
+                        f'{batch_index + 1}/{batch_total} ids={len(chunk)} '
+                        f'rows={len(rows)} duration={batch_elapsed * 1000:.0f}ms',
+                        flush=True,
+                    )
             success = True
             return all_rows
         finally:
+            print(
+                f'[cloud_sync] measurement fetch: complete requests={request_count} '
+                f'rows={len(all_rows)} '
+                f'duration={(_cloud_sync_perf_counter() - fetch_start) * 1000:.0f}ms',
+                flush=True,
+            )
             if profiler is not None:
                 try:
                     profiler.record_pull_measurements_for_images(len(all_rows) if success else 0)
@@ -8869,8 +8902,8 @@ class SporelyCloudClient:
             if not obs_cloud_ids:
                 success = True
                 return []
-            for i in range(0, len(obs_cloud_ids), 50):
-                chunk = obs_cloud_ids[i:i+50]
+            for i in range(0, len(obs_cloud_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+                chunk = obs_cloud_ids[i:i + _CLOUD_SYNC_IN_BATCH_SIZE]
                 ids_str = ','.join(chunk)
                 rows = self._get(
                     f'observation_images?observation_id=in.({ids_str})&user_id=eq.{self.user_id}&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
