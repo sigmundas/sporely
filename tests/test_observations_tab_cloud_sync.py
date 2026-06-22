@@ -23,6 +23,30 @@ def qapp():
     return app
 
 
+def test_cloud_workers_have_non_empty_object_names(qapp):
+    """Every cloud/background worker must carry an objectName so a
+    'QThread: Destroyed while thread "" is still running' warning can be traced
+    to a specific worker instead of an anonymous thread.
+    """
+    from ui.cloud_conflict_dialog import ConflictResolutionWorker
+
+    workers = [
+        observations_tab._CloudAutoSyncWorker(prepare_images_cb=None),
+        observations_tab._CloudMediaMaterializationWorker(1),
+        observations_tab._ThumbnailLoaderWorker([]),
+        observations_tab.LocationLookupWorker(0.0, 0.0),
+        observations_tab.ArtsobsMobileLinkCheckWorker([]),
+        main_window._CloudLoginWorker("a@example.com", "pw"),
+        ConflictResolutionWorker([]),
+    ]
+    try:
+        for worker in workers:
+            assert worker.objectName(), f"{type(worker).__name__} has an empty objectName"
+    finally:
+        for worker in workers:
+            worker.deleteLater()
+
+
 def test_cloud_auto_sync_worker_disables_remote_media_materialization(monkeypatch):
     fake_client = SimpleNamespace(user_id="user-123")
     sync_kwargs: dict = {}

@@ -47,6 +47,7 @@ class ConflictResolutionWorker(QThread):
 
     def __init__(self, decisions, prepare_images_cb=None):
         super().__init__()
+        self.setObjectName("Cloud conflict resolution")
         self.decisions = decisions
         self.prepare_images_cb = prepare_images_cb
 
@@ -58,6 +59,8 @@ class ConflictResolutionWorker(QThread):
             total = len(self.decisions)
             resolved_any = False
             for i, dec in enumerate(self.decisions):
+                if self.isInterruptionRequested():
+                    return
                 local_id = dec['local_id']
                 cloud_id = dec['cloud_id']
                 action = dec['action']

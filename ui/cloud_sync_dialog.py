@@ -60,6 +60,7 @@ class _SyncWorker(QThread):
         prepare_images_cb=None,
     ):
         super().__init__()
+        self.setObjectName("Cloud sync (dialog)")
         self._client = client
         self._push_images = push_images
         self._materialize_remote_images = materialize_remote_images
@@ -251,6 +252,7 @@ class CloudSyncDialog(QDialog):
             fail  = Signal(str)
             def __init__(self, email, pw):
                 super().__init__()
+                self.setObjectName("Cloud login (dialog)")
                 self._email, self._pw = email, pw
             def run(self):
                 try:

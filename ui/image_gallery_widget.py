@@ -95,6 +95,7 @@ class _ObservationGalleryLoader(QThread):
 
     def __init__(self, observation_id: int) -> None:
         super().__init__()
+        self.setObjectName("Observation gallery loader")
         self._observation_id = int(observation_id)
 
     def run(self) -> None:

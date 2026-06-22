@@ -107,6 +107,7 @@ from utils.publish_targets import (
 from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
+    CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY,
     CloudSyncError,
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
@@ -292,6 +293,23 @@ def normalize_location_precision(value: str | None, fallback: str = LOCATION_PRE
 
 
 _running_cloud_workers: list[QThread] = []
+
+
+def _cloud_sync_prepare_skip_ids(observation: dict | None) -> set[int]:
+    """Local image ids the upload-preparation step should skip.
+
+    Populated by the remote-first association pass in cloud_sync so that a
+    metadata-only association of an already-uploaded image does not encode a
+    temporary WebP upload candidate.
+    """
+    skip_ids: set[int] = set()
+    raw = (observation or {}).get(CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY)
+    for value in raw or []:
+        try:
+            skip_ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return skip_ids
 
 
 def _track_worker(worker: QThread) -> None:
@@ -542,6 +560,7 @@ class _ThumbnailLoaderWorker(QThread):
 
     def __init__(self, paths: list, parent=None):
         super().__init__(parent)
+        self.setObjectName("Thumbnail loader")
         self._paths = list(paths)
 
     def run(self) -> None:
@@ -738,6 +757,7 @@ class LocationLookupWorker(QThread):
 
     def __init__(self, lat: float, lon: float, parent=None):
         super().__init__(parent)
+        self.setObjectName("Location lookup")
         self.lat = lat
         self.lon = lon
 
@@ -783,6 +803,7 @@ class ArtsobsMobileLinkCheckWorker(QThread):
 
     def __init__(self, checks: list[tuple[int, int]], parent=None):
         super().__init__(parent)
+        self.setObjectName("Artsobs mobile link check")
         self._checks = checks
 
     def run(self):
@@ -1237,6 +1258,7 @@ class INatAIGuessWorker(QThread):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("iNat AI guess")
         self.requests: list[dict] = []
         for request in requests or []:
             if not request:
@@ -4583,6 +4605,29 @@ class ObservationsTab(QWidget):
             except Exception:
                 pass
 
+        # Module-level background cloud workers (e.g. conflict resolution) are
+        # tracked separately and deleted on a delayed timer. If the app exits
+        # while one is still running it is destroyed mid-flight, which aborts
+        # with "QThread: Destroyed while thread '' is still running". Request
+        # interruption and join each with a bounded timeout before exit.
+        for worker in list(_running_cloud_workers):
+            if worker is None:
+                continue
+            try:
+                worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                if worker.isRunning():
+                    worker.wait(5000)
+            except Exception:
+                pass
+            try:
+                if worker.isRunning():
+                    self._park_thread_until_finished(worker)
+            except Exception:
+                pass
+
     def _on_thumbnail_ready(self, path: str, qimage: object) -> None:
         if not isinstance(qimage, QImage) or qimage.isNull():
             return
@@ -5902,9 +5947,11 @@ class ObservationsTab(QWidget):
         if not observation_id:
             return [], None, []
 
+        skip_ids = _cloud_sync_prepare_skip_ids(obs)
         selected_images = [
             dict(image_row or {})
             for image_row in self._collect_cloud_sync_image_rows(int(observation_id))
+            if int((image_row or {}).get("id") or 0) not in skip_ids
         ]
         if not selected_images:
             return [], None, []
@@ -6088,9 +6135,11 @@ class ObservationsTab(QWidget):
         if not observation_id:
             return [], None, []
 
+        skip_ids = _cloud_sync_prepare_skip_ids(obs)
         selected_images = [
             dict(image_row or {})
             for image_row in self._collect_cloud_sync_image_rows(int(observation_id))
+            if int((image_row or {}).get("id") or 0) not in skip_ids
         ]
         if not selected_images:
             return [], None, []

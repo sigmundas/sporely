@@ -395,6 +395,7 @@ class AIGuessWorker(QThread):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("AI guess (import)")
         self.requests: list[dict] = []
         for request in requests or []:
             if not request:

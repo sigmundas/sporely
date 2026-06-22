@@ -1550,6 +1550,10 @@ _CLOUD_SYNC_SUMMARY_CONTEXT: ContextVar[dict[str, int] | None] = ContextVar(
     default=None,
 )
 
+# A single sync sub-step taking longer than this is logged so a silent UI pause
+# can be traced to the exact calibration / step responsible.
+_CLOUD_SYNC_SLOW_STEP_SECONDS = 1.0
+
 
 def _cloud_sync_profile_enabled() -> bool:
     return str(os.getenv(_CLOUD_SYNC_PROFILE_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -3249,10 +3253,17 @@ _SYNC_SUMMARY_KEYS = (
     'images_prepared_local',
     'images_uploaded',
     'images_skipped_already_synced',
+    'images_cloud_id_repaired',
     'images_deleted_remote',
     'measurements_checked',
     'measurements_patched',
     'measurements_skipped_noop',
+    'calibrations_pushed',
+    'calibrations_pulled',
+    'calibrations_skipped_noop',
+    'calibrations_conflicts',
+    'calibration_reference_images_uploaded',
+    'calibration_remote_lookups',
     'storage_quota_delta_rpc_calls',
     'remote_media_downloads',
     'remote_media_materializations',
@@ -3321,6 +3332,9 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
     images_skipped = _sync_summary_value(summary, 'images_skipped_already_synced')
     if images_skipped:
         image_bits.append(f'{images_skipped} skipped as already synced')
+    images_repaired = _sync_summary_value(summary, 'images_cloud_id_repaired')
+    if images_repaired:
+        image_bits.append(f'{images_repaired} cloud_id associations repaired')
     images_deleted = _sync_summary_value(summary, 'images_deleted_remote')
     if images_deleted:
         image_bits.append(f'{images_deleted} deleted remotely')
@@ -3339,6 +3353,25 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
         measurement_bits.append(f'{measurements_noop} skipped as no-op')
     if measurement_bits:
         lines.append(f"Measurements: {'; '.join(measurement_bits)}.")
+
+    calibration_bits = []
+    calibrations_pushed = _sync_summary_value(summary, 'calibrations_pushed')
+    if calibrations_pushed:
+        calibration_bits.append(f'{calibrations_pushed} pushed')
+    calibrations_pulled = _sync_summary_value(summary, 'calibrations_pulled')
+    if calibrations_pulled:
+        calibration_bits.append(f'{calibrations_pulled} pulled')
+    calibrations_noop = _sync_summary_value(summary, 'calibrations_skipped_noop')
+    if calibrations_noop:
+        calibration_bits.append(f'{calibrations_noop} skipped as no-op')
+    calibrations_conflicts = _sync_summary_value(summary, 'calibrations_conflicts')
+    if calibrations_conflicts:
+        calibration_bits.append(f'{calibrations_conflicts} conflicts')
+    calibration_reference_uploads = _sync_summary_value(summary, 'calibration_reference_images_uploaded')
+    if calibration_reference_uploads:
+        calibration_bits.append(f'{calibration_reference_uploads} reference image(s) uploaded')
+    if calibration_bits:
+        lines.append(f"Calibrations: {'; '.join(calibration_bits)}.")
 
     storage_quota_delta_calls = _sync_summary_value(summary, 'storage_quota_delta_rpc_calls')
     if storage_quota_delta_calls:
@@ -3536,6 +3569,51 @@ def _store_cloud_image_file_signature(
 
 def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int | str) -> None:
     SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
+
+
+def _reconcile_local_image_cloud_id(
+    local_image_id: int | str,
+    cloud_image_id: str,
+    *,
+    mark_synced: bool = False,
+) -> bool:
+    """Persist ``cloud_image_id`` onto the local images row.
+
+    Returns ``True`` when the row was updated because its ``cloud_id`` was
+    missing or stale. This makes metadata-only associations of an existing
+    remote cloud image persistent: previously-synced local rows whose
+    ``cloud_id`` was lost get re-linked instead of being re-dirtied on every
+    sync. No image bytes are uploaded here — only the local link is restored.
+    """
+    try:
+        image_id = int(local_image_id)
+    except Exception:
+        image_id = 0
+    cloud_image_id = str(cloud_image_id or '').strip()
+    if image_id <= 0 or not cloud_image_id:
+        return False
+    conn = get_connection()
+    try:
+        row = conn.execute('SELECT cloud_id FROM images WHERE id = ?', (image_id,)).fetchone()
+        if row is None:
+            return False
+        existing = str((row['cloud_id'] if isinstance(row, sqlite3.Row) else row[0]) or '').strip()
+        if existing == cloud_image_id:
+            return False
+        if mark_synced:
+            conn.execute(
+                'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
+                (cloud_image_id, datetime.now(timezone.utc).isoformat(), image_id),
+            )
+        else:
+            conn.execute(
+                'UPDATE images SET cloud_id = ? WHERE id = ?',
+                (cloud_image_id, image_id),
+            )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
 
 
 def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ...] | set[str] | None = None) -> set[str]:
@@ -3824,8 +3902,10 @@ def sync_all(
         _emit_progress(progress_cb, "Connecting to Sporely Cloud...", progress_state)
 
         # Pre-fetch remote metadata once to reuse in both phases
+        _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
         with _cloud_sync_phase_scope(profiler, 'list_remote_observations'):
             remote_obs = client.list_remote_observations()
+        _emit_progress(progress_cb, "Loading cloud calibrations…", progress_state)
         with _cloud_sync_phase_scope(profiler, 'list_remote_calibrations'):
             remote_calibrations = client.list_remote_calibrations()
 
@@ -4236,6 +4316,8 @@ def push_calibrations(
     remote_calibrations: list[dict] | None = None,
 ) -> dict:
     """Push calibration metadata rows that exist only on the desktop."""
+    phase_start = _cloud_sync_perf_counter()
+    summary = _cloud_sync_current_summary()
     remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
     remote_map = {
         _normalize_calibration_uuid(row.get('calibration_uuid')): row
@@ -4245,12 +4327,23 @@ def push_calibrations(
     local_rows = _load_local_calibration_rows()
     total = len(local_rows)
     pushed = 0
+    matched_noop = 0
+    conflicts = 0
+    remote_lookups = 0
     errors: list[str] = []
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     _extend_progress_total(progress_state, total)
     reference_image_uploader = getattr(client, 'push_calibration_reference_image', None)
+    print(
+        f"[cloud_sync] calibration push: start (local={total}, remote={len(remote_rows)})",
+        flush=True,
+    )
+    if total:
+        _emit_progress(progress_cb, "Checking local calibrations…", progress_state)
 
     for index, local_row in enumerate(local_rows, start=1):
+        step_start = _cloud_sync_perf_counter()
+        step_kind = 'metadata'
         calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
         label = _calibration_display_name(local_row)
         _emit_progress(
@@ -4266,9 +4359,12 @@ def push_calibrations(
             remote_row = remote_map.get(calibration_uuid)
             if remote_row is not None:
                 if not _calibration_payloads_match(local_row, remote_row):
+                    conflicts += 1
                     errors.append(_calibration_sync_warning('push', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
                     continue
+                matched_noop += 1
                 if callable(reference_image_uploader):
+                    step_kind = 'reference_image'
                     warning = reference_image_uploader(
                         local_row,
                         cloud_row_id=str(remote_row.get('id') or '').strip() or None,
@@ -4278,10 +4374,18 @@ def push_calibrations(
                         errors.append(warning)
                 continue
 
+            # Not in the freshly-listed remote set: double-check the server
+            # before inserting so a row created since the list (e.g. another
+            # device) is not duplicated. This is an extra remote call per
+            # not-yet-synced calibration; tracked so an N+1 shows up in logs.
+            step_kind = 'remote_lookup'
+            remote_lookups += 1
             current_remote = client.find_remote_calibration(calibration_uuid)
             if current_remote is not None:
                 if _calibration_payloads_match(local_row, current_remote):
+                    matched_noop += 1
                     if callable(reference_image_uploader):
+                        step_kind = 'reference_image'
                         warning = reference_image_uploader(
                             local_row,
                             cloud_row_id=str(current_remote.get('id') or '').strip() or None,
@@ -4290,12 +4394,15 @@ def push_calibrations(
                         if warning:
                             errors.append(warning)
                     continue
+                conflicts += 1
                 errors.append(_calibration_sync_warning('push', local_row, current_remote, _calibration_diff_fields(local_row, current_remote)))
                 continue
 
+            step_kind = 'metadata_insert'
             cloud_row_id = client.push_calibration_metadata(local_row)
             pushed += 1
             if callable(reference_image_uploader):
+                step_kind = 'reference_image'
                 warning = reference_image_uploader(
                     local_row,
                     cloud_row_id=cloud_row_id,
@@ -4312,9 +4419,34 @@ def push_calibrations(
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
+            step_elapsed = _cloud_sync_perf_counter() - step_start
+            if step_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
+                print(
+                    f"[cloud_sync] calibration push: slow step "
+                    f"calibration {index}/{max(1, total)} ({label}) "
+                    f"took {step_elapsed * 1000:.0f}ms during {step_kind}",
+                    flush=True,
+                )
             _advance_progress(progress_state, 1)
 
-    return {'pushed': pushed, 'total': total, 'errors': errors}
+    _increment_sync_summary(summary, 'calibrations_pushed', pushed)
+    _increment_sync_summary(summary, 'calibrations_skipped_noop', matched_noop)
+    _increment_sync_summary(summary, 'calibrations_conflicts', conflicts)
+    _increment_sync_summary(summary, 'calibration_remote_lookups', remote_lookups)
+    print(
+        f"[cloud_sync] calibration push: complete pushed={pushed} matched_noop={matched_noop} "
+        f"conflicts={conflicts} remote_lookups={remote_lookups} errors={len(errors)} "
+        f"duration={(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms",
+        flush=True,
+    )
+    return {
+        'pushed': pushed,
+        'total': total,
+        'matched_noop': matched_noop,
+        'conflicts': conflicts,
+        'remote_lookups': remote_lookups,
+        'errors': errors,
+    }
 
 
 def pull_calibrations(
@@ -4324,14 +4456,22 @@ def pull_calibrations(
     remote_calibrations: list[dict] | None = None,
 ) -> dict:
     """Pull cloud calibration metadata into local rows keyed by UUID."""
+    phase_start = _cloud_sync_perf_counter()
+    summary = _cloud_sync_current_summary()
     remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
     local_rows = _load_local_calibration_rows()
     local_map = _local_calibration_lookup(local_rows)
     total = len(remote_rows)
     pulled = 0
+    matched_noop = 0
+    conflicts = 0
     errors: list[str] = []
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     _extend_progress_total(progress_state, total)
+    print(
+        f"[cloud_sync] calibration pull: start (remote={total}, local={len(local_rows)})",
+        flush=True,
+    )
 
     remote_rows_sorted = sorted(
         remote_rows,
@@ -4344,6 +4484,7 @@ def pull_calibrations(
     )
 
     for index, remote_row in enumerate(remote_rows_sorted, start=1):
+        step_start = _cloud_sync_perf_counter()
         calibration_uuid = _normalize_calibration_uuid(remote_row.get('calibration_uuid'))
         label = _calibration_display_name(remote_row)
         _emit_progress(
@@ -4359,7 +4500,10 @@ def pull_calibrations(
             local_row = local_map.get(calibration_uuid)
             if local_row is not None:
                 if not _calibration_payloads_match(local_row, remote_row):
+                    conflicts += 1
                     errors.append(_calibration_sync_warning('pull', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
+                else:
+                    matched_noop += 1
                 continue
 
             try:
@@ -4369,8 +4513,10 @@ def pull_calibrations(
             except sqlite3.IntegrityError:
                 current_local = _load_local_calibration_by_uuid(calibration_uuid)
                 if current_local and _calibration_payloads_match(current_local, remote_row):
+                    matched_noop += 1
                     local_map[calibration_uuid] = current_local
                     continue
+                conflicts += 1
                 errors.append(_calibration_sync_warning('pull', current_local or remote_row, remote_row, _calibration_diff_fields(current_local or {}, remote_row)))
             except Exception as exc:
                 errors.append(f'calibration {calibration_uuid}: {exc}')
@@ -4383,14 +4529,47 @@ def pull_calibrations(
                 raise
             errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
         finally:
+            step_elapsed = _cloud_sync_perf_counter() - step_start
+            if step_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
+                print(
+                    f"[cloud_sync] calibration pull: slow step "
+                    f"calibration {index}/{max(1, total)} ({label}) took {step_elapsed * 1000:.0f}ms",
+                    flush=True,
+                )
             _advance_progress(progress_state, 1)
 
+    reconcile_start = _cloud_sync_perf_counter()
+    reconciled_links = 0
     try:
-        _reconcile_local_image_calibration_links()
+        _emit_progress(progress_cb, "Linking calibration images…", progress_state)
+        reconciled_links = _reconcile_local_image_calibration_links()
     except Exception as exc:
         errors.append(f'calibration reconciliation: {exc}')
+    reconcile_elapsed = _cloud_sync_perf_counter() - reconcile_start
+    if reconcile_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
+        print(
+            f"[cloud_sync] calibration pull: image link reconciliation took "
+            f"{reconcile_elapsed * 1000:.0f}ms ({reconciled_links} link(s) updated)",
+            flush=True,
+        )
 
-    return {'pulled': pulled, 'total': total, 'errors': errors}
+    _increment_sync_summary(summary, 'calibrations_pulled', pulled)
+    _increment_sync_summary(summary, 'calibrations_skipped_noop', matched_noop)
+    _increment_sync_summary(summary, 'calibrations_conflicts', conflicts)
+    print(
+        f"[cloud_sync] calibration pull: complete pulled={pulled} matched_noop={matched_noop} "
+        f"conflicts={conflicts} links_updated={reconciled_links} errors={len(errors)} "
+        f"duration={(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms",
+        flush=True,
+    )
+    return {
+        'pulled': pulled,
+        'total': total,
+        'matched_noop': matched_noop,
+        'conflicts': conflicts,
+        'links_updated': reconciled_links,
+        'errors': errors,
+    }
 
 
 def list_calibration_conflicts(
@@ -5336,6 +5515,108 @@ def _mark_cloud_observations_dirty_for_media_changes() -> None:
     SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
 
 
+def _cloud_publish_excluded_image_ids(observation_id: int | None) -> set[int]:
+    """Local image ids the user has unchecked from cloud/publish upload.
+
+    Mirrors ``ObservationsTab._publish_excluded_image_ids`` so the backend
+    dirty-scan agrees with what the upload path actually mirrors.
+    """
+    if not observation_id:
+        return set()
+    key = f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
+    raw = SettingsDB.get_setting(key, "[]")
+    try:
+        loaded = json.loads(raw or "[]")
+        if isinstance(loaded, list):
+            return {int(value) for value in loaded}
+    except Exception:
+        pass
+    return set()
+
+
+def _cloud_publish_path_key(path: str | None) -> str:
+    if not path:
+        return ""
+    try:
+        return str(Path(path).resolve()).lower()
+    except Exception:
+        return str(Path(path)).lower()
+
+
+def _pending_cloud_pushable_image_ids(observation_id: int) -> list[int]:
+    """Image ids still missing a cloud_id that cloud sync would actually push.
+
+    This mirrors ``ObservationsTab._collect_cloud_sync_image_rows`` so the
+    dirty-scan does not perpetually re-dirty observations over rows that sync
+    intentionally skips — publish-excluded images, duplicate file paths and
+    (for non cloud-origin rows) missing files. Without this alignment those
+    rows keep ``cloud_id IS NULL`` forever and re-trigger the scan on every run.
+    """
+    try:
+        excluded_ids = _cloud_publish_excluded_image_ids(observation_id)
+    except Exception:
+        excluded_ids = set()
+
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        existing_cols = {
+            str(info["name"])
+            for info in conn.execute("PRAGMA table_info(images)").fetchall()
+        }
+        if "id" not in existing_cols or "image_type" not in existing_cols:
+            return []
+        wanted = [
+            col
+            for col in (
+                "id", "image_type", "cloud_id", "filepath", "original_filepath",
+                "source_role", "file_purpose", "notes", "sort_order",
+            )
+            if col in existing_cols
+        ]
+        order_bits: list[str] = []
+        if "sort_order" in existing_cols:
+            order_bits.append("CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END")
+            order_bits.append("sort_order")
+        order_bits.append("id")
+        rows = conn.execute(
+            f"SELECT {', '.join(wanted)} FROM images WHERE observation_id = ? "
+            f"ORDER BY {', '.join(order_bits)}",
+            (int(observation_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    pending: list[int] = []
+    seen_paths: set[str] = set()
+    for image in rows or []:
+        row = dict(image)
+        image_id = _safe_int(row.get("id"))
+        if image_id <= 0 or image_id in excluded_ids:
+            continue
+        image_type = str(row.get("image_type") or "").strip().lower()
+        if image_type not in {"field", "microscope"}:
+            continue
+        if not should_push_local_image_to_cloud(row):
+            continue
+        filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
+        source_role = str(row.get("source_role") or "").strip().lower()
+        file_purpose = str(row.get("file_purpose") or "").strip().lower()
+        is_cloud_origin = source_role == "cloud_recovery_cache" or file_purpose == "cache"
+        if not is_cloud_origin and (not filepath or not Path(filepath).exists()):
+            # Non cloud-origin rows are only pushed when their local file exists;
+            # otherwise sync skips them and they would re-dirty forever.
+            continue
+        if filepath:
+            path_key = _cloud_publish_path_key(filepath)
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+        if not str(row.get("cloud_id") or "").strip():
+            pending.append(image_id)
+    return pending
+
+
 def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
     """Mark synced observations dirty when they still have cloud-eligible local images.
 
@@ -5359,40 +5640,33 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
             ORDER BY o.id
             """
         ).fetchall()
-        for row in rows or []:
-            obs_id = _safe_int(dict(row or {}).get("observation_id"))
-            if obs_id <= 0:
-                continue
-            image_rows = cursor.execute(
-                """
-                SELECT id, image_type, notes, source_role, file_purpose
-                FROM images
-                WHERE observation_id = ?
-                  AND cloud_id IS NULL
-                  AND image_type IN ('field', 'microscope')
-                ORDER BY
-                    CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
-                    sort_order,
-                    id
-                """,
-                (obs_id,),
-            ).fetchall()
-            if any(should_push_local_image_to_cloud(dict(image_row or {})) for image_row in image_rows):
-                pending_count = sum(
-                    1
-                    for image_row in image_rows
-                    if should_push_local_image_to_cloud(dict(image_row or {}))
-                )
-                if pending_count > 0:
-                    print(
-                        f"[cloud_sync] Observation {obs_id}: re-dirtied because "
-                        f"{pending_count} cloud-eligible local image row(s) still have cloud_id IS NULL"
-                    )
-                dirty_ids.append(obs_id)
+        candidate_ids = [
+            _safe_int(dict(row or {}).get("observation_id"))
+            for row in rows or []
+        ]
     except Exception as exc:
         print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
+        candidate_ids = []
     finally:
         conn.close()
+
+    for obs_id in candidate_ids:
+        if obs_id <= 0:
+            continue
+        try:
+            pending_ids = _pending_cloud_pushable_image_ids(obs_id)
+        except Exception as exc:
+            print(
+                f"[cloud_sync] Could not evaluate pending local images for observation {obs_id}: {exc}"
+            )
+            continue
+        pending_count = len(pending_ids)
+        if pending_count > 0:
+            print(
+                f"[cloud_sync] Observation {obs_id}: re-dirtied because "
+                f"{pending_count} cloud-eligible local image row(s) still have cloud_id IS NULL"
+            )
+            dirty_ids.append(obs_id)
     if not dirty_ids:
         return
 
@@ -7779,6 +8053,7 @@ class SporelyCloudClient:
                 f'but could not update the cloud row ({exc})'
             )
 
+        _increment_sync_summary(_cloud_sync_current_summary(), 'calibration_reference_images_uploaded')
         return None
 
     def push_calibration_metadata(self, calibration: dict) -> str:
@@ -9483,6 +9758,119 @@ def push_all(
     return result
 
 
+# Image rows the upload-preparation step should skip because a remote-first
+# pass already re-associated them with an existing cloud image. Passed to the
+# prepare callback via the observation dict so no temporary WebP candidate is
+# encoded for metadata-only associations.
+CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY = '_cloud_sync_skip_prepare_image_ids'
+
+
+def _associate_persisted_cloud_images(
+    client: SporelyCloudClient,
+    obs: dict,
+    existing_rows: list[dict],
+) -> tuple[set[int], set[str]]:
+    """Re-link orphaned local image rows to existing remote cloud images.
+
+    Targets the repair case described in the sync bug: a local image row whose
+    ``cloud_id`` was lost but which still has a matching remote cloud image
+    (same ``desktop_id``), an existing remote ``storage_path`` and descriptive
+    metadata that already matches. The local ``cloud_id`` is restored without
+    uploading any bytes and without encoding a temporary WebP candidate.
+
+    Returns ``(associated_local_image_ids, kept_remote_cloud_ids)``. The first
+    set tells the upload-preparation step which rows it can skip; the second
+    seeds ``kept_cloud_ids`` so the re-linked remote rows are not treated as
+    stale and deleted.
+    """
+    associated_ids: set[int] = set()
+    kept_cloud_ids: set[str] = set()
+    try:
+        obs_local_id = int(obs.get('id'))
+    except Exception:
+        return associated_ids, kept_cloud_ids
+
+    existing_by_desktop_id = {
+        _safe_int(row.get('desktop_id')): row
+        for row in (existing_rows or [])
+        if _safe_int(row.get('desktop_id')) != 0
+    }
+    if not existing_by_desktop_id:
+        return associated_ids, kept_cloud_ids
+
+    include_ai_crop = client._observation_images_support_ai_crop()
+    include_upload_meta = client._observation_images_support_upload_metadata()
+    # Fields that describe the uploaded bytes rather than user metadata. They
+    # cannot be known without encoding, so they are excluded from the
+    # metadata-only match decision — the remote bytes are unchanged anyway.
+    upload_derived_keys = {
+        'id',
+        'storage_path',
+        'original_filename',
+        'source_width',
+        'source_height',
+        'stored_width',
+        'stored_height',
+        'stored_bytes',
+        'upload_mode',
+    }
+
+    for image_row in ImageDB.get_images_for_observation(obs_local_id):
+        img = dict(image_row or {})
+        local_image_id = _safe_int(img.get('id'))
+        if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
+            continue
+        # Only repair orphaned rows. Rows that still hold a cloud_id (correct or
+        # conflicting) and never-synced rows flow through the normal path.
+        if str(img.get('cloud_id') or '').strip():
+            continue
+        if not str(img.get('synced_at') or '').strip():
+            continue
+        remote_row = existing_by_desktop_id.get(local_image_id)
+        if not remote_row:
+            continue
+        remote_cloud_id = str(remote_row.get('id') or '').strip()
+        remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
+        if not remote_cloud_id or not remote_storage_path:
+            continue
+
+        expected_payload = _prepared_item_remote_payload(
+            img,
+            '',
+            remote_storage_path,
+            include_ai_crop=include_ai_crop,
+            include_upload_meta=include_upload_meta,
+        )
+        remote_payload = _remote_image_payload(
+            remote_row,
+            include_ai_crop=include_ai_crop,
+            include_upload_meta=include_upload_meta,
+        )
+        if not _image_calibration_uuid(img):
+            expected_payload.pop('calibration_uuid', None)
+            remote_payload.pop('calibration_uuid', None)
+        for key in upload_derived_keys:
+            expected_payload.pop(key, None)
+            remote_payload.pop(key, None)
+        if expected_payload != remote_payload:
+            # Descriptive metadata changed while the link was missing — let the
+            # normal prepare + metadata-patch path handle it.
+            continue
+
+        if _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True):
+            _increment_sync_summary(_cloud_sync_current_summary(), 'images_cloud_id_repaired')
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: metadata association for cloud image '
+                f'actual_upload=False image_id={local_image_id} cloud_image_id={remote_cloud_id} '
+                f'storage_path={remote_storage_path} '
+                f'(restored local cloud_id without preparing an upload candidate)'
+            )
+        associated_ids.add(local_image_id)
+        kept_cloud_ids.add(remote_cloud_id)
+
+    return associated_ids, kept_cloud_ids
+
+
 def _push_images_for_observation(
     client: SporelyCloudClient,
     obs: dict,
@@ -9501,12 +9889,36 @@ def _push_images_for_observation(
     prepared_items: list[dict] = []
     cleanup = None
     preparation_failed = False
+    # Remote-first pass: pull existing cloud image metadata once up front so we
+    # can re-associate orphaned local rows (cloud_id lost but already uploaded)
+    # before any temporary WebP candidate is encoded for them. Reused by the
+    # main upload loop below to avoid a second metadata fetch.
+    prepass_existing_rows: list[dict] | None = None
+    prepass_kept_cloud_ids: set[str] = set()
+    skip_prepare_image_ids: set[int] = set()
+    if callable(prepare_images_cb):
+        try:
+            prepass_existing_rows = client.pull_image_metadata(obs_cloud_id) or []
+        except Exception as e:
+            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
+                raise
+            print(
+                f'[cloud_sync] Could not pre-fetch cloud images for observation {obs["id"]}: {e}'
+            )
+            prepass_existing_rows = None
+        if prepass_existing_rows is not None:
+            skip_prepare_image_ids, prepass_kept_cloud_ids = _associate_persisted_cloud_images(
+                client, obs, prepass_existing_rows
+            )
     if callable(prepare_images_cb):
         try:
             def prepare_progress(message: str, _current: int | None = None, _total: int | None = None) -> None:
                 _emit_progress(progress_cb, message, progress_state)
 
-            prepared_items, cleanup, prep_warnings = prepare_images_cb(obs, prepare_progress)
+            prepare_obs = dict(obs)
+            if skip_prepare_image_ids:
+                prepare_obs[CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY] = sorted(skip_prepare_image_ids)
+            prepared_items, cleanup, prep_warnings = prepare_images_cb(prepare_obs, prepare_progress)
             warnings.extend(prep_warnings or [])
         except Exception as e:
             if is_image_too_large_for_plan_error(e) or is_webp_support_required_for_cloud_media_upload_error(e):
@@ -9606,13 +10018,16 @@ def _push_images_for_observation(
             )
         return False
 
-    try:
-        existing_rows = client.pull_image_metadata(obs_cloud_id) or []
-    except Exception as e:
-        if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
-            raise
-        print(f'[cloud_sync] Could not fetch existing cloud images for observation {obs["id"]}: {e}')
-        existing_rows = []
+    if prepass_existing_rows is not None:
+        existing_rows = prepass_existing_rows
+    else:
+        try:
+            existing_rows = client.pull_image_metadata(obs_cloud_id) or []
+        except Exception as e:
+            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
+                raise
+            print(f'[cloud_sync] Could not fetch existing cloud images for observation {obs["id"]}: {e}')
+            existing_rows = []
     existing_by_id = {
         str(row.get('id') or '').strip(): row
         for row in existing_rows
@@ -9627,7 +10042,9 @@ def _push_images_for_observation(
     try:
         processed_items = 0
         total_items = len(prepared_items)
-        kept_cloud_ids: set[str] = set()
+        # Seed with remote rows re-associated by the remote-first pass so they
+        # are not deleted as stale even though they were skipped during prepare.
+        kept_cloud_ids: set[str] = set(prepass_kept_cloud_ids)
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
         include_upload_meta = client._observation_images_support_upload_metadata()
@@ -9715,6 +10132,24 @@ def _push_images_for_observation(
 
                 if file_matches and metadata_matches:
                     _increment_sync_summary(_cloud_sync_current_summary(), 'images_skipped_already_synced')
+                    # The remote bytes and metadata already match, but the local
+                    # row may have lost its cloud_id (e.g. an earlier overwrite).
+                    # Restore the association so this observation is not
+                    # re-dirtied forever. This is a metadata-only repair —
+                    # actual_upload=False, no bytes are sent.
+                    if remote_cloud_id and local_image_id > 0 and local_cloud_id != remote_cloud_id:
+                        if _reconcile_local_image_cloud_id(
+                            local_image_id, remote_cloud_id, mark_synced=True
+                        ):
+                            _increment_sync_summary(
+                                _cloud_sync_current_summary(), 'images_cloud_id_repaired'
+                            )
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: metadata association for cloud image '
+                                f'actual_upload=False image_id={local_image_id or item_index} '
+                                f'cloud_image_id={remote_cloud_id} storage_path={storage_path} '
+                                f'(restored missing local cloud_id)'
+                            )
                     print(
                         f'[cloud_sync] Observation {obs["id"]}: skipped already synced cloud image '
                         f'{local_image_id or item_index} (storage_path={storage_path})'

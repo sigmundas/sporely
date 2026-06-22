@@ -2674,6 +2674,8 @@ def test_mark_cloud_observations_dirty_for_pending_local_images_counts_re_dirtie
     capsys,
 ):
     db_path = _init_push_all_sync_db(tmp_path)
+    pending_image = tmp_path / "pending.jpg"
+    pending_image.write_bytes(b"pending-field-image")
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
@@ -2686,7 +2688,7 @@ def test_mark_cloud_observations_dirty_for_pending_local_images_counts_re_dirtie
                 id, observation_id, cloud_id, filepath, image_type, source_role, file_purpose
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (1, 434, None, "pending.jpg", "field", "local_canonical", "field"),
+            (1, 434, None, str(pending_image), "field", "local_canonical", "field"),
         )
         conn.commit()
     finally:

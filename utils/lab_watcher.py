@@ -124,6 +124,7 @@ class LabWatcherWorker(QThread):
 
     def __init__(self, directory_to_watch: str, parent=None):
         super().__init__(parent)
+        self.setObjectName("Lab watcher")
         self.directory_to_watch = directory_to_watch
         self.observer = None
         self._is_running = False

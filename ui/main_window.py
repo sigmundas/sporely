@@ -252,6 +252,7 @@ class _CloudLoginWorker(QThread):
 
     def __init__(self, email: str, password: str, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("Cloud login")
         self._email = str(email or "").strip()
         self._password = password or ""
 
@@ -5482,6 +5483,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.shutdown()
+            except Exception:
+                pass
+        # A cloud login worker may still be running if the user quits mid sign-in.
+        # Join it with a bounded timeout so it is not destroyed while running.
+        login_worker = getattr(self, "_cloud_login_worker", None)
+        self._cloud_login_worker = None
+        if login_worker is not None:
+            try:
+                login_worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                if login_worker.isRunning():
+                    login_worker.wait(5000)
             except Exception:
                 pass
         super().closeEvent(event)

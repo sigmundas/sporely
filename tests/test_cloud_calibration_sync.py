@@ -573,6 +573,95 @@ def test_push_calibration_reference_image_respects_existing_cloud_image_storage_
     assert patches == []
 
 
+def test_calibration_sync_records_summary_counters_and_phase_logs(monkeypatch, tmp_path, capsys):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+
+    first_uuid = str(uuid.uuid4())
+    second_uuid = str(uuid.uuid4())
+    models.CalibrationDB.add_calibration(
+        objective_key="100X",
+        microns_per_pixel=0.0315,
+        calibration_date="2026-05-08 08:30:00",
+        notes="first",
+        set_active=False,
+        calibration_uuid=first_uuid,
+    )
+    models.CalibrationDB.add_calibration(
+        objective_key="40X",
+        microns_per_pixel=0.0820,
+        calibration_date="2026-05-08 09:30:00",
+        notes="second",
+        set_active=False,
+        calibration_uuid=second_uuid,
+    )
+
+    class DummyClient:
+        def __init__(self):
+            self.find_calls = 0
+
+        def list_remote_calibrations(self):
+            return []
+
+        def find_remote_calibration(self, calibration_uuid):
+            self.find_calls += 1
+            return None
+
+        def push_calibration_metadata(self, calibration):
+            return f"cloud-{calibration.get('calibration_uuid')}"
+
+    client = DummyClient()
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        result = cloud_sync.push_calibrations(client, remote_calibrations=[])
+
+    output = capsys.readouterr().out
+    assert result["pushed"] == 2
+    assert result["remote_lookups"] == 2
+    assert client.find_calls == 2
+    assert summary["calibrations_pushed"] == 2
+    assert summary["calibration_remote_lookups"] == 2
+    assert "calibration push: start (local=2, remote=0)" in output
+    assert "calibration push: complete pushed=2" in output
+
+    # The summary line surfaces the calibration phase to the UI.
+    rendered = cloud_sync.format_sync_summary(summary)
+    assert rendered is not None and "Calibrations:" in rendered
+
+
+def test_pull_calibrations_records_summary_counters_and_phase_logs(monkeypatch, tmp_path, capsys):
+    db_path = _prepare_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+
+    remote_rows = [
+        {
+            "id": "cloud-cal-1",
+            "calibration_uuid": str(uuid.uuid4()),
+            "objective_key": "100X",
+            "calibration_date": "2026-05-08",
+            "calibration_image_date": None,
+            "microns_per_pixel": 0.0315,
+            "notes": "remote",
+            "is_active": True,
+        }
+    ]
+
+    class DummyClient:
+        def list_remote_calibrations(self):
+            return [dict(row) for row in remote_rows]
+
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        result = cloud_sync.pull_calibrations(DummyClient(), remote_calibrations=remote_rows)
+
+    output = capsys.readouterr().out
+    assert result["pulled"] == 1
+    assert "matched_noop" in result and "links_updated" in result
+    assert summary["calibrations_pulled"] == 1
+    assert "calibration pull: start (remote=1, local=0)" in output
+    assert "calibration pull: complete pulled=1" in output
+
+
 def test_push_calibrations_still_pushes_metadata_when_reference_image_is_missing(monkeypatch, tmp_path):
     db_path = _prepare_db(tmp_path)
     _patch_connections(monkeypatch, db_path)

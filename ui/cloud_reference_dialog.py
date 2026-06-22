@@ -62,6 +62,7 @@ class _CloudSearchWorker(QThread):
 
     def __init__(self, genus: str, species: str):
         super().__init__()
+        self.setObjectName("Cloud reference search")
         self._genus = str(genus or "").strip()
         self._species = str(species or "").strip()
 
@@ -101,6 +102,7 @@ class _CloudDetailWorker(QThread):
 
     def __init__(self, result_row: dict[str, Any]):
         super().__init__()
+        self.setObjectName("Cloud reference detail")
         self._row = dict(result_row or {})
 
     def run(self) -> None:
