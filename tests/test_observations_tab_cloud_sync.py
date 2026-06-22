@@ -47,6 +47,98 @@ def test_cloud_workers_have_non_empty_object_names(qapp):
             worker.deleteLater()
 
 
+def test_shutdown_interrupts_and_joins_artsobs_link_check_worker(qapp):
+    """ObservationsTab.shutdown must stop the Artsobs link check thread.
+
+    Regression: shutdown() relied on dialog-only helpers that AttributeError on
+    the tab, so the Artsobs worker was never joined and was destroyed mid-run
+    ("QThread: Destroyed while thread 'Artsobs mobile link check' is still
+    running").
+    """
+
+    class _FakeArtsobsWorker:
+        def __init__(self):
+            self.interrupted = False
+            self.wait_ms = None
+            self._running = True
+
+        def requestInterruption(self):
+            self.interrupted = True
+
+        def isRunning(self):
+            return self._running
+
+        def wait(self, ms):
+            self.wait_ms = ms
+            self._running = False  # interruption took effect
+            return True
+
+    worker = _FakeArtsobsWorker()
+    fake_tab = SimpleNamespace(
+        _search_refresh_timer=SimpleNamespace(stop=lambda: None),
+        _thumb_loader=None,
+        _cloud_sync_worker=None,
+        _artsobs_check_thread=worker,
+    )
+
+    observations_tab.ObservationsTab.shutdown(fake_tab)
+
+    assert worker.interrupted is True
+    assert worker.wait_ms == 2000
+    assert fake_tab._artsobs_check_thread is None
+
+
+def test_shutdown_parks_artsobs_worker_that_will_not_stop(qapp):
+    """If the Artsobs worker cannot be interrupted promptly it is parked
+    (kept alive) instead of destroyed mid-run."""
+    from types import MethodType
+
+    parked_before = set(getattr(qapp, "_sporely_parked_threads", set()) or set())
+
+    class _StubbornWorker:
+        def __init__(self):
+            self.parented_to = "self"
+
+        def requestInterruption(self):
+            pass
+
+        def isRunning(self):
+            return True  # never stops within the bounded wait
+
+        def wait(self, ms):
+            return False
+
+        def parent(self):
+            return None
+
+        def setParent(self, obj):
+            self.parented_to = obj
+
+        class _Signal:
+            def connect(self, *a, **k):
+                return None
+
+        finished = _Signal()
+
+    worker = _StubbornWorker()
+    fake_tab = SimpleNamespace(
+        _search_refresh_timer=SimpleNamespace(stop=lambda: None),
+        _thumb_loader=None,
+        _cloud_sync_worker=None,
+        _artsobs_check_thread=worker,
+    )
+    # Bind the real park helper so the park branch runs.
+    fake_tab._park_thread_until_finished = MethodType(
+        observations_tab.ObservationsTab._park_thread_until_finished, fake_tab
+    )
+
+    observations_tab.ObservationsTab.shutdown(fake_tab)
+
+    parked_after = getattr(qapp, "_sporely_parked_threads", set()) or set()
+    assert worker in parked_after and worker not in parked_before
+    assert worker.parented_to is qapp
+
+
 def test_cloud_auto_sync_worker_disables_remote_media_materialization(monkeypatch):
     fake_client = SimpleNamespace(user_id="user-123")
     sync_kwargs: dict = {}

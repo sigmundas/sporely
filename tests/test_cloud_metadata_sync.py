@@ -353,6 +353,208 @@ def test_sync_all_refreshes_remote_after_push_and_preserves_remote_only_metadata
     assert result["errors"] == []
 
 
+def test_sync_all_ends_progress_on_neutral_finalizing_message(monkeypatch, tmp_path):
+    """The last progress message must not be a stale per-calibration label.
+
+    The UI shows the most recent message until the table refresh completes, so
+    sync_all emits a neutral "Finalizing cloud sync…" after the last phase.
+    """
+    db_path = _init_metadata_sync_db(tmp_path)
+    _insert_observation(db_path, cloud_id="cloud-obs-1")
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "push_calibrations",
+        lambda *args, **kwargs: cloud_sync._emit_progress(
+            kwargs.get("progress_cb"), "Checking calibration 1/1: 100X…", kwargs.get("progress_state")
+        )
+        or {"pushed": 0, "total": 1, "errors": []},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "pull_calibrations",
+        lambda *args, **kwargs: cloud_sync._emit_progress(
+            kwargs.get("progress_cb"), "Checking calibration 1/1: 100X…", kwargs.get("progress_state")
+        )
+        or {"pulled": 0, "total": 1, "errors": []},
+    )
+    monkeypatch.setattr(cloud_sync, "_load_linked_cloud_user_id", lambda: "user-123")
+    monkeypatch.setattr(cloud_sync, "_save_linked_cloud_user_id", lambda user_id: None)
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_detect_deleted_remote_observations", lambda remote_obs: [])
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *args, **kwargs: None)
+
+    class DummyClient:
+        def fetch_current_user_id(self):
+            return "user-123"
+
+        def list_remote_observations(self):
+            return []
+
+        def list_remote_calibrations(self):
+            return []
+
+        def pull_bulk_image_metadata(self, obs_cloud_ids):
+            return []
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            return []
+
+        def set_desktop_id(self, *args, **kwargs):
+            return None
+
+    messages: list[str] = []
+
+    cloud_sync.sync_all(
+        DummyClient(),
+        progress_cb=lambda msg, cur, tot: messages.append(msg),
+        sync_images=False,
+        materialize_remote_images=False,
+    )
+
+    assert messages, "expected at least one progress message"
+    assert messages[-1] == "Finalizing cloud sync…"
+    assert "Finalizing cloud sync…" not in messages[:-1]
+
+
+def test_pull_all_emits_phase_progress_messages(monkeypatch, tmp_path):
+    """Each slow pull-preflight sub-step announces itself with truthful text."""
+    db_path = tmp_path / "sporely.db"
+    sqlite3.connect(db_path).close()
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: {"scanned": 0})
+    monkeypatch.setattr(cloud_sync, "_load_local_observation_lookup", lambda: ({}, {}))
+    monkeypatch.setattr(cloud_sync, "_find_local_observation_for_remote_cached", lambda *a, **k: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: "")
+    monkeypatch.setattr(
+        cloud_sync,
+        "_pull_remote_measurements_for_images",
+        lambda client, ids: [{"id": "m1", "image_id": "img-1"}],
+    )
+    monkeypatch.setattr(cloud_sync, "_create_local_from_remote", lambda *a, **k: 1)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *a, **k: None)
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *a, **k: None)
+    monkeypatch.setattr(cloud_sync, "_detect_deleted_remote_observations", lambda remote_obs: [])
+
+    class DummyClient:
+        def pull_bulk_image_metadata(self, ids):
+            return [{"id": "img-1", "observation_id": "cloud-obs-1"}]
+
+        def set_desktop_id(self, *args, **kwargs):
+            return None
+
+    messages: list[str] = []
+
+    cloud_sync.pull_all(
+        DummyClient(),
+        progress_cb=lambda msg, cur, tot: messages.append(msg),
+        remote_obs=[{"id": "cloud-obs-1", "desktop_id": 1, "date": "2026-05-01"}],
+        sync_calibrations=False,
+        materialize_remote_images=False,
+    )
+
+    assert "Checking image EXIF metadata…" in messages
+    assert "Loading cloud image metadata…" in messages
+    assert "Loading cloud measurements…" in messages
+    # EXIF check announced before the image-metadata fetch.
+    assert messages.index("Checking image EXIF metadata…") < messages.index("Loading cloud image metadata…")
+    assert messages.index("Loading cloud image metadata…") < messages.index("Loading cloud measurements…")
+
+
+def test_sync_all_emits_preflight_message_between_calibration_push_and_observation(monkeypatch, tmp_path, capsys):
+    """A no-change sync must move the UI off the calibration label immediately.
+
+    The dirty scans + remote refresh + pull preflight run before the first
+    observation progress event. Without a neutral message the UI stayed stuck on
+    "Syncing calibration N/M" for that whole gap. Assert the message right after
+    the last calibration push event is the pre-observation preflight message.
+    """
+    db_path = _init_metadata_sync_db(tmp_path)
+    _insert_observation(db_path, cloud_id="cloud-obs-1")
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "push_calibrations",
+        lambda *args, **kwargs: cloud_sync._emit_progress(
+            kwargs.get("progress_cb"), "Syncing calibration 8/8: 63X…", kwargs.get("progress_state")
+        )
+        or {"pushed": 0, "total": 8, "errors": []},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "pull_calibrations",
+        lambda *args, **kwargs: cloud_sync._emit_progress(
+            kwargs.get("progress_cb"), "Checking calibration 8/8: 63X…", kwargs.get("progress_state")
+        )
+        or {"pulled": 0, "total": 8, "errors": []},
+    )
+    monkeypatch.setattr(cloud_sync, "_load_linked_cloud_user_id", lambda: "user-123")
+    monkeypatch.setattr(cloud_sync, "_save_linked_cloud_user_id", lambda user_id: None)
+    monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_detect_deleted_remote_observations", lambda remote_obs: [])
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda *args, **kwargs: None)
+
+    class DummyClient:
+        def fetch_current_user_id(self):
+            return "user-123"
+
+        def list_remote_observations(self):
+            return []
+
+        def list_remote_calibrations(self):
+            return []
+
+        def pull_bulk_image_metadata(self, obs_cloud_ids):
+            return []
+
+        def pull_image_metadata(self, cloud_id, include_deleted_for_sync=False):
+            return []
+
+        def set_desktop_id(self, *args, **kwargs):
+            return None
+
+    messages: list[str] = []
+
+    cloud_sync.sync_all(
+        DummyClient(),
+        progress_cb=lambda msg, cur, tot: messages.append(msg),
+        sync_images=False,
+        materialize_remote_images=False,
+    )
+
+    push_calibration_index = messages.index("Syncing calibration 8/8: 63X…")
+    assert "Checking local observation changes…" in messages
+    preflight_index = messages.index("Checking local observation changes…")
+    # The UI moves off the calibration label straight into preflight.
+    assert messages[push_calibration_index + 1] == "Checking local observation changes…"
+    assert preflight_index > push_calibration_index
+    # The pull-side preamble also announces itself before observation checking.
+    assert "Preparing cloud observations…" in messages
+    assert messages.index("Preparing cloud observations…") > preflight_index
+
+    # Named, timed sub-step logs identify the actual slow step in the gap.
+    output = capsys.readouterr().out
+    assert "[cloud_sync] observation preflight: start" in output
+    assert "observation preflight: media dirty scan complete" in output
+    assert "observation preflight: local dirty scan complete count=" in output
+    assert "observation preflight: complete" in output
+    assert "observation preflight: remote observations refreshed count=" in output
+    assert "pull preflight: candidate build complete count=" in output
+    assert "pull preflight: cloud image metadata fetched" in output
+    assert "pull preflight: complete" in output
+
+
 def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match(monkeypatch, tmp_path):
     db_path = _init_metadata_sync_db(tmp_path)
     _insert_observation(

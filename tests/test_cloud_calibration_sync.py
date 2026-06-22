@@ -573,6 +573,70 @@ def test_push_calibration_reference_image_respects_existing_cloud_image_storage_
     assert patches == []
 
 
+def test_push_calibration_reference_image_logs_slow_upload(monkeypatch, tmp_path, capsys):
+    source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
+    calibration_uuid = str(uuid.uuid4())
+    calibration = {
+        "calibration_uuid": calibration_uuid,
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": []},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+
+    class DummyWorker:
+        def put_bytes(self, *args, **kwargs):
+            return {"ok": True}
+
+    monkeypatch.setattr(client, "_get_media_worker", lambda: DummyWorker())
+    monkeypatch.setattr(client, "fetch_cloud_plan_profile", lambda: {"cloud_plan": "free"})
+    monkeypatch.setattr(client, "_patch", lambda path, payload: None)
+
+    # Simulate a slow upload: the first perf-counter read is the start, the next
+    # is well past the slow-step threshold.
+    times = iter([0.0] + [10.0] * 20)
+    monkeypatch.setattr(cloud_sync, "_cloud_sync_perf_counter", lambda: next(times))
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": None},
+    )
+
+    assert warning is None
+    output = capsys.readouterr().out
+    assert "calibration reference image: slow" in output
+    assert calibration_uuid in output
+    assert "upload_attempted=True" in output
+    assert "outcome=uploaded" in output
+    assert "had_storage_path=False" in output
+
+
+def test_push_calibration_reference_image_quiet_for_fast_no_op(monkeypatch, tmp_path, capsys):
+    source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
+    calibration = {
+        "calibration_uuid": str(uuid.uuid4()),
+        "objective_key": "100X",
+        "calibration_date": "2026-05-08 08:30:00",
+        "microns_per_pixel": 0.0315,
+        "image_filepath": str(source),
+        "measurements_json": {"images": []},
+    }
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    monkeypatch.setattr(client, "_patch", lambda path, payload: None)
+
+    warning = client.push_calibration_reference_image(
+        calibration,
+        cloud_row_id="cloud-cal-1",
+        remote_row={"id": "cloud-cal-1", "image_storage_path": "user-123/existing/reference.webp"},
+    )
+
+    assert warning is None
+    assert "calibration reference image: slow" not in capsys.readouterr().out
+
+
 def test_calibration_sync_records_summary_counters_and_phase_logs(monkeypatch, tmp_path, capsys):
     db_path = _prepare_db(tmp_path)
     _patch_connections(monkeypatch, db_path)

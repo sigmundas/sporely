@@ -128,6 +128,7 @@ from utils.cloud_sync import (
     should_push_local_image_to_cloud,
     privacy_slot_limit_user_message,
     summarize_image_too_large_for_plan_error,
+    summarize_sync_change_activity,
     summarize_sync_issues,
     sync_all,
     unlink_local_observation_from_cloud,
@@ -2918,6 +2919,21 @@ class ObservationsTab(QWidget):
             self._finish_manual_refresh_flow()
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
+        change_activity = summarize_sync_change_activity(result)
+        # The push phase counts every dirty / cloud_id-less observation as
+        # "pushed" even when the upsert was a no-op (e.g. an observation
+        # re-dirtied only because a local image row was re-associated to an
+        # existing cloud image). Base the notification on real remote-facing or
+        # local changes so a no-change sync does not claim an observation synced.
+        has_real_change = bool(change_activity.get("any_real_change"))
+        if pushed and not has_real_change:
+            print(
+                "[cloud_sync] sync touched "
+                f"{pushed} dirty observation(s) with no real change "
+                f"(patched={change_activity.get('observations_metadata_patched', 0)}, "
+                f"checked_noop={change_activity.get('observations_checked_noop', 0)}, "
+                f"local_only_repairs={change_activity.get('observations_images_repaired_local_only', 0)})"
+            )
         errors = list(result.get("errors", []) or [])
         deleted_remote = [dict(row or {}) for row in (result.get("deleted_remote") or []) if row]
         issue_summary = summarize_sync_issues(errors)
@@ -2963,7 +2979,7 @@ class ObservationsTab(QWidget):
                 )
             for idx, error in enumerate(issue_summary.get("other_errors", []) or [], 1):
                 print(f"[cloud_sync] other issue {idx}: {error}")
-        if pushed or pulled:
+        if has_real_change:
             message = self.tr("Cloud sync complete.")
             level = "warning" if errors else "success"
             if errors:
@@ -4561,12 +4577,86 @@ class ObservationsTab(QWidget):
         self._thumb_loader.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._thumb_loader.start(QThread.LowPriority)
 
+    def _park_thread_until_finished(self, thread: QThread | None) -> None:
+        """Keep a still-running thread alive past widget destruction.
+
+        A QThread destroyed while still running aborts with
+        "QThread: Destroyed while thread '<name>' is still running". For workers
+        that cannot be interrupted promptly (e.g. the Artsobs link check blocks
+        on per-request HTTP timeouts), reparent the thread to the QApplication
+        and delete it only once it actually finishes.
+        """
+        if thread is None:
+            return
+        app = QApplication.instance()
+        if app is None:
+            try:
+                if thread.parent() is self:
+                    thread.setParent(None)
+            except Exception:
+                pass
+            return
+        try:
+            if thread.parent() is self or thread.parent() is None:
+                thread.setParent(app)
+        except Exception:
+            pass
+        parked = getattr(app, "_sporely_parked_threads", None)
+        if parked is None:
+            parked = set()
+            setattr(app, "_sporely_parked_threads", parked)
+        try:
+            parked.add(thread)
+        except Exception:
+            pass
+
+        def _release_thread(t=thread, a=app):
+            def _delayed_release():
+                try:
+                    parked_threads = getattr(a, "_sporely_parked_threads", None)
+                    if parked_threads is not None:
+                        parked_threads.discard(t)
+                except Exception:
+                    pass
+            QTimer.singleShot(2000, _delayed_release)
+
+        try:
+            thread.finished.connect(thread.deleteLater)
+        except Exception:
+            pass
+        try:
+            thread.finished.connect(_release_thread)
+        except Exception:
+            pass
+
     def shutdown(self) -> None:
         """Stop background workers owned by the observations tab before app exit."""
         try:
             self._search_refresh_timer.stop()
         except Exception:
             pass
+        # The Artsobs link check blocks on per-request HTTP timeouts and only
+        # checks for interruption between requests, so a bounded wait may not
+        # stop it. Interrupt, wait briefly, and park it if it is still running so
+        # it is not destroyed mid-flight ("QThread: Destroyed while thread
+        # 'Artsobs mobile link check' is still running").
+        artsobs_worker = getattr(self, "_artsobs_check_thread", None)
+        self._artsobs_check_thread = None
+        if artsobs_worker is not None:
+            try:
+                artsobs_worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                if artsobs_worker.isRunning():
+                    artsobs_worker.wait(2000)
+            except Exception:
+                pass
+            try:
+                if artsobs_worker.isRunning():
+                    self._park_thread_until_finished(artsobs_worker)
+            except Exception:
+                pass
         thumb_loader = getattr(self, "_thumb_loader", None)
         self._thumb_loader = None
         if thumb_loader is not None:

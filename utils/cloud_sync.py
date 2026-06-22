@@ -1554,6 +1554,21 @@ _CLOUD_SYNC_SUMMARY_CONTEXT: ContextVar[dict[str, int] | None] = ContextVar(
 # can be traced to the exact calibration / step responsible.
 _CLOUD_SYNC_SLOW_STEP_SECONDS = 1.0
 
+# Per-sync progress trace. When set, every progress message emission records its
+# monotonic timestamp so a gap between two UI updates (i.e. a backend step that
+# produced no progress text) can be logged and traced to whatever was running.
+_CLOUD_SYNC_PROGRESS_TRACE_CONTEXT: ContextVar[dict | None] = ContextVar(
+    'cloud_sync_progress_trace',
+    default=None,
+)
+
+
+def _cloud_sync_progress_trace() -> dict | None:
+    try:
+        return _CLOUD_SYNC_PROGRESS_TRACE_CONTEXT.get()
+    except Exception:
+        return None
+
 
 def _cloud_sync_profile_enabled() -> bool:
     return str(os.getenv(_CLOUD_SYNC_PROFILE_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -3206,11 +3221,41 @@ def _progress_total(progress_state: dict | None) -> int:
         return 0
 
 
+def _trace_progress_gap(message: str) -> None:
+    """Log when a long backend step elapsed between two UI progress updates.
+
+    The UI only shows the *last* emitted message. If a slow step runs while that
+    message stays on screen (e.g. the bar appears frozen on "Checking
+    calibration 4/8"), the gap is logged here naming both messages so the pause
+    can be traced to the actual backend work, even when that work emits no
+    progress text of its own.
+    """
+    trace = _cloud_sync_progress_trace()
+    if not isinstance(trace, dict):
+        return
+    now = _cloud_sync_perf_counter()
+    last_t = trace.get('last_t')
+    last_msg = trace.get('last_msg')
+    start = trace.get('start', now)
+    if last_t is not None:
+        gap = now - last_t
+        if gap >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
+            print(
+                f"[cloud_sync] progress gap: {gap * 1000:.0f}ms with no UI update "
+                f"(stuck showing \"{last_msg}\") before \"{message}\" "
+                f"at +{(now - start):.1f}s into sync",
+                flush=True,
+            )
+    trace['last_t'] = now
+    trace['last_msg'] = message
+
+
 def _emit_progress(
     progress_cb: ProgressCallback | None,
     message: str,
     progress_state: dict | None,
 ) -> None:
+    _trace_progress_gap(message)
     if callable(progress_cb):
         progress_cb(message, _progress_done(progress_state), max(1, _progress_total(progress_state)))
 
@@ -3386,6 +3431,95 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
         )
 
     return '\n'.join(lines) if lines else None
+
+
+def summarize_sync_change_activity(result: dict | None) -> dict:
+    """Classify a sync result into real changes vs. checked/no-op/local-only work.
+
+    The push phase walks every observation whose row is dirty or has no cloud_id
+    and counts each as "pushed" even when the upsert was a no-op (e.g. an
+    observation re-dirtied only because a local image row was re-associated to an
+    existing cloud image). The user-facing notification must reflect *real*
+    remote-facing or local changes, not the raw dirty-scan count, otherwise a
+    no-change sync wrongly reports that an observation was synced.
+
+    Returns a dict with explicit counters plus ``any_real_change``:
+      - real remote change: observation/measurement metadata written, image bytes
+        uploaded or deleted remotely, calibration pushed / reference image uploaded.
+      - real local change: observation/calibration pulled, remote media downloaded
+        or materialized locally.
+    Local-only cloud_id repairs (``images_cloud_id_repaired``) and pure no-op /
+    checked counts are reported but excluded from ``any_real_change``.
+    """
+    data = dict(result or {})
+    summary = data.get('sync_summary') or {}
+
+    def _value(key: str) -> int:
+        return _sync_summary_value(summary, key)
+
+    def _result_int(key: str) -> int:
+        try:
+            return max(0, int(data.get(key, 0) or 0))
+        except Exception:
+            return 0
+
+    observations_metadata_patched = _value('observations_patched')
+    observations_checked = _value('observations_checked')
+    observations_checked_noop = _value('observations_skipped_noop')
+    observations_deleted_remote = _value('observations_deleted_remote')
+    images_uploaded = _value('images_uploaded')
+    images_deleted_remote = _value('images_deleted_remote')
+    images_repaired_local_only = _value('images_cloud_id_repaired')
+    measurements_patched = _value('measurements_patched')
+    calibrations_pushed = _value('calibrations_pushed')
+    calibration_reference_images_uploaded = _value('calibration_reference_images_uploaded')
+    calibrations_pulled = _value('calibrations_pulled')
+    remote_media_downloads = _value('remote_media_downloads')
+    remote_media_materializations = _value('remote_media_materializations')
+    # ``pulled`` is the count of observations pulled into the local DB; fall back
+    # to the summary count is not tracked separately, so use the result value.
+    observations_pulled = _result_int('pulled')
+    deleted_remote_rows = len(data.get('deleted_remote') or [])
+
+    real_remote_change = (
+        observations_metadata_patched
+        + images_uploaded
+        + images_deleted_remote
+        + measurements_patched
+        + calibrations_pushed
+        + calibration_reference_images_uploaded
+        + observations_deleted_remote
+    )
+    real_local_change = (
+        observations_pulled
+        + calibrations_pulled
+        + remote_media_downloads
+        + remote_media_materializations
+    )
+    # ``deleted_remote_rows`` (cloud observations deleted elsewhere, awaiting local
+    # review) is surfaced by its own notification branch, so it is reported here
+    # but not folded into ``any_real_change``.
+    any_real_change = bool(real_remote_change or real_local_change)
+
+    return {
+        'observations_metadata_patched': observations_metadata_patched,
+        'observations_checked': observations_checked,
+        'observations_checked_noop': observations_checked_noop,
+        'observations_images_repaired_local_only': images_repaired_local_only,
+        'observations_pulled': observations_pulled,
+        'images_uploaded': images_uploaded,
+        'images_deleted_remote': images_deleted_remote,
+        'measurements_patched': measurements_patched,
+        'calibrations_pushed': calibrations_pushed,
+        'calibrations_pulled': calibrations_pulled,
+        'calibration_reference_images_uploaded': calibration_reference_images_uploaded,
+        'remote_media_downloads': remote_media_downloads,
+        'remote_media_materializations': remote_media_materializations,
+        'deleted_remote_rows': deleted_remote_rows,
+        'real_remote_change': real_remote_change,
+        'real_local_change': real_local_change,
+        'any_real_change': any_real_change,
+    }
 
 
 def _observation_display_name(obs: dict | None) -> str:
@@ -3889,6 +4023,8 @@ def sync_all(
         profile_token = _CLOUD_SYNC_PROFILE_CONTEXT.set(profiler)
     sync_summary = _new_sync_summary()
     summary_token = _CLOUD_SYNC_SUMMARY_CONTEXT.set(sync_summary)
+    progress_trace = {'start': _cloud_sync_perf_counter(), 'last_t': None, 'last_msg': None}
+    progress_trace_token = _CLOUD_SYNC_PROGRESS_TRACE_CONTEXT.set(progress_trace)
 
     sync_error: Exception | None = None
     result: dict | None = None
@@ -3931,9 +4067,18 @@ def sync_all(
 
         # Refresh remote observations after the push phase so pull-side
         # comparisons see the cloud state that now includes any local metadata
-        # edits we just pushed.
+        # edits we just pushed. This network round-trip runs before the first
+        # pull-side progress update, so announce it and time it.
+        _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
+        refresh_start = _cloud_sync_perf_counter()
         with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
             remote_obs = client.list_remote_observations()
+        refresh_elapsed = _cloud_sync_perf_counter() - refresh_start
+        print(
+            f"[cloud_sync] observation preflight: remote observations refreshed "
+            f"count={len(remote_obs or [])} duration={refresh_elapsed * 1000:.0f}ms",
+            flush=True,
+        )
 
         # Phase 2: Pull cloud edits to the desktop
         with _cloud_sync_phase_scope(profiler, 'pull_all'):
@@ -3953,6 +4098,15 @@ def sync_all(
                 progress_state=progress_state,
                 remote_calibrations=remote_calibrations,
             )
+
+        # Leave the UI on a neutral phase rather than the last per-calibration
+        # message while the worker finishes and the table refreshes.
+        _emit_progress(progress_cb, "Finalizing cloud sync…", progress_state)
+        print(
+            f"[cloud_sync] sync progress complete "
+            f"duration={(_cloud_sync_perf_counter() - progress_trace['start']) * 1000:.0f}ms",
+            flush=True,
+        )
 
         # Combine results for the UI summary
         result = {
@@ -3989,6 +4143,10 @@ def sync_all(
                     pass
         try:
             _CLOUD_SYNC_SUMMARY_CONTEXT.reset(summary_token)
+        except Exception:
+            pass
+        try:
+            _CLOUD_SYNC_PROGRESS_TRACE_CONTEXT.reset(progress_trace_token)
         except Exception:
             pass
 
@@ -7958,6 +8116,20 @@ class SporelyCloudClient:
         record = dict(calibration or {})
         calibration_uuid = _normalize_calibration_uuid(record.get('calibration_uuid'))
         label = _calibration_display_name(record)
+        ref_image_start = _cloud_sync_perf_counter()
+
+        def _log_slow_reference_image(*, had_storage_path: bool, upload_attempted: bool, outcome: str) -> None:
+            elapsed = _cloud_sync_perf_counter() - ref_image_start
+            if elapsed < _CLOUD_SYNC_SLOW_STEP_SECONDS:
+                return
+            print(
+                f"[cloud_sync] calibration reference image: slow "
+                f"calibration {calibration_uuid or '?'} ({label}) "
+                f"had_storage_path={had_storage_path} "
+                f"upload_attempted={upload_attempted} outcome={outcome} "
+                f"took {elapsed * 1000:.0f}ms",
+                flush=True,
+            )
 
         remote = dict(remote_row or {})
         if not remote and calibration_uuid:
@@ -7965,6 +8137,7 @@ class SporelyCloudClient:
 
         existing_storage_path = _normalize_cloud_media_key(remote.get('image_storage_path'))
         if existing_storage_path:
+            # Fast no-op once the cloud row already references an image.
             return None
 
         target_cloud_row_id = str(cloud_row_id or remote.get('id') or '').strip()
@@ -7984,6 +8157,7 @@ class SporelyCloudClient:
         try:
             image_bytes, content_type, extension = _calibration_reference_image_bytes(local_path)
         except Exception as exc:
+            _log_slow_reference_image(had_storage_path=False, upload_attempted=False, outcome='prepare_failed')
             return (
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because the image could not be prepared ({exc})'
@@ -8037,6 +8211,7 @@ class SporelyCloudClient:
                 )
                 _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
         except Exception as exc:
+            _log_slow_reference_image(had_storage_path=False, upload_attempted=True, outcome='r2_upload_failed')
             return (
                 f'calibration {calibration_uuid or "?"}: skipped reference image upload for {label} '
                 f'because R2 upload failed ({exc})'
@@ -8048,12 +8223,14 @@ class SporelyCloudClient:
                 {'image_storage_path': _normalize_cloud_media_key(storage_key)},
             )
         except Exception as exc:
+            _log_slow_reference_image(had_storage_path=False, upload_attempted=True, outcome='patch_failed')
             return (
                 f'calibration {calibration_uuid or "?"}: uploaded reference image for {label} '
                 f'but could not update the cloud row ({exc})'
             )
 
         _increment_sync_summary(_cloud_sync_current_summary(), 'calibration_reference_images_uploaded')
+        _log_slow_reference_image(had_storage_path=False, upload_attempted=True, outcome='uploaded')
         return None
 
     def push_calibration_metadata(self, calibration: dict) -> str:
@@ -9490,9 +9667,35 @@ def push_all(
     conn.row_factory = __import__('sqlite3').Row
     cursor = conn.cursor()
 
+    # Observation preflight: the dirty scans below run before any per-observation
+    # progress update, so on a no-change sync (0 dirty rows) they were a silent
+    # gap that left the UI stuck on the last calibration label. Emit a neutral
+    # message first and time each sub-step so a slow scan is named in the log.
+    preflight_start = _cloud_sync_perf_counter()
+    print("[cloud_sync] observation preflight: start", flush=True)
+    _emit_progress(progress_cb, "Checking local observation changes…", progress_state)
+
+    media_scan_start = _cloud_sync_perf_counter()
     _mark_cloud_observations_dirty_for_media_changes()
+    media_scan_elapsed = _cloud_sync_perf_counter() - media_scan_start
+    print(
+        f"[cloud_sync] observation preflight: media dirty scan complete "
+        f"duration={media_scan_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
+
     if sync_images:
+        pending_scan_start = _cloud_sync_perf_counter()
         _mark_cloud_observations_dirty_for_pending_local_images()
+        pending_scan_elapsed = _cloud_sync_perf_counter() - pending_scan_start
+        redirtied = _sync_summary_value(
+            _cloud_sync_current_summary(), 'observations_redirtied_pending_local_images'
+        )
+        print(
+            f"[cloud_sync] observation preflight: pending image dirty scan complete "
+            f"re_dirtied={redirtied} duration={pending_scan_elapsed * 1000:.0f}ms",
+            flush=True,
+        )
 
     calibration_result = {'pushed': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
@@ -9502,11 +9705,23 @@ def push_all(
             progress_state=progress_state,
         )
 
+    dirty_scan_start = _cloud_sync_perf_counter()
     cursor.execute(
         "SELECT * FROM observations WHERE cloud_id IS NULL OR sync_status = 'dirty' ORDER BY date DESC"
     )
     observations = [dict(r) for r in cursor.fetchall()]
     conn.close()
+    dirty_scan_elapsed = _cloud_sync_perf_counter() - dirty_scan_start
+    print(
+        f"[cloud_sync] observation preflight: local dirty scan complete "
+        f"count={len(observations)} duration={dirty_scan_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
+    print(
+        f"[cloud_sync] observation preflight: complete "
+        f"candidates={len(observations)} duration={(_cloud_sync_perf_counter() - preflight_start) * 1000:.0f}ms",
+        flush=True,
+    )
 
     total = len(observations)
     pushed = 0
@@ -10497,12 +10712,65 @@ def _push_measurements_for_observation(
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
 
 
-def _backfill_missing_exif_on_cloud_images() -> None:
-    """One-shot backfill: inject observation GPS/datetime into any field images
-    that have a cloud_id but no EXIF datetime (stripped by the web app's 2 MP
-    conversion).  Runs at the start of each pull; safe to call repeatedly since
-    it skips files that already have EXIF.
+_SETTING_CLOUD_EXIF_BACKFILL_STATE = 'cloud_exif_backfill_checked'
+
+
+def _exif_file_signature(path: Path) -> str | None:
+    """Cheap file fingerprint (mtime + size) used to skip already-checked files.
+
+    A `stat()` is orders of magnitude cheaper than opening + decoding the image,
+    so it lets EXIF backfill avoid re-reading every cloud field image on a sync
+    where nothing has changed.
     """
+    try:
+        st = path.stat()
+    except Exception:
+        return None
+    return f'{st.st_mtime_ns}:{st.st_size}'
+
+
+def _load_exif_backfill_state() -> dict:
+    try:
+        raw = SettingsDB.get_setting(_SETTING_CLOUD_EXIF_BACKFILL_STATE)
+        if raw:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_exif_backfill_state(state: dict) -> None:
+    try:
+        SettingsDB.set_setting(
+            _SETTING_CLOUD_EXIF_BACKFILL_STATE,
+            json.dumps(state, separators=(',', ':')),
+        )
+    except Exception:
+        pass
+
+
+def _backfill_missing_exif_on_cloud_images() -> dict:
+    """Inject observation GPS/datetime into field images whose EXIF was stripped
+    by the web app's 2 MP conversion (cloud_id set but no EXIF datetime/GPS).
+
+    Runs at the start of each pull.  To avoid a multi-second hidden tax on every
+    no-change sync, files are fingerprinted by mtime+size: a file whose exact
+    version was already checked is skipped without opening/decoding it.  Files
+    are only opened when they are new or have changed since the last check.
+
+    Returns a counters dict (scanned / skipped_cached / opened / already_complete
+    / updated / missing_file) for instrumentation.
+    """
+    counters = {
+        'scanned': 0,
+        'skipped_cached': 0,
+        'opened': 0,
+        'already_complete': 0,
+        'updated': 0,
+        'missing_file': 0,
+    }
     try:
         from PIL import Image as _PilImg, ExifTags as _ET
         conn = get_connection()
@@ -10518,13 +10786,33 @@ def _backfill_missing_exif_on_cloud_images() -> None:
             ).fetchall()
         finally:
             conn.close()
+        if not rows:
+            return counters
+
+        prev_state = _load_exif_backfill_state()
+        new_state: dict[str, str] = {}
         for row in rows:
+            counters['scanned'] += 1
+            image_id = str(row[0])
             filepath = str(row[1] or '').strip()
             if not filepath:
                 continue
             p = Path(filepath)
-            if not p.exists() or p.suffix.lower() not in {'.jpg', '.jpeg', '.webp'}:
+            if p.suffix.lower() not in {'.jpg', '.jpeg', '.webp'}:
                 continue
+            sig = _exif_file_signature(p)
+            if sig is None:
+                # File missing/unreadable: don't cache, so it is retried once it
+                # reappears (e.g. after media materialization).
+                counters['missing_file'] += 1
+                continue
+            if prev_state.get(image_id) == sig:
+                # Same file version already checked — skip the expensive open.
+                counters['skipped_cached'] += 1
+                new_state[image_id] = sig
+                continue
+
+            counters['opened'] += 1
             try:
                 with _PilImg.open(p) as img:
                     exif = img.getexif()
@@ -10536,10 +10824,14 @@ def _backfill_missing_exif_on_cloud_images() -> None:
                         already_has_gps = bool(exif.get_ifd(0x8825))
                     except Exception:
                         already_has_gps = False
-                    if already_has_dt and already_has_gps:
-                        continue
+                if already_has_dt and already_has_gps:
+                    counters['already_complete'] += 1
+                    new_state[image_id] = sig
+                    continue
             except Exception:
+                # Leave uncached so a transient read error is retried next sync.
                 continue
+
             obs_id = int(row[2] or 0)
             if obs_id <= 0:
                 continue
@@ -10552,8 +10844,16 @@ def _backfill_missing_exif_on_cloud_images() -> None:
                 date_str,
                 gps_accuracy=gps_acc,
             )
+            counters['updated'] += 1
+            # Injection rewrites the file, so record the post-write signature to
+            # skip it next time.
+            new_state[image_id] = _exif_file_signature(p) or sig
+
+        if new_state != prev_state:
+            _save_exif_backfill_state(new_state)
     except Exception as exc:
         print(f'[cloud_sync] EXIF backfill skipped: {exc}')
+    return counters
 
 
 def pull_all(
@@ -10565,7 +10865,28 @@ def pull_all(
     materialize_remote_images: bool = True,
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows."""
-    _backfill_missing_exif_on_cloud_images()
+    # Pull preflight: EXIF backfill, candidate build, and the bulk image /
+    # measurement fetches all run before the first per-observation progress
+    # update. On a no-change sync these were part of the silent gap that left the
+    # UI on the last calibration label, so emit messages and time each sub-step.
+    pull_preflight_start = _cloud_sync_perf_counter()
+    progress_state = progress_state if isinstance(progress_state, dict) else {}
+    _emit_progress(progress_cb, "Preparing cloud observations…", progress_state)
+
+    _emit_progress(progress_cb, "Checking image EXIF metadata…", progress_state)
+    exif_start = _cloud_sync_perf_counter()
+    exif_counts = _backfill_missing_exif_on_cloud_images() or {}
+    exif_elapsed = _cloud_sync_perf_counter() - exif_start
+    print(
+        f"[cloud_sync] pull preflight: exif backfill complete "
+        f"scanned={exif_counts.get('scanned', 0)} "
+        f"skipped_cached={exif_counts.get('skipped_cached', 0)} "
+        f"opened={exif_counts.get('opened', 0)} "
+        f"updated={exif_counts.get('updated', 0)} "
+        f"duration={exif_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
+
     remote_obs = list(remote_obs or client.list_remote_observations())
     calibration_result = {'pulled': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
@@ -10577,7 +10898,7 @@ def pull_all(
     pulled = 0
     errors = list(calibration_result.get('errors') or [])
     imported_local_ids: list[int] = []
-    progress_state = progress_state if isinstance(progress_state, dict) else {}
+    candidate_start = _cloud_sync_perf_counter()
     local_by_cloud_id, local_by_id = _load_local_observation_lookup()
     candidates: list[tuple[dict, dict | None, str]] = []
     candidate_cloud_ids: list[str] = []
@@ -10590,7 +10911,16 @@ def pull_all(
             candidate_cloud_ids.append(cloud_id)
 
     total = len(candidates)
+    candidate_elapsed = _cloud_sync_perf_counter() - candidate_start
+    print(
+        f"[cloud_sync] pull preflight: candidate build complete "
+        f"count={total} duration={candidate_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
     _extend_progress_total(progress_state, total)
+    if total:
+        _emit_progress(progress_cb, "Loading cloud image metadata…", progress_state)
+    bulk_start = _cloud_sync_perf_counter()
     bulk_fetcher = getattr(client, 'pull_bulk_image_metadata', None)
     if callable(bulk_fetcher):
         bulk_images = [dict(row or {}) for row in (bulk_fetcher(candidate_cloud_ids) or [])]
@@ -10601,11 +10931,20 @@ def pull_all(
                 dict(row or {})
                 for row in (client.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or [])
             )
+    bulk_elapsed = _cloud_sync_perf_counter() - bulk_start
+    print(
+        f"[cloud_sync] pull preflight: cloud image metadata fetched "
+        f"images={len(bulk_images)} duration={bulk_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
     remote_images_by_obs = {}
     for img in bulk_images:
         obs_id = str(img.get('observation_id') or '').strip()
         if obs_id:
             remote_images_by_obs.setdefault(obs_id, []).append(img)
+    if total:
+        _emit_progress(progress_cb, "Loading cloud measurements…", progress_state)
+    measurements_start = _cloud_sync_perf_counter()
     remote_measurements = _pull_remote_measurements_for_images(
         client,
         [str(row.get('id') or '').strip() for row in bulk_images if str(row.get('id') or '').strip()],
@@ -10613,6 +10952,17 @@ def pull_all(
     remote_measurements_by_obs = _group_remote_measurements_by_observation(
         bulk_images,
         remote_measurements,
+    )
+    measurements_elapsed = _cloud_sync_perf_counter() - measurements_start
+    print(
+        f"[cloud_sync] pull preflight: remote measurements fetched "
+        f"count={len(remote_measurements or [])} duration={measurements_elapsed * 1000:.0f}ms",
+        flush=True,
+    )
+    print(
+        f"[cloud_sync] pull preflight: complete candidates={total} "
+        f"duration={(_cloud_sync_perf_counter() - pull_preflight_start) * 1000:.0f}ms",
+        flush=True,
     )
 
     for i, (remote, local_obs, stored_snapshot) in enumerate(candidates):
