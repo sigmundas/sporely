@@ -128,6 +128,13 @@ from .spore_preview_widget import SporePreviewWidget
 from .calibration_dialog import get_resolution_status
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
 from .dialog_helpers import ask_measurements_exist_delete, make_github_help_button
+from .adaptive_choice_selector import (
+    AdaptiveChoiceSelector,
+    objective_color,
+    objective_short_label,
+    objective_is_macro_profile,
+    stain_color,
+)
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .styles import pt, _is_dark
@@ -1057,12 +1064,41 @@ class ImageImportDialog(GeometryMixin, QDialog):
             options.insert(0, preferred)
         return options[0] if options else fallback
 
-    def _populate_tag_combo(self, combo: QComboBox, category: str, options: list[str]) -> None:
-        combo.clear()
-        for canonical in options:
-            combo.addItem(DatabaseTerms.translate(category, canonical), canonical)
+    def _add_choice_item(
+        self,
+        combo,
+        text: str,
+        value,
+        *,
+        pill_text: str | None = None,
+        tooltip: str | None = None,
+        color: str | None = None,
+    ) -> None:
+        if isinstance(combo, AdaptiveChoiceSelector):
+            combo.addItem(text, value, pillText=pill_text, tooltip=tooltip, color=color)
+        else:
+            combo.addItem(text, value)
 
-    def _set_tag_combo_neutral_display(self, combo: QComboBox, category: str, blank: bool) -> None:
+    def _populate_tag_combo(self, combo, category: str, options: list[str]) -> None:
+        combo.clear()
+        adder = getattr(self, "_add_choice_item", None)
+        for canonical in options:
+            if category == "contrast" and canonical == "Not_set":
+                continue
+            display = DatabaseTerms.translate(category, canonical)
+            if callable(adder):
+                adder(
+                    combo,
+                    display,
+                    canonical,
+                    pill_text="—" if canonical == "Not_set" else display,
+                    color=stain_color(canonical) if category == "stain" else None,
+                    tooltip=display,
+                )
+            else:
+                combo.addItem(display, canonical)
+
+    def _set_tag_combo_neutral_display(self, combo, category: str, blank: bool) -> None:
         idx = combo.findData(self._field_tag_value(category))
         if idx < 0:
             return
@@ -1074,18 +1110,34 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_tag_combo_neutral_display(self.stain_combo, "stain", blank)
         self._set_tag_combo_neutral_display(self.sample_combo, "sample", blank)
 
-    def _set_combo_tag_value(self, combo: QComboBox, category: str, value: str | None) -> None:
+    def _set_combo_tag_value(self, combo, category: str, value: str | None) -> None:
         canonical = self._canonicalize_tag(category, value)
         if not canonical:
+            return
+        if category == "contrast" and canonical == "Not_set":
+            if combo.count() > 0:
+                combo.setCurrentIndex(0)
             return
         idx = combo.findData(canonical)
         if idx >= 0:
             combo.setCurrentIndex(idx)
             return
-        combo.addItem(DatabaseTerms.translate(category, canonical), canonical)
+        display = DatabaseTerms.translate(category, canonical)
+        adder = getattr(self, "_add_choice_item", None)
+        if callable(adder):
+            adder(
+                combo,
+                display,
+                canonical,
+                pill_text="—" if canonical == "Not_set" else display,
+                color=stain_color(canonical) if category == "stain" else None,
+                tooltip=display,
+            )
+        else:
+            combo.addItem(display, canonical)
         combo.setCurrentIndex(combo.count() - 1)
 
-    def _get_combo_tag_value(self, combo: QComboBox, category: str) -> str | None:
+    def _get_combo_tag_value(self, combo, category: str) -> str | None:
         value = combo.currentData()
         if value is None:
             value = combo.currentText()
@@ -1119,11 +1171,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 result = self.import_results[index]
                 active_image_type = str(getattr(result, "image_type", "") or "").strip().lower() or None
         field_active = active_image_type == "field"
+        scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
         update_combo_alert(
             getattr(self, "objective_combo", None),
-            alert=False if field_active else None,
+            alert=False if field_active or scale_bar_active else None,
         )
         if field_active:
+            update_combo_alert(getattr(self, "field_scale_combo", None), alert=False)
             for combo in (
                 getattr(self, "contrast_combo", None),
                 getattr(self, "mount_combo", None),
@@ -1132,6 +1186,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             ):
                 update_combo_alert(combo, alert=False)
             return
+        update_combo_alert(getattr(self, "field_scale_combo", None), alert=False)
         update_combo_alerts(
             (
                 getattr(self, "contrast_combo", None),
@@ -1194,21 +1249,30 @@ class ImageImportDialog(GeometryMixin, QDialog):
         outer.addWidget(add_btn_row)
 
         self.scale_group, scale_layout = create_section_card(self.tr("Scale"))
-        self.objective_combo = QComboBox()
-        self._apply_combo_popup_style(self.objective_combo)
-        self._populate_objectives()
-        self.objective_combo.currentIndexChanged.connect(self._on_settings_changed)
-        self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        scale_layout.addWidget(self.objective_combo)
+        self.field_scale_row = QWidget()
+        field_scale_layout = QHBoxLayout(self.field_scale_row)
+        field_scale_layout.setContentsMargins(0, 0, 0, 0)
+        field_scale_layout.setSpacing(6)
+        self.field_scale_label = QLabel(self.tr("Scale:"))
+        self.field_scale_combo = AdaptiveChoiceSelector(self, compact=True)
+        self._populate_field_scale_combo()
+        self.field_scale_combo.currentIndexChanged.connect(self._on_settings_changed)
+        field_scale_layout.addWidget(self.field_scale_label)
+        field_scale_layout.addWidget(self.field_scale_combo, 1)
+        scale_layout.addWidget(self.field_scale_row)
+
+        self.scale_bar_mode_checkbox = QCheckBox(self.tr("Scale bar"))
+        self.scale_bar_mode_checkbox.toggled.connect(self._on_scale_bar_mode_toggled)
+        scale_layout.addWidget(self.scale_bar_mode_checkbox)
         self.calibrate_btn = QPushButton(self.tr("Set from scalebar"))
         calibrate_hint = self.tr("Select start and end on the image")
         self._register_hint_widget(self.calibrate_btn, calibrate_hint)
-        self.calibrate_btn.clicked.connect(self._start_scale_bar_selection)
+        self.calibrate_btn.clicked.connect(self._begin_scale_bar_workflow)
         scale_layout.addWidget(self.calibrate_btn)
         # Inline controls mirror Measure tab behavior and remain available
-        # whenever objective calibration is not selected.
+        # whenever scale bar mode is enabled.
         self._scale_bar_inline = QWidget()
-        self._scale_bar_inline.setVisible(True)
+        self._scale_bar_inline.setVisible(False)
         _inline_layout = QVBoxLayout(self._scale_bar_inline)
         _inline_layout.setContentsMargins(0, 4, 0, 0)
         _inline_layout.setSpacing(4)
@@ -1242,32 +1306,36 @@ class ImageImportDialog(GeometryMixin, QDialog):
         micro_form.setLabelAlignment(Qt.AlignLeft)
         micro_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-        self.contrast_combo = QComboBox()
-        self._apply_combo_popup_style(self.contrast_combo)
+        self.objective_combo = AdaptiveChoiceSelector(self, compact=True)
+        self.objective_combo.set_unselected_border_visible(False)
+        self._populate_objectives()
+        self.objective_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        micro_form.addRow(self.tr("Objective:"), self.objective_combo)
+
+        self.contrast_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.contrast_combo, "contrast", self.contrast_options)
         self._set_combo_tag_value(self.contrast_combo, "contrast", self.contrast_default)
         self.contrast_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
-        self.mount_combo = QComboBox()
-        self._apply_combo_popup_style(self.mount_combo)
+        self.mount_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.mount_combo, "mount", self.mount_options)
         self._set_combo_tag_value(self.mount_combo, "mount", self.mount_default)
         self.mount_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Mount:"), self.mount_combo)
 
-        self.stain_combo = QComboBox()
-        self._apply_combo_popup_style(self.stain_combo)
+        self.stain_combo = AdaptiveChoiceSelector(self, compact=True)
+        self.stain_combo.set_unselected_border_visible(False)
         self._populate_tag_combo(self.stain_combo, "stain", self.stain_options)
         self._set_combo_tag_value(self.stain_combo, "stain", self.stain_default)
         self.stain_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Stain:"), self.stain_combo)
 
-        self.sample_combo = QComboBox()
-        self._apply_combo_popup_style(self.sample_combo)
+        self.sample_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.sample_combo, "sample", self.sample_options)
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
@@ -1553,23 +1621,132 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         return panel
 
+    def _populate_field_scale_combo(self, selected_value: str | None = None) -> None:
+        if not hasattr(self, "field_scale_combo"):
+            return
+        combo = self.field_scale_combo
+        combo.blockSignals(True)
+        combo.clear()
+        adder = getattr(self, "_add_choice_item", None)
+        if callable(adder):
+            adder(combo, self.tr("Not set"), None, pill_text="—")
+        else:
+            combo.addItem(self.tr("Not set"), None)
+        for key, obj in sorted(
+            self.objectives.items(),
+            key=lambda item: objective_sort_value(item[1], item[0]),
+        ):
+            if not objective_is_macro_profile(obj, key):
+                continue
+            label = objective_display_name(obj, key) or key
+            if callable(adder):
+                adder(
+                    combo,
+                    label,
+                    key,
+                    pill_text=objective_short_label(obj, key) or label,
+                    color=objective_color(obj, key),
+                    tooltip=label,
+                )
+            else:
+                combo.addItem(label, key)
+        if isinstance(selected_value, (int, float)):
+            selected_value = self._field_scale_key_for_scale(float(selected_value))
+        idx = combo.findData(selected_value)
+        if idx < 0:
+            idx = 0 if combo.count() else -1
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
     def _populate_objectives(self, selected_key: str | None = None) -> None:
         self.objective_combo.blockSignals(True)
         self.objective_combo.clear()
-        self.objective_combo.addItem(self.tr("Not set"), None)
-        self.objective_combo.addItem(self.tr("From scalebar"), self.CUSTOM_OBJECTIVE_KEY)
+        adder = getattr(self, "_add_choice_item", None)
         for key, obj in sorted(self.objectives.items(), key=lambda item: objective_sort_value(item[1], item[0])):
+            if objective_is_macro_profile(obj, key):
+                continue
             label = objective_display_name(obj, key) or key
-            self.objective_combo.addItem(label, key)
+            if callable(adder):
+                adder(
+                    self.objective_combo,
+                    label,
+                    key,
+                    pill_text=objective_short_label(obj, key) or label,
+                    color=objective_color(obj, key),
+                    tooltip=label,
+                )
+            else:
+                self.objective_combo.addItem(label, key)
         if selected_key is None:
             selected_key = self.default_objective
-        if selected_key:
-            idx = self.objective_combo.findData(selected_key)
-            if idx >= 0:
-                self.objective_combo.setCurrentIndex(idx)
+        idx = self.objective_combo.findData(selected_key) if selected_key is not None else -1
+        if idx < 0:
+            idx = 0 if self.objective_combo.count() else -1
+        if idx >= 0:
+            self.objective_combo.setCurrentIndex(idx)
         self._last_objective_key = self.objective_combo.currentData()
         self.objective_combo.blockSignals(False)
         self._update_lab_state_combo_alerts()
+
+    def refresh_microscope_tag_preferences(self) -> None:
+        if not hasattr(self, "contrast_combo"):
+            return
+        current_values = {
+            "contrast": self._get_combo_tag_value(self.contrast_combo, "contrast"),
+            "mount": self._get_combo_tag_value(self.mount_combo, "mount"),
+            "stain": self._get_combo_tag_value(self.stain_combo, "stain"),
+            "sample": self._get_combo_tag_value(self.sample_combo, "sample"),
+        }
+        self.contrast_options = self._load_tag_options("contrast")
+        self.mount_options = self._load_tag_options("mount")
+        self.stain_options = self._load_tag_options("stain")
+        self.sample_options = self._load_tag_options("sample")
+        self.contrast_default = self.contrast_options[0] if self.contrast_options else DatabaseTerms.CONTRAST_METHODS[0]
+        self.mount_default = self.mount_options[0] if self.mount_options else DatabaseTerms.MOUNT_MEDIA[0]
+        self.stain_default = self.stain_options[0] if self.stain_options else DatabaseTerms.STAIN_TYPES[0]
+        self.sample_default = self.sample_options[0] if self.sample_options else DatabaseTerms.SAMPLE_TYPES[0]
+        for category, combo in (
+            ("contrast", self.contrast_combo),
+            ("mount", self.mount_combo),
+            ("stain", self.stain_combo),
+            ("sample", self.sample_combo),
+        ):
+            options = getattr(self, f"{category}_options")
+            self._populate_tag_combo(combo, category, options)
+            value = current_values.get(category)
+            index = combo.findData(value) if value is not None else -1
+            if index < 0:
+                index = 0 if combo.count() else -1
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        self._update_lab_state_combo_alerts()
+
+    def _micro_objective_items(self) -> list[tuple[str, dict]]:
+        items: list[tuple[str, dict]] = []
+        for key, obj in self.objectives.items():
+            if objective_is_macro_profile(obj, key):
+                continue
+            items.append((key, obj))
+        return items
+
+    def _field_scale_objective_items(self) -> list[tuple[str, dict]]:
+        items: list[tuple[str, dict]] = []
+        for key, obj in self.objectives.items():
+            if not objective_is_macro_profile(obj, key):
+                continue
+            items.append((key, obj))
+        return items
+
+    def _field_scale_key_for_scale(self, scale_um_per_px: float | None) -> str | None:
+        if not isinstance(scale_um_per_px, (int, float)):
+            return None
+        target = float(scale_um_per_px)
+        for key, obj in self._field_scale_objective_items():
+            scale = obj.get("microns_per_pixel")
+            if isinstance(scale, (int, float)) and abs(float(scale) - target) <= 1e-6:
+                return key
+        return None
 
     def _open_calibration_dialog(self, previous_key: str | None = None) -> None:
         if previous_key is None:
@@ -1609,6 +1786,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         """Enter calibration mode directly — user clicks start/end on the preview."""
         if not getattr(self, "preview", None) or not self.preview.original_pixmap:
             return
+        if hasattr(self, "scale_bar_mode_checkbox") and not self.scale_bar_mode_checkbox.isChecked():
+            self.scale_bar_mode_checkbox.blockSignals(True)
+            self.scale_bar_mode_checkbox.setChecked(True)
+            self.scale_bar_mode_checkbox.blockSignals(False)
         if self._crop_active_mode:
             self._set_crop_active_mode(None)
         if hasattr(self.preview, "ensure_full_resolution"):
@@ -1621,6 +1802,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._sync_scale_bar_length_unit_for_image_type()
         self._update_scalebar_controls_visibility()
         self.set_hint(self.tr("Click the start point of the scale bar, then the end point"))
+
+    def _begin_scale_bar_workflow(self) -> None:
+        if hasattr(self, "scale_bar_mode_checkbox") and not self.scale_bar_mode_checkbox.isChecked():
+            self.scale_bar_mode_checkbox.blockSignals(True)
+            self.scale_bar_mode_checkbox.setChecked(True)
+            self.scale_bar_mode_checkbox.blockSignals(False)
+            self._on_scale_bar_mode_toggled(True)
+            return
+        self._start_scale_bar_selection()
+
+    def _on_scale_bar_mode_toggled(self, checked: bool) -> None:
+        if getattr(self, "_loading_form", False):
+            return
+        if checked:
+            self._start_scale_bar_selection()
+            self._update_objective_selector_state()
+            return
+        self._custom_scale = None
+        self._update_scalebar_controls_visibility()
+        self._update_objective_selector_state()
+        indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
+        if indices:
+            self._apply_settings_to_indices(indices, action="scale")
 
     def _on_scale_bar_horizontal_toggled(self, checked: bool) -> None:
         """Update preview line horizontal constraint when checkbox changes."""
@@ -1712,12 +1916,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not scale_um or scale_um <= 0:
             return
         self._custom_scale = float(scale_um)
-        self._populate_objectives(selected_key=self.CUSTOM_OBJECTIVE_KEY)
-        idx = self.objective_combo.findData(self.CUSTOM_OBJECTIVE_KEY)
-        self._loading_form = True
-        if idx >= 0:
-            self.objective_combo.setCurrentIndex(idx)
-        self._loading_form = False
+        if hasattr(self, "scale_bar_mode_checkbox"):
+            self.scale_bar_mode_checkbox.blockSignals(True)
+            self.scale_bar_mode_checkbox.setChecked(True)
+            self.scale_bar_mode_checkbox.blockSignals(False)
+        self._update_scalebar_controls_visibility()
+        self._update_objective_selector_state()
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if indices:
             self._apply_settings_to_indices(indices, action="scale")
@@ -1726,24 +1930,25 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if not isinstance(objective, dict):
             return
         custom_scale = objective.get("microns_per_pixel")
-        key = objective.get("key") or objective.get("objective_key") or objective.get("magnification") or ""
-        is_custom = str(key).lower() == "custom" or key == self.CUSTOM_OBJECTIVE_KEY
-        if is_custom and isinstance(custom_scale, (int, float)):
+        if isinstance(custom_scale, (int, float)):
             self._custom_scale = float(custom_scale)
-            self._populate_objectives(selected_key=self.CUSTOM_OBJECTIVE_KEY)
-            idx = self.objective_combo.findData(self.CUSTOM_OBJECTIVE_KEY)
-            if idx >= 0:
-                self.objective_combo.setCurrentIndex(idx)
+            if hasattr(self, "scale_bar_mode_checkbox"):
+                self.scale_bar_mode_checkbox.blockSignals(True)
+                self.scale_bar_mode_checkbox.setChecked(True)
+                self.scale_bar_mode_checkbox.blockSignals(False)
+            self._update_scalebar_controls_visibility()
+            self._update_objective_selector_state()
 
     def _load_objectives(self):
         return load_objectives()
 
     def _get_default_objective(self):
-        for key, obj in self.objectives.items():
+        for key, obj in self._micro_objective_items():
             if obj.get("is_default"):
                 return key
-        if self.objectives:
-            return sorted(self.objectives.keys())[0]
+        items = self._micro_objective_items()
+        if items:
+            return sorted(items, key=lambda item: objective_sort_value(item[1], item[0]))[0][0]
         return None
 
     def _current_selection_indices(self) -> list[int]:
@@ -1780,28 +1985,52 @@ class ImageImportDialog(GeometryMixin, QDialog):
             for idx in indices
             if 0 <= idx < len(self.import_results)
         )
+        all_field = all(
+            self.import_results[idx].image_type == "field"
+            for idx in indices
+            if 0 <= idx < len(self.import_results)
+        )
         # Scale can be set for both field and microscope images.
         self.scale_group.setEnabled(True)
         # Contrast/mount/stain/sample remain microscope-only controls.
         self._update_micro_settings_state(all_micro)
+        self._update_scale_context_controls(all_field=all_field, all_micro=all_micro)
         self._update_resize_group_state()
         self._update_scalebar_controls_visibility()
         self._update_scale_mismatch_warning()
 
-    def _has_objective_calibration_selected(self) -> bool:
-        selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
-        if not selected_objective:
-            return False
-        if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
-            return False
-        return True
+    def _update_scale_context_controls(self, *, all_field: bool, all_micro: bool) -> None:
+        if hasattr(self, "field_scale_row"):
+            self.field_scale_row.setVisible(all_field)
+            self.field_scale_row.setEnabled(all_field)
+        if hasattr(self, "scale_bar_mode_checkbox"):
+            self.scale_bar_mode_checkbox.setVisible(all_micro)
+            self.scale_bar_mode_checkbox.setEnabled(all_micro)
+        if hasattr(self, "calibrate_btn"):
+            self.calibrate_btn.setVisible(all_micro and bool(self.scale_bar_mode_checkbox.isChecked() if hasattr(self, "scale_bar_mode_checkbox") else False))
+            self.calibrate_btn.setEnabled(all_micro)
+        if hasattr(self, "_scale_bar_inline"):
+            self._scale_bar_inline.setVisible(all_micro and bool(self.scale_bar_mode_checkbox.isChecked() if hasattr(self, "scale_bar_mode_checkbox") else False))
+            self._scale_bar_inline.setEnabled(all_micro)
+        self._update_objective_selector_state()
+
+    def _update_objective_selector_state(self) -> None:
+        if not hasattr(self, "objective_combo"):
+            return
+        is_micro = bool(getattr(self, "micro_radio", None) and self.micro_radio.isChecked())
+        scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
+        enabled = is_micro and not scale_bar_active
+        self.objective_combo.setEnabled(enabled)
 
     def _update_scalebar_controls_visibility(self) -> None:
-        hide_scalebar_controls = self._has_objective_calibration_selected()
+        active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
+        is_micro = bool(getattr(self, "micro_radio", None) and self.micro_radio.isChecked())
         if hasattr(self, "calibrate_btn"):
-            self.calibrate_btn.setVisible(not hide_scalebar_controls)
+            self.calibrate_btn.setVisible(active and is_micro)
+            self.calibrate_btn.setEnabled(is_micro)
         if hasattr(self, "_scale_bar_inline"):
-            self._scale_bar_inline.setVisible(not hide_scalebar_controls)
+            self._scale_bar_inline.setVisible(active and is_micro)
+            self._scale_bar_inline.setEnabled(is_micro)
 
     def _update_resize_group_state(self) -> None:
         if not hasattr(self, "resize_group"):
@@ -1821,9 +2050,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 enable_resize = False
             else:
                 selected_objective = self.objective_combo.currentData() if hasattr(self, "objective_combo") else None
-                if selected_objective == self.CUSTOM_OBJECTIVE_KEY:
-                    enable_resize = False
-                elif self._objective_optics_type(selected_objective) == "macro":
+                if self._objective_optics_type(selected_objective) == "macro":
                     enable_resize = False
                 else:
                     any_resized = any(
@@ -3991,15 +4218,25 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.field_radio.setChecked(True)
         self._sync_scale_bar_length_unit_for_image_type()
         self._custom_scale = float(result.custom_scale) if result.custom_scale else None
-        self._populate_objectives(
-            selected_key=self.CUSTOM_OBJECTIVE_KEY if result.custom_scale else result.objective
-        )
-        if result.custom_scale:
-            idx = self.objective_combo.findData(self.CUSTOM_OBJECTIVE_KEY)
-            if idx >= 0:
-                self.objective_combo.setCurrentIndex(idx)
-        elif result.objective:
-            idx = self.objective_combo.findText(result.objective)
+        is_field = result.image_type == "field"
+        field_scale_key = None
+        if is_field:
+            if result.objective and result.objective in self.objectives:
+                objective = self.objectives[result.objective]
+                if str(objective.get("optics_type") or "").strip().lower() == "macro":
+                    field_scale_key = result.objective
+            if field_scale_key is None:
+                field_scale_key = self._field_scale_key_for_scale(self._custom_scale)
+        self._populate_objectives(selected_key=result.objective if not is_field else None)
+        self._populate_field_scale_combo(selected_value=field_scale_key or self._custom_scale or None)
+        if hasattr(self, "scale_bar_mode_checkbox"):
+            self.scale_bar_mode_checkbox.blockSignals(True)
+            self.scale_bar_mode_checkbox.setChecked(bool(result.custom_scale))
+            self.scale_bar_mode_checkbox.blockSignals(False)
+        self._update_scalebar_controls_visibility()
+        self._update_objective_selector_state()
+        if result.objective:
+            idx = self.objective_combo.findData(result.objective)
             if idx >= 0:
                 self.objective_combo.setCurrentIndex(idx)
         else:
@@ -4054,12 +4291,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if sender is self.objective_combo:
             action = "scale"
             previous_key = self._last_objective_key
-            current_key = self.objective_combo.currentData()
             self._update_scalebar_controls_visibility()
-            if current_key == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale is None:
-                self._update_resize_group_state()
-                self._start_scale_bar_selection()
-                return
+        elif sender is getattr(self, "field_scale_combo", None):
+            action = "field_scale"
         elif sender is self.contrast_combo:
             action = "contrast"
         elif sender is self.mount_combo:
@@ -4138,12 +4372,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
                         result.image_id, float(old_scale), float(new_scale)
                     ):
                         return False
-        if selected_objective == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale:
+        scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
+        if result.image_type == "microscope" and scale_bar_active and self._custom_scale:
             result.custom_scale = self._custom_scale
-            result.objective = None
+        elif result.image_type == "field":
+            field_scale_key = self.field_scale_combo.currentData() if hasattr(self, "field_scale_combo") else None
+            result.custom_scale = self._resolve_selected_field_scale_value(field_scale_key)
         else:
             result.custom_scale = None
+        if result.image_type == "microscope":
             result.objective = selected_objective or None
+        else:
+            result.objective = None
         result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
         result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
         result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
@@ -4239,11 +4479,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
 
     def _resolve_selected_scale_value(self, selected_objective) -> float | None:
-        if selected_objective == self.CUSTOM_OBJECTIVE_KEY and self._custom_scale:
+        scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
+        if scale_bar_active and self._custom_scale:
             return float(self._custom_scale)
         if selected_objective and selected_objective in self.objectives:
             return self.objectives[selected_objective].get("microns_per_pixel")
         return None
+
+    def _resolve_selected_field_scale_value(self, selected_scale) -> float | None:
+        if not selected_scale:
+            return None
+        objective = self.objectives.get(selected_scale)
+        if not isinstance(objective, dict):
+            return None
+        if str(objective.get("optics_type") or "").strip().lower() != "macro":
+            return None
+        scale = objective.get("microns_per_pixel")
+        return float(scale) if isinstance(scale, (int, float)) else None
 
     def _collect_rescale_targets(
         self,
@@ -4647,12 +4899,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
         return None
 
     def _objective_optics_type(self, objective_key: str | None) -> str:
-        if not objective_key or objective_key == self.CUSTOM_OBJECTIVE_KEY:
+        if not objective_key:
             return "microscope"
         objective = self.objectives.get(objective_key)
         if not isinstance(objective, dict):
             return "microscope"
-        return "macro" if str(objective.get("optics_type") or "").strip().lower() == "macro" else "microscope"
+        return "macro" if objective_is_macro_profile(objective, objective_key) else "microscope"
 
     def _compute_resample_scale_factor(
         self,
@@ -4896,7 +5148,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             _hide_warning()
             return
         selected_objective = self.objective_combo.currentData()
-        if not selected_objective or selected_objective == self.CUSTOM_OBJECTIVE_KEY:
+        if not selected_objective:
             _hide_warning()
             return
         calibration = CalibrationDB.get_active_calibration(selected_objective)

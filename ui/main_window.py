@@ -1101,6 +1101,13 @@ class SettingsHubDialog(QDialog):
                 widget.hide()
                 widget.setParent(None)
 
+    def _on_database_settings_changed(self) -> None:
+        self._database_changed = True
+        parent = self.parent()
+        refresher = getattr(parent, "_refresh_microscope_tag_preferences", None)
+        if callable(refresher):
+            refresher()
+
     def _update_embedded_bottom_row(self, page_index: int) -> None:
         if not hasattr(self, "_hub_hint_layout"):
             return
@@ -1270,6 +1277,7 @@ class SettingsHubDialog(QDialog):
         # central widget so we avoid duplicating its UI code.
         self._db_dialog = DatabaseSettingsDialog(self)
         self._db_dialog.setWindowFlags(Qt.Widget)  # embed as widget, not window
+        self._db_dialog.microscopeTagsChanged.connect(self._on_database_settings_changed)
         layout.addWidget(self._db_dialog)
         return page
 
@@ -17360,6 +17368,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     def open_database_settings_dialog(self):
         """Open database settings dialog."""
         dialog = DatabaseSettingsDialog(self)
+        dialog.microscopeTagsChanged.connect(self._refresh_microscope_tag_preferences)
         if dialog.exec() == QDialog.Accepted:
             self._populate_measure_categories()
 
@@ -17385,6 +17394,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Open appearance (theme) settings dialog."""
         dialog = AppearanceDialog(self)
         dialog.exec()
+
+    def _refresh_microscope_tag_preferences(self) -> None:
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is not None:
+            refresher = getattr(observations_tab, "refresh_open_image_import_dialogs", None)
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
+        live_lab_tab = getattr(self, "live_lab_tab", None)
+        if live_lab_tab is not None:
+            refresher = getattr(live_lab_tab, "refresh_microscope_tag_preferences", None)
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
 
     def _set_ui_theme(self, theme: str) -> None:
         SettingsDB.set_setting("ui_theme", theme)

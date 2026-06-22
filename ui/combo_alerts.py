@@ -72,6 +72,9 @@ def update_combo_alert(combo: QComboBox | None, alert: bool | None = None) -> No
     if combo is None:
         return
     state = combo_is_unset(combo) if alert is None else bool(alert)
+    if hasattr(combo, "set_lab_state_alert"):
+        combo.set_lab_state_alert(state)
+        return
     combo.setProperty("labStateAlert", state)
     combo.setStyleSheet(lab_state_combo_alert_stylesheet(state))
     style = combo.style()

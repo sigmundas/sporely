@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QEvent, QT_TRANSLATE_NOOP
+from PySide6.QtCore import Qt, QEvent, QT_TRANSLATE_NOOP, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -33,6 +33,8 @@ from .hint_status import HintBar, HintStatusController
 
 class DatabaseSettingsDialog(QDialog):
     """Dialog for database and image folder settings."""
+
+    microscopeTagsChanged = Signal()
 
     TAG_CATEGORIES = (
         ("contrast", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Contrast methods")),
@@ -339,6 +341,7 @@ class DatabaseSettingsDialog(QDialog):
         SettingsDB.set_setting("remember_last_used", True)
         SettingsDB.set_setting("original_storage_mode", "none")
         SettingsDB.set_setting("store_original_images", False)
+        self.microscopeTagsChanged.emit()
 
     def _save_settings(self):
         if self._loading_settings:

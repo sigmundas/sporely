@@ -76,7 +76,7 @@ def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
                 continue
             seen.add(canonical)
             cleaned.append(canonical)
-        return cleaned or list(_DEFAULT_MEASURE_CATEGORIES)
+        return cleaned
 
     key = "measure_categories"
     defaults = list(_DEFAULT_MEASURE_CATEGORIES)
@@ -84,7 +84,7 @@ def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
     row = cursor.fetchone()
 
     if row is None or row[0] is None:
-        normalized = _canonicalize_list(defaults)
+        normalized = list(defaults)
         cursor.execute(
             """
             INSERT INTO settings (key, value)
@@ -104,14 +104,8 @@ def _migrate_measure_categories_setting(cursor: sqlite3.Cursor) -> None:
         parsed = []
 
     normalized = _canonicalize_list(parsed)
-    merged = list(normalized)
-    changed = merged != parsed
-    for default_category in defaults:
-        if default_category not in merged:
-            merged.append(default_category)
-            changed = True
-
-    if changed:
+    merged = list(normalized) if normalized else list(defaults)
+    if merged != parsed:
         cursor.execute(
             """
             INSERT INTO settings (key, value)
@@ -158,7 +152,7 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
                 continue
             seen.add(canonical)
             cleaned.append(canonical)
-        return cleaned or list(_DEFAULT_CONTRAST_METHODS)
+        return cleaned
 
     key = "contrast_options"
     defaults = list(_DEFAULT_CONTRAST_METHODS)
@@ -166,7 +160,7 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
     row = cursor.fetchone()
 
     if row is None or row[0] is None:
-        normalized = _canonicalize_list(defaults)
+        normalized = list(defaults)
         cursor.execute(
             """
             INSERT INTO settings (key, value)
@@ -186,14 +180,8 @@ def _migrate_contrast_options_setting(cursor: sqlite3.Cursor) -> None:
         parsed = []
 
     normalized = _canonicalize_list(parsed)
-    merged = list(normalized)
-    changed = merged != parsed
-    for default_method in defaults:
-        if default_method not in merged:
-            merged.append(default_method)
-            changed = True
-
-    if changed:
+    merged = list(normalized) if normalized else list(defaults)
+    if merged != parsed:
         cursor.execute(
             """
             INSERT INTO settings (key, value)
@@ -241,18 +229,14 @@ def _migrate_mount_and_stain_settings(cursor: sqlite3.Cursor) -> None:
         else:
             kept_mounts.append(value)
 
-    merged_mounts = list(kept_mounts)
-    for value in default_mounts:
-        if value not in merged_mounts:
-            merged_mounts.append(value)
+    merged_mounts = list(kept_mounts) if kept_mounts else list(default_mounts)
 
     merged_stains = list(stain_values)
     for value in moved_stains:
         if value not in merged_stains:
             merged_stains.append(value)
-    for value in default_stains:
-        if value not in merged_stains:
-            merged_stains.append(value)
+    if not merged_stains:
+        merged_stains = list(default_stains)
 
     _save_value("mount_options", merged_mounts)
     _save_value("stain_options", merged_stains)

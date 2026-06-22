@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QComboBox
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox
 
 from ui import image_import_dialog
 from ui.image_import_dialog import (
@@ -245,9 +245,8 @@ def test_collect_raw_settings_from_form_uses_raw_controls_widget_state():
 def test_prepare_images_combo_alerts_track_unset_and_custom_objective_state(qapp):
     dummy = SimpleNamespace()
     dummy.tr = lambda text: text
-    dummy.objectives = {}
+    dummy.objectives = {"40x": {"magnification": 40.0}}
     dummy.default_objective = None
-    dummy.CUSTOM_OBJECTIVE_KEY = ImageImportDialog.CUSTOM_OBJECTIVE_KEY
     dummy._FIELD_TAG_DEFAULTS = ImageImportDialog._FIELD_TAG_DEFAULTS
     dummy._canonicalize_tag = lambda category, value: ImageImportDialog._canonicalize_tag(dummy, category, value)
     dummy._field_tag_value = lambda category: ImageImportDialog._field_tag_value(dummy, category)
@@ -255,10 +254,10 @@ def test_prepare_images_combo_alerts_track_unset_and_custom_objective_state(qapp
     dummy._update_lab_state_combo_alerts = lambda *_args: ImageImportDialog._update_lab_state_combo_alerts(dummy, *_args)
     dummy._set_field_tag_defaults_in_form = lambda: ImageImportDialog._set_field_tag_defaults_in_form(dummy)
     dummy._populate_objectives = lambda selected_key=None: ImageImportDialog._populate_objectives(dummy, selected_key)
+    dummy.scale_bar_mode_checkbox = QCheckBox()
 
     dummy.objective_combo = QComboBox()
     dummy.objective_combo.addItem("Not set", None)
-    dummy.objective_combo.addItem("From scalebar", dummy.CUSTOM_OBJECTIVE_KEY)
     dummy.objective_combo.addItem("40x", "40x")
 
     dummy.contrast_combo = QComboBox()
@@ -275,10 +274,12 @@ def test_prepare_images_combo_alerts_track_unset_and_custom_objective_state(qapp
     dummy.sample_combo.addItem("Spore", "spore")
 
     dummy._populate_objectives(selected_key=None)
-    assert dummy.objective_combo.property("labStateAlert") is True
+    assert dummy.objective_combo.count() == 1
+    assert dummy.objective_combo.currentData() == "40x"
+    assert dummy.objective_combo.property("labStateAlert") is False
 
-    dummy._populate_objectives(selected_key=dummy.CUSTOM_OBJECTIVE_KEY)
-    assert dummy.objective_combo.currentData() == dummy.CUSTOM_OBJECTIVE_KEY
+    dummy.scale_bar_mode_checkbox.setChecked(True)
+    dummy._update_lab_state_combo_alerts()
     assert dummy.objective_combo.property("labStateAlert") is False
 
     dummy._set_field_tag_defaults_in_form()
@@ -304,7 +305,6 @@ def test_prepare_images_combo_alerts_are_suppressed_for_field_images(qapp):
     dummy.tr = lambda text: text
     dummy.objectives = {}
     dummy.default_objective = None
-    dummy.CUSTOM_OBJECTIVE_KEY = ImageImportDialog.CUSTOM_OBJECTIVE_KEY
     dummy._FIELD_TAG_DEFAULTS = ImageImportDialog._FIELD_TAG_DEFAULTS
     dummy._canonicalize_tag = lambda category, value: ImageImportDialog._canonicalize_tag(dummy, category, value)
     dummy._field_tag_value = lambda category: ImageImportDialog._field_tag_value(dummy, category)
@@ -312,6 +312,7 @@ def test_prepare_images_combo_alerts_are_suppressed_for_field_images(qapp):
     dummy._update_lab_state_combo_alerts = lambda *_args: ImageImportDialog._update_lab_state_combo_alerts(dummy, *_args)
     dummy._current_single_index = lambda: 0
     dummy.import_results = [SimpleNamespace(image_type="field")]
+    dummy.scale_bar_mode_checkbox = QCheckBox()
 
     dummy.objective_combo = QComboBox()
     dummy.objective_combo.addItem("Not set", None)

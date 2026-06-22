@@ -8398,6 +8398,16 @@ class ObservationsTab(QWidget):
         self.set_selected_as_active(switch_tab=False)
         self.set_status_message(self.tr("Images updated."), level="success")
 
+    def refresh_open_image_import_dialogs(self) -> None:
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, ImageImportDialog):
+                refresher = getattr(widget, "refresh_microscope_tag_preferences", None)
+                if callable(refresher):
+                    try:
+                        refresher()
+                    except Exception:
+                        pass
+
     def _on_gallery_image_double_clicked(self, _image_id, filepath: str) -> None:
         """Open Prepare Images from Observations-gallery double-click."""
         target_path = (filepath or "").strip() or None

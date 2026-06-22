@@ -91,6 +91,13 @@ from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 from .hint_status import HintBar, HintStatusController
 from .combo_alerts import combo_is_unset, lab_state_combo_alert_stylesheet, update_combo_alert, update_combo_alerts
 from .image_gallery_widget import ImageGalleryWidget
+from .adaptive_choice_selector import (
+    AdaptiveChoiceSelector,
+    objective_color,
+    objective_short_label,
+    objective_is_macro_profile,
+    stain_color,
+)
 from .raw_processing_controls import RawProcessingControls
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
@@ -419,6 +426,7 @@ class LiveLabTab(QWidget):
         )
         tag_form.setSpacing(8)
         self.objective_combo = self._make_combo()
+        self.objective_combo.set_unselected_border_visible(False)
         self.objective_combo.currentIndexChanged.connect(self._save_objective_selection)
         self.contrast_combo = self._build_term_combo("contrast")
         self.mount_combo = self._build_term_combo("mount")
@@ -3177,24 +3185,94 @@ class LiveLabTab(QWidget):
             self._update_lab_state_combo_alerts()
 
     def _make_combo(self):
-        from PySide6.QtWidgets import QComboBox
+        return AdaptiveChoiceSelector(self, compact=True)
 
-        combo = QComboBox()
-        combo.setSizeAdjustPolicy(combo.SizeAdjustPolicy.AdjustToContents)
-        return combo
+    def _add_choice_item(
+        self,
+        combo,
+        text: str,
+        value,
+        *,
+        pill_text: str | None = None,
+        tooltip: str | None = None,
+        color: str | None = None,
+    ) -> None:
+        if isinstance(combo, AdaptiveChoiceSelector):
+            combo.addItem(text, value, pillText=pill_text, tooltip=tooltip, color=color)
+        else:
+            combo.addItem(text, value)
 
     def _build_term_combo(self, category: str):
         combo = self._make_combo()
+        if category == "stain" and hasattr(combo, "set_unselected_border_visible"):
+            combo.set_unselected_border_visible(False)
+        adder = getattr(self, "_add_choice_item", None)
         values = DatabaseTerms.canonicalize_list(
             category,
             SettingsDB.get_list_setting(DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)),
         )
         for value in values:
-            combo.addItem(DatabaseTerms.translate(category, value), value)
+            if category == "contrast" and value == "Not_set":
+                continue
+            display = DatabaseTerms.translate(category, value)
+            if callable(adder):
+                adder(
+                    combo,
+                    display,
+                    value,
+                    pill_text="—" if value == "Not_set" else display,
+                    color=stain_color(value) if category == "stain" else None,
+                    tooltip=display,
+                )
+            else:
+                combo.addItem(display, value)
         combo.currentIndexChanged.connect(
             lambda _idx, cat=category, c=combo: self._remember_last_used_term(cat, c.currentData())
         )
         return combo
+
+    def _refresh_term_combo(self, combo, category: str) -> None:
+        if combo is None:
+            return
+        current_value = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        adder = getattr(self, "_add_choice_item", None)
+        values = DatabaseTerms.canonicalize_list(
+            category,
+            SettingsDB.get_list_setting(DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)),
+        )
+        for value in values:
+            if category == "contrast" and value == "Not_set":
+                continue
+            display = DatabaseTerms.translate(category, value)
+            if callable(adder):
+                adder(
+                    combo,
+                    display,
+                    value,
+                    pill_text="—" if value == "Not_set" else display,
+                    color=stain_color(value) if category == "stain" else None,
+                    tooltip=display,
+                )
+            else:
+                combo.addItem(display, value)
+        index = combo.findData(current_value) if current_value is not None else -1
+        if index < 0:
+            index = 0 if combo.count() else -1
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        combo.blockSignals(False)
+
+    def refresh_microscope_tag_preferences(self) -> None:
+        for category, combo in (
+            ("contrast", getattr(self, "contrast_combo", None)),
+            ("mount", getattr(self, "mount_combo", None)),
+            ("stain", getattr(self, "stain_combo", None)),
+            ("sample", getattr(self, "sample_combo", None)),
+        ):
+            self._refresh_term_combo(combo, category)
+        self._update_lab_state_combo_alerts()
 
     def _restore_term_selection(self, combo, category: str) -> None:
         saved = DatabaseTerms.canonicalize(category, SettingsDB.get_setting(DatabaseTerms.last_used_key(category), ""))
@@ -3243,16 +3321,27 @@ class LiveLabTab(QWidget):
 
     def _populate_objective_combo(self) -> None:
         self.objective_combo.clear()
-        self.objective_combo.addItem(self.tr("Not set"), None)
+        adder = getattr(self, "_add_choice_item", None)
         objectives = load_objectives()
         rows = []
         for key, obj in objectives.items():
-            if str(obj.get("optics_type") or "microscope").strip().lower() == "macro":
+            if objective_is_macro_profile(obj, key):
                 continue
             rows.append((key, obj))
         rows.sort(key=lambda item: objective_sort_value(item[1], item[0]))
         for key, obj in rows:
-            self.objective_combo.addItem(objective_display_name(obj, key) or str(key), key)
+            label = objective_display_name(obj, key) or str(key)
+            if callable(adder):
+                adder(
+                    self.objective_combo,
+                    label,
+                    key,
+                    pill_text=objective_short_label(obj, key) or label,
+                    color=objective_color(obj, key),
+                    tooltip=label,
+                )
+            else:
+                self.objective_combo.addItem(label, key)
         saved = str(SettingsDB.get_setting(self.SETTING_LAST_OBJECTIVE, "") or "").strip()
         if saved:
             index = self.objective_combo.findData(saved)
