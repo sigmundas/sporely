@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 import utils.cloud_sync as cloud_sync
 
@@ -137,6 +138,35 @@ def test_from_stored_credentials_returns_cached_client_without_probing(monkeypat
     assert client.access_token == "cached-token"
     assert client.user_id == "user-123"
     assert client.refresh_token == "refresh-token"
+
+
+def test_from_stored_credentials_refreshes_from_saved_refresh_token(monkeypatch):
+    settings = {
+        "cloud_refresh_token": "refresh-token",
+    }
+    save_calls: list[dict[str, object]] = []
+    refreshed_client = SimpleNamespace(
+        access_token="fresh-token",
+        user_id="user-123",
+        refresh_token="new-refresh-token",
+        save_credentials=lambda **kwargs: save_calls.append(dict(kwargs)),
+    )
+
+    def fake_refresh_login(refresh_token: str):
+        assert refresh_token == "refresh-token"
+        return refreshed_client
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+    monkeypatch.setattr(cloud_sync, "load_saved_cloud_password", lambda: ("", None, False))
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "refresh_login", fake_refresh_login)
+
+    client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+
+    assert client is refreshed_client
+    assert client.access_token == "fresh-token"
+    assert client.user_id == "user-123"
+    assert client.refresh_token == "new-refresh-token"
+    assert save_calls == [{}]
 
 
 def test_push_images_for_observation_surfaces_auth_errors(monkeypatch):

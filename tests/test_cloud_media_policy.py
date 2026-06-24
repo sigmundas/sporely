@@ -26,6 +26,25 @@ def test_normalize_cloud_plan_profile_maps_free_and_pro():
     assert pro_profile["has_pro_access"] is True
 
 
+def test_normalize_cloud_plan_profile_handles_null_quota_on_pro_rows():
+    profile = normalize_cloud_plan_profile(
+        {
+            "cloud_plan": "pro",
+            "is_pro": True,
+            "storage_quota_bytes": None,
+            "full_res_storage_enabled": False,
+        }
+    )
+
+    assert profile["cloudPlan"] == "pro"
+    assert profile["qualityProfile"] == CLOUD_QUALITY_PROFILE_HIGH
+    assert profile["has_pro_access"] is True
+    assert profile["storage_quota_bytes"] is None
+    assert profile["storageQuotaBytes"] is None
+    assert profile["full_res_storage_enabled"] is False
+    assert profile["fullResStorageEnabled"] is False
+
+
 def test_build_cloud_upload_policy_uses_expected_quality_and_caps():
     free_policy = build_cloud_upload_policy(normalize_cloud_plan_profile({"cloud_plan": "free"}), upload_mode="full")
     pro_policy = build_cloud_upload_policy(normalize_cloud_plan_profile({"cloud_plan": "pro", "is_pro": True}), upload_mode="full")

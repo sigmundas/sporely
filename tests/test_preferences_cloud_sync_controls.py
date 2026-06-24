@@ -234,6 +234,77 @@ def test_profile_cloud_controls_hide_privacy_slot_count_for_pro(monkeypatch, qap
     parent.deleteLater()
 
 
+def test_profile_cloud_controls_show_plan_even_when_privacy_count_fails(monkeypatch, qapp):
+    failing_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_current_user_info=lambda: {"email": "sigmund.as@gmail.com"},
+        fetch_profile=lambda: {
+            "username": "sigmundas",
+            "display_name": "Sigmundas",
+            "bio": "",
+            "avatar_url": "",
+        },
+        fetch_cloud_plan_profile=lambda: {
+            "cloud_plan": "pro",
+            "is_pro": True,
+            "storage_quota_bytes": None,
+            "full_res_storage_enabled": False,
+        },
+        count_remote_privacy_slots=lambda: (_ for _ in ()).throw(
+            cloud_sync.CloudSyncError('GET observations?user_id=eq.user-123 status=503: {"message":"Service Unavailable"}')
+        ),
+        list_remote_observations=lambda: [],
+    )
+
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, client=failing_client)
+    cloud_card = dialog._artsobs_dialog
+
+    assert cloud_card.cloud_plan_label.text() == "Plan: Pro"
+    assert cloud_card.cloud_plan_label.toolTip() == ""
+    assert cloud_card.cloud_privacy_slots_label.isVisible() is False
+    assert cloud_card.cloud_privacy_slots_label.text() == ""
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_controls_show_private_slot_error_for_free_plan(monkeypatch, qapp):
+    failing_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_current_user_info=lambda: {"email": "sigmund.as@gmail.com"},
+        fetch_profile=lambda: {
+            "username": "sigmundas",
+            "display_name": "Sigmundas",
+            "bio": "",
+            "avatar_url": "",
+        },
+        fetch_cloud_plan_profile=lambda: {
+            "cloud_plan": "free",
+            "is_pro": False,
+            "storage_quota_bytes": 20_000_000,
+            "full_res_storage_enabled": False,
+        },
+        count_remote_privacy_slots=lambda: (_ for _ in ()).throw(
+            cloud_sync.CloudSyncError('GET observations?user_id=eq.user-123 status=503: {"message":"Service Unavailable"}')
+        ),
+        list_remote_observations=lambda: [],
+    )
+
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, client=failing_client)
+    cloud_card = dialog._artsobs_dialog
+
+    assert cloud_card.cloud_plan_label.text() == "Plan: Free"
+    assert cloud_card.cloud_plan_label.toolTip() == ""
+    assert cloud_card.cloud_privacy_slots_label.isVisible() is True
+    assert cloud_card.cloud_privacy_slots_label.text() == "Private/fuzzed slots: unavailable"
+    assert "Service Unavailable" in cloud_card.cloud_privacy_slots_label.toolTip()
+    assert "status=503" in cloud_card.cloud_privacy_slots_label.toolTip()
+    assert cloud_card.cloud_upgrade_label.isVisible() is True
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
 def test_profile_cloud_avatar_url_triggers_avatar_fetch(monkeypatch, qapp):
     avatar_calls: list[str] = []
 

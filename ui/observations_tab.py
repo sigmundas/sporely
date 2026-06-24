@@ -120,6 +120,7 @@ from utils.cloud_sync import (
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     load_saved_cloud_password,
+    format_cloud_sync_error_details,
     _format_cloud_sync_observation_status,
     _cloud_sync_current_summary,
     _increment_sync_summary,
@@ -423,7 +424,7 @@ class _CloudAutoSyncWorker(QThread):
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
-            self.error.emit(str(exc))
+            self.error.emit(format_cloud_sync_error_details(exc) or str(exc))
 
 
 def _cloud_media_materialization_should_launch(state: dict | None, worker_running: bool = False) -> bool:
@@ -458,7 +459,7 @@ class _CloudMediaMaterializationWorker(QThread):
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
-            self.error.emit(str(exc))
+            self.error.emit(format_cloud_sync_error_details(exc) or str(exc))
 
 
 def _cloud_sync_sanitized_messages(messages: list | tuple | None) -> list[str]:
@@ -10442,12 +10443,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
 
         summary = dict(getattr(self, "_cloud_privacy_usage_summary", {}) or {})
-        summary_loaded = bool(summary.get("cloud_usage_loaded") or summary.get("cloudUsageLoaded"))
-        if not summary_loaded:
-            if self._cloud_privacy_usage_summary_user_id:
+        profile_loaded = bool(
+            summary.get("cloud_profile_loaded")
+            or summary.get("cloudProfileLoaded")
+            or summary.get("cloud_usage_loaded")
+            or summary.get("cloudUsageLoaded")
+        )
+        privacy_loaded = bool(
+            summary.get("cloud_privacy_usage_loaded")
+            or summary.get("cloudPrivacyUsageLoaded")
+            or summary.get("cloud_usage_loaded")
+            or summary.get("cloudUsageLoaded")
+        )
+        profile_error = str(summary.get("cloud_profile_error") or summary.get("cloudProfileError") or "").strip()
+        privacy_error = str(summary.get("cloud_privacy_usage_error") or summary.get("cloudPrivacyUsageError") or "").strip()
+        summary_error = str(summary.get("cloud_usage_error") or summary.get("cloudUsageError") or "").strip()
+        if not profile_loaded:
+            if profile_error or summary_error:
+                label.setText(self.tr("Private slot availability: unavailable"))
+                label.setToolTip(profile_error or summary_error)
+            elif self._cloud_privacy_usage_summary_user_id:
                 label.setText(self.tr("Private slot availability: loading…"))
+                label.setToolTip("")
             else:
                 label.setText(self.tr("Sign in to Sporely Cloud to see private slot availability."))
+                label.setToolTip("")
+            label.setVisible(True)
             return
 
         base_used = max(0, int(summary.get("privacy_slots_used") or summary.get("privacy_slot_count") or 0))
@@ -10457,6 +10478,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         privacy_limit = summary.get("privacy_slots_limit")
         if privacy_limit is None:
             label.setText("")
+            label.setToolTip("")
             label.setVisible(False)
             return
 
@@ -10464,13 +10486,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             limit_value = max(0, int(privacy_limit))
         except Exception:
             limit_value = 0
-        available = max(0, limit_value - projected_used)
-        label.setText(
-            self.tr("Available private slots: {available} of {limit}").format(
-                available=available,
-                limit=limit_value,
+        if not privacy_loaded:
+            if privacy_error:
+                label.setText(self.tr("Private slot availability: unavailable"))
+                label.setToolTip(privacy_error)
+            else:
+                label.setText(self.tr("Private slot availability: loading…"))
+                label.setToolTip("")
+        else:
+            available = max(0, limit_value - projected_used)
+            label.setText(
+                self.tr("Available private slots: {available} of {limit}").format(
+                    available=available,
+                    limit=limit_value,
+                )
             )
-        )
+            label.setToolTip("")
+        label.setVisible(True)
 
     def _ai_selected_fields(self, obs: dict | None) -> dict:
         row = dict(obs or {})

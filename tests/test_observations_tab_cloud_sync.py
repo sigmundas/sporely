@@ -275,6 +275,30 @@ def test_cloud_auto_sync_worker_cancels_during_sync(monkeypatch, qapp):
     assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True, "cancelled": True}]
 
 
+def test_cloud_auto_sync_worker_surfaces_detailed_transient_supabase_errors(monkeypatch):
+    fake_client = SimpleNamespace(user_id="user-123")
+    errors: list[str] = []
+
+    def fake_sync_all(*args, **kwargs):
+        raise cloud_sync.CloudTemporarilyUnavailableError(
+            "Supabase/cloud sync is temporarily unavailable; local data was not overwritten."
+        ) from cloud_sync.CloudSyncError(
+            'GET profiles?id=eq.user-123 status=503: {"message":"Service Unavailable"}'
+        )
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
+    monkeypatch.setattr(observations_tab, "sync_all", fake_sync_all)
+
+    worker = observations_tab._CloudAutoSyncWorker(prepare_images_cb=None)
+    worker.error.connect(errors.append)
+    worker.run()
+
+    assert errors
+    assert "temporarily unavailable" in errors[0].lower()
+    assert "status=503" in errors[0]
+    assert "Service Unavailable" in errors[0]
+
+
 def test_metadata_sync_timeout_is_disabled(monkeypatch):
     calls: dict[str, object] = {}
 

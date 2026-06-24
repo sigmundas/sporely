@@ -1287,6 +1287,33 @@ def test_fetch_cloud_usage_summary_counts_private_and_fuzzed_slots():
     assert summary["cloud_plan"] == "free"
 
 
+def test_fetch_cloud_usage_summary_keeps_plan_loaded_when_privacy_count_fails():
+    client = SimpleNamespace(
+        fetch_cloud_plan_profile=lambda: {
+            "cloud_plan": "pro",
+            "is_pro": True,
+            "storage_quota_bytes": None,
+            "full_res_storage_enabled": False,
+        },
+        count_remote_privacy_slots=lambda: (_ for _ in ()).throw(
+            cloud_sync.CloudSyncError(
+                'GET observations?user_id=eq.user-123&select=id status=503: {"message":"Service Unavailable"}'
+            )
+        ),
+    )
+
+    summary = cloud_sync.fetch_cloud_usage_summary(client)
+
+    assert summary["cloud_profile_loaded"] is True
+    assert summary["cloud_privacy_usage_loaded"] is False
+    assert summary["cloud_usage_loaded"] is False
+    assert summary["cloud_plan"] == "pro"
+    assert summary["privacy_slots_used"] is None
+    assert summary["privacy_slots_available"] is None
+    assert "status=503" in summary["cloud_usage_error"]
+    assert "Service Unavailable" in summary["cloud_usage_error"]
+
+
 def test_push_all_blocks_privacy_slot_limit_and_continues_to_next_row(tmp_path, monkeypatch):
     db_path = tmp_path / "push_all_blocked.sqlite"
     conn = sqlite3.connect(db_path)

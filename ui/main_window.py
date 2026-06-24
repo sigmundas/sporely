@@ -1901,33 +1901,32 @@ class SettingsHubDialog(QDialog):
                 if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
                     cloud_dialog._update_cloud_account_summary_labels()
             return
+        user_info = {}
+        cloud_profile = {}
+        account_email = str(get_app_settings().get("cloud_user_email") or "").strip()
         try:
             user_info = client.fetch_current_user_info()
-            account_email = str(user_info.get("email") or get_app_settings().get("cloud_user_email") or "").strip()
+        except Exception:
+            user_info = {}
+        account_email = str(user_info.get("email") or account_email or "").strip()
+        try:
             cloud_profile = client.fetch_profile()
-            from utils.cloud_sync import fetch_cloud_usage_summary
+        except Exception:
+            cloud_profile = {}
+        from utils.cloud_sync import fetch_cloud_usage_summary
 
-            if cloud_dialog is not None:
-                cloud_dialog._cloud_client = client
-                cloud_dialog._cloud_account_email = account_email
-                summary = fetch_cloud_usage_summary(client)
-                cloud_dialog._cloud_usage_summary = summary
-                cloud_dialog._cloud_usage_summary_user_id = user_id if summary.get("cloud_usage_loaded") else ""
-        except Exception as exc:
-            self._profile_email.setReadOnly(True)
-            self._profile_email.setToolTip(self.tr("Signed in to Sporely Cloud."))
-            self._cloud_profile_loaded_user_id = user_id
-            self._profile_email.setText(str(get_app_settings().get("cloud_user_email") or "").strip())
-            self._profile_avatar_url = str(SettingsDB.get_setting("profile_avatar_url", "") or "").strip()
-            if cloud_dialog is not None:
-                cloud_dialog._cloud_client = client
-                cloud_dialog._cloud_account_email = str(get_app_settings().get("cloud_user_email") or "").strip()
-                cloud_dialog._cloud_usage_summary = {}
-                cloud_dialog._cloud_usage_summary_user_id = user_id
-                if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
-                    cloud_dialog._update_cloud_account_summary_labels()
-            self._render_profile_avatar()
-            return
+        try:
+            summary = fetch_cloud_usage_summary(client)
+        except Exception:
+            summary = {}
+
+        if cloud_dialog is not None:
+            cloud_dialog._cloud_client = client
+            cloud_dialog._cloud_account_email = account_email
+            cloud_dialog._cloud_usage_summary = summary
+            cloud_dialog._cloud_usage_summary_user_id = user_id if summary.get("cloud_usage_loaded") else ""
+            if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
+                cloud_dialog._update_cloud_account_summary_labels()
 
         username = str(cloud_profile.get("username") or "").strip()
         display_name = str(cloud_profile.get("display_name") or "").strip()
@@ -1940,7 +1939,11 @@ class SettingsHubDialog(QDialog):
         if account_email:
             self._profile_email.setText(account_email)
         self._profile_email.setReadOnly(True)
-        self._profile_email.setToolTip(self.tr("Profile email is the signed-in Sporely Cloud account."))
+        profile_tooltip = self.tr("Profile email is the signed-in Sporely Cloud account.")
+        profile_error = str(summary.get("cloud_profile_error") or summary.get("cloudProfileError") or "").strip()
+        if profile_error:
+            profile_tooltip = f"{profile_tooltip}\n\n{profile_error}"
+        self._profile_email.setToolTip(profile_tooltip)
         if bio:
             self._profile_bio.setPlainText(bio)
         if avatar_url:
@@ -3444,7 +3447,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._cloud_client = client
         logged_in = bool(client)
         summary = dict(getattr(self, "_cloud_usage_summary", {}) or {})
-        summary_loaded = bool(summary.get("cloud_usage_loaded") or summary.get("cloudUsageLoaded"))
+        profile_loaded = bool(
+            summary.get("cloud_profile_loaded")
+            or summary.get("cloudProfileLoaded")
+            or summary.get("cloud_usage_loaded")
+            or summary.get("cloudUsageLoaded")
+        )
+        privacy_loaded = bool(
+            summary.get("cloud_privacy_usage_loaded")
+            or summary.get("cloudPrivacyUsageLoaded")
+            or summary.get("cloud_usage_loaded")
+            or summary.get("cloudUsageLoaded")
+        )
+        profile_error = str(summary.get("cloud_profile_error") or summary.get("cloudProfileError") or "").strip()
+        privacy_error = str(summary.get("cloud_privacy_usage_error") or summary.get("cloudPrivacyUsageError") or "").strip()
+        summary_error = str(summary.get("cloud_usage_error") or summary.get("cloudUsageError") or "").strip()
 
         if not logged_in:
             self.cloud_status_label.setText(self.tr("Not logged in"))
@@ -3482,41 +3499,59 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if plan_label is None or slots_label is None or upgrade_label is None:
             return
 
-        if not summary_loaded:
-            plan_label.setText(self.tr("Plan: loading…"))
+        if not profile_loaded:
+            if profile_error or summary_error:
+                plan_label.setText(self.tr("Plan: unavailable"))
+                plan_label.setToolTip(profile_error or summary_error)
+            else:
+                plan_label.setText(self.tr("Plan: loading…"))
+                plan_label.setToolTip("")
             plan_label.setVisible(True)
             slots_label.setText("")
+            slots_label.setToolTip("")
             slots_label.setVisible(False)
             upgrade_label.setVisible(False)
             return
 
         is_pro = bool(summary.get("has_pro_access") or str(summary.get("cloud_plan") or "").strip().lower() == "pro")
         plan_label.setText(self.tr("Plan: {plan}").format(plan=self.tr("Pro") if is_pro else self.tr("Free")))
+        plan_label.setToolTip("")
         plan_label.setVisible(True)
 
         used = max(0, int(summary.get("privacy_slots_used") or summary.get("privacy_slot_count") or 0))
         privacy_limit = summary.get("privacy_slots_limit")
         if privacy_limit is None:
             slots_label.setText("")
+            slots_label.setToolTip("")
             slots_label.setVisible(False)
         else:
             try:
                 limit_value = max(0, int(privacy_limit))
             except Exception:
                 limit_value = 0
-            available = summary.get("privacy_slots_available")
-            try:
-                available_value = max(0, int(available)) if available is not None else max(0, limit_value - used)
-            except Exception:
-                available_value = max(0, limit_value - used)
-            slots_label.setText(
-                self.tr("Private/fuzzed slots: {used} used of {limit} ({available} available)").format(
-                    used=used,
-                    limit=limit_value,
-                    available=available_value,
+            if not privacy_loaded:
+                if privacy_error:
+                    slots_label.setText(self.tr("Private/fuzzed slots: unavailable"))
+                    slots_label.setToolTip(privacy_error)
+                else:
+                    slots_label.setText(self.tr("Private/fuzzed slots: loading…"))
+                    slots_label.setToolTip("")
+                slots_label.setVisible(True)
+            else:
+                available = summary.get("privacy_slots_available")
+                try:
+                    available_value = max(0, int(available)) if available is not None else max(0, limit_value - used)
+                except Exception:
+                    available_value = max(0, limit_value - used)
+                slots_label.setText(
+                    self.tr("Private/fuzzed slots: {used} used of {limit} ({available} available)").format(
+                        used=used,
+                        limit=limit_value,
+                        available=available_value,
+                    )
                 )
-            )
-            slots_label.setVisible(True)
+                slots_label.setToolTip("")
+                slots_label.setVisible(True)
 
         if is_pro:
             upgrade_label.setVisible(False)

@@ -12,6 +12,7 @@ One-time Supabase SQL to run in the SQL editor for optimal upsert performance:
 from __future__ import annotations
 
 import base64
+import logging
 import math
 import os
 import hashlib
@@ -79,6 +80,8 @@ from utils.r2_storage import (
     normalize_media_key,
 )
 from utils.thumbnail_generator import generate_all_sizes
+
+logger = logging.getLogger(__name__)
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
@@ -2240,27 +2243,52 @@ def _parse_postgrest_content_range_total(content_range: str | None) -> int | Non
 def fetch_cloud_usage_summary(client) -> dict:
     profile = normalize_cloud_plan_profile({})
     profile_loaded = False
-    remote_loaded = False
-    privacy_slots_used = 0
+    privacy_count_loaded = False
+    privacy_loaded = False
+    privacy_slots_used: int | None = None
+    profile_error = ''
+    privacy_error = ''
     if client is not None:
         try:
             profile = normalize_cloud_plan_profile(client.fetch_cloud_plan_profile())
             profile_loaded = True
-        except Exception:
+        except Exception as exc:
             profile = normalize_cloud_plan_profile({})
+            profile_error = format_cloud_sync_error_details(exc)
+            if profile_error:
+                logger.warning(
+                    "Cloud plan profile lookup failed for user_id=%s: %s",
+                    getattr(client, 'user_id', ''),
+                    profile_error,
+                )
         try:
             count_method = getattr(client, 'count_remote_privacy_slots', None)
             if callable(count_method):
                 privacy_slots_used = int(count_method())
-                remote_loaded = True
-        except Exception:
-            privacy_slots_used = 0
+                privacy_count_loaded = True
+        except Exception as exc:
+            privacy_slots_used = None
+            privacy_error = format_cloud_sync_error_details(exc)
+            if privacy_error:
+                logger.warning(
+                    "Cloud privacy slot count failed for user_id=%s: %s",
+                    getattr(client, 'user_id', ''),
+                    privacy_error,
+                )
     has_pro_access = bool(profile.get('has_pro_access') or str(profile.get('cloud_plan') or '').strip().lower() == 'pro')
     privacy_slots_limit = None if has_pro_access else FREE_TIER_PRIVACY_SLOT_LIMIT
-    privacy_slots_available = None if privacy_slots_limit is None else max(
+    privacy_loaded = bool(profile_loaded and privacy_count_loaded)
+    if not privacy_loaded:
+        privacy_slots_used = None
+    privacy_slots_available = None if privacy_slots_limit is None or not privacy_loaded else max(
         0,
         int(privacy_slots_limit) - int(privacy_slots_used),
     )
+    error_messages = []
+    if profile_error:
+        error_messages.append(f"Profile lookup: {profile_error}")
+    if privacy_error:
+        error_messages.append(f"Private slot count: {privacy_error}")
     summary = dict(profile)
     summary.update({
         'privacy_slots_used': privacy_slots_used,
@@ -2271,8 +2299,20 @@ def fetch_cloud_usage_summary(client) -> dict:
         'privacySlotsLimit': privacy_slots_limit,
         'privacy_slots_available': privacy_slots_available,
         'privacySlotsAvailable': privacy_slots_available,
-        'cloud_usage_loaded': bool(profile_loaded and remote_loaded),
-        'cloudUsageLoaded': bool(profile_loaded and remote_loaded),
+        'cloud_profile_loaded': profile_loaded,
+        'cloudProfileLoaded': profile_loaded,
+        'cloud_privacy_usage_loaded': privacy_loaded,
+        'cloudPrivacyUsageLoaded': privacy_loaded,
+        'cloud_usage_loaded': bool(profile_loaded and privacy_loaded),
+        'cloudUsageLoaded': bool(profile_loaded and privacy_loaded),
+        'cloud_profile_error': profile_error or None,
+        'cloudProfileError': profile_error or None,
+        'cloud_privacy_usage_error': privacy_error or None,
+        'cloudPrivacyUsageError': privacy_error or None,
+        'cloud_usage_error': "\n".join(error_messages),
+        'cloudUsageError': "\n".join(error_messages),
+        'cloud_usage_error_messages': error_messages,
+        'cloudUsageErrorMessages': error_messages,
     })
     return summary
 
@@ -2352,6 +2392,17 @@ def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[st
         if sub_code and not code:
             code = sub_code
         texts.extend(sub_texts)
+    for attr in ('__cause__', '__context__'):
+        try:
+            chained_value = getattr(value, attr)
+        except Exception:
+            chained_value = None
+        if chained_value is None:
+            continue
+        sub_code, sub_texts = _collect_sync_error_details(chained_value, seen)
+        if sub_code and not code:
+            code = sub_code
+        texts.extend(sub_texts)
     text = str(value).strip()
     if text:
         texts.append(text)
@@ -2362,6 +2413,23 @@ def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[st
             elif 'check_violation' in lowered:
                 code = 'check_violation'
     return code, texts
+
+
+def format_cloud_sync_error_details(error) -> str:
+    code, texts = _collect_sync_error_details(error)
+    parts: list[str] = []
+    code_text = str(code or '').strip()
+    if code_text:
+        parts.append(f"code={code_text}")
+    for text in dict.fromkeys(texts):
+        cleaned = str(text or '').strip()
+        if cleaned and cleaned not in parts:
+            parts.append(cleaned)
+    if not parts:
+        fallback = str(error or '').strip()
+        if fallback:
+            parts.append(fallback)
+    return " | ".join(parts)
 
 
 def is_privacy_slot_limit_error(error) -> bool:
@@ -2517,7 +2585,7 @@ def _request_with_transient_retry(
             if refreshed_ok:
                 continue
             raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
-                f'{method} {url}: auth refresh failed'
+                f'{method} {url} status={getattr(response, "status_code", "")}: auth refresh failed'
             )
 
         if _response_indicates_transient_supabase_error(response):
@@ -2525,7 +2593,7 @@ def _request_with_transient_retry(
                 _sleep_supabase_backoff(attempt)
                 continue
             raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
-                f'{method} {url}: {getattr(response, "text", "")}'
+                f'{method} {url} status={getattr(response, "status_code", "")}: {getattr(response, "text", "")}'
             )
         return response
 
@@ -7791,7 +7859,7 @@ class SporelyCloudClient:
             timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'Login failed: {resp.text}')
+            raise CloudSyncError(f'Login failed (status={resp.status_code}): {resp.text}')
         d = resp.json()
         return cls(
             access_token=d['access_token'],
@@ -7813,7 +7881,7 @@ class SporelyCloudClient:
             timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'Refresh failed: {resp.text}')
+            raise CloudSyncError(f'Refresh failed (status={resp.status_code}): {resp.text}')
         d = resp.json()
         return cls(
             access_token=d['access_token'],
