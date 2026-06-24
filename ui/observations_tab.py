@@ -1724,10 +1724,11 @@ class ObservationsTab(QWidget):
 
         # Set column properties
         header = self.table.horizontalHeader()
+        # Columns 1/2/3 (vernacular/genus/species) stretch proportionally via _redistribute_taxonomy_columns.
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.Fixed)
@@ -1736,15 +1737,16 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
-        self.table.setColumnWidth(1, 170)  # Name
-        self.table.setColumnWidth(2, 120)  # Genus
-        self.table.setColumnWidth(3, 120)  # Species
+        self.table.setColumnWidth(1, 190)  # Vernacular name (initial; redistributed on resize)
+        self.table.setColumnWidth(2, 96)   # Genus (initial; redistributed on resize)
+        self.table.setColumnWidth(3, 140)  # Species (initial; redistributed on resize)
         self.table.setColumnWidth(4, 72)   # Spores
         self.table.setColumnWidth(5, 128)  # Date
         self.table.setColumnWidth(6, 108)  # Location
         self.table.setColumnWidth(7, 138)  # Status
         self.table.setColumnWidth(8, 56)   # Map
         self.table.setColumnWidth(9, 140)  # Publish
+        self._table_col_resize_guard = False
         self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -1999,7 +2001,35 @@ class ObservationsTab(QWidget):
             return True
         if event.type() == QEvent.Drop and self._handle_new_observation_drop(event):
             return True
+        if (
+            obj is getattr(self, "table", None)
+            and hasattr(self, "_table_col_resize_guard")
+            and event.type() == QEvent.Resize
+        ):
+            self._redistribute_taxonomy_columns()
         return super().eventFilter(obj, event)
+
+    def _redistribute_taxonomy_columns(self) -> None:
+        if getattr(self, "_table_col_resize_guard", False):
+            return
+        total = self.table.viewport().width()
+        if total < 100:
+            return
+        self._table_col_resize_guard = True
+        try:
+            header = self.table.horizontalHeader()
+            fixed = sum(
+                header.sectionSize(i)
+                for i in range(self.table.columnCount())
+                if i not in (1, 2, 3)
+            )
+            available = max(0, total - fixed)
+            # Proportions: vernacular 45%, genus 20%, species 35%
+            self.table.setColumnWidth(1, max(80, int(available * 0.45)))
+            self.table.setColumnWidth(2, max(50, int(available * 0.20)))
+            self.table.setColumnWidth(3, max(80, int(available * 0.35)))
+        finally:
+            self._table_col_resize_guard = False
 
     def _on_delete_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
@@ -4555,6 +4585,8 @@ class ObservationsTab(QWidget):
             self.set_status_message(status_message, level="success")
         elif show_status:
             self.set_status_message(self.tr("Refreshed db."), level="success")
+
+        self._redistribute_taxonomy_columns()
 
         if _async_thumb_paths and show_thumbnails:
             # Deduplicate while preserving order, skip paths already being loaded

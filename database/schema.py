@@ -1355,6 +1355,10 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
     try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN inaturalist_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
         cursor.execute('ALTER TABLE observations ADD COLUMN inaturalist_taxon_id INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists
