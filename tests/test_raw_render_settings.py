@@ -11,8 +11,10 @@ from utils.raw_render import (
     RAW_DERIVATIVE_QUALITY,
     RAW_DERIVATIVE_SUBSAMPLING,
     RawRenderSettings,
+    apply_auto_level_bounds_to_settings,
     build_raw_processing_metadata,
     render_raw_image,
+    save_raw_preview_jpeg,
     render_raw_sampling_rgb,
 )
 
@@ -67,6 +69,8 @@ def test_raw_render_settings_round_trip():
         tone_curve_enabled=True,
         tone_curve_strength=0.75,
         tone_curve_midpoint=0.42,
+        tone_shadows=0.25,
+        tone_highlights=-0.15,
         output_bps=8,
     )
 
@@ -100,6 +104,8 @@ def test_raw_render_settings_default_uses_camera_wb_and_auto_levels():
     assert settings.auto_levels_shadow_lift == 0.0
     assert settings.shadow_lift == 0.0
     assert settings.tone_curve_enabled is False
+    assert settings.tone_shadows == 0.0
+    assert settings.tone_highlights == 0.0
     assert settings.wb_selection_space is None
 
 
@@ -125,6 +131,8 @@ def test_raw_render_settings_from_legacy_dict_uses_new_defaults():
     assert settings.auto_levels_tail_size == 0.03
     assert settings.auto_levels_shadow_lift == 0.10
     assert settings.shadow_lift == 0.10
+    assert settings.tone_shadows == 0.0
+    assert settings.tone_highlights == 0.0
 
 
 def test_raw_render_settings_clamps_shadow_lift_aliases():
@@ -135,6 +143,17 @@ def test_raw_render_settings_clamps_shadow_lift_aliases():
     assert settings.dark_ev == -2.0
     assert settings.auto_levels_shadow_lift == 0.10
     assert settings.shadow_lift == 0.10
+
+
+def test_apply_auto_level_bounds_to_settings_uses_bounds_without_crashing():
+    settings = RawRenderSettings.default()
+
+    adjusted = apply_auto_level_bounds_to_settings(settings, 0.12, 0.92)
+
+    assert adjusted.auto_levels is True
+    assert adjusted.dark_ev <= 0.0
+    assert adjusted.light_ev >= 0.0
+    assert adjusted.exposure_ev == pytest.approx(adjusted.light_ev + adjusted.dark_ev)
 
 
 def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeypatch):
@@ -177,6 +196,34 @@ def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeyp
     assert saved["params"]["optimize"] is True
     with Image.open(output_path) as rendered:
         assert rendered.size == (2, 2)
+        assert rendered.format == "JPEG"
+
+
+def test_render_raw_image_preview_mode_downscales_to_1600px_max_edge(tmp_path, monkeypatch):
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    output_dir = tmp_path / "imports"
+    rgb = np.full((2000, 4000, 3), 0.5, dtype=np.float64)
+    raw = _DummyRaw(rgb)
+    monkeypatch.setattr("utils.raw_render.import_rawpy", lambda: _DummyRawpyModule(raw))
+
+    output_path = render_raw_image(source_path, output_dir=output_dir, preview=True)
+
+    with Image.open(output_path) as rendered:
+        assert rendered.size == (1600, 800)
+        assert rendered.format == "JPEG"
+
+
+def test_save_raw_preview_jpeg_downscales_to_1600px_max_edge(tmp_path):
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "preview.jpg"
+    rgb = np.full((1200, 3600, 3), 0.5, dtype=np.float64)
+
+    save_raw_preview_jpeg(rgb, preview_path, source_path)
+
+    with Image.open(preview_path) as rendered:
+        assert rendered.size == (1600, 533)
         assert rendered.format == "JPEG"
 
 

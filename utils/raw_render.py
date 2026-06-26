@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime
+import math
 import os
 from pathlib import Path
 from typing import Any, Mapping
@@ -25,6 +26,8 @@ RAW_DERIVATIVE_MIME_TYPE = "image/jpeg"
 RAW_DERIVATIVE_QUALITY = 95
 RAW_DERIVATIVE_SUBSAMPLING = 0
 RAW_DERIVATIVE_OPTIMIZE = True
+RAW_PREVIEW_MAX_DIM = 1600
+_EPSILON = np.finfo(np.float64).eps
 
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
@@ -171,6 +174,8 @@ class RawRenderSettings:
     tone_curve_enabled: bool = False
     tone_curve_strength: float = 0.5
     tone_curve_midpoint: float = 0.5
+    tone_shadows: float = 0.0
+    tone_highlights: float = 0.0
     output_bps: int = 16
 
     def __init__(
@@ -197,6 +202,8 @@ class RawRenderSettings:
         tone_curve_enabled: bool = False,
         tone_curve_strength: float = 0.5,
         tone_curve_midpoint: float = 0.5,
+        tone_shadows: float = 0.0,
+        tone_highlights: float = 0.0,
         output_bps: int = 16,
     ) -> None:
         resolved_shadow_lift = auto_levels_shadow_lift if shadow_lift is None else shadow_lift
@@ -229,6 +236,8 @@ class RawRenderSettings:
         object.__setattr__(self, "tone_curve_enabled", bool(tone_curve_enabled))
         object.__setattr__(self, "tone_curve_strength", _coerce_float_in_range(tone_curve_strength, 0.5, 0.0, 1.0))
         object.__setattr__(self, "tone_curve_midpoint", _coerce_float_in_range(tone_curve_midpoint, 0.5, 0.0, 1.0))
+        object.__setattr__(self, "tone_shadows", _coerce_float_in_range(tone_shadows, 0.0, -1.0, 1.0))
+        object.__setattr__(self, "tone_highlights", _coerce_float_in_range(tone_highlights, 0.0, -1.0, 1.0))
         object.__setattr__(self, "output_bps", _coerce_int(output_bps, 16))
 
     @classmethod
@@ -263,6 +272,8 @@ class RawRenderSettings:
             "tone_curve_enabled": bool(self.tone_curve_enabled),
             "tone_curve_strength": float(self.tone_curve_strength),
             "tone_curve_midpoint": float(self.tone_curve_midpoint),
+            "tone_shadows": float(self.tone_shadows),
+            "tone_highlights": float(self.tone_highlights),
             "output_bps": int(self.output_bps),
         }
 
@@ -300,6 +311,12 @@ class RawRenderSettings:
         shadow_lift_value = mapping.get("shadow_lift")
         if shadow_lift_value is None:
             shadow_lift_value = mapping.get("auto_levels_shadow_lift", 0.0)
+        tone_shadows_value = mapping.get("tone_shadows")
+        if tone_shadows_value is None:
+            tone_shadows_value = mapping.get("shadows", 0.0)
+        tone_highlights_value = mapping.get("tone_highlights")
+        if tone_highlights_value is None:
+            tone_highlights_value = mapping.get("highlights", 0.0)
         has_light_dark = "light_ev" in mapping or "dark_ev" in mapping
         light_ev_value = mapping.get("light_ev") if has_light_dark else None
         dark_ev_value = mapping.get("dark_ev") if has_light_dark else None
@@ -329,6 +346,8 @@ class RawRenderSettings:
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),
             tone_curve_strength=_coerce_float(mapping.get("tone_curve_strength"), 0.5),
             tone_curve_midpoint=_coerce_float(mapping.get("tone_curve_midpoint"), 0.5),
+            tone_shadows=_coerce_float_in_range(tone_shadows_value, 0.0, -1.0, 1.0),
+            tone_highlights=_coerce_float_in_range(tone_highlights_value, 0.0, -1.0, 1.0),
             output_bps=_coerce_int(mapping.get("output_bps"), 16),
         )
 
@@ -419,6 +438,83 @@ def _apply_auto_levels(
     return apply_auto_levels_from_bounds(rgb, black_level, white_level, shadow_lift=shadow_lift)
 
 
+def _auto_level_analysis_settings(settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None) -> RawRenderSettings:
+    resolved = RawRenderSettings.from_dict(settings)
+    return replace(
+        resolved,
+        exposure_ev=0.0,
+        light_ev=0.0,
+        dark_ev=0.0,
+        auto_levels=False,
+        black_percentile=0.0,
+        white_percentile=1.0,
+        auto_levels_strength=1.0,
+        auto_levels_soft_tails=False,
+        auto_levels_tail_size=0.03,
+        auto_levels_shadow_lift=0.0,
+        tone_curve_enabled=False,
+        tone_shadows=0.0,
+        tone_highlights=0.0,
+    )
+
+
+def apply_auto_level_bounds_to_settings(
+    settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None,
+    black_level: float | None,
+    white_level: float | None,
+) -> RawRenderSettings:
+    """Return a RAW settings snapshot with auto levels snapped to the given bounds."""
+    resolved = RawRenderSettings.from_dict(settings)
+    if (
+        black_level is None
+        or white_level is None
+        or not np.isfinite(float(black_level))
+        or not np.isfinite(float(white_level))
+    ):
+        return resolved
+
+    dark_point = float(np.clip(float(black_level), 0.0, 1.0))
+    light_point = float(np.clip(float(white_level), 0.0, 1.0))
+    if light_point <= dark_point + _EPSILON:
+        return resolved
+
+    dark_ev = float(np.log2(max(_EPSILON, 1.0 - dark_point)))
+    light_ev = float(-math.log2(max(_EPSILON, light_point)))
+    dark_ev = float(np.clip(dark_ev, -2.0, 0.0))
+    light_ev = float(np.clip(light_ev, 0.0, 2.0))
+    return replace(
+        resolved,
+        auto_levels=True,
+        black_percentile=0.0,
+        white_percentile=1.0,
+        auto_levels_strength=1.0,
+        auto_levels_soft_tails=False,
+        auto_levels_tail_size=0.03,
+        auto_levels_shadow_lift=0.0,
+        exposure_ev=light_ev + dark_ev,
+        light_ev=light_ev,
+        dark_ev=dark_ev,
+    )
+
+
+def compute_auto_level_adjusted_settings_from_source(
+    source_path: str | Path,
+    *,
+    settings: RawRenderSettings | Mapping[str, Any] | dict[str, Any] | None = None,
+    black_percentile: float = 0.0,
+    white_percentile: float = 1.0,
+) -> RawRenderSettings:
+    """Compute the auto-level-snapped settings for a RAW source preview."""
+    resolved = RawRenderSettings.from_dict(settings)
+    try:
+        analysis_settings = _auto_level_analysis_settings(resolved)
+        analysis_rgb = render_raw_preview_proxy_rgb(source_path, settings=analysis_settings)
+        black_level, white_level = compute_auto_level_bounds(analysis_rgb, black_percentile, white_percentile)
+    except Exception:
+        return resolved
+    return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
+
+
 def _render_raw_array(
     rawpy_module: Any,
     source_path: str | Path,
@@ -476,6 +572,25 @@ def _save_local_derivative_jpeg(
             except Exception:
                 pass
         raise
+
+
+def _resize_rgb_preview(rgb: np.ndarray, max_dim: int = RAW_PREVIEW_MAX_DIM) -> np.ndarray:
+    arr = to_float_rgb(rgb, clip=False)
+    if arr.ndim != 3 or arr.shape[-1] < 3:
+        raise ValueError("Expected an RGB image with at least 3 channels")
+    height, width = arr.shape[:2]
+    limit = max(1, int(max_dim))
+    long_edge = max(int(width), int(height))
+    image = np.clip(arr[..., :3], 0.0, 1.0)
+    if long_edge <= limit:
+        return image
+
+    scale = limit / float(long_edge)
+    new_width = max(1, int(round(float(width) * scale)))
+    new_height = max(1, int(round(float(height) * scale)))
+    rgb8 = np.rint(image * 255.0).astype(np.uint8)
+    resized = Image.fromarray(rgb8, mode="RGB").resize((new_width, new_height), Image.Resampling.LANCZOS)
+    return np.asarray(resized, dtype=np.float64) / 255.0
 
 
 def build_raw_processing_metadata(
@@ -583,6 +698,8 @@ def render_raw_image(
             )
 
         rgb_float = apply_post_decode_processing(rgb, processing_settings)
+        if preview:
+            rgb_float = _resize_rgb_preview(rgb_float)
         _save_local_derivative_jpeg(
             rgb_float,
             destination,
@@ -617,6 +734,7 @@ def save_raw_preview_jpeg(
     source_capture_datetime: datetime | str | None = None,
 ) -> None:
     """Persist a processed RAW preview frame as a JPEG file."""
+    rgb = _resize_rgb_preview(rgb)
     _save_local_derivative_jpeg(
         rgb,
         Path(destination),
@@ -665,9 +783,12 @@ __all__ = [
     "RAW_DERIVATIVE_MIME_TYPE",
     "RAW_DERIVATIVE_QUALITY",
     "RAW_DERIVATIVE_SUBSAMPLING",
+    "RAW_PREVIEW_MAX_DIM",
     "RawRenderSettings",
     "RawRenderingUnavailableError",
+    "apply_auto_level_bounds_to_settings",
     "build_raw_processing_metadata",
+    "compute_auto_level_adjusted_settings_from_source",
     "render_raw_image",
     "render_raw_preview",
     "render_raw_preview_proxy_rgb",

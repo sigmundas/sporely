@@ -99,6 +99,7 @@ from utils.vernacular_utils import normalize_vernacular_language
 from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordinates, get_camera_model
 from utils.heic_converter import maybe_convert_heic
 from utils.raw_render import (
+    apply_auto_level_bounds_to_settings,
     RawRenderSettings,
     build_raw_processing_metadata,
     render_raw_image,
@@ -106,7 +107,7 @@ from utils.raw_render import (
     render_raw_sampling_rgb,
     save_raw_preview_jpeg,
 )
-from utils.image_processing_pipeline import apply_post_decode_processing
+from utils.image_processing_pipeline import apply_post_decode_processing, compute_auto_level_bounds
 from utils.raw_white_balance import estimate_white_balance_from_background
 
 try:  # pragma: no cover - optional capture-time helper
@@ -5792,6 +5793,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             settings = self._default_raw_settings()
         else:
             settings = RawRenderSettings.from_dict(settings).to_dict()
+        source = self._raw_source_path_for_result(result)
+        auto_helper = getattr(self, "_raw_auto_level_settings_for_source", None)
+        if source and _is_raw_path(source) and Path(source).exists() and callable(auto_helper):
+            resolved_settings = RawRenderSettings.from_dict(settings)
+            if bool(resolved_settings.auto_levels):
+                settings = auto_helper(source, resolved_settings).to_dict()
         result.raw_settings = settings
         return settings
 
@@ -5918,8 +5925,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if btn is not None:
                 btn.hide()
             return
+        original_settings = RawRenderSettings.from_dict(result.raw_settings or RawRenderSettings.default())
         settings = self._ensure_raw_settings(result)
-        self._load_raw_settings_into_form(settings)
+        source = self._raw_source_path_for_result(result)
+        self._load_raw_settings_into_form(settings, source=source)
+        if source and RawRenderSettings.from_dict(settings) != original_settings:
+            self._schedule_raw_preview_refresh(result)
         if btn is not None:
             pending = bool(getattr(result, "raw_pending", False)) or bool(
                 getattr(result, "raw_unsaved_changes", False)
@@ -5933,10 +5944,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.raw_convert_btn.setText(self.tr("Converted"))
                 self.raw_convert_btn.hide()
 
-    def _load_raw_settings_into_form(self, settings: dict | RawRenderSettings | None) -> None:
+    def _load_raw_settings_into_form(self, settings: dict | RawRenderSettings | None, *, source: str | None = None) -> None:
         controls = getattr(self, "raw_controls", None)
         if controls is not None:
-            controls.set_settings(settings)
+            visible_settings = RawRenderSettings.from_dict(settings)
+            auto_helper = getattr(self, "_raw_auto_level_settings_for_source", None)
+            if source and _is_raw_path(source) and Path(source).exists() and callable(auto_helper):
+                if bool(visible_settings.auto_levels):
+                    controls.set_auto_level_settings(visible_settings)
+                else:
+                    controls.set_auto_level_settings(auto_helper(source, visible_settings))
+            controls.set_settings(visible_settings)
 
     def _collect_raw_settings_from_form(self, base: dict | None = None) -> dict:
         controls = getattr(self, "raw_controls", None)
@@ -5945,6 +5963,35 @@ class ImageImportDialog(GeometryMixin, QDialog):
         else:
             settings = controls.settings()
         return settings.to_dict()
+
+    def _raw_auto_level_settings_for_source(
+        self,
+        source: str,
+        settings: dict | RawRenderSettings | None,
+    ) -> RawRenderSettings:
+        resolved = RawRenderSettings.from_dict(settings)
+        try:
+            analysis_settings = replace(
+                resolved,
+                exposure_ev=0.0,
+                light_ev=0.0,
+                dark_ev=0.0,
+                auto_levels=False,
+                black_percentile=0.0,
+                white_percentile=1.0,
+                auto_levels_strength=1.0,
+                auto_levels_soft_tails=False,
+                auto_levels_tail_size=0.03,
+                auto_levels_shadow_lift=0.0,
+                tone_curve_enabled=False,
+                tone_shadows=0.0,
+                tone_highlights=0.0,
+            )
+            preview_rgb = self._raw_preview_proxy_for_result(source, analysis_settings)
+            black_level, white_level = compute_auto_level_bounds(preview_rgb, 0.0, 1.0)
+        except Exception:
+            return resolved
+        return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
 
     def _on_raw_settings_changed(self, *_args) -> None:
         if getattr(self, "_raw_loading", False):

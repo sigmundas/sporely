@@ -6,7 +6,11 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from utils.raw_tone_curve import apply_luminance_tone_curve, normalized_sigmoid_curve
+from utils.raw_tone_curve import (
+    apply_luminance_shadow_highlights,
+    apply_luminance_tone_curve,
+    normalized_sigmoid_curve,
+)
 
 _LUMA_WEIGHTS = np.array([0.2126, 0.7152, 0.0722], dtype=np.float64)
 _EPSILON = np.finfo(np.float64).eps
@@ -39,6 +43,7 @@ class PostDecodeTransferCurve:
     light_dark_output: np.ndarray
     auto_levels_output: np.ndarray
     shadow_toe_output: np.ndarray
+    shadow_highlight_output: np.ndarray
     final_output: np.ndarray
     debug: ProcessingDebugInfo
 
@@ -48,8 +53,10 @@ class RawBasicControlState:
     """Simplified RAW controls used by the normal Live Lab UI."""
 
     white_balance_mode: str
-    contrast: float
+    strength: float
     midpoint: float
+    shadows: float
+    highlights: float
     preserve_tails: bool
 
 
@@ -89,16 +96,18 @@ def raw_basic_controls_from_settings(settings: Any) -> RawBasicControlState:
     if np.isfinite(midpoint_raw):
         midpoint = float(np.clip(midpoint_raw, 0.0, 1.0))
 
-    contrast = 0.0
+    strength = 0.0
     if bool(resolved.tone_curve_enabled):
         strength = float(np.clip(float(resolved.tone_curve_strength), 0.08, 0.80))
-        contrast = float(np.clip((strength - 0.08) / 0.72, 0.0, 1.0)) ** (1.0 / 1.35)
+        strength = float(np.clip((strength - 0.08) / 0.72, 0.0, 1.0)) ** (1.0 / 1.35)
     preserve_tails = bool(resolved.auto_levels_soft_tails)
 
     return RawBasicControlState(
         white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto", "custom"} else "camera",
-        contrast=float(np.clip(contrast, 0.0, 1.0)),
+        strength=float(np.clip(strength, 0.0, 1.0)),
         midpoint=midpoint,
+        shadows=float(np.clip(float(resolved.tone_shadows), -1.0, 1.0)),
+        highlights=float(np.clip(float(resolved.tone_highlights), -1.0, 1.0)),
         preserve_tails=preserve_tails,
     )
 
@@ -107,8 +116,10 @@ def raw_settings_from_basic_controls(
     *,
     white_balance_mode: str,
     wb_multipliers: tuple[float, float, float] | None = None,
-    contrast: float,
+    strength: float,
     midpoint: float,
+    shadows: float = 0.0,
+    highlights: float = 0.0,
     preserve_tails: bool,
     dark_cutoff: float = 0.0,
     bright_cutoff: float = 0.0,
@@ -140,10 +151,10 @@ def raw_settings_from_basic_controls(
         resolved_wb_sample_base_mode = base_settings.wb_sample_base_mode
         resolved_wb_selection_space = base_settings.wb_selection_space
 
-    contrast_value = _clamp_unit(contrast, 0.0)
+    strength_value = _clamp_unit(strength, 0.0)
     midpoint_value = _clamp_unit(midpoint, 0.5)
     curve_midpoint = 0.18 + midpoint_value * 0.64
-    curve_strength = 0.08 + 0.72 * (contrast_value ** 1.35)
+    curve_strength = 0.08 + 0.72 * (strength_value ** 1.35)
     dark_cutoff_value = _clamp_range(dark_cutoff, 0.0005, 0.0, 0.02)
     bright_cutoff_value = _clamp_range(bright_cutoff, 0.0005, 0.0, 0.02)
     resolved = replace(
@@ -163,9 +174,11 @@ def raw_settings_from_basic_controls(
         auto_levels_soft_tails=bool(preserve_tails),
         auto_levels_tail_size=0.03,
         auto_levels_shadow_lift=float(base_settings.auto_levels_shadow_lift),
-        tone_curve_enabled=bool(contrast_value > 0.02),
+        tone_curve_enabled=bool(strength_value > 0.02),
         tone_curve_strength=float(np.clip(curve_strength, 0.0, 1.0)),
         tone_curve_midpoint=float(np.clip(curve_midpoint, 0.0, 1.0)),
+        tone_shadows=float(_clamp_range(shadows, 0.0, -1.0, 1.0)),
+        tone_highlights=float(_clamp_range(highlights, 0.0, -1.0, 1.0)),
     )
     return resolved
 
@@ -595,6 +608,23 @@ def apply_post_decode_processing(
         shadow_toe_output = apply_shadow_toe_lift(working_luminance, shadow_lift, cutoff=shadow_black_level)
         working = apply_luminance_transfer(working, working_luminance, shadow_toe_output)
 
+    tone_shadows = _clamp_range(
+        normalized_settings.get("tone_shadows", normalized_settings.get("shadows", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    tone_highlights = _clamp_range(
+        normalized_settings.get("tone_highlights", normalized_settings.get("highlights", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    if abs(tone_shadows) > _EPSILON or abs(tone_highlights) > _EPSILON:
+        working_luminance = compute_luminance(working)
+        shadow_highlight_output = apply_luminance_shadow_highlights(working_luminance, tone_shadows, tone_highlights)
+        working = apply_luminance_transfer(working, working_luminance, shadow_highlight_output)
+
     if bool(normalized_settings.get("tone_curve_enabled", False)):
         working = apply_luminance_tone_curve(
             working,
@@ -690,10 +720,24 @@ def compute_post_decode_transfer_curve(
     shadow_cutoff = shadow_black_level if shadow_black_level is not None else black_level
     shadow_toe_output = apply_shadow_toe_lift(manual_levels_output, shadow_lift, cutoff=float(shadow_cutoff or 0.0))
 
-    final_output = shadow_toe_output.copy()
+    tone_shadows = _clamp_range(
+        normalized_settings.get("tone_shadows", normalized_settings.get("shadows", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    tone_highlights = _clamp_range(
+        normalized_settings.get("tone_highlights", normalized_settings.get("highlights", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    shadow_highlight_output = apply_luminance_shadow_highlights(shadow_toe_output, tone_shadows, tone_highlights)
+
+    final_output = shadow_highlight_output.copy()
     if bool(normalized_settings.get("tone_curve_enabled", False)):
         final_output = normalized_sigmoid_curve(
-            shadow_toe_output,
+            shadow_highlight_output,
             float(normalized_settings.get("tone_curve_strength", 0.5)),
             float(normalized_settings.get("tone_curve_midpoint", 0.5)),
         )
@@ -707,6 +751,7 @@ def compute_post_decode_transfer_curve(
         light_dark_output=manual_levels_output,
         auto_levels_output=auto_levels_output,
         shadow_toe_output=shadow_toe_output,
+        shadow_highlight_output=shadow_highlight_output,
         final_output=final_output,
         debug=resolved_debug,
     )

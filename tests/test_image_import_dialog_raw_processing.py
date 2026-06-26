@@ -75,8 +75,13 @@ def _build_raw_dialog_dummy(result: ImageImportResult) -> SimpleNamespace:
     dummy._raw_preview_proxy_for_result = lambda source, settings: ImageImportDialog._raw_preview_proxy_for_result(dummy, source, settings)
     dummy._raw_preview_output_path = lambda source: ImageImportDialog._raw_preview_output_path(source)
     dummy._raw_preview_decode_mode = lambda settings: ImageImportDialog._raw_preview_decode_mode(settings)
+    dummy._refresh_raw_preview = lambda *_args, **_kwargs: None
     dummy._ensure_raw_settings = lambda result: ImageImportDialog._ensure_raw_settings(dummy, result)
-    dummy._load_raw_settings_into_form = lambda settings: ImageImportDialog._load_raw_settings_into_form(dummy, settings)
+    dummy._load_raw_settings_into_form = lambda settings, **kwargs: ImageImportDialog._load_raw_settings_into_form(
+        dummy,
+        settings,
+        **kwargs,
+    )
     dummy._ensure_raw_convert_button = lambda: None
     dummy._refresh_raw_preview_calls = []
     return dummy
@@ -280,8 +285,8 @@ def test_raw_settings_changes_preserve_custom_wb_and_serialise_exposure_and_shad
     assert initial["exposure_ev"] == pytest.approx(0.25)
     assert initial["shadow_lift"] == pytest.approx(0.02)
 
-    controls.exposure_slider.setValue(10)
-    controls.dark_slider.setValue(5)
+    controls.exposure_slider.setValue(500)
+    controls.dark_slider.setValue(250)
     controls.curve_strength_slider.setValue(60)
     controls.curve_midpoint_slider.setValue(40)
 

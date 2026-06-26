@@ -4,14 +4,13 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from dataclasses import replace
 
 import numpy as np
 import pytest
 from PIL import Image
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QSlider, QSizePolicy
+from PySide6.QtWidgets import QApplication, QSizePolicy, QSlider
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -29,8 +28,12 @@ def qapp():
 
 def _make_low_contrast_16bit_tiff(path: Path) -> None:
     ramp = np.linspace(12000, 18000, 64, dtype=np.uint16).reshape(8, 8)
-    image = Image.fromarray(ramp, mode="I;16")
-    image.save(path, format="TIFF")
+    Image.fromarray(ramp).save(path, format="TIFF")
+
+
+def _make_large_gradient_tiff(path: Path, *, width: int = 2400, height: int = 1600) -> None:
+    ramp = np.tile(np.linspace(0, 65535, width, dtype=np.uint16), (height, 1))
+    Image.fromarray(ramp).save(path, format="TIFF")
 
 
 def test_parse_args_without_input_path_launches_blank_interactive_mode():
@@ -52,20 +55,17 @@ def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
             sys.executable,
             str(script_path),
             str(input_path),
-            "--exposure-ev",
-            "0.50",
             "--auto-levels",
-            "--auto-levels-strength",
-            "0.65",
-            "--soft-tails",
-            "--tail-size",
-            "0.03",
-            "--shadow-lift",
-            "0.05",
+            "--contrast",
+            "18",
+            "--shadows",
+            "35",
+            "--highlights",
+            "-20",
             "--dark-cutoff",
-            "0.001",
+            "0.01",
             "--bright-cutoff",
-            "0.001",
+            "0.01",
             "--tone-curve",
             "--curve-strength",
             "0.50",
@@ -93,21 +93,21 @@ def test_plot_image_processing_curve_script_creates_outputs(tmp_path):
         assert preview.size == (8, 8)
 
     assert "settings JSON:" in result.stdout
-    assert '"exposure_ev": 0.5' in result.stdout
-    assert '"auto_levels_strength": 0.65' in result.stdout
-    assert '"auto_levels_soft_tails": true' in result.stdout
-    assert '"shadow_lift": 0.05' in result.stdout
-    assert f"plot out: {plot_out}" in result.stdout
-    assert f"preview out: {preview_out}" in result.stdout
+    assert '"contrast": 0.18' in result.stdout
+    assert '"shadows": 0.35' in result.stdout
+    assert '"highlights": -0.2' in result.stdout
+    assert '"tone_curve_enabled": true' in result.stdout
+    assert '"preview_mode": "preview-resized"' in result.stdout
+    assert '"dark_point":' in result.stdout
+    assert '"light_point":' in result.stdout
+    assert "snapshot preview bucket: 8px" in result.stdout
 
 
 def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     input_path = tmp_path / "low_contrast.tiff"
-    ramp = np.linspace(12000, 18000, 64, dtype=np.uint16).reshape(8, 8)
-    Image.fromarray(ramp, mode="I;16").save(input_path, format="TIFF")
+    _make_low_contrast_16bit_tiff(input_path)
 
     window = curve_tool.ProcessingCurveWindow(input_path)
-
     assert window.preview_label.original_pixmap is not None
     assert window.canvas is not None
     assert window.canvas.sizePolicy().horizontalPolicy() == QSizePolicy.Expanding
@@ -118,73 +118,73 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     assert window.figure.axes[0].get_ylabel() == "Output luminance"
     assert isinstance(window.preview_label, ZoomableImageLabel)
     assert window.preview_label.pan_without_shift is True
-    assert isinstance(window.light_slider, QSlider)
     assert isinstance(window.dark_slider, QSlider)
+    assert isinstance(window.light_slider, QSlider)
     assert isinstance(window.dark_cutoff_slider, QSlider)
     assert isinstance(window.bright_cutoff_slider, QSlider)
-    assert isinstance(window.auto_levels_strength_slider, QSlider)
-    assert isinstance(window.shadow_lift_slider, QSlider)
+    assert isinstance(window.contrast_slider, QSlider)
+    assert isinstance(window.shadows_slider, QSlider)
+    assert isinstance(window.highlights_slider, QSlider)
     assert isinstance(window.curve_strength_slider, QSlider)
     assert isinstance(window.curve_midpoint_slider, QSlider)
-    assert window.contrast_label.text() == "Contrast"
-    assert window.midpoint_label.text() == "Midpoint"
-    assert window.light_slider.minimum() == 0
-    assert window.light_slider.maximum() == 20
-    assert window.light_value_label.text() == "+0.00 EV"
     assert window.dark_slider.minimum() == 0
-    assert window.dark_slider.maximum() == 10
-    assert window.dark_value_label.text() == "0.00 EV"
-    assert window.shadow_lift_label.text() == "Dark boost:"
+    assert window.dark_slider.maximum() == 1000
+    assert window.light_slider.minimum() == 0
+    assert window.light_slider.maximum() == 1000
+    assert window.contrast_slider.minimum() == -100
+    assert window.contrast_slider.maximum() == 100
+    assert window.shadows_slider.minimum() == -100
+    assert window.shadows_slider.maximum() == 100
+    assert window.highlights_slider.minimum() == -100
+    assert window.highlights_slider.maximum() == 100
     assert window.dark_cutoff_slider.minimum() == 0
     assert window.dark_cutoff_slider.maximum() == 20
-    assert window.dark_cutoff_value_label.text() == "0.010%"
-    assert window.bright_cutoff_value_label.text() == "0.010%"
-    assert window.auto_levels_strength_slider.minimum() == 0
-    assert window.auto_levels_strength_slider.maximum() == 100
-    assert window.auto_levels_strength_value_label.text() == "100%"
-    assert window.shadow_lift_slider.minimum() == 0
-    assert window.shadow_lift_slider.maximum() == 100
-    assert window.shadow_lift_value_label.text() == "0.0%"
-    assert window.curve_strength_value_label.text() == "0.50"
-    assert window.curve_midpoint_value_label.text() == "0.50"
-    assert "light +0.00 EV" in window.settings_label.text()
-    assert "dark 0.00 EV" in window.settings_label.text()
-    assert "auto levels on" in window.settings_label.text()
-    assert "strength 100%" in window.settings_label.text()
-    assert "soft tails off" in window.settings_label.text()
-    assert "dark boost 0.0%" in window.settings_label.text()
-    assert "dark cutoff" in window.settings_label.text()
-    assert "bright cutoff" in window.settings_label.text()
+    assert window.bright_cutoff_slider.maximum() == 20
+    assert window.auto_levels_checkbox.isChecked() is True
+    assert window.tone_curve_checkbox.isChecked() is False
+    assert window.auto_black_label.text() != "—"
+    assert window.auto_white_label.text() != "—"
 
-    window.light_slider.setValue(10)
-    window.dark_slider.setValue(5)
+    window.auto_levels_checkbox.setChecked(False)
+    window.dark_slider.setValue(100)
+    window.light_slider.setValue(900)
+    window.contrast_slider.setValue(18)
+    window.shadows_slider.setValue(35)
+    window.highlights_slider.setValue(-20)
     window.tone_curve_checkbox.setChecked(True)
-    window.auto_levels_strength_slider.setValue(65)
-    window.shadow_lift_slider.setValue(100)
-    window.dark_cutoff_slider.setValue(15)
-    window.bright_cutoff_slider.setValue(15)
     window.curve_strength_slider.setValue(75)
     window.curve_midpoint_slider.setValue(35)
-    window.raw_controls.set_settings(replace(window.raw_controls.settings(), auto_levels_soft_tails=True))
     window._refresh_outputs()
 
-    assert "light +0.50 EV" in window.settings_label.text()
-    assert "dark 0.25 EV" in window.settings_label.text()
-    assert "tone curve on" in window.settings_label.text()
-    assert "strength 65%" in window.settings_label.text()
-    assert "soft tails off" in window.settings_label.text()
-    assert "dark boost 10.0%" in window.settings_label.text()
-    assert window.dark_cutoff_value_label.text() == "0.015%"
-    assert window.bright_cutoff_value_label.text() == "0.015%"
-    assert window.auto_levels_strength_value_label.text() == "65%"
-    assert window.shadow_lift_value_label.text() == "10.0%"
-    assert window.light_value_label.text() == "+0.50 EV"
-    assert window.dark_value_label.text() == "0.25 EV"
+    assert window.dark_value_label.text() == "0.100"
+    assert window.light_value_label.text() == "0.900"
+    assert window.contrast_value_label.text() == "+18"
+    assert window.shadows_value_label.text() == "+35"
+    assert window.highlights_value_label.text() == "-20"
     assert window.curve_strength_value_label.text() == "0.75"
     assert window.curve_midpoint_value_label.text() == "0.35"
-    assert window.black_level_label.text() != "—"
-    assert window.figure.axes[0].get_xlabel() == "Input luminance"
-    assert window.figure.axes[0].get_ylabel() == "Output luminance"
+    assert "Camera WB" in window.settings_label.text()
+    assert "auto levels off" in window.settings_label.text()
+    assert "dark point 0.100" in window.settings_label.text()
+    assert "light point 0.900" in window.settings_label.text()
+    assert "contrast +18" in window.settings_label.text()
+    assert "shadows/highlights +35 / -20" in window.settings_label.text()
+    assert "tone curve on" in window.settings_label.text()
+    assert "preview" in window.settings_label.text()
+
+    axes = window.figure.axes[0]
+    lines = {line.get_label(): line for line in axes.lines}
+    assert {"identity", "after levels", "after contrast", "after shadows/highlights", "final with tone curve", "tone nodes"}.issubset(lines)
+
+    curve = curve_tool.compute_post_decode_transfer_curve(window._analysis_rgb, window._settings, debug=window._debug)
+    assert np.allclose(lines["identity"].get_xdata(), curve.input_values)
+    assert np.allclose(lines["identity"].get_ydata(), curve.input_values)
+    assert np.allclose(lines["after levels"].get_ydata(), curve.levels_output)
+    assert np.allclose(lines["after contrast"].get_ydata(), curve.contrast_output)
+    assert np.allclose(lines["after shadows/highlights"].get_ydata(), curve.shadow_highlight_output)
+    assert np.allclose(lines["final with tone curve"].get_ydata(), curve.final_output)
+    assert np.allclose(lines["tone nodes"].get_xdata(), [curve.debug.dark_point, curve.debug.light_point])
+    assert np.allclose(lines["tone nodes"].get_ydata(), [0.0, 1.0])
 
 
 def test_zoomable_preview_refresh_preserves_view_state(qapp):
@@ -208,95 +208,144 @@ def test_zoomable_preview_refresh_preserves_view_state(qapp):
     assert after["center"].y() == pytest.approx(before["center"].y())
 
 
-def test_processing_curve_window_uses_real_chart_transfer_mapping(qapp):
-    chart_path = Path(__file__).resolve().parents[2] / "curve_test_chart_low_contrast_16bit.tiff"
-    assert chart_path.exists()
+def test_zoomable_preview_tag_is_set_for_scaled_sources(qapp):
+    label = ZoomableImageLabel()
+    pixmap = QPixmap(40, 40)
+    pixmap.fill(Qt.red)
 
-    window = curve_tool.ProcessingCurveWindow(chart_path)
+    label.set_image_sources(pixmap, None, preview_scaled=True)
 
-    processed_rgb, debug = curve_tool.apply_post_decode_processing(window._source.rgb, window._settings, return_debug=True)
-    curve = curve_tool.compute_post_decode_transfer_curve(
-        window._source.rgb,
-        window._settings,
-        debug=debug,
+    assert label._preview_tag_text == "Preview"
+
+    label.set_image(QPixmap())
+
+    assert label._preview_tag_text == ""
+
+
+def test_processing_curve_transfer_mapping_matches_stages(qapp):
+    ramp = np.linspace(0.0, 1.0, 256, dtype=np.float64)
+    rgb = np.repeat(ramp[None, :, None], 3, axis=2)
+    settings = curve_tool.TestToneSettings(
+        dark_point=0.25,
+        light_point=0.75,
+        auto_levels=False,
+        contrast=0.25,
+        shadows=0.4,
+        highlights=-0.2,
+        tone_curve_enabled=False,
     )
 
-    assert curve.debug.black_level == pytest.approx(0.179995422293431, rel=1e-6)
-    assert curve.debug.white_level == pytest.approx(0.8, rel=1e-6)
-    assert float(processed_rgb.min()) == pytest.approx(0.0, abs=1e-6)
-    assert float(processed_rgb.max()) == pytest.approx(1.0, abs=1e-6)
-    black_idx = int(np.where(np.isclose(curve.input_values, curve.debug.black_level))[0][0])
-    white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
-    assert float(curve.hard_target[black_idx]) == pytest.approx(0.0, abs=1e-6)
-    assert float(curve.hard_target[white_idx]) == pytest.approx(1.0, abs=1e-6)
-    assert float(curve.manual_levels_output[black_idx]) == pytest.approx(float(curve.auto_levels_output[black_idx]), abs=1e-6)
+    processed_rgb, debug = curve_tool.apply_post_decode_processing(rgb, settings, return_debug=True)
+    curve = curve_tool.compute_post_decode_transfer_curve(rgb, settings, debug=debug)
 
-    window.tone_curve_checkbox.setChecked(True)
-    window.curve_strength_slider.setValue(75)
-    window.curve_midpoint_slider.setValue(30)
-    window._refresh_outputs()
+    assert curve.debug.dark_point == pytest.approx(0.25, abs=1e-6)
+    assert curve.debug.light_point == pytest.approx(0.75, abs=1e-6)
+    assert curve.levels_output[0] == pytest.approx(0.0, abs=1e-6)
+    assert curve.levels_output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert np.all(np.diff(curve.levels_output) >= -1e-9)
+    assert np.all(np.diff(curve.contrast_output) >= -1e-9)
+    assert np.all(np.diff(curve.shadow_highlight_output) >= -1e-9)
+    assert curve.shadow_highlight_output[0] == pytest.approx(0.0, abs=1e-6)
+    assert curve.shadow_highlight_output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert curve.final_output[0] == pytest.approx(0.0, abs=1e-6)
+    assert curve.final_output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert float(processed_rgb.min()) >= 0.0
+    assert float(processed_rgb.max()) <= 1.0
 
-    processed_toned, toned_debug = curve_tool.apply_post_decode_processing(window._source.rgb, window._settings, return_debug=True)
-    curve = curve_tool.compute_post_decode_transfer_curve(
-        window._source.rgb,
-        window._settings,
-        debug=toned_debug,
+
+@pytest.mark.parametrize(
+    ("shadows", "highlights"),
+    [
+        (-1.0, 0.0),
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (0.0, -1.0),
+        (0.0, 1.0),
+    ],
+)
+def test_shadow_highlight_curve_stays_pinned_and_monotone(qapp, shadows, highlights):
+    ramp = np.linspace(0.0, 1.0, 256, dtype=np.float64)
+    rgb = np.repeat(ramp[None, :, None], 3, axis=2)
+    settings = curve_tool.TestToneSettings(
+        dark_point=0.25,
+        light_point=0.75,
+        auto_levels=False,
+        contrast=0.25,
+        shadows=shadows,
+        highlights=highlights,
+        tone_curve_enabled=False,
     )
 
-    black_idx = int(np.where(np.isclose(curve.input_values, curve.debug.black_level))[0][0])
-    white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
-    assert float(curve.auto_levels_output[black_idx]) == pytest.approx(0.0, abs=1e-6)
-    assert float(curve.auto_levels_output[white_idx]) == pytest.approx(1.0, abs=1e-6)
-    assert np.all(np.diff(curve.manual_levels_output) >= -1e-9)
-    assert np.all(np.diff(curve.auto_levels_output) >= -1e-9)
-    assert np.all(np.diff(curve.shadow_toe_output) >= -1e-9)
-    assert float(curve.final_output[0]) == pytest.approx(0.0, abs=1e-6)
-    assert float(curve.final_output[-1]) == pytest.approx(1.0, abs=1e-6)
-    assert float(processed_toned.min()) <= 0.05
-    assert float(processed_toned.max()) >= 0.95
+    curve = curve_tool.compute_post_decode_transfer_curve(rgb, settings)
+    output = curve.shadow_highlight_output
 
-    axes = window.figure.axes[0]
-    lines = {line.get_label(): line for line in axes.lines}
-    assert np.allclose(lines["identity"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["identity"].get_ydata(), curve.input_values)
-    assert np.allclose(lines["after auto-levels"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["after auto-levels"].get_ydata(), curve.auto_levels_output)
-    assert np.allclose(lines["after light / dark"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["after light / dark"].get_ydata(), curve.manual_levels_output)
-    assert np.allclose(lines["after dark boost"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["after dark boost"].get_ydata(), curve.shadow_toe_output)
-    assert np.allclose(lines["final after tone curve"].get_xdata(), curve.input_values)
-    assert np.allclose(lines["final after tone curve"].get_ydata(), curve.final_output)
-    assert axes.get_xlim() == pytest.approx((0.0, 1.0))
-    assert axes.get_ylim() == pytest.approx((0.0, 1.0))
+    assert output[0] == pytest.approx(0.0, abs=1e-6)
+    assert output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert np.all(output >= -1e-9)
+    assert np.all(output <= 1.0 + 1e-9)
+    assert np.all(np.diff(output) >= -1e-9)
 
 
-def test_processing_curve_window_soft_target_is_continuous(tmp_path, qapp):
-    input_path = tmp_path / "low_contrast.tiff"
-    ramp = np.linspace(12000, 18000, 64, dtype=np.uint16).reshape(8, 8)
-    Image.fromarray(ramp, mode="I;16").save(input_path, format="TIFF")
+def test_high_positive_highlights_do_not_create_white_hump(qapp):
+    ramp = np.linspace(0.0, 1.0, 256, dtype=np.float64)
+    rgb = np.repeat(ramp[None, :, None], 3, axis=2)
+    settings = curve_tool.TestToneSettings(
+        dark_point=0.0,
+        light_point=1.0,
+        auto_levels=False,
+        contrast=0.0,
+        shadows=0.0,
+        highlights=0.88,
+        tone_curve_enabled=False,
+    )
+
+    curve = curve_tool.compute_post_decode_transfer_curve(rgb, settings)
+    output = curve.shadow_highlight_output
+
+    assert output[0] == pytest.approx(0.0, abs=1e-6)
+    assert output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert np.all(np.diff(output) >= -1e-9)
+
+
+def test_high_positive_shadows_do_not_move_black_endpoint(qapp):
+    ramp = np.linspace(0.0, 1.0, 256, dtype=np.float64)
+    rgb = np.repeat(ramp[None, :, None], 3, axis=2)
+    settings = curve_tool.TestToneSettings(
+        dark_point=0.0,
+        light_point=1.0,
+        auto_levels=False,
+        contrast=0.0,
+        shadows=0.88,
+        highlights=0.0,
+        tone_curve_enabled=False,
+    )
+
+    curve = curve_tool.compute_post_decode_transfer_curve(rgb, settings)
+    output = curve.shadow_highlight_output
+
+    assert output[0] == pytest.approx(0.0, abs=1e-6)
+    assert output[-1] == pytest.approx(1.0, abs=1e-6)
+    assert np.all(np.diff(output) >= -1e-9)
+    assert output[1] > output[0]
+
+
+def test_processing_curve_window_preview_bucket_increases_when_zooming(tmp_path, qapp):
+    input_path = tmp_path / "large.tiff"
+    _make_large_gradient_tiff(input_path)
 
     window = curve_tool.ProcessingCurveWindow(input_path)
-    window.shadow_lift_slider.setValue(100)
-    window.dark_cutoff_slider.setValue(0)
-    window.bright_cutoff_slider.setValue(0)
-    window.raw_controls.set_settings(replace(window.raw_controls.settings(), auto_levels_soft_tails=True))
+    initial_width = window.preview_label.original_pixmap.width()
+    initial_height = window.preview_label.original_pixmap.height()
+    assert initial_width <= 1600
+
+    window.preview_label.set_view_state(
+        QPointF(initial_width / 2.0, initial_height / 2.0),
+        3.0,
+    )
     window._refresh_outputs()
 
-    processed_rgb, debug = curve_tool.apply_post_decode_processing(window._source.rgb, window._settings, return_debug=True)
-    curve = curve_tool.compute_post_decode_transfer_curve(
-        window._source.rgb,
-        window._settings,
-        debug=debug,
-    )
-
-    black_idx = int(np.where(np.isclose(curve.input_values, curve.debug.black_level))[0][0])
-    white_idx = int(np.where(np.isclose(curve.input_values, curve.debug.white_level))[0][0])
-    assert float(curve.soft_target[black_idx]) == pytest.approx(0.0, abs=1e-6)
-    assert float(curve.soft_target[white_idx]) == pytest.approx(1.0, abs=1e-6)
-    assert float(np.max(np.abs(np.diff(curve.soft_target)))) < 0.05
-    assert 0.0 < float(processed_rgb.min()) < 0.05
-    assert float(processed_rgb.max()) == pytest.approx(1.0, abs=1e-6)
+    assert window.preview_label.original_pixmap.width() == 2400
+    assert window.preview_label.original_pixmap.height() < initial_height * 2
 
 
 def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp, monkeypatch):
@@ -305,10 +354,7 @@ def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp
 
     def fake_render_raw_preview(source, *, settings=None, output_path=None, output_dir=None, **_kwargs):
         mode = str(getattr(settings, "white_balance_mode", "camera") or "camera").strip().lower() or "camera"
-        if mode == "auto":
-            color = (80, 80, 110)
-        else:
-            color = (120, 60, 30)
+        color = (80, 80, 110) if mode == "auto" else (120, 60, 30)
         out_path = Path(output_path or (Path(output_dir or tmp_path) / "raw_preview.jpg"))
         out_path.parent.mkdir(parents=True, exist_ok=True)
         Image.new("RGB", (8, 8), color).save(out_path, format="JPEG")
@@ -326,11 +372,11 @@ def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp
     window.wb_pick_btn.setChecked(True)
     window.preview_label.clicked.emit(QPointF(4.0, 4.0))
 
-    settings = window._settings
-    assert settings.white_balance_mode == "custom"
-    assert settings.wb_multipliers is not None
-    assert settings.wb_multiplier_space == "post_decode_rgb"
-    assert settings.wb_sample_base_mode == "camera"
+    wb_settings = window.raw_controls.settings()
+    assert wb_settings.white_balance_mode == "custom"
+    assert wb_settings.wb_multipliers is not None
+    assert wb_settings.wb_multiplier_space == "post_decode_rgb"
+    assert wb_settings.wb_sample_base_mode == "camera"
     assert window.wb_pick_btn.isChecked() is False
     assert window.wb_readout_label.text().startswith("Custom WB")
 
@@ -338,8 +384,7 @@ def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp
 def test_processing_curve_window_can_open_a_new_file_from_blank_start(tmp_path, qapp, monkeypatch):
     initial_path = tmp_path / "initial.tiff"
     opened_path = tmp_path / "opened.orf"
-    ramp = np.linspace(12000, 18000, 64, dtype=np.uint16).reshape(8, 8)
-    Image.fromarray(ramp, mode="I;16").save(initial_path, format="TIFF")
+    _make_low_contrast_16bit_tiff(initial_path)
     opened_path.write_bytes(b"raw-bytes")
 
     captured_filter: dict[str, str] = {}
@@ -353,7 +398,7 @@ def test_processing_curve_window_can_open_a_new_file_from_blank_start(tmp_path, 
         return out_path
 
     monkeypatch.setattr(curve_tool, "render_raw_preview", fake_render_raw_preview)
-    
+
     def fake_get_open_file_name(*args, **kwargs):
         captured_filter["value"] = str(args[3] if len(args) > 3 else kwargs.get("filter", ""))
         return str(opened_path), ""
@@ -374,11 +419,13 @@ def test_processing_curve_window_can_open_a_new_file_from_blank_start(tmp_path, 
     assert window.raw_base_mode_combo.currentData() == "camera"
     assert window.raw_controls.white_balance_selector.selected_value("camera") == "camera"
     assert window.preview_label.original_pixmap is not None
+    assert window.preview_label.original_pixmap.isNull() is False
     zoom_before = window.preview_label.zoom_level
     window.preview_label.zoom_in()
     assert window.preview_label.zoom_level > zoom_before
     assert window.preview_label.pan_without_shift is True
-    assert "base camera" in window.settings_label.text()
+    assert "Camera WB" in window.settings_label.text()
+    assert "preview" in window.settings_label.text()
     assert "*.orf" in captured_filter["value"]
     assert "*.cr3" in captured_filter["value"]
     assert "*.dng" in captured_filter["value"]

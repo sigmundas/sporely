@@ -87,6 +87,7 @@ from utils.lab_watcher import LabWatcherWorker
 from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
 from utils.raw_render import (
     RawRenderSettings,
+    compute_auto_level_adjusted_settings_from_source,
     build_raw_processing_metadata,
     render_raw_image,
     render_raw_preview,
@@ -262,7 +263,7 @@ class LiveLabTab(QWidget):
     RAW_CAPTURE_MODE_REVIEW = "review"
     SESSION_MODE_LIVE = "live"
     SESSION_MODE_OFFLINE = "offline"
-    VIEWER_PREVIEW_MAX_DIM = 2400
+    VIEWER_PREVIEW_MAX_DIM = 1600
     VIEWER_SCALE_BAR_UM = 10.0
     RAW_BACKGROUND_WB_SAMPLE_SIZE = 10
     OBSERVATION_PREVIEW_SIZE = 116
@@ -898,17 +899,27 @@ class LiveLabTab(QWidget):
             self._raw_render_settings = settings
         return settings
 
+    def _raw_auto_level_settings_for_source(
+        self,
+        source_path: str | Path,
+        settings: RawRenderSettings | None,
+    ) -> RawRenderSettings:
+        return compute_auto_level_adjusted_settings_from_source(source_path, settings=settings)
+
     def _sync_raw_processing_controls_from_settings(
         self,
         settings: RawRenderSettings | None = None,
         *,
         update_session_settings: bool = True,
+        auto_level_settings: RawRenderSettings | None = None,
     ) -> None:
         settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
         if update_session_settings:
             self._raw_render_settings = settings
         controls = getattr(self, "raw_controls", None)
         if controls is not None:
+            if auto_level_settings is not None:
+                controls.set_auto_level_settings(auto_level_settings)
             controls.set_settings(settings)
         self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
         self._refresh_raw_processing_context_ui()
@@ -1234,23 +1245,94 @@ class LiveLabTab(QWidget):
     def _selected_raw_processing_targets(self) -> list[tuple[str, object, object]]:
         targets: list[tuple[str, object, object]] = []
         captures = getattr(self, "_pending_raw_captures", [])
-        for key in self._session_gallery_selected_keys():
-            pending_index = self._pending_raw_capture_index_for_key(key)
-            if pending_index is not None and 0 <= pending_index < len(captures):
-                capture = captures[pending_index]
-                if isinstance(capture, PendingRawCapture):
-                    targets.append(("pending", pending_index, capture))
+        selected_keys = self._session_gallery_selected_keys()
+        selected_key_set = {key for key in selected_keys if key is not None}
+
+        current_pending = self._current_pending_raw_capture()
+        if current_pending is not None:
+            pending_key = self._pending_raw_gallery_key(current_pending)
+            if pending_key is not None and pending_key not in selected_key_set:
+                targets = [("pending", self._selected_pending_raw_index_value(), current_pending)]
+
+        selected_image_id = self._selected_committed_image_id()
+        if not targets and selected_image_id is not None and selected_image_id not in selected_key_set:
+            image = ImageDB.get_image(selected_image_id)
+            if image is not None and self._raw_editable_image_session(image) is not None:
+                targets = [("image", selected_image_id, image)]
+
+        if not targets:
+            for key in selected_keys:
+                pending_index = self._pending_raw_capture_index_for_key(key)
+                if pending_index is not None and 0 <= pending_index < len(captures):
+                    capture = captures[pending_index]
+                    if isinstance(capture, PendingRawCapture):
+                        targets.append(("pending", pending_index, capture))
+                        continue
+                try:
+                    image_id = int(key)
+                except Exception:
                     continue
-            try:
-                image_id = int(key)
-            except Exception:
-                continue
+                image = ImageDB.get_image(image_id)
+                if image is None:
+                    continue
+                if self._raw_editable_image_session(image) is not None:
+                    targets.append(("image", image_id, image))
+
+        visible_target = self._visible_raw_processing_target()
+        if visible_target is not None:
+            if not targets:
+                return [visible_target]
+            if len(targets) == 1 and (targets[0][0], targets[0][1]) != (visible_target[0], visible_target[1]):
+                return [visible_target]
+        return targets
+
+    def _visible_raw_processing_target(self) -> tuple[str, object, object] | None:
+        label = getattr(self, "live_image_label", None)
+        if label is None:
+            return None
+
+        visible_path = str(getattr(label, "_full_image_path", "") or "").strip()
+        if not visible_path:
+            return None
+
+        try:
+            visible_path_obj = Path(visible_path)
+        except Exception:
+            visible_path_obj = None
+
+        current_pending = self._current_pending_raw_capture()
+        if current_pending is not None:
+            for candidate in (current_pending.preview_path, current_pending.source_path):
+                candidate_text = str(candidate or "").strip()
+                if not candidate_text:
+                    continue
+                try:
+                    if visible_path_obj is not None and Path(candidate_text) == visible_path_obj:
+                        pending_index = self._selected_pending_raw_index_value()
+                        return ("pending", pending_index if pending_index >= 0 else 0, current_pending)
+                except Exception:
+                    if candidate_text == visible_path:
+                        pending_index = self._selected_pending_raw_index_value()
+                        return ("pending", pending_index if pending_index >= 0 else 0, current_pending)
+
+        for image_id in reversed(list(getattr(self, "_session_image_ids", []) or [])):
             image = ImageDB.get_image(image_id)
             if image is None:
                 continue
-            if self._raw_editable_image_session(image) is not None:
-                targets.append(("image", image_id, image))
-        return targets
+            image_path = str(image.get("filepath") or "").strip()
+            if not image_path:
+                continue
+            try:
+                matches_visible = visible_path_obj is not None and Path(image_path) == visible_path_obj
+            except Exception:
+                matches_visible = image_path == visible_path
+            if not matches_visible:
+                continue
+            if self._raw_editable_image_session(image) is None:
+                return None
+            return ("image", image_id, image)
+
+        return None
 
     def _raw_processing_controls_visible(self) -> bool:
         if self._raw_edit_session is not None:
@@ -1676,6 +1758,8 @@ class LiveLabTab(QWidget):
 
         raw_settings = RawRenderSettings.from_dict(raw_processing.get("settings"))
         resolved_settings = RawRenderSettings.from_dict(settings or raw_settings)
+        if source_path.exists() and bool(resolved_settings.auto_levels):
+            resolved_settings = self._raw_auto_level_settings_for_source(source_path, resolved_settings)
         source_capture_datetime = str(source.get("captured_at") or image_data.get("captured_at") or "").strip() or None
 
         return RawEditSession(
@@ -1768,9 +1852,16 @@ class LiveLabTab(QWidget):
         self._raw_edit_session = editable_session
         self._selected_session_image_id = int(editable_session.image_id)
         self.session_gallery.select_image(int(editable_session.image_id))
+        auto_settings = None
+        if editable_session.source_raw_path.exists():
+            auto_settings = self._raw_auto_level_settings_for_source(
+                editable_session.source_raw_path,
+                editable_session.working_settings,
+            )
         self._sync_raw_processing_controls_from_settings(
             editable_session.working_settings,
             update_session_settings=False,
+            auto_level_settings=auto_settings,
         )
         self._update_raw_edit_controls()
         if not self._refresh_raw_edit_preview():
@@ -2336,18 +2427,42 @@ class LiveLabTab(QWidget):
             wb_selection_space="preview_pixels",
         )
 
+        source_path: Path | None = None
+        if target == "edit":
+            session = getattr(self, "_raw_edit_session", None)
+            if session is None:
+                return False
+            source_path = Path(session.source_raw_path)
+        else:
+            capture = self._current_pending_raw_capture()
+            if capture is None:
+                self._show_status(
+                    self.tr("Choose a pending RAW capture before sampling background WB."),
+                    tone="warning",
+                    timeout_ms=4000,
+                )
+                return False
+            source_path = Path(capture.source_path)
+
+        if source_path.exists() and bool(updated_settings.auto_levels):
+            updated_settings = self._raw_auto_level_settings_for_source(source_path, updated_settings)
+
         armed, _button = self._raw_background_wb_selection_state(target)
         if not armed:
             return False
 
         if target == "edit":
-            session = getattr(self, "_raw_edit_session", None)
-            if session is None:
-                return False
             session.working_settings = updated_settings
             session.dirty = updated_settings != session.original_settings
             self._cancel_raw_background_wb_selection(target=target)
-            self._sync_raw_processing_controls_from_settings(updated_settings, update_session_settings=False)
+            auto_settings = None
+            if source_path.exists():
+                auto_settings = self._raw_auto_level_settings_for_source(source_path, updated_settings)
+            self._sync_raw_processing_controls_from_settings(
+                updated_settings,
+                update_session_settings=False,
+                auto_level_settings=auto_settings,
+            )
             self._schedule_raw_edit_preview_refresh()
             self._update_raw_edit_controls()
             self._show_status(
@@ -2357,17 +2472,16 @@ class LiveLabTab(QWidget):
             )
             return True
 
-        capture = self._current_pending_raw_capture()
-        if capture is None:
-            self._show_status(
-                self.tr("Choose a pending RAW capture before sampling background WB."),
-                tone="warning",
-                timeout_ms=4000,
-            )
-            return False
         capture.raw_settings = updated_settings
         self._cancel_raw_background_wb_selection(target=target)
-        self._sync_raw_processing_controls_from_settings(updated_settings, update_session_settings=True)
+        auto_settings = None
+        if source_path.exists():
+            auto_settings = self._raw_auto_level_settings_for_source(source_path, updated_settings)
+        self._sync_raw_processing_controls_from_settings(
+            updated_settings,
+            update_session_settings=True,
+            auto_level_settings=auto_settings,
+        )
         self._refresh_selected_pending_raw_preview()
         self._show_status(
             self._raw_white_balance_readout_text(updated_settings),
@@ -3089,7 +3203,13 @@ class LiveLabTab(QWidget):
         apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
         if callable(apply_microscope_state):
             apply_microscope_state(capture.lab_metadata)
-        self._sync_raw_processing_controls_from_settings(capture.raw_settings)
+        auto_settings = None
+        if capture.source_path.exists():
+            auto_settings = self._raw_auto_level_settings_for_source(capture.source_path, capture.raw_settings)
+        self._sync_raw_processing_controls_from_settings(
+            capture.raw_settings,
+            auto_level_settings=auto_settings,
+        )
         preview_path = str(capture.preview_path or "").strip()
         if not preview_path or not Path(preview_path).exists():
             self._clear_session_viewer(
@@ -3098,7 +3218,7 @@ class LiveLabTab(QWidget):
             )
             self._update_pending_raw_controls()
             return
-        pixmap, preview_scaled = self._load_viewer_pixmap(preview_path)
+        pixmap, _preview_scaled = self._load_viewer_pixmap(preview_path)
         if pixmap is None or pixmap.isNull():
             self._clear_session_viewer(
                 title=self.tr("Pending RAW preview unavailable"),
@@ -3121,8 +3241,8 @@ class LiveLabTab(QWidget):
                 preserve_view = False
         self.live_image_label.set_image_sources(
             pixmap,
-            preview_path,
-            preview_scaled,
+            None,
+            True,
             preserve_view=preserve_view,
         )
         self.reset_view_btn.setEnabled(True)
@@ -3195,6 +3315,8 @@ class LiveLabTab(QWidget):
         resolved_lab_metadata = merge_image_lab_metadata(self._current_lab_metadata(), lab_metadata)
         resolved_lab_metadata["image_type"] = "microscope"
         resolved_settings = RawRenderSettings.from_dict(raw_settings or self._current_raw_render_settings())
+        if source.exists() and bool(resolved_settings.auto_levels):
+            resolved_settings = self._raw_auto_level_settings_for_source(source, resolved_settings)
         pending = PendingRawCapture(
             source_path=source,
             companion_jpeg_path=Path(companion_jpeg_path) if companion_jpeg_path else None,
@@ -5022,9 +5144,11 @@ class LiveLabTab(QWidget):
                 preserve_view = bool(preserve_view_checker(image_path))
             except Exception:
                 preserve_view = False
+        if edit_session is not None and int(edit_session.image_id) == int(image_id):
+            preview_scaled = True
         self.live_image_label.set_image_sources(
             pixmap,
-            image_path,
+            None,
             preview_scaled,
             preserve_view=preserve_view,
         )
@@ -5044,9 +5168,16 @@ class LiveLabTab(QWidget):
                 self.tr("Editing RAW: {name}").format(name=edit_session.source_raw_path.name)
             )
             self.viewer_meta_label.setText(self._raw_settings_info_text(edit_session.working_settings))
+            auto_settings = None
+            if edit_session.source_raw_path.exists():
+                auto_settings = self._raw_auto_level_settings_for_source(
+                    edit_session.source_raw_path,
+                    edit_session.working_settings,
+                )
             self._sync_raw_processing_controls_from_settings(
                 edit_session.working_settings,
                 update_session_settings=False,
+                auto_level_settings=auto_settings,
             )
         else:
             title_prefix = self.tr("Last import")
@@ -5061,9 +5192,16 @@ class LiveLabTab(QWidget):
             self.viewer_meta_label.setText(self._viewer_meta_text(image))
             editable_session = self._raw_editable_image_session(image)
             if editable_session is not None:
+                auto_settings = None
+                if editable_session.source_raw_path.exists():
+                    auto_settings = self._raw_auto_level_settings_for_source(
+                        editable_session.source_raw_path,
+                        editable_session.working_settings,
+                    )
                 self._sync_raw_processing_controls_from_settings(
-                    editable_session.original_settings,
+                    editable_session.working_settings,
                     update_session_settings=False,
+                    auto_level_settings=auto_settings,
                 )
         self._update_raw_edit_controls()
 

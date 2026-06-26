@@ -118,7 +118,7 @@ class ZoomableImageLabel(QLabel):
         self._preview_is_scaled = bool(preview_scaled)
         self._preview_tag_text = "Preview" if self._preview_is_scaled else ""
         self._corner_tag_text = ""
-        self._full_loaded = not self._preview_is_scaled
+        self._full_loaded = (not self._preview_is_scaled) or self._full_image_path is None
         if not pixmap:
             self.pan_offset = QPointF(0, 0)
             self.zoom_level = 1.0
@@ -2962,6 +2962,28 @@ class ZoomableImageLabel(QLabel):
             zoom_width + zoom_pad_x * 2,
             zoom_height + zoom_pad_y * 2,
         )
+        if self._preview_tag_text:
+            preview_font = QFont(font)
+            preview_font.setBold(True)
+            painter.setFont(preview_font)
+            preview_metrics = painter.fontMetrics()
+            preview_text = self._preview_tag_text
+            preview_width = preview_metrics.horizontalAdvance(preview_text)
+            preview_height = preview_metrics.height()
+            preview_rect = QRect(
+                zoom_margin,
+                max(zoom_margin, zoom_rect.top() - preview_height - zoom_pad_y * 2 - 6),
+                preview_width + zoom_pad_x * 2,
+                preview_height + zoom_pad_y * 2,
+            )
+            preview_color = QColor(52, 73, 94)
+            preview_color.setAlpha(210)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(preview_color)
+            painter.drawRoundedRect(preview_rect, 4, 4)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(preview_rect, Qt.AlignCenter, preview_text)
+            painter.setFont(font)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(255, 255, 255, 180))
         painter.drawRoundedRect(zoom_rect, 4, 4)

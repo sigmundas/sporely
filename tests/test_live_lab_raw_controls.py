@@ -80,6 +80,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         live_lab_tab.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     )
     state.raw_controls = RawProcessingControls()
+    state._raw_auto_level_settings_for_source = lambda source, settings: live_lab_tab.LiveLabTab._raw_auto_level_settings_for_source(
+        state,
+        source,
+        settings,
+    )
     state.objective_combo = QComboBox()
     state.objective_combo.addItem("Not set", None)
     state.contrast_combo = QComboBox()
@@ -125,13 +130,17 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state.reset_view_btn = QPushButton("Reset")
     state.live_image_label = SimpleNamespace(
         original_pixmap=QPixmap(10, 10),
+        _full_image_path=None,
         crop_mode=False,
         crop_box=None,
         crop_preview=None,
         cursor=Qt.ArrowCursor,
         objective_text=None,
         objective_color=None,
-        set_image_sources=lambda pixmap, *args, **kwargs: setattr(state.live_image_label, "original_pixmap", pixmap),
+        set_image_sources=lambda pixmap, full_path=None, *args, **kwargs: (
+            setattr(state.live_image_label, "original_pixmap", pixmap),
+            setattr(state.live_image_label, "_full_image_path", str(full_path) if full_path else None),
+        ),
         set_microns_per_pixel=lambda *args, **kwargs: None,
         set_scale_bar=lambda *args, **kwargs: None,
         reset_view=lambda: None,
@@ -239,10 +248,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         state,
         update_session_settings=update_session_settings,
     )
-    state._sync_raw_processing_controls_from_settings = lambda settings=None, update_session_settings=True: live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(
+    state._sync_raw_processing_controls_from_settings = lambda settings=None, update_session_settings=True, auto_level_settings=None: live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(
         state,
         settings,
         update_session_settings=update_session_settings,
+        auto_level_settings=auto_level_settings,
     )
     state._set_raw_tone_controls_enabled = lambda enabled: live_lab_tab.LiveLabTab._set_raw_tone_controls_enabled(state, enabled)
     state._raw_settings_summary_text = lambda settings: live_lab_tab.LiveLabTab._raw_settings_summary_text(state, settings)
@@ -257,6 +267,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
         metadata,
     )
     state._selected_raw_processing_targets = lambda: live_lab_tab.LiveLabTab._selected_raw_processing_targets(state)
+    state._visible_raw_processing_target = lambda: live_lab_tab.LiveLabTab._visible_raw_processing_target(state)
     state._preserve_raw_wb_fields = lambda base_settings, resolved_settings: live_lab_tab.LiveLabTab._preserve_raw_wb_fields(
         base_settings,
         resolved_settings,
@@ -639,6 +650,114 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     assert json.loads(saved_settings[-1][1])["white_balance_mode"] == "auto"
 
 
+def test_live_lab_raw_sync_applies_auto_level_slider_values(monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    visible_settings = RawRenderSettings(
+        white_balance_mode="camera",
+        auto_levels=True,
+        light_ev=0.125,
+        dark_ev=-0.031,
+    )
+    auto_settings = RawRenderSettings(
+        white_balance_mode="camera",
+        auto_levels=True,
+        light_ev=0.357,
+        dark_ev=-0.143,
+    )
+
+    live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(
+        state,
+        visible_settings,
+        auto_level_settings=auto_settings,
+    )
+
+    assert state.raw_controls.auto_levels_checkbox.isChecked() is True
+    assert state.raw_controls.light_slider.value() == 357
+    assert state.raw_controls.dark_slider.value() == 143
+    assert state.raw_controls.light_value_label.text() == "0.357"
+    assert state.raw_controls.dark_value_label.text() == "0.143"
+    round_tripped = state.raw_controls.settings()
+    assert round_tripped.light_ev == pytest.approx(0.0)
+    assert round_tripped.dark_ev == pytest.approx(0.0)
+    assert round_tripped.exposure_ev == pytest.approx(0.0)
+    assert state.raw_controls._auto_level_settings is not None
+    assert state.raw_controls._auto_level_settings.light_ev == pytest.approx(0.357)
+    assert state.raw_controls._auto_level_settings.dark_ev == pytest.approx(-0.143)
+
+
+def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_selection(tmp_path, monkeypatch):
+    _qapp()
+    old_path = tmp_path / "imports" / "old.jpg"
+    new_path = tmp_path / "imports" / "new.jpg"
+    old_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.write_text("old", encoding="utf-8")
+    new_path.write_text("new", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    state._session_image_ids = [101, 102]
+    state._selected_session_image_id = 101
+    state.session_gallery.select_image(101)
+    state.live_image_label._full_image_path = str(new_path)
+    state._refresh_session_gallery = lambda: None
+    state._update_pending_raw_controls = lambda: None
+    state._update_raw_edit_controls = lambda: None
+    state._update_raw_processing_section_label = lambda *args, **kwargs: None
+    state._refresh_raw_processing_context_ui = lambda: None
+    state._set_raw_tone_controls_enabled = lambda enabled: None
+
+    images = {
+        101: {
+            "id": 101,
+            "filepath": str(old_path),
+            "image_type": "microscope",
+            "lab_metadata": {"image_type": "microscope"},
+        },
+        102: {
+            "id": 102,
+            "filepath": str(new_path),
+            "image_type": "microscope",
+            "lab_metadata": {"image_type": "microscope"},
+        },
+    }
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
+    )
+
+    def fake_raw_editable_image_session(image, settings=None):
+        image_id = int(image.get("id") or 0)
+        return live_lab_tab.RawEditSession(
+            image_id=image_id,
+            source_raw_path=Path(image["filepath"]),
+            current_derivative_path=Path(image["filepath"]),
+            original_settings=RawRenderSettings.default(),
+            working_settings=RawRenderSettings.default(),
+            image_lab_metadata=copy.deepcopy(image.get("lab_metadata") or {}),
+        )
+
+    committed_ids: list[int] = []
+    state._raw_editable_image_session = fake_raw_editable_image_session
+    state._commit_raw_edit_session = lambda session: committed_ids.append(int(session.image_id)) or True
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    state.raw_controls.set_settings(
+        RawRenderSettings(
+            tone_curve_enabled=True,
+            auto_levels=False,
+            tone_curve_strength=0.8,
+            tone_curve_midpoint=0.4,
+        )
+    )
+
+    live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
+
+    assert committed_ids == [102]
+
+
 def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
@@ -820,6 +939,113 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     assert set_setting_calls
     assert set_setting_calls[-1][0] == state._raw_processing_settings_key()
     assert json.loads(set_setting_calls[-1][1])["white_balance_mode"] == "auto"
+
+
+def test_live_lab_raw_controls_follow_visible_image_when_gallery_selection_is_stale(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    old_derivative_path = tmp_path / "imports" / "sample_101.jpg"
+    old_derivative_path.parent.mkdir(parents=True, exist_ok=True)
+    old_derivative_path.write_text("old", encoding="utf-8")
+    new_derivative_path = tmp_path / "imports" / "sample_102.jpg"
+    new_derivative_path.write_text("new", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    state.session_gallery.set_multi_select(True)
+    state._session_observation_id = 1
+    state._session_image_ids = [101]
+    state._selected_session_image_id = 101
+    state._session_import_count = 1
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "contrast": "phase",
+        "mount_medium": "water",
+        "stain": "none",
+        "sample_type": "spore",
+    }
+    state._raw_processing_preset_context = lambda: {}
+    state._show_status = lambda *args, **kwargs: None
+    state._update_observation_thumbnail = lambda: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: None
+    state._update_session_controls = lambda: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state.tr = lambda text: text
+    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+
+    images = {
+        101: _make_raw_image_row(101, source_path=source_path, derivative_path=old_derivative_path),
+    }
+
+    def fake_get_image(image_id):
+        image = images.get(int(image_id))
+        return copy.deepcopy(image) if image is not None else None
+
+    def fake_prepare_local_ingest_image(source, *, raw_settings=None, lab_metadata=None, output_dir=None):
+        snapshot = raw_settings.to_dict() if isinstance(raw_settings, RawRenderSettings) else None
+        return SimpleNamespace(
+            source_path=str(source),
+            working_path=str(new_derivative_path),
+            original_path=str(source),
+            raw_render_snapshot={"settings": snapshot} if snapshot is not None else None,
+            lab_metadata={
+                **dict(lab_metadata or {}),
+                "raw_processing": {
+                    "engine": "rawpy",
+                    "source": {
+                        "kind": "camera_raw",
+                        "path": str(source),
+                        "mime_type": "image/x-raw",
+                    },
+                    "local_derivative": {
+                        "kind": "rendered_from_raw",
+                        "path": str(new_derivative_path),
+                        "mime_type": "image/jpeg",
+                        "format": "jpeg",
+                        "quality": 95,
+                        "subsampling": 0,
+                    },
+                    "settings": snapshot,
+                },
+            },
+            provenance_kwargs=lambda: {
+                "source_role": "converted_local",
+                "file_purpose": "microscope",
+                "original_mime_type": "image/x-raw",
+                "working_mime_type": "image/jpeg",
+            },
+        )
+
+    def fake_add_image(**kwargs):
+        new_image_id = 102
+        images[new_image_id] = _make_raw_image_row(
+            new_image_id,
+            source_path=source_path,
+            derivative_path=new_derivative_path,
+        )
+        return new_image_id
+
+    monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", fake_get_image)
+    monkeypatch.setattr(live_lab_tab, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
+    monkeypatch.setattr(live_lab_tab.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+
+    state._refresh_session_gallery()
+    assert state.session_gallery.selected == 101
+    assert [target[1] for target in state._selected_raw_processing_targets()] == [101]
+
+    assert live_lab_tab.LiveLabTab._ingest_detected_image(state, str(source_path))
+    assert state._session_image_ids == [101, 102]
+    assert state._selected_session_image_id == 102
+    assert state.session_gallery.selected == 101
+
+    selected_targets = state._selected_raw_processing_targets()
+    assert len(selected_targets) == 1
+    assert selected_targets[0][0] == "image"
+    assert int(selected_targets[0][1]) == 102
 
 
 def test_live_lab_non_raw_capture_keeps_raw_processing_out_of_metadata(tmp_path, monkeypatch):
@@ -1965,6 +2191,37 @@ def test_live_lab_auto_save_mode_still_ingests_immediately(tmp_path, monkeypatch
     state._refresh_main_window_after_import = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._log_session_event = lambda *args, **kwargs: None
+    def fake_get_image(image_id):
+        if not add_image_calls:
+            return None
+        try:
+            resolved_image_id = int(image_id)
+        except Exception:
+            return None
+        if resolved_image_id != 1:
+            return None
+        filepath = str(add_image_calls[0].get("filepath") or tmp_path / "imports" / "P070020_1.jpg")
+        return {
+            "id": resolved_image_id,
+            "filepath": filepath,
+            "image_type": "microscope",
+            "objective_name": None,
+            "contrast": "phase",
+            "mount_medium": "water",
+            "stain": "none",
+            "sample_type": "spore",
+            "scale_microns_per_pixel": 1.2,
+            "lab_metadata": {
+                "image_type": "microscope",
+                "raw_processing": {
+                    "source": {
+                        "kind": "camera_raw",
+                        "path": str(source_path),
+                        "mime_type": "image/x-raw",
+                    },
+                },
+            },
+        }
 
     captured_calls: list[dict[str, object]] = []
     add_image_calls: list[dict[str, object]] = []
@@ -1976,6 +2233,7 @@ def test_live_lab_auto_save_mode_still_ingests_immediately(tmp_path, monkeypatch
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
+    monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", fake_get_image)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,

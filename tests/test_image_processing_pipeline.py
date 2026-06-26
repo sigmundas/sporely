@@ -288,6 +288,25 @@ def test_apply_post_decode_processing_shadow_toe_lift_lifts_deep_shadows_more_th
     assert float(processed.max()) == pytest.approx(1.0, abs=1e-6)
 
 
+def test_apply_post_decode_processing_shadow_highlights_anchor_endpoints():
+    ramp = np.linspace(0.0, 1.0, 512, dtype=np.float64)
+    rgb = np.repeat(ramp[None, :, None], 3, axis=2)
+    settings = RawRenderSettings(
+        auto_levels=False,
+        tone_curve_enabled=False,
+        tone_shadows=0.85,
+        tone_highlights=0.70,
+    )
+
+    processed = apply_post_decode_processing(rgb, settings)
+
+    assert float(processed[0, 0, 0]) == pytest.approx(0.0, abs=1e-6)
+    assert float(processed[0, -1, 0]) == pytest.approx(1.0, abs=1e-6)
+    assert np.all(np.diff(processed[0, :, 0]) >= -1e-9)
+    assert float(processed.min()) >= 0.0
+    assert float(processed.max()) <= 1.0
+
+
 def test_compute_post_decode_transfer_curve_soft_tails_and_strength_blend():
     settings = RawRenderSettings(
         auto_levels=True,
@@ -297,7 +316,9 @@ def test_compute_post_decode_transfer_curve_soft_tails_and_strength_blend():
         auto_levels_soft_tails=True,
         auto_levels_tail_size=0.1,
         exposure_ev=0.0,
-        shadow_lift=0.05,
+        shadow_lift=0.0,
+        tone_shadows=0.75,
+        tone_highlights=-0.35,
         tone_curve_enabled=True,
         tone_curve_strength=0.75,
         tone_curve_midpoint=0.5,
@@ -320,10 +341,12 @@ def test_compute_post_decode_transfer_curve_soft_tails_and_strength_blend():
     assert float(curve.soft_target[white_idx]) == pytest.approx(0.90)
     assert float(curve.auto_levels_output[black_idx]) == pytest.approx(0.15)
     assert float(curve.auto_levels_output[white_idx]) == pytest.approx(0.85)
-    assert float(curve.shadow_toe_output[0]) > float(curve.auto_levels_output[0])
+    assert float(curve.shadow_highlight_output[0]) == pytest.approx(0.0, abs=1e-6)
+    assert float(curve.shadow_highlight_output[-1]) == pytest.approx(1.0, abs=1e-6)
     assert float(curve.final_output[-1]) == pytest.approx(1.0)
     assert not np.allclose(curve.final_output, curve.shadow_toe_output)
     assert np.all(np.diff(curve.manual_levels_output) >= -1e-9)
     assert np.all(np.diff(curve.auto_levels_output) >= -1e-9)
     assert np.all(np.diff(curve.shadow_toe_output) >= -1e-9)
+    assert np.all(np.diff(curve.shadow_highlight_output) >= -1e-9)
     assert np.all(np.diff(curve.final_output) >= -1e-9)

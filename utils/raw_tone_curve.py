@@ -30,6 +30,46 @@ def normalized_sigmoid_curve(x, strength: float, midpoint: float):
     return np.clip((_sigmoid(clipped) - lo) / denom, 0.0, 1.0)
 
 
+def smoothstep(edge0, edge1=None, x=None):
+    """Return a smoothstep interpolation."""
+    if x is None and edge1 is None:
+        values = np.clip(np.asarray(edge0, dtype=np.float64), 0.0, 1.0)
+    else:
+        if edge1 is None or x is None:
+            raise TypeError("smoothstep() expects either 1 or 3 arguments")
+        start = float(edge0)
+        stop = float(edge1)
+        span = max(stop - start, 1e-6)
+        values = np.clip((np.asarray(x, dtype=np.float64) - start) / span, 0.0, 1.0)
+    return values * values * (3.0 - 2.0 * values)
+
+
+def apply_luminance_contrast_curve(x, contrast: float):
+    """Apply the local midtone contrast curve used by the plot front-end."""
+    base = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
+    amount = float(np.clip(float(contrast), -1.0, 1.0))
+    if abs(amount) <= _EPSILON:
+        return base
+    target = smoothstep(base)
+    return np.clip(base + amount * (target - base), 0.0, 1.0)
+
+
+def apply_luminance_shadow_highlights(x, shadows: float, highlights: float):
+    """Apply endpoint-anchored shadow/highlight shaping."""
+    base = np.clip(np.asarray(x, dtype=np.float64), 0.0, 1.0)
+    shadow_amount = float(np.clip(float(shadows), -1.0, 1.0))
+    highlight_amount = float(np.clip(float(highlights), -1.0, 1.0))
+    if abs(shadow_amount) <= _EPSILON and abs(highlight_amount) <= _EPSILON:
+        return base
+
+    shadow_mask = 1.0 - smoothstep(0.0, 0.55, base)
+    highlight_mask = smoothstep(0.45, 0.90, base)
+    shadow_term = shadow_mask * base * np.square(1.0 - base)
+    highlight_term = highlight_mask * np.square(base) * (1.0 - base)
+    adjusted = base + shadow_amount * shadow_term + highlight_amount * highlight_term
+    return np.clip(adjusted, 0.0, 1.0)
+
+
 def apply_luminance_tone_curve(rgb, strength: float, midpoint: float):
     """Apply a luminance-only tone curve while preserving hue."""
     arr = np.asarray(rgb, dtype=np.float64)
@@ -52,6 +92,9 @@ def apply_luminance_tone_curve(rgb, strength: float, midpoint: float):
 
 
 __all__ = [
+    "apply_luminance_contrast_curve",
+    "apply_luminance_shadow_highlights",
     "apply_luminance_tone_curve",
     "normalized_sigmoid_curve",
+    "smoothstep",
 ]
