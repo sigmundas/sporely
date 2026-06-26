@@ -298,13 +298,8 @@ class RawProcessingControls(QWidget):
     def _settings_from_controls(self) -> RawRenderSettings:
         base_settings = RawRenderSettings.from_dict(self._settings)
         white_balance_mode = str(self.white_balance_selector.selected_value("camera") or "camera").strip().lower() or "camera"
-        auto_levels_enabled = bool(self.auto_levels_checkbox.isChecked())
-        if auto_levels_enabled:
-            light_ev = 0.0
-            dark_ev = 0.0
-        else:
-            light_ev = max(0.0, min(2.0, float(self.light_slider.value()) / _EV_SLIDER_SCALE))
-            dark_ev = -max(0.0, min(2.0, float(self.dark_slider.value()) / _EV_SLIDER_SCALE))
+        light_ev = max(0.0, min(2.0, float(self.light_slider.value()) / _EV_SLIDER_SCALE))
+        dark_ev = -max(0.0, min(2.0, float(self.dark_slider.value()) / _EV_SLIDER_SCALE))
         tone_curve_strength = max(0.0, min(1.0, float(self.curve_strength_slider.value()) / 100.0))
         tone_curve_midpoint = max(0.0, min(1.0, float(self.curve_midpoint_slider.value()) / 100.0))
         settings = replace(

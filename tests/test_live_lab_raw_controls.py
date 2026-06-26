@@ -680,9 +680,9 @@ def test_live_lab_raw_sync_applies_auto_level_slider_values(monkeypatch):
     assert state.raw_controls.light_value_label.text() == "0.357"
     assert state.raw_controls.dark_value_label.text() == "0.143"
     round_tripped = state.raw_controls.settings()
-    assert round_tripped.light_ev == pytest.approx(0.0)
-    assert round_tripped.dark_ev == pytest.approx(0.0)
-    assert round_tripped.exposure_ev == pytest.approx(0.0)
+    assert round_tripped.light_ev == pytest.approx(0.357)
+    assert round_tripped.dark_ev == pytest.approx(-0.143)
+    assert round_tripped.exposure_ev == pytest.approx(0.214)
     assert state.raw_controls._auto_level_settings is not None
     assert state.raw_controls._auto_level_settings.light_ev == pytest.approx(0.357)
     assert state.raw_controls._auto_level_settings.dark_ev == pytest.approx(-0.143)

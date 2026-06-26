@@ -68,7 +68,7 @@ def test_apply_post_decode_processing_light_alias_shifts_manual_levels():
     assert np.allclose(processed[..., 0].ravel(), expected)
 
 
-def test_apply_post_decode_processing_exposure_remains_visible_with_auto_levels():
+def test_apply_post_decode_processing_exposure_is_ignored_with_auto_levels():
     rgb = np.array(
         [
             [[0.12, 0.12, 0.12], [0.18, 0.18, 0.18]],
@@ -97,8 +97,8 @@ def test_apply_post_decode_processing_exposure_remains_visible_with_auto_levels(
         ),
     )
 
-    assert not np.allclose(base, bright)
-    assert float(bright.mean()) > float(base.mean())
+    assert np.allclose(base, bright)
+    assert float(bright.mean()) == pytest.approx(float(base.mean()))
 
 
 def test_apply_post_decode_processing_light_and_dark_shift_endpoints():

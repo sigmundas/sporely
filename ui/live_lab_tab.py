@@ -3241,7 +3241,7 @@ class LiveLabTab(QWidget):
                 preserve_view = False
         self.live_image_label.set_image_sources(
             pixmap,
-            None,
+            preview_path,
             True,
             preserve_view=preserve_view,
         )
@@ -5148,7 +5148,7 @@ class LiveLabTab(QWidget):
             preview_scaled = True
         self.live_image_label.set_image_sources(
             pixmap,
-            None,
+            image_path,
             preview_scaled,
             preserve_view=preserve_view,
         )

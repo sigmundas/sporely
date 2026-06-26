@@ -589,8 +589,13 @@ def apply_post_decode_processing(
 
     working = np.clip(working, 0.0, 1.0)
 
-    light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
-    dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
+    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    if auto_levels_enabled:
+        light_ev = 0.0
+        dark_ev = 0.0
+    else:
+        light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
+        dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
     if light_ev > 0.0 or dark_ev < 0.0:
         working_luminance = compute_luminance(working)
         manual_levels_output = apply_light_dark_levels(working_luminance, light_ev, dark_ev)
@@ -707,9 +712,13 @@ def compute_post_decode_transfer_curve(
         soft_target = sample_values.copy()
         auto_levels_output = sample_values.copy()
 
-    light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
-    dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
-    manual_levels_output = apply_light_dark_levels(auto_levels_output, light_ev, dark_ev)
+    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    if auto_levels_enabled:
+        manual_levels_output = auto_levels_output.copy()
+    else:
+        light_ev = _clamp_range(normalized_settings.get("light_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, 0.0, 2.0)
+        dark_ev = _clamp_range(normalized_settings.get("dark_ev", normalized_settings.get("exposure_ev", 0.0)), 0.0, -2.0, 0.0)
+        manual_levels_output = apply_light_dark_levels(auto_levels_output, light_ev, dark_ev)
 
     shadow_lift = _clamp_range(
         normalized_settings.get("shadow_lift", normalized_settings.get("auto_levels_shadow_lift", 0.0)),
