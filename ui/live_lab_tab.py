@@ -62,7 +62,13 @@ from config import (
 )
 from database.database_tags import DatabaseTerms
 from database.models import CalibrationDB, ImageDB, ObservationDB, SessionLogDB, SettingsDB
-from database.schema import get_images_dir, load_objectives, objective_display_name, objective_sort_value
+from database.schema import (
+    get_images_dir,
+    load_objectives,
+    objective_display_name,
+    objective_sort_value,
+    resolve_objective_key,
+)
 from utils.image_utils import cleanup_import_temp_file
 from utils.image_companion_grouping import (
     companion_group_key,
@@ -321,7 +327,9 @@ class LiveLabTab(QWidget):
         self._clear_session_viewer()
         self._update_target_display()
         self._update_session_controls()
-        self._update_lab_state_combo_alerts()
+        update_alerts = getattr(self, "_update_lab_state_combo_alerts", None)
+        if callable(update_alerts):
+            update_alerts()
         self._register_hint_widgets()
         self._set_hint(self._default_hint_text)
 
@@ -420,7 +428,7 @@ class LiveLabTab(QWidget):
         left_layout.addWidget(current_group)
 
         tag_group, tag_form = create_section_card(
-            self.tr("Current Lab State"),
+            self.tr("Microscope"),
             QFormLayout,
             body_margins=(10, 12, 10, 10),
         )
@@ -584,13 +592,16 @@ class LiveLabTab(QWidget):
         self.session_gallery = ImageGalleryWidget(
             self.tr("Session Gallery"),
             parent=self,
-            show_delete=False,
+            show_delete=True,
             show_badges=True,
             thumbnail_size=132,
             default_height=GALLERY_DEFAULT_HEIGHT,
             min_height=GALLERY_MIN_HEIGHT,
         )
+        self.session_gallery.set_multi_select(True)
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
+        self.session_gallery.selectionChanged.connect(self._on_session_gallery_selection_changed)
+        self.session_gallery.deleteRequested.connect(self._on_session_gallery_delete_requested)
 
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
@@ -749,17 +760,19 @@ class LiveLabTab(QWidget):
 
     def _raw_processing_preset_context(self) -> dict[str, str | None]:
         """Return the context key that future RAW presets will use."""
-        objective_key = str(self.objective_combo.currentData() or "").strip() or None
+        objective_value = self._selected_combo_value(self.objective_combo)
+        objective_key = str(objective_value).strip() if objective_value is not None else ""
+        objective_key = objective_key or None
         objective_label = str(self.objective_combo.currentText() or "").strip() or None
         return {
             "capture_source": "live_lab",
             "instrument": "microscope",
             "objective_name": objective_key,
             "objective_label": objective_label,
-            "contrast": DatabaseTerms.canonicalize("contrast", self.contrast_combo.currentData()),
-            "mount_medium": DatabaseTerms.canonicalize("mount", self.mount_combo.currentData()),
-            "stain": DatabaseTerms.canonicalize("stain", self.stain_combo.currentData()),
-            "sample_type": DatabaseTerms.canonicalize("sample", self.sample_combo.currentData()),
+            "contrast": DatabaseTerms.canonicalize("contrast", self._selected_combo_value(self.contrast_combo)),
+            "mount_medium": DatabaseTerms.canonicalize("mount", self._selected_combo_value(self.mount_combo)),
+            "stain": DatabaseTerms.canonicalize("stain", self._selected_combo_value(self.stain_combo)),
+            "sample_type": DatabaseTerms.canonicalize("sample", self._selected_combo_value(self.sample_combo)),
         }
 
     def _raw_processing_settings_key(self, context: dict[str, str | None] | None = None) -> str:
@@ -1012,6 +1025,11 @@ class LiveLabTab(QWidget):
             return self._raw_edit_hint_text()
         if self._current_pending_raw_capture() is not None:
             return self._pending_raw_review_hint_text()
+        selected_targets = self._selected_raw_processing_targets()
+        if selected_targets:
+            if len(selected_targets) > 1:
+                return self.tr("Settings will be applied to selected images.")
+            return self._raw_processing_hint_text()
         if self._selected_committed_image_id() is not None:
             return self._committed_raw_review_hint_text()
         raw_body = getattr(self, "raw_processing_body", None)
@@ -1019,7 +1037,415 @@ class LiveLabTab(QWidget):
             return self._raw_processing_hint_text()
         return self._default_hint_text
 
+    @staticmethod
+    def _metadata_text(value) -> str | None:
+        text = str(value or "").strip()
+        return text or None
+
+    @staticmethod
+    def _selected_combo_value(combo) -> object | None:
+        if combo is None:
+            return None
+        unset_texts = {"not_set", "not set", "-", "—"}
+        selected_item_fn = getattr(combo, "selected_item", None)
+        if callable(selected_item_fn):
+            try:
+                item = selected_item_fn()
+            except Exception:
+                item = None
+            if item is not None:
+                value = getattr(item, "value", None)
+                if value is not None:
+                    if isinstance(value, str):
+                        value = value.strip()
+                        if value:
+                            return value
+                    else:
+                        return value
+                for attr in ("display_text", "pill_text", "tooltip"):
+                    text = str(getattr(item, attr, "") or "").strip()
+                    if text and text.lower() not in unset_texts:
+                        return text
+                return None
+        try:
+            value = combo.currentData()
+        except Exception:
+            value = None
+        if value is not None:
+            if isinstance(value, str):
+                value = value.strip()
+                if value:
+                    return value
+                return None
+            return value
+        try:
+            text = str(combo.currentText() or "").strip()
+        except Exception:
+            text = ""
+        if not text or text.lower() in unset_texts:
+            return None
+        return text
+
+    def _objective_key_from_metadata(self, metadata: dict | None) -> str | None:
+        data = dict(metadata or {})
+        lab_metadata = data.get("lab_metadata")
+        lab_data = dict(lab_metadata) if isinstance(lab_metadata, dict) else {}
+        candidates = (
+            data.get("objective_name"),
+            data.get("objective_label"),
+            lab_data.get("objective_name"),
+            lab_data.get("objective_label"),
+        )
+        objectives = load_objectives()
+        for candidate in candidates:
+            text = LiveLabTab._metadata_text(candidate)
+            if not text:
+                continue
+            return resolve_objective_key(text, objectives) or text
+        return None
+
+    def _microscope_state_from_metadata(self, metadata: dict | None) -> dict[str, str | None]:
+        data = dict(metadata or {})
+        objective_key = LiveLabTab._objective_key_from_metadata(self, data)
+        return {
+            "objective_name": objective_key,
+            "contrast": DatabaseTerms.canonicalize("contrast", data.get("contrast")),
+            "mount_medium": DatabaseTerms.canonicalize("mount", data.get("mount_medium")),
+            "stain": DatabaseTerms.canonicalize("stain", data.get("stain")),
+            "sample_type": DatabaseTerms.canonicalize("sample", data.get("sample_type")),
+        }
+
+    def _microscope_tag_for_metadata(self, metadata: dict | None) -> tuple[str | None, str | None]:
+        data = dict(metadata or {})
+        objective_name = LiveLabTab._objective_key_from_metadata(self, data)
+        if not objective_name:
+            return None, None
+
+        objectives = load_objectives()
+        objective = objectives.get(str(objective_name))
+        tag_text = objective_short_label(objective, str(objective_name))
+        if not tag_text:
+            tag_text = objective_display_name(objective, str(objective_name)) if objective else str(objective_name)
+        contrast = DatabaseTerms.canonicalize("contrast", data.get("contrast"))
+        if contrast and str(contrast).strip().lower() not in {"not_set", "not set"}:
+            tag_text = f"{tag_text} {DatabaseTerms.translate('contrast', contrast)}"
+        return tag_text, objective_color(objective, str(objective_name))
+
+    def _apply_microscope_state_to_controls(self, metadata: dict | None) -> None:
+        state = self._microscope_state_from_metadata(metadata)
+        objective_combo = getattr(self, "objective_combo", None)
+        if objective_combo is not None:
+            objective_value = state.get("objective_name")
+            if objective_value is not None and str(objective_value).strip():
+                with QSignalBlocker(objective_combo):
+                    if hasattr(objective_combo, "set_selected_value"):
+                        objective_combo.set_selected_value(objective_value, emit=False)
+                    elif hasattr(objective_combo, "findData"):
+                        index = objective_combo.findData(objective_value)
+                        if index >= 0:
+                            objective_combo.setCurrentIndex(index)
+
+        for combo_name, value in (
+            ("contrast_combo", state.get("contrast")),
+            ("mount_combo", state.get("mount_medium")),
+            ("stain_combo", state.get("stain")),
+            ("sample_combo", state.get("sample_type")),
+        ):
+            combo = getattr(self, combo_name, None)
+            if combo is None:
+                continue
+            with QSignalBlocker(combo):
+                try:
+                    index = combo.findData(value)
+                except Exception:
+                    index = -1
+                if index < 0:
+                    index = 0 if getattr(combo, "count", lambda: 0)() else -1
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+        update_alerts = getattr(self, "_update_lab_state_combo_alerts", None)
+        if callable(update_alerts):
+            update_alerts()
+        refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+        if callable(refresh_viewer_objective_tag):
+            refresh_viewer_objective_tag()
+
+    def _refresh_viewer_objective_tag_from_current_state(self, *_args) -> None:
+        update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
+        if callable(update_viewer_objective_tag):
+            update_viewer_objective_tag(None, use_current_state=True)
+
+    def _update_viewer_objective_tag(self, metadata: dict | None, *, use_current_state: bool = False) -> None:
+        label = getattr(self, "live_image_label", None)
+        if label is None:
+            return
+        if use_current_state:
+            current_lab_metadata = getattr(self, "_current_lab_metadata", None)
+            if callable(current_lab_metadata):
+                try:
+                    metadata = current_lab_metadata()
+                except Exception:
+                    metadata = None
+        set_text = getattr(label, "set_objective_text", None)
+        set_color = getattr(label, "set_objective_color", None)
+        tag_text, tag_color = LiveLabTab._microscope_tag_for_metadata(self, metadata)
+        if callable(set_text):
+            try:
+                set_text(tag_text or "")
+            except Exception:
+                pass
+        if callable(set_color):
+            try:
+                set_color(tag_color or objective_color(None, None))
+            except Exception:
+                pass
+
+    def _session_gallery_selected_keys(self) -> list[object]:
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            selected_keys_fn = getattr(gallery, "selected_keys", None)
+            if callable(selected_keys_fn):
+                try:
+                    keys = [key for key in list(selected_keys_fn()) if key is not None]
+                except Exception:
+                    keys = []
+                if keys:
+                    return keys
+            selected_paths_fn = getattr(gallery, "selected_paths", None)
+            if callable(selected_paths_fn):
+                try:
+                    selected_paths = [str(path) for path in selected_paths_fn() if path]
+                except Exception:
+                    selected_paths = []
+                if selected_paths:
+                    return selected_paths
+
+        current_pending = self._current_pending_raw_capture()
+        if current_pending is not None:
+            pending_key = self._pending_raw_gallery_key(current_pending)
+            if pending_key is not None:
+                return [pending_key]
+
+        selected_image_id = self._selected_committed_image_id()
+        if selected_image_id is not None:
+            return [selected_image_id]
+        return []
+
+    def _selected_raw_processing_targets(self) -> list[tuple[str, object, object]]:
+        targets: list[tuple[str, object, object]] = []
+        captures = getattr(self, "_pending_raw_captures", [])
+        for key in self._session_gallery_selected_keys():
+            pending_index = self._pending_raw_capture_index_for_key(key)
+            if pending_index is not None and 0 <= pending_index < len(captures):
+                capture = captures[pending_index]
+                if isinstance(capture, PendingRawCapture):
+                    targets.append(("pending", pending_index, capture))
+                    continue
+            try:
+                image_id = int(key)
+            except Exception:
+                continue
+            image = ImageDB.get_image(image_id)
+            if image is None:
+                continue
+            if self._raw_editable_image_session(image) is not None:
+                targets.append(("image", image_id, image))
+        return targets
+
+    def _raw_processing_controls_visible(self) -> bool:
+        if self._raw_edit_session is not None:
+            return True
+        if self._current_pending_raw_capture() is not None:
+            return True
+        return bool(self._selected_raw_processing_targets())
+
+    def _update_raw_processing_visibility(self) -> None:
+        card = getattr(self, "raw_processing_card", None)
+        body = getattr(self, "raw_processing_body", None)
+        visible = self._raw_processing_controls_visible()
+        if card is not None:
+            card.setVisible(bool(visible))
+        if body is None:
+            return
+        if not visible:
+            body.setVisible(False)
+            return
+        toggle = getattr(self, "raw_processing_toggle_btn", None)
+        body.setVisible(bool(toggle.isChecked()) if toggle is not None else False)
+
+    @staticmethod
+    def _preserve_raw_wb_fields(base_settings: RawRenderSettings, resolved_settings: RawRenderSettings) -> RawRenderSettings:
+        wb_mode = str(resolved_settings.white_balance_mode or "camera").strip().lower() or "camera"
+        if wb_mode == "custom":
+            if base_settings.wb_multipliers is not None:
+                return replace(
+                    resolved_settings,
+                    wb_multipliers=base_settings.wb_multipliers,
+                    wb_selection=base_settings.wb_selection,
+                    wb_multiplier_space=base_settings.wb_multiplier_space,
+                    wb_sample_point=base_settings.wb_sample_point,
+                    wb_sample_size=base_settings.wb_sample_size,
+                    wb_sample_base_mode=base_settings.wb_sample_base_mode,
+                    wb_selection_space=base_settings.wb_selection_space,
+                )
+            return replace(
+                resolved_settings,
+                wb_multipliers=None,
+                wb_selection=None,
+                wb_multiplier_space=None,
+                wb_sample_point=None,
+                wb_sample_size=None,
+                wb_sample_base_mode=None,
+                wb_selection_space=None,
+            )
+        return replace(
+            resolved_settings,
+            wb_multipliers=None,
+            wb_selection=None,
+            wb_multiplier_space=None,
+            wb_sample_point=None,
+            wb_sample_size=None,
+            wb_sample_base_mode=None,
+            wb_selection_space=None,
+        )
+
+    def _apply_raw_settings_to_pending_capture(self, capture: PendingRawCapture, settings: RawRenderSettings) -> bool:
+        if capture is None:
+            return False
+        resolved_settings = RawRenderSettings.from_dict(settings)
+        base_settings = RawRenderSettings.from_dict(capture.raw_settings)
+        updated_settings = self._preserve_raw_wb_fields(base_settings, resolved_settings)
+        capture.raw_settings = updated_settings
+        if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
+            return True
+
+        preview_dir = self._pending_raw_preview_dir()
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            preview_path = render_raw_preview(
+                capture.source_path,
+                settings=updated_settings,
+                output_path=capture.preview_path if capture.preview_path and Path(capture.preview_path).exists() else None,
+                output_dir=preview_dir,
+            )
+            capture.preview_path = Path(preview_path)
+            capture.status = "pending"
+            gallery = getattr(self, "session_gallery", None)
+            if gallery is not None:
+                invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
+                if callable(invalidate_gallery):
+                    try:
+                        invalidate_gallery(capture.preview_path)
+                    except Exception:
+                        pass
+            return True
+        except RawRenderingUnavailableError as exc:
+            capture.status = "failed"
+            self._show_status(
+                self.tr("RAW preview unavailable for {name}: {error}").format(
+                    name=capture.source_path.name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+        except RuntimeError as exc:
+            capture.status = "failed"
+            self._show_status(
+                self.tr("Could not render RAW preview for {name}: {error}").format(
+                    name=capture.source_path.name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+        return False
+
+    def _commit_raw_edit_session(self, session: RawEditSession) -> bool:
+        if session is None:
+            return False
+
+        temp_dir = self._raw_edit_preview_dir()
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_output = temp_dir / f"{session.source_raw_path.stem}_{session.image_id}_{uuid4().hex}.jpg"
+        final_path = Path(session.current_derivative_path)
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            rendered_path = render_raw_image(
+                session.source_raw_path,
+                settings=session.working_settings,
+                output_path=temp_output,
+                source_capture_datetime=session.source_capture_datetime,
+            )
+            reader = QImageReader(str(rendered_path))
+            size = reader.size()
+            width = int(size.width()) if size.isValid() else 0
+            height = int(size.height()) if size.isValid() else 0
+            if width <= 0 or height <= 0:
+                width = height = 0
+            os.replace(rendered_path, final_path)
+            updated_lab_metadata = copy.deepcopy(session.image_lab_metadata)
+            source_metadata = dict((updated_lab_metadata.get("raw_processing") or {}).get("source") or {})
+            source_mime_type = source_metadata.get("mime_type")
+            raw_processing = build_raw_processing_metadata(
+                session.source_raw_path,
+                final_path,
+                session.working_settings,
+                width=width,
+                height=height,
+                source_mime_type=str(source_mime_type or "") or None,
+                source_capture_datetime=session.source_capture_datetime,
+                rendered_at=datetime.now(),
+            )
+            updated_lab_metadata["raw_processing"] = raw_processing
+            ImageDB.update_image(
+                session.image_id,
+                filepath=str(final_path),
+                lab_metadata=updated_lab_metadata,
+            )
+            try:
+                generate_all_sizes(str(final_path), int(session.image_id))
+            except Exception as exc:
+                self._show_status(
+                    self.tr("Thumbnail refresh warning for {name}: {error}").format(
+                        name=final_path.name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+            self._invalidate_thumbnail_caches_for_raw_image(int(session.image_id), final_path)
+            return True
+        except RawRenderingUnavailableError as exc:
+            self._show_status(
+                self.tr("RAW re-render unavailable for {name}: {error}").format(
+                    name=session.source_raw_path.name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+        except Exception as exc:
+            self._show_status(
+                self.tr("Could not re-render RAW image {name}: {error}").format(
+                    name=session.source_raw_path.name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+        finally:
+            try:
+                temp_output.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return False
+
     def _refresh_raw_processing_context_ui(self) -> None:
+        updater = getattr(self, "_update_raw_processing_visibility", None)
+        if callable(updater):
+            updater()
         updater = getattr(self, "_update_raw_processing_pick_button", None)
         if callable(updater):
             updater()
@@ -1077,74 +1503,87 @@ class LiveLabTab(QWidget):
         )
 
     def _on_raw_processing_toggle_changed(self, checked: bool) -> None:
-        if hasattr(self, "raw_processing_body"):
-            self.raw_processing_body.setVisible(bool(checked))
+        self._update_raw_processing_visibility()
         self._update_raw_processing_section_label(bool(checked))
         self._set_hint(self._current_raw_hint_text())
 
     def _on_raw_processing_controls_changed(self, *_args) -> None:
         editing_session = getattr(self, "_raw_edit_session", None)
         settings = self._raw_settings_from_controls(update_session_settings=editing_session is None)
-        selected_capture = None if editing_session is not None else self._current_pending_raw_capture()
-
-        def _apply_current_wb_fields(base_settings: RawRenderSettings, resolved_settings: RawRenderSettings) -> RawRenderSettings:
-            wb_mode = str(resolved_settings.white_balance_mode or "camera").strip().lower() or "camera"
-            if wb_mode == "custom":
-                if base_settings.wb_multipliers is not None:
-                    return replace(
-                        resolved_settings,
-                        wb_multipliers=base_settings.wb_multipliers,
-                        wb_selection=base_settings.wb_selection,
-                        wb_multiplier_space=base_settings.wb_multiplier_space,
-                        wb_sample_point=base_settings.wb_sample_point,
-                        wb_sample_size=base_settings.wb_sample_size,
-                        wb_sample_base_mode=base_settings.wb_sample_base_mode,
-                        wb_selection_space=base_settings.wb_selection_space,
-                    )
-                return replace(
-                    resolved_settings,
-                    wb_multipliers=None,
-                    wb_selection=None,
-                    wb_multiplier_space=None,
-                    wb_sample_point=None,
-                    wb_sample_size=None,
-                    wb_sample_base_mode=None,
-                    wb_selection_space=None,
-                )
-            return replace(
-                resolved_settings,
-                wb_multipliers=None,
-                wb_selection=None,
-                wb_multiplier_space=None,
-                wb_sample_point=None,
-                wb_sample_size=None,
-                wb_sample_base_mode=None,
-                wb_selection_space=None,
-            )
-
-        if selected_capture is not None and self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) == self.RAW_CAPTURE_MODE_REVIEW:
-            current_settings = RawRenderSettings.from_dict(selected_capture.raw_settings)
-            settings = _apply_current_wb_fields(current_settings, settings)
         if editing_session is not None:
             current_edit_settings = RawRenderSettings.from_dict(editing_session.working_settings)
-            settings = _apply_current_wb_fields(current_edit_settings, settings)
+            settings = self._preserve_raw_wb_fields(current_edit_settings, settings)
             editing_session.working_settings = settings
             editing_session.dirty = settings != editing_session.original_settings
             self._schedule_raw_edit_preview_refresh()
             self._update_raw_edit_controls()
+            self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
+            self._update_pending_raw_controls()
+            self._update_raw_edit_controls()
+            self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+            self._refresh_raw_processing_context_ui()
+            return
+
+        selected_targets = self._selected_raw_processing_targets()
+        if selected_targets:
+            active_pending_index = self._selected_pending_raw_index_value()
+            active_pending_capture = self._current_pending_raw_capture()
+            active_committed_image_id = self._selected_committed_image_id()
+            active_pending_applied = False
+            active_committed_applied = False
+            any_applied = False
+            for kind, target_key, target in selected_targets:
+                if kind == "pending" and isinstance(target, PendingRawCapture):
+                    if active_pending_capture is target:
+                        active_pending_applied = True
+                    if self._apply_raw_settings_to_pending_capture(target, settings):
+                        any_applied = True
+                    else:
+                        any_applied = True
+                elif kind == "image":
+                    try:
+                        image_id = int(target_key)
+                    except Exception:
+                        continue
+                    editable_session = self._raw_editable_image_session(target, settings=settings if isinstance(target, dict) else None)
+                    if editable_session is None:
+                        continue
+                    editable_session.working_settings = self._preserve_raw_wb_fields(editable_session.original_settings, settings)
+                    editable_session.dirty = editable_session.working_settings != editable_session.original_settings
+                    if self._commit_raw_edit_session(editable_session):
+                        any_applied = True
+                        if active_committed_image_id is not None and int(active_committed_image_id) == image_id:
+                            active_committed_applied = True
+            if any_applied:
+                self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
+                self._update_pending_raw_controls()
+                self._update_raw_edit_controls()
+                self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+                self._refresh_session_gallery()
+                if active_pending_applied and active_pending_capture is not None:
+                    try:
+                        pending_index = active_pending_index
+                        current_capture = self._current_pending_raw_capture()
+                        if current_capture is active_pending_capture:
+                            pending_index = self._selected_pending_raw_index_value()
+                        self._show_pending_raw_capture(pending_index)
+                    except Exception:
+                        pass
+                elif active_committed_applied and active_committed_image_id is not None:
+                    self._show_session_image(int(active_committed_image_id))
+                self._refresh_raw_processing_context_ui()
+                return
+
+        save_helper = getattr(self, "_save_raw_processing_settings_for_current_context", None)
+        if callable(save_helper):
+            save_helper(settings)
         else:
-            save_helper = getattr(self, "_save_raw_processing_settings_for_current_context", None)
-            if callable(save_helper):
-                save_helper(settings)
-            else:
-                LiveLabTab._save_raw_processing_settings_for_current_context(self, settings)
-            if selected_capture is not None and self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) == self.RAW_CAPTURE_MODE_REVIEW:
-                selected_capture.raw_settings = settings
-                self._schedule_pending_raw_preview_refresh()
+            LiveLabTab._save_raw_processing_settings_for_current_context(self, settings)
         self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
         self._update_pending_raw_controls()
         self._update_raw_edit_controls()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
+        self._refresh_raw_processing_context_ui()
 
     def _current_raw_render_settings(self) -> RawRenderSettings:
         _preset_context = self._raw_processing_preset_context()
@@ -2340,6 +2779,52 @@ class LiveLabTab(QWidget):
         capture = captures[index]
         return capture if isinstance(capture, PendingRawCapture) else None
 
+    def _selected_pending_raw_captures(self) -> list[PendingRawCapture]:
+        captures = getattr(self, "_pending_raw_captures", []) or []
+        selected: list[PendingRawCapture] = []
+        seen_indices: set[int] = set()
+        for key in self._session_gallery_selected_keys():
+            pending_index = self._pending_raw_capture_index_for_key(key)
+            if pending_index is None or pending_index in seen_indices:
+                continue
+            if 0 <= pending_index < len(captures):
+                capture = captures[pending_index]
+                if isinstance(capture, PendingRawCapture):
+                    selected.append(capture)
+                    seen_indices.add(pending_index)
+        if selected:
+            return selected
+        current_pending = self._current_pending_raw_capture()
+        return [current_pending] if current_pending is not None else []
+
+    def _sync_selected_pending_raw_metadata_from_controls(self) -> bool:
+        if getattr(self, "_raw_edit_session", None) is not None:
+            return False
+        selected_captures = self._selected_pending_raw_captures()
+        if not selected_captures:
+            return False
+
+        current_lab_metadata = getattr(self, "_current_lab_metadata", None)
+        if not callable(current_lab_metadata):
+            return False
+        try:
+            metadata = dict(current_lab_metadata() or {})
+        except Exception:
+            return False
+
+        changed = False
+        for capture in selected_captures:
+            merged = merge_image_lab_metadata(capture.lab_metadata, metadata)
+            if merged != capture.lab_metadata:
+                capture.lab_metadata = merged
+                changed = True
+        if changed:
+            self._refresh_session_gallery()
+            refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+            if callable(refresh_viewer_objective_tag):
+                refresh_viewer_objective_tag()
+        return changed
+
     def _pending_raw_gallery_key(self, capture: PendingRawCapture | None) -> str | None:
         if capture is None:
             return None
@@ -2402,6 +2887,7 @@ class LiveLabTab(QWidget):
                 badges.append(self.tr("Preview failed"))
             elif preview_path is None:
                 badges.append(self.tr("Preview pending"))
+            microscope_tag_text, microscope_tag_color = LiveLabTab._microscope_tag_for_metadata(self, capture.lab_metadata)
             item = {
                 "id": self._pending_raw_gallery_key(capture),
                 "filepath": str(capture.source_path),
@@ -2409,6 +2895,11 @@ class LiveLabTab(QWidget):
                 "image_number": f"P{index + 1}",
                 "badges": badges,
                 "frame_border_color": "#e74c3c" if capture.status == "failed" else "#e67e22",
+                "raw_halo_color": "#e74c3c",
+                "microscope_tag_text": microscope_tag_text,
+                "microscope_tag_color": microscope_tag_color,
+                "gps_tag_text": microscope_tag_text,
+                "gps_tag_color": microscope_tag_color,
             }
             items.append(item)
             if current_pending is capture:
@@ -2424,7 +2915,7 @@ class LiveLabTab(QWidget):
             image = ImageDB.get_image(image_id)
             if not image:
                 continue
-            objective_name = image.get("objective_name")
+            objective_name = LiveLabTab._objective_key_from_metadata(self, image)
             objective_label = None
             if objective_name:
                 objective_obj = objectives.get(str(objective_name))
@@ -2438,10 +2929,10 @@ class LiveLabTab(QWidget):
                 objective_name=objective_label,
                 contrast=image.get("contrast"),
                 scale_microns_per_pixel=image.get("scale_microns_per_pixel"),
-                custom_scale=bool(str(image.get("objective_name") or "").strip().lower() == "custom"),
+                custom_scale=bool(str(objective_name or "").strip().lower() == "custom"),
                 needs_scale=(
                     str(image.get("image_type") or "").strip().lower() == "microscope"
-                    and not image.get("objective_name")
+                    and not objective_name
                     and not image.get("scale_microns_per_pixel")
                 ),
                 resize_to_optimal=bool(
@@ -2452,6 +2943,9 @@ class LiveLabTab(QWidget):
                 lab_metadata=image.get("lab_metadata"),
                 translate=self.tr,
             )
+            microscope_tag_text, microscope_tag_color = LiveLabTab._microscope_tag_for_metadata(self, image)
+            if microscope_tag_text and badges and str(image.get("image_type") or "").strip().lower() == "microscope":
+                badges = badges[1:]
             items.append(
                 {
                     "id": image_id,
@@ -2459,6 +2953,10 @@ class LiveLabTab(QWidget):
                     "image_number": idx,
                     "has_measurements": False,
                     "badges": badges,
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
+                    "gps_tag_text": microscope_tag_text,
+                    "gps_tag_color": microscope_tag_color,
                 }
             )
         selected_key: str | int | None = selected_pending_key
@@ -2565,6 +3063,32 @@ class LiveLabTab(QWidget):
             return
         self._cancel_pending_raw_background_wb_selection()
         self._selected_session_image_id = None
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            is_multi_select = False
+            selected_keys: list[object] = []
+            is_multi_select_fn = getattr(gallery, "is_multi_select", None)
+            if callable(is_multi_select_fn):
+                try:
+                    is_multi_select = bool(is_multi_select_fn())
+                except Exception:
+                    is_multi_select = False
+            selected_keys_fn = getattr(gallery, "selected_keys", None)
+            if callable(selected_keys_fn):
+                try:
+                    selected_keys = [key for key in list(selected_keys_fn()) if key is not None]
+                except Exception:
+                    selected_keys = []
+            select_image = getattr(gallery, "select_image", None)
+            pending_key = self._pending_raw_gallery_key(capture)
+            if callable(select_image) and pending_key is not None and (not is_multi_select or not selected_keys):
+                try:
+                    select_image(pending_key)
+                except Exception:
+                    pass
+        apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+        if callable(apply_microscope_state):
+            apply_microscope_state(capture.lab_metadata)
         self._sync_raw_processing_controls_from_settings(capture.raw_settings)
         preview_path = str(capture.preview_path or "").strip()
         if not preview_path or not Path(preview_path).exists():
@@ -3248,8 +3772,6 @@ class LiveLabTab(QWidget):
             SettingsDB.get_list_setting(DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)),
         )
         for value in values:
-            if category == "contrast" and value == "Not_set":
-                continue
             display = DatabaseTerms.translate(category, value)
             if callable(adder):
                 adder(
@@ -3279,8 +3801,6 @@ class LiveLabTab(QWidget):
             SettingsDB.get_list_setting(DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)),
         )
         for value in values:
-            if category == "contrast" and value == "Not_set":
-                continue
             display = DatabaseTerms.translate(category, value)
             if callable(adder):
                 adder(
@@ -3383,9 +3903,14 @@ class LiveLabTab(QWidget):
             index = self.objective_combo.findData(saved)
             if index >= 0:
                 self.objective_combo.setCurrentIndex(index)
+        self._update_lab_state_combo_alerts()
 
     def _save_objective_selection(self) -> None:
-        SettingsDB.set_setting(self.SETTING_LAST_OBJECTIVE, str(self.objective_combo.currentData() or ""))
+        objective_value = self._selected_combo_value(self.objective_combo)
+        SettingsDB.set_setting(self.SETTING_LAST_OBJECTIVE, "" if objective_value is None else str(objective_value))
+        refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+        if callable(refresh_viewer_objective_tag):
+            refresh_viewer_objective_tag()
 
     def _normalize_session_mode(self, value: str | None) -> str:
         mode = str(value or self.SESSION_MODE_LIVE).strip().lower()
@@ -3417,43 +3942,53 @@ class LiveLabTab(QWidget):
         self.objective_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "objective_name",
-                self.objective_combo.currentData(),
+                self._selected_combo_value(self.objective_combo),
                 self.objective_combo.currentText(),
             )
         )
         self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.objective_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.objective_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
         self.contrast_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "contrast",
-                self.contrast_combo.currentData(),
+                self._selected_combo_value(self.contrast_combo),
                 self.contrast_combo.currentText(),
             )
         )
         self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.contrast_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.contrast_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
         self.mount_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "mount_medium",
-                self.mount_combo.currentData(),
+                self._selected_combo_value(self.mount_combo),
                 self.mount_combo.currentText(),
             )
         )
         self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.mount_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.mount_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
         self.stain_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "stain",
-                self.stain_combo.currentData(),
+                self._selected_combo_value(self.stain_combo),
                 self.stain_combo.currentText(),
             )
         )
         self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.stain_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.stain_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
         self.sample_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "sample_type",
-                self.sample_combo.currentData(),
+                self._selected_combo_value(self.sample_combo),
                 self.sample_combo.currentText(),
             )
         )
         self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.sample_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.sample_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
 
     def _restore_watch_dir(self) -> None:
         saved = str(SettingsDB.get_setting(self.SETTING_WATCH_DIR, "") or "").strip()
@@ -3648,15 +4183,15 @@ class LiveLabTab(QWidget):
         return {
             "session_id": str(self._session_id or "").strip() or None,
             "session_kind": self._normalize_session_mode(self._active_session_mode or self._selected_session_mode()),
-            "objective_name": self.objective_combo.currentData(),
+            "objective_name": self._selected_combo_value(self.objective_combo),
             "objective_label": str(self.objective_combo.currentText() or "").strip() or None,
-            "contrast": DatabaseTerms.canonicalize("contrast", self.contrast_combo.currentData()),
+            "contrast": DatabaseTerms.canonicalize("contrast", self._selected_combo_value(self.contrast_combo)),
             "contrast_label": str(self.contrast_combo.currentText() or "").strip() or None,
-            "mount_medium": DatabaseTerms.canonicalize("mount", self.mount_combo.currentData()),
+            "mount_medium": DatabaseTerms.canonicalize("mount", self._selected_combo_value(self.mount_combo)),
             "mount_label": str(self.mount_combo.currentText() or "").strip() or None,
-            "stain": DatabaseTerms.canonicalize("stain", self.stain_combo.currentData()),
+            "stain": DatabaseTerms.canonicalize("stain", self._selected_combo_value(self.stain_combo)),
             "stain_label": str(self.stain_combo.currentText() or "").strip() or None,
-            "sample_type": DatabaseTerms.canonicalize("sample", self.sample_combo.currentData()),
+            "sample_type": DatabaseTerms.canonicalize("sample", self._selected_combo_value(self.sample_combo)),
             "sample_label": str(self.sample_combo.currentText() or "").strip() or None,
         }
 
@@ -3690,7 +4225,10 @@ class LiveLabTab(QWidget):
     def _log_dropdown_change(self, attribute_name: str, raw_value, display_value: str | None = None) -> None:
         if not self.is_session_running():
             return
-        value = str(raw_value or "").strip() or None
+        if raw_value is None:
+            value = None
+        else:
+            value = str(raw_value).strip() or None
         metadata = {
             "display_value": str(display_value or "").strip() or None,
         }
@@ -3702,11 +4240,11 @@ class LiveLabTab(QWidget):
         )
 
     def _log_initial_lab_state(self) -> None:
-        self._log_dropdown_change("objective_name", self.objective_combo.currentData(), self.objective_combo.currentText())
-        self._log_dropdown_change("contrast", self.contrast_combo.currentData(), self.contrast_combo.currentText())
-        self._log_dropdown_change("mount_medium", self.mount_combo.currentData(), self.mount_combo.currentText())
-        self._log_dropdown_change("stain", self.stain_combo.currentData(), self.stain_combo.currentText())
-        self._log_dropdown_change("sample_type", self.sample_combo.currentData(), self.sample_combo.currentText())
+        self._log_dropdown_change("objective_name", self._selected_combo_value(self.objective_combo), self.objective_combo.currentText())
+        self._log_dropdown_change("contrast", self._selected_combo_value(self.contrast_combo), self.contrast_combo.currentText())
+        self._log_dropdown_change("mount_medium", self._selected_combo_value(self.mount_combo), self.mount_combo.currentText())
+        self._log_dropdown_change("stain", self._selected_combo_value(self.stain_combo), self.stain_combo.currentText())
+        self._log_dropdown_change("sample_type", self._selected_combo_value(self.sample_combo), self.sample_combo.currentText())
 
     def _add_session_note(self) -> None:
         note_text = str(self.session_note_input.text() or "").strip()
@@ -4007,19 +4545,21 @@ class LiveLabTab(QWidget):
             lab_metadata,
             getattr(ingest, "lab_metadata", None),
         )
-        objective_key = ingest_lab_metadata.get("objective_name") or self.objective_combo.currentData()
+        objective_key = ingest_lab_metadata.get("objective_name")
+        if objective_key is None or not str(objective_key).strip():
+            objective_key = self._selected_combo_value(self.objective_combo)
         contrast_value = ingest_lab_metadata.get("contrast")
         mount_value = ingest_lab_metadata.get("mount_medium")
         stain_value = ingest_lab_metadata.get("stain")
         sample_value = ingest_lab_metadata.get("sample_type")
         if not str(contrast_value or "").strip():
-            contrast_value = self.contrast_combo.currentData()
+            contrast_value = self._selected_combo_value(self.contrast_combo)
         if not str(mount_value or "").strip():
-            mount_value = self.mount_combo.currentData()
+            mount_value = self._selected_combo_value(self.mount_combo)
         if not str(stain_value or "").strip():
-            stain_value = self.stain_combo.currentData()
+            stain_value = self._selected_combo_value(self.stain_combo)
         if not str(sample_value or "").strip():
-            sample_value = self.sample_combo.currentData()
+            sample_value = self._selected_combo_value(self.sample_combo)
         objective_key = str(objective_key or "").strip() or None
         objective = load_objectives().get(objective_key) if objective_key else None
         scale = objective.get("microns_per_pixel") if isinstance(objective, dict) else None
@@ -4160,12 +4700,55 @@ class LiveLabTab(QWidget):
         gallery = getattr(self, "session_gallery", None)
         if gallery is None:
             return
+        selected_paths: list[str] = []
+        selected_paths_fn = getattr(gallery, "selected_paths", None)
+        if callable(selected_paths_fn):
+            try:
+                selected_paths = [str(path) for path in selected_paths_fn() if path]
+            except Exception:
+                selected_paths = []
         items, selected_key = self._session_gallery_items()
         gallery.set_items(items)
-        if selected_key is not None:
+        is_multi_select = False
+        is_multi_select_fn = getattr(gallery, "is_multi_select", None)
+        if callable(is_multi_select_fn):
+            try:
+                is_multi_select = bool(is_multi_select_fn())
+            except Exception:
+                is_multi_select = False
+        if is_multi_select and selected_paths:
+            select_paths = getattr(gallery, "select_paths", None)
+            if callable(select_paths):
+                select_paths(selected_paths)
+                selected_paths_fn = getattr(gallery, "selected_paths", None)
+                restored_paths = []
+                if callable(selected_paths_fn):
+                    try:
+                        restored_paths = [str(path) for path in selected_paths_fn() if path]
+                    except Exception:
+                        restored_paths = []
+                if not restored_paths and selected_key is not None:
+                    fallback_paths = []
+                    for item in items:
+                        item_key = item.get("id") if item.get("id") is not None else item.get("filepath")
+                        if item_key == selected_key and item.get("filepath"):
+                            fallback_paths = [str(item.get("filepath"))]
+                            break
+                    if fallback_paths:
+                        select_paths(fallback_paths)
+        elif selected_key is not None:
             gallery.select_image(selected_key)
 
     def _on_session_gallery_clicked(self, image_id, _path: str) -> None:
+        gallery = getattr(self, "session_gallery", None)
+        is_multi_select = False
+        if gallery is not None:
+            is_multi_select_fn = getattr(gallery, "is_multi_select", None)
+            if callable(is_multi_select_fn):
+                try:
+                    is_multi_select = bool(is_multi_select_fn())
+                except Exception:
+                    is_multi_select = False
         current_edit_session = getattr(self, "_raw_edit_session", None)
         try:
             clicked_image_id = int(image_id or 0)
@@ -4177,6 +4760,20 @@ class LiveLabTab(QWidget):
         if pending_index is None:
             pending_index = self._pending_raw_capture_index_for_key(_path)
         if pending_index is not None:
+            capture = None
+            captures = getattr(self, "_pending_raw_captures", [])
+            if 0 <= int(pending_index) < len(captures):
+                maybe_capture = captures[int(pending_index)]
+                if isinstance(maybe_capture, PendingRawCapture):
+                    capture = maybe_capture
+            if capture is not None:
+                apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+                if callable(apply_microscope_state):
+                    apply_microscope_state(capture.lab_metadata)
+            if is_multi_select and gallery is not None:
+                center_on_key = getattr(gallery, "center_on_key", None)
+                if callable(center_on_key):
+                    center_on_key(image_id if image_id is not None else _path)
             self._show_pending_raw_capture(pending_index)
             return
         resolved_image_id = clicked_image_id
@@ -4185,8 +4782,176 @@ class LiveLabTab(QWidget):
         self._selected_pending_raw_index = -1
         self._selected_session_image_id = resolved_image_id
         self._update_pending_raw_controls()
-        self.session_gallery.select_image(resolved_image_id)
+        if is_multi_select:
+            image = ImageDB.get_image(resolved_image_id)
+            if image is not None:
+                apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+                if callable(apply_microscope_state):
+                    apply_microscope_state(image)
+            if gallery is not None:
+                center_on_key = getattr(gallery, "center_on_key", None)
+                if callable(center_on_key):
+                    center_on_key(resolved_image_id)
+        else:
+            if gallery is not None:
+                select_image = getattr(gallery, "select_image", None)
+                if callable(select_image):
+                    select_image(resolved_image_id)
         self._show_session_image(resolved_image_id)
+
+    def _on_session_gallery_selection_changed(self, selected_paths: list[str]) -> None:
+        try:
+            selected_count = len([path for path in selected_paths or [] if path])
+        except Exception:
+            selected_count = 0
+        if selected_count > 1:
+            self._show_status(
+                self.tr("Settings will be applied to selected images."),
+                tone="info",
+                timeout_ms=3500,
+            )
+        self._update_raw_processing_visibility()
+
+    def _on_session_gallery_delete_requested(self, key) -> None:
+        if self._delete_session_gallery_item(key):
+            return
+
+    def _delete_session_gallery_item(self, key) -> bool:
+        pending_index = self._pending_raw_capture_index_for_key(key)
+        if pending_index is not None:
+            return self._delete_session_gallery_pending_capture(int(pending_index))
+        try:
+            image_id = int(key or 0)
+        except Exception:
+            image_id = 0
+        if image_id <= 0:
+            return False
+        return self._delete_session_gallery_committed_image(image_id)
+
+    def _delete_session_gallery_pending_capture(self, pending_index: int) -> bool:
+        captures = list(getattr(self, "_pending_raw_captures", []) or [])
+        if pending_index < 0 or pending_index >= len(captures):
+            return False
+        capture = captures[pending_index]
+        if not isinstance(capture, PendingRawCapture):
+            return False
+
+        current_capture = self._current_pending_raw_capture()
+        current_index = self._selected_pending_raw_index_value()
+        current_committed_id = self._selected_committed_image_id()
+        if current_capture is capture and current_index == pending_index:
+            return self._discard_selected_pending_raw_capture()
+
+        preview_path = Path(capture.preview_path) if capture.preview_path else None
+        capture.status = "discarded"
+        if preview_path is not None:
+            try:
+                preview_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        captures.pop(pending_index)
+        self._pending_raw_captures = captures
+        if current_capture is not None and current_index > pending_index:
+            current_index -= 1
+        if current_capture is not None and captures:
+            self._selected_pending_raw_index = max(0, min(current_index, len(captures) - 1))
+        elif current_capture is not None:
+            self._selected_pending_raw_index = -1
+
+        self._refresh_session_gallery()
+        if current_capture is not None and captures:
+            self._show_pending_raw_capture(self._selected_pending_raw_index)
+        elif current_committed_id is not None and current_committed_id in set(self._session_image_ids or []):
+            self._show_session_image(int(current_committed_id))
+        elif self._session_image_ids:
+            self._show_session_image(int(self._session_image_ids[-1]))
+        else:
+            self._clear_session_viewer(
+                title=self.tr("Waiting for first import"),
+                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
+            )
+
+        self._show_status(
+            self.tr("Removed pending RAW capture {name}.").format(name=capture.source_path.name),
+            tone="info",
+            timeout_ms=3500,
+        )
+        return True
+
+    def _delete_session_gallery_committed_image(self, image_id: int) -> bool:
+        image = ImageDB.get_image(image_id)
+        image_name = Path(str((image or {}).get("filepath") or "")).name or self.tr("selected image")
+        session_image_ids = list(getattr(self, "_session_image_ids", []) or [])
+        try:
+            image_index = session_image_ids.index(image_id)
+        except ValueError:
+            image_index = -1
+
+        current_pending_capture = self._current_pending_raw_capture()
+        current_pending_index = self._selected_pending_raw_index_value()
+        current_committed_id = self._selected_committed_image_id()
+
+        try:
+            ImageDB.delete_image(image_id)
+        except Exception as exc:
+            self._show_status(
+                self.tr("Could not delete local processed image {name}: {error}").format(
+                    name=image_name,
+                    error=str(exc),
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+            return False
+
+        self._session_image_ids = [existing_id for existing_id in session_image_ids if int(existing_id) != int(image_id)]
+        self._refresh_session_gallery()
+
+        if current_pending_capture is not None:
+            if current_pending_index >= 0:
+                self._show_pending_raw_capture(current_pending_index)
+            else:
+                self._show_pending_raw_capture(self._selected_pending_raw_index)
+        elif current_committed_id is not None and int(current_committed_id) in set(int(item) for item in self._session_image_ids):
+            self._selected_session_image_id = int(current_committed_id)
+            self._show_session_image(int(current_committed_id))
+        elif self._session_image_ids:
+            next_index = image_index if image_index >= 0 else 0
+            if next_index >= len(self._session_image_ids):
+                next_index = len(self._session_image_ids) - 1
+            next_image_id = int(self._session_image_ids[next_index])
+            self._selected_session_image_id = next_image_id
+            self._show_session_image(next_image_id)
+        else:
+            self._selected_session_image_id = None
+            self._clear_session_viewer(
+                title=self.tr("Waiting for first import"),
+                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
+            )
+
+        self._update_pending_raw_controls()
+
+        observation_id = int(self._session_observation_id or 0)
+        if observation_id > 0 and int(getattr(self._main_window, "active_observation_id", 0) or 0) == observation_id:
+            try:
+                if hasattr(self._main_window, "observations_tab"):
+                    self._main_window.observations_tab.refresh_observations(show_status=False)
+            except Exception:
+                pass
+            try:
+                self._main_window.refresh_observation_images(select_image_id=self._selected_session_image_id)
+                self._main_window.update_measurements_table()
+                if getattr(self._main_window, "is_analysis_visible", None) and self._main_window.is_analysis_visible():
+                    self._main_window.schedule_gallery_refresh()
+            except Exception:
+                pass
+
+        self._show_status(
+            self.tr("Deleted local processed image {name}.").format(name=image_name),
+            tone="success",
+            timeout_ms=3500,
+        )
+        return True
 
     def _clear_session_viewer(self, title: str | None = None, meta: str | None = None) -> None:
         self.viewer_title_label.setText(title or self.tr("Last import"))
@@ -4195,6 +4960,12 @@ class LiveLabTab(QWidget):
         self.live_image_label.set_microns_per_pixel(0.0)
         self.live_image_label.set_scale_bar(False, 0.0)
         self.live_image_label.set_image(None)
+        update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
+        if callable(update_viewer_objective_tag):
+            update_viewer_objective_tag(None)
+        update_raw_processing_visibility = getattr(self, "_update_raw_processing_visibility", None)
+        if callable(update_raw_processing_visibility):
+            update_raw_processing_visibility()
 
     def _show_session_image(self, image_id: int) -> None:
         image = ImageDB.get_image(image_id)
@@ -4213,6 +4984,9 @@ class LiveLabTab(QWidget):
             self._update_raw_edit_controls()
             return
 
+        apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+        if callable(apply_microscope_state):
+            apply_microscope_state(image)
         edit_session = getattr(self, "_raw_edit_session", None)
         if edit_session is not None and int(edit_session.image_id) == int(image_id):
             preview_path = str(edit_session.preview_path or "").strip()
@@ -4270,6 +5044,10 @@ class LiveLabTab(QWidget):
                 self.tr("Editing RAW: {name}").format(name=edit_session.source_raw_path.name)
             )
             self.viewer_meta_label.setText(self._raw_settings_info_text(edit_session.working_settings))
+            self._sync_raw_processing_controls_from_settings(
+                edit_session.working_settings,
+                update_session_settings=False,
+            )
         else:
             title_prefix = self.tr("Last import")
             if self._session_image_ids and int(image_id) != int(self._session_image_ids[-1]):
@@ -4281,6 +5059,12 @@ class LiveLabTab(QWidget):
                 )
             )
             self.viewer_meta_label.setText(self._viewer_meta_text(image))
+            editable_session = self._raw_editable_image_session(image)
+            if editable_session is not None:
+                self._sync_raw_processing_controls_from_settings(
+                    editable_session.original_settings,
+                    update_session_settings=False,
+                )
         self._update_raw_edit_controls()
 
     def _load_viewer_pixmap(self, path: str) -> tuple[QPixmap | None, bool]:
@@ -4342,7 +5126,7 @@ class LiveLabTab(QWidget):
             return ""
         objectives = load_objectives()
         parts: list[str] = []
-        objective_name = str(image.get("objective_name") or "").strip()
+        objective_name = LiveLabTab._objective_key_from_metadata(self, image)
         if objective_name:
             objective = objectives.get(objective_name)
             parts.append(objective_display_name(objective, objective_name) if objective else objective_name)

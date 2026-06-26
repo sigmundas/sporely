@@ -2466,6 +2466,7 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'invalid jwt',
     'expired access token',
     'access token expired',
+    'auth refresh failed',
     'token expired',
     'session expired',
     'authentication failed',
@@ -8034,6 +8035,16 @@ class SporelyCloudClient:
             save_cloud_password(str(email or '').strip(), password)
         elif remember_password is False:
             clear_saved_cloud_password()
+
+    @staticmethod
+    def clear_session() -> None:
+        """Forget only the cloud tokens so the saved password can survive re-login."""
+        update_app_settings({
+            'cloud_access_token': None,
+            'cloud_user_id': None,
+            'cloud_refresh_token': None,
+            'cloud_user_email': None,
+        })
 
     @staticmethod
     def clear_credentials() -> None:

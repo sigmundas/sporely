@@ -7,7 +7,7 @@ from types import MethodType, SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QDialogButtonBox
+from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QLineEdit
 from PySide6.QtWidgets import QPlainTextEdit
 from PySide6.QtCore import QPoint, Signal
 
@@ -132,17 +132,30 @@ def _build_settings_hub_dialog(
     return fake_parent, dialog
 
 
+def _auth_refresh_failure():
+    try:
+        raise cloud_sync.CloudSyncError("GET https://example.test/rest/v1/profiles status=401: auth refresh failed")
+    except cloud_sync.CloudSyncError as cause:
+        try:
+            raise cloud_sync.CloudTemporarilyUnavailableError(
+                "Supabase/cloud sync is temporarily unavailable; local data was not overwritten."
+            ) from cause
+        except cloud_sync.CloudTemporarilyUnavailableError as error:
+            return error
+
+
 def test_profile_cloud_controls_expose_sync_actions(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
 
     assert dialog.cloud_sync_now_button.text() == "Sync now"
-    assert dialog.cloud_offline_media_button.text() == "Download missing cloud media for offline use"
-    assert dialog.cloud_repair_calibration_conflicts_button.text() == "Repair calibration conflicts (local wins)"
+    assert dialog.cloud_sync_log_button.text() == "Sync log"
     assert dialog._hub_cancel_button.text() == "Cancel"
     assert dialog._hub_save_button.text() == "Save"
     assert dialog.cloud_sync_now_button.isEnabled() is True
-    assert dialog.cloud_offline_media_button.isEnabled() is True
-    assert dialog.cloud_repair_calibration_conflicts_button.isEnabled() is True
+    assert dialog.cloud_sync_log_button.isEnabled() is True
+    assert not hasattr(dialog, "cloud_sync_summary_label")
+    assert not hasattr(dialog, "cloud_offline_media_button")
+    assert not hasattr(dialog, "cloud_repair_calibration_conflicts_button")
     assert dialog._artsobs_dialog._cloud_section.objectName() == "sectionCard"
     assert dialog.cloud_sync_group.objectName() == "sectionCard"
     cloud_card = dialog._artsobs_dialog
@@ -343,33 +356,54 @@ def test_profile_cloud_controls_show_last_status_and_details(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, app_settings=app_settings)
 
     assert dialog.cloud_sync_status_label.text() == "Last sync: 2026-06-03 08:30 UTC"
-    assert "Original uploads: 2 uploaded, 1 skipped, 1 failed." in dialog.cloud_sync_summary_label.text()
     assert dialog.cloud_sync_error_label.text() == "Errors: 2"
-    assert dialog.cloud_sync_details_button.isVisible() is True
-    assert dialog.cloud_sync_details_button.isEnabled() is True
+    assert dialog.cloud_sync_log_button.text() == "Sync log"
+    assert dialog.cloud_sync_log_button.isVisible() is True
+    assert dialog.cloud_sync_log_button.isEnabled() is True
 
     dialog.deleteLater()
     parent.deleteLater()
 
 
-def test_profile_cloud_sync_details_window_shows_raw_errors(monkeypatch, qapp):
+def test_profile_cloud_sync_log_button_shows_summary_and_errors(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(
         monkeypatch,
         qapp,
         app_settings={
-            "cloud_last_sync_errors_json": json.dumps(["conflict A", "conflict B"]),
+            "cloud_last_sync_at": "2026-06-03T08:30:00+00:00",
+            "cloud_last_sync_status": "ok",
+            "cloud_last_sync_summary": (
+                "Cloud sync complete.\n"
+                "Observations: 5 checked; 5 re-dirtied due to pending local images; 5 skipped as no-op.\n"
+                "Images: 32 checked; 24 uploaded."
+            ),
             "cloud_last_sync_error_count": 2,
+            "cloud_last_sync_errors_json": json.dumps(["conflict A", "conflict B"]),
         },
     )
 
-    details_dialog = dialog._build_cloud_sync_details_dialog(["conflict A", "conflict B"])
-    text_edit = details_dialog.findChild(QPlainTextEdit)
+    captured: dict[str, object] = {}
 
-    assert text_edit is not None
-    assert text_edit.toPlainText() == "conflict A\nconflict B"
-    assert details_dialog.findChild(QDialogButtonBox) is None
+    def fake_build(lines):
+        captured["lines"] = list(lines)
+        return SimpleNamespace(exec=lambda: captured.setdefault("executed", True))
 
-    details_dialog.deleteLater()
+    monkeypatch.setattr(dialog, "_build_cloud_sync_details_dialog", fake_build)
+
+    dialog.cloud_sync_log_button.click()
+
+    assert captured["executed"] is True
+    text = "\n".join(captured["lines"])
+    assert "Status: ok" in text
+    assert "Summary: Cloud sync complete." in text
+    assert "Observations: 5 checked; 5 re-dirtied due to pending local images; 5 skipped as no-op." in text
+    assert "Images: 32 checked; 24 uploaded." in text
+    assert "Last sync: 2026-06-03 08:30 UTC" in text
+    assert "Errors: 2" in text
+    assert "Raw sync errors:" in text
+    assert "- conflict A" in text
+    assert "- conflict B" in text
+
     dialog.deleteLater()
     parent.deleteLater()
 
@@ -388,69 +422,6 @@ def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
             "materialize_remote_images": True,
         }
     ]
-
-    dialog.deleteLater()
-    parent.deleteLater()
-
-
-def test_profile_cloud_repair_button_repairs_explicit_conflicts(monkeypatch, qapp):
-    conflicts = [
-        {
-            "calibration_uuid": "09dac379-76eb-4513-892e-cd1df532f682",
-            "fields": ["measurements_json", "is_active"],
-            "label": "10X_0.25_N_Plan_PH • 2026-02-27",
-            "cloud_row_id": "cloud-cal-1",
-        }
-    ]
-    repair_calls: list[tuple[str, list[str]]] = []
-    info_messages: list[str] = []
-    question_prompts: list[str] = []
-
-    monkeypatch.setattr(cloud_sync, "list_calibration_conflicts", lambda client: [dict(row) for row in conflicts])
-    monkeypatch.setattr(
-        cloud_sync,
-        "repair_calibrations_local_wins",
-        lambda client, calibration_uuids=None: repair_calls.append(
-            (str(getattr(client, "user_id", "")), [str(value) for value in (calibration_uuids or [])])
-        )
-        or {
-            "repaired": 1,
-            "repairs": [
-                {
-                    "calibration_uuid": conflicts[0]["calibration_uuid"],
-                    "fields": conflicts[0]["fields"],
-                    "message": "repaired",
-                }
-            ],
-            "errors": [],
-        },
-    )
-    monkeypatch.setattr(
-        main_window.QMessageBox,
-        "question",
-        lambda *args, **kwargs: question_prompts.append(str(args[2])) or main_window.QMessageBox.Yes,
-    )
-    monkeypatch.setattr(
-        main_window.QMessageBox,
-        "information",
-        lambda *args, **kwargs: info_messages.append(str(args[2])) or main_window.QMessageBox.Ok,
-    )
-    monkeypatch.setattr(
-        main_window.QMessageBox,
-        "warning",
-        lambda *args, **kwargs: info_messages.append(str(args[2])) or main_window.QMessageBox.Ok,
-    )
-
-    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
-
-    dialog.cloud_repair_calibration_conflicts_button.click()
-    qapp.processEvents()
-
-    assert question_prompts
-    assert "09dac379-76eb-4513-892e-cd1df532f682" in question_prompts[0]
-    assert repair_calls == [("user-123", ["09dac379-76eb-4513-892e-cd1df532f682"])]
-    assert info_messages
-    assert "Repaired 1 calibration conflict(s) with local wins." in info_messages[0]
 
     dialog.deleteLater()
     parent.deleteLater()
@@ -509,6 +480,41 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     assert warning_calls
 
 
+def test_cloud_profile_refresh_auth_failure_clears_invalid_session(monkeypatch):
+    events: list[str] = []
+    clear_calls: list[str] = []
+
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_current_user_info=lambda: (_ for _ in ()).throw(_auth_refresh_failure()),
+        fetch_profile=lambda: pytest.fail("profile fetch should not run after auth failure"),
+    )
+    fake_dialog = SimpleNamespace(
+        tr=lambda text: text,
+        _profile_email=QLineEdit("sigmund.as@gmail.com"),
+        _profile_username=QLineEdit("sigmundas"),
+        _profile_name=QLineEdit("Sigmundas"),
+        _profile_bio=QPlainTextEdit("Bio"),
+        _profile_avatar_url="",
+        _cloud_profile_loaded_user_id="user-123",
+        _cached_cloud_client=lambda: fake_client,
+        _on_cloud_logout_changed=lambda: events.append("logout"),
+    )
+    fake_dialog._clear_invalid_cloud_session = MethodType(
+        main_window.SettingsHubDialog._clear_invalid_cloud_session,
+        fake_dialog,
+    )
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
+    monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: pytest.fail("set_profile should not run"))
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+
+    main_window.SettingsHubDialog._refresh_cloud_profile_fields(fake_dialog, force=True)
+
+    assert clear_calls == ["clear_session"]
+    assert events == ["logout"]
+
+
 def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
     events: list[str] = []
     settings_payload: dict[str, object] = {}
@@ -558,23 +564,57 @@ def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
     assert "refresh_ui" in events
 
 
-def test_profile_cloud_offline_media_action_starts_materializing_sync(monkeypatch, qapp):
-    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
+def test_profile_save_auth_failure_clears_invalid_session(monkeypatch):
+    events: list[str] = []
+    warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    settings_payload: dict[str, object] = {}
+    profile_rows: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    clear_calls: list[str] = []
 
-    dialog.cloud_offline_media_button.click()
-    qapp.processEvents()
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        update_profile=lambda **kwargs: (_ for _ in ()).throw(_auth_refresh_failure()),
+    )
+    fake_dialog = SimpleNamespace(
+        tr=lambda text: text,
+        _profile_username=QLineEdit("sigmundas"),
+        _profile_name=QLineEdit("Sigmundas"),
+        _profile_email=QLineEdit("sigmund.as@gmail.com"),
+        _profile_bio=QPlainTextEdit("Bio"),
+        _profile_avatar_url="",
+        _profile_changed=False,
+        _profile_email_for_save=lambda: "sigmund.as@gmail.com",
+        _get_cloud_client=lambda: fake_client,
+        _on_cloud_logout_changed=lambda: events.append("logout"),
+        parent=lambda: None,
+    )
+    fake_dialog._profile_sync_error_message = MethodType(
+        main_window.SettingsHubDialog._profile_sync_error_message,
+        fake_dialog,
+    )
+    fake_dialog._clear_invalid_cloud_session = MethodType(
+        main_window.SettingsHubDialog._clear_invalid_cloud_session,
+        fake_dialog,
+    )
 
-    assert parent.start_calls == [
-        {
-            "show_status": True,
-            "run_refresh_flow": False,
-            "sync_images": False,
-            "materialize_remote_images": True,
-        }
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
+    monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: profile_rows.append((args, kwargs)))
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: warning_calls.append((args, kwargs)))
+
+    result = main_window.SettingsHubDialog._save_profile(fake_dialog)
+
+    assert result is False
+    assert clear_calls == ["clear_session"]
+    assert events == ["logout"]
+    assert profile_rows == [
+        (
+            ("Sigmundas", "sigmund.as@gmail.com", "Bio", "sigmundas", ""),
+            {},
+        )
     ]
-
-    dialog.deleteLater()
-    parent.deleteLater()
+    assert warning_calls
+    assert "session expired" in str(warning_calls[0][0][2]).lower()
 
 
 def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, qapp):

@@ -42,6 +42,12 @@ def _cloud_status_icon() -> QIcon:
     return QIcon()
 
 
+def _tag_text_color(background: QColor) -> str:
+    if background.isValid() and background.lightness() >= 180:
+        return "#000000"
+    return "#ffffff"
+
+
 class _PublishToggle(QLabel):
     """A simple icon-based toggle that mimics QCheckBox for publish selection."""
 
@@ -383,11 +389,15 @@ class ImageGalleryWidget(QGroupBox):
                     "image_number": item.get("image_number", idx + 1),
                     "badges": item.get("badges", []),
                     "center_badge": item.get("center_badge"),
+                    "microscope_tag_text": item.get("microscope_tag_text"),
+                    "microscope_tag_color": item.get("microscope_tag_color"),
                     "gps_tag_text": item.get("gps_tag_text"),
                     "gps_tag_highlight": item.get("gps_tag_highlight", False),
+                    "gps_tag_color": item.get("gps_tag_color"),
                     "publish_selected": publish_selected,
                     "publish_selected_default": item.get("publish_selected_default"),
                     "frame_border_color": item.get("frame_border_color"),
+                    "raw_halo_color": item.get("raw_halo_color"),
                     "cloud_id": item.get("cloud_id"),
                     "cloud_uploaded": item.get("cloud_uploaded"),
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
@@ -510,6 +520,9 @@ class ImageGalleryWidget(QGroupBox):
                     "has_measurements": bool(img_id and int(img_id) in measurement_image_ids),
                     "image_number": idx + 1,
                     "badges": badges,
+                    "microscope_tag_text": img.get("microscope_tag_text"),
+                    "microscope_tag_color": img.get("microscope_tag_color"),
+                    "gps_tag_color": img.get("gps_tag_color"),
                     "cloud_id": cloud_id or None,
                     "cloud_uploaded": bool(cloud_id and not cloud_tombstone_synced),
                     "cloud_tombstone_synced": cloud_tombstone_synced,
@@ -830,7 +843,20 @@ class ImageGalleryWidget(QGroupBox):
                 )
                 self._apply_frame_glow(frame, True)
         if self._selected_id is not None:
-            self.select_image(self._selected_id)
+            if self._multi_select and self._selected_keys:
+                if self._selected_id not in self._selected_keys:
+                    self._selected_id = None
+                    for item in self._items:
+                        key = self._item_key(item)
+                        if key in self._selected_keys:
+                            self._selected_id = item.get("id")
+                            break
+                self._last_clicked_index = self._index_for_key(self._selected_id)
+                self._apply_selection_styles()
+                if self._selected_id is not None:
+                    self._center_on_key(self._selected_id)
+            else:
+                self.select_image(self._selected_id)
         elif self._selected_keys:
             self._apply_selection_styles()
         if generation == self._render_generation and self._render_index < len(self._items):
@@ -883,18 +909,31 @@ class ImageGalleryWidget(QGroupBox):
         return QSize(120, self._min_height)
 
     def _frame_style(self, selected: bool = False, border_color: str | None = None) -> str:
-        border = border_color or ("#2980b9" if selected else "#bdc3c7")
+        border = "#2980b9" if selected else (border_color or "#bdc3c7")
         return (
             "QFrame { border: 2px solid %s; border-radius: 5px; background: white; }"
         ) % border
 
     @staticmethod
     def _apply_frame_glow(frame: QFrame, selected: bool, hovered: bool = False) -> None:
+        raw_halo_color = getattr(frame, "raw_halo_color", None)
         if selected:
             effect = QGraphicsDropShadowEffect(frame)
             effect.setBlurRadius(30)
             effect.setOffset(0, 0)
-            effect.setColor(QColor(52, 152, 219, 230))
+            effect_color = QColor(raw_halo_color) if raw_halo_color else QColor(52, 152, 219, 230)
+            if not effect_color.isValid():
+                effect_color = QColor(52, 152, 219, 230)
+            effect.setColor(effect_color)
+            frame.setGraphicsEffect(effect)
+        elif raw_halo_color:
+            effect = QGraphicsDropShadowEffect(frame)
+            effect.setBlurRadius(22)
+            effect.setOffset(0, 0)
+            effect_color = QColor(raw_halo_color)
+            if not effect_color.isValid():
+                effect_color = QColor(231, 76, 60, 190)
+            effect.setColor(effect_color)
             frame.setGraphicsEffect(effect)
         elif hovered:
             from PySide6.QtWidgets import QApplication
@@ -974,8 +1013,10 @@ class ImageGalleryWidget(QGroupBox):
 
         cloud_badge = None
         cloud_badge_visible = self._cloud_badge_visible(item)
+        microscope_tag_text = str(item.get("microscope_tag_text") or "").strip() or None
+        microscope_tag_color = item.get("microscope_tag_color")
         gps_tag_text = item.get("gps_tag_text")
-        if cloud_badge_visible or gps_tag_text:
+        if cloud_badge_visible:
             top_center = QWidget()
             top_center.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             top_center_layout = QVBoxLayout(top_center)
@@ -994,22 +1035,6 @@ class ImageGalleryWidget(QGroupBox):
                 cloud_badge.setToolTip(self.tr("Uploaded to Sporely Cloud"))
                 top_center_layout.addWidget(cloud_badge, 0, Qt.AlignHCenter)
 
-            if gps_tag_text:
-                gps_label = QLabel(str(gps_tag_text))
-                gps_highlight = bool(item.get("gps_tag_highlight"))
-                color = "#ffffff" if gps_highlight else "#000000"
-                background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
-                weight = "bold" if gps_highlight else "normal"
-                gps_label.setStyleSheet(
-                    f"color: {color}; background-color: {background};"
-                    f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: {weight};"
-                    f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
-                )
-                if self._compact_overlay:
-                    gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
-                gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-                top_center_layout.addWidget(gps_label, 0, Qt.AlignHCenter)
-
             image_layout.addWidget(top_center, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
 
         center_badge = str(item.get("center_badge") or "").strip()
@@ -1023,30 +1048,82 @@ class ImageGalleryWidget(QGroupBox):
             image_layout.addWidget(center_badge_label, 0, 0, alignment=Qt.AlignCenter)
 
         badges = item.get("badges") or []
-        if badges:
-            badge_container = QWidget()
-            badge_layout = QVBoxLayout(badge_container)
-            badge_layout.setContentsMargins(2, 2, 2, 2)
-            badge_layout.setSpacing(2)
+        clean_badges = [str(b).strip() for b in badges if b]
+        raw_badge_text = None
+        for idx in range(len(clean_badges) - 1, -1, -1):
+            if "raw" in clean_badges[idx].lower():
+                raw_badge_text = clean_badges.pop(idx)
+                break
 
-            def _make_badge(text: str, is_resize: bool) -> QLabel:
-                badge = QLabel(str(text))
-                badge.setStyleSheet(
-                    (
-                        "color: #ffffff; background-color: rgba(30, 132, 73, 210);"
-                        f"font-size: {pt(7)}pt; font-weight: bold; padding: 1px 4px; border-radius: 3px; border: none;"
-                    )
-                    if is_resize
-                    else (
-                        "color: #000000; background-color: rgba(255, 255, 255, 180);"
-                        f"font-size: {pt(7)}pt; padding: 1px 4px; border-radius: 3px; border: none;"
-                    )
+        def _make_badge(text: str, is_resize: bool) -> QLabel:
+            badge = QLabel(str(text))
+            badge.setStyleSheet(
+                (
+                    "color: #ffffff; background-color: rgba(30, 132, 73, 210);"
+                    f"font-size: {pt(7)}pt; font-weight: bold; padding: 1px 4px; border-radius: 3px; border: none;"
                 )
-                badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-                return badge
+                if is_resize
+                else (
+                    "color: #000000; background-color: rgba(255, 255, 255, 180);"
+                    f"font-size: {pt(7)}pt; padding: 1px 4px; border-radius: 3px; border: none;"
+                )
+            )
+            badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            return badge
 
-            clean_badges = [str(b).strip() for b in badges if b]
+        if microscope_tag_text:
+            bottom_left = QWidget()
+            bottom_left.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            bottom_left_layout = QVBoxLayout(bottom_left)
+            bottom_left_layout.setContentsMargins(2, 2, 2, 2)
+            bottom_left_layout.setSpacing(2)
+
+            microscope_label = QLabel(str(microscope_tag_text))
+            microscope_color = QColor(microscope_tag_color) if microscope_tag_color is not None else QColor("#3498db")
+            text_color = _tag_text_color(microscope_color)
+            if microscope_color.isValid():
+                microscope_color.setAlpha(220)
+                background = (
+                    f"rgba({microscope_color.red()}, {microscope_color.green()}, {microscope_color.blue()}, {microscope_color.alpha()})"
+                )
+            else:
+                background = "#3498db"
+            microscope_label.setStyleSheet(
+                f"color: {text_color}; background-color: {background};"
+                f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: bold;"
+                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
+            )
+            if self._compact_overlay:
+                microscope_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
+            microscope_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            bottom_left_layout.addWidget(microscope_label, 0, Qt.AlignLeft)
+
+            if raw_badge_text:
+                raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
+                bottom_left_layout.addWidget(raw_label, 0, Qt.AlignLeft)
+
             if clean_badges:
+                first_row = QHBoxLayout()
+                first_row.setContentsMargins(0, 0, 0, 0)
+                first_row.setSpacing(2)
+                first_row.addWidget(_make_badge(clean_badges[0], False))
+                consumed = 1
+                if len(clean_badges) > 1 and clean_badges[1] == "R":
+                    first_row.addWidget(_make_badge("R", True))
+                    consumed = 2
+                first_row.addStretch(1)
+                bottom_left_layout.addLayout(first_row)
+                for extra_text in clean_badges[consumed:]:
+                    bottom_left_layout.addWidget(_make_badge(extra_text, extra_text == "R"))
+
+            image_layout.addWidget(bottom_left, 0, 0, alignment=Qt.AlignBottom | Qt.AlignLeft)
+        else:
+            if clean_badges:
+                badge_container = QWidget()
+                badge_layout = QVBoxLayout(badge_container)
+                badge_layout.setContentsMargins(2, 2, 2, 2)
+                badge_layout.setSpacing(2)
+
                 first_row = QHBoxLayout()
                 first_row.setContentsMargins(0, 0, 0, 0)
                 first_row.setSpacing(2)
@@ -1059,7 +1136,51 @@ class ImageGalleryWidget(QGroupBox):
                 badge_layout.addLayout(first_row)
                 for extra_text in clean_badges[consumed:]:
                     badge_layout.addWidget(_make_badge(extra_text, extra_text == "R"))
-            image_layout.addWidget(badge_container, 0, 0, alignment=Qt.AlignBottom | Qt.AlignLeft)
+                image_layout.addWidget(badge_container, 0, 0, alignment=Qt.AlignBottom | Qt.AlignLeft)
+
+            if gps_tag_text or raw_badge_text:
+                bottom_right = QWidget()
+                bottom_right.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                bottom_right_layout = QVBoxLayout(bottom_right)
+                bottom_right_layout.setContentsMargins(0, 0, 0, 0)
+                bottom_right_layout.setSpacing(2)
+
+                if gps_tag_text:
+                    gps_label = QLabel(str(gps_tag_text))
+                    gps_highlight = bool(item.get("gps_tag_highlight"))
+                    gps_color = item.get("gps_tag_color")
+                    if gps_color is not None:
+                        color_value = QColor(gps_color)
+                        if color_value.isValid():
+                            color_value.setAlpha(220)
+                            background = (
+                                f"rgba({color_value.red()}, {color_value.green()}, {color_value.blue()}, {color_value.alpha()})"
+                            )
+                            color = "#ffffff"
+                            weight = "bold"
+                        else:
+                            color = "#ffffff" if gps_highlight else "#000000"
+                            background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
+                            weight = "bold" if gps_highlight else "normal"
+                    else:
+                        color = "#ffffff" if gps_highlight else "#000000"
+                        background = "#c0392b" if gps_highlight else "rgba(255, 255, 255, 77)"
+                        weight = "bold" if gps_highlight else "normal"
+                    gps_label.setStyleSheet(
+                        f"color: {color}; background-color: {background};"
+                        f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: {weight};"
+                        f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
+                    )
+                    if self._compact_overlay:
+                        gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
+                    gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                    bottom_right_layout.addWidget(gps_label, 0, Qt.AlignRight)
+
+                if raw_badge_text:
+                    raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
+                    bottom_right_layout.addWidget(raw_label, 0, Qt.AlignRight)
+
+                image_layout.addWidget(bottom_right, 0, 0, alignment=Qt.AlignBottom | Qt.AlignRight)
 
         overlay = QWidget()
         overlay_layout = QHBoxLayout(overlay)
@@ -1118,6 +1239,7 @@ class ImageGalleryWidget(QGroupBox):
         frame.image_path = item.get("filepath")
         frame.image_key = item.get("id") if item.get("id") is not None else item.get("filepath")
         frame.frame_border_color = item.get("frame_border_color")
+        frame.raw_halo_color = item.get("raw_halo_color")
         frame.thumb_label = thumb_label
         frame.publish_checkbox = publish_checkbox
         frame.cloud_badge = cloud_badge
@@ -1138,13 +1260,24 @@ class ImageGalleryWidget(QGroupBox):
                 self._selected_keys.add(self._selected_id)
             self._apply_selection_styles()
 
+    def is_multi_select(self) -> bool:
+        return bool(self._multi_select)
+
     def selected_paths(self) -> list[str]:
         selected = []
         for item in self._items:
             key = item.get("id") if item.get("id") is not None else item.get("filepath")
             if key in self._selected_keys:
-                selected.append(item.get("filepath"))
+                filepath = item.get("filepath")
+                if filepath:
+                    selected.append(str(filepath))
         return selected
+
+    def selected_keys(self) -> set[str | int]:
+        return set(self._selected_keys)
+
+    def center_on_key(self, key) -> None:
+        self._center_on_key(key)
 
     def select_paths(self, paths: list[str]) -> None:
         keys: set[str | int] = set()

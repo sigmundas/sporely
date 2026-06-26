@@ -2,10 +2,11 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 from PySide6.QtGui import QImage, QColor
 
 from ui.image_gallery_widget import ImageGalleryWidget
+from ui.adaptive_choice_selector import objective_color
 
 
 def qapp():
@@ -47,6 +48,73 @@ def test_build_gallery_badges_combines_image_and_raw_badges():
 
     assert badges[0] == "Micro"
     assert badges[-1] == "RAW-derived"
+
+
+def test_objective_color_matches_live_lab_palette():
+    assert objective_color(None, "4x") == "#e74c3c"
+    assert objective_color(None, "10x") == "#f1c40f"
+    assert objective_color(None, "40x") == "#3498db"
+    assert objective_color(None, "100x") == "#f7f1e5"
+
+
+def test_thumbnail_widget_renders_microscope_tag_above_raw_badge(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_items(
+        [
+            {
+                "id": 1,
+                "filepath": str(tmp_path / "placeholder.jpg"),
+                "badges": ["UNSAVED RAW", "Preview pending"],
+                "microscope_tag_text": "63x DIC",
+                "microscope_tag_color": "#1f4ea8",
+            }
+        ]
+    )
+    widget.resize(220, 180)
+    widget.show()
+    qapp.processEvents()
+
+    frame = widget._frames[0]
+    labels = {
+        label.text(): label
+        for label in frame.findChildren(QLabel)
+        if label.text() in {"63x DIC", "UNSAVED RAW", "Preview pending"}
+    }
+
+    assert "63x DIC" in labels
+    assert "UNSAVED RAW" in labels
+    assert labels["63x DIC"].geometry().y() < labels["UNSAVED RAW"].geometry().y()
+    assert labels["63x DIC"].geometry().x() <= labels["UNSAVED RAW"].geometry().x()
+    assert "color: #ffffff" in labels["63x DIC"].styleSheet()
+
+
+def test_thumbnail_widget_renders_light_100x_tag_with_black_text(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_items(
+        [
+            {
+                "id": 1,
+                "filepath": str(tmp_path / "placeholder.jpg"),
+                "badges": ["UNSAVED RAW"],
+                "microscope_tag_text": "100x DIC",
+                "microscope_tag_color": objective_color(None, "100x"),
+            }
+        ]
+    )
+    widget.resize(220, 180)
+    widget.show()
+    qapp.processEvents()
+
+    frame = widget._frames[0]
+    labels = {
+        label.text(): label
+        for label in frame.findChildren(QLabel)
+        if label.text() in {"100x DIC", "UNSAVED RAW"}
+    }
+
+    assert "100x DIC" in labels
+    assert "UNSAVED RAW" in labels
+    assert "color: #000000" in labels["100x DIC"].styleSheet()
 
 
 def test_observation_gallery_rows_include_raw_badges(monkeypatch):

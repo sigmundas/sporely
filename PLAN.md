@@ -26,61 +26,6 @@ Note that this is from a pro account, so I should not have seen this. Anyway, up
 
 I openend the app again, and microscope images still don't sync. I dunno if the error above blocks all syncs? I have a button for download missing cloud media, pressing that does not upload microscope images either..
 
-## Desktop ↔ Cloud Sync Foundation
-
-Goal: make `sporely-py`, `sporely-web`, Supabase, and R2 agree on image/calibration identity, deletion state, and file provenance before moving into multi-asset sync or full-resolution cloud storage.
-
-### Stage A — sporely-py local calibration UUID
-
-Status: Done.
-
-- Added `calibration_uuid` to local SQLite calibrations.
-- Backfilled existing rows.
-- Generated UUIDs for new calibrations.
-- Preserved UUIDs in export/import.
-- Validated UUIDs as canonical UUID text.
-
-### Stage B — Supabase calibration UUID
-
-Status: Done.
-
-- Added `calibration_uuid uuid` to `public.calibrations`.
-- Backfilled existing cloud rows.
-- Added default `gen_random_uuid()`.
-- Set `NOT NULL`.
-- Added uniqueness on `(user_id, calibration_uuid)`.
-- Did not add `desktop_id`.
-
-### Stage C — Metadata-only calibration sync
-
-Status: Done.
-
-- Sync calibration metadata by `calibration_uuid`.
-- Do not match by objective/date.
-- Do not silently overwrite same-UUID conflicts.
-- Keep local `image_filepath` out of cloud payloads.
-- Keep cloud `image_storage_path` out of local canonical paths.
-
-### Stage D1 — Calibration photo/reference-image design
-
-Status: Done.
-
-- Representative asset rule decided.
-- Local original vs cloud derivative rules decided.
-- Recovery/cache semantics deferred.
-
-### Stage D2 — Representative calibration derivative sync
-
-Status: Done.
-
-- Upload one web-friendly derivative/reference image per calibration.
-- Prefer `image_filepath`, then first readable `measurements_json.images[].path`.
-- Store relative cloud key in `public.calibrations.image_storage_path`.
-- Do not upload full-resolution originals.
-- Do not write cloud paths into local `image_filepath` or `measurements_json`.
-- Metadata sync still works when photo is missing.
-
-### Stage E1 — Image tombstone deletion model
 
 ### Stage E1b — Image tombstone sync cleanup
 
@@ -94,62 +39,7 @@ Status: in progress.
 - Do not classify a matched cloud tombstone as both “cloud removed” and “desktop-only copy.”
 - Keep bucket objects as retained cloud derivatives until media garbage collection is designed.
 
-### Stage E2 — Image provenance/source tags
 
-Status: Done.
-
-Purpose: define explicit provenance roles so the app does not confuse import sources, local working files, cloud derivatives, cloud recovery/cache files, and generated artifacts.
-
-Delivered coverage:
-
-- E2a: documented provenance vocabulary and rules.
-- E2b: added local-only image provenance columns.
-- E2c: tagged new imports/conversions.
-- E2d: tagged cloud recovery/cache files.
-- E2e: kept generated-artifact provenance vocabulary-only; the table/model is deferred to Stage H.
-- E2f: deferred cloud provenance fields to a later cloud contract/provenance stage if needed.
-
-Current local fields:
-
-- `source_role`
-- `file_purpose`
-- `original_mime_type`
-- `working_mime_type`
-- `original_filepath`
-
-Accepted vocabulary:
-
-`source_role`:
-- `import_source`
-- `local_canonical`
-- `converted_local`
-- `cloud_derivative`
-- `cloud_recovery_cache`
-- `generated_artifact`
-
-`file_purpose`:
-- `field`
-- `microscope`
-- `calibration`
-- `reference`
-- `plot`
-- `thumbnail`
-- `spore_crop`
-- `cache`
-
-Important rules:
-
-- HEIC is an import source.
-- `sporely-py` may convert HEIC to JPEG/PNG for local work.
-- `converted_local` can still be analysis-authoritative when it is the durable working copy.
-- Cloud WebP/JPEG files are derivatives/cache, not scientific originals.
-- Generated artifact provenance is vocabulary-only for now; persistence belongs to Stage H or a dedicated artifact-model stage.
-
-Deferred:
-- cloud provenance fields → later cloud contract/provenance stage, only if actually needed
-- full-resolution original sync → Stage I
-- generated artifact table/model → Stage H or separate artifact-model stage
-- multi-asset calibration provenance → Stage H
 
 ### Stage E3 — Cloud media garbage collection
 
@@ -239,6 +129,11 @@ TODO/UI: “Unable to save cloud login” is misleading; this is an account-link
 TODO/UI: Add a menu link to Pro info/payment on `sporely.no`; do not embed desktop checkout.
 
 Add a real Reset Cloud Sync / Reset Cloud Link tool, or remove that instruction from the account-mismatch message until the tool exists.
+
+### iNat/artsobs publishing
+- The plate layout changes for the upload picture. All bubbles will have images in them, even if I switch them off.
+- Scale bar does not show up on publishedi mages
+
 
 
 ## Taxonomy Lookup / Local Species DB

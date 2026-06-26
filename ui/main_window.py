@@ -161,6 +161,7 @@ from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
+from utils.cloud_sync import is_cloud_auth_error
 from .delegates import SpeciesItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
@@ -1215,11 +1216,6 @@ class SettingsHubDialog(QDialog):
         status_row.addWidget(self.cloud_sync_error_label, 0, Qt.AlignRight | Qt.AlignTop)
         cloud_sync_layout.addLayout(status_row)
 
-        self.cloud_sync_summary_label = QLabel("", cloud_sync_group)
-        self.cloud_sync_summary_label.setWordWrap(True)
-        self.cloud_sync_summary_label.setStyleSheet("color: #6b7280;")
-        cloud_sync_layout.addWidget(self.cloud_sync_summary_label)
-
         cloud_sync_button_row = QHBoxLayout()
         cloud_sync_button_row.setContentsMargins(0, 0, 0, 0)
         cloud_sync_button_row.setSpacing(8)
@@ -1231,36 +1227,11 @@ class SettingsHubDialog(QDialog):
             )
         )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
-        self.cloud_offline_media_button = QPushButton(
-            self.tr("Download missing cloud media for offline use"),
-            cloud_sync_group,
-        )
-        self.cloud_offline_media_button.clicked.connect(
-            lambda: self._request_settings_cloud_sync(
-                sync_images=False,
-                materialize_remote_images=True,
-            )
-        )
-        cloud_sync_button_row.addWidget(self.cloud_offline_media_button)
-        self.cloud_sync_details_button = QPushButton(self.tr("Details"), cloud_sync_group)
-        self.cloud_sync_details_button.clicked.connect(self._show_cloud_sync_details)
-        cloud_sync_button_row.addWidget(self.cloud_sync_details_button)
+        self.cloud_sync_log_button = QPushButton(self.tr("Sync log"), cloud_sync_group)
+        self.cloud_sync_log_button.clicked.connect(self._show_cloud_sync_details)
+        cloud_sync_button_row.addWidget(self.cloud_sync_log_button)
         cloud_sync_button_row.addStretch()
         cloud_sync_layout.addLayout(cloud_sync_button_row)
-
-        repair_row = QHBoxLayout()
-        repair_row.setContentsMargins(0, 0, 0, 0)
-        repair_row.setSpacing(8)
-        self.cloud_repair_calibration_conflicts_button = QPushButton(
-            self.tr("Repair calibration conflicts (local wins)"),
-            cloud_sync_group,
-        )
-        self.cloud_repair_calibration_conflicts_button.clicked.connect(
-            self._request_settings_calibration_conflict_repair
-        )
-        repair_row.addWidget(self.cloud_repair_calibration_conflicts_button)
-        repair_row.addStretch()
-        cloud_sync_layout.addLayout(repair_row)
         layout.addWidget(cloud_sync_group)
 
         layout.addStretch()
@@ -1906,18 +1877,27 @@ class SettingsHubDialog(QDialog):
         account_email = str(get_app_settings().get("cloud_user_email") or "").strip()
         try:
             user_info = client.fetch_current_user_info()
-        except Exception:
+        except Exception as exc:
+            if is_cloud_auth_error(exc):
+                self._clear_invalid_cloud_session()
+                return
             user_info = {}
         account_email = str(user_info.get("email") or account_email or "").strip()
         try:
             cloud_profile = client.fetch_profile()
-        except Exception:
+        except Exception as exc:
+            if is_cloud_auth_error(exc):
+                self._clear_invalid_cloud_session()
+                return
             cloud_profile = {}
         from utils.cloud_sync import fetch_cloud_usage_summary
 
         try:
             summary = fetch_cloud_usage_summary(client)
-        except Exception:
+        except Exception as exc:
+            if is_cloud_auth_error(exc):
+                self._clear_invalid_cloud_session()
+                return
             summary = {}
 
         if cloud_dialog is not None:
@@ -2026,16 +2006,6 @@ class SettingsHubDialog(QDialog):
         )
         running = self._settings_cloud_sync_running()
         sync_status = str(settings.get("cloud_last_sync_status") or "").strip().lower()
-        main_window = self._settings_hub_main_window()
-        blocked_ids: list[int] = []
-        if main_window is not None:
-            blocked_getter = getattr(main_window, "_cloud_sync_blocked_observation_ids", None)
-            if callable(blocked_getter):
-                try:
-                    blocked_ids = [int(value) for value in (blocked_getter() or []) if int(value) > 0]
-                except Exception:
-                    blocked_ids = []
-        summary = str(settings.get("cloud_last_sync_summary") or "").strip()
         error_count = max(0, int(settings.get("cloud_last_sync_error_count") or 0))
         error_messages = self._cloud_sync_error_messages(settings)
         last_sync_at = self._format_cloud_sync_timestamp(
@@ -2043,37 +2013,25 @@ class SettingsHubDialog(QDialog):
         )
         if running:
             status_text = self.tr("Syncing cloud metadata and media…")
-        elif sync_status in {"error", "blocked"} and (summary or error_messages):
-            status_text = summary or self.tr("Cloud sync failed.")
         elif not logged_in:
             status_text = self.tr("Sign in to use cloud sync.")
         elif last_sync_at:
             status_text = self.tr("Last sync: {timestamp}").format(timestamp=last_sync_at)
+        elif sync_status in {"error", "blocked"}:
+            status_text = self.tr("Cloud sync needs review.")
         else:
             status_text = self.tr("Ready to sync.")
         self.cloud_sync_status_label.setText(status_text)
-        self.cloud_sync_summary_label.setText(summary or self.tr("No sync summary yet."))
         self.cloud_sync_error_label.setVisible(error_count > 0 and bool(error_messages))
         if error_count > 0:
             self.cloud_sync_error_label.setText(self.tr("Errors: {count}").format(count=error_count))
         else:
             self.cloud_sync_error_label.setText("")
-        has_details = bool(error_messages) or bool(blocked_ids)
-        self.cloud_sync_details_button.setVisible(has_details)
-        self.cloud_sync_details_button.setEnabled(has_details and not running)
         self.cloud_sync_now_button.setEnabled(logged_in and not running)
-        self.cloud_offline_media_button.setEnabled(logged_in and not running)
-        self.cloud_repair_calibration_conflicts_button.setEnabled(logged_in and not running)
         if not logged_in:
             self.cloud_sync_now_button.setToolTip(self.tr("Sign in to sync cloud metadata and images."))
-            self.cloud_offline_media_button.setToolTip(self.tr("Sign in to download cloud media for offline use."))
-            self.cloud_repair_calibration_conflicts_button.setToolTip(
-                self.tr("Sign in to repair calibration conflicts in cloud metadata.")
-            )
         else:
             self.cloud_sync_now_button.setToolTip("")
-            self.cloud_offline_media_button.setToolTip("")
-            self.cloud_repair_calibration_conflicts_button.setToolTip("")
         cloud_dialog = getattr(self, "_artsobs_dialog", None)
         if cloud_dialog is not None:
             updater = getattr(cloud_dialog, "_update_cloud_controls", None)
@@ -2280,9 +2238,9 @@ class SettingsHubDialog(QDialog):
         else:
             QMessageBox.information(self, self.tr("Calibration Repair"), message)
 
-    def _build_cloud_sync_details_dialog(self, error_messages: list[str]) -> QDialog:
+    def _build_cloud_sync_details_dialog(self, lines: list[str]) -> QDialog:
         dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Cloud Sync Details"))
+        dialog.setWindowTitle(self.tr("Sync log"))
         dialog.setMinimumSize(560, 320)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -2290,7 +2248,7 @@ class SettingsHubDialog(QDialog):
 
         text = QPlainTextEdit(dialog)
         text.setReadOnly(True)
-        text.setPlainText("\n".join(error_messages))
+        text.setPlainText("\n".join(lines))
         text.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         layout.addWidget(text, 1)
         return dialog
@@ -2304,10 +2262,34 @@ class SettingsHubDialog(QDialog):
             except Exception:
                 pass
         settings = get_app_settings()
+        lines: list[str] = []
+        status = str(settings.get("cloud_last_sync_status") or "").strip()
+        summary = str(settings.get("cloud_last_sync_summary") or "").strip()
+        last_sync_at = ""
+        try:
+            last_sync_at = self._format_cloud_sync_timestamp(
+                settings.get("cloud_last_sync_at") or settings.get("cloud_last_pull_at")
+            )
+        except Exception:
+            last_sync_at = str(settings.get("cloud_last_sync_at") or settings.get("cloud_last_pull_at") or "").strip()
+        error_count = max(0, int(settings.get("cloud_last_sync_error_count") or 0))
         error_messages = self._cloud_sync_error_messages(settings)
-        if not error_messages:
-            return
-        self._build_cloud_sync_details_dialog(error_messages).exec()
+
+        if status:
+            lines.append(self.tr("Status: {status}").format(status=status))
+        if summary:
+            lines.append(self.tr("Summary: {summary}").format(summary=summary))
+        if last_sync_at:
+            lines.append(self.tr("Last sync: {timestamp}").format(timestamp=last_sync_at))
+        if error_count:
+            lines.append(self.tr("Errors: {count}").format(count=error_count))
+        if error_messages:
+            lines.append("")
+            lines.append(self.tr("Raw sync errors:"))
+            lines.extend(f"- {message}" for message in error_messages)
+        if not lines:
+            lines.append(self.tr("No cloud sync details are available yet."))
+        self._build_cloud_sync_details_dialog(lines).exec()
 
     def _on_cloud_login_changed(self, client=None, email: str | None = None) -> None:
         self._cloud_profile_loaded_user_id = ""
@@ -2371,9 +2353,20 @@ class SettingsHubDialog(QDialog):
     def _profile_sync_error_message(self, exc: Exception) -> str:
         text = str(exc or "").strip()
         lower = text.lower()
+        if is_cloud_auth_error(exc):
+            return self.tr("Your Sporely Cloud session expired. Please sign in again.")
         if "23505" in lower or "unique constraint" in lower or "duplicate key" in lower or ("username" in lower and "taken" in lower):
             return self.tr("That username is already taken. Please choose a different one.")
         return self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc)
+
+    def _clear_invalid_cloud_session(self) -> None:
+        try:
+            from utils.cloud_sync import SporelyCloudClient
+
+            SporelyCloudClient.clear_session()
+        except Exception:
+            pass
+        self._on_cloud_logout_changed()
 
     def _save_profile(self) -> bool:
         username = self._profile_username.text().strip().lstrip("@")
@@ -2398,6 +2391,8 @@ class SettingsHubDialog(QDialog):
                 )
                 self._cloud_profile_loaded_user_id = str(getattr(client, "user_id", "") or "").strip()
             except Exception as exc:
+                if is_cloud_auth_error(exc):
+                    self._clear_invalid_cloud_session()
                 QMessageBox.warning(
                     self,
                     self.tr("Profile Not Synced"),
@@ -6119,6 +6114,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             lines.append(self.tr("Summary: {summary}").format(summary=summary))
         if last_sync_at:
             lines.append(self.tr("Last sync: {timestamp}").format(timestamp=last_sync_at))
+        error_count = max(0, int(settings.get("cloud_last_sync_error_count") or 0))
+        if error_count:
+            lines.append(self.tr("Errors: {count}").format(count=error_count))
 
         try:
             error_messages = SettingsHubDialog._cloud_sync_error_messages(settings)
@@ -6151,7 +6149,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _build_cloud_sync_details_dialog(self) -> QDialog:
         dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Cloud Sync Details"))
+        dialog.setWindowTitle(self.tr("Sync log"))
         dialog.setMinimumSize(700, 420)
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         layout = QVBoxLayout(dialog)
@@ -12466,6 +12464,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             return QColor(52, 152, 219)
         match = re.search(r"(\d+)", str(name))
         mag = int(match.group(1)) if match else None
+        if mag in (100,):
+            return QColor("#f7f1e5")
         if mag in (10,):
             return QColor("#f1c40f")
         if mag in (16, 20, 25, 32):

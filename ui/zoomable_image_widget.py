@@ -2904,9 +2904,10 @@ class ZoomableImageLabel(QLabel):
             painter.setPen(Qt.NoPen)
             tag_color = QColor(bg_color)
             tag_color.setAlpha(200)
+            text_color = QColor("#000000") if tag_color.isValid() and tag_color.lightness() >= 180 else QColor("#ffffff")
             painter.setBrush(tag_color)
             painter.drawRoundedRect(tag_rect, 6, 6)
-            painter.setPen(Qt.white)
+            painter.setPen(text_color)
             painter.drawText(tag_rect, Qt.AlignCenter, text)
             return tag_rect.bottom() + 6
 

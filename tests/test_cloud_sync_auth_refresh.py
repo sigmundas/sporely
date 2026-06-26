@@ -102,6 +102,18 @@ def test_cloud_request_auth_refresh_failure_is_temporarily_unavailable(monkeypat
         client._get("observations?limit=1&select=id")
 
 
+def test_cloud_auth_error_detects_auth_refresh_failure():
+    try:
+        raise cloud_sync.CloudSyncError("GET https://example.test/rest/v1/profiles status=401: auth refresh failed")
+    except cloud_sync.CloudSyncError as cause:
+        error = cloud_sync.CloudTemporarilyUnavailableError(
+            "Supabase/cloud sync is temporarily unavailable; local data was not overwritten."
+        )
+        error.__cause__ = cause
+
+    assert cloud_sync.is_cloud_auth_error(error) is True
+
+
 def test_pull_observation_identifications_schema_cache_error_is_temporarily_unavailable(monkeypatch):
     client = cloud_sync.SporelyCloudClient("access-token", "user-123")
 

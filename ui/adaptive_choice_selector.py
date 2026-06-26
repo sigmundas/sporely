@@ -216,6 +216,9 @@ class AdaptiveChoiceSelector(QWidget):
             return None
         return self._buttons[index]
 
+    def selected_item(self) -> ChoiceItem | None:
+        return self._item_at(self._current_index)
+
     def selected_value(self, fallback: Any | None = None) -> Any | None:
         data = self.currentData()
         return fallback if data is None else data
@@ -337,6 +340,8 @@ class AdaptiveChoiceSelector(QWidget):
         return QColor(tokens["accent"])
 
     def _contrast_text_color(self, background: QColor) -> str:
+        if background.isValid() and background.lightness() >= 180:
+            return "#000000"
         dark = QColor("#1f2937")
         white = QColor("#ffffff")
         return white.name() if self._contrast_ratio(background, white) >= self._contrast_ratio(background, dark) else dark.name()
@@ -363,7 +368,7 @@ class AdaptiveChoiceSelector(QWidget):
         return f"rgba({color.red()}, {color.green()}, {color.blue()}, {alpha})"
 
     def _is_unset_choice_item(self, item: ChoiceItem) -> bool:
-        for part in (item.pill_text, item.display_text, item.tooltip):
+        for part in (item.value, item.pill_text, item.display_text, item.tooltip):
             text = str(part or "").strip().lower()
             if text in {"-", "—", "not set", "not_set"}:
                 return True
@@ -551,11 +556,14 @@ class AdaptiveChoiceSelector(QWidget):
         self._apply_index(int(index), emit=not self.signalsBlocked())
 
     def _on_button_clicked(self, button: QPushButton) -> None:
+        choice_index = button.property("choiceIndex")
+        try:
+            index = int(choice_index) if choice_index is not None else -1
+        except Exception:
+            index = -1
         if self.signalsBlocked():
-            index = int(button.property("choiceIndex") or -1)
             self._apply_index(index, emit=False)
             return
-        index = int(button.property("choiceIndex") or -1)
         self._apply_index(index, emit=True)
 
     def _syncing_from_user(self) -> bool:
@@ -652,25 +660,23 @@ def objective_color(obj: Any, fallback_key: str | None = None) -> str:
     if objective_is_macro_profile(obj, fallback_key):
         return "#6b7280"
     if magnification is None:
-        return "#4d7c7a"
-    bands = (
-        (1.5, "#1f1f1f"),
-        (3.0, "#8f9398"),
-        # Keep 4x in the neutral band; reserve red for the slightly higher low-power range.
-        (4.5, "#4d7c7a"),
-        (5.5, "#d64545"),
-        (12.0, "#f1c40f"),
-        (22.0, "#2ecc71"),
-        (35.0, "#16a085"),
-        (55.0, "#5dade2"),
-        (70.0, "#1f4ea8"),
-    )
-    for threshold, color in bands:
-        if magnification <= threshold:
-            return color
-    if magnification >= 90.0:
-        return "#f7f7f7"
-    return "#1f4ea8"
+        return "#3498db"
+    mag = int(round(float(magnification)))
+    if mag in (100,):
+        return "#f7f1e5"
+    if mag in (10,):
+        return "#f1c40f"
+    if mag in (16, 20, 25, 32):
+        return "#2ecc71"
+    if mag in (40, 50):
+        return "#3498db"
+    if mag in (63,):
+        return "#1f4ea8"
+    if mag in (4, 5):
+        return "#e74c3c"
+    if mag in (6,):
+        return "#f39c12"
+    return "#3498db"
 
 
 def objective_is_macro_profile(obj: Any, fallback_key: str | None = None) -> bool:

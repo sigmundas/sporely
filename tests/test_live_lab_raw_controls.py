@@ -13,9 +13,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QLabel, QLineEdit, QPushButton, QSlider, QToolButton, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QToolButton, QWidget
+from PySide6.QtTest import QTest
 
 import ui.live_lab_tab as live_lab_tab
+from ui.adaptive_choice_selector import AdaptiveChoiceSelector
 from ui.raw_processing_controls import RawProcessingControls
 from ui.segmented_selector import SegmentedSelector
 from utils.raw_render import RawRenderSettings, RawRenderingUnavailableError
@@ -28,6 +30,25 @@ def _qapp():
     return app
 
 
+def _show_selector_in_pill_mode(qapp, selector: AdaptiveChoiceSelector, *, width: int = 1100) -> QWidget:
+    container = QWidget()
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(selector)
+    container.resize(width, 48)
+    container.show()
+    qapp.processEvents()
+    QTest.qWait(150)
+    assert selector.display_mode() == "pill"
+    return container
+
+
+def _click_and_settle(qapp, button) -> None:
+    QTest.mouseClick(button, Qt.LeftButton)
+    qapp.processEvents()
+    QTest.qWait(150)
+
+
 def _build_raw_controls_state() -> SimpleNamespace:
     state = SimpleNamespace()
     state.RAW_CAPTURE_MODE_AUTO_SAVE = live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE
@@ -36,6 +57,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state.SESSION_MODE_OFFLINE = live_lab_tab.LiveLabTab.SESSION_MODE_OFFLINE
     state.RAW_BACKGROUND_WB_SAMPLE_SIZE = live_lab_tab.LiveLabTab.RAW_BACKGROUND_WB_SAMPLE_SIZE
     state.SETTING_RAW_CAPTURE_MODE = live_lab_tab.LiveLabTab.SETTING_RAW_CAPTURE_MODE
+    state.SETTING_LAST_OBJECTIVE = live_lab_tab.LiveLabTab.SETTING_LAST_OBJECTIVE
     state.SETTING_RAW_PROCESSING_PRESET_PREFIX = live_lab_tab.LiveLabTab.SETTING_RAW_PROCESSING_PRESET_PREFIX
     state._raw_render_settings = RawRenderSettings.default()
     state._raw_capture_mode = live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_AUTO_SAVE
@@ -72,6 +94,13 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state.sample_combo = QComboBox()
     state.sample_combo.addItem("Not set", "Not_set")
     state.sample_combo.addItem("Spore", "spore")
+    def _combo_value(combo):
+        try:
+            value = combo.currentData()
+        except Exception:
+            value = None
+        return value
+
     state.pending_raw_frame = QFrame()
     state.pending_raw_count_label = QLabel()
     state.pending_raw_save_btn = QPushButton("Save current")
@@ -100,6 +129,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
         crop_box=None,
         crop_preview=None,
         cursor=Qt.ArrowCursor,
+        objective_text=None,
+        objective_color=None,
         set_image_sources=lambda pixmap, *args, **kwargs: setattr(state.live_image_label, "original_pixmap", pixmap),
         set_microns_per_pixel=lambda *args, **kwargs: None,
         set_scale_bar=lambda *args, **kwargs: None,
@@ -108,6 +139,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
         set_crop_overlay_style=lambda *args, **kwargs: None,
         clear_crop_box=lambda: (setattr(state.live_image_label, "crop_box", None), setattr(state.live_image_label, "crop_preview", None)),
         set_crop_box=lambda box: setattr(state.live_image_label, "crop_box", box),
+        set_objective_text=lambda text: setattr(state.live_image_label, "objective_text", text),
+        set_objective_color=lambda color: setattr(state.live_image_label, "objective_color", color),
         _normalized_crop_box_from_points=lambda start, end: (
             min(float(start.x()), float(end.x())),
             min(float(start.y()), float(end.y())),
@@ -121,22 +154,62 @@ def _build_raw_controls_state() -> SimpleNamespace:
         get_current_view_crop_rect=lambda: None,
         setCursor=lambda cursor: setattr(state.live_image_label, "cursor", cursor),
     )
+    def _gallery_item_key(item):
+        return item.get("id") if item.get("id") is not None else item.get("filepath")
+
+    def _gallery_select_paths(paths):
+        normalized_paths = {str(path) for path in (paths or []) if path}
+        selected_keys = set()
+        first_selected = None
+        for item in state.session_gallery.items:
+            filepath = item.get("filepath")
+            if filepath in normalized_paths:
+                key = _gallery_item_key(item)
+                selected_keys.add(key)
+                if first_selected is None:
+                    first_selected = key
+        state.session_gallery._selected_keys = selected_keys
+        state.session_gallery.selected = first_selected
+        state.session_gallery._centered_on = first_selected
+
+    def _gallery_selected_paths():
+        selected = []
+        for item in state.session_gallery.items:
+            key = _gallery_item_key(item)
+            if key in state.session_gallery._selected_keys and item.get("filepath"):
+                selected.append(str(item.get("filepath")))
+        return selected
+
     state.session_gallery = SimpleNamespace(
         items=[],
         selected=None,
         visible=False,
         invalidated_paths=[],
+        _multi_select=False,
+        _selected_keys=set(),
+        _centered_on=None,
         clear=lambda: (
             state.session_gallery.items.clear(),
             setattr(state.session_gallery, "visible", False),
             setattr(state.session_gallery, "selected", None),
+            setattr(state.session_gallery, "_selected_keys", set()),
         ),
         set_items=lambda items: setattr(state.session_gallery, "items", list(items)) or setattr(
             state.session_gallery,
             "visible",
             bool(items),
         ),
-        select_image=lambda image_id: setattr(state.session_gallery, "selected", image_id),
+        select_image=lambda image_id: (
+            setattr(state.session_gallery, "selected", image_id),
+            setattr(state.session_gallery, "_selected_keys", {image_id} if image_id is not None else set()),
+            setattr(state.session_gallery, "_centered_on", image_id),
+        ),
+        selected_keys=lambda: set(state.session_gallery._selected_keys),
+        selected_paths=_gallery_selected_paths,
+        select_paths=_gallery_select_paths,
+        set_multi_select=lambda enabled: setattr(state.session_gallery, "_multi_select", bool(enabled)),
+        is_multi_select=lambda: bool(state.session_gallery._multi_select),
+        center_on_key=lambda key: setattr(state.session_gallery, "_centered_on", key),
         invalidate_pixmap_cache=lambda path=None: state.session_gallery.invalidated_paths.append(str(path) if path is not None else None),
     )
     state.pending_raw_gallery = state.session_gallery
@@ -176,6 +249,35 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._raw_settings_info_text = lambda settings: live_lab_tab.LiveLabTab._raw_settings_info_text(state, settings)
     state._raw_processing_summary_text = lambda: live_lab_tab.LiveLabTab._raw_processing_summary_text(state)
     state._refresh_raw_processing_context_ui = lambda: live_lab_tab.LiveLabTab._refresh_raw_processing_context_ui(state)
+    state._session_gallery_selected_keys = lambda: live_lab_tab.LiveLabTab._session_gallery_selected_keys(state)
+    state._objective_key_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._objective_key_from_metadata(state, metadata)
+    state._microscope_state_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._microscope_state_from_metadata(state, metadata)
+    state._apply_microscope_state_to_controls = lambda metadata: live_lab_tab.LiveLabTab._apply_microscope_state_to_controls(
+        state,
+        metadata,
+    )
+    state._selected_raw_processing_targets = lambda: live_lab_tab.LiveLabTab._selected_raw_processing_targets(state)
+    state._preserve_raw_wb_fields = lambda base_settings, resolved_settings: live_lab_tab.LiveLabTab._preserve_raw_wb_fields(
+        base_settings,
+        resolved_settings,
+    )
+    state._apply_raw_settings_to_pending_capture = lambda capture, settings: live_lab_tab.LiveLabTab._apply_raw_settings_to_pending_capture(
+        state,
+        capture,
+        settings,
+    )
+    state._sync_selected_pending_raw_metadata_from_controls = lambda: live_lab_tab.LiveLabTab._sync_selected_pending_raw_metadata_from_controls(state)
+    state._selected_pending_raw_captures = lambda: live_lab_tab.LiveLabTab._selected_pending_raw_captures(state)
+    state._update_viewer_objective_tag = lambda metadata=None, use_current_state=False: live_lab_tab.LiveLabTab._update_viewer_objective_tag(
+        state,
+        metadata,
+        use_current_state=use_current_state,
+    )
+    state._refresh_viewer_objective_tag_from_current_state = lambda *_args: live_lab_tab.LiveLabTab._refresh_viewer_objective_tag_from_current_state(
+        state,
+        *_args,
+    )
+    state._selected_combo_value = lambda combo: live_lab_tab.LiveLabTab._selected_combo_value(combo)
     state._update_raw_processing_section_label = lambda expanded: live_lab_tab.LiveLabTab._update_raw_processing_section_label(state, expanded)
     state._lab_state_combo_alert_stylesheet = lambda: live_lab_tab.LiveLabTab._lab_state_combo_alert_stylesheet(state)
     state._combo_is_unset = lambda combo: live_lab_tab.LiveLabTab._combo_is_unset(combo)
@@ -298,7 +400,19 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._delete_current_raw_review_item = lambda: live_lab_tab.LiveLabTab._delete_current_raw_review_item(state)
     state._apply_current_raw_settings_to_all_pending = lambda: live_lab_tab.LiveLabTab._apply_current_raw_settings_to_all_pending(state)
     state._finalize_local_ingest = lambda *args, **kwargs: live_lab_tab.LiveLabTab._finalize_local_ingest(state, *args, **kwargs)
-    state._current_lab_metadata = lambda: {"image_type": "microscope"}
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "objective_name": _combo_value(state.objective_combo),
+        "objective_label": str(state.objective_combo.currentText() or "").strip() or None,
+        "contrast": _combo_value(state.contrast_combo),
+        "contrast_label": str(state.contrast_combo.currentText() or "").strip() or None,
+        "mount_medium": _combo_value(state.mount_combo),
+        "mount_label": str(state.mount_combo.currentText() or "").strip() or None,
+        "stain": _combo_value(state.stain_combo),
+        "stain_label": str(state.stain_combo.currentText() or "").strip() or None,
+        "sample_type": _combo_value(state.sample_combo),
+        "sample_label": str(state.sample_combo.currentText() or "").strip() or None,
+    }
     state._scientific_name_text = lambda observation=None: live_lab_tab.LiveLabTab._scientific_name_text(state, observation)
     state._vernacular_name_text = lambda observation=None: live_lab_tab.LiveLabTab._vernacular_name_text(state, observation)
     state._show_status = lambda *args, **kwargs: None
@@ -523,6 +637,66 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Auto WB · levels off · Curve 45 / mid 48"
     assert saved_settings[-1][0] == state._raw_processing_settings_key()
     assert json.loads(saved_settings[-1][1])["white_balance_mode"] == "auto"
+
+
+def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+
+    monkeypatch.setattr(
+        live_lab_tab,
+        "load_objectives",
+        lambda: {
+            "40x": {
+                "magnification": 40.0,
+                "objective_name": "Plan Apo",
+                "name": "40X Plan Apo",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        live_lab_tab,
+        "resolve_objective_key",
+        lambda name, objectives: "40x" if "40" in str(name) else None,
+    )
+
+    metadata = {
+        "lab_metadata": {
+            "objective_label": "40x / 0.95 Plan Apo",
+            "contrast": "phase",
+        }
+    }
+
+    state_data = live_lab_tab.LiveLabTab._microscope_state_from_metadata(state, metadata)
+    tag_text, tag_color = live_lab_tab.LiveLabTab._microscope_tag_for_metadata(state, metadata)
+
+    assert state_data["objective_name"] == "40x"
+    assert tag_text == "40x"
+    assert tag_color == "#3498db"
+
+
+def test_live_lab_viewer_objective_tag_tracks_current_controls(monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    state.SETTING_LAST_OBJECTIVE = live_lab_tab.LiveLabTab.SETTING_LAST_OBJECTIVE
+    state.objective_combo.addItem("40x", "40x")
+    state.objective_combo.setCurrentIndex(1)
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "objective_name": state.objective_combo.currentData(),
+        "objective_label": state.objective_combo.currentText(),
+    }
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    captured: dict[str, object] = {}
+    state.live_image_label = SimpleNamespace(
+        set_objective_text=lambda text: captured.__setitem__("text", text),
+        set_objective_color=lambda color: captured.__setitem__("color", QColor(color).name()),
+    )
+
+    live_lab_tab.LiveLabTab._save_objective_selection(state)
+
+    assert captured["text"] == "40x"
 
 
 def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_path, monkeypatch):
@@ -1415,6 +1589,57 @@ def test_live_lab_current_lab_state_unset_combo_is_alert_styled():
     assert state.sample_combo.property("labStateAlert") is True
 
 
+def test_live_lab_microscope_pill_rows_clear_alert_for_real_first_values():
+    qapp = _qapp()
+    state = SimpleNamespace()
+    state.objective_combo = AdaptiveChoiceSelector(compact=True)
+    state.objective_combo.addItem("4x", "4x", pillText="4x")
+    state.objective_combo.addItem("10x", "10x", pillText="10x")
+    state.contrast_combo = AdaptiveChoiceSelector(compact=True)
+    state.contrast_combo.addItem("BF", "BF", pillText="BF")
+    state.contrast_combo.addItem("DIC", "DIC", pillText="DIC")
+    objective_container = _show_selector_in_pill_mode(qapp, state.objective_combo)
+    contrast_container = _show_selector_in_pill_mode(qapp, state.contrast_combo)
+    state._update_lab_state_combo_alerts = lambda *_args: live_lab_tab.LiveLabTab._update_lab_state_combo_alerts(state, *_args)
+
+    try:
+        objective_10x = state.objective_combo.button_for_value("10x")
+        objective_4x = state.objective_combo.button_for_value("4x")
+        contrast_dic = state.contrast_combo.button_for_value("DIC")
+        contrast_bf = state.contrast_combo.button_for_value("BF")
+        assert objective_10x is not None
+        assert objective_4x is not None
+        assert contrast_dic is not None
+        assert contrast_bf is not None
+
+        state._update_lab_state_combo_alerts()
+        assert state.objective_combo.property("labStateAlert") is False
+        assert state.objective_combo.combo().property("labStateAlert") is False
+        assert state.contrast_combo.property("labStateAlert") is False
+        assert state.contrast_combo.combo().property("labStateAlert") is False
+
+        _click_and_settle(qapp, objective_10x)
+        _click_and_settle(qapp, objective_4x)
+        state._update_lab_state_combo_alerts()
+        assert state.objective_combo.currentIndex() == 0
+        assert state.objective_combo.currentData() == "4x"
+        assert live_lab_tab.LiveLabTab._combo_is_unset(state.objective_combo) is False
+        assert state.objective_combo.property("labStateAlert") is False
+        assert state.objective_combo.combo().property("labStateAlert") is False
+
+        _click_and_settle(qapp, contrast_dic)
+        _click_and_settle(qapp, contrast_bf)
+        state._update_lab_state_combo_alerts()
+        assert state.contrast_combo.currentIndex() == 0
+        assert state.contrast_combo.currentData() == "BF"
+        assert live_lab_tab.LiveLabTab._combo_is_unset(state.contrast_combo) is False
+        assert state.contrast_combo.property("labStateAlert") is False
+        assert state.contrast_combo.combo().property("labStateAlert") is False
+    finally:
+        objective_container.close()
+        contrast_container.close()
+
+
 def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tmp_path, monkeypatch):
     _qapp()
     source_path = tmp_path / "P070020_1.ORF"
@@ -1850,7 +2075,6 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     state._session_image_ids = []
     state._selected_session_image_id = None
     state._session_import_count = 0
-    state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
     state._raw_processing_preset_context = lambda: {}
     state._show_status = lambda *args, **kwargs: None
     state._clear_session_viewer = lambda *args, **kwargs: None
@@ -1860,6 +2084,59 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     state._refresh_main_window_after_import = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._log_session_event = lambda *args, **kwargs: None
+    monkeypatch.setattr(
+        live_lab_tab,
+        "load_objectives",
+        lambda: {
+            "10x": {"magnification": 10.0, "name": "10x"},
+            "63x": {"magnification": 63.0, "name": "63x"},
+        },
+    )
+    monkeypatch.setattr(
+        live_lab_tab,
+        "resolve_objective_key",
+        lambda name, objectives: str(name) if str(name) in objectives else None,
+    )
+
+    for combo, values in (
+        (state.objective_combo, [("10x", "10x"), ("63x", "63x")]),
+        (state.contrast_combo, [("BF", "BF"), ("DIC", "DIC")]),
+        (state.mount_combo, [("Water", "Water"), ("KOH", "KOH")]),
+        (state.stain_combo, [("Not set", "Not_set"), ("Congo Red", "Congo_Red")]),
+        (state.sample_combo, [("Not set", "Not_set"), ("Dried", "Dried")]),
+    ):
+        combo.clear()
+        for label, value in values:
+            combo.addItem(label, value)
+
+    first_metadata = {
+        "image_type": "microscope",
+        "objective_name": "10x",
+        "objective_label": "10x",
+        "contrast": "BF",
+        "contrast_label": "BF",
+        "mount_medium": "Water",
+        "mount_label": "Water",
+        "stain": "Not_set",
+        "stain_label": "Not set",
+        "sample_type": "Not_set",
+        "sample_label": "Not set",
+    }
+    second_metadata = {
+        "image_type": "microscope",
+        "objective_name": "63x",
+        "objective_label": "63x",
+        "contrast": "DIC",
+        "contrast_label": "DIC",
+        "mount_medium": "KOH",
+        "mount_label": "KOH",
+        "stain": "Congo_Red",
+        "stain_label": "Congo Red",
+        "sample_type": "Dried",
+        "sample_label": "Dried",
+    }
+
+    state._current_lab_metadata = lambda: first_metadata
     state.raw_capture_mode_selector.set_selected_value(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
     state._on_raw_capture_mode_changed(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
 
@@ -1876,11 +2153,19 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
+    state._current_lab_metadata = lambda: second_metadata
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
 
     assert len(state.session_gallery.items) == 2
     assert state.session_gallery.selected == f"pending:{source_two}"
     assert state.viewer_title_label.text().startswith("Pending RAW 2 of 2")
+    assert state.session_gallery.items[0]["microscope_tag_text"] == "10x BF"
+    assert state.session_gallery.items[1]["microscope_tag_text"] == "63x DIC"
+    assert state.objective_combo.currentData() == "63x"
+    assert state.contrast_combo.currentData() == "DIC"
+    assert state.mount_combo.currentData() == "KOH"
+    assert state.stain_combo.currentData() == "Congo_Red"
+    assert state.sample_combo.currentData() == "Dried"
 
     first_item = state.session_gallery.items[0]
     live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, first_item["id"], first_item["filepath"])
@@ -1888,6 +2173,188 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     assert state._selected_pending_raw_index == 0
     assert state.session_gallery.selected == f"pending:{source_one}"
     assert state.viewer_title_label.text().startswith("Pending RAW 1 of 2")
+    assert state.objective_combo.currentData() == "10x"
+    assert state.contrast_combo.currentData() == "BF"
+    assert state.mount_combo.currentData() == "Water"
+    assert state.stain_combo.currentData() == "Not_set"
+    assert state.sample_combo.currentData() == "Not_set"
+
+
+def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_microscope_changes_to_selected_pending_captures(tmp_path, monkeypatch):
+    _qapp()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_three = tmp_path / "P070022_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    source_three.write_bytes(b"raw-3")
+
+    preview_one = tmp_path / "previews" / "P070020_1_preview.jpg"
+    preview_two = tmp_path / "previews" / "P070021_1_preview.jpg"
+    preview_three = tmp_path / "previews" / "P070022_1_preview.jpg"
+    preview_one.parent.mkdir(parents=True, exist_ok=True)
+    preview_one.write_text("preview-1", encoding="utf-8")
+    preview_two.write_text("preview-2", encoding="utf-8")
+    preview_three.write_text("preview-3", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = []
+    state._selected_session_image_id = None
+    state._session_import_count = 0
+    state._session_id = "session-1"
+    state._active_session_mode = live_lab_tab.LiveLabTab.SESSION_MODE_LIVE
+    state._pending_stop_status = None
+    state._watcher = None
+    state._pending_raw_captures = [
+        live_lab_tab.PendingRawCapture(
+            source_path=source_one,
+            companion_jpeg_path=None,
+            lab_metadata={
+                "image_type": "microscope",
+                "objective_name": "4x",
+                "objective_label": "4x",
+                "contrast": "BF",
+                "contrast_label": "BF",
+                "mount_medium": "Water",
+                "mount_label": "Water",
+                "stain": "Not_set",
+                "stain_label": "Not set",
+                "sample_type": "Not_set",
+                "sample_label": "Not set",
+            },
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_one,
+            group_key="group-1",
+        ),
+        live_lab_tab.PendingRawCapture(
+            source_path=source_two,
+            companion_jpeg_path=None,
+            lab_metadata={
+                "image_type": "microscope",
+                "objective_name": "40x",
+                "objective_label": "40x",
+                "contrast": "DIC",
+                "contrast_label": "DIC",
+                "mount_medium": "KOH",
+                "mount_label": "KOH",
+                "stain": "Congo_Red",
+                "stain_label": "Congo Red",
+                "sample_type": "Dried",
+                "sample_label": "Dried",
+            },
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_two,
+            group_key="group-2",
+        ),
+        live_lab_tab.PendingRawCapture(
+            source_path=source_three,
+            companion_jpeg_path=None,
+            lab_metadata={
+                "image_type": "microscope",
+                "objective_name": "63x",
+                "objective_label": "63x",
+                "contrast": "Phase",
+                "contrast_label": "Phase",
+                "mount_medium": "Water",
+                "mount_label": "Water",
+                "stain": "Not_set",
+                "stain_label": "Not set",
+                "sample_type": "Not_set",
+                "sample_label": "Not set",
+            },
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_three,
+            group_key="group-3",
+        ),
+    ]
+    state._selected_pending_raw_index = 0
+    state._pending_companion_groups = {
+        "group-1": {"paths": {"ignored-1"}, "timer": None},
+        "group-2": {"paths": {"ignored-2"}, "timer": None},
+        "group-3": {"paths": {"ignored-3"}, "timer": None},
+    }
+    state._consumed_companion_groups = {"group-1", "group-2", "group-3"}
+    state._pending_raw_preview_timer = SimpleNamespace(stop=lambda: None, start=lambda _ms: None)
+    state._cancel_raw_edit_session = lambda restore_selection=False: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state._update_session_controls = lambda: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._update_observation_thumbnail = lambda: None
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "objective_name": state.objective_combo.currentData(),
+        "objective_label": str(state.objective_combo.currentText() or "").strip() or None,
+        "contrast": state.contrast_combo.currentData(),
+        "contrast_label": str(state.contrast_combo.currentText() or "").strip() or None,
+        "mount_medium": state.mount_combo.currentData(),
+        "mount_label": str(state.mount_combo.currentText() or "").strip() or None,
+        "stain": state.stain_combo.currentData(),
+        "stain_label": str(state.stain_combo.currentText() or "").strip() or None,
+        "sample_type": state.sample_combo.currentData(),
+        "sample_label": str(state.sample_combo.currentText() or "").strip() or None,
+    }
+
+    for combo, values in (
+        (state.objective_combo, [("4x", "4x"), ("100x", "100x"), ("40x", "40x"), ("63x", "63x")]),
+        (state.contrast_combo, [("BF", "BF"), ("DIC", "DIC"), ("Phase", "Phase")]),
+        (state.mount_combo, [("Water", "Water"), ("KOH", "KOH")]),
+        (state.stain_combo, [("Not set", "Not_set"), ("Congo Red", "Congo_Red")]),
+        (state.sample_combo, [("Not set", "Not_set"), ("Dried", "Dried")]),
+    ):
+        combo.clear()
+        for label, value in values:
+            combo.addItem(label, value)
+
+    state.session_gallery.set_multi_select(True)
+    state._refresh_session_gallery()
+    state.session_gallery.select_paths([str(source_one), str(source_two)])
+
+    expected_selected_keys = {
+        f"pending:{source_one}",
+        f"pending:{source_two}",
+    }
+    assert state.session_gallery.selected_keys() == expected_selected_keys
+
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+    assert state.session_gallery.selected_keys() == expected_selected_keys
+    assert {capture.source_path for capture in state._selected_pending_raw_captures()} == {source_one, source_two}
+    assert state.live_image_label.objective_text == "4x BF"
+
+    state.objective_combo.setCurrentIndex(1)
+    state.contrast_combo.setCurrentIndex(1)
+    assert live_lab_tab.LiveLabTab._sync_selected_pending_raw_metadata_from_controls(state) is True
+
+    assert state.session_gallery.selected_keys() == expected_selected_keys
+    assert {capture.source_path for capture in state._selected_pending_raw_captures()} == {source_one, source_two}
+
+    first_pending, second_pending, third_pending = state._pending_raw_captures
+    assert first_pending.lab_metadata["objective_name"] == "100x"
+    assert first_pending.lab_metadata["contrast"] == "DIC"
+    assert first_pending.lab_metadata["mount_medium"] == "Water"
+    assert first_pending.lab_metadata["stain"] == "Not_set"
+    assert first_pending.lab_metadata["sample_type"] == "Not_set"
+    assert second_pending.lab_metadata["objective_name"] == "100x"
+    assert second_pending.lab_metadata["contrast"] == "DIC"
+    assert second_pending.lab_metadata["mount_medium"] == "Water"
+    assert second_pending.lab_metadata["stain"] == "Not_set"
+    assert second_pending.lab_metadata["sample_type"] == "Not_set"
+    assert third_pending.lab_metadata["objective_name"] == "63x"
+    assert third_pending.lab_metadata["contrast"] == "Phase"
+    assert third_pending.lab_metadata["mount_medium"] == "Water"
+    assert third_pending.lab_metadata["stain"] == "Not_set"
+    assert third_pending.lab_metadata["sample_type"] == "Not_set"
+    assert state.session_gallery.items[0]["microscope_tag_text"] == "100x DIC"
+    assert state.session_gallery.items[1]["microscope_tag_text"] == "100x DIC"
+    assert state.session_gallery.items[2]["microscope_tag_text"] == "63x Phase"
+    assert state.session_gallery.items[0]["microscope_tag_color"] == "#f7f1e5"
+    assert state.live_image_label.objective_text == "100x DIC"
+    assert state.live_image_label.objective_color == "#f7f1e5"
 
 
 def test_live_lab_finalize_session_stop_preserves_pending_raw_gallery_and_preview(tmp_path, monkeypatch):
@@ -2222,6 +2689,150 @@ def test_live_lab_review_mode_save_all_after_session_stop_commits_every_pending_
     assert state._session_image_ids == [1, 2]
     assert state.session_gallery.items and all(not str(item["id"]).startswith("pending:") for item in state.session_gallery.items)
     assert any("Saved 2 RAW capture(s)." in text and tone == "success" for text, tone, _ in statuses)
+
+
+def test_live_lab_review_mode_pending_metadata_changes_stick_to_each_capture_on_save_all(tmp_path, monkeypatch):
+    _qapp()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+
+    preview_one = tmp_path / "previews" / "P070020_1_preview.jpg"
+    preview_two = tmp_path / "previews" / "P070021_1_preview.jpg"
+    preview_one.parent.mkdir(parents=True, exist_ok=True)
+    preview_one.write_text("preview-1", encoding="utf-8")
+    preview_two.write_text("preview-2", encoding="utf-8")
+
+    committed_one = tmp_path / "imports" / "P070020_1.jpg"
+    committed_two = tmp_path / "imports" / "P070021_1.jpg"
+    committed_one.parent.mkdir(parents=True, exist_ok=True)
+
+    state = _build_raw_controls_state()
+    state._session_active = True
+    state._session_observation_id = 1
+    state._session_observation_snapshot = {"id": 1, "name": "Observation 1"}
+    state._session_id = "session-1"
+    state._session_import_count = 2
+    state._active_session_mode = live_lab_tab.LiveLabTab.SESSION_MODE_LIVE
+    state._pending_stop_status = None
+    state._watcher = None
+    state._session_image_ids = []
+    state._selected_session_image_id = None
+    state._pending_companion_groups = {
+        "group-1": {"paths": {"ignored-1"}, "timer": None},
+        "group-2": {"paths": {"ignored-2"}, "timer": None},
+    }
+    state._consumed_companion_groups = {"group-1", "group-2"}
+    state._pending_raw_preview_timer = SimpleNamespace(stop=lambda: None, start=lambda _ms: None)
+    state._cancel_raw_edit_session = lambda restore_selection=False: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state._update_session_controls = lambda: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._update_observation_thumbnail = lambda: None
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+
+    for combo, values in (
+        (state.objective_combo, [("10x", "10x"), ("40x", "40x"), ("63x", "63x")]),
+        (state.contrast_combo, [("BF", "BF"), ("DIC", "DIC")]),
+        (state.mount_combo, [("Water", "Water"), ("KOH", "KOH")]),
+        (state.stain_combo, [("Not set", "Not_set"), ("Congo Red", "Congo_Red")]),
+        (state.sample_combo, [("Not set", "Not_set"), ("Dried", "Dried")]),
+    ):
+        combo.clear()
+        for label, value in values:
+            combo.addItem(label, value)
+
+    state.raw_capture_mode_selector.set_selected_value(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+    state._on_raw_capture_mode_changed(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+    state._current_lab_metadata = lambda: {
+        "image_type": "microscope",
+        "objective_name": state.objective_combo.currentData(),
+        "objective_label": str(state.objective_combo.currentText() or "").strip() or None,
+        "contrast": state.contrast_combo.currentData(),
+        "contrast_label": str(state.contrast_combo.currentText() or "").strip() or None,
+        "mount_medium": state.mount_combo.currentData(),
+        "mount_label": str(state.mount_combo.currentText() or "").strip() or None,
+        "stain": state.stain_combo.currentData(),
+        "stain_label": str(state.stain_combo.currentText() or "").strip() or None,
+        "sample_type": state.sample_combo.currentData(),
+        "sample_label": str(state.sample_combo.currentText() or "").strip() or None,
+    }
+
+    add_image_calls: list[dict[str, object]] = []
+    captured_calls: list[dict[str, object]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: committed_one if source == source_one else committed_two,
+        captured_calls=captured_calls,
+        add_image_calls=add_image_calls,
+    )
+    images = {
+        1: _make_raw_image_row(1, source_path=source_one, derivative_path=committed_one),
+        2: _make_raw_image_row(2, source_path=source_two, derivative_path=committed_two),
+    }
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
+    )
+    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+
+    state.objective_combo.setCurrentIndex(0)
+    state.contrast_combo.setCurrentIndex(0)
+    state.mount_combo.setCurrentIndex(0)
+    state.stain_combo.setCurrentIndex(0)
+    state.sample_combo.setCurrentIndex(0)
+    assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
+
+    state.objective_combo.setCurrentIndex(2)
+    state.contrast_combo.setCurrentIndex(1)
+    state.mount_combo.setCurrentIndex(0)
+    state.stain_combo.setCurrentIndex(0)
+    state.sample_combo.setCurrentIndex(0)
+    assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
+
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+    state.objective_combo.setCurrentIndex(1)
+    state.contrast_combo.setCurrentIndex(1)
+    state.mount_combo.setCurrentIndex(1)
+    state.stain_combo.setCurrentIndex(1)
+    state.sample_combo.setCurrentIndex(1)
+    assert live_lab_tab.LiveLabTab._sync_selected_pending_raw_metadata_from_controls(state) is True
+
+    first_pending, second_pending = state._pending_raw_captures
+    assert first_pending.lab_metadata["objective_name"] == "40x"
+    assert first_pending.lab_metadata["contrast"] == "DIC"
+    assert first_pending.lab_metadata["mount_medium"] == "KOH"
+    assert first_pending.lab_metadata["stain"] == "Congo_Red"
+    assert first_pending.lab_metadata["sample_type"] == "Dried"
+    assert second_pending.lab_metadata["objective_name"] == "63x"
+    assert second_pending.lab_metadata["contrast"] == "DIC"
+    assert second_pending.lab_metadata["mount_medium"] == "Water"
+    assert second_pending.lab_metadata["stain"] == "Not_set"
+    assert second_pending.lab_metadata["sample_type"] == "Not_set"
+    assert state.session_gallery.items[0]["microscope_tag_text"] == "40x DIC"
+    assert state.session_gallery.items[1]["microscope_tag_text"] == "63x DIC"
+
+    live_lab_tab.LiveLabTab._finalize_session_stop(state)
+    state._commit_all_pending_raw_captures()
+
+    assert len(captured_calls) == 2
+    assert len(add_image_calls) == 2
+    assert add_image_calls[0]["lab_metadata"]["objective_name"] == "40x"
+    assert add_image_calls[0]["lab_metadata"]["contrast"] == "DIC"
+    assert add_image_calls[0]["lab_metadata"]["mount_medium"] == "KOH"
+    assert add_image_calls[0]["lab_metadata"]["stain"] == "Congo_Red"
+    assert add_image_calls[0]["lab_metadata"]["sample_type"] == "Dried"
+    assert add_image_calls[1]["lab_metadata"]["objective_name"] == "63x"
+    assert add_image_calls[1]["lab_metadata"]["contrast"] == "DIC"
+    assert add_image_calls[1]["lab_metadata"]["mount_medium"] == "Water"
+    assert add_image_calls[1]["lab_metadata"]["stain"] == "Not_set"
+    assert add_image_calls[1]["lab_metadata"]["sample_type"] == "Not_set"
 
 
 def test_live_lab_review_mode_commit_uses_selected_settings_and_keeps_snapshot(tmp_path, monkeypatch):
