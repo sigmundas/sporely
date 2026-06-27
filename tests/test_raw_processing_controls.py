@@ -126,7 +126,7 @@ def test_raw_processing_controls_exposure_and_shadows_update_settings_without_lo
     assert updated.tone_highlights == pytest.approx(-0.15)
 
 
-def test_raw_processing_controls_dragging_light_slider_defers_emit_and_clears_auto_levels(qapp):
+def test_raw_processing_controls_dragging_light_slider_emits_live_and_clears_auto_levels(qapp):
     controls = RawProcessingControls()
     emissions: list[RawRenderSettings] = []
     controls.settingsChanged.connect(lambda settings: emissions.append(settings))
@@ -142,7 +142,8 @@ def test_raw_processing_controls_dragging_light_slider_defers_emit_and_clears_au
 
     controls.light_slider.setSliderDown(True)
     controls.light_slider.setValue(600)
-    assert emissions == []
+    assert len(emissions) == 1
+    assert emissions[0].light_ev == pytest.approx(0.60)
     assert controls.auto_levels_checkbox.isChecked() is False
 
     controls.light_slider.setSliderDown(False)
@@ -150,7 +151,6 @@ def test_raw_processing_controls_dragging_light_slider_defers_emit_and_clears_au
 
     assert len(emissions) == 1
     assert emissions[0].auto_levels is False
-    assert emissions[0].light_ev == pytest.approx(0.60)
 
 
 def test_raw_processing_controls_reenabling_auto_levels_restores_cached_slider_positions(qapp):

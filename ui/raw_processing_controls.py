@@ -31,13 +31,20 @@ class RawProcessingControls(QWidget):
     settingsChanged = Signal(object)
     pickWhiteBalanceToggled = Signal(bool)
 
-    def __init__(self, parent=None, *, show_shadow_lift: bool = False) -> None:
+    def __init__(
+        self,
+        parent=None,
+        *,
+        show_shadow_lift: bool = False,
+        show_tone_controls_when_disabled: bool = False,
+    ) -> None:
         super().__init__(parent)
         self._settings = RawRenderSettings.default()
         self._auto_level_settings: RawRenderSettings | None = None
         self._loading = False
         self._slider_change_pending = False
         self._show_shadow_lift = bool(show_shadow_lift)
+        self._show_tone_controls_when_disabled = bool(show_tone_controls_when_disabled)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -342,6 +349,7 @@ class RawProcessingControls(QWidget):
         return settings
 
     def _set_tone_controls_enabled(self, enabled: bool) -> None:
+        visible = bool(enabled) or self._show_tone_controls_when_disabled
         for widget in (
             self.curve_strength_label,
             self.curve_strength_slider,
@@ -356,7 +364,7 @@ class RawProcessingControls(QWidget):
             self.highlights_slider,
             self.highlights_value_label,
         ):
-            widget.setVisible(bool(enabled))
+            widget.setVisible(visible)
             widget.setEnabled(bool(enabled))
 
     @staticmethod
@@ -391,15 +399,12 @@ class RawProcessingControls(QWidget):
                     self.auto_levels_checkbox.setChecked(False)
             self._slider_change_pending = bool(sender.isSliderDown())
             self._refresh_value_labels()
-            if sender.isSliderDown():
-                return
         self._settings = self._settings_from_controls()
         self._slider_change_pending = False
         self._refresh_value_labels()
         self.settingsChanged.emit(self._settings)
 
     def _on_slider_released(self, *_args) -> None:
-        if self._loading or not self._slider_change_pending:
+        if self._loading:
             return
         self._slider_change_pending = False
-        self._on_control_changed()

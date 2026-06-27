@@ -4,9 +4,11 @@ import copy
 import json
 import os
 import tempfile
+from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -79,12 +81,9 @@ def _build_raw_controls_state() -> SimpleNamespace:
         "Use camera JPEG",
         live_lab_tab.RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     )
-    state.raw_controls = RawProcessingControls()
-    state._raw_auto_level_settings_for_source = lambda source, settings: live_lab_tab.LiveLabTab._raw_auto_level_settings_for_source(
-        state,
-        source,
-        settings,
-    )
+    state.raw_controls = RawProcessingControls(show_tone_controls_when_disabled=True)
+    state.raw_curve_preview_widget = live_lab_tab.RawCurvePreviewWidget()
+    state._raw_auto_level_settings_for_source = lambda source, settings: _fake_auto_level_settings_for_source(source, settings)
     state.objective_combo = QComboBox()
     state.objective_combo.addItem("Not set", None)
     state.contrast_combo = QComboBox()
@@ -259,6 +258,53 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._raw_settings_info_text = lambda settings: live_lab_tab.LiveLabTab._raw_settings_info_text(state, settings)
     state._raw_processing_summary_text = lambda: live_lab_tab.LiveLabTab._raw_processing_summary_text(state)
     state._refresh_raw_processing_context_ui = lambda: live_lab_tab.LiveLabTab._refresh_raw_processing_context_ui(state)
+    state._raw_curve_preview_source_path = lambda: live_lab_tab.LiveLabTab._raw_curve_preview_source_path(state)
+    state._raw_curve_preview_fallback_rgb = lambda: live_lab_tab.LiveLabTab._raw_curve_preview_fallback_rgb()
+    state._raw_curve_preview_analysis_from_path = lambda source_path, settings=None: live_lab_tab.LiveLabTab._raw_curve_preview_analysis_from_path(
+        state,
+        source_path,
+        settings,
+    )
+    state._refresh_raw_curve_preview = lambda: live_lab_tab.LiveLabTab._refresh_raw_curve_preview(state)
+    state._raw_preview_decode_mode = lambda settings: live_lab_tab.LiveLabTab._raw_preview_decode_mode(settings)
+    state._raw_preview_proxy_cache_key = lambda source_path, settings: None
+    state._raw_preview_proxy_for_source = lambda source_path, settings: _fake_render_raw_preview_proxy_rgb(
+        source_path,
+        settings=settings,
+    )
+    state._rgb_to_pixmap = lambda rgb: live_lab_tab.LiveLabTab._rgb_to_pixmap(rgb)
+    state._raw_preview_rgb_for_source = lambda source_path, settings: live_lab_tab.LiveLabTab._raw_preview_rgb_for_source(
+        state,
+        source_path,
+        settings,
+    )
+    state._present_raw_preview = lambda **kwargs: live_lab_tab.LiveLabTab._present_raw_preview(state, **kwargs)
+    state._schedule_raw_edit_preview_save = lambda *args, **kwargs: live_lab_tab.LiveLabTab._persist_raw_edit_preview(state)
+    state._schedule_pending_raw_preview_save = lambda *args, **kwargs: live_lab_tab.LiveLabTab._persist_pending_raw_preview(state)
+    state._persist_raw_edit_preview = lambda: live_lab_tab.LiveLabTab._persist_raw_edit_preview(state)
+    state._persist_pending_raw_preview = lambda: live_lab_tab.LiveLabTab._persist_pending_raw_preview(state)
+    def _fake_save_raw_preview_jpeg(rgb, destination, source_path, source_capture_datetime=None):
+        del rgb, source_capture_datetime
+        preview_path = Path(destination)
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        settings = None
+        edit_session = getattr(state, "_raw_edit_session", None)
+        if edit_session is not None and str(getattr(edit_session, "preview_path", "") or "") == str(preview_path):
+            settings = getattr(edit_session, "working_settings", None)
+        if settings is None:
+            for capture in list(getattr(state, "_pending_raw_captures", []) or []):
+                if str(getattr(capture, "preview_path", "") or "") == str(preview_path):
+                    settings = getattr(capture, "raw_settings", None)
+                    break
+        if settings is None:
+            settings = getattr(state, "_raw_render_settings", RawRenderSettings.default())
+        payload = {
+            "source": str(Path(source_path)),
+            "settings": settings.to_dict() if isinstance(settings, RawRenderSettings) else settings,
+        }
+        preview_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        return str(preview_path)
+    live_lab_tab.save_raw_preview_jpeg = _fake_save_raw_preview_jpeg
     state._session_gallery_selected_keys = lambda: live_lab_tab.LiveLabTab._session_gallery_selected_keys(state)
     state._objective_key_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._objective_key_from_metadata(state, metadata)
     state._microscope_state_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._microscope_state_from_metadata(state, metadata)
@@ -342,7 +388,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._begin_raw_edit_with_copied_settings = lambda: live_lab_tab.LiveLabTab._begin_raw_edit_with_copied_settings(state)
     state._cancel_raw_edit_session = lambda restore_selection=True: live_lab_tab.LiveLabTab._cancel_raw_edit_session(state, restore_selection=restore_selection)
     state._copy_raw_edit_settings = lambda: live_lab_tab.LiveLabTab._copy_raw_edit_settings(state)
-    state._schedule_raw_edit_preview_refresh = lambda: live_lab_tab.LiveLabTab._schedule_raw_edit_preview_refresh(state)
+    state._schedule_raw_edit_preview_refresh = lambda: live_lab_tab.LiveLabTab._refresh_raw_edit_preview(state)
     state._refresh_raw_edit_preview = lambda: live_lab_tab.LiveLabTab._refresh_raw_edit_preview(state)
     state._apply_raw_edit_session = lambda: live_lab_tab.LiveLabTab._apply_raw_edit_session(state)
     state._invalidate_thumbnail_caches_for_raw_image = lambda image_id, final_path: live_lab_tab.LiveLabTab._invalidate_thumbnail_caches_for_raw_image(
@@ -392,8 +438,13 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._on_session_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, image_id, path)
     state._update_pending_raw_controls = lambda: live_lab_tab.LiveLabTab._update_pending_raw_controls(state)
     state._show_pending_raw_capture = lambda index=None: live_lab_tab.LiveLabTab._show_pending_raw_capture(state, index)
-    state._schedule_pending_raw_preview_refresh = lambda: live_lab_tab.LiveLabTab._schedule_pending_raw_preview_refresh(state)
+    state._schedule_pending_raw_preview_refresh = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
     state._refresh_selected_pending_raw_preview = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
+    state._prune_pending_raw_preview_buffers = lambda keep_capture=None, clear_proxy_cache=False: live_lab_tab.LiveLabTab._prune_pending_raw_preview_buffers(
+        state,
+        keep_capture,
+        clear_proxy_cache=clear_proxy_cache,
+    )
     state._create_pending_raw_capture = lambda *args, **kwargs: live_lab_tab.LiveLabTab._create_pending_raw_capture(state, *args, **kwargs)
     state._add_pending_raw_capture = lambda pending: live_lab_tab.LiveLabTab._add_pending_raw_capture(state, pending)
     state._show_previous_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._show_previous_pending_raw_capture(state)
@@ -460,6 +511,29 @@ def _fake_render_raw_preview(source, *, settings=None, output_path=None, output_
     }
     preview_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
     return str(preview_path)
+
+
+def _fake_render_raw_preview_proxy_rgb(source, *, settings=None, **_kwargs):
+    del source, settings, _kwargs
+    width = 8
+    height = 8
+    ramp = np.linspace(0.0, 1.0, width, dtype=np.float32)
+    rgb = np.zeros((height, width, 3), dtype=np.float32)
+    rgb[..., 0] = ramp
+    rgb[..., 1] = np.clip(ramp * 0.9 + 0.05, 0.0, 1.0)
+    rgb[..., 2] = np.clip(1.0 - ramp * 0.85, 0.0, 1.0)
+    return rgb
+
+
+def _fake_auto_level_settings_for_source(source, settings):
+    del source
+    resolved = RawRenderSettings.from_dict(settings)
+    return replace(
+        resolved,
+        auto_levels=True,
+        light_ev=0.357,
+        dark_ev=-0.143,
+    )
 
 
 def _fake_render_raw_jpeg(source, *, settings=None, output_path=None, output_dir=None, **_kwargs):
@@ -626,8 +700,10 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     )
     assert state.raw_controls.curve_strength_row.isEnabled() is True
     assert state.raw_controls.curve_midpoint_row.isEnabled() is True
+    assert state.raw_controls.curve_strength_slider.isHidden() is False
     assert state.raw_controls.curve_strength_slider.isEnabled() is False
     assert state.raw_controls.curve_midpoint_slider.isEnabled() is False
+    assert state.raw_curve_preview_widget.current_curve is not None
 
     state.raw_controls.curve_strength_slider.setValue(45)
     state.raw_controls.curve_midpoint_slider.setValue(48)
@@ -686,6 +762,29 @@ def test_live_lab_raw_sync_applies_auto_level_slider_values(monkeypatch):
     assert state.raw_controls._auto_level_settings is not None
     assert state.raw_controls._auto_level_settings.light_ev == pytest.approx(0.357)
     assert state.raw_controls._auto_level_settings.dark_ev == pytest.approx(-0.143)
+
+
+def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    preview_path = tmp_path / "current_preview.png"
+    image = QImage(24, 24, QImage.Format.Format_RGB32)
+    image.fill(Qt.red)
+    assert image.save(str(preview_path))
+    state.live_image_label._full_image_path = str(preview_path)
+
+    live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(
+        state,
+        RawRenderSettings.default(),
+    )
+
+    histogram = state.raw_curve_preview_widget.current_histogram()
+    assert histogram is not None
+    assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
+    assert float(histogram.max()) <= 1.0
+    assert float(histogram.min()) >= 0.0
 
 
 def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_selection(tmp_path, monkeypatch):
@@ -2307,7 +2406,9 @@ def test_live_lab_review_mode_creates_pending_preview_and_defers_db_row(tmp_path
     assert pending.preview_path is not None
     assert pending.preview_path.exists()
     assert pending.status == "pending"
-    assert pending.raw_settings == RawRenderSettings.default()
+    assert pending.raw_settings.auto_levels is True
+    assert pending.raw_settings.light_ev == pytest.approx(0.357)
+    assert pending.raw_settings.dark_ev == pytest.approx(-0.143)
     assert pending.lab_metadata["contrast"] == "phase"
     assert state.raw_processing_toggle_btn.isChecked() is True
     assert state.pending_raw_frame.isVisible() is True
@@ -3503,6 +3604,7 @@ def test_live_lab_review_mode_falls_back_to_companion_jpeg_when_raw_preview_fail
         raise RawRenderingUnavailableError("rawpy unavailable")
 
     monkeypatch.setattr(live_lab_tab, "render_raw_preview", failing_preview)
+    state._raw_preview_proxy_for_source = lambda *args, **kwargs: (_ for _ in ()).throw(RawRenderingUnavailableError("rawpy unavailable"))
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,

@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QColor, QPalette, QPixmap
 from PySide6.QtWidgets import QApplication, QSizePolicy, QSlider
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -176,7 +176,9 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     lines = {line.get_label(): line for line in axes.lines}
     assert {"identity", "after levels", "after contrast", "after shadows/highlights", "final with tone curve", "tone nodes"}.issubset(lines)
 
-    curve = curve_tool.compute_post_decode_transfer_curve(window._analysis_rgb, window._settings, debug=window._debug)
+    curve_cache = window._get_curve_cache(window._settings)
+    assert curve_cache is not None
+    curve = curve_cache.curve
     assert np.allclose(lines["identity"].get_xdata(), curve.input_values)
     assert np.allclose(lines["identity"].get_ydata(), curve.input_values)
     assert np.allclose(lines["after levels"].get_ydata(), curve.levels_output)
@@ -185,6 +187,49 @@ def test_processing_curve_window_refreshes_preview_and_graph(tmp_path, qapp):
     assert np.allclose(lines["final with tone curve"].get_ydata(), curve.final_output)
     assert np.allclose(lines["tone nodes"].get_xdata(), [curve.debug.dark_point, curve.debug.light_point])
     assert np.allclose(lines["tone nodes"].get_ydata(), [0.0, 1.0])
+
+
+def test_processing_curve_window_shows_compact_curve_preview(tmp_path, qapp):
+    input_path = tmp_path / "low_contrast.tiff"
+    _make_low_contrast_16bit_tiff(input_path)
+
+    window = curve_tool.ProcessingCurveWindow(input_path)
+    assert window.curve_preview_widget is not None
+    assert window.curve_preview_widget.width() == window.curve_preview_widget.height()
+    assert window.curve_preview_widget.width() > 0
+
+    curve = window.curve_preview_widget.current_curve()
+    assert curve is not None
+    histogram = window.curve_preview_widget.current_histogram()
+    assert histogram is not None
+    assert histogram.size == curve_tool._TONE_HISTOGRAM_BINS
+    assert float(histogram.min()) >= 0.0
+    assert float(histogram.max()) <= 1.0
+    curve_cache = window._get_curve_cache(window._settings)
+    assert curve_cache is not None
+    expected_curve = curve_cache.curve
+
+    assert np.allclose(curve.input_values, expected_curve.input_values)
+    assert np.allclose(curve.final_output, expected_curve.final_output)
+    assert curve.debug.dark_point == pytest.approx(expected_curve.debug.dark_point, abs=1e-6)
+    assert curve.debug.light_point == pytest.approx(expected_curve.debug.light_point, abs=1e-6)
+
+
+def test_compact_curve_preview_tracks_palette_changes(qapp):
+    widget = curve_tool.CompactToneCurvePreview()
+    palette = widget.palette()
+    palette.setColor(QPalette.Window, QColor("#101010"))
+    palette.setColor(QPalette.Base, QColor("#202020"))
+    palette.setColor(QPalette.Mid, QColor("#505050"))
+    palette.setColor(QPalette.Text, QColor("#eeeeee"))
+    palette.setColor(QPalette.Highlight, QColor("#4d7c7a"))
+    widget.setPalette(palette)
+
+    widget.changeEvent(QEvent(QEvent.Type.PaletteChange))
+
+    assert widget._theme_colors["window"].name() == "#101010"
+    assert widget._theme_colors["plot"].name() == "#202020"
+    assert widget._theme_colors["histogram"].alpha() > 0
 
 
 def test_zoomable_preview_refresh_preserves_view_state(qapp):
@@ -329,7 +374,7 @@ def test_high_positive_shadows_do_not_move_black_endpoint(qapp):
     assert output[1] > output[0]
 
 
-def test_processing_curve_window_preview_bucket_increases_when_zooming(tmp_path, qapp):
+def test_processing_curve_window_keeps_preview_bucket_capped_when_zooming(tmp_path, qapp):
     input_path = tmp_path / "large.tiff"
     _make_large_gradient_tiff(input_path)
 
@@ -342,10 +387,21 @@ def test_processing_curve_window_preview_bucket_increases_when_zooming(tmp_path,
         QPointF(initial_width / 2.0, initial_height / 2.0),
         3.0,
     )
+    zoomed_before = window.preview_label.get_view_state()
+    assert zoomed_before is not None
+
+    window.contrast_slider.setValue(12)
     window._refresh_outputs()
 
-    assert window.preview_label.original_pixmap.width() == 2400
-    assert window.preview_label.original_pixmap.height() < initial_height * 2
+    assert window.preview_label.original_pixmap.width() == initial_width
+    assert window.preview_label.original_pixmap.width() <= 1600
+    assert window.preview_label.original_pixmap.height() <= initial_height
+    after = window.preview_label.get_view_state()
+    assert after is not None
+    assert after["zoom"] == pytest.approx(zoomed_before["zoom"])
+    assert after["center"].x() == pytest.approx(zoomed_before["center"].x())
+    assert after["center"].y() == pytest.approx(zoomed_before["center"].y())
+    assert after["size"] == zoomed_before["size"]
 
 
 def test_processing_curve_window_supports_raw_preview_and_wb_pick(tmp_path, qapp, monkeypatch):

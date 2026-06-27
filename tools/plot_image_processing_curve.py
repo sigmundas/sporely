@@ -6,14 +6,15 @@ import argparse
 import json
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import QEvent, QPointF, Qt, QSignalBlocker, QTimer
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QSignalBlocker, QTimer
+from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -61,6 +62,15 @@ _CURVE_CUTOFF_SCALE = 20
 _EXPOSURE_SCALE = 20
 _CURVE_STRENGTH_SCALE = 100
 _CURVE_TONE_SCALE = 100
+_TONE_LUT_SIZE = 4096
+_TONE_ANALYSIS_MAX_DIM = 1600
+_TONE_PREVIEW_FAST_BUCKET = 1120
+_TONE_PREVIEW_NORMAL_BUCKET = 1600
+_TONE_FAST_REFRESH_MS = 24
+_TONE_GRAPH_REFRESH_MS = 180
+_TONE_DEBUG_TIMING = True
+_TONE_LUMA_WEIGHTS32 = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+_TONE_HISTOGRAM_BINS = 96
 
 
 @dataclass(slots=True)
@@ -70,13 +80,27 @@ class LoadedSource:
     raw_base_mode: str | None = None
 
 
+def _tone_debug_timing(label: str, start: float | None, *, detail: str | None = None) -> None:
+    if not _TONE_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    message = f"[tone-timing] {label}: {elapsed_ms:.1f} ms"
+    if detail:
+        message = f"{message} | {detail}"
+    print(message, flush=True)
+
+
 def _load_raster_rgb(path: Path) -> np.ndarray:
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
     with Image.open(path) as image:
         image.load()
-        return to_float_rgb(np.array(image))
+        result = to_float_rgb(np.array(image)).astype(np.float32, copy=False)
+    _tone_debug_timing("source/raster decode", start)
+    return result
 
 
 def _load_raw_rgb(path: Path, *, base_mode: str, scratch_dir: Path) -> np.ndarray:
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
     scratch_dir.mkdir(parents=True, exist_ok=True)
     preview_path = scratch_dir / f"{path.stem}_{base_mode}_base.jpg"
     preview_settings = RawRenderSettings(
@@ -96,7 +120,9 @@ def _load_raw_rgb(path: Path, *, base_mode: str, scratch_dir: Path) -> np.ndarra
         raise RuntimeError(f"RAW preview unavailable for {path.name}: {exc}") from exc
     with Image.open(rendered_preview) as image:
         image.load()
-        return to_float_rgb(np.array(image))
+        result = to_float_rgb(np.array(image)).astype(np.float32, copy=False)
+    _tone_debug_timing("source/raw decode", start)
+    return result
 
 
 def _load_source_image(path: Path, *, raw_base_mode: str = "camera", scratch_dir: Path | None = None) -> LoadedSource:
@@ -108,14 +134,20 @@ def _load_source_image(path: Path, *, raw_base_mode: str = "camera", scratch_dir
 
 def _save_preview(path: Path, rgb: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    image = np.clip(np.asarray(rgb, dtype=np.float64)[..., :3], 0.0, 1.0)
+    image = np.clip(np.asarray(rgb, dtype=np.float32)[..., :3], 0.0, 1.0)
     image8 = np.rint(image * 255.0).astype(np.uint8)
     Image.fromarray(image8, mode="RGB").save(path, format="PNG")
 
 
 def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
-    image = np.clip(np.asarray(rgb, dtype=np.float64)[..., :3], 0.0, 1.0)
-    image8 = np.rint(image * 255.0).astype(np.uint8)
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+    arr = np.asarray(rgb)
+    if arr.dtype == np.uint8:
+        image8 = np.ascontiguousarray(arr[..., :3])
+    else:
+        image = np.asarray(arr[..., :3], dtype=np.float32)
+        image = np.clip(image, 0.0, 1.0)
+        image8 = np.ascontiguousarray(np.rint(image * 255.0).astype(np.uint8))
     image8 = np.ascontiguousarray(image8)
     height, width = image8.shape[:2]
     qimage = QImage(
@@ -125,7 +157,9 @@ def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
         int(image8.strides[0]),
         QImage.Format.Format_RGB888,
     ).copy()
-    return QPixmap.fromImage(qimage)
+    pixmap = QPixmap.fromImage(qimage)
+    _tone_debug_timing("qimage/pixmap conversion", start)
+    return pixmap
 
 
 def _build_settings(args: argparse.Namespace) -> RawRenderSettings:
@@ -1121,6 +1155,187 @@ class TestToneTransferCurve:
     debug: TestToneDebugInfo
 
 
+@dataclass(slots=True)
+class TestToneCurveCache:
+    key: tuple[Any, ...]
+    lut: np.ndarray
+    curve: TestToneTransferCurve
+    debug: TestToneDebugInfo
+
+
+class CompactToneCurvePreview(QWidget):
+    """Small, display-only preview of the effective transfer curve."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._curve: TestToneTransferCurve | None = None
+        self._histogram: np.ndarray | None = None
+        self._theme_colors: dict[str, QColor] = {}
+        self.setFixedSize(190, 190)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setToolTip("Effective transfer curve")
+        self._refresh_theme_colors()
+
+    def set_curve(self, curve: TestToneTransferCurve | None, histogram: np.ndarray | None = None) -> None:
+        self._curve = curve
+        self._histogram = None if histogram is None else np.asarray(histogram, dtype=np.float32).copy()
+        self.update()
+
+    def current_curve(self) -> TestToneTransferCurve | None:
+        return self._curve
+
+    def current_histogram(self) -> np.ndarray | None:
+        if self._histogram is None:
+            return None
+        return self._histogram.copy()
+
+    def _refresh_theme_colors(self) -> None:
+        palette = self.palette()
+        window_color = QColor(palette.window().color())
+        plot_color = QColor(palette.base().color())
+        border_color = QColor(palette.mid().color())
+        text_color = QColor(palette.text().color())
+        accent_color = QColor("#16a085")
+        if palette.highlight().color().isValid():
+            highlight = QColor(palette.highlight().color())
+            if highlight.lightness() > 200:
+                accent_color = highlight.darker(140)
+            elif highlight.lightness() < 80:
+                accent_color = highlight.lighter(120)
+            else:
+                accent_color = highlight
+
+        dark_theme = window_color.lightness() < 128
+        histogram_color = QColor(border_color)
+        histogram_color.setAlpha(84 if dark_theme else 96)
+        identity_color = QColor(border_color)
+        identity_color.setAlpha(170 if dark_theme else 150)
+        curve_color = QColor(accent_color)
+        curve_color.setAlpha(240)
+        node_fill = QColor(plot_color)
+        node_fill.setAlpha(255)
+        node_dark = QColor(text_color)
+        node_dark.setAlpha(235)
+        node_light = QColor(curve_color)
+        node_light.setAlpha(255)
+
+        self._theme_colors = {
+            "window": window_color,
+            "plot": plot_color,
+            "border": border_color,
+            "histogram": histogram_color,
+            "identity": identity_color,
+            "curve": curve_color,
+            "node_fill": node_fill,
+            "node_dark": node_dark,
+            "node_light": node_light,
+        }
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        event_type = event.type()
+        if event_type in {
+            getattr(QEvent, "PaletteChange", None),
+            getattr(QEvent, "ApplicationPaletteChange", None),
+            getattr(QEvent, "StyleChange", None),
+            getattr(QEvent, "ThemeChange", None),
+        }:
+            self._refresh_theme_colors()
+            self.update()
+        super().changeEvent(event)
+
+    @staticmethod
+    def _map_point(plot: QRectF, x: float, y: float) -> QPointF:
+        px = plot.left() + float(np.clip(float(x), 0.0, 1.0)) * plot.width()
+        py = plot.bottom() - float(np.clip(float(y), 0.0, 1.0)) * plot.height()
+        return QPointF(px, py)
+
+    @staticmethod
+    def _draw_node(painter: QPainter, center: QPointF, *, fill: QColor, stroke: QColor) -> None:
+        painter.setPen(QPen(stroke, 1.0))
+        painter.setBrush(fill)
+        painter.drawEllipse(center, 3.8, 3.8)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+        if not self._theme_colors:
+            self._refresh_theme_colors()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.fillRect(self.rect(), self._theme_colors["window"])
+
+        outer = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(self._theme_colors["border"], 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(outer, 8, 8)
+
+        inset = 12
+        plot_side = max(1, min(int(outer.width() - inset * 2), int(outer.height() - inset * 2)))
+        plot_left = float(outer.center().x()) - float(plot_side) / 2.0
+        plot_top = float(outer.center().y()) - float(plot_side) / 2.0
+        plot = QRectF(plot_left, plot_top, float(plot_side), float(plot_side))
+
+        painter.setPen(QPen(self._theme_colors["border"], 1))
+        painter.setBrush(self._theme_colors["plot"])
+        painter.drawRoundedRect(plot, 6, 6)
+
+        histogram = self._histogram
+        if histogram is not None and histogram.size:
+            hist = np.asarray(histogram, dtype=np.float32)
+            peak = float(np.max(hist)) if hist.size else 0.0
+            if np.isfinite(peak) and peak > 0.0:
+                hist = np.clip(hist / peak, 0.0, 1.0)
+                hist_path = QPainterPath()
+                step = plot.width() / float(hist.size)
+                hist_path.moveTo(plot.left(), plot.bottom())
+                for index, value in enumerate(hist):
+                    x_left = plot.left() + float(index) * step
+                    x_right = x_left + step
+                    y_top = plot.bottom() - float(value) * plot.height()
+                    hist_path.lineTo(x_left, y_top)
+                    hist_path.lineTo(x_right, y_top)
+                hist_path.lineTo(plot.right(), plot.bottom())
+                hist_path.closeSubpath()
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(self._theme_colors["histogram"])
+                painter.drawPath(hist_path)
+
+        painter.setPen(QPen(self._theme_colors["identity"], 1.1, Qt.DashLine))
+        painter.drawLine(self._map_point(plot, 0.0, 0.0), self._map_point(plot, 1.0, 1.0))
+
+        curve = self._curve
+        if curve is not None and curve.input_values.size > 0 and curve.final_output.size > 0:
+            path = QPainterPath()
+            first_point = True
+            for x_value, y_value in zip(curve.input_values, curve.final_output, strict=False):
+                point = self._map_point(plot, float(x_value), float(y_value))
+                if first_point:
+                    path.moveTo(point)
+                    first_point = False
+                else:
+                    path.lineTo(point)
+
+            painter.setPen(QPen(self._theme_colors["curve"], 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+
+            debug = getattr(curve, "debug", None)
+            if debug is not None:
+                dark_point = float(getattr(debug, "dark_point", 0.0))
+                light_point = float(getattr(debug, "light_point", 1.0))
+                self._draw_node(
+                    painter,
+                    self._map_point(plot, dark_point, 0.0),
+                    fill=self._theme_colors["node_fill"],
+                    stroke=self._theme_colors["node_dark"],
+                )
+                self._draw_node(
+                    painter,
+                    self._map_point(plot, light_point, 1.0),
+                    fill=self._theme_colors["node_fill"],
+                    stroke=self._theme_colors["node_light"],
+                )
+
+
 def _tone_coerce_settings(settings: Any | None) -> TestToneSettings:
     if isinstance(settings, TestToneSettings):
         return settings
@@ -1263,14 +1478,18 @@ def _tone_build_debug(
     *,
     manual_level_override: bool = False,
     preview_bucket: int | None = None,
+    luminance: np.ndarray | None = None,
     extra_settings: dict[str, Any] | None = None,
 ) -> TestToneDebugInfo:
-    source = to_float_rgb(rgb, clip=False)
-    luminance = _tone_compute_luminance(source)
-    input_min = float(np.min(luminance)) if luminance.size else 0.0
-    input_max = float(np.max(luminance)) if luminance.size else 0.0
-    auto_black_level, auto_white_level = _tone_compute_auto_level_bounds(
-        source,
+    source_luminance = (
+        _tone_compute_luminance(to_float_rgb(rgb, clip=False))
+        if luminance is None
+        else np.asarray(luminance, dtype=np.float32)
+    )
+    input_min = float(np.min(source_luminance)) if source_luminance.size else 0.0
+    input_max = float(np.max(source_luminance)) if source_luminance.size else 0.0
+    auto_black_level, auto_white_level = _tone_compute_auto_level_bounds_from_luminance(
+        source_luminance,
         settings.dark_cutoff,
         settings.bright_cutoff,
     )
@@ -1397,13 +1616,16 @@ def _tone_format_percent(value: float) -> str:
 
 def _draw_processing_figure(
     figure: Figure,
-    source_rgb: np.ndarray,
+    source_or_curve: np.ndarray | TestToneTransferCurve,
     settings: Any,
     *,
     debug: TestToneDebugInfo | None = None,
 ) -> None:
     resolved = _tone_coerce_settings(settings)
-    curve = compute_post_decode_transfer_curve(source_rgb, resolved, debug=debug)
+    if isinstance(source_or_curve, TestToneTransferCurve):
+        curve = source_or_curve
+    else:
+        curve = compute_post_decode_transfer_curve(source_or_curve, resolved, debug=debug)
 
     figure.clear()
     ax = figure.add_subplot(111)
@@ -1461,7 +1683,8 @@ def _draw_processing_figure(
 
 def _build_processing_figure(source_rgb: np.ndarray, settings: Any, *, debug: TestToneDebugInfo | None = None) -> Figure:
     figure = Figure(figsize=(8.4, 6.1), dpi=120, constrained_layout=True)
-    _draw_processing_figure(figure, source_rgb, settings, debug=debug)
+    curve = compute_post_decode_transfer_curve(source_rgb, _tone_coerce_settings(settings), debug=debug)
+    _draw_processing_figure(figure, curve, settings, debug=debug)
     return figure
 
 
@@ -1512,23 +1735,124 @@ def _preview_bucket_for_zoom(source_width: int, zoom_level: float) -> int:
 
 
 def _resize_rgb_preview(rgb: np.ndarray, max_width: int) -> np.ndarray:
-    arr = np.asarray(rgb, dtype=np.float64)
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+    arr = np.asarray(rgb, dtype=np.float32)
     if arr.size == 0:
         return arr.copy()
     width = int(arr.shape[1])
     height = int(arr.shape[0])
     bucket = max(1, int(max_width))
     if width <= bucket:
-        return arr.copy()
+        result = arr.copy()
+        _tone_debug_timing("preview bucket resize", start)
+        return result
     new_height = max(1, int(round(float(height) * float(bucket) / float(width))))
     image8 = np.rint(np.clip(arr[..., :3], 0.0, 1.0) * 255.0).astype(np.uint8)
     resized = Image.fromarray(image8, mode="RGB").resize((bucket, new_height), Image.Resampling.LANCZOS)
-    return np.asarray(resized, dtype=np.float64) / 255.0
+    result = np.asarray(resized, dtype=np.float32) / np.float32(255.0)
+    _tone_debug_timing("preview bucket resize", start)
+    return result
 
 
 def _apply_preview_bucket_rgb(rgb: np.ndarray, zoom_level: float) -> tuple[np.ndarray, int]:
     bucket = _preview_bucket_for_zoom(int(rgb.shape[1]), zoom_level)
     return _resize_rgb_preview(rgb, bucket), bucket
+
+
+def _preview_bucket_for_interaction(source_width: int, zoom_level: float, *, interactive: bool) -> int:
+    del zoom_level, interactive
+    target = _TONE_PREVIEW_NORMAL_BUCKET
+    return max(1, min(max(1, int(source_width)), int(target)))
+
+
+def _compute_preview_luminance(rgb: np.ndarray) -> np.ndarray:
+    arr = np.asarray(rgb, dtype=np.float32)
+    if arr.size == 0:
+        return np.zeros(arr.shape[:2], dtype=np.float32)
+    return np.tensordot(arr[..., :3], _TONE_LUMA_WEIGHTS32, axes=([-1], [0])).astype(np.float32, copy=False)
+
+
+def _compute_combined_rgb_histogram(rgb: np.ndarray, *, bins: int = _TONE_HISTOGRAM_BINS) -> np.ndarray:
+    arr = np.asarray(rgb, dtype=np.float32)
+    bin_count = max(1, int(bins))
+    if arr.size == 0:
+        return np.zeros(bin_count, dtype=np.float32)
+
+    values = np.clip(arr[..., :3], 0.0, 1.0).reshape(-1)
+    hist, _edges = np.histogram(values, bins=bin_count, range=(0.0, 1.0))
+    hist = hist.astype(np.float32, copy=False)
+    if hist.size == 0:
+        return np.zeros(bin_count, dtype=np.float32)
+
+    peak = float(hist.max())
+    if peak <= 0.0 or not np.isfinite(peak):
+        return np.zeros(bin_count, dtype=np.float32)
+    hist = np.sqrt(hist / np.float32(peak)).astype(np.float32, copy=False)
+    return hist
+
+
+def _tone_compute_auto_level_bounds_from_luminance(
+    luminance: np.ndarray,
+    dark_cutoff: float,
+    bright_cutoff: float,
+) -> tuple[float | None, float | None]:
+    luma = np.asarray(luminance, dtype=np.float32)
+    if luma.size == 0:
+        return None, None
+
+    black_quantile = float(np.clip(float(dark_cutoff), 0.0, 0.49))
+    white_quantile = float(np.clip(1.0 - float(bright_cutoff), 0.51, 1.0))
+    if white_quantile <= black_quantile:
+        white_quantile = min(1.0, black_quantile + 1e-3)
+
+    try:
+        black_level = float(np.quantile(luma, black_quantile))
+        white_level = float(np.quantile(luma, white_quantile))
+    except Exception:
+        return None, None
+
+    if not np.isfinite(black_level) or not np.isfinite(white_level):
+        return None, None
+    if white_level <= black_level:
+        black_level = float(np.min(luma))
+        white_level = float(np.max(luma))
+    if white_level <= black_level:
+        white_level = min(1.0, black_level + 1e-3)
+    return black_level, white_level
+
+
+def _tone_build_lut(
+    source_rgb: np.ndarray,
+    settings: Any,
+    *,
+    debug: TestToneDebugInfo | None = None,
+    lut_size: int = _TONE_LUT_SIZE,
+) -> tuple[np.ndarray, TestToneTransferCurve]:
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+    curve = compute_post_decode_transfer_curve(source_rgb, _tone_coerce_settings(settings), samples=lut_size, debug=debug)
+    lut = np.asarray(curve.final_output, dtype=np.float32).copy()
+    _tone_debug_timing("lut build", start)
+    return lut, curve
+
+
+def _tone_apply_lut_to_preview(
+    preview_rgb: np.ndarray,
+    preview_luma: np.ndarray,
+    lut: np.ndarray,
+) -> np.ndarray:
+    start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+    rgb = np.asarray(preview_rgb, dtype=np.float32)
+    luma = np.asarray(preview_luma, dtype=np.float32)
+    lut_arr = np.asarray(lut, dtype=np.float32)
+    if rgb.size == 0:
+        return rgb.copy()
+    lut_size = max(2, int(lut_arr.size))
+    idx = np.clip((luma * float(lut_size - 1)).astype(np.int32), 0, lut_size - 1)
+    mapped_luma = lut_arr[idx]
+    scale = mapped_luma / np.maximum(luma, np.float32(1e-6))
+    out = np.clip(rgb * scale[..., None], 0.0, 1.0).astype(np.float32, copy=False)
+    _tone_debug_timing("lut apply", start)
+    return out
 
 
 def _tone_settings_from_args(args: argparse.Namespace, source_rgb: np.ndarray) -> TestToneSettings:
@@ -1582,20 +1906,29 @@ class ProcessingCurveWindow(QMainWindow):
         self._raw_tempdir = tempfile.TemporaryDirectory(prefix="sporely_curve_") if self._is_raw else None
         self._has_source = self._source_path is not None
         self._source = self._load_source()
-        self._analysis_rgb = np.zeros((0, 0, 3), dtype=np.float64)
-        self._analysis_luminance = np.zeros((0, 0), dtype=np.float64)
-        self._preview_source_cache: dict[int, np.ndarray] = {}
+        self._analysis_rgb = np.zeros((0, 0, 3), dtype=np.float32)
+        self._analysis_luminance = np.zeros((0, 0), dtype=np.float32)
+        self._analysis_histogram = np.zeros((_TONE_HISTOGRAM_BINS,), dtype=np.float32)
+        self._preview_rgb_cache: dict[int, np.ndarray] = {}
+        self._preview_luma_cache: dict[int, np.ndarray] = {}
         self._preview_bucket_value = 1
         self._manual_level_override = False
         self._auto_black_point: float | None = None
         self._auto_white_point: float | None = None
         self._wb_signature: tuple[Any, ...] | None = None
+        self._render_generation = 0
         self._settings = TestToneSettings.default()
+        self._curve_cache: TestToneCurveCache | None = None
         self._wb_pick_armed = False
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
-        self._refresh_timer.setInterval(16)
-        self._refresh_timer.timeout.connect(self._refresh_outputs)
+        self._refresh_timer.setInterval(_TONE_FAST_REFRESH_MS)
+        self._refresh_timer.timeout.connect(self._refresh_fast_preview)
+        self._graph_timer = QTimer(self)
+        self._graph_timer.setSingleShot(True)
+        self._graph_timer.setInterval(_TONE_GRAPH_REFRESH_MS)
+        self._graph_timer.timeout.connect(self._refresh_large_graph)
+        self._interactive_dragging = False
         self._build_ui()
         if self._has_source:
             self._rebuild_analysis_source(force_auto=True)
@@ -1606,6 +1939,7 @@ class ProcessingCurveWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         try:
             self._refresh_timer.stop()
+            self._graph_timer.stop()
             if self._raw_tempdir is not None:
                 self._raw_tempdir.cleanup()
         finally:
@@ -1613,7 +1947,7 @@ class ProcessingCurveWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:  # type: ignore[override]
         if obj is self.preview_label and event.type() in {QEvent.Type.Wheel, QEvent.Type.Resize}:
-            self._queue_refresh()
+            self._queue_fast_preview_refresh()
         return super().eventFilter(obj, event)
 
     def _load_source(self) -> LoadedSource:
@@ -1724,6 +2058,14 @@ class ProcessingCurveWindow(QMainWindow):
         tone_form.addRow("Highlights", highlights_row)
 
         layout.addWidget(tone_group)
+
+        curve_group = QGroupBox("Curve preview")
+        curve_layout = QVBoxLayout(curve_group)
+        curve_layout.setContentsMargins(8, 8, 8, 8)
+        curve_layout.setSpacing(8)
+        self.curve_preview_widget = CompactToneCurvePreview(curve_group)
+        curve_layout.addWidget(self.curve_preview_widget, 0, Qt.AlignHCenter)
+        layout.addWidget(curve_group)
 
         advanced_group = QGroupBox("Advanced / Tone Curve")
         advanced_form = QFormLayout(advanced_group)
@@ -1860,6 +2202,7 @@ class ProcessingCurveWindow(QMainWindow):
             self._queue_refresh()
 
         slider.valueChanged.connect(_sync_slider_value)
+        self._register_tone_slider(slider)
         return row, slider, value_label
 
     def _create_cutoff_slider_row(self, *, value: float) -> tuple[QWidget, QSlider, QLabel]:
@@ -1887,6 +2230,7 @@ class ProcessingCurveWindow(QMainWindow):
             self._queue_refresh()
 
         slider.valueChanged.connect(_sync_slider_value)
+        self._register_tone_slider(slider)
         return row, slider, value_label
 
     def _create_signed_slider_row(self, *, value: float) -> tuple[QWidget, QSlider, QLabel]:
@@ -1913,6 +2257,7 @@ class ProcessingCurveWindow(QMainWindow):
             self._queue_refresh()
 
         slider.valueChanged.connect(_sync_slider_value)
+        self._register_tone_slider(slider)
         return row, slider, value_label
 
     def _create_fraction_slider_row(self, *, value: float) -> tuple[QWidget, QSlider, QLabel]:
@@ -1939,6 +2284,7 @@ class ProcessingCurveWindow(QMainWindow):
             self._queue_refresh()
 
         slider.valueChanged.connect(_sync_slider_value)
+        self._register_tone_slider(slider)
         return row, slider, value_label
 
     @staticmethod
@@ -2022,18 +2368,36 @@ class ProcessingCurveWindow(QMainWindow):
         return source_rgb
 
     def _rebuild_analysis_source(self, *, force_auto: bool = False) -> None:
-        self._analysis_rgb = self._analysis_source_rgb()
-        self._analysis_luminance = _tone_compute_luminance(self._analysis_rgb)
-        self._preview_source_cache.clear()
-        self._preview_bucket_value = _preview_bucket_for_zoom(
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+        self._render_generation += 1
+        analysis_rgb = np.asarray(self._analysis_source_rgb(), dtype=np.float32)
+        if analysis_rgb.size:
+            analysis_rgb = _resize_rgb_preview(analysis_rgb, _TONE_ANALYSIS_MAX_DIM)
+        self._analysis_rgb = analysis_rgb.astype(np.float32, copy=False)
+        self._analysis_luminance = _compute_preview_luminance(self._analysis_rgb)
+        self._analysis_histogram = _compute_combined_rgb_histogram(self._analysis_rgb)
+        self._preview_rgb_cache.clear()
+        self._preview_luma_cache.clear()
+        self._curve_cache = None
+        self._preview_bucket_value = _preview_bucket_for_interaction(
             int(self._analysis_rgb.shape[1]) if self._analysis_rgb.size else 1,
             getattr(self.preview_label, "zoom_level", 1.0),
+            interactive=self._interactive_dragging,
         )
         self._apply_auto_level_points(force=force_auto)
+        _tone_debug_timing(
+            "analysis source rebuild",
+            start,
+            detail=(
+                f"size={int(self._analysis_rgb.shape[1]) if self._analysis_rgb.size else 0}x"
+                f"{int(self._analysis_rgb.shape[0]) if self._analysis_rgb.size else 0} "
+                f"bucket={self._preview_bucket_value} auto={force_auto}"
+            ),
+        )
 
     def _apply_auto_level_points(self, *, force: bool = False) -> None:
-        auto_black, auto_white = _tone_compute_auto_level_bounds(
-            self._analysis_rgb,
+        auto_black, auto_white = _tone_compute_auto_level_bounds_from_luminance(
+            self._analysis_luminance,
             self._cutoff_slider_value_to_percent(self.dark_cutoff_slider.value()),
             self._cutoff_slider_value_to_percent(self.bright_cutoff_slider.value()),
         )
@@ -2078,6 +2442,93 @@ class ProcessingCurveWindow(QMainWindow):
             tone_curve_strength=self._fraction_slider_value_float(self.curve_strength_slider.value()),
             tone_curve_midpoint=self._fraction_slider_value_float(self.curve_midpoint_slider.value()),
         )
+
+    def _invalidate_preview_caches(self) -> None:
+        self._preview_rgb_cache.clear()
+        self._preview_luma_cache.clear()
+
+    def _current_preview_bucket(self) -> int:
+        if self._analysis_rgb.size == 0:
+            return 1
+        return _preview_bucket_for_interaction(
+            int(self._analysis_rgb.shape[1]),
+            getattr(self.preview_label, "zoom_level", 1.0),
+            interactive=self._interactive_dragging,
+        )
+
+    def _preview_source_for_bucket(self, bucket: int) -> np.ndarray:
+        bucket = max(1, int(bucket))
+        cached = self._preview_rgb_cache.get(bucket)
+        if cached is not None:
+            return cached
+        preview_source = _resize_rgb_preview(self._analysis_rgb, bucket)
+        self._preview_rgb_cache[bucket] = preview_source.astype(np.float32, copy=False)
+        return self._preview_rgb_cache[bucket]
+
+    def _preview_luma_for_bucket(self, bucket: int) -> np.ndarray:
+        bucket = max(1, int(bucket))
+        cached = self._preview_luma_cache.get(bucket)
+        if cached is not None:
+            return cached
+        preview_rgb = self._preview_source_for_bucket(bucket)
+        preview_luma = _compute_preview_luminance(preview_rgb)
+        self._preview_luma_cache[bucket] = preview_luma.astype(np.float32, copy=False)
+        return self._preview_luma_cache[bucket]
+
+    def _get_curve_cache(self, settings: TestToneSettings | None = None) -> TestToneCurveCache | None:
+        if self._analysis_rgb.size == 0:
+            return None
+        resolved = self._settings_from_controls() if settings is None else _tone_coerce_settings(settings)
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+        key = (
+            self._render_generation,
+            resolved.dark_point,
+            resolved.light_point,
+            resolved.auto_levels,
+            resolved.dark_cutoff,
+            resolved.bright_cutoff,
+            resolved.contrast,
+            resolved.shadows,
+            resolved.highlights,
+            resolved.tone_curve_enabled,
+            resolved.tone_curve_strength,
+            resolved.tone_curve_midpoint,
+        )
+        cached = self._curve_cache
+        if cached is not None and cached.key == key:
+            return cached
+
+        debug = _tone_build_debug(
+            self._analysis_rgb,
+            resolved,
+            manual_level_override=self._manual_level_override,
+            preview_bucket=self._preview_bucket_value,
+            luminance=self._analysis_luminance,
+            extra_settings={
+                "white_balance_mode": str(RawRenderSettings.from_dict(self.raw_controls.settings()).white_balance_mode or "camera").strip().lower() or "camera",
+                "raw_base_mode": self._raw_base_mode if self._is_raw else None,
+                "wb_multipliers": list(RawRenderSettings.from_dict(self.raw_controls.settings()).wb_multipliers)
+                if RawRenderSettings.from_dict(self.raw_controls.settings()).wb_multipliers is not None
+                else None,
+            },
+        )
+        lut, curve = _tone_build_lut(self._analysis_rgb, resolved, debug=debug)
+        cache = TestToneCurveCache(key=key, lut=lut, curve=curve, debug=debug)
+        self._curve_cache = cache
+        _tone_debug_timing(
+            "curve cache build",
+            start,
+            detail=(
+                f"bucket={self._preview_bucket_value} "
+                f"levels={resolved.dark_point:.3f}/{resolved.light_point:.3f} "
+                f"tone={resolved.tone_curve_enabled}"
+            ),
+        )
+        return cache
+
+    def _register_tone_slider(self, slider: QSlider) -> None:
+        slider.sliderPressed.connect(self._on_any_tone_slider_pressed)
+        slider.sliderReleased.connect(self._on_any_tone_slider_released)
 
     def _set_processing_controls_enabled(self, enabled: bool) -> None:
         for widget in (
@@ -2191,22 +2642,45 @@ class ProcessingCurveWindow(QMainWindow):
         )
 
     def _sync_wb_from_controls(self, *, force_rebuild: bool = False) -> None:
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
         resolved = RawRenderSettings.from_dict(self.raw_controls.settings())
         mode = str(resolved.white_balance_mode or "camera").strip().lower() or "camera"
         if self._is_raw and mode in {"camera", "auto"} and mode != self._raw_base_mode:
+            reload_start = time.perf_counter() if _TONE_DEBUG_TIMING else None
             self._raw_base_mode = mode
             self._set_combo_data(self.raw_base_mode_combo, mode)
             self._source = self._load_source()
+            _tone_debug_timing("raw source reload", reload_start, detail=f"mode={mode}")
             force_rebuild = True
         signature = self._wb_signature_for_settings(resolved)
         if force_rebuild or signature != self._wb_signature:
+            rebuild_start = time.perf_counter() if _TONE_DEBUG_TIMING else None
             self._wb_signature = signature
             self._rebuild_analysis_source(force_auto=True)
+            _tone_debug_timing(
+                "wb sync rebuild analysis source",
+                rebuild_start,
+                detail=f"mode={mode} force_rebuild={force_rebuild}",
+            )
         self._update_wb_readout(resolved)
         self._queue_refresh()
+        _tone_debug_timing(
+            "wb sync",
+            start,
+            detail=f"mode={mode} force_rebuild={force_rebuild} dragging={self._interactive_dragging}",
+        )
 
     def _on_wb_controls_changed(self, *_args) -> None:
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+        sender_fn = getattr(self, "sender", None)
+        sender = sender_fn() if callable(sender_fn) else None
+        self._last_tone_control_change_at = time.perf_counter() if _TONE_DEBUG_TIMING else None
         self._sync_wb_from_controls(force_rebuild=True)
+        _tone_debug_timing(
+            "wb controls changed",
+            start,
+            detail=f"sender={type(sender).__name__ if sender is not None else 'unknown'} dragging={self._interactive_dragging}",
+        )
 
     def _on_raw_base_mode_changed(self, *_args) -> None:
         if not self._is_raw:
@@ -2226,26 +2700,46 @@ class ProcessingCurveWindow(QMainWindow):
             self._apply_auto_level_points(force=True)
         self._queue_refresh()
 
-    def _queue_refresh(self, *_args) -> None:
+    def _queue_fast_preview_refresh(self, *_args) -> None:
         self._refresh_timer.stop()
         self._refresh_timer.start()
+
+    def _queue_graph_refresh(self, *, immediate: bool = False) -> None:
+        self._graph_timer.stop()
+        if immediate:
+            self._graph_timer.start(0)
+        else:
+            self._graph_timer.start()
+
+    def _queue_refresh(self, *_args) -> None:
+        self._queue_fast_preview_refresh()
+        self._queue_graph_refresh()
+
+    def _on_any_tone_slider_pressed(self) -> None:
+        self._interactive_dragging = True
+        self._queue_fast_preview_refresh()
+
+    def _on_any_tone_slider_released(self) -> None:
+        self._interactive_dragging = False
+        self._queue_refresh()
 
     def _current_preview_bucket(self) -> int:
         if self._analysis_rgb.size == 0:
             return 1
-        return _preview_bucket_for_zoom(
+        return _preview_bucket_for_interaction(
             int(self._analysis_rgb.shape[1]),
             getattr(self.preview_label, "zoom_level", 1.0),
+            interactive=self._interactive_dragging,
         )
 
     def _preview_source_for_bucket(self, bucket: int) -> np.ndarray:
         bucket = max(1, int(bucket))
-        cached = self._preview_source_cache.get(bucket)
+        cached = self._preview_rgb_cache.get(bucket)
         if cached is not None:
             return cached
         preview_source = _resize_rgb_preview(self._analysis_rgb, bucket)
-        self._preview_source_cache[bucket] = preview_source
-        return preview_source
+        self._preview_rgb_cache[bucket] = preview_source.astype(np.float32, copy=False)
+        return self._preview_rgb_cache[bucket]
 
     def _sample_rect_from_point(
         self,
@@ -2319,7 +2813,8 @@ class ProcessingCurveWindow(QMainWindow):
     def _on_preview_clicked(self, point: QPointF) -> None:
         self._apply_wb_pick_from_point(point)
 
-    def _refresh_outputs(self) -> None:
+    def _refresh_fast_preview(self) -> None:
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
         if self._source_path is None:
             self._set_blank_outputs()
             return
@@ -2327,38 +2822,29 @@ class ProcessingCurveWindow(QMainWindow):
             self._rebuild_analysis_source(force_auto=True)
 
         self._settings = self._settings_from_controls()
-        preview_bucket = self._current_preview_bucket()
-        preview_source = self._preview_source_for_bucket(preview_bucket)
-        processed_rgb = apply_post_decode_processing(
-            preview_source,
-            self._settings,
-            manual_level_override=self._manual_level_override,
-            preview_bucket=preview_bucket,
-        )
-        debug = _tone_build_debug(
-            self._analysis_rgb,
-            self._settings,
-            manual_level_override=self._manual_level_override,
-            preview_bucket=preview_bucket,
-            extra_settings={
-                "white_balance_mode": str(RawRenderSettings.from_dict(self.raw_controls.settings()).white_balance_mode or "camera").strip().lower() or "camera",
-                "raw_base_mode": self._raw_base_mode if self._is_raw else None,
-                "wb_multipliers": list(RawRenderSettings.from_dict(self.raw_controls.settings()).wb_multipliers)
-                if RawRenderSettings.from_dict(self.raw_controls.settings()).wb_multipliers is not None
-                else None,
-            },
-        )
-        self._debug = debug
-        curve = compute_post_decode_transfer_curve(self._analysis_rgb, self._settings, debug=debug)
+        self._preview_bucket_value = self._current_preview_bucket()
+        curve_cache = self._get_curve_cache(self._settings)
+        if curve_cache is None:
+            self._set_blank_outputs()
+            return
 
+        preview_source = self._preview_source_for_bucket(self._preview_bucket_value)
+        preview_luma = self._preview_luma_for_bucket(self._preview_bucket_value)
+        processed_rgb = _tone_apply_lut_to_preview(preview_source, preview_luma, curve_cache.lut)
+        pixmap_start = time.perf_counter() if _TONE_DEBUG_TIMING else None
         preview_pixmap = _rgb_to_pixmap(processed_rgb)
         self.preview_label.set_image_sources(preview_pixmap, preserve_view=True)
         self.preview_label.set_pan_without_shift(True)
+        _tone_debug_timing("small preview widget update", pixmap_start)
 
-        self.figure.clear()
-        _draw_processing_figure(self.figure, self._analysis_rgb, self._settings, debug=debug)
-        self.canvas.draw()
+        curve_preview = getattr(self, "curve_preview_widget", None)
+        if curve_preview is not None:
+            curve_widget_start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+            curve_preview.set_curve(curve_cache.curve, self._analysis_histogram)
+            _tone_debug_timing("small curve widget update", curve_widget_start)
 
+        debug = curve_cache.debug
+        self._debug = debug
         self.input_min_label.setText(f"{debug.input_min:.6f}")
         self.input_max_label.setText(f"{debug.input_max:.6f}")
         self.auto_black_label.setText("none" if debug.auto_black_level is None else f"{debug.auto_black_level:.6f}")
@@ -2370,21 +2856,68 @@ class ProcessingCurveWindow(QMainWindow):
             self._settings,
             debug=debug,
             wb_text=wb_text,
-            preview_bucket=preview_bucket,
+            preview_bucket=self._preview_bucket_value,
         )
         self.settings_label.setText(summary)
-        self._update_wb_readout()
         self.statusBar().showMessage(summary)
 
         if self._preview_out is not None:
             _save_preview(self._preview_out, processed_rgb)
+        last_change = getattr(self, "_last_tone_control_change_at", None)
+        change_delay_ms = (time.perf_counter() - last_change) * 1000.0 if last_change is not None else None
+        detail = f"bucket={self._preview_bucket_value}"
+        if change_delay_ms is not None:
+            detail = f"{detail} change_delay={change_delay_ms:.1f} ms"
+        _tone_debug_timing(
+            "fast preview refresh",
+            start,
+            detail=detail,
+        )
+
+    def _refresh_large_graph(self) -> None:
+        start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+        if self._source_path is None:
+            self._set_blank_outputs()
+            return
+        if self._analysis_rgb.size == 0:
+            self._rebuild_analysis_source(force_auto=True)
+
+        self._settings = self._settings_from_controls()
+        curve_cache = self._get_curve_cache(self._settings)
+        if curve_cache is None:
+            self._set_blank_outputs()
+            return
+
+        redraw_start = time.perf_counter() if _TONE_DEBUG_TIMING else None
+        self.figure.clear()
+        _draw_processing_figure(self.figure, curve_cache.curve, self._settings, debug=curve_cache.debug)
+        self.canvas.draw()
+        _tone_debug_timing("large matplotlib redraw", redraw_start)
+
         if self._plot_out is not None:
-            _save_plot(self._plot_out, self._analysis_rgb, self._settings, debug=debug)
+            _save_plot(self._plot_out, self._analysis_rgb, self._settings, debug=curve_cache.debug)
+        last_change = getattr(self, "_last_tone_control_change_at", None)
+        change_delay_ms = (time.perf_counter() - last_change) * 1000.0 if last_change is not None else None
+        detail = "change_delay=unknown"
+        if change_delay_ms is not None:
+            detail = f"change_delay={change_delay_ms:.1f} ms"
+        _tone_debug_timing(
+            "large graph refresh",
+            start,
+            detail=detail,
+        )
+
+    def _refresh_outputs(self) -> None:
+        self._refresh_fast_preview()
+        self._refresh_large_graph()
 
     def _set_blank_outputs(self) -> None:
         self.preview_label.set_image_sources(QPixmap())
         self.figure.clear()
         self.canvas.draw()
+        curve_preview = getattr(self, "curve_preview_widget", None)
+        if curve_preview is not None:
+            curve_preview.set_curve(None, None)
         self.input_min_label.setText("—")
         self.input_max_label.setText("—")
         self.auto_black_label.setText("—")

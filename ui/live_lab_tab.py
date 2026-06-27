@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import time
 import tempfile
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -11,8 +12,9 @@ from uuid import uuid4
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
-from PySide6.QtCore import QSize, Qt, QTimer, QSignalBlocker, QEvent, QPointF
+from PySide6.QtCore import QSize, Qt, QTimer, QSignalBlocker, QEvent, QPointF, QRectF
 from PySide6.QtGui import (
     QColor,
     QIcon,
@@ -23,6 +25,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QPalette,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -78,6 +81,7 @@ from utils.image_companion_grouping import (
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.image_processing_pipeline import (
     ProcessingDebugInfo,
+    apply_post_decode_processing,
     compute_post_decode_transfer_curve,
     raw_basic_controls_from_settings,
     raw_settings_from_basic_controls,
@@ -89,8 +93,11 @@ from utils.raw_render import (
     RawRenderSettings,
     compute_auto_level_adjusted_settings_from_source,
     build_raw_processing_metadata,
+    RAW_PREVIEW_MAX_DIM,
     render_raw_image,
     render_raw_preview,
+    render_raw_preview_proxy_rgb,
+    save_raw_preview_jpeg,
 )
 from utils.raw_white_balance import estimate_white_balance_from_background
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
@@ -120,6 +127,19 @@ from .splitter_state import (
 from .zoomable_image_widget import ZoomableImageLabel
 
 
+_RAW_DEBUG_TIMING = True
+
+
+def _raw_timing_log(label: str, start: float | None, *, detail: str | None = None) -> None:
+    if not _RAW_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    message = f"[raw-timing] {label}: {elapsed_ms:.1f} ms"
+    if detail:
+        message = f"{message} | {detail}"
+    print(message, flush=True)
+
+
 @dataclass(slots=True)
 class PendingRawCapture:
     """Session-local RAW capture waiting for review and commit."""
@@ -129,6 +149,7 @@ class PendingRawCapture:
     lab_metadata: dict[str, object]
     raw_settings: RawRenderSettings
     preview_path: Path | None = None
+    preview_rgb: np.ndarray | None = None
     wb_sample_base_preview_path: Path | None = None
     wb_sample_base_pixmap: QPixmap | None = None
     status: str = "pending"
@@ -150,103 +171,240 @@ class RawEditSession:
     source_capture_datetime: str | None = None
     previous_session_settings: RawRenderSettings | None = None
     preview_path: Path | None = None
+    preview_rgb: np.ndarray | None = None
     wb_sample_base_preview_path: Path | None = None
     wb_sample_base_pixmap: QPixmap | None = None
     dirty: bool = False
 
 
+def _resize_preview_rgb(rgb: np.ndarray, max_dim: int = RAW_PREVIEW_MAX_DIM) -> np.ndarray:
+    arr = np.asarray(rgb, dtype=np.float32)
+    if arr.size == 0:
+        return arr.copy()
+    if arr.ndim != 3 or arr.shape[-1] < 3:
+        return arr.copy()
+
+    height, width = arr.shape[:2]
+    limit = max(1, int(max_dim))
+    long_edge = max(int(width), int(height))
+    image = np.clip(arr[..., :3], 0.0, 1.0)
+    if long_edge <= limit:
+        return image.copy()
+
+    scale = float(limit) / float(long_edge)
+    new_width = max(1, int(round(float(width) * scale)))
+    new_height = max(1, int(round(float(height) * scale)))
+    rgb8 = np.rint(image * 255.0).astype(np.uint8)
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
+    resized = Image.fromarray(rgb8, mode="RGB").resize((new_width, new_height), resample)
+    return np.asarray(resized, dtype=np.float32) / np.float32(255.0)
+
+
+_TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM = 192
+_TONE_CURVE_PREVIEW_HISTOGRAM_BINS = 96
+
+
 class RawCurvePreviewWidget(QWidget):
-    """Tiny QPainter-only preview of the current simplified RAW transfer."""
+    """Compact preview of the active RAW transfer curve and image histogram."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._settings = RawRenderSettings.default()
-        self._debug: ProcessingDebugInfo | None = None
         self._curve = None
-        self.setMinimumSize(120, 68)
-        self.setMaximumHeight(76)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setToolTip("Curve preview")
+        self._histogram: np.ndarray | None = None
+        self._theme_colors: dict[str, QColor] = {}
+        self.setFixedSize(190, 190)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setToolTip("Effective transfer curve")
+        self._refresh_theme_colors()
 
     @property
     def current_curve(self):
         return self._curve
 
-    def set_curve_state(
-        self,
-        settings: RawRenderSettings | None,
-        *,
-        debug: ProcessingDebugInfo | None = None,
-    ) -> None:
-        self._settings = RawRenderSettings.from_dict(settings or RawRenderSettings.default())
-        self._debug = debug if isinstance(debug, ProcessingDebugInfo) else None
-        self._curve = self._build_curve()
+    def current_histogram(self) -> np.ndarray | None:
+        if self._histogram is None:
+            return None
+        return self._histogram.copy()
+
+    def set_curve(self, curve, histogram: np.ndarray | None = None) -> None:
+        self._curve = curve
+        self._histogram = None if histogram is None else np.asarray(histogram, dtype=np.float32).copy()
         self.update()
 
-    def _build_curve(self):
-        debug = self._debug
-        if debug is None:
-            debug = ProcessingDebugInfo(
-                input_min=0.0,
-                input_max=1.0,
-                black_level=0.20,
-                white_level=0.80,
-                settings=self._settings.to_dict(),
-            )
-        return compute_post_decode_transfer_curve(
-            np.zeros((1, 1, 3), dtype=np.float64),
-            self._settings,
-            debug=debug,
-        )
+    def _refresh_theme_colors(self) -> None:
+        palette = self.palette()
+        window_color = QColor(palette.window().color())
+        plot_color = QColor(palette.base().color())
+        border_color = QColor(palette.mid().color())
+        text_color = QColor(palette.text().color())
+        accent_color = QColor("#16a085")
+        if palette.highlight().color().isValid():
+            highlight = QColor(palette.highlight().color())
+            if highlight.lightness() > 200:
+                accent_color = highlight.darker(140)
+            elif highlight.lightness() < 80:
+                accent_color = highlight.lighter(120)
+            else:
+                accent_color = highlight
+
+        dark_theme = window_color.lightness() < 128
+        histogram_color = QColor(border_color)
+        histogram_color.setAlpha(84 if dark_theme else 96)
+        identity_color = QColor(border_color)
+        identity_color.setAlpha(170 if dark_theme else 150)
+        curve_color = QColor(accent_color)
+        curve_color.setAlpha(240)
+        node_fill = QColor(plot_color)
+        node_fill.setAlpha(255)
+        node_dark = QColor(text_color)
+        node_dark.setAlpha(235)
+        node_light = QColor(curve_color)
+        node_light.setAlpha(255)
+
+        self._theme_colors = {
+            "window": window_color,
+            "plot": plot_color,
+            "border": border_color,
+            "histogram": histogram_color,
+            "identity": identity_color,
+            "curve": curve_color,
+            "node_fill": node_fill,
+            "node_dark": node_dark,
+            "node_light": node_light,
+        }
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        event_type = event.type()
+        if event_type in {
+            getattr(QEvent, "PaletteChange", None),
+            getattr(QEvent, "ApplicationPaletteChange", None),
+            getattr(QEvent, "StyleChange", None),
+            getattr(QEvent, "ThemeChange", None),
+        }:
+            self._refresh_theme_colors()
+            self.update()
+        super().changeEvent(event)
+
+    @staticmethod
+    def _map_point(plot: QRectF, x: float, y: float) -> QPointF:
+        px = plot.left() + float(np.clip(float(x), 0.0, 1.0)) * plot.width()
+        py = plot.bottom() - float(np.clip(float(y), 0.0, 1.0)) * plot.height()
+        return QPointF(px, py)
+
+    @staticmethod
+    def _draw_node(painter: QPainter, center: QPointF, *, fill: QColor, stroke: QColor) -> None:
+        painter.setPen(QPen(stroke, 1.0))
+        painter.setBrush(fill)
+        painter.drawEllipse(center, 3.8, 3.8)
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
-        super().paintEvent(event)
+        del event
+        if not self._theme_colors:
+            self._refresh_theme_colors()
+
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(self.rect(), QColor("#fbfbfc"))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.fillRect(self.rect(), self._theme_colors["window"])
 
         outer = self.rect().adjusted(1, 1, -1, -1)
-        painter.setPen(QPen(QColor("#d1d5db"), 1))
-        painter.drawRoundedRect(outer, 6, 6)
+        painter.setPen(QPen(self._theme_colors["border"], 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(outer, 8, 8)
+
+        inset = 12
+        plot_side = max(1, min(int(outer.width() - inset * 2), int(outer.height() - inset * 2)))
+        plot_left = float(outer.center().x()) - float(plot_side) / 2.0
+        plot_top = float(outer.center().y()) - float(plot_side) / 2.0
+        plot = QRectF(plot_left, plot_top, float(plot_side), float(plot_side))
+
+        painter.setPen(QPen(self._theme_colors["border"], 1))
+        painter.setBrush(self._theme_colors["plot"])
+        painter.drawRoundedRect(plot, 6, 6)
+
+        histogram = self._histogram
+        if histogram is not None and histogram.size:
+            hist = np.asarray(histogram, dtype=np.float32)
+            peak = float(np.max(hist)) if hist.size else 0.0
+            if np.isfinite(peak) and peak > 0.0:
+                hist = np.clip(hist / peak, 0.0, 1.0)
+                hist_path = QPainterPath()
+                step = plot.width() / float(hist.size)
+                hist_path.moveTo(plot.left(), plot.bottom())
+                for index, value in enumerate(hist):
+                    x_left = plot.left() + float(index) * step
+                    x_right = x_left + step
+                    y_top = plot.bottom() - float(value) * plot.height()
+                    hist_path.lineTo(x_left, y_top)
+                    hist_path.lineTo(x_right, y_top)
+                hist_path.lineTo(plot.right(), plot.bottom())
+                hist_path.closeSubpath()
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(self._theme_colors["histogram"])
+                painter.drawPath(hist_path)
+
+        painter.setPen(QPen(self._theme_colors["identity"], 1.1, Qt.DashLine))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawLine(self._map_point(plot, 0.0, 0.0), self._map_point(plot, 1.0, 1.0))
 
         curve = self._curve
         if curve is None:
             return
 
-        plot = outer.adjusted(6, 6, -6, -6)
-        if plot.width() <= 1 or plot.height() <= 1:
-            return
-
-        def _map_point(x: float, y: float) -> QPointF:
-            px = plot.left() + float(np.clip(x, 0.0, 1.0)) * plot.width()
-            py = plot.bottom() - float(np.clip(y, 0.0, 1.0)) * plot.height()
-            return QPointF(px, py)
-
-        painter.setPen(QPen(QColor("#d1d5db"), 1, Qt.DashLine))
-        painter.drawLine(_map_point(0.0, 0.0), _map_point(1.0, 1.0))
-
-        black_level = getattr(curve.debug, "black_level", None)
-        white_level = getattr(curve.debug, "white_level", None)
-        if black_level is not None and np.isfinite(float(black_level)):
-            x = plot.left() + float(np.clip(float(black_level), 0.0, 1.0)) * plot.width()
-            painter.setPen(QPen(QColor(44, 62, 80, 100), 1, Qt.DotLine))
-            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
-        if white_level is not None and np.isfinite(float(white_level)):
-            x = plot.left() + float(np.clip(float(white_level), 0.0, 1.0)) * plot.width()
-            painter.setPen(QPen(QColor(192, 57, 43, 100), 1, Qt.DotLine))
-            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
-
         path = QPainterPath()
         first_point = True
         for x_value, y_value in zip(curve.input_values, curve.final_output, strict=False):
-            point = _map_point(float(x_value), float(y_value))
+            point = self._map_point(plot, float(x_value), float(y_value))
             if first_point:
                 path.moveTo(point)
                 first_point = False
             else:
                 path.lineTo(point)
-        painter.setPen(QPen(QColor("#2563eb"), 2))
+        painter.setPen(QPen(self._theme_colors["curve"], 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
+
+        debug = getattr(curve, "debug", None)
+        black_level = getattr(debug, "black_level", None)
+        white_level = getattr(debug, "white_level", None)
+        dark_point = getattr(debug, "dark_point", None)
+        light_point = getattr(debug, "light_point", None)
+        if dark_point is None and black_level is not None:
+            dark_point = black_level
+        if light_point is None and white_level is not None:
+            light_point = white_level
+        if dark_point is not None and np.isfinite(float(dark_point)):
+            self._draw_node(
+                painter,
+                self._map_point(plot, float(dark_point), 0.0),
+                fill=self._theme_colors["node_fill"],
+                stroke=self._theme_colors["node_dark"],
+            )
+        if light_point is not None and np.isfinite(float(light_point)):
+            self._draw_node(
+                painter,
+                self._map_point(plot, float(light_point), 1.0),
+                fill=self._theme_colors["node_light"],
+                stroke=self._theme_colors["node_dark"],
+            )
+
+
+def _compute_combined_rgb_histogram(rgb: np.ndarray, *, bins: int = _TONE_CURVE_PREVIEW_HISTOGRAM_BINS) -> np.ndarray:
+    arr = np.asarray(rgb, dtype=np.float32)
+    bin_count = max(1, int(bins))
+    if arr.size == 0:
+        return np.zeros(bin_count, dtype=np.float32)
+
+    values = np.clip(arr[..., :3], 0.0, 1.0).reshape(-1)
+    hist, _edges = np.histogram(values, bins=bin_count, range=(0.0, 1.0))
+    hist = hist.astype(np.float32, copy=False)
+    if hist.size == 0:
+        return np.zeros(bin_count, dtype=np.float32)
+
+    peak = float(hist.max())
+    if peak <= 0.0 or not np.isfinite(peak):
+        return np.zeros(bin_count, dtype=np.float32)
+    hist = np.sqrt(hist / np.float32(peak)).astype(np.float32, copy=False)
+    return hist
 
 
 class LiveLabTab(QWidget):
@@ -293,12 +451,28 @@ class LiveLabTab(QWidget):
         self._pending_raw_preview_timer = QTimer(self)
         self._pending_raw_preview_timer.setSingleShot(True)
         self._pending_raw_preview_timer.timeout.connect(self._refresh_selected_pending_raw_preview)
+        self._pending_raw_preview_timer.setInterval(24)
         self._raw_edit_session: RawEditSession | None = None
         self._raw_edit_background_wb_armed = False
         self._raw_edit_preview_timer = QTimer(self)
         self._raw_edit_preview_timer.setSingleShot(True)
         self._raw_edit_preview_timer.timeout.connect(self._refresh_raw_edit_preview)
+        self._raw_edit_preview_timer.setInterval(24)
         self._pending_raw_background_wb_armed = False
+        self._pending_raw_preview_proxy_cache: dict[tuple[str, int, int, str], np.ndarray] = {}
+        self._raw_curve_preview_analysis_signature: tuple[str, int, int, str] | None = None
+        self._raw_curve_preview_analysis_rgb: np.ndarray | None = None
+        self._raw_curve_preview_histogram: np.ndarray | None = None
+        self._raw_edit_preview_save_target: RawEditSession | None = None
+        self._pending_raw_preview_save_target: PendingRawCapture | None = None
+        self._raw_edit_preview_save_timer = QTimer(self)
+        self._raw_edit_preview_save_timer.setSingleShot(True)
+        self._raw_edit_preview_save_timer.timeout.connect(self._persist_raw_edit_preview)
+        self._raw_edit_preview_save_timer.setInterval(300)
+        self._pending_raw_preview_save_timer = QTimer(self)
+        self._pending_raw_preview_save_timer.setSingleShot(True)
+        self._pending_raw_preview_save_timer.timeout.connect(self._persist_pending_raw_preview)
+        self._pending_raw_preview_save_timer.setInterval(300)
         self._raw_review_shortcuts: list[QShortcut] = []
         self._raw_copied_settings: RawRenderSettings | None = None
         self._seen_source_paths: set[str] = set()
@@ -482,10 +656,15 @@ class LiveLabTab(QWidget):
         raw_body_layout.setContentsMargins(12, 4, 12, 12)
         raw_body_layout.setSpacing(10)
 
-        self.raw_controls = RawProcessingControls(self.raw_processing_body)
+        self.raw_controls = RawProcessingControls(
+            self.raw_processing_body,
+            show_tone_controls_when_disabled=True,
+        )
         self.raw_controls.settingsChanged.connect(self._on_raw_processing_controls_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._toggle_active_raw_background_wb_pick)
         raw_body_layout.addWidget(self.raw_controls)
+        self.raw_curve_preview_widget = RawCurvePreviewWidget(self.raw_processing_body)
+        raw_body_layout.addWidget(self.raw_curve_preview_widget, 0, Qt.AlignHCenter)
 
         self.pending_raw_frame = QFrame()
         self.pending_raw_frame.setFrameShape(QFrame.NoFrame)
@@ -1394,6 +1573,7 @@ class LiveLabTab(QWidget):
     def _apply_raw_settings_to_pending_capture(self, capture: PendingRawCapture, settings: RawRenderSettings) -> bool:
         if capture is None:
             return False
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         resolved_settings = RawRenderSettings.from_dict(settings)
         base_settings = RawRenderSettings.from_dict(capture.raw_settings)
         updated_settings = self._preserve_raw_wb_fields(base_settings, resolved_settings)
@@ -1401,25 +1581,21 @@ class LiveLabTab(QWidget):
         if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
             return True
 
-        preview_dir = self._pending_raw_preview_dir()
-        preview_dir.mkdir(parents=True, exist_ok=True)
         try:
-            preview_path = render_raw_preview(
-                capture.source_path,
-                settings=updated_settings,
-                output_path=capture.preview_path if capture.preview_path and Path(capture.preview_path).exists() else None,
-                output_dir=preview_dir,
-            )
+            preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, updated_settings)
+            capture.preview_rgb = preview_rgb
+            preview_dir = self._pending_raw_preview_dir()
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_path = capture.preview_path
+            if preview_path is None:
+                preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
             capture.preview_path = Path(preview_path)
             capture.status = "pending"
-            gallery = getattr(self, "session_gallery", None)
-            if gallery is not None:
-                invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
-                if callable(invalidate_gallery):
-                    try:
-                        invalidate_gallery(capture.preview_path)
-                    except Exception:
-                        pass
+            _raw_timing_log(
+                "pending RAW capture settings applied",
+                start,
+                detail=f"{capture.source_path.name} preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+            )
             return True
         except RawRenderingUnavailableError as exc:
             capture.status = "failed"
@@ -1531,9 +1707,356 @@ class LiveLabTab(QWidget):
         updater = getattr(self, "_update_raw_processing_pick_button", None)
         if callable(updater):
             updater()
+        updater = getattr(self, "_refresh_raw_curve_preview", None)
+        if callable(updater):
+            updater()
         hint_setter = getattr(self, "_set_hint", None)
         if callable(hint_setter):
             hint_setter(self._current_raw_hint_text())
+
+    @staticmethod
+    def _raw_preview_decode_mode(settings: RawRenderSettings) -> str:
+        sample_base_mode = str(settings.wb_sample_base_mode or "").strip().lower() or None
+        if sample_base_mode not in {"camera", "auto"}:
+            sample_base_mode = "auto" if settings.white_balance_mode == "auto" else "camera"
+        return sample_base_mode if sample_base_mode in {"camera", "auto"} else "camera"
+
+    def _raw_preview_proxy_cache_key(
+        self,
+        source_path: str | Path,
+        settings: RawRenderSettings | dict | None,
+    ) -> tuple[str, int, int, str] | None:
+        path = Path(source_path)
+        try:
+            stat = path.stat()
+        except Exception:
+            return None
+        render_settings = RawRenderSettings.from_dict(settings)
+        decode_mode = self._raw_preview_decode_mode(render_settings)
+        try:
+            source_key = str(path.resolve())
+        except Exception:
+            source_key = str(path)
+        return (source_key, int(stat.st_mtime_ns), int(stat.st_size), decode_mode)
+
+    def _raw_preview_proxy_for_source(
+        self,
+        source_path: str | Path,
+        settings: RawRenderSettings | dict | None,
+    ) -> np.ndarray:
+        cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+        if cache is None:
+            cache = {}
+            self._pending_raw_preview_proxy_cache = cache
+        cache_key = self._raw_preview_proxy_cache_key(source_path, settings)
+        if cache_key is None:
+            proxy = render_raw_preview_proxy_rgb(source_path, settings=settings)
+            return np.asarray(proxy, dtype=np.float32)
+        cached = cache.get(cache_key)
+        if isinstance(cached, np.ndarray):
+            return cached
+        proxy = render_raw_preview_proxy_rgb(source_path, settings=settings)
+        result = np.asarray(proxy, dtype=np.float32)
+        cache[cache_key] = result
+        return result
+
+    @staticmethod
+    def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
+        arr = np.asarray(rgb)
+        if arr.dtype == np.uint8:
+            image8 = np.ascontiguousarray(arr[..., :3])
+        else:
+            image = np.asarray(arr[..., :3], dtype=np.float32)
+            image = np.clip(image, 0.0, 1.0)
+            image8 = np.ascontiguousarray(np.rint(image * 255.0).astype(np.uint8))
+        image8 = np.ascontiguousarray(image8)
+        height, width = image8.shape[:2]
+        qimage = QImage(
+            image8.data,
+            width,
+            height,
+            int(image8.strides[0]),
+            QImage.Format.Format_RGB888,
+        ).copy()
+        return QPixmap.fromImage(qimage)
+
+    def _raw_preview_rgb_for_source(
+        self,
+        source_path: str | Path,
+        settings: RawRenderSettings | dict | None,
+    ) -> tuple[np.ndarray, RawRenderSettings]:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        source_name = Path(source_path).name
+        resolved_settings = RawRenderSettings.from_dict(settings)
+        proxy_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        preview_rgb = self._raw_preview_proxy_for_source(source_path, resolved_settings)
+        preview_rgb = _resize_preview_rgb(preview_rgb, RAW_PREVIEW_MAX_DIM)
+        _raw_timing_log(
+            "RAW preview proxy decode/resize",
+            proxy_start,
+            detail=f"{source_name} -> {preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+        )
+        processing_settings = resolved_settings
+        if (
+            processing_settings.white_balance_mode in {"background", "custom"}
+            and processing_settings.wb_multipliers is None
+            and processing_settings.wb_selection is not None
+        ):
+            wb_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            background_wb = estimate_white_balance_from_background(
+                preview_rgb,
+                rect=processing_settings.wb_selection,
+            )
+            _raw_timing_log("background WB estimate", wb_start, detail=source_name)
+            processing_settings = replace(
+                processing_settings,
+                white_balance_mode="custom",
+                wb_multipliers=(
+                    float(background_wb[0]),
+                    float(background_wb[1]),
+                    float(background_wb[2]),
+                ),
+                wb_multiplier_space="post_decode_rgb",
+                wb_sample_base_mode=self._raw_preview_decode_mode(resolved_settings),
+            )
+        process_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        preview_float = apply_post_decode_processing(preview_rgb, processing_settings)
+        _raw_timing_log("RAW preview post-decode processing", process_start, detail=source_name)
+        _raw_timing_log("RAW preview total", start, detail=source_name)
+        return np.asarray(preview_float, dtype=np.float32), processing_settings
+
+    def _present_raw_preview(
+        self,
+        *,
+        pixmap: QPixmap,
+        image_path: str,
+        image: dict | None,
+        title: str,
+        meta: str,
+        preview_scaled: bool = True,
+        preserve_view: bool = False,
+    ) -> None:
+        if pixmap is None or pixmap.isNull():
+            return
+        actual_preserve_view = bool(preserve_view)
+        if not actual_preserve_view:
+            preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
+            if callable(preserve_view_checker):
+                try:
+                    actual_preserve_view = bool(preserve_view_checker(image_path))
+                except Exception:
+                    actual_preserve_view = False
+        self.live_image_label.set_image_sources(
+            pixmap,
+            image_path,
+            preview_scaled,
+            preserve_view=actual_preserve_view,
+        )
+        self.reset_view_btn.setEnabled(True)
+        if image is not None:
+            mpp_value = self._image_microns_per_pixel(image)
+            self.live_image_label.set_microns_per_pixel(mpp_value or 0.0)
+            if mpp_value:
+                scale_bar_value, scale_bar_unit = self._viewer_scale_bar_config(image)
+                scale_bar_microns = float(scale_bar_value) * 1000.0 if scale_bar_unit == "mm" else float(scale_bar_value)
+                self.live_image_label.set_scale_bar(True, scale_bar_microns, unit=scale_bar_unit)
+            else:
+                self.live_image_label.set_scale_bar(False, 0.0)
+        else:
+            self.live_image_label.set_microns_per_pixel(0.0)
+            self.live_image_label.set_scale_bar(False, 0.0)
+        self.viewer_title_label.setText(title)
+        self.viewer_meta_label.setText(meta)
+
+    def _schedule_raw_edit_preview_save(self, session: RawEditSession | None = None) -> None:
+        self._raw_edit_preview_save_target = session or getattr(self, "_raw_edit_session", None)
+        timer = getattr(self, "_raw_edit_preview_save_timer", None)
+        if isinstance(timer, QTimer):
+            timer.stop()
+            timer.start()
+
+    def _schedule_pending_raw_preview_save(self, capture: PendingRawCapture | None = None) -> None:
+        self._pending_raw_preview_save_target = capture or self._current_pending_raw_capture()
+        timer = getattr(self, "_pending_raw_preview_save_timer", None)
+        if isinstance(timer, QTimer):
+            timer.stop()
+            timer.start()
+
+    def _persist_raw_edit_preview(self) -> None:
+        session = getattr(self, "_raw_edit_preview_save_target", None) or getattr(self, "_raw_edit_session", None)
+        if session is None:
+            return
+        preview_rgb = getattr(session, "preview_rgb", None)
+        preview_path = getattr(session, "preview_path", None)
+        if preview_rgb is None or not preview_path:
+            return
+        preview_path = Path(str(preview_path))
+        try:
+            save_raw_preview_jpeg(
+                preview_rgb,
+                preview_path,
+                session.source_raw_path,
+                source_capture_datetime=session.source_capture_datetime,
+            )
+        except Exception:
+            pass
+        finally:
+            if getattr(self, "_raw_edit_preview_save_target", None) is session:
+                self._raw_edit_preview_save_target = None
+
+    def _persist_pending_raw_preview(self) -> None:
+        capture = getattr(self, "_pending_raw_preview_save_target", None) or self._current_pending_raw_capture()
+        if capture is None:
+            return
+        preview_rgb = getattr(capture, "preview_rgb", None)
+        preview_path = getattr(capture, "preview_path", None)
+        if preview_rgb is None or not preview_path:
+            return
+        preview_path = Path(str(preview_path))
+        try:
+            save_raw_preview_jpeg(
+                preview_rgb,
+                preview_path,
+                capture.source_path,
+            )
+            gallery = getattr(self, "session_gallery", None)
+            if gallery is not None:
+                invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
+                if callable(invalidate_gallery):
+                    invalidate_gallery(preview_path)
+        except Exception:
+            pass
+        finally:
+            if self._current_pending_raw_capture() is not capture:
+                capture.preview_rgb = None
+            if getattr(self, "_pending_raw_preview_save_target", None) is capture:
+                self._pending_raw_preview_save_target = None
+
+    def _prune_pending_raw_preview_buffers(
+        self,
+        keep_capture: PendingRawCapture | None = None,
+        *,
+        clear_proxy_cache: bool = False,
+    ) -> None:
+        captures = getattr(self, "_pending_raw_captures", []) or []
+        for capture in captures:
+            if capture is keep_capture:
+                continue
+            if getattr(capture, "preview_rgb", None) is not None:
+                capture.preview_rgb = None
+        if clear_proxy_cache:
+            cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+            if isinstance(cache, dict):
+                cache.clear()
+
+    def _raw_curve_preview_source_path(self) -> Path | None:
+        session = getattr(self, "_raw_edit_session", None)
+        if session is not None:
+            source_path = getattr(session, "source_raw_path", None)
+            if source_path:
+                path = Path(str(source_path))
+                if path.exists():
+                    return path
+
+        capture = self._current_pending_raw_capture()
+        if capture is not None:
+            source_path = getattr(capture, "source_path", None)
+            if source_path:
+                path = Path(str(source_path))
+                if path.exists():
+                    return path
+
+        live_image_label = getattr(self, "live_image_label", None)
+        preview_path = getattr(live_image_label, "_full_image_path", None)
+        if preview_path:
+            path = Path(str(preview_path))
+            if path.exists():
+                return path
+        return None
+
+    @staticmethod
+    def _raw_curve_preview_fallback_rgb() -> np.ndarray:
+        ramp = np.linspace(0.0, 1.0, 256, dtype=np.float32)
+        return np.repeat(ramp[:, None, None], 3, axis=2)
+
+    def _raw_curve_preview_analysis_from_path(
+        self,
+        source_path: Path | None,
+        settings: RawRenderSettings | None = None,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        if source_path is None:
+            return None
+        try:
+            stat = source_path.stat()
+        except Exception:
+            return None
+
+        resolved_settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
+        signature = (str(source_path), int(stat.st_mtime_ns), int(stat.st_size), self._raw_preview_decode_mode(resolved_settings))
+        cached_signature = getattr(self, "_raw_curve_preview_analysis_signature", None)
+        if signature == cached_signature:
+            cached_rgb = getattr(self, "_raw_curve_preview_analysis_rgb", None)
+            cached_histogram = getattr(self, "_raw_curve_preview_histogram", None)
+            if isinstance(cached_rgb, np.ndarray) and isinstance(cached_histogram, np.ndarray):
+                return cached_rgb, cached_histogram
+
+        try:
+            if is_raw_image_path(source_path):
+                rgb = self._raw_preview_proxy_for_source(source_path, resolved_settings)
+                rgb = _resize_preview_rgb(rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
+            else:
+                with Image.open(source_path) as image:
+                    image.load()
+                    image = image.convert("RGB")
+                    max_dim = max(int(image.width), int(image.height))
+                    if max_dim > _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM:
+                        scale = float(_TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM) / float(max_dim)
+                        resized_size = (
+                            max(1, int(round(float(image.width) * scale))),
+                            max(1, int(round(float(image.height) * scale))),
+                        )
+                        resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", Image.BILINEAR)
+                        image = image.resize(resized_size, resample)
+                    rgb = np.asarray(image, dtype=np.float32) / np.float32(255.0)
+        except Exception:
+            return None
+
+        histogram = _compute_combined_rgb_histogram(rgb, bins=_TONE_CURVE_PREVIEW_HISTOGRAM_BINS)
+        self._raw_curve_preview_analysis_signature = signature
+        self._raw_curve_preview_analysis_rgb = rgb
+        self._raw_curve_preview_histogram = histogram
+        return rgb, histogram
+
+    def _refresh_raw_curve_preview(self) -> None:
+        widget = getattr(self, "raw_curve_preview_widget", None)
+        if widget is None:
+            return
+
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            try:
+                settings = RawRenderSettings.from_dict(controls.settings())
+            except Exception:
+                settings = RawRenderSettings.from_dict(getattr(self, "_raw_render_settings", None))
+        else:
+            settings = RawRenderSettings.from_dict(getattr(self, "_raw_render_settings", None))
+
+        source_path = self._raw_curve_preview_source_path()
+        analysis = self._raw_curve_preview_analysis_from_path(source_path, settings)
+        if analysis is None:
+            rgb = self._raw_curve_preview_fallback_rgb()
+            histogram = None
+            self._raw_curve_preview_analysis_signature = None
+            self._raw_curve_preview_analysis_rgb = rgb
+            self._raw_curve_preview_histogram = None
+        else:
+            rgb, histogram = analysis
+
+        try:
+            curve = compute_post_decode_transfer_curve(rgb, settings)
+        except Exception:
+            curve = None
+        widget.set_curve(curve, histogram)
 
     def _raw_processing_pick_target(self) -> str | None:
         if getattr(self, "_raw_edit_session", None) is not None:
@@ -1590,6 +2113,9 @@ class LiveLabTab(QWidget):
         self._set_hint(self._current_raw_hint_text())
 
     def _on_raw_processing_controls_changed(self, *_args) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        sender_fn = getattr(self, "sender", None)
+        sender = sender_fn() if callable(sender_fn) else None
         editing_session = getattr(self, "_raw_edit_session", None)
         settings = self._raw_settings_from_controls(update_session_settings=editing_session is None)
         if editing_session is not None:
@@ -1597,13 +2123,17 @@ class LiveLabTab(QWidget):
             settings = self._preserve_raw_wb_fields(current_edit_settings, settings)
             editing_session.working_settings = settings
             editing_session.dirty = settings != editing_session.original_settings
-            self._schedule_raw_edit_preview_refresh()
-            self._update_raw_edit_controls()
+            self._refresh_raw_edit_preview()
             self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
             self._update_pending_raw_controls()
             self._update_raw_edit_controls()
             self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
             self._refresh_raw_processing_context_ui()
+            _raw_timing_log(
+                "RAW controls changed (edit session)",
+                start,
+                detail=f"image_id={editing_session.image_id} sender={type(sender).__name__ if sender is not None else 'unknown'}",
+            )
             return
 
         selected_targets = self._selected_raw_processing_targets()
@@ -1641,7 +2171,6 @@ class LiveLabTab(QWidget):
                 self._update_pending_raw_controls()
                 self._update_raw_edit_controls()
                 self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
-                self._refresh_session_gallery()
                 if active_pending_applied and active_pending_capture is not None:
                     try:
                         pending_index = active_pending_index
@@ -1654,6 +2183,15 @@ class LiveLabTab(QWidget):
                 elif active_committed_applied and active_committed_image_id is not None:
                     self._show_session_image(int(active_committed_image_id))
                 self._refresh_raw_processing_context_ui()
+                _raw_timing_log(
+                    "RAW controls changed (selected targets)",
+                    start,
+                    detail=(
+                        f"targets={len(selected_targets)} "
+                        f"pending={active_pending_applied} committed={active_committed_applied} "
+                        f"sender={type(sender).__name__ if sender is not None else 'unknown'}"
+                    ),
+                )
                 return
 
         save_helper = getattr(self, "_save_raw_processing_settings_for_current_context", None)
@@ -1666,6 +2204,11 @@ class LiveLabTab(QWidget):
         self._update_raw_edit_controls()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
         self._refresh_raw_processing_context_ui()
+        _raw_timing_log(
+            "RAW controls changed (no targets)",
+            start,
+            detail=f"sender={type(sender).__name__ if sender is not None else 'unknown'}",
+        )
 
     def _current_raw_render_settings(self) -> RawRenderSettings:
         _preset_context = self._raw_processing_preset_context()
@@ -1952,31 +2495,36 @@ class LiveLabTab(QWidget):
         timer = getattr(self, "_raw_edit_preview_timer", None)
         if isinstance(timer, QTimer):
             timer.stop()
-            timer.start(200)
+            timer.start()
 
     def _refresh_raw_edit_preview(self) -> bool:
         session = getattr(self, "_raw_edit_session", None)
         if session is None:
             return False
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
 
-        preview_dir = self._raw_edit_preview_dir()
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        preview_path = session.preview_path
-        if preview_path is None:
-            preview_path = preview_dir / f"{session.source_raw_path.stem}_{session.image_id}.jpg"
         try:
-            rendered_path = render_raw_preview(
-                session.source_raw_path,
-                settings=session.working_settings,
-                output_path=preview_path,
-                output_dir=preview_dir,
-                source_capture_datetime=session.source_capture_datetime,
-            )
-            session.preview_path = Path(rendered_path)
+            preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(session.source_raw_path, session.working_settings)
+            session.preview_rgb = preview_rgb
+            preview_dir = self._raw_edit_preview_dir()
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_path = session.preview_path
+            if preview_path is None:
+                preview_path = preview_dir / f"{session.source_raw_path.stem}_{session.image_id}.jpg"
+            session.preview_path = Path(preview_path)
             session.dirty = session.working_settings != session.original_settings
             self._update_raw_edit_controls()
             if self._selected_committed_image_id() == session.image_id:
                 self._show_session_image(session.image_id)
+                action = "displayed"
+            else:
+                self._schedule_raw_edit_preview_save(session)
+                action = "scheduled-save"
+            _raw_timing_log(
+                "RAW edit preview refresh",
+                start,
+                detail=f"{session.source_raw_path.name} {preview_rgb.shape[1]}x{preview_rgb.shape[0]} {action}",
+            )
             return True
         except RawRenderingUnavailableError as exc:
             self._show_status(
@@ -3150,6 +3698,7 @@ class LiveLabTab(QWidget):
         self._refresh_raw_processing_context_ui()
 
     def _show_pending_raw_capture(self, index: int | None = None) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         captures = getattr(self, "_pending_raw_captures", [])
         if not captures:
             self._cancel_pending_raw_background_wb_selection()
@@ -3210,85 +3759,130 @@ class LiveLabTab(QWidget):
             capture.raw_settings,
             auto_level_settings=auto_settings,
         )
-        preview_path = str(capture.preview_path or "").strip()
-        if not preview_path or not Path(preview_path).exists():
-            self._clear_session_viewer(
-                title=self.tr("Pending RAW preview unavailable"),
-                meta=self.tr("The temporary preview for {name} is not available.").format(name=capture.source_path.name),
-            )
-            self._update_pending_raw_controls()
-            return
-        pixmap, _preview_scaled = self._load_viewer_pixmap(preview_path)
-        if pixmap is None or pixmap.isNull():
-            self._clear_session_viewer(
-                title=self.tr("Pending RAW preview unavailable"),
-                meta=self.tr("Could not load the temporary preview for {name}.").format(name=capture.source_path.name),
-            )
-            self._show_status(
-                self.tr("Could not load the temporary preview for {name}.").format(name=capture.source_path.name),
-                tone="warning",
-                timeout_ms=5000,
-            )
-            self._update_pending_raw_controls()
-            return
-
-        preserve_view = False
-        preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
-        if callable(preserve_view_checker):
-            try:
-                preserve_view = bool(preserve_view_checker(preview_path))
-            except Exception:
-                preserve_view = False
-        self.live_image_label.set_image_sources(
-            pixmap,
-            preview_path,
-            True,
-            preserve_view=preserve_view,
+        preview_rgb = getattr(capture, "preview_rgb", None)
+        preview_path = str(capture.preview_path or capture.source_path)
+        title = self.tr("Pending RAW {current} of {total}: {name}").format(
+            current=self._selected_pending_raw_index_value() + 1,
+            total=len(captures),
+            name=capture.source_path.name,
         )
-        self.reset_view_btn.setEnabled(True)
-        self.live_image_label.set_microns_per_pixel(0.0)
-        self.live_image_label.set_scale_bar(False, 0.0)
-        self.viewer_title_label.setText(
-            self.tr("Pending RAW {current} of {total}: {name}").format(
-                current=self._selected_pending_raw_index_value() + 1,
-                total=len(captures),
-                name=capture.source_path.name,
+        meta = self._raw_settings_info_text(capture.raw_settings)
+        if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
+            preview_dir = self._pending_raw_preview_dir()
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_path_obj = Path(capture.preview_path) if capture.preview_path else preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
+            capture.preview_path = preview_path_obj
+            preview_path = str(preview_path_obj)
+            self._present_raw_preview(
+                pixmap=self._rgb_to_pixmap(preview_rgb),
+                image_path=preview_path,
+                image=None,
+                title=title,
+                meta=meta,
+                preview_scaled=True,
+                preserve_view=True,
             )
-        )
-        self.viewer_meta_label.setText(self._raw_settings_info_text(capture.raw_settings))
+            self._schedule_pending_raw_preview_save(capture)
+            self._prune_pending_raw_preview_buffers(capture)
+            _raw_timing_log(
+                "show pending RAW capture",
+                start,
+                detail=f"{capture.source_path.name} source=memory preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+            )
+        else:
+            self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
+            if not preview_path or not Path(preview_path).exists():
+                _raw_timing_log(
+                    "show pending RAW capture",
+                    start,
+                    detail=f"{capture.source_path.name} source=refresh-needed",
+                )
+                self._refresh_selected_pending_raw_preview()
+                return
+            pixmap, _preview_scaled = self._load_viewer_pixmap(preview_path)
+            if pixmap is None or pixmap.isNull():
+                self._clear_session_viewer(
+                    title=self.tr("Pending RAW preview unavailable"),
+                    meta=self.tr("Could not load the temporary preview for {name}.").format(name=capture.source_path.name),
+                )
+                self._show_status(
+                    self.tr("Could not load the temporary preview for {name}.").format(name=capture.source_path.name),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+                self._update_pending_raw_controls()
+                return
+            self._present_raw_preview(
+                pixmap=pixmap,
+                image_path=preview_path,
+                image=None,
+                title=title,
+                meta=meta,
+                preview_scaled=True,
+                preserve_view=True,
+            )
+            self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
+            _raw_timing_log(
+                "show pending RAW capture",
+                start,
+                detail=f"{capture.source_path.name} source=disk",
+            )
         self._update_pending_raw_controls()
 
     def _refresh_selected_pending_raw_preview(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         capture = self._current_pending_raw_capture()
         if capture is None:
             return
         if capture.status not in {"pending", "failed"}:
             return
         try:
-            preview_path = render_raw_preview(
-                capture.source_path,
-                settings=capture.raw_settings,
-                output_path=capture.preview_path if capture.preview_path and Path(capture.preview_path).exists() else None,
-                output_dir=self._pending_raw_preview_dir(),
-            )
+            preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, capture.raw_settings)
+            capture.preview_rgb = preview_rgb
+            preview_dir = self._pending_raw_preview_dir()
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_path = capture.preview_path
+            if preview_path is None:
+                preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
             capture.preview_path = Path(preview_path)
             capture.status = "pending"
-            gallery = getattr(self, "session_gallery", None)
-            if gallery is not None:
-                try:
-                    gallery.invalidate_pixmap_cache(capture.preview_path)
-                except Exception:
-                    pass
-            self._refresh_session_gallery()
+            _raw_timing_log(
+                "refresh selected pending RAW preview",
+                start,
+                detail=f"{capture.source_path.name} preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+            )
             self._show_pending_raw_capture(self._selected_pending_raw_index)
         except RawRenderingUnavailableError as exc:
+            companion_jpeg_path = getattr(capture, "companion_jpeg_path", None)
+            if companion_jpeg_path and Path(str(companion_jpeg_path)).exists():
+                try:
+                    if self._ingest_detected_image(str(companion_jpeg_path)):
+                        self._remove_pending_raw_capture(capture, status="discarded", refresh_ui=False)
+                        self._update_pending_raw_controls()
+                        return
+                except Exception:
+                    pass
             capture.status = "failed"
+            _raw_timing_log(
+                "refresh selected pending RAW preview failed",
+                start,
+                detail=f"{capture.source_path.name}: {exc}",
+            )
             self._show_status(
                 self.tr("RAW preview unavailable for {name}: {error}").format(name=capture.source_path.name, error=str(exc)),
                 tone="warning",
                 timeout_ms=6000,
             )
         except RuntimeError as exc:
+            companion_jpeg_path = getattr(capture, "companion_jpeg_path", None)
+            if companion_jpeg_path and Path(str(companion_jpeg_path)).exists():
+                try:
+                    if self._ingest_detected_image(str(companion_jpeg_path)):
+                        self._remove_pending_raw_capture(capture, status="discarded", refresh_ui=False)
+                        self._update_pending_raw_controls()
+                        return
+                except Exception:
+                    pass
             capture.status = "failed"
             self._show_status(
                 self.tr("Could not render preview for {name}: {error}").format(name=capture.source_path.name, error=str(exc)),
@@ -3300,7 +3894,7 @@ class LiveLabTab(QWidget):
         timer = getattr(self, "_pending_raw_preview_timer", None)
         if isinstance(timer, QTimer):
             timer.stop()
-            timer.start(250)
+            timer.start()
 
     def _create_pending_raw_capture(
         self,
@@ -3326,12 +3920,9 @@ class LiveLabTab(QWidget):
             observation_id=int(self._session_observation_id or 0) or None,
             created_at=datetime.now(),
         )
-        preview_path = render_raw_preview(
-            source,
-            settings=resolved_settings,
-            output_dir=self._pending_raw_preview_dir(),
-        )
-        pending.preview_path = Path(preview_path)
+        preview_dir = self._pending_raw_preview_dir()
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        pending.preview_path = preview_dir / f"{source.stem}_{uuid4().hex}.jpg"
         return pending
 
     def _add_pending_raw_capture(self, pending: PendingRawCapture) -> None:
@@ -3573,21 +4164,23 @@ class LiveLabTab(QWidget):
             copied_settings = self._pending_raw_settings_for_copy(settings)
             capture.raw_settings = copied_settings
             try:
-                capture.preview_path = Path(
-                    render_raw_preview(
+                preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, copied_settings)
+                capture.preview_rgb = preview_rgb
+                preview_dir = self._pending_raw_preview_dir()
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                preview_path = capture.preview_path
+                if preview_path is None:
+                    preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
+                capture.preview_path = Path(preview_path)
+                try:
+                    save_raw_preview_jpeg(
+                        preview_rgb,
+                        capture.preview_path,
                         capture.source_path,
-                        settings=copied_settings,
-                        output_path=capture.preview_path if capture.preview_path and Path(capture.preview_path).exists() else None,
-                        output_dir=self._pending_raw_preview_dir(),
                     )
-                )
+                except Exception:
+                    pass
                 capture.status = "pending"
-                gallery = getattr(self, "session_gallery", None)
-                if gallery is not None:
-                    try:
-                        gallery.invalidate_pixmap_cache(capture.preview_path)
-                    except Exception:
-                        pass
             except Exception as exc:
                 capture.status = "failed"
                 self._show_status(
@@ -3599,6 +4192,7 @@ class LiveLabTab(QWidget):
                     timeout_ms=6000,
                 )
         self._update_pending_raw_controls()
+        self._prune_pending_raw_preview_buffers(self._current_pending_raw_capture(), clear_proxy_cache=True)
         self._refresh_session_gallery()
         if self._current_pending_raw_capture() is not None:
             self._show_pending_raw_capture(self._selected_pending_raw_index)
@@ -4588,7 +5182,8 @@ class LiveLabTab(QWidget):
         self.stop_session()
 
     def _on_watcher_finished(self) -> None:
-        if self.sender() is not self._watcher:
+        sender_fn = getattr(self, "sender", None)
+        if callable(sender_fn) and sender_fn() is not self._watcher:
             return
         self._watcher = None
         if self._session_stop_pending or self._session_observation_id:
@@ -5090,10 +5685,12 @@ class LiveLabTab(QWidget):
             update_raw_processing_visibility()
 
     def _show_session_image(self, image_id: int) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         image = ImageDB.get_image(image_id)
         if not image:
             self._clear_session_viewer()
             self._update_raw_edit_controls()
+            _raw_timing_log("show session image", start, detail=f"image_id={image_id} missing")
             return
         self._selected_session_image_id = int(image_id)
 
@@ -5104,15 +5701,29 @@ class LiveLabTab(QWidget):
                 meta=self.tr("This session image does not have a stored file path."),
             )
             self._update_raw_edit_controls()
+            _raw_timing_log("show session image", start, detail=f"image_id={image_id} missing-path")
             return
 
         apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
         if callable(apply_microscope_state):
             apply_microscope_state(image)
         edit_session = getattr(self, "_raw_edit_session", None)
-        if edit_session is not None and int(edit_session.image_id) == int(image_id):
-            preview_path = str(edit_session.preview_path or "").strip()
-            if not preview_path or not Path(preview_path).exists():
+        edit_mode = edit_session is not None and int(edit_session.image_id) == int(image_id)
+        preview_scaled = False
+        pixmap: QPixmap | None = None
+        if edit_mode:
+            preview_dir = self._raw_edit_preview_dir()
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            preview_path_obj = Path(edit_session.preview_path) if edit_session.preview_path else preview_dir / f"{edit_session.source_raw_path.stem}_{edit_session.image_id}.jpg"
+            edit_session.preview_path = preview_path_obj
+            preview_path = str(preview_path_obj)
+            image_path = preview_path
+            preview_rgb = getattr(edit_session, "preview_rgb", None)
+            if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
+                pixmap = self._rgb_to_pixmap(preview_rgb)
+                preview_scaled = True
+                self._schedule_raw_edit_preview_save(edit_session)
+            elif not preview_path or not Path(preview_path).exists():
                 self._clear_session_viewer(
                     title=self.tr("RAW edit preview unavailable"),
                     meta=self.tr("The temporary RAW edit preview for {name} is not available.").format(
@@ -5120,31 +5731,39 @@ class LiveLabTab(QWidget):
                     ),
                 )
                 self._update_raw_edit_controls()
+                _raw_timing_log(
+                    "show session image",
+                    start,
+                    detail=f"{Path(image_path).name} edit={edit_mode} preview-missing",
+                )
                 return
-            image_path = preview_path
 
-        pixmap, preview_scaled = self._load_viewer_pixmap(image_path)
-        if pixmap is None or pixmap.isNull():
-            self._clear_session_viewer(
-                title=self.tr("Selected image unavailable"),
-                meta=self.tr("Could not load {name}.").format(name=Path(image_path).name),
-            )
-            self._show_status(
-                self.tr("Could not load {name}.").format(name=Path(image_path).name),
-                tone="warning",
-                timeout_ms=5000,
-            )
-            self._update_raw_edit_controls()
-            return
+        if pixmap is None:
+            pixmap, preview_scaled = self._load_viewer_pixmap(image_path)
+            if pixmap is None or pixmap.isNull():
+                self._clear_session_viewer(
+                    title=self.tr("Selected image unavailable"),
+                    meta=self.tr("Could not load {name}.").format(name=Path(image_path).name),
+                )
+                self._show_status(
+                    self.tr("Could not load {name}.").format(name=Path(image_path).name),
+                    tone="warning",
+                    timeout_ms=5000,
+                )
+                self._update_raw_edit_controls()
+                _raw_timing_log("show session image", start, detail=f"{Path(image_path).name} load-failed")
+                return
 
         preserve_view = False
         preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
-        if callable(preserve_view_checker):
+        if edit_mode:
+            preserve_view = True
+        elif callable(preserve_view_checker):
             try:
                 preserve_view = bool(preserve_view_checker(image_path))
             except Exception:
                 preserve_view = False
-        if edit_session is not None and int(edit_session.image_id) == int(image_id):
+        if edit_mode:
             preview_scaled = True
         self.live_image_label.set_image_sources(
             pixmap,
@@ -5152,6 +5771,7 @@ class LiveLabTab(QWidget):
             preview_scaled,
             preserve_view=preserve_view,
         )
+        self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
         self.reset_view_btn.setEnabled(True)
 
         mpp_value = self._image_microns_per_pixel(image)
@@ -5163,7 +5783,7 @@ class LiveLabTab(QWidget):
         else:
             self.live_image_label.set_scale_bar(False, 0.0)
 
-        if edit_session is not None and int(edit_session.image_id) == int(image_id):
+        if edit_mode:
             self.viewer_title_label.setText(
                 self.tr("Editing RAW: {name}").format(name=edit_session.source_raw_path.name)
             )
@@ -5204,6 +5824,11 @@ class LiveLabTab(QWidget):
                     auto_level_settings=auto_settings,
                 )
         self._update_raw_edit_controls()
+        _raw_timing_log(
+            "show session image",
+            start,
+            detail=f"{Path(image_path).name} edit={edit_mode} preserve_view={preserve_view} preview_scaled={preview_scaled}",
+        )
 
     def _load_viewer_pixmap(self, path: str) -> tuple[QPixmap | None, bool]:
         reader = QImageReader(path)
