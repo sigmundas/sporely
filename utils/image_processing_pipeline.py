@@ -476,13 +476,23 @@ def compute_auto_level_bounds(
     """Return the luminance bounds used by the auto-level stage."""
     arr = to_float_rgb(rgb, clip=False)
     luminance = compute_luminance(arr)
+    return compute_auto_level_bounds_from_luminance(luminance, black_percentile, white_percentile)
+
+
+def compute_auto_level_bounds_from_luminance(
+    luminance: Any,
+    black_percentile: float,
+    white_percentile: float,
+) -> tuple[float | None, float | None]:
+    """Same as compute_auto_level_bounds but skips the RGB→luminance step."""
+    luma = np.asarray(luminance)
     black_percentile = float(np.clip(black_percentile, 0.0, 1.0))
     white_percentile = float(np.clip(white_percentile, 0.0, 1.0))
-    if white_percentile <= black_percentile:
+    if white_percentile <= black_percentile or luma.size == 0:
         return None, None
 
-    black_level = float(np.quantile(luminance, black_percentile))
-    white_level = float(np.quantile(luminance, white_percentile))
+    black_level = float(np.quantile(luma, black_percentile))
+    white_level = float(np.quantile(luma, white_percentile))
     if not np.isfinite(black_level) or not np.isfinite(white_level) or white_level <= black_level:
         return None, None
     return black_level, white_level
@@ -658,8 +668,14 @@ def compute_post_decode_transfer_curve(
     *,
     samples: int = 2048,
     debug: ProcessingDebugInfo | None = None,
+    shadow_bounds: tuple[float | None, float | None] | None = None,
 ) -> PostDecodeTransferCurve:
-    """Return the luminance transfer curves used by post-decode processing."""
+    """Return the luminance transfer curves used by post-decode processing.
+
+    Callers that already know the auto-level bounds (or want to compute them
+    once for both ``debug`` and the curve) can pass ``shadow_bounds`` to skip
+    the redundant RGB→luminance + quantile pass.
+    """
     normalized_settings = _settings_to_dict(settings)
     resolved_debug = debug
     if resolved_debug is None:
@@ -671,11 +687,14 @@ def compute_post_decode_transfer_curve(
     sample_count = max(2, int(samples))
     ramp = np.linspace(0.0, 1.0, sample_count, dtype=np.float64)
     sample_values = ramp
-    shadow_black_level, shadow_white_level = compute_auto_level_bounds(
-        rgb,
-        float(normalized_settings.get("black_percentile", 0.001)),
-        float(normalized_settings.get("white_percentile", 0.999)),
-    )
+    if shadow_bounds is not None:
+        shadow_black_level, shadow_white_level = shadow_bounds
+    else:
+        shadow_black_level, shadow_white_level = compute_auto_level_bounds(
+            rgb,
+            float(normalized_settings.get("black_percentile", 0.001)),
+            float(normalized_settings.get("white_percentile", 0.999)),
+        )
     black_level = resolved_debug.black_level if bool(normalized_settings.get("auto_levels", True)) else None
     white_level = resolved_debug.white_level if bool(normalized_settings.get("auto_levels", True)) else None
 
@@ -766,7 +785,131 @@ def compute_post_decode_transfer_curve(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class FastPreviewResult:
+    """Output of :func:`apply_post_decode_processing_fast`."""
+
+    rgb: np.ndarray
+    debug: ProcessingDebugInfo
+    curve: PostDecodeTransferCurve
+
+
+def _resolve_post_decode_wb_gains(settings: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    multipliers = settings.get("wb_multipliers")
+    if multipliers is None:
+        return None
+    space = str(settings.get("wb_multiplier_space") or "").strip().lower() or None
+    if space not in {None, "post_decode_rgb"}:
+        return None
+    try:
+        gains = tuple(float(value) for value in multipliers)
+    except Exception:
+        return None
+    if len(gains) != 3:
+        return None
+    return gains
+
+
+def prepare_post_decode_fast_inputs(
+    rgb: Any,
+    settings: Any,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(rgb_with_wb, luminance)`` ready for the fast LUT path.
+
+    Applies post-decode WB if the settings carry custom multipliers, then
+    clips and returns the luminance. Callers (e.g. the live preview) can
+    cache the result and re-use it across slider events that don't change
+    WB or the source pixels.
+    """
+    normalized_settings = _settings_to_dict(settings)
+    input_rgb = to_float_rgb(rgb, clip=False)
+
+    gains = _resolve_post_decode_wb_gains(normalized_settings)
+    if gains is not None:
+        working_rgb = apply_custom_white_balance(input_rgb, gains)
+    else:
+        working_rgb = input_rgb
+    working_rgb = np.clip(np.asarray(working_rgb[..., :3], dtype=np.float32), 0.0, 1.0)
+    luminance = working_rgb @ np.asarray(_LUMA_WEIGHTS, dtype=np.float32)
+    return working_rgb, luminance
+
+
+def apply_post_decode_processing_fast(
+    rgb: Any,
+    settings: Any,
+    *,
+    lut_samples: int = 4096,
+    prepared_inputs: tuple[np.ndarray, np.ndarray] | None = None,
+) -> FastPreviewResult:
+    """LUT-based post-decode processing for live preview updates.
+
+    Composes the entire post-decode pipeline (WB + auto levels + manual
+    light/dark + shadow lift + tone shadows/highlights + sigmoid tone curve)
+    into a single 1‑D luminance LUT, then maps the source RGB through the
+    LUT with a per-pixel scale. This matches what the curve inspector tool
+    does and is ~10× faster than running :func:`apply_post_decode_processing`
+    per slider event.
+
+    Callers that already cached the WB-applied RGB and luminance (e.g. the
+    live preview between slider events) can pass them as
+    ``prepared_inputs=(rgb_with_wb, luminance)`` to skip the per-call WB +
+    luminance pass.
+
+    The only behavioral difference vs. the slow path is that intermediate
+    clipping between stages is collapsed into a single output clip — the
+    same approximation the live curve preview already shows and the curve
+    inspector uses.
+    """
+    normalized_settings = _settings_to_dict(settings)
+    if prepared_inputs is not None:
+        working_rgb, luminance = prepared_inputs
+        working_rgb = np.asarray(working_rgb, dtype=np.float32)
+        luminance = np.asarray(luminance, dtype=np.float32)
+    else:
+        working_rgb, luminance = prepare_post_decode_fast_inputs(rgb, normalized_settings)
+
+    shadow_bounds = compute_auto_level_bounds_from_luminance(
+        luminance,
+        float(normalized_settings.get("black_percentile", 0.001)),
+        float(normalized_settings.get("white_percentile", 0.999)),
+    )
+    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    debug_black = shadow_bounds[0] if auto_levels_enabled else None
+    debug_white = shadow_bounds[1] if auto_levels_enabled else None
+
+    debug = ProcessingDebugInfo(
+        input_min=float(np.min(luminance)) if luminance.size else 0.0,
+        input_max=float(np.max(luminance)) if luminance.size else 0.0,
+        black_level=debug_black,
+        white_level=debug_white,
+        settings=normalized_settings,
+    )
+
+    curve = compute_post_decode_transfer_curve(
+        working_rgb,
+        normalized_settings,
+        samples=lut_samples,
+        debug=debug,
+        shadow_bounds=shadow_bounds,
+    )
+
+    lut = np.asarray(curve.final_output, dtype=np.float32)
+    lut_size = max(2, int(lut.size))
+    indices = np.clip(
+        (luminance * np.float32(lut_size - 1)).astype(np.int32),
+        0,
+        lut_size - 1,
+    )
+    mapped_luminance = lut[indices]
+    safe_luma = np.maximum(luminance, np.float32(1e-6))
+    scale = mapped_luminance / safe_luma
+    processed = np.clip(working_rgb * scale[..., None], 0.0, 1.0).astype(np.float32, copy=False)
+
+    return FastPreviewResult(rgb=processed, debug=debug, curve=curve)
+
+
 __all__ = [
+    "FastPreviewResult",
     "RawBasicControlState",
     "ProcessingDebugInfo",
     "PostDecodeTransferCurve",
@@ -776,9 +919,12 @@ __all__ = [
     "apply_light_dark_levels",
     "apply_luminance_transfer",
     "apply_post_decode_processing",
+    "apply_post_decode_processing_fast",
     "apply_shadow_toe_lift",
+    "prepare_post_decode_fast_inputs",
     "blend_luminance_levels",
     "compute_auto_level_bounds",
+    "compute_auto_level_bounds_from_luminance",
     "compute_auto_levels_transfer",
     "compute_post_decode_transfer_curve",
     "compute_luminance",

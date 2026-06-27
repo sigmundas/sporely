@@ -6,7 +6,7 @@ import json
 import os
 import time
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from uuid import uuid4
 from pathlib import Path
@@ -80,9 +80,13 @@ from utils.image_companion_grouping import (
 )
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.image_processing_pipeline import (
+    PostDecodeTransferCurve,
     ProcessingDebugInfo,
     apply_post_decode_processing,
+    apply_post_decode_processing_fast,
+    compute_auto_level_bounds_from_luminance,
     compute_post_decode_transfer_curve,
+    prepare_post_decode_fast_inputs,
     raw_basic_controls_from_settings,
     raw_settings_from_basic_controls,
 )
@@ -91,6 +95,7 @@ from utils.lab_watcher import LabWatcherWorker
 from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
 from utils.raw_render import (
     RawRenderSettings,
+    apply_auto_level_bounds_to_settings,
     compute_auto_level_adjusted_settings_from_source,
     build_raw_processing_metadata,
     RAW_PREVIEW_MAX_DIM,
@@ -175,6 +180,27 @@ class RawEditSession:
     wb_sample_base_preview_path: Path | None = None
     wb_sample_base_pixmap: QPixmap | None = None
     dirty: bool = False
+
+
+_RAW_PREVIEW_WB_CACHE_MAX = 4
+
+
+@dataclass(slots=True)
+class _RawPreviewCacheEntry:
+    """Per-source proxy cache shared by every preview path.
+
+    The half-size LibRaw decode is by far the dominant cost; everything
+    derived from it (resized preview, source auto-level bounds, WB-applied
+    RGB + luminance) is kept here so that slider events don't redo any of
+    it.
+    """
+
+    raw_rgb: np.ndarray
+    preview_rgb: np.ndarray | None = None
+    source_auto_bounds: tuple[float | None, float | None] | None = None
+    wb_processed: dict[
+        tuple[float, float, float] | None, tuple[np.ndarray, np.ndarray]
+    ] = field(default_factory=dict)
 
 
 def _resize_preview_rgb(rgb: np.ndarray, max_dim: int = RAW_PREVIEW_MAX_DIM) -> np.ndarray:
@@ -459,10 +485,14 @@ class LiveLabTab(QWidget):
         self._raw_edit_preview_timer.timeout.connect(self._refresh_raw_edit_preview)
         self._raw_edit_preview_timer.setInterval(24)
         self._pending_raw_background_wb_armed = False
-        self._pending_raw_preview_proxy_cache: dict[tuple[str, int, int, str], np.ndarray] = {}
+        self._pending_raw_preview_proxy_cache: dict[
+            tuple[str, int, int, str], "_RawPreviewCacheEntry"
+        ] = {}
         self._raw_curve_preview_analysis_signature: tuple[str, int, int, str] | None = None
         self._raw_curve_preview_analysis_rgb: np.ndarray | None = None
         self._raw_curve_preview_histogram: np.ndarray | None = None
+        self._raw_preview_last_curve: PostDecodeTransferCurve | None = None
+        self._raw_preview_last_curve_signature: tuple[object, ...] | None = None
         self._raw_edit_preview_save_target: RawEditSession | None = None
         self._pending_raw_preview_save_target: PendingRawCapture | None = None
         self._raw_edit_preview_save_timer = QTimer(self)
@@ -1083,7 +1113,15 @@ class LiveLabTab(QWidget):
         source_path: str | Path,
         settings: RawRenderSettings | None,
     ) -> RawRenderSettings:
-        return compute_auto_level_adjusted_settings_from_source(source_path, settings=settings)
+        resolved = RawRenderSettings.from_dict(settings)
+        try:
+            entry = LiveLabTab._raw_preview_cache_entry(self, source_path, resolved)
+            black_level, white_level = LiveLabTab._raw_preview_source_auto_bounds(entry)
+        except Exception:
+            return compute_auto_level_adjusted_settings_from_source(source_path, settings=resolved)
+        if black_level is None or white_level is None:
+            return resolved
+        return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
 
     def _sync_raw_processing_controls_from_settings(
         self,
@@ -1749,16 +1787,89 @@ class LiveLabTab(QWidget):
             cache = {}
             self._pending_raw_preview_proxy_cache = cache
         cache_key = self._raw_preview_proxy_cache_key(source_path, settings)
-        if cache_key is None:
-            proxy = render_raw_preview_proxy_rgb(source_path, settings=settings)
-            return np.asarray(proxy, dtype=np.float32)
-        cached = cache.get(cache_key)
-        if isinstance(cached, np.ndarray):
-            return cached
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if isinstance(cached, _RawPreviewCacheEntry):
+                return cached.raw_rgb
+            if isinstance(cached, np.ndarray):
+                return cached
         proxy = render_raw_preview_proxy_rgb(source_path, settings=settings)
         result = np.asarray(proxy, dtype=np.float32)
-        cache[cache_key] = result
+        if cache_key is not None:
+            cache[cache_key] = _RawPreviewCacheEntry(raw_rgb=result)
         return result
+
+    def _raw_preview_cache_entry(
+        self,
+        source_path: str | Path,
+        settings: RawRenderSettings | dict | None,
+    ) -> "_RawPreviewCacheEntry":
+        cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+        if cache is None:
+            cache = {}
+            self._pending_raw_preview_proxy_cache = cache
+        cache_key = self._raw_preview_proxy_cache_key(source_path, settings)
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if isinstance(cached, _RawPreviewCacheEntry):
+                return cached
+            if isinstance(cached, np.ndarray):
+                entry = _RawPreviewCacheEntry(raw_rgb=np.asarray(cached, dtype=np.float32))
+                cache[cache_key] = entry
+                return entry
+        raw_rgb = self._raw_preview_proxy_for_source(source_path, settings)
+        entry = _RawPreviewCacheEntry(raw_rgb=np.asarray(raw_rgb, dtype=np.float32))
+        if cache_key is not None:
+            cache[cache_key] = entry
+        return entry
+
+    @staticmethod
+    def _raw_preview_resized_for_entry(entry: "_RawPreviewCacheEntry") -> np.ndarray:
+        if entry.preview_rgb is None:
+            resized = _resize_preview_rgb(entry.raw_rgb, RAW_PREVIEW_MAX_DIM)
+            entry.preview_rgb = np.ascontiguousarray(resized.astype(np.float32, copy=False))
+        return entry.preview_rgb
+
+    @staticmethod
+    def _raw_preview_source_auto_bounds(
+        entry: "_RawPreviewCacheEntry",
+    ) -> tuple[float | None, float | None]:
+        if entry.source_auto_bounds is None:
+            preview = LiveLabTab._raw_preview_resized_for_entry(entry)
+            luminance = preview @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
+            entry.source_auto_bounds = compute_auto_level_bounds_from_luminance(
+                luminance, 0.0, 1.0
+            )
+        return entry.source_auto_bounds
+
+    @staticmethod
+    def _raw_preview_wb_inputs(
+        entry: "_RawPreviewCacheEntry",
+        settings: RawRenderSettings,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        preview = LiveLabTab._raw_preview_resized_for_entry(entry)
+        wb_key: tuple[float, float, float] | None = None
+        wb_multipliers = settings.wb_multipliers
+        wb_space = (settings.wb_multiplier_space or "").strip().lower() or None
+        if wb_multipliers is not None and wb_space in {None, "post_decode_rgb"}:
+            try:
+                wb_key = (
+                    float(wb_multipliers[0]),
+                    float(wb_multipliers[1]),
+                    float(wb_multipliers[2]),
+                )
+            except Exception:
+                wb_key = None
+        cached = entry.wb_processed.get(wb_key)
+        if cached is not None:
+            return cached
+        prepared = prepare_post_decode_fast_inputs(preview, settings)
+        if len(entry.wb_processed) >= _RAW_PREVIEW_WB_CACHE_MAX:
+            oldest_key = next(iter(entry.wb_processed), None)
+            if oldest_key is not None:
+                entry.wb_processed.pop(oldest_key, None)
+        entry.wb_processed[wb_key] = prepared
+        return prepared
 
     @staticmethod
     def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
@@ -1789,8 +1900,8 @@ class LiveLabTab(QWidget):
         source_name = Path(source_path).name
         resolved_settings = RawRenderSettings.from_dict(settings)
         proxy_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-        preview_rgb = self._raw_preview_proxy_for_source(source_path, resolved_settings)
-        preview_rgb = _resize_preview_rgb(preview_rgb, RAW_PREVIEW_MAX_DIM)
+        entry = LiveLabTab._raw_preview_cache_entry(self, source_path, resolved_settings)
+        preview_rgb = LiveLabTab._raw_preview_resized_for_entry(entry)
         _raw_timing_log(
             "RAW preview proxy decode/resize",
             proxy_start,
@@ -1820,10 +1931,33 @@ class LiveLabTab(QWidget):
                 wb_sample_base_mode=self._raw_preview_decode_mode(resolved_settings),
             )
         process_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-        preview_float = apply_post_decode_processing(preview_rgb, processing_settings)
+        prepared = LiveLabTab._raw_preview_wb_inputs(entry, processing_settings)
+        fast_result = apply_post_decode_processing_fast(
+            preview_rgb,
+            processing_settings,
+            prepared_inputs=prepared,
+        )
         _raw_timing_log("RAW preview post-decode processing", process_start, detail=source_name)
+        self._raw_preview_last_curve = fast_result.curve
+        self._raw_preview_last_curve_signature = LiveLabTab._raw_curve_signature_for_source(
+            source_path, processing_settings
+        )
         _raw_timing_log("RAW preview total", start, detail=source_name)
-        return np.asarray(preview_float, dtype=np.float32), processing_settings
+        return fast_result.rgb, processing_settings
+
+    @staticmethod
+    def _raw_curve_signature_for_source(
+        source_path: str | Path,
+        settings: RawRenderSettings,
+    ) -> tuple[object, ...]:
+        try:
+            stat = Path(source_path).stat()
+            mtime_ns = int(stat.st_mtime_ns)
+            size = int(stat.st_size)
+        except Exception:
+            mtime_ns = 0
+            size = 0
+        return (str(source_path), mtime_ns, size, settings)
 
     def _present_raw_preview(
         self,
@@ -1913,12 +2047,14 @@ class LiveLabTab(QWidget):
         if preview_rgb is None or not preview_path:
             return
         preview_path = Path(str(preview_path))
+        save_succeeded = False
         try:
             save_raw_preview_jpeg(
                 preview_rgb,
                 preview_path,
                 capture.source_path,
             )
+            save_succeeded = True
             gallery = getattr(self, "session_gallery", None)
             if gallery is not None:
                 invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
@@ -1931,6 +2067,8 @@ class LiveLabTab(QWidget):
                 capture.preview_rgb = None
             if getattr(self, "_pending_raw_preview_save_target", None) is capture:
                 self._pending_raw_preview_save_target = None
+        if save_succeeded:
+            self._refresh_session_gallery()
 
     def _prune_pending_raw_preview_buffers(
         self,
@@ -2042,6 +2180,15 @@ class LiveLabTab(QWidget):
             settings = RawRenderSettings.from_dict(getattr(self, "_raw_render_settings", None))
 
         source_path = self._raw_curve_preview_source_path()
+
+        cached_curve = getattr(self, "_raw_preview_last_curve", None)
+        cached_signature = getattr(self, "_raw_preview_last_curve_signature", None)
+        if cached_curve is not None and cached_signature is not None and source_path is not None:
+            if cached_signature == LiveLabTab._raw_curve_signature_for_source(source_path, settings):
+                histogram = getattr(self, "_raw_curve_preview_histogram", None)
+                widget.set_curve(cached_curve, histogram)
+                return
+
         analysis = self._raw_curve_preview_analysis_from_path(source_path, settings)
         if analysis is None:
             rgb = self._raw_curve_preview_fallback_rgb()
