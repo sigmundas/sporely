@@ -804,12 +804,14 @@ class ZoomableImageLabel(QLabel):
         """Return current view center (image coords) and zoom."""
         if not self.original_pixmap or self.zoom_level <= 0:
             return None
-        display_rect = self.get_display_rect()
-        if display_rect.isNull():
-            return None
-        center_screen = QPointF(self.width() / 2, self.height() / 2)
-        center_x = (center_screen.x() - display_rect.x()) / self.zoom_level
-        center_y = (center_screen.y() - display_rect.y()) / self.zoom_level
+        # Compute in float space to keep `get_view_state` → `set_view_state`
+        # idempotent. Going through ``get_display_rect`` would truncate to
+        # ints and accumulate sub-pixel drift on every pixmap swap, which
+        # showed up as horizontal walk-off on slider drags when zoomed in.
+        width = float(self.original_pixmap.width())
+        height = float(self.original_pixmap.height())
+        center_x = width / 2.0 - float(self.pan_offset.x()) / float(self.zoom_level)
+        center_y = height / 2.0 - float(self.pan_offset.y()) / float(self.zoom_level)
         return {
             "center": QPointF(center_x, center_y),
             "zoom": float(self.zoom_level),

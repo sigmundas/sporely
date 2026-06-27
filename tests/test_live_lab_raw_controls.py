@@ -318,10 +318,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         base_settings,
         resolved_settings,
     )
-    state._apply_raw_settings_to_pending_capture = lambda capture, settings: live_lab_tab.LiveLabTab._apply_raw_settings_to_pending_capture(
+    state._apply_raw_settings_to_pending_capture = lambda capture, settings, *, render_preview=True: live_lab_tab.LiveLabTab._apply_raw_settings_to_pending_capture(
         state,
         capture,
         settings,
+        render_preview=render_preview,
     )
     state._sync_selected_pending_raw_metadata_from_controls = lambda: live_lab_tab.LiveLabTab._sync_selected_pending_raw_metadata_from_controls(state)
     state._selected_pending_raw_captures = lambda: live_lab_tab.LiveLabTab._selected_pending_raw_captures(state)

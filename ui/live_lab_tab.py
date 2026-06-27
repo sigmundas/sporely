@@ -132,7 +132,7 @@ from .splitter_state import (
 from .zoomable_image_widget import ZoomableImageLabel
 
 
-_RAW_DEBUG_TIMING = True
+_RAW_DEBUG_TIMING = False
 
 
 def _raw_timing_log(label: str, start: float | None, *, detail: str | None = None) -> None:
@@ -161,6 +161,10 @@ class PendingRawCapture:
     group_key: str | None = None
     observation_id: int | None = None
     created_at: datetime | None = None
+    # Settings the current ``preview_rgb`` / on-disk preview JPEG were
+    # rendered with. Used to detect staleness when multi-select applied new
+    # settings to this capture without re-rendering it.
+    rendered_settings: RawRenderSettings | None = None
 
 
 @dataclass(slots=True)
@@ -503,6 +507,13 @@ class LiveLabTab(QWidget):
         self._pending_raw_preview_save_timer.setSingleShot(True)
         self._pending_raw_preview_save_timer.timeout.connect(self._persist_pending_raw_preview)
         self._pending_raw_preview_save_timer.setInterval(300)
+        self._pending_raw_background_render_queue: list[PendingRawCapture] = []
+        self._pending_raw_background_render_timer = QTimer(self)
+        self._pending_raw_background_render_timer.setSingleShot(True)
+        self._pending_raw_background_render_timer.setInterval(50)
+        self._pending_raw_background_render_timer.timeout.connect(
+            self._process_pending_raw_background_render_queue
+        )
         self._raw_review_shortcuts: list[QShortcut] = []
         self._raw_copied_settings: RawRenderSettings | None = None
         self._seen_source_paths: set[str] = set()
@@ -1554,9 +1565,33 @@ class LiveLabTab(QWidget):
     def _raw_processing_controls_visible(self) -> bool:
         if self._raw_edit_session is not None:
             return True
+        # Multi-select with any non-RAW item: hide the panel so the user
+        # isn't led to think RAW sliders also affect the JPEG/16-bit-TIFF
+        # rows in the selection.
+        if self._selection_contains_non_raw_item():
+            return False
         if self._current_pending_raw_capture() is not None:
             return True
         return bool(self._selected_raw_processing_targets())
+
+    def _selection_contains_non_raw_item(self) -> bool:
+        """True if any selected gallery item is not RAW-editable."""
+        selected_keys = self._session_gallery_selected_keys()
+        if len(selected_keys) <= 1:
+            return False
+        for key in selected_keys:
+            if self._pending_raw_capture_index_for_key(key) is not None:
+                continue  # pending captures are always RAW
+            try:
+                image_id = int(key)
+            except Exception:
+                continue
+            image = ImageDB.get_image(image_id)
+            if image is None:
+                continue
+            if self._raw_editable_image_session(image) is None:
+                return True
+        return False
 
     def _update_raw_processing_visibility(self) -> None:
         card = getattr(self, "raw_processing_card", None)
@@ -1608,7 +1643,13 @@ class LiveLabTab(QWidget):
             wb_selection_space=None,
         )
 
-    def _apply_raw_settings_to_pending_capture(self, capture: PendingRawCapture, settings: RawRenderSettings) -> bool:
+    def _apply_raw_settings_to_pending_capture(
+        self,
+        capture: PendingRawCapture,
+        settings: RawRenderSettings,
+        *,
+        render_preview: bool = True,
+    ) -> bool:
         if capture is None:
             return False
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
@@ -1619,9 +1660,24 @@ class LiveLabTab(QWidget):
         if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
             return True
 
+        if not render_preview:
+            # Multi-select: only the active capture is re-rendered on each
+            # slider event. For the rest, just stash the new settings and
+            # release the stale preview so the next activation forces a
+            # re-render via _show_pending_raw_capture's staleness check.
+            capture.preview_rgb = None
+            capture.status = "pending"
+            _raw_timing_log(
+                "pending RAW capture settings applied",
+                start,
+                detail=f"{capture.source_path.name} deferred (multi-select)",
+            )
+            return True
+
         try:
             preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, updated_settings)
             capture.preview_rgb = preview_rgb
+            capture.rendered_settings = updated_settings
             preview_dir = self._pending_raw_preview_dir()
             preview_dir.mkdir(parents=True, exist_ok=True)
             preview_path = capture.preview_path
@@ -1798,6 +1854,19 @@ class LiveLabTab(QWidget):
         if cache_key is not None:
             cache[cache_key] = _RawPreviewCacheEntry(raw_rgb=result)
         return result
+
+    def _evict_raw_preview_proxy_cache(self, source_path: str | Path) -> None:
+        """Drop every cache entry tied to ``source_path`` (across decode modes)."""
+        cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+        if not isinstance(cache, dict) or not cache:
+            return
+        try:
+            target = str(Path(source_path).resolve())
+        except Exception:
+            target = str(source_path)
+        stale = [key for key in cache.keys() if isinstance(key, tuple) and key and key[0] == target]
+        for key in stale:
+            cache.pop(key, None)
 
     def _raw_preview_cache_entry(
         self,
@@ -2054,6 +2123,7 @@ class LiveLabTab(QWidget):
                 preview_path,
                 capture.source_path,
             )
+            capture.rendered_settings = capture.raw_settings
             save_succeeded = True
             gallery = getattr(self, "session_gallery", None)
             if gallery is not None:
@@ -2069,6 +2139,11 @@ class LiveLabTab(QWidget):
                 self._pending_raw_preview_save_target = None
         if save_succeeded:
             self._refresh_session_gallery()
+            # The slider has settled (300 ms idle); kick off background
+            # rendering for any captures left stale by multi-select.
+            queue_helper = getattr(self, "_queue_background_pending_raw_renders", None)
+            if callable(queue_helper):
+                queue_helper()
 
     def _prune_pending_raw_preview_buffers(
         self,
@@ -2086,6 +2161,117 @@ class LiveLabTab(QWidget):
             cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
             if isinstance(cache, dict):
                 cache.clear()
+
+    @staticmethod
+    def _pending_raw_capture_preview_is_current(capture: PendingRawCapture) -> bool:
+        """Return True when the on-disk preview matches the capture's current settings."""
+        rendered = getattr(capture, "rendered_settings", None)
+        if not isinstance(rendered, RawRenderSettings):
+            return False
+        if rendered != capture.raw_settings:
+            return False
+        preview_path = getattr(capture, "preview_path", None)
+        if not preview_path:
+            return False
+        try:
+            return Path(str(preview_path)).exists()
+        except Exception:
+            return False
+
+    def _queue_background_pending_raw_renders(self) -> None:
+        """Queue every pending capture whose on-disk preview is missing or stale."""
+        queue = getattr(self, "_pending_raw_background_render_queue", None)
+        timer = getattr(self, "_pending_raw_background_render_timer", None)
+        if queue is None or timer is None:
+            return
+        active = self._current_pending_raw_capture()
+        queued_ids = {id(capture) for capture in queue}
+        added = False
+        for capture in list(getattr(self, "_pending_raw_captures", []) or []):
+            if capture is active or id(capture) in queued_ids:
+                continue
+            if getattr(capture, "status", "pending") != "pending":
+                continue
+            if LiveLabTab._pending_raw_capture_preview_is_current(capture):
+                continue
+            queue.append(capture)
+            added = True
+        if (added or queue) and not timer.isActive():
+            timer.start()
+
+    def _process_pending_raw_background_render_queue(self) -> None:
+        """Render and persist the preview JPEG for one queued pending capture."""
+        queue = getattr(self, "_pending_raw_background_render_queue", None)
+        timer = getattr(self, "_pending_raw_background_render_timer", None)
+        if not queue:
+            return
+        active_captures = list(getattr(self, "_pending_raw_captures", []) or [])
+        capture: PendingRawCapture | None = None
+        while queue:
+            candidate = queue.pop(0)
+            if candidate not in active_captures:
+                continue
+            if getattr(candidate, "status", "pending") != "pending":
+                continue
+            if LiveLabTab._pending_raw_capture_preview_is_current(candidate):
+                continue
+            capture = candidate
+            break
+        try:
+            if capture is None:
+                return
+            try:
+                preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(
+                    capture.source_path, capture.raw_settings
+                )
+            except RawRenderingUnavailableError as exc:
+                capture.status = "failed"
+                if _RAW_DEBUG_TIMING:
+                    print(
+                        f"[raw-timing] background render failed (rawpy unavailable): {capture.source_path.name}: {exc}",
+                        flush=True,
+                    )
+                return
+            except Exception as exc:
+                capture.status = "failed"
+                if _RAW_DEBUG_TIMING:
+                    print(
+                        f"[raw-timing] background render failed: {capture.source_path.name}: {exc!r}",
+                        flush=True,
+                    )
+                return
+            capture.rendered_settings = capture.raw_settings
+            try:
+                preview_dir = self._pending_raw_preview_dir()
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                preview_path = capture.preview_path
+                if preview_path is None:
+                    preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
+                preview_path = Path(str(preview_path))
+                capture.preview_path = preview_path
+                save_raw_preview_jpeg(preview_rgb, preview_path, capture.source_path)
+            except Exception as exc:
+                if _RAW_DEBUG_TIMING:
+                    print(
+                        f"[raw-timing] background JPEG save failed: {capture.source_path.name}: {exc!r}",
+                        flush=True,
+                    )
+                return
+            # save_raw_preview_jpeg resets the JPEG mtime back to the source
+            # RAW's mtime, so the gallery's (path|mtime|variant) cache key
+            # is unchanged — we have to evict it explicitly or the thumbnail
+            # keeps rendering the previous bytes.
+            gallery = getattr(self, "session_gallery", None)
+            if gallery is not None:
+                invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
+                if callable(invalidate_gallery):
+                    invalidate_gallery(preview_path)
+            if self._current_pending_raw_capture() is not capture:
+                capture.preview_rgb = None
+            self._refresh_session_gallery()
+        finally:
+            if isinstance(timer, QTimer) and queue:
+                timer.start()
 
     def _raw_curve_preview_source_path(self) -> Path | None:
         session = getattr(self, "_raw_edit_session", None)
@@ -2293,9 +2479,14 @@ class LiveLabTab(QWidget):
             any_applied = False
             for kind, target_key, target in selected_targets:
                 if kind == "pending" and isinstance(target, PendingRawCapture):
-                    if active_pending_capture is target:
+                    is_active_pending = active_pending_capture is target
+                    if is_active_pending:
                         active_pending_applied = True
-                    if self._apply_raw_settings_to_pending_capture(target, settings):
+                    if self._apply_raw_settings_to_pending_capture(
+                        target,
+                        settings,
+                        render_preview=is_active_pending,
+                    ):
                         any_applied = True
                     else:
                         any_applied = True
@@ -3907,6 +4098,16 @@ class LiveLabTab(QWidget):
             auto_level_settings=auto_settings,
         )
         preview_rgb = getattr(capture, "preview_rgb", None)
+        rendered_settings = getattr(capture, "rendered_settings", None)
+        settings_are_stale = (
+            isinstance(rendered_settings, RawRenderSettings)
+            and rendered_settings != capture.raw_settings
+        )
+        if settings_are_stale:
+            # Multi-select left this capture with new raw_settings but no
+            # fresh preview. Force a re-render so the viewer reflects the
+            # current sliders rather than the old JPEG on disk.
+            preview_rgb = None
         preview_path = str(capture.preview_path or capture.source_path)
         title = self.tr("Pending RAW {current} of {total}: {name}").format(
             current=self._selected_pending_raw_index_value() + 1,
@@ -3937,8 +4138,9 @@ class LiveLabTab(QWidget):
                 detail=f"{capture.source_path.name} source=memory preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
             )
         else:
-            self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
-            if not preview_path or not Path(preview_path).exists():
+            self._prune_pending_raw_preview_buffers(clear_proxy_cache=False)
+            needs_refresh = settings_are_stale or not preview_path or not Path(preview_path).exists()
+            if needs_refresh:
                 _raw_timing_log(
                     "show pending RAW capture",
                     start,
@@ -3968,7 +4170,11 @@ class LiveLabTab(QWidget):
                 preview_scaled=True,
                 preserve_view=True,
             )
-            self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
+            # Keep the proxy cache: the curve preview refresh that runs as
+            # part of _sync_raw_processing_controls_from_settings re-uses it,
+            # and so does the next slider event. Cache eviction now happens
+            # when captures are removed, not on every disk-load.
+            self._prune_pending_raw_preview_buffers(clear_proxy_cache=False)
             _raw_timing_log(
                 "show pending RAW capture",
                 start,
@@ -3986,6 +4192,7 @@ class LiveLabTab(QWidget):
         try:
             preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, capture.raw_settings)
             capture.preview_rgb = preview_rgb
+            capture.rendered_settings = capture.raw_settings
             preview_dir = self._pending_raw_preview_dir()
             preview_dir.mkdir(parents=True, exist_ok=True)
             preview_path = capture.preview_path
@@ -4078,6 +4285,9 @@ class LiveLabTab(QWidget):
         self._pending_raw_captures = captures
         self._selected_pending_raw_index = len(captures) - 1
         self._show_pending_raw_capture(self._selected_pending_raw_index)
+        queue_helper = getattr(self, "_queue_background_pending_raw_renders", None)
+        if callable(queue_helper):
+            queue_helper()
 
     def _show_previous_pending_raw_capture(self) -> None:
         count = self._pending_raw_capture_count()
@@ -4128,6 +4338,9 @@ class LiveLabTab(QWidget):
                 pass
         captures.pop(index)
         self._pending_raw_captures = captures
+        evict = getattr(self, "_evict_raw_preview_proxy_cache", None)
+        if callable(evict):
+            evict(pending.source_path)
         if not refresh_ui:
             if captures:
                 self._selected_pending_raw_index = min(index, len(captures) - 1)
