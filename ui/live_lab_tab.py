@@ -1643,6 +1643,90 @@ class LiveLabTab(QWidget):
             wb_selection_space=None,
         )
 
+    @staticmethod
+    def _propagate_raw_wb_for_multi_select(
+        resolved_settings: RawRenderSettings,
+    ) -> RawRenderSettings:
+        """Return ``resolved_settings`` with selection-coordinate WB metadata stripped.
+
+        Multi-select propagates the active capture's WB to its siblings. The
+        WB multipliers and mode are valid for any source (they live in
+        post-decode RGB space), but the sample rectangle and click point are
+        in the active capture's preview coordinates and don't translate.
+        """
+        return replace(
+            resolved_settings,
+            wb_selection=None,
+            wb_sample_point=None,
+            wb_sample_size=None,
+            wb_selection_space=None,
+        )
+
+    @staticmethod
+    def _replace_capture_wb(
+        capture_settings: RawRenderSettings,
+        source_settings: RawRenderSettings,
+    ) -> RawRenderSettings:
+        """Return ``capture_settings`` with WB fields replaced by ``source_settings``."""
+        wb_mode = str(source_settings.white_balance_mode or "camera").strip().lower() or "camera"
+        if wb_mode == "custom" and source_settings.wb_multipliers is not None:
+            return replace(
+                capture_settings,
+                white_balance_mode="custom",
+                wb_multipliers=source_settings.wb_multipliers,
+                wb_multiplier_space=source_settings.wb_multiplier_space or "post_decode_rgb",
+                wb_sample_base_mode=source_settings.wb_sample_base_mode,
+                wb_selection=None,
+                wb_sample_point=None,
+                wb_sample_size=None,
+                wb_selection_space=None,
+            )
+        return replace(
+            capture_settings,
+            white_balance_mode=wb_mode if wb_mode in {"camera", "auto"} else "camera",
+            wb_multipliers=None,
+            wb_multiplier_space=None,
+            wb_sample_base_mode=None,
+            wb_selection=None,
+            wb_sample_point=None,
+            wb_sample_size=None,
+            wb_selection_space=None,
+        )
+
+    def _propagate_raw_wb_to_selected_pending(
+        self,
+        source_settings: RawRenderSettings,
+        *,
+        exclude: PendingRawCapture | None = None,
+    ) -> None:
+        """Copy ``source_settings``' WB onto every other selected pending capture."""
+        targets_fn = getattr(self, "_selected_raw_processing_targets", None)
+        if not callable(targets_fn):
+            return
+        try:
+            targets = targets_fn()
+        except Exception:
+            return
+        changed = False
+        for kind, _key, target in targets:
+            if kind != "pending" or not isinstance(target, PendingRawCapture):
+                continue
+            if target is exclude:
+                continue
+            merged = LiveLabTab._replace_capture_wb(target.raw_settings, source_settings)
+            if merged == target.raw_settings:
+                continue
+            target.raw_settings = merged
+            target.preview_rgb = None
+            target.rendered_settings = None
+            target.status = "pending"
+            changed = True
+        if not changed:
+            return
+        queue_helper = getattr(self, "_queue_background_pending_raw_renders", None)
+        if callable(queue_helper):
+            queue_helper()
+
     def _apply_raw_settings_to_pending_capture(
         self,
         capture: PendingRawCapture,
@@ -1655,7 +1739,12 @@ class LiveLabTab(QWidget):
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         resolved_settings = RawRenderSettings.from_dict(settings)
         base_settings = RawRenderSettings.from_dict(capture.raw_settings)
-        updated_settings = self._preserve_raw_wb_fields(base_settings, resolved_settings)
+        if render_preview:
+            updated_settings = self._preserve_raw_wb_fields(base_settings, resolved_settings)
+        else:
+            # Multi-select non-active: take the active's WB (with its
+            # sample-coord metadata stripped) along with the other settings.
+            updated_settings = self._propagate_raw_wb_for_multi_select(resolved_settings)
         capture.raw_settings = updated_settings
         if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
             return True
@@ -3359,6 +3448,7 @@ class LiveLabTab(QWidget):
             return True
 
         capture.raw_settings = updated_settings
+        capture.rendered_settings = None
         self._cancel_raw_background_wb_selection(target=target)
         auto_settings = None
         if source_path.exists():
@@ -3368,6 +3458,9 @@ class LiveLabTab(QWidget):
             update_session_settings=True,
             auto_level_settings=auto_settings,
         )
+        propagate_wb = getattr(self, "_propagate_raw_wb_to_selected_pending", None)
+        if callable(propagate_wb):
+            propagate_wb(updated_settings, exclude=capture)
         self._refresh_selected_pending_raw_preview()
         self._show_status(
             self._raw_white_balance_readout_text(updated_settings),
