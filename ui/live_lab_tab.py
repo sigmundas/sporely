@@ -280,6 +280,8 @@ class RawCurvePreviewWidget(QWidget):
         dark_theme = window_color.lightness() < 128
         histogram_color = QColor(border_color)
         histogram_color.setAlpha(84 if dark_theme else 96)
+        histogram_clipped_color = QColor(231, 76, 60)
+        histogram_clipped_color.setAlpha(150 if dark_theme else 170)
         identity_color = QColor(border_color)
         identity_color.setAlpha(170 if dark_theme else 150)
         curve_color = QColor(accent_color)
@@ -296,6 +298,7 @@ class RawCurvePreviewWidget(QWidget):
             "plot": plot_color,
             "border": border_color,
             "histogram": histogram_color,
+            "histogram_clipped": histogram_clipped_color,
             "identity": identity_color,
             "curve": curve_color,
             "node_fill": node_fill,
@@ -351,32 +354,48 @@ class RawCurvePreviewWidget(QWidget):
         painter.setBrush(self._theme_colors["plot"])
         painter.drawRoundedRect(plot, 6, 6)
 
+        curve = self._curve
+        dark_bound = 0.0
+        light_bound = 1.0
+        if curve is not None:
+            inputs = np.asarray(curve.input_values, dtype=np.float64)
+            outputs = np.asarray(curve.final_output, dtype=np.float64)
+            if inputs.size and outputs.size and inputs.size == outputs.size:
+                eps = 1e-4
+                dark_mask = outputs <= eps
+                light_mask = outputs >= 1.0 - eps
+                if dark_mask.any():
+                    dark_bound = float(inputs[dark_mask].max())
+                if light_mask.any():
+                    light_bound = float(inputs[light_mask].min())
+        if light_bound < dark_bound:
+            dark_bound, light_bound = light_bound, dark_bound
+
         histogram = self._histogram
         if histogram is not None and histogram.size:
             hist = np.asarray(histogram, dtype=np.float32)
             peak = float(np.max(hist)) if hist.size else 0.0
             if np.isfinite(peak) and peak > 0.0:
                 hist = np.clip(hist / peak, 0.0, 1.0)
-                hist_path = QPainterPath()
                 step = plot.width() / float(hist.size)
-                hist_path.moveTo(plot.left(), plot.bottom())
-                for index, value in enumerate(hist):
-                    x_left = plot.left() + float(index) * step
-                    x_right = x_left + step
-                    y_top = plot.bottom() - float(value) * plot.height()
-                    hist_path.lineTo(x_left, y_top)
-                    hist_path.lineTo(x_right, y_top)
-                hist_path.lineTo(plot.right(), plot.bottom())
-                hist_path.closeSubpath()
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(self._theme_colors["histogram"])
-                painter.drawPath(hist_path)
+                normal_color = self._theme_colors["histogram"]
+                clipped_color = self._theme_colors.get("histogram_clipped", normal_color)
+                for index, value in enumerate(hist):
+                    if value <= 0.0:
+                        continue
+                    bin_center = (float(index) + 0.5) / float(hist.size)
+                    is_clipped = bin_center < dark_bound or bin_center > light_bound
+                    x_left = plot.left() + float(index) * step
+                    y_top = plot.bottom() - float(value) * plot.height()
+                    bar_rect = QRectF(x_left, y_top, step, plot.bottom() - y_top)
+                    painter.setBrush(clipped_color if is_clipped else normal_color)
+                    painter.drawRect(bar_rect)
 
         painter.setPen(QPen(self._theme_colors["identity"], 1.1, Qt.DashLine))
         painter.setBrush(Qt.NoBrush)
         painter.drawLine(self._map_point(plot, 0.0, 0.0), self._map_point(plot, 1.0, 1.0))
 
-        curve = self._curve
         if curve is None:
             return
 
@@ -392,27 +411,17 @@ class RawCurvePreviewWidget(QWidget):
         painter.setPen(QPen(self._theme_colors["curve"], 2.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
-
-        debug = getattr(curve, "debug", None)
-        black_level = getattr(debug, "black_level", None)
-        white_level = getattr(debug, "white_level", None)
-        dark_point = getattr(debug, "dark_point", None)
-        light_point = getattr(debug, "light_point", None)
-        if dark_point is None and black_level is not None:
-            dark_point = black_level
-        if light_point is None and white_level is not None:
-            light_point = white_level
-        if dark_point is not None and np.isfinite(float(dark_point)):
+        if dark_bound > 0.0:
             self._draw_node(
                 painter,
-                self._map_point(plot, float(dark_point), 0.0),
+                self._map_point(plot, dark_bound, 0.0),
                 fill=self._theme_colors["node_fill"],
                 stroke=self._theme_colors["node_dark"],
             )
-        if light_point is not None and np.isfinite(float(light_point)):
+        if light_bound < 1.0:
             self._draw_node(
                 painter,
-                self._map_point(plot, float(light_point), 1.0),
+                self._map_point(plot, light_bound, 1.0),
                 fill=self._theme_colors["node_light"],
                 stroke=self._theme_colors["node_dark"],
             )
@@ -455,9 +464,9 @@ class LiveLabTab(QWidget):
     VIEWER_SCALE_BAR_UM = 10.0
     RAW_BACKGROUND_WB_SAMPLE_SIZE = 10
     OBSERVATION_PREVIEW_SIZE = 116
-    SESSION_BUTTON_BASE_STYLE = "font-weight: bold; padding: 6px 10px;"
+    SESSION_BUTTON_BASE_STYLE = "font-weight: bold; padding: 4px 10px;"
     SESSION_BUTTON_ACTIVE_STYLE = (
-        "font-weight: bold; padding: 6px 10px; background-color: #e74c3c; color: white;"
+        "font-weight: bold; padding: 4px 10px; background-color: #e74c3c; color: white;"
     )
 
     def __init__(self, main_window, parent=None) -> None:
@@ -516,6 +525,7 @@ class LiveLabTab(QWidget):
         )
         self._raw_review_shortcuts: list[QShortcut] = []
         self._raw_copied_settings: RawRenderSettings | None = None
+        self._pending_raw_copy_source_path: str | None = None
         self._seen_source_paths: set[str] = set()
         self._pending_companion_groups: dict[str, dict[str, object]] = {}
         self._consumed_companion_groups: set[str] = set()
@@ -583,7 +593,7 @@ class LiveLabTab(QWidget):
         current_row.addWidget(self.current_observation_thumb_label, 0, Qt.AlignTop)
         current_text_layout = QVBoxLayout()
         current_text_layout.setContentsMargins(0, 0, 0, 0)
-        current_text_layout.setSpacing(6)
+        current_text_layout.setSpacing(4)
         self.current_observation_name_label = QLabel("\u2014")
         self.current_observation_name_label.setWordWrap(True)
         self.current_observation_name_label.setStyleSheet("font-weight: 600; font-size: 15px;")
@@ -596,13 +606,22 @@ class LiveLabTab(QWidget):
         self.current_observation_date_label.setWordWrap(True)
         self.current_observation_date_label.setStyleSheet("color: #6b7280;")
         current_text_layout.addWidget(self.current_observation_date_label)
-        self.start_stop_btn = QPushButton(self.tr("Start Session"))
-        self.start_stop_btn.setMinimumHeight(36)
-        self.start_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
-        self.start_stop_btn.clicked.connect(self._toggle_session)
-        current_text_layout.addWidget(self.start_stop_btn)
-        self.session_mode_selector = SegmentedSelector(self, compact=True)
+        self.current_observation_location_label = QLabel("")
+        self.current_observation_location_label.setWordWrap(True)
+        self.current_observation_location_label.setStyleSheet("color: #6b7280;")
+        self.current_observation_location_label.setVisible(False)
+        current_text_layout.addWidget(self.current_observation_location_label)
+        current_text_layout.addStretch(1)
+        current_row.addLayout(current_text_layout, 1)
+        current_layout.addLayout(current_row)
+        left_layout.addWidget(current_group)
+
+        session_group, session_layout = create_section_card(
+            self.tr("Session"),
+            body_margins=(10, 12, 10, 10),
+        )
+        session_layout.setSpacing(8)
+        self.session_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
         self.session_mode_live_radio = self.session_mode_selector.add_option(
             self.tr("Live capture (watch folder)"),
             self.SESSION_MODE_LIVE,
@@ -614,12 +633,12 @@ class LiveLabTab(QWidget):
         )
         self.session_mode_combo = self.session_mode_selector
         self.session_mode_selector.selectionChanged.connect(lambda _value: self._on_session_mode_changed())
-        current_text_layout.addWidget(self.session_mode_selector)
+        session_layout.addWidget(self.session_mode_selector)
 
         self.watch_group = QWidget()
         self.watch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         watch_layout = QHBoxLayout(self.watch_group)
-        watch_layout.setContentsMargins(0, 4, 0, 0)
+        watch_layout.setContentsMargins(0, 0, 0, 0)
         watch_layout.setSpacing(8)
         self.watch_dir_input = QLineEdit()
         self.watch_dir_input.setPlaceholderText(self.tr("Choose the microscope capture folder"))
@@ -632,16 +651,15 @@ class LiveLabTab(QWidget):
         self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.browse_btn.setMinimumWidth(72)
         watch_layout.addWidget(self.browse_btn, 0, Qt.AlignVCenter)
-        self.rescan_btn = QPushButton(self.tr("Rescan folder"))
-        self.rescan_btn.clicked.connect(self._on_rescan_watch_folder)
-        self.rescan_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.rescan_btn.setMinimumWidth(104)
-        watch_layout.addWidget(self.rescan_btn, 0, Qt.AlignVCenter)
-        current_text_layout.addWidget(self.watch_group)
-        current_text_layout.addStretch(1)
-        current_row.addLayout(current_text_layout, 1)
-        current_layout.addLayout(current_row)
-        left_layout.addWidget(current_group)
+        session_layout.addWidget(self.watch_group)
+
+        self.start_stop_btn = QPushButton(self.tr("Start Session"))
+        self.start_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
+        self.start_stop_btn.clicked.connect(self._toggle_session)
+        session_layout.addWidget(self.start_stop_btn)
+
+        left_layout.addWidget(session_group)
 
         tag_group, tag_form = create_section_card(
             self.tr("Microscope"),
@@ -710,37 +728,29 @@ class LiveLabTab(QWidget):
         self.pending_raw_frame = QFrame()
         self.pending_raw_frame.setFrameShape(QFrame.NoFrame)
         self.pending_raw_frame.setObjectName("sectionCard")
-        self.pending_raw_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        pending_raw_layout = QVBoxLayout(self.pending_raw_frame)
-        pending_raw_layout.setContentsMargins(12, 8, 12, 8)
-        pending_raw_layout.setSpacing(8)
+        self.pending_raw_frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        pending_raw_layout = QHBoxLayout(self.pending_raw_frame)
+        pending_raw_layout.setContentsMargins(8, 6, 8, 6)
+        pending_raw_layout.setSpacing(6)
 
-        pending_raw_top_row = QWidget()
-        pending_raw_top_row_layout = QHBoxLayout(pending_raw_top_row)
-        pending_raw_top_row_layout.setContentsMargins(0, 0, 0, 0)
-        pending_raw_top_row_layout.setSpacing(8)
-
-        self.pending_raw_count_label = QLabel(self.tr("Pending RAW captures: 0"), pending_raw_top_row)
+        self.pending_raw_count_label = QLabel(self.tr("Pending RAW captures: 0"), self.pending_raw_frame)
         self.pending_raw_count_label.setStyleSheet("font-weight: 600;")
         self.pending_raw_count_label.setVisible(False)
-        pending_raw_top_row_layout.addStretch(1)
 
         self.pending_raw_save_btn = QPushButton(self.tr("Save current"))
         self.pending_raw_save_btn.clicked.connect(self._commit_selected_pending_raw_capture)
-        pending_raw_top_row_layout.addWidget(self.pending_raw_save_btn)
+        pending_raw_layout.addWidget(self.pending_raw_save_btn)
         self.pending_raw_save_all_btn = QPushButton(self.tr("Save all"))
         self.pending_raw_save_all_btn.clicked.connect(self._commit_all_pending_raw_captures)
-        pending_raw_top_row_layout.addWidget(self.pending_raw_save_all_btn)
-        self.pending_raw_apply_all_btn = QPushButton(self.tr("Apply settings to all pending"))
-        self.pending_raw_apply_all_btn.clicked.connect(self._apply_current_raw_settings_to_all_pending)
-        pending_raw_top_row_layout.addWidget(self.pending_raw_apply_all_btn)
+        pending_raw_layout.addWidget(self.pending_raw_save_all_btn)
+        self.pending_raw_copy_btn = QPushButton(self.tr("Copy settings"))
+        self.pending_raw_copy_btn.clicked.connect(self._copy_selected_pending_raw_settings)
+        pending_raw_layout.addWidget(self.pending_raw_copy_btn)
+        self.pending_raw_paste_btn = QPushButton(self.tr("Paste settings"))
+        self.pending_raw_paste_btn.clicked.connect(self._paste_copied_settings_to_selected_pending)
+        self.pending_raw_paste_btn.setVisible(False)
+        pending_raw_layout.addWidget(self.pending_raw_paste_btn)
 
-        pending_raw_layout.addWidget(pending_raw_top_row)
-
-        self.pending_raw_shortcuts_label = QLabel("")
-        self.pending_raw_shortcuts_label.setWordWrap(True)
-        self.pending_raw_shortcuts_label.setStyleSheet("color: #6b7280; font-size: 11px;")
-        pending_raw_layout.addWidget(self.pending_raw_shortcuts_label)
         self.pending_raw_frame.setVisible(False)
 
         self.raw_processing_body.setVisible(False)
@@ -773,32 +783,17 @@ class LiveLabTab(QWidget):
         viewer_layout.setContentsMargins(0, 0, 0, 0)
         viewer_layout.setSpacing(8)
 
-        viewer_header = QWidget()
-        viewer_header_layout = QHBoxLayout(viewer_header)
-        viewer_header_layout.setContentsMargins(0, 0, 0, 0)
-        viewer_header_layout.setSpacing(8)
-        viewer_text_layout = QVBoxLayout()
-        viewer_text_layout.setContentsMargins(0, 0, 0, 0)
-        viewer_text_layout.setSpacing(2)
-        self.viewer_title_label = QLabel(self.tr("Last import"))
+        self.viewer_title_label = QLabel(self.tr("Last import"), viewer_panel)
         self.viewer_title_label.setStyleSheet("font-weight: 600; font-size: 15px;")
-        viewer_text_layout.addWidget(self.viewer_title_label)
-        self.viewer_meta_label = QLabel("")
+        self.viewer_title_label.setVisible(False)
+        self.viewer_meta_label = QLabel("", viewer_panel)
         self.viewer_meta_label.setWordWrap(True)
         self.viewer_meta_label.setStyleSheet("color: #6b7280;")
-        viewer_text_layout.addWidget(self.viewer_meta_label)
-        viewer_header_layout.addLayout(viewer_text_layout, 1)
-        self.reset_view_btn = QPushButton(self.tr("Reset view"))
+        self.viewer_meta_label.setVisible(False)
+        self.reset_view_btn = QPushButton(self.tr("Reset view"), viewer_panel)
         self.reset_view_btn.setEnabled(False)
         self.reset_view_btn.clicked.connect(self._reset_viewer)
-        viewer_header_layout.addWidget(self.reset_view_btn, 0, Qt.AlignTop)
-        viewer_layout.addWidget(viewer_header)
-
-        # Committed RAW images behave like normal images; the in-place RAW
-        # re-render panel has been removed. Users review/edit RAW settings once
-        # before saving via the pending RAW review flow.
-
-        viewer_layout.addWidget(self.pending_raw_frame)
+        self.reset_view_btn.setVisible(False)
 
         self.live_image_label = ZoomableImageLabel()
         self.live_image_label.setObjectName("liveLabImageLabel")
@@ -809,6 +804,22 @@ class LiveLabTab(QWidget):
         self.live_image_label.set_show_measure_overlays(False)
         self.live_image_label.clicked.connect(self._on_live_image_clicked_for_background_wb)
         viewer_layout.addWidget(self.live_image_label, 1)
+
+        # Floating action tab pinned to the bottom-right of the image viewer.
+        self.pending_raw_frame.setParent(self.live_image_label)
+        self.pending_raw_frame.setAttribute(Qt.WA_StyledBackground, True)
+        self.pending_raw_frame.setStyleSheet(
+            "QFrame#sectionCard {"
+            " background-color: rgba(255, 255, 255, 215);"
+            " border: 1px solid rgba(0, 0, 0, 40);"
+            " border-bottom-left-radius: 0px;"
+            " border-bottom-right-radius: 0px;"
+            " border-top-left-radius: 8px;"
+            " border-top-right-radius: 8px;"
+            "}"
+        )
+        self.pending_raw_frame.raise_()
+        self.live_image_label.installEventFilter(self)
 
         self.session_gallery = ImageGalleryWidget(
             self.tr("Session Gallery"),
@@ -936,9 +947,13 @@ class LiveLabTab(QWidget):
             disabled_hint=self.tr("No pending RAW captures are waiting to be saved."),
         )
         self._register_hint_widget(
-            self.pending_raw_apply_all_btn,
-            self.tr("Update all pending RAW captures to use the current RAW settings."),
-            disabled_hint=self.tr("No pending RAW captures are waiting to be reviewed."),
+            self.pending_raw_copy_btn,
+            self.tr("Copy the current RAW processing settings so you can paste them onto another pending capture."),
+            disabled_hint=self.tr("Choose a pending RAW capture first."),
+        )
+        self._register_hint_widget(
+            self.pending_raw_paste_btn,
+            self.tr("Apply the copied RAW processing settings to this pending capture."),
         )
         self._register_hint_widget(
             self.add_note_btn,
@@ -953,6 +968,10 @@ class LiveLabTab(QWidget):
         self._register_hint_widget(
             self.reset_view_btn,
             self.tr("Fit the selected session image back into view."),
+        )
+        self._register_hint_widget(
+            self.live_image_label,
+            self._pending_raw_action_hint_text(),
         )
         self._register_hint_widget(
             self.session_gallery,
@@ -2651,6 +2670,22 @@ class LiveLabTab(QWidget):
             return False
         return bool(resolved.wb_multipliers is not None)
 
+    def _refresh_live_image_hover_hint(self, capture: PendingRawCapture | None = None) -> None:
+        widget = getattr(self, "live_image_label", None)
+        if widget is None:
+            return
+        text = self._pending_raw_action_hint_text(capture)
+        set_property = getattr(widget, "setProperty", None)
+        if callable(set_property):
+            set_property("_hint_text", text)
+        controller = getattr(self, "_hint_controller", None)
+        under_mouse = getattr(widget, "underMouse", None)
+        if controller is not None and callable(under_mouse) and under_mouse():
+            try:
+                controller.set_hint(text, tone="info")
+            except Exception:
+                pass
+
     def _pending_raw_action_hint_text(self, capture: PendingRawCapture | None = None) -> str:
         if self._pending_raw_background_wb_armed:
             return self.tr("Click neutral background to set WB")
@@ -3131,11 +3166,13 @@ class LiveLabTab(QWidget):
                 button.setChecked(armed)
             button.setText(self.tr("Cancel background WB") if armed else self.tr("Pick background WB"))
 
-        label = getattr(self, "pending_raw_shortcuts_label", None) if target == "pending" else getattr(self, "raw_edit_summary_label", None)
-        if label is not None:
-            if target == "pending":
-                label.setText(self._pending_raw_action_hint_text())
-            elif self._raw_edit_session is not None:
+        if target == "pending":
+            refresh_hover_hint = getattr(self, "_refresh_live_image_hover_hint", None)
+            if callable(refresh_hover_hint):
+                refresh_hover_hint()
+        else:
+            label = getattr(self, "raw_edit_summary_label", None)
+            if label is not None and self._raw_edit_session is not None:
                 if armed:
                     label.setText(self.tr("Click neutral background to set WB"))
                 else:
@@ -3790,6 +3827,8 @@ class LiveLabTab(QWidget):
 
     def eventFilter(self, obj, event) -> bool:
         if obj is getattr(self, "live_image_label", None):
+            if event.type() == QEvent.Resize:
+                self._reposition_pending_raw_floating_tab()
             active_target = self._active_raw_background_target()
             if event.type() == QEvent.MouseButtonRelease and getattr(event, "button", lambda: None)() == Qt.LeftButton:
                 if active_target and getattr(self.live_image_label, "crop_mode", False):
@@ -3802,6 +3841,21 @@ class LiveLabTab(QWidget):
                     self._cancel_raw_background_wb_selection(target=active_target)
                     return True
         return super().eventFilter(obj, event)
+
+    def _reposition_pending_raw_floating_tab(self) -> None:
+        frame = getattr(self, "pending_raw_frame", None)
+        image_label = getattr(self, "live_image_label", None)
+        if frame is None or image_label is None:
+            return
+        if frame.parentWidget() is not image_label:
+            return
+        hint = frame.sizeHint()
+        width = max(hint.width(), frame.minimumSizeHint().width())
+        height = max(hint.height(), frame.minimumSizeHint().height())
+        x = max(0, (image_label.width() - width) // 2)
+        y = max(0, image_label.height() - height)
+        frame.setGeometry(x, y, width, height)
+        frame.raise_()
 
     def _finalize_pending_raw_background_wb_from_preview(self) -> None:
         self._finalize_raw_background_wb_from_preview(target="pending")
@@ -4078,6 +4132,9 @@ class LiveLabTab(QWidget):
         frame = getattr(self, "pending_raw_frame", None)
         if frame is not None:
             frame.setVisible(bool(count))
+            reposition = getattr(self, "_reposition_pending_raw_floating_tab", None)
+            if callable(reposition):
+                reposition()
 
         raw_toggle = getattr(self, "raw_processing_toggle_btn", None)
         should_expand = bool(count and selected_mode == self.RAW_CAPTURE_MODE_REVIEW)
@@ -4111,9 +4168,32 @@ class LiveLabTab(QWidget):
         if save_all_btn is not None:
             save_all_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed))
 
-        apply_btn = getattr(self, "pending_raw_apply_all_btn", None)
-        if apply_btn is not None:
-            apply_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed))
+        copy_btn = getattr(self, "pending_raw_copy_btn", None)
+        if copy_btn is not None:
+            copy_btn.setEnabled(bool(has_selection and not self._pending_raw_background_wb_armed))
+
+        paste_btn = getattr(self, "pending_raw_paste_btn", None)
+        if paste_btn is not None:
+            copied_settings = getattr(self, "_raw_copied_settings", None)
+            copied_source = getattr(self, "_pending_raw_copy_source_path", None)
+            current_source = (
+                str(current_capture.source_path)
+                if current_capture is not None and current_capture.source_path is not None
+                else None
+            )
+            paste_applicable = bool(
+                copied_settings is not None
+                and has_selection
+                and copied_source is not None
+                and current_source is not None
+                and copied_source != current_source
+                and not self._pending_raw_background_wb_armed
+            )
+            paste_btn.setVisible(paste_applicable)
+            paste_btn.setEnabled(paste_applicable)
+            reposition = getattr(self, "_reposition_pending_raw_floating_tab", None)
+            if callable(reposition):
+                reposition()
 
         wb_btn = getattr(self, "pending_raw_pick_wb_btn", None)
         if wb_btn is not None:
@@ -4121,9 +4201,9 @@ class LiveLabTab(QWidget):
             if not self._pending_raw_background_wb_armed:
                 wb_btn.setText(self.tr("Pick background WB"))
 
-        hint_label = getattr(self, "pending_raw_shortcuts_label", None)
-        if hint_label is not None:
-            hint_label.setText(self._pending_raw_action_hint_text(current_capture))
+        refresh_hover_hint = getattr(self, "_refresh_live_image_hover_hint", None)
+        if callable(refresh_hover_hint):
+            refresh_hover_hint(current_capture)
 
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
         self._refresh_raw_processing_context_ui()
@@ -4607,48 +4687,54 @@ class LiveLabTab(QWidget):
         )
         return True
 
-    def _apply_current_raw_settings_to_all_pending(self) -> None:
-        captures = list(getattr(self, "_pending_raw_captures", []) or [])
-        if not captures:
+    def _copy_selected_pending_raw_settings(self) -> None:
+        capture = self._current_pending_raw_capture()
+        if capture is None:
             return
-        current_capture = self._current_pending_raw_capture()
-        settings = RawRenderSettings.from_dict(current_capture.raw_settings if current_capture is not None else self._current_raw_render_settings())
-        for capture in captures:
-            copied_settings = self._pending_raw_settings_for_copy(settings)
-            capture.raw_settings = copied_settings
-            try:
-                preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, copied_settings)
-                capture.preview_rgb = preview_rgb
-                preview_dir = self._pending_raw_preview_dir()
-                preview_dir.mkdir(parents=True, exist_ok=True)
-                preview_path = capture.preview_path
-                if preview_path is None:
-                    preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
-                capture.preview_path = Path(preview_path)
-                try:
-                    save_raw_preview_jpeg(
-                        preview_rgb,
-                        capture.preview_path,
-                        capture.source_path,
-                    )
-                except Exception:
-                    pass
-                capture.status = "pending"
-            except Exception as exc:
-                capture.status = "failed"
-                self._show_status(
-                    self.tr("Could not update preview for {name}: {error}").format(
-                        name=capture.source_path.name,
-                        error=str(exc),
-                    ),
-                    tone="warning",
-                    timeout_ms=6000,
-                )
+        settings = RawRenderSettings.from_dict(capture.raw_settings)
+        self._raw_copied_settings = self._raw_settings_for_copy(settings)
+        self._pending_raw_copy_source_path = str(capture.source_path)
         self._update_pending_raw_controls()
-        self._prune_pending_raw_preview_buffers(self._current_pending_raw_capture(), clear_proxy_cache=True)
-        self._refresh_session_gallery()
-        if self._current_pending_raw_capture() is not None:
-            self._show_pending_raw_capture(self._selected_pending_raw_index)
+        self._show_status(
+            self.tr("Copied RAW settings from {name}.").format(name=capture.source_path.name),
+            tone="success",
+            timeout_ms=2500,
+        )
+
+    def _paste_copied_settings_to_selected_pending(self) -> None:
+        copied = getattr(self, "_raw_copied_settings", None)
+        if copied is None:
+            return
+        capture = self._current_pending_raw_capture()
+        if capture is None:
+            return
+        target_settings = RawRenderSettings.from_dict(capture.raw_settings)
+        pasted = self._pending_raw_settings_for_copy(RawRenderSettings.from_dict(copied))
+        # WB stays with the target image; only tone/levels and other RAW
+        # processing parameters come from the copied capture.
+        pasted = replace(
+            pasted,
+            white_balance_mode=target_settings.white_balance_mode,
+            wb_multipliers=target_settings.wb_multipliers,
+            wb_multiplier_space=target_settings.wb_multiplier_space,
+            wb_sample_point=target_settings.wb_sample_point,
+            wb_sample_size=target_settings.wb_sample_size,
+            wb_sample_base_mode=target_settings.wb_sample_base_mode,
+            wb_selection=target_settings.wb_selection,
+            wb_selection_space=target_settings.wb_selection_space,
+        )
+        capture.raw_settings = pasted
+        capture.rendered_settings = None
+        capture.preview_rgb = None
+        capture.status = "pending"
+        self._sync_raw_processing_controls_from_settings(pasted)
+        self._refresh_selected_pending_raw_preview()
+        self._update_pending_raw_controls()
+        self._show_status(
+            self.tr("Pasted RAW settings to {name}.").format(name=capture.source_path.name),
+            tone="success",
+            timeout_ms=2500,
+        )
 
     def _reset_companion_dedupe_state(self) -> None:
         pending = getattr(self, "_pending_companion_groups", {})
@@ -5181,21 +5267,6 @@ class LiveLabTab(QWidget):
             self.watch_dir_input.setCursorPosition(len(chosen))
             self.watch_dir_input.setToolTip(chosen)
 
-    def _on_rescan_watch_folder(self) -> None:
-        queued = self.rescan_watch_folder()
-        if queued > 0:
-            self._show_status(
-                self.tr("Rescanned the watched folder and queued {count} image(s).").format(count=queued),
-                tone="info",
-                timeout_ms=4000,
-            )
-        else:
-            self._show_status(
-                self.tr("No supported images were ready to rescan."),
-                tone="info",
-                timeout_ms=3000,
-            )
-
     def _open_observations_tab(self) -> None:
         self._main_window.tab_widget.setCurrentIndex(0)
         table = getattr(getattr(self._main_window, "observations_tab", None), "table", None)
@@ -5263,20 +5334,32 @@ class LiveLabTab(QWidget):
 
     def _update_target_display(self) -> None:
         observation = self._target_observation
+        location_label = getattr(self, "current_observation_location_label", None)
         if observation:
             vernacular = self._vernacular_name_text(observation) or "\u2014"
             scientific = self._scientific_name_text(observation) or "\u2014"
             date_text = str(observation.get("date") or "").strip() or "\u2014"
+            location_text = str(observation.get("location") or "").strip()
             self.current_observation_name_label.setText(vernacular)
             self.current_observation_scientific_label.setText(scientific)
             self.current_observation_date_label.setText(
                 self.tr("Date: {date}").format(date=date_text)
             )
+            if location_label is not None:
+                if location_text:
+                    location_label.setText(self.tr("Location: {location}").format(location=location_text))
+                    location_label.setVisible(True)
+                else:
+                    location_label.clear()
+                    location_label.setVisible(False)
             self._update_observation_thumbnail()
         else:
             self.current_observation_name_label.setText(self.tr("No current observation selected"))
             self.current_observation_scientific_label.setText("\u2014")
             self.current_observation_date_label.setText(self.tr("Date: \u2014"))
+            if location_label is not None:
+                location_label.clear()
+                location_label.setVisible(False)
             self._clear_observation_thumbnail()
 
     def _build_recording_tab_icon(self) -> QIcon:
@@ -5319,7 +5402,8 @@ class LiveLabTab(QWidget):
             self._clear_observation_thumbnail()
             return
 
-        image = images[-1]
+        field_images = [img for img in images if str(img.get("image_type") or "").strip().lower() == "field"]
+        image = field_images[-1] if field_images else images[-1]
         image_id = int(image.get("id") or 0)
         candidate_path = ""
         if image_id > 0:
@@ -5457,11 +5541,6 @@ class LiveLabTab(QWidget):
         self.watch_group.setVisible(mode_is_live if running else selected_mode == self.SESSION_MODE_LIVE)
         self.watch_dir_input.setReadOnly(running or stopping or selected_mode != self.SESSION_MODE_LIVE)
         self.browse_btn.setEnabled(not running and not stopping and selected_mode == self.SESSION_MODE_LIVE)
-        rescan_btn = getattr(self, "rescan_btn", None)
-        if rescan_btn is not None:
-            rescan_btn.setEnabled(
-                bool(running and not stopping and selected_mode == self.SESSION_MODE_LIVE and watch_ok)
-            )
         self.start_stop_btn.setEnabled(bool(running or can_start))
         self.session_note_input.setEnabled(bool(running and not stopping))
         self.add_note_btn.setEnabled(bool(running and not stopping))

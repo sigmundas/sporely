@@ -109,10 +109,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state.pending_raw_count_label = QLabel()
     state.pending_raw_save_btn = QPushButton("Save current")
     state.pending_raw_save_all_btn = QPushButton("Save all")
-    state.pending_raw_apply_all_btn = QPushButton("Apply settings to all pending")
+    state.pending_raw_copy_btn = QPushButton("Copy settings")
+    state.pending_raw_paste_btn = QPushButton("Paste settings")
+    state.pending_raw_paste_btn.setVisible(False)
     state.pending_raw_pick_wb_btn = QPushButton("Pick background WB")
     state.pending_raw_pick_wb_btn.setCheckable(True)
-    state.pending_raw_shortcuts_label = QLabel()
     state.raw_edit_frame = QFrame()
     state.raw_edit_frame.setVisible(False)
     state.raw_edit_summary_label = QLabel()
@@ -136,6 +137,10 @@ def _build_raw_controls_state() -> SimpleNamespace:
         cursor=Qt.ArrowCursor,
         objective_text=None,
         objective_color=None,
+        _stub_properties={},
+        setProperty=lambda key, value: state.live_image_label._stub_properties.__setitem__(key, value),
+        property=lambda key: state.live_image_label._stub_properties.get(key),
+        underMouse=lambda: False,
         set_image_sources=lambda pixmap, full_path=None, *args, **kwargs: (
             setattr(state.live_image_label, "original_pixmap", pixmap),
             setattr(state.live_image_label, "_full_image_path", str(full_path) if full_path else None),
@@ -438,6 +443,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._on_pending_raw_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, image_id, path)
     state._on_session_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, image_id, path)
     state._update_pending_raw_controls = lambda: live_lab_tab.LiveLabTab._update_pending_raw_controls(state)
+    state._refresh_live_image_hover_hint = lambda capture=None: live_lab_tab.LiveLabTab._refresh_live_image_hover_hint(state, capture)
     state._show_pending_raw_capture = lambda index=None: live_lab_tab.LiveLabTab._show_pending_raw_capture(state, index)
     state._schedule_pending_raw_preview_refresh = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
     state._refresh_selected_pending_raw_preview = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
@@ -461,7 +467,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._commit_all_pending_raw_captures = lambda: live_lab_tab.LiveLabTab._commit_all_pending_raw_captures(state)
     state._discard_selected_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._discard_selected_pending_raw_capture(state)
     state._delete_current_raw_review_item = lambda: live_lab_tab.LiveLabTab._delete_current_raw_review_item(state)
-    state._apply_current_raw_settings_to_all_pending = lambda: live_lab_tab.LiveLabTab._apply_current_raw_settings_to_all_pending(state)
+    state._copy_selected_pending_raw_settings = lambda: live_lab_tab.LiveLabTab._copy_selected_pending_raw_settings(state)
+    state._paste_copied_settings_to_selected_pending = lambda: live_lab_tab.LiveLabTab._paste_copied_settings_to_selected_pending(state)
     state._finalize_local_ingest = lambda *args, **kwargs: live_lab_tab.LiveLabTab._finalize_local_ingest(state, *args, **kwargs)
     state._current_lab_metadata = lambda: {
         "image_type": "microscope",
@@ -1708,16 +1715,17 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     tab._update_pending_raw_controls()
     qapp.processEvents()
 
-    assert tab.viewer_panel.layout().indexOf(tab.pending_raw_frame) >= 0
-    assert tab.pending_raw_frame.parentWidget() is tab.viewer_panel
+    assert tab.pending_raw_frame.parentWidget() is tab.live_image_label
     assert tab.pending_raw_frame.isVisible() is True
     assert tab.pending_raw_frame.sizeHint().height() <= 96
     assert tab.pending_raw_count_label.isVisible() is False
     assert tab.pending_raw_save_btn.text() == "Save current"
     assert tab.pending_raw_save_all_btn.text() == "Save all"
-    assert tab.pending_raw_apply_all_btn.text() == "Apply settings to all pending"
+    assert tab.pending_raw_copy_btn.text() == "Copy settings"
+    assert tab.pending_raw_paste_btn.text() == "Paste settings"
+    assert tab.pending_raw_paste_btn.isVisible() is False
     assert not hasattr(tab, "pending_raw_pick_wb_btn")
-    assert tab.pending_raw_shortcuts_label.text() == "←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current"
+    assert tab.live_image_label.property("_hint_text") == "←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current"
     assert tab.session_gallery._items[0]["id"].startswith("pending:")
     assert tab.session_gallery._items[0]["badges"][0] == "UNSAVED RAW"
     assert tab.session_gallery._items[0]["frame_border_color"] == "#e67e22"
@@ -1756,7 +1764,8 @@ def test_live_lab_instantiates_without_committed_raw_edit_panel(monkeypatch, qap
 
     # Pending RAW review controls remain available.
     assert tab.pending_raw_save_btn.text() == "Save current"
-    assert tab.pending_raw_apply_all_btn.text() == "Apply settings to all pending"
+    assert tab.pending_raw_copy_btn.text() == "Copy settings"
+    assert tab.pending_raw_paste_btn.text() == "Paste settings"
 
 
 def test_live_lab_selecting_committed_raw_image_does_not_show_edit_panel(tmp_path, monkeypatch, qapp):
@@ -2034,8 +2043,9 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
     assert "Soft tails" in state.viewer_meta_label.text()
     assert "Curve strength" in state.viewer_meta_label.text()
     assert "Curve midpoint" in state.viewer_meta_label.text()
-    assert state.pending_raw_shortcuts_label.text().startswith("Custom WB")
-    assert "Enter save current" in state.pending_raw_shortcuts_label.text()
+    hint_text = state.live_image_label.property("_hint_text") or ""
+    assert hint_text.startswith("Custom WB")
+    assert "Enter save current" in hint_text
     preview_payload = json.loads(Path(pending.preview_path).read_text(encoding="utf-8"))
     assert preview_payload["settings"]["white_balance_mode"] == "custom"
     assert preview_payload["settings"]["wb_multiplier_space"] == "post_decode_rgb"
@@ -2161,11 +2171,11 @@ def test_live_lab_pending_raw_invalid_background_wb_sample_leaves_settings_uncha
     assert live_lab_tab.LiveLabTab._apply_raw_background_wb_selection_from_point(state, QPointF(1.0, 1.0)) is False
     assert pending.raw_settings == original_settings
     assert state.pending_raw_pick_wb_btn.isChecked() is True
-    assert state.pending_raw_shortcuts_label.text() == "Click neutral background to set WB"
+    assert state.live_image_label.property("_hint_text") == "Click neutral background to set WB"
 
     live_lab_tab.LiveLabTab._cancel_active_raw_background_wb_selection(state)
     assert state.pending_raw_pick_wb_btn.isChecked() is False
-    assert state.pending_raw_shortcuts_label.text() == "←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current"
+    assert state.live_image_label.property("_hint_text") == "←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current"
     assert captured_calls == []
     assert add_image_calls == []
 
@@ -3620,7 +3630,7 @@ def test_live_lab_review_mode_falls_back_to_companion_jpeg_when_raw_preview_fail
     assert state._pending_raw_captures == []
 
 
-def test_live_lab_review_mode_apply_current_settings_to_all_pending(tmp_path, monkeypatch):
+def test_live_lab_review_mode_copy_paste_settings_between_pending(tmp_path, monkeypatch):
     _qapp()
     source_one = tmp_path / "P070020_1.ORF"
     source_two = tmp_path / "P070021_1.ORF"
@@ -3660,6 +3670,8 @@ def test_live_lab_review_mode_apply_current_settings_to_all_pending(tmp_path, mo
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
 
+    # Configure source_two as the active capture, edit its settings, then copy.
+    state._selected_pending_raw_index = 1
     state.raw_controls.white_balance_selector.set_selected_value("auto")
     state.raw_controls.auto_levels_checkbox.setChecked(False)
     state.raw_controls.tone_curve_checkbox.setChecked(True)
@@ -3667,16 +3679,24 @@ def test_live_lab_review_mode_apply_current_settings_to_all_pending(tmp_path, mo
     state.raw_controls.curve_midpoint_slider.setValue(20)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
-    live_lab_tab.LiveLabTab._apply_current_raw_settings_to_all_pending(state)
+    state._copy_selected_pending_raw_settings()
+    assert state._raw_copied_settings is not None
+    assert state._pending_raw_copy_source_path == str(source_two)
+    assert state.pending_raw_paste_btn.isVisible() is False  # paste hidden on copy source
 
-    assert len(state._pending_raw_captures) == 2
-    assert all(capture.raw_settings.white_balance_mode == "auto" for capture in state._pending_raw_captures)
-    assert all(capture.raw_settings.auto_levels is False for capture in state._pending_raw_captures)
-    assert all(capture.raw_settings.tone_curve_enabled is True for capture in state._pending_raw_captures)
-    assert all(capture.preview_path is not None and Path(capture.preview_path).exists() for capture in state._pending_raw_captures)
-    assert all(
-        json.loads(Path(capture.preview_path).read_text(encoding="utf-8"))["settings"]["white_balance_mode"] == "auto"
-        for capture in state._pending_raw_captures
-        if capture.preview_path is not None
-    )
+    # Switch to source_one, paste, and verify settings are transferred.
+    state._selected_pending_raw_index = 0
+    state._update_pending_raw_controls()
+    assert state.pending_raw_paste_btn.isVisible() is True
+
+    target = state._pending_raw_captures[0]
+    target_wb_before = target.raw_settings.white_balance_mode
+    state._paste_copied_settings_to_selected_pending()
+    # Tone / level params transfer from the copy source...
+    assert target.raw_settings.auto_levels is False
+    assert target.raw_settings.tone_curve_enabled is True
+    assert target.raw_settings.tone_curve_strength == pytest.approx(0.80, rel=1e-3)
+    assert target.raw_settings.tone_curve_midpoint == pytest.approx(0.20, rel=1e-3)
+    # ...but WB stays with the target image (multipliers belong to the target).
+    assert target.raw_settings.white_balance_mode == target_wb_before
     assert add_image_calls == []
