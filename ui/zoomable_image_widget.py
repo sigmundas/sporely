@@ -33,6 +33,7 @@ class ZoomableImageLabel(QLabel):
         super().__init__(parent)
         self.setAlignment(Qt.AlignCenter)
         self.setMouseTracking(True)
+        self._cursor_shape = None
 
         # Image data
         self.original_pixmap = None
@@ -109,6 +110,31 @@ class ZoomableImageLabel(QLabel):
         self.crop_overlay_text = "Crop"
         self.crop_overlay_color = QColor(243, 156, 18)
         self.crop_overlay_active_color = QColor(211, 84, 0)
+
+    def _cursor_shape_value(self, cursor) -> int | None:
+        if cursor is None:
+            return None
+        shape_attr = getattr(cursor, 'shape', None)
+        if callable(shape_attr):
+            try:
+                return int(shape_attr())
+            except Exception:
+                return None
+        try:
+            return int(cursor)
+        except (TypeError, ValueError):
+            return None
+
+    def setCursor(self, cursor) -> None:
+        cursor_shape = self._cursor_shape_value(cursor)
+        if cursor_shape is not None and cursor_shape == self._cursor_shape:
+            return
+        self._cursor_shape = cursor_shape
+        super().setCursor(cursor)
+
+    def unsetCursor(self) -> None:
+        self._cursor_shape = None
+        super().unsetCursor()
 
     def set_image_sources(self, pixmap, full_path=None, preview_scaled=False, preserve_view: bool = False):
         """Set image with optional full-resolution source."""
