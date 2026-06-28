@@ -174,6 +174,7 @@ class RawRenderSettings:
     tone_curve_enabled: bool = False
     tone_curve_strength: float = 0.5
     tone_curve_midpoint: float = 0.5
+    tone_contrast: float = 0.0
     tone_shadows: float = 0.0
     tone_highlights: float = 0.0
     output_bps: int = 16
@@ -202,6 +203,7 @@ class RawRenderSettings:
         tone_curve_enabled: bool = False,
         tone_curve_strength: float = 0.5,
         tone_curve_midpoint: float = 0.5,
+        tone_contrast: float = 0.0,
         tone_shadows: float = 0.0,
         tone_highlights: float = 0.0,
         output_bps: int = 16,
@@ -236,6 +238,7 @@ class RawRenderSettings:
         object.__setattr__(self, "tone_curve_enabled", bool(tone_curve_enabled))
         object.__setattr__(self, "tone_curve_strength", _coerce_float_in_range(tone_curve_strength, 0.5, 0.0, 1.0))
         object.__setattr__(self, "tone_curve_midpoint", _coerce_float_in_range(tone_curve_midpoint, 0.5, 0.0, 1.0))
+        object.__setattr__(self, "tone_contrast", _coerce_float_in_range(tone_contrast, 0.0, -1.0, 1.0))
         object.__setattr__(self, "tone_shadows", _coerce_float_in_range(tone_shadows, 0.0, -1.0, 1.0))
         object.__setattr__(self, "tone_highlights", _coerce_float_in_range(tone_highlights, 0.0, -1.0, 1.0))
         object.__setattr__(self, "output_bps", _coerce_int(output_bps, 16))
@@ -272,6 +275,7 @@ class RawRenderSettings:
             "tone_curve_enabled": bool(self.tone_curve_enabled),
             "tone_curve_strength": float(self.tone_curve_strength),
             "tone_curve_midpoint": float(self.tone_curve_midpoint),
+            "tone_contrast": float(self.tone_contrast),
             "tone_shadows": float(self.tone_shadows),
             "tone_highlights": float(self.tone_highlights),
             "output_bps": int(self.output_bps),
@@ -317,6 +321,9 @@ class RawRenderSettings:
         tone_highlights_value = mapping.get("tone_highlights")
         if tone_highlights_value is None:
             tone_highlights_value = mapping.get("highlights", 0.0)
+        tone_contrast_value = mapping.get("tone_contrast")
+        if tone_contrast_value is None:
+            tone_contrast_value = mapping.get("contrast", 0.0)
         has_light_dark = "light_ev" in mapping or "dark_ev" in mapping
         light_ev_value = mapping.get("light_ev") if has_light_dark else None
         dark_ev_value = mapping.get("dark_ev") if has_light_dark else None
@@ -346,6 +353,7 @@ class RawRenderSettings:
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),
             tone_curve_strength=_coerce_float(mapping.get("tone_curve_strength"), 0.5),
             tone_curve_midpoint=_coerce_float(mapping.get("tone_curve_midpoint"), 0.5),
+            tone_contrast=_coerce_float_in_range(tone_contrast_value, 0.0, -1.0, 1.0),
             tone_shadows=_coerce_float_in_range(tone_shadows_value, 0.0, -1.0, 1.0),
             tone_highlights=_coerce_float_in_range(tone_highlights_value, 0.0, -1.0, 1.0),
             output_bps=_coerce_int(mapping.get("output_bps"), 16),

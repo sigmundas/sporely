@@ -30,7 +30,11 @@ def test_raw_processing_controls_round_trip_preserves_raw_settings(qapp):
     assert controls.shadow_lift_slider is controls.shadows_slider
     assert controls.shadow_lift_value_label is controls.shadows_value_label
     assert controls.auto_levels_checkbox.isHidden() is False
-    assert controls.auto_levels_checkbox.text() == "Auto levels"
+    assert controls.auto_levels_checkbox.text() == "Auto"
+    assert controls.auto_levels_btn is controls.auto_levels_checkbox
+    assert controls.contrast_label.text() == "Contrast:"
+    assert controls.contrast_slider.minimum() == -100
+    assert controls.contrast_slider.maximum() == 100
     assert controls.light_slider.minimum() == 0
     assert controls.light_slider.maximum() == 2000
     assert controls.dark_slider.minimum() == 0

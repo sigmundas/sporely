@@ -7,6 +7,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from utils.raw_tone_curve import (
+    apply_luminance_contrast_curve,
     apply_luminance_shadow_highlights,
     apply_luminance_tone_curve,
     normalized_sigmoid_curve,
@@ -623,6 +624,17 @@ def apply_post_decode_processing(
         shadow_toe_output = apply_shadow_toe_lift(working_luminance, shadow_lift, cutoff=shadow_black_level)
         working = apply_luminance_transfer(working, working_luminance, shadow_toe_output)
 
+    tone_contrast = _clamp_range(
+        normalized_settings.get("tone_contrast", normalized_settings.get("contrast", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    if abs(tone_contrast) > _EPSILON:
+        working_luminance = compute_luminance(working)
+        contrast_output = apply_luminance_contrast_curve(working_luminance, tone_contrast)
+        working = apply_luminance_transfer(working, working_luminance, contrast_output)
+
     tone_shadows = _clamp_range(
         normalized_settings.get("tone_shadows", normalized_settings.get("shadows", 0.0)),
         0.0,
@@ -748,6 +760,14 @@ def compute_post_decode_transfer_curve(
     shadow_cutoff = shadow_black_level if shadow_black_level is not None else black_level
     shadow_toe_output = apply_shadow_toe_lift(manual_levels_output, shadow_lift, cutoff=float(shadow_cutoff or 0.0))
 
+    tone_contrast = _clamp_range(
+        normalized_settings.get("tone_contrast", normalized_settings.get("contrast", 0.0)),
+        0.0,
+        -1.0,
+        1.0,
+    )
+    contrast_output = apply_luminance_contrast_curve(shadow_toe_output, tone_contrast)
+
     tone_shadows = _clamp_range(
         normalized_settings.get("tone_shadows", normalized_settings.get("shadows", 0.0)),
         0.0,
@@ -760,7 +780,7 @@ def compute_post_decode_transfer_curve(
         -1.0,
         1.0,
     )
-    shadow_highlight_output = apply_luminance_shadow_highlights(shadow_toe_output, tone_shadows, tone_highlights)
+    shadow_highlight_output = apply_luminance_shadow_highlights(contrast_output, tone_shadows, tone_highlights)
 
     final_output = shadow_highlight_output.copy()
     if bool(normalized_settings.get("tone_curve_enabled", False)):

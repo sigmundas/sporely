@@ -917,8 +917,8 @@ class LiveLabTab(QWidget):
             self.tr("Choose the white balance mode for future RAW captures."),
         )
         self._register_hint_widget(
-            self.raw_controls.auto_levels_checkbox,
-            self.tr("Apply automatic levels to future RAW captures."),
+            self.raw_controls.auto_levels_btn,
+            self.tr("Apply automatic levels to the current RAW capture."),
         )
         self._register_hint_widget(
             self.raw_controls.tone_curve_checkbox,

@@ -23,6 +23,7 @@ from .segmented_selector import SegmentedSelector
 
 _EV_SLIDER_SCALE = 1000
 _EV_SLIDER_MAX = 2000
+_TRAILING_WIDTH = 48
 
 
 class RawProcessingControls(QWidget):
@@ -72,151 +73,138 @@ class RawProcessingControls(QWidget):
         white_balance_row.setMinimumHeight(44)
         layout.addWidget(white_balance_row)
 
-        self.light_row = QWidget(self)
-        light_layout = QHBoxLayout(self.light_row)
-        light_layout.setContentsMargins(0, 0, 0, 0)
-        light_layout.setSpacing(8)
-        self.light_label = QLabel(self.tr("Light:"), self.light_row)
-        self.light_label.setMinimumWidth(72)
-        self.light_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.light_slider = QSlider(Qt.Horizontal, self.light_row)
+        slider_form = QFormLayout()
+        slider_form.setContentsMargins(0, 0, 0, 0)
+        slider_form.setHorizontalSpacing(8)
+        slider_form.setVerticalSpacing(8)
+        slider_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        def _build_slider_row(slider: QSlider, trailing: QWidget) -> QWidget:
+            row = QWidget(self)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+            row_layout.addWidget(slider, 1)
+            row_layout.addWidget(trailing, 0)
+            return row
+
+        self.light_label = QLabel(self.tr("Light:"), self)
+        self.light_slider = QSlider(Qt.Horizontal, self)
         self.light_slider.setRange(0, _EV_SLIDER_MAX)
         self.light_slider.setSingleStep(1)
         self.light_slider.setPageStep(25)
         self.light_slider.valueChanged.connect(self._on_control_changed)
         self.light_slider.sliderReleased.connect(self._on_slider_released)
-        self.light_value_label = QLabel("", self.light_row)
-        self.light_value_label.setMinimumWidth(84)
-        self.light_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        light_layout.addWidget(self.light_label, 0)
-        light_layout.addWidget(self.light_slider, 1)
-        light_layout.addWidget(self.light_value_label, 0)
-        layout.addWidget(self.light_row)
+        self.auto_levels_btn = QPushButton(self.tr("Auto"), self)
+        self.auto_levels_btn.setCheckable(True)
+        self.auto_levels_btn.setFixedWidth(_TRAILING_WIDTH)
+        self.auto_levels_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.auto_levels_btn.toggled.connect(self._on_control_changed)
+        self.auto_levels_checkbox = self.auto_levels_btn  # backwards-compat alias
+        self.light_value_label = QLabel("", self)
+        self.light_value_label.setVisible(False)
+        self.light_row = _build_slider_row(self.light_slider, self.auto_levels_btn)
+        slider_form.addRow(self.light_label, self.light_row)
         self.exposure_row = self.light_row
         self.exposure_slider = self.light_slider
         self.exposure_value_label = self.light_value_label
 
-        self.dark_row = QWidget(self)
-        dark_layout = QHBoxLayout(self.dark_row)
-        dark_layout.setContentsMargins(0, 0, 0, 0)
-        dark_layout.setSpacing(8)
-        self.dark_label = QLabel(self.tr("Dark:"), self.dark_row)
-        self.dark_label.setMinimumWidth(72)
-        self.dark_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.dark_slider = QSlider(Qt.Horizontal, self.dark_row)
+        self.dark_label = QLabel(self.tr("Dark:"), self)
+        self.dark_slider = QSlider(Qt.Horizontal, self)
         self.dark_slider.setRange(0, _EV_SLIDER_MAX)
         self.dark_slider.setSingleStep(1)
         self.dark_slider.setPageStep(25)
         self.dark_slider.valueChanged.connect(self._on_control_changed)
         self.dark_slider.sliderReleased.connect(self._on_slider_released)
-        self.dark_value_label = QLabel("", self.dark_row)
-        self.dark_value_label.setMinimumWidth(84)
-        self.dark_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        dark_layout.addWidget(self.dark_label, 0)
-        dark_layout.addWidget(self.dark_slider, 1)
-        dark_layout.addWidget(self.dark_value_label, 0)
-        layout.addWidget(self.dark_row)
+        dark_trailing = QWidget(self)
+        dark_trailing.setFixedWidth(_TRAILING_WIDTH)
+        dark_trailing.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.dark_value_label = QLabel("", self)
+        self.dark_value_label.setVisible(False)
+        self.dark_row = _build_slider_row(self.dark_slider, dark_trailing)
+        slider_form.addRow(self.dark_label, self.dark_row)
         self.dark_exposure_slider = self.dark_slider
         self.dark_exposure_value_label = self.dark_value_label
 
-        self.auto_levels_checkbox = QCheckBox(self.tr("Auto levels"), self)
-        self.auto_levels_checkbox.toggled.connect(self._on_control_changed)
-        self.auto_levels_checkbox.setVisible(True)
-        layout.addWidget(self.auto_levels_checkbox)
+        self.contrast_label = QLabel(self.tr("Contrast:"), self)
+        self.contrast_slider = QSlider(Qt.Horizontal, self)
+        self.contrast_slider.setRange(-100, 100)
+        self.contrast_slider.setSingleStep(1)
+        self.contrast_slider.setPageStep(5)
+        self.contrast_slider.valueChanged.connect(self._on_control_changed)
+        self.contrast_slider.sliderReleased.connect(self._on_slider_released)
+        self.contrast_value_label = QLabel("", self)
+        self.contrast_value_label.setFixedWidth(_TRAILING_WIDTH)
+        self.contrast_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.contrast_row = _build_slider_row(self.contrast_slider, self.contrast_value_label)
+        slider_form.addRow(self.contrast_label, self.contrast_row)
 
         self.tone_curve_checkbox = QCheckBox(self.tr("Tone curve"), self)
         self.tone_curve_checkbox.toggled.connect(self._on_control_changed)
-        layout.addWidget(self.tone_curve_checkbox)
-
-        curve_form = QFormLayout()
-        curve_form.setContentsMargins(0, 0, 0, 0)
-        curve_form.setHorizontalSpacing(8)
-        curve_form.setVerticalSpacing(8)
-        curve_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        slider_form.addRow(QLabel("", self), self.tone_curve_checkbox)
 
         self.curve_strength_label = QLabel(self.tr("Strength:"), self)
-        self.curve_strength_row = QWidget(self)
-        curve_strength_layout = QHBoxLayout(self.curve_strength_row)
-        curve_strength_layout.setContentsMargins(0, 0, 0, 0)
-        curve_strength_layout.setSpacing(8)
-        self.curve_strength_slider = QSlider(Qt.Horizontal, self.curve_strength_row)
+        self.curve_strength_slider = QSlider(Qt.Horizontal, self)
         self.curve_strength_slider.setRange(0, 100)
         self.curve_strength_slider.setSingleStep(1)
         self.curve_strength_slider.setPageStep(5)
         self.curve_strength_slider.valueChanged.connect(self._on_control_changed)
         self.curve_strength_slider.sliderReleased.connect(self._on_slider_released)
-        self.curve_strength_value_label = QLabel("", self.curve_strength_row)
-        self.curve_strength_value_label.setMinimumWidth(28)
+        self.curve_strength_value_label = QLabel("", self)
+        self.curve_strength_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.curve_strength_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        curve_strength_layout.addWidget(self.curve_strength_slider, 1)
-        curve_strength_layout.addWidget(self.curve_strength_value_label, 0)
-        curve_form.addRow(self.curve_strength_label, self.curve_strength_row)
+        self.curve_strength_row = _build_slider_row(self.curve_strength_slider, self.curve_strength_value_label)
+        slider_form.addRow(self.curve_strength_label, self.curve_strength_row)
         self.strength_label = self.curve_strength_label
         self.strength_slider = self.curve_strength_slider
         self.strength_value_label = self.curve_strength_value_label
-        self.contrast_slider = self.curve_strength_slider
-        self.contrast_value_label = self.curve_strength_value_label
 
         self.curve_midpoint_label = QLabel(self.tr("Midpoint:"), self)
-        self.curve_midpoint_row = QWidget(self)
-        curve_midpoint_layout = QHBoxLayout(self.curve_midpoint_row)
-        curve_midpoint_layout.setContentsMargins(0, 0, 0, 0)
-        curve_midpoint_layout.setSpacing(8)
-        self.curve_midpoint_slider = QSlider(Qt.Horizontal, self.curve_midpoint_row)
+        self.curve_midpoint_slider = QSlider(Qt.Horizontal, self)
         self.curve_midpoint_slider.setRange(0, 100)
         self.curve_midpoint_slider.setSingleStep(1)
         self.curve_midpoint_slider.setPageStep(5)
         self.curve_midpoint_slider.valueChanged.connect(self._on_control_changed)
         self.curve_midpoint_slider.sliderReleased.connect(self._on_slider_released)
-        self.curve_midpoint_value_label = QLabel("", self.curve_midpoint_row)
-        self.curve_midpoint_value_label.setMinimumWidth(28)
+        self.curve_midpoint_value_label = QLabel("", self)
+        self.curve_midpoint_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.curve_midpoint_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        curve_midpoint_layout.addWidget(self.curve_midpoint_slider, 1)
-        curve_midpoint_layout.addWidget(self.curve_midpoint_value_label, 0)
-        curve_form.addRow(self.curve_midpoint_label, self.curve_midpoint_row)
+        self.curve_midpoint_row = _build_slider_row(self.curve_midpoint_slider, self.curve_midpoint_value_label)
+        slider_form.addRow(self.curve_midpoint_label, self.curve_midpoint_row)
         self.midpoint_slider = self.curve_midpoint_slider
         self.midpoint_value_label = self.curve_midpoint_value_label
 
         self.shadows_label = QLabel(self.tr("Shadows:"), self)
-        self.shadows_row = QWidget(self)
-        shadows_layout = QHBoxLayout(self.shadows_row)
-        shadows_layout.setContentsMargins(0, 0, 0, 0)
-        shadows_layout.setSpacing(8)
-        self.shadows_slider = QSlider(Qt.Horizontal, self.shadows_row)
+        self.shadows_slider = QSlider(Qt.Horizontal, self)
         self.shadows_slider.setRange(-100, 100)
         self.shadows_slider.setSingleStep(1)
         self.shadows_slider.setPageStep(5)
         self.shadows_slider.valueChanged.connect(self._on_control_changed)
         self.shadows_slider.sliderReleased.connect(self._on_slider_released)
-        self.shadows_value_label = QLabel("", self.shadows_row)
-        self.shadows_value_label.setMinimumWidth(40)
+        self.shadows_value_label = QLabel("", self)
+        self.shadows_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.shadows_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        shadows_layout.addWidget(self.shadows_slider, 1)
-        shadows_layout.addWidget(self.shadows_value_label, 0)
-        curve_form.addRow(self.shadows_label, self.shadows_row)
+        self.shadows_row = _build_slider_row(self.shadows_slider, self.shadows_value_label)
+        slider_form.addRow(self.shadows_label, self.shadows_row)
         self.shadow_lift_label = self.shadows_label
         self.shadow_lift_row = self.shadows_row
         self.shadow_lift_slider = self.shadows_slider
         self.shadow_lift_value_label = self.shadows_value_label
 
         self.highlights_label = QLabel(self.tr("Highlights:"), self)
-        self.highlights_row = QWidget(self)
-        highlights_layout = QHBoxLayout(self.highlights_row)
-        highlights_layout.setContentsMargins(0, 0, 0, 0)
-        highlights_layout.setSpacing(8)
-        self.highlights_slider = QSlider(Qt.Horizontal, self.highlights_row)
+        self.highlights_slider = QSlider(Qt.Horizontal, self)
         self.highlights_slider.setRange(-100, 100)
         self.highlights_slider.setSingleStep(1)
         self.highlights_slider.setPageStep(5)
         self.highlights_slider.valueChanged.connect(self._on_control_changed)
         self.highlights_slider.sliderReleased.connect(self._on_slider_released)
-        self.highlights_value_label = QLabel("", self.highlights_row)
-        self.highlights_value_label.setMinimumWidth(40)
+        self.highlights_value_label = QLabel("", self)
+        self.highlights_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.highlights_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        highlights_layout.addWidget(self.highlights_slider, 1)
-        highlights_layout.addWidget(self.highlights_value_label, 0)
-        curve_form.addRow(self.highlights_label, self.highlights_row)
-        layout.addLayout(curve_form)
+        self.highlights_row = _build_slider_row(self.highlights_slider, self.highlights_value_label)
+        slider_form.addRow(self.highlights_label, self.highlights_row)
+
+        layout.addLayout(slider_form)
 
         self._sync_controls_from_settings(self._settings)
 
@@ -275,6 +263,8 @@ class RawProcessingControls(QWidget):
                 self.curve_strength_slider.setValue(int(round(float(settings.tone_curve_strength) * 100.0)))
             with QSignalBlocker(self.curve_midpoint_slider):
                 self.curve_midpoint_slider.setValue(int(round(float(settings.tone_curve_midpoint) * 100.0)))
+            with QSignalBlocker(self.contrast_slider):
+                self.contrast_slider.setValue(int(round(float(settings.tone_contrast) * 100.0)))
             with QSignalBlocker(self.shadows_slider):
                 self.shadows_slider.setValue(int(round(float(settings.tone_shadows) * 100.0)))
             with QSignalBlocker(self.highlights_slider):
@@ -299,6 +289,7 @@ class RawProcessingControls(QWidget):
         self.dark_value_label.setText(self._dark_ev_value_text(self.dark_slider.value()))
         self.curve_strength_value_label.setText(f"{float(self.curve_strength_slider.value()) / 100.0:.2f}")
         self.curve_midpoint_value_label.setText(f"{float(self.curve_midpoint_slider.value()) / 100.0:.2f}")
+        self.contrast_value_label.setText(self._signed_percent_value_text(self.contrast_slider.value()))
         self.shadows_value_label.setText(self._signed_percent_value_text(self.shadows_slider.value()))
         self.highlights_value_label.setText(self._signed_percent_value_text(self.highlights_slider.value()))
 
@@ -330,6 +321,7 @@ class RawProcessingControls(QWidget):
             tone_curve_enabled=bool(self.tone_curve_checkbox.isChecked()),
             tone_curve_strength=tone_curve_strength,
             tone_curve_midpoint=tone_curve_midpoint,
+            tone_contrast=float(self.contrast_slider.value()) / 100.0,
             tone_shadows=float(self.shadows_slider.value()) / 100.0,
             tone_highlights=float(self.highlights_slider.value()) / 100.0,
         )
@@ -366,6 +358,9 @@ class RawProcessingControls(QWidget):
         ):
             widget.setVisible(visible)
             widget.setEnabled(bool(enabled))
+
+    def is_auto_levels_enabled(self) -> bool:
+        return bool(self.auto_levels_btn.isChecked())
 
     @staticmethod
     def _ev_value_text(value: int) -> str:
