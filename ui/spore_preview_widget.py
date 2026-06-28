@@ -480,6 +480,7 @@ class PreviewImageLabel(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(340, 340)
         self.setMouseTracking(True)
+        self._cursor_shape = None
 
         # Data
         self.original_pixmap = None
@@ -512,6 +513,31 @@ class PreviewImageLabel(QLabel):
         self.measure_color = QColor("#0044aa")
         self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
         self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
+
+    def _cursor_shape_value(self, cursor) -> int | None:
+        if cursor is None:
+            return None
+        shape_attr = getattr(cursor, 'shape', None)
+        if callable(shape_attr):
+            try:
+                return int(shape_attr())
+            except Exception:
+                return None
+        try:
+            return int(cursor)
+        except (TypeError, ValueError):
+            return None
+
+    def setCursor(self, cursor) -> None:
+        cursor_shape = self._cursor_shape_value(cursor)
+        if cursor_shape is not None and cursor_shape == self._cursor_shape:
+            return
+        self._cursor_shape = cursor_shape
+        super().setCursor(cursor)
+
+    def unsetCursor(self) -> None:
+        self._cursor_shape = None
+        super().unsetCursor()
 
     def set_show_dimension_labels(self, show: bool):
         self.show_dimension_labels = bool(show)
