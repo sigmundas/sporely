@@ -5404,7 +5404,20 @@ class ObservationsTab(QWidget):
         vern_lang = normalize_vernacular_language(SettingsDB.get_setting("vernacular_language", "no"))
         return bool(vern_lang.startswith("nb") or vern_lang.startswith("no"))
 
-    def _localize_spore_stats_for_publish(self, stats_text: str | None) -> str:
+    def _localize_spore_stats_for_publish(self, stats_text: str | dict | None) -> str:
+        # Resolve structured JSON (dict or JSON string) to the plain rendered string.
+        if isinstance(stats_text, dict):
+            stats_text = stats_text.get("rendered") or ""
+        else:
+            raw = str(stats_text or "").strip()
+            if raw.startswith("{"):
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    data = None
+                stats_text = data.get("rendered") or "" if isinstance(data, dict) else raw
+            else:
+                stats_text = raw
         text = str(stats_text or "").strip()
         if not text:
             return ""
@@ -5495,14 +5508,42 @@ class ObservationsTab(QWidget):
             status_message=None,
         )
 
-    def _format_spore_stats_short(self, stats: str | None) -> str | None:
+    def _format_spore_stats_short(self, stats: str | dict | None) -> str | None:
         if not stats:
             return None
+        # Handle dict or JSON string carrying a structured payload.
+        # Prefer numeric fields (handles length-only payloads); fall back to
+        # the legacy regex on the rendered string only when numeric fields are absent.
+        def _short_from_structured(data: dict) -> str | None:
+            from_values = self._format_spore_stats_short_from_values({
+                "length_p5": data.get("length_core_min_um"),
+                "length_p95": data.get("length_core_max_um"),
+                "width_p5": data.get("width_core_min_um"),
+                "width_p95": data.get("width_core_max_um"),
+                "ratio_p5": data.get("q_min"),
+                "ratio_p95": data.get("q_max"),
+                "count": data.get("n"),
+            })
+            if from_values is not None:
+                return from_values
+            rendered = data.get("rendered")
+            return self._format_spore_stats_short(rendered) if rendered else None
+
+        if isinstance(stats, dict):
+            return _short_from_structured(stats)
         text = str(stats)
+        stripped = text.strip()
+        if stripped.startswith("{"):
+            try:
+                data = json.loads(stripped)
+            except Exception:
+                data = None
+            if isinstance(data, dict):
+                return _short_from_structured(data)
         length_seg = None
         width_seg = None
-        match_len = re.search(r"Spores?:\\s*([^,]+?)\\s*um\\s*x", text, re.IGNORECASE)
-        match_wid = re.search(r"\\s*x\\s*([^,]+?)\\s*um", text, re.IGNORECASE)
+        match_len = re.search(r"Spores?:\s*([^,]+?)\s*um\s*x", text, re.IGNORECASE)
+        match_wid = re.search(r"\s*x\s*([^,]+?)\s*um", text, re.IGNORECASE)
         if match_len:
             length_seg = match_len.group(1)
         if match_wid:
@@ -5516,7 +5557,7 @@ class ObservationsTab(QWidget):
         def _extract_p05_p95(segment: str | None) -> tuple[str | None, str | None]:
             if not segment:
                 return None, None
-            nums = re.findall(r"[0-9]+(?:\\.[0-9]+)?", segment)
+            nums = re.findall(r"[0-9]+(?:\.[0-9]+)?", segment)
             if len(nums) >= 3:
                 return nums[1], nums[2]
             if len(nums) == 2:
@@ -5547,9 +5588,15 @@ class ObservationsTab(QWidget):
         ratio_p5 = stats.get("ratio_p5")
         ratio_p95 = stats.get("ratio_p95")
         count = stats.get("count")
-        if None in (length_p5, length_p95, width_p5, width_p95):
+        if None in (length_p5, length_p95):
             return None
         try:
+            if None in (width_p5, width_p95):
+                # Length-only mode (no width measurements).
+                text = f"{float(length_p5):.1f}-{float(length_p95):.1f}"
+                if count is not None:
+                    text += f"  n = {int(count)}"
+                return text
             text = f"{float(length_p5):.1f}-{float(length_p95):.1f} x {float(width_p5):.1f}-{float(width_p95):.1f}"
             if ratio_p5 is not None and ratio_p95 is not None:
                 text += f"  Q = {float(ratio_p5):.1f}-{float(ratio_p95):.1f}"

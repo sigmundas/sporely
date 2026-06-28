@@ -1128,6 +1128,7 @@ def test_render_observations_table_places_status_before_map_and_publish(qapp):
         _show_observation_table_thumbnails=lambda: False,
         _observation_table_thumbnail_size=lambda: 48,
         _update_observations_table_geometry=lambda: None,
+        _redistribute_taxonomy_columns=lambda: None,
         _observation_thumb_icon_cache={},
         _status_hint_controller=SimpleNamespace(register_widget=lambda *args, **kwargs: None),
         rename_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),

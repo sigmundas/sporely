@@ -132,6 +132,7 @@ from datetime import datetime, timezone
 import numpy as np
 import math
 import sqlite3
+from utils.spore_stats import serialise_spore_statistics
 import time
 import os
 import warnings
@@ -18527,13 +18528,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not hasattr(self, "_stats_retry_pending"):
             self._stats_retry_pending = False
         try:
-            if stats:
-                ObservationDB.update_spore_statistics(
-                    observation_id,
-                    self.format_literature_string(stats)
-                )
-            else:
-                ObservationDB.update_spore_statistics(observation_id, None)
+            ObservationDB.update_spore_statistics(
+                observation_id,
+                serialise_spore_statistics(stats) if stats else None,
+            )
             self._stats_retry_pending = False
         except sqlite3.OperationalError as exc:
             if "locked" in str(exc).lower():
@@ -18566,6 +18564,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         lit_format += f", n = {stats['count']}"
         return lit_format
+
+    @staticmethod
+    def _build_structured_spore_statistics(stats: dict | None) -> dict | None:
+        """Delegate to utils.spore_stats.build_structured_spore_statistics."""
+        from utils.spore_stats import build_structured_spore_statistics  # noqa: PLC0415
+        return build_structured_spore_statistics(stats)
 
     def _update_preview_title(self):
         if not hasattr(self, "preview_group"):
