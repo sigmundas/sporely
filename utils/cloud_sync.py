@@ -1461,6 +1461,24 @@ _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
     'ai_crop_is_custom',
 )
 
+_LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS = frozenset({
+    'crop_mode',
+    'ai_crop_x1',
+    'ai_crop_y1',
+    'ai_crop_x2',
+    'ai_crop_y2',
+    'ai_crop_source_w',
+    'ai_crop_source_h',
+    'ai_crop_is_custom',
+})
+
+_LOCAL_MEDIA_PREP_RENDER_AFFECTING_TOP_LEVEL_FIELDS = frozenset({
+    'render_version',
+    'cloud_media_signature',
+    'cloud_image_size_mode',
+    'excluded_image_ids_raw',
+})
+
 _SNAPSHOT_OBS_FIELDS = [
     'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
     'uncertain', 'unspontaneous', 'determination_method',
@@ -1544,6 +1562,7 @@ ProgressCallback = Callable[[str, int, int], None]
 PreparedImagesCallback = Callable[[dict, ProgressCallback | None], tuple[list[dict], object | None, list[str]]]
 
 _CLOUD_SYNC_PROFILE_ENV = 'SPORELY_CLOUD_SYNC_PROFILE'
+_CLOUD_SYNC_DEBUG_ENV = 'SPORELY_DEBUG_CLOUD_SYNC'
 _CLOUD_SYNC_PROFILE_CONTEXT: ContextVar['CloudSyncProfiler | None'] = ContextVar(
     'cloud_sync_profiler',
     default=None,
@@ -1575,6 +1594,10 @@ def _cloud_sync_progress_trace() -> dict | None:
 
 def _cloud_sync_profile_enabled() -> bool:
     return str(os.getenv(_CLOUD_SYNC_PROFILE_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _cloud_sync_debug_enabled() -> bool:
+    return str(os.getenv(_CLOUD_SYNC_DEBUG_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _cloud_sync_current_profiler() -> 'CloudSyncProfiler | None':
@@ -5293,6 +5316,173 @@ def _local_cloud_media_signature(
 
 def _local_cloud_image_media_signature(observation_id: int | str) -> str:
     return _local_cloud_media_signature(observation_id, include_measurements=False)
+
+
+def _local_media_signatures_match_ignoring_tombstoned_images(
+    stored_signature: str | None,
+    current_signature: str | None,
+) -> bool:
+    stored_text = str(stored_signature or '').strip()
+    current_text = str(current_signature or '').strip()
+    if not stored_text or not current_text:
+        return stored_text == current_text
+    if stored_text == current_text:
+        return True
+
+    tombstoned_local_ids = _local_tombstoned_local_image_ids()
+    if not tombstoned_local_ids:
+        return False
+
+    stored_payload = _parsed_local_media_signature(stored_text)
+    current_payload = _parsed_local_media_signature(current_text)
+    if not stored_payload or not current_payload:
+        return False
+
+    def _filtered_payload(payload: dict) -> dict:
+        filtered = dict(payload or {})
+        images: list[dict] = []
+        for row in list(filtered.get('images') or []):
+            if not isinstance(row, dict):
+                continue
+            if _safe_int(row.get('id')) in tombstoned_local_ids:
+                continue
+            images.append(dict(row))
+        filtered['images'] = images
+        return filtered
+
+    return _normalized_local_media_signature_payload(
+        _filtered_payload(stored_payload),
+        include_measurements=False,
+    ) == _normalized_local_media_signature_payload(
+        _filtered_payload(current_payload),
+        include_measurements=False,
+    )
+
+
+def _local_media_prep_diagnostics(
+    observation_id: int | str,
+    stored_signature: str | None,
+    current_signature: str | None,
+) -> dict:
+    stored_text = str(stored_signature or '').strip()
+    current_text = str(current_signature or '').strip()
+    stored_payload = _parsed_local_media_signature(stored_text)
+    current_payload = _parsed_local_media_signature(current_text)
+    image_render_signature_matched = bool(
+        stored_text
+        and current_text
+        and _local_media_signatures_match(
+            stored_text,
+            current_text,
+            include_measurements=False,
+        )
+    )
+    tombstone_aware_signature_matched = bool(
+        stored_text
+        and current_text
+        and _local_media_signatures_match_ignoring_tombstoned_images(
+            stored_text,
+            current_text,
+        )
+    )
+    measurement_only_matched = bool(
+        stored_text
+        and current_text
+        and image_render_signature_matched
+        and not _local_media_signatures_match(stored_text, current_text)
+    )
+
+    local_image_rows: list[dict] = []
+    obs_id = _safe_int(observation_id)
+    if obs_id > 0:
+        try:
+            local_image_rows = [dict(row or {}) for row in ImageDB.get_images_for_observation(obs_id) or []]
+        except Exception:
+            local_image_rows = []
+    has_local_image_cloud_id_null = any(not str(row.get('cloud_id') or '').strip() for row in local_image_rows)
+
+    changed_keys: list[str] = []
+    any_image_file_signature_changed = False
+    any_render_affecting_field_changed = False
+    only_metadata_fields_changed = False
+
+    def _normalized_path_signature(path_value: object) -> dict:
+        if not isinstance(path_value, dict):
+            return {'path': '', 'exists': False}
+        normalized = dict(path_value)
+        normalized.pop('mtime_ns', None)
+        return normalized
+
+    if stored_payload and current_payload:
+        stored_images = [dict(row or {}) for row in (stored_payload.get('images') or [])]
+        current_images = [dict(row or {}) for row in (current_payload.get('images') or [])]
+        image_changes = _analyze_image_changes(current_images, stored_images)
+        changed_keys.extend(f'+{key}' for key in (image_changes.get('added_keys') or []))
+        changed_keys.extend(f'-{key}' for key in (image_changes.get('removed_keys') or []))
+
+        current_map = {_image_compare_key(row): row for row in current_images}
+        stored_map = {_image_compare_key(row): row for row in stored_images}
+        shared_keys = [key for key in current_map if key in stored_map]
+        metadata_changed_field_count = 0
+
+        for key in shared_keys:
+            current_row = current_map[key]
+            stored_row = stored_map[key]
+
+            for path_key in ('filepath', 'original_filepath'):
+                if _normalized_path_signature(current_row.get(path_key)) != _normalized_path_signature(stored_row.get(path_key)):
+                    any_image_file_signature_changed = True
+                    changed_keys.append(f'{key}:{path_key}')
+
+            current_meta = _image_metadata_payload(current_row)
+            stored_meta = _image_metadata_payload(stored_row)
+            for field, current_value in current_meta.items():
+                if current_value == stored_meta.get(field):
+                    continue
+                metadata_changed_field_count += 1
+                changed_keys.append(f'{key}:{field}')
+                if field in _LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS:
+                    any_render_affecting_field_changed = True
+
+        for field in _LOCAL_MEDIA_PREP_RENDER_AFFECTING_TOP_LEVEL_FIELDS:
+            if current_payload.get(field) != stored_payload.get(field):
+                any_render_affecting_field_changed = True
+                changed_keys.append(field)
+
+        if image_changes.get('added_keys') or image_changes.get('removed_keys'):
+            any_image_file_signature_changed = True
+
+        only_metadata_fields_changed = bool(
+            metadata_changed_field_count
+            and not any_image_file_signature_changed
+            and not any_render_affecting_field_changed
+            and not image_changes.get('added_keys')
+            and not image_changes.get('removed_keys')
+        )
+
+    changed_keys = list(dict.fromkeys(str(key).strip() for key in changed_keys if str(key).strip()))
+
+    return {
+        'image_render_signature_matched': image_render_signature_matched,
+        'tombstone_aware_signature_matched': tombstone_aware_signature_matched,
+        'measurement_only_matched': measurement_only_matched,
+        'has_local_image_cloud_id_null': has_local_image_cloud_id_null,
+        'any_image_file_signature_changed': any_image_file_signature_changed,
+        'any_render_affecting_field_changed': any_render_affecting_field_changed,
+        'only_metadata_fields_changed': only_metadata_fields_changed,
+        'changed_keys': changed_keys,
+    }
+
+
+def _format_local_media_prep_diagnostic_keys(keys: list[str], *, limit: int = 8) -> str:
+    normalized_keys = [str(key).strip() for key in (keys or []) if str(key or '').strip()]
+    if not normalized_keys:
+        return '[]'
+    display_keys = normalized_keys[: max(1, int(limit))]
+    suffix = ''
+    if len(normalized_keys) > len(display_keys):
+        suffix = f', … (+{len(normalized_keys) - len(display_keys)} more)'
+    return f"[{', '.join(display_keys)}{suffix}]"
 
 
 def _prepared_item_remote_payload(
@@ -10017,19 +10207,96 @@ def push_all(
                         include_measurements=False,
                     )
                 )
+                tombstone_cleanup_only = (
+                    not image_render_unchanged
+                    and had_existing_cloud
+                    and local_obs_id > 0
+                    and stored_local_media_signature
+                    and current_local_image_signature
+                    and _local_media_signatures_match_ignoring_tombstoned_images(
+                        stored_local_media_signature,
+                        current_local_image_signature,
+                    )
+                )
+                if _cloud_sync_debug_enabled():
+                    prep_diagnostics = _local_media_prep_diagnostics(
+                        local_obs_id,
+                        stored_local_media_signature,
+                        current_local_image_signature,
+                    )
+                    prep_decision = (
+                        'skip prep'
+                        if image_render_unchanged
+                        else 'metadata-only image sync'
+                        if tombstone_cleanup_only
+                        else 'full image prep'
+                    )
+                    print(
+                        (
+                            f'[cloud_sync] Observation {obs["id"]}: image prep diagnostics '
+                            f'image_render_signature_matched={prep_diagnostics["image_render_signature_matched"]} '
+                            f'tombstone_aware_signature_matched={prep_diagnostics["tombstone_aware_signature_matched"]} '
+                            f'measurement_only_matched={prep_diagnostics["measurement_only_matched"]} '
+                            f'has_local_image_cloud_id_null={prep_diagnostics["has_local_image_cloud_id_null"]} '
+                            f'image_file_signature_changed={prep_diagnostics["any_image_file_signature_changed"]} '
+                            f'render_affecting_field_changed={prep_diagnostics["any_render_affecting_field_changed"]} '
+                            f'only_metadata_fields_changed={prep_diagnostics["only_metadata_fields_changed"]} '
+                            f'decision={prep_decision} '
+                            f'changed_keys={_format_local_media_prep_diagnostic_keys(prep_diagnostics["changed_keys"])}'
+                        ),
+                        flush=True,
+                    )
                 if image_render_unchanged:
+                    measurement_only = bool(
+                        stored_local_media_signature
+                        and current_local_image_signature
+                        and not _local_media_signatures_match(
+                            stored_local_media_signature,
+                            current_local_image_signature,
+                        )
+                    )
                     _emit_progress(
                         progress_cb,
                         _format_cloud_sync_observation_status(
                             obs,
                             (
                                 f"Image/render media unchanged; skipping image prep for "
-                                f"observation {i + 1}/{max(1, total)} (no prepared upload candidates)"
+                                f"observation {i + 1}/{max(1, total)} "
+                                f"(reason={'measurement_only' if measurement_only else 'unchanged'}, "
+                                f"no prepared upload candidates)"
                             ),
                         ),
                         progress_state,
                     )
                     _push_measurements_for_current_observation()
+                elif tombstone_cleanup_only:
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            (
+                                f"Image/render media unchanged after tombstone cleanup; "
+                                f"skipping image prep for observation {i + 1}/{max(1, total)} "
+                                f"(reason=tombstone_only, metadata-only image sync)"
+                            ),
+                        ),
+                        progress_state,
+                    )
+                    original_upload_warnings = []
+                    images_synced = _push_images_for_observation(
+                        client,
+                        obs,
+                        cloud_id,
+                        prepare_images_cb=None,
+                        progress_cb=progress_cb,
+                        progress_state=progress_state,
+                        observation_index=i + 1,
+                        observation_total=total,
+                        summary_warnings=original_upload_warnings,
+                        original_summary=original_upload_summary,
+                    )
+                    if images_synced and local_obs_id > 0:
+                        _push_measurements_for_current_observation()
                 else:
                     original_upload_warnings: list[str] = []
                     images_synced = _push_images_for_observation(
@@ -10779,6 +11046,7 @@ def _push_measurements_for_observation(
     Measurements are upserted by desktop_id; stale cloud rows for images that
     still exist locally are cleaned up.
     """
+    push_start = _cloud_sync_perf_counter()
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     try:
@@ -10860,6 +11128,16 @@ def _push_measurements_for_observation(
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
+
+    push_elapsed = _cloud_sync_perf_counter() - push_start
+    print(
+        (
+            f'[cloud_sync] Observation {obs_local_id}: measurement push finalized '
+            f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)} '
+            f'duration={push_elapsed * 1000:.0f}ms'
+        ),
+        flush=True,
+    )
 
 
 _SETTING_CLOUD_EXIF_BACKFILL_STATE = 'cloud_exif_backfill_checked'

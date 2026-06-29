@@ -94,6 +94,8 @@ def _init_push_all_sync_db(tmp_path):
         conn.execute("ALTER TABLE observations ADD COLUMN sync_blocked_at TEXT")
         conn.execute("ALTER TABLE images ADD COLUMN source_role TEXT")
         conn.execute("ALTER TABLE images ADD COLUMN file_purpose TEXT")
+        conn.execute("ALTER TABLE spore_measurements ADD COLUMN cloud_id TEXT")
+        conn.execute("ALTER TABLE spore_measurements ADD COLUMN measured_at TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -101,23 +103,53 @@ def _init_push_all_sync_db(tmp_path):
 
 
 class _PushAllImageClient(cloud_sync.SporelyCloudClient):
-    def __init__(self, *, fail_derivative_upload: bool = False, fail_original_upload: bool = False):
+    def __init__(
+        self,
+        *,
+        fail_derivative_upload: bool = False,
+        fail_original_upload: bool = False,
+        remote_images: list[dict] | None = None,
+        remote_measurements: list[dict] | None = None,
+    ):
         super().__init__("token", "user-123")
         self.fail_derivative_upload = bool(fail_derivative_upload)
         self.fail_original_upload = bool(fail_original_upload)
+        self.remote_images = [dict(row or {}) for row in (remote_images or [])]
+        self.remote_measurements = [dict(row or {}) for row in (remote_measurements or [])]
         self.upload_image_calls: list[dict] = []
         self.upload_original_calls: list[dict] = []
         self.push_metadata_calls: list[dict] = []
         self.original_patch_calls: list[dict] = []
+        self.soft_delete_calls: list[tuple[str, str]] = []
+        self.measurement_push_calls: list[tuple[int, str]] = []
+        self.delete_calls: list[str] = []
+        self.storage_remove_calls: list[list[str]] = []
 
     def push_observation(self, obs, remote_obs=None, **kwargs):
         return "cloud-obs-1"
 
     def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
-        return []
+        cloud_value = str(obs_cloud_id or "").strip()
+        rows = [
+            dict(row)
+            for row in self.remote_images
+            if str(row.get("observation_id") or "").strip() == cloud_value
+        ]
+        if include_deleted_for_sync:
+            return rows
+        return [row for row in rows if not str(row.get("deleted_at") or "").strip()]
 
     def pull_measurements_for_images(self, image_cloud_ids: list[str]) -> list[dict]:
-        return []
+        image_ids = {
+            str(image_id or "").strip()
+            for image_id in (image_cloud_ids or [])
+            if str(image_id or "").strip()
+        }
+        return [
+            dict(row)
+            for row in self.remote_measurements
+            if str(row.get("image_id") or "").strip() in image_ids
+        ]
 
     def _observation_images_support_ai_crop(self) -> bool:
         return False
@@ -191,6 +223,25 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
                 "original_storage_path": cloud_sync.normalize_media_key(original_storage_path),
             }
         )
+
+    def soft_delete_image(self, cloud_image_id: str, deleted_at: str | None) -> None:
+        deleted_cloud_id = str(cloud_image_id or "").strip()
+        deleted_at_text = str(deleted_at or "").strip()
+        self.soft_delete_calls.append((deleted_cloud_id, deleted_at_text))
+        for row in self.remote_images:
+            if str(row.get("id") or "").strip() == deleted_cloud_id:
+                row["deleted_at"] = deleted_at_text
+                break
+
+    def push_measurement(self, meas: dict, cloud_image_id: str, remote_measurement_cache=None) -> str:
+        self.measurement_push_calls.append((int(meas["id"]), str(cloud_image_id)))
+        return f"cloud-measurement-{int(meas['id'])}"
+
+    def _delete(self, path: str) -> None:
+        self.delete_calls.append(str(path))
+
+    def _storage_remove(self, paths: list[str]) -> None:
+        self.storage_remove_calls.append([str(path) for path in paths])
 
 
 def _seed_existing_cloud_media_observation(db_path, image_path: Path) -> None:
@@ -354,6 +405,246 @@ def _setup_push_all_existing_media_case(tmp_path, monkeypatch):
         progress_messages=progress_messages,
         refresh_calls=refresh_calls,
         client=DummyClient(),
+    )
+
+
+def _setup_push_all_tombstone_cleanup_case(
+    tmp_path,
+    monkeypatch,
+    *,
+    include_deleted_measurement: bool,
+):
+    db_path = _init_push_all_sync_db(tmp_path)
+    tombstoned_image_path = tmp_path / "tombstoned-image.jpg"
+    surviving_image_path = tmp_path / "surviving-image.jpg"
+    tombstoned_image_path.write_bytes(b"tombstoned-image-bytes")
+    surviving_image_path.write_bytes(b"surviving-image-bytes")
+
+    tombstoned_created_at = "2026-05-01T10:00:00Z"
+    surviving_created_at = "2026-05-01T10:05:00Z"
+    tombstoned_image_type = "microscope" if include_deleted_measurement else "field"
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, cloud_id, sync_status, synced_at, sync_error_code,
+                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, "cloud-obs-1", "dirty", "2026-05-01T00:00:00Z", None, None, None, None, "user-1", "2026-05-02"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at,
+                synced_at, notes, crop_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                11,
+                1,
+                "cloud-image-11",
+                str(tombstoned_image_path),
+                None,
+                tombstoned_image_type,
+                "local_canonical",
+                "field",
+                0,
+                tombstoned_created_at,
+                tombstoned_created_at,
+                "tombstoned note",
+                "full",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at,
+                synced_at, notes, crop_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                12,
+                1,
+                "cloud-image-12",
+                str(surviving_image_path),
+                None,
+                "field",
+                "local_canonical",
+                "field",
+                1,
+                surviving_created_at,
+                surviving_created_at,
+                "surviving note",
+                "full",
+            ),
+        )
+        if include_deleted_measurement:
+            conn.execute(
+                """
+                INSERT INTO spore_measurements (
+                    id, image_id, length_um, width_um, measurement_type, notes,
+                    p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, gallery_rotation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    21,
+                    11,
+                    12.3,
+                    4.5,
+                    "spore",
+                    "deleted-image measurement",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    0,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = _PushAllImageClient()
+    tombstoned_local_image = {
+        "id": 11,
+        "cloud_id": "cloud-image-11",
+        "filepath": str(tombstoned_image_path),
+        "image_type": tombstoned_image_type,
+        "sort_order": 0,
+        "created_at": tombstoned_created_at,
+        "synced_at": tombstoned_created_at,
+        "notes": "tombstoned note",
+        "crop_mode": "full",
+    }
+    surviving_local_image = {
+        "id": 12,
+        "cloud_id": "cloud-image-12",
+        "filepath": str(surviving_image_path),
+        "image_type": "field",
+        "sort_order": 1,
+        "created_at": surviving_created_at,
+        "synced_at": surviving_created_at,
+        "notes": "surviving note",
+        "crop_mode": "full",
+    }
+    remote_images = []
+    for local_image in (tombstoned_local_image, surviving_local_image):
+        storage_path = cloud_sync._build_worker_storage_path(
+            client.user_id,
+            "cloud-obs-1",
+            local_image,
+            str(local_image["filepath"]),
+        )
+        original_storage_path = client._build_original_storage_path(
+            "cloud-obs-1",
+            str(local_image["cloud_id"]),
+            str(local_image["filepath"]),
+        )
+        remote_images.append(
+            {
+                "id": str(local_image["cloud_id"]),
+                "observation_id": "cloud-obs-1",
+                "desktop_id": int(local_image["id"]),
+                "sort_order": int(local_image["sort_order"]),
+                "image_type": str(local_image["image_type"]),
+                "crop_mode": str(local_image["crop_mode"]),
+                "notes": str(local_image["notes"]),
+                "storage_path": storage_path,
+                "original_storage_path": original_storage_path,
+                "original_filename": Path(str(local_image["filepath"])).name,
+                "deleted_at": "",
+            }
+        )
+
+    remote_measurements = []
+    if include_deleted_measurement:
+        remote_measurements.append(
+            {
+                "id": "cloud-measurement-21",
+                "desktop_id": 21,
+                "image_id": "cloud-image-11",
+                "length_um": 12.3,
+                "width_um": 4.5,
+                "measurement_type": "spore",
+                "gallery_rotation": 0,
+                "p1_x": None,
+                "p1_y": None,
+                "p2_x": None,
+                "p2_y": None,
+                "p3_x": None,
+                "p3_y": None,
+                "p4_x": None,
+                "p4_y": None,
+                "measured_at": None,
+            }
+        )
+
+    client.remote_images = [dict(row) for row in remote_images]
+    client.remote_measurements = [dict(row) for row in remote_measurements]
+
+    remote_obs = {
+        "id": "cloud-obs-1",
+        "desktop_id": 1,
+        "date": "2026-05-02",
+    }
+    stored_snapshot = cloud_sync._cloud_observation_snapshot(remote_obs, remote_images, remote_measurements)
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    stored_signature = cloud_sync._local_cloud_media_signature(1)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE images SET notes = ? WHERE id = ?",
+            ("tombstoned note (cleanup)", 11),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, local_observation_id, local_image_id
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("cloud-image-11", "2026-05-01 10:10:00", 1, 11),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    progress_messages: list[str] = []
+    refresh_calls: list[int] = []
+
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
+    monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda observation_id: stored_signature)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_refresh_local_cloud_media_signature",
+        lambda observation_id: refresh_calls.append(int(observation_id)) or stored_signature,
+    )
+
+    return SimpleNamespace(
+        db_path=db_path,
+        client=client,
+        remote_obs=remote_obs,
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+        stored_signature=stored_signature,
+        stored_snapshot=stored_snapshot,
+        progress_messages=progress_messages,
+        refresh_calls=refresh_calls,
     )
 
 
@@ -1935,7 +2226,34 @@ def test_push_all_skips_image_prep_for_measurement_only_change_but_pushes_measur
     assert ctx.refresh_calls == [1]
     assert skip_index < measurements_index
     assert any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "image prep diagnostics" not in output
     assert "measurements pushed" in output
+
+
+def test_push_measurements_for_observation_logs_finalization_timing(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute("UPDATE images SET image_type = ? WHERE id = ?", ("microscope", 11))
+        conn.commit()
+    push_calls: list[tuple[int, str, bool]] = []
+
+    def push_measurement(meas, cloud_image_id, remote_measurement_cache=None):
+        push_calls.append((int(meas["id"]), str(cloud_image_id), bool(remote_measurement_cache)))
+        return f"cloud-measurement-{int(meas['id'])}"
+
+    monkeypatch.setattr(ctx.client, "push_measurement", push_measurement, raising=False)
+
+    cloud_sync._push_measurements_for_observation(ctx.client, 1)
+
+    output = capsys.readouterr().out
+    assert push_calls == [(21, "cloud-image-11", True)]
+    assert "measurement push finalized" in output
+    assert "measurements=1" in output
+    assert "pushed=1" in output
 
 
 @pytest.mark.parametrize("mutation_name", ["metadata", "file", "crop", "render"])
@@ -1945,6 +2263,7 @@ def test_push_all_prepares_images_for_image_render_changes(
     capsys,
     mutation_name,
 ):
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
     if mutation_name == "metadata":
         with sqlite3.connect(ctx.db_path) as conn:
@@ -2021,6 +2340,18 @@ def test_push_all_prepares_images_for_image_render_changes(
     assert prepare_cb_calls == [1]
     assert measurement_push_calls == [1]
     assert ctx.refresh_calls == [1]
+    assert "image prep diagnostics" in output
+    assert "decision=full image prep" in output
+    assert "changed_keys=[" in output
+    if mutation_name == "metadata":
+        assert "image_file_signature_changed=False" in output
+        assert "render_affecting_field_changed=False" in output
+        assert "only_metadata_fields_changed=True" in output
+        assert "notes" in output
+    elif mutation_name == "file":
+        assert "image_file_signature_changed=True" in output
+    elif mutation_name in {"crop", "render"}:
+        assert "render_affecting_field_changed=True" in output
     assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
     assert "measurements pushed" in output
 
@@ -2125,6 +2456,137 @@ def test_push_all_prepares_images_for_new_image(
     assert measurement_push_calls == [1]
     assert ctx.refresh_calls == [1]
     assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
+
+
+def test_push_all_skips_image_prep_for_tombstone_only_cleanup(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path,
+        monkeypatch,
+        include_deleted_measurement=False,
+    )
+
+    measurement_push_calls: list[int] = []
+    real_push_images_for_observation = cloud_sync._push_images_for_observation
+
+    def fake_push_images_for_observation(client, obs, cloud_id, *, prepare_images_cb=None, **kwargs):
+        assert prepare_images_cb is None
+        return real_push_images_for_observation(
+            client,
+            obs,
+            cloud_id,
+            prepare_images_cb=prepare_images_cb,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fake_push_images_for_observation)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    output = capsys.readouterr().out
+    conn = sqlite3.connect(ctx.db_path)
+    try:
+        tombstone_row = conn.execute(
+            """
+            SELECT delete_synced_at
+            FROM image_tombstones
+            WHERE deleted_cloud_id = ?
+            """,
+            ("cloud-image-11",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert measurement_push_calls == [1]
+    assert ctx.refresh_calls == [1]
+    assert ctx.client.soft_delete_calls and ctx.client.soft_delete_calls[0][0] == "cloud-image-11"
+    assert ctx.client.upload_image_calls == []
+    assert tombstone_row is not None and tombstone_row[0] is not None
+    assert "image prep diagnostics" in output
+    assert "decision=metadata-only image sync" in output
+    assert "tombstone_aware_signature_matched=True" in output
+    assert any("reason=tombstone_only" in message for message in ctx.progress_messages)
+    assert any("metadata-only image sync" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
+
+
+def test_push_all_skips_image_prep_for_deleted_image_measurement_cleanup(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path,
+        monkeypatch,
+        include_deleted_measurement=True,
+    )
+
+    real_push_images_for_observation = cloud_sync._push_images_for_observation
+
+    def fake_push_images_for_observation(client, obs, cloud_id, *, prepare_images_cb=None, **kwargs):
+        assert prepare_images_cb is None
+        return real_push_images_for_observation(
+            client,
+            obs,
+            cloud_id,
+            prepare_images_cb=prepare_images_cb,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fake_push_images_for_observation)
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    output = capsys.readouterr().out
+    conn = sqlite3.connect(ctx.db_path)
+    try:
+        tombstone_row = conn.execute(
+            """
+            SELECT delete_synced_at
+            FROM image_tombstones
+            WHERE deleted_cloud_id = ?
+            """,
+            ("cloud-image-11",),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert ctx.client.upload_image_calls == []
+    assert ctx.client.measurement_push_calls == []
+    assert ctx.client.soft_delete_calls and ctx.client.soft_delete_calls[0][0] == "cloud-image-11"
+    assert tombstone_row is not None and tombstone_row[0] is not None
+    assert "image prep diagnostics" in output
+    assert "decision=metadata-only image sync" in output
+    assert "tombstone_aware_signature_matched=True" in output
+    assert any("reason=tombstone_only" in message for message in ctx.progress_messages)
+    assert "skipped cloud measurement 21 because cloud image cloud-image-11 has a local tombstone" in output
     assert "measurements pushed" in output
 
 
