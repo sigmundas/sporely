@@ -17,6 +17,31 @@ import base64
 from app_identity import APP_NAME
 
 
+class UploadImageActionEndpointMismatchError(RuntimeError):
+    """Raised when UploadImageAction appears to be the wrong endpoint."""
+
+    def __init__(self, url: str, status_code: int, detail: str):
+        self.url = url
+        self.status_code = int(status_code)
+        self.detail = detail
+        super().__init__(f"{url} -> {self.status_code}: {detail}")
+
+
+class WebImageUploadError(RuntimeError):
+    """Raised when one or more Artsobservasjoner web image uploads fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        uploaded_images: list[Dict[str, Any]] | None = None,
+        failures: list[str] | None = None,
+    ):
+        self.uploaded_images = list(uploaded_images or [])
+        self.failures = list(failures or [])
+        super().__init__(message)
+
+
 class ArtsObservasjonerWebClient:
     """Client for submitting observations via www.artsobservasjoner.no (form post)."""
 
@@ -211,13 +236,22 @@ class ArtsObservasjonerWebClient:
                     "Observation was saved, but no sighting ID was returned or discovered; "
                     "cannot upload images."
                 )
-            uploaded = self.upload_images_web(
-                sighting_id=sighting_id,
-                image_paths=image_paths or [],
-                media_license=media_license,
-                progress_cb=progress_cb,
-            )
-            result["uploaded_images"] = uploaded
+            try:
+                uploaded = self.upload_images_web(
+                    sighting_id=sighting_id,
+                    image_paths=image_paths or [],
+                    media_license=media_license,
+                    progress_cb=progress_cb,
+                )
+            except WebImageUploadError as exc:
+                result["uploaded_images"] = list(exc.uploaded_images)
+                result["image_upload_error"] = str(exc)
+                if exc.failures:
+                    result["image_upload_failures"] = list(exc.failures)
+            except Exception as exc:
+                result["image_upload_error"] = str(exc)
+            else:
+                result["uploaded_images"] = uploaded
         return result
 
     def upload_images_web(
@@ -226,6 +260,7 @@ class ArtsObservasjonerWebClient:
         image_paths: list[str],
         media_license: Optional[str] = None,
         progress_cb: Optional[callable] = None,
+        allow_bruteforce_fallback: bool = False,
     ) -> list[Dict[str, Any]]:
         existing = []
         for path in image_paths:
@@ -270,8 +305,8 @@ class ArtsObservasjonerWebClient:
                     idx + 1,
                     len(existing) + 1,
                 )
+            action_error: Optional[str] = None
             try:
-                action_error: Optional[str] = None
                 try:
                     details = self._upload_single_web_image_action(
                         sighting_id=sighting_id,
@@ -279,8 +314,13 @@ class ArtsObservasjonerWebClient:
                         token=token,
                         media_license=media_license,
                     )
-                except Exception as action_exc:
+                except UploadImageActionEndpointMismatchError as action_exc:
                     action_error = str(action_exc)
+                    if not allow_bruteforce_fallback:
+                        failures.append(
+                            f"{Path(image_path).name}: UploadImageAction({action_error})"
+                        )
+                        continue
                     details = self._upload_single_web_image(
                         sighting_id=sighting_id,
                         image_path=image_path,
@@ -294,9 +334,11 @@ class ArtsObservasjonerWebClient:
 
         if failures:
             failure_text = "; ".join(failures[:3])
-            raise RuntimeError(
+            raise WebImageUploadError(
                 "One or more web image uploads failed. "
-                f"{failure_text}."
+                f"{failure_text}.",
+                uploaded_images=uploaded,
+                failures=failures,
             )
         return uploaded
 
@@ -393,13 +435,13 @@ class ArtsObservasjonerWebClient:
             files = {
                 "UploadImageViewModel.Image": (file_path.name, handle, content_type),
             }
-        response = self.session.post(
-            url,
-            data=data,
-            files=files,
-            headers=headers,
-            timeout=self.UPLOAD_TIMEOUT,
-        )
+            response = self.session.post(
+                url,
+                data=data,
+                files=files,
+                headers=headers,
+                timeout=self.UPLOAD_TIMEOUT,
+            )
 
         # Trust the HTTP status code directly for this known endpoint.
         # _web_upload_response_ok scans the body for words like "error"/"feil"/
@@ -407,6 +449,8 @@ class ArtsObservasjonerWebClient:
         # causing false negatives even when the upload succeeded.
         if not response.ok:
             detail = self._response_error_text(response) or response.reason or "HTTP error"
+            if response.status_code in {404, 405}:
+                raise UploadImageActionEndpointMismatchError(url, response.status_code, detail)
             raise RuntimeError(f"{response.status_code}: {detail}")
         return {
             "filename": file_path.name,

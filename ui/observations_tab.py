@@ -75,6 +75,11 @@ from utils.heic_converter import build_local_image_provenance, save_image_as_web
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
+from utils.artsobservasjoner_taxon import (
+    ArtsobservasjonerTaxonIdError,
+    log_artsobservasjoner_taxon_diagnostic,
+    select_artsobservasjoner_taxon_id,
+)
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
     WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE,
@@ -7654,6 +7659,13 @@ class ObservationsTab(QWidget):
                 adb_taxon_id = ObservationDB.resolve_adb_taxon_id(*accepted_pair)
         return adb_taxon_id
 
+    def _resolve_artsobs_taxon_resolution(self, obs: dict):
+        return select_artsobservasjoner_taxon_id(
+            obs,
+            resolved_taxonomy_taxon_id=self._resolve_artsobs_taxon_id(obs),
+            resolved_taxonomy_source="taxonomy_db.artsdatabanken",
+        )
+
     def _resolve_artportalen_taxon_id(self, obs: dict) -> int | None:
         taxon_pair = self._extract_artsobs_taxon_pair(obs)
         if not taxon_pair:
@@ -7930,17 +7942,19 @@ class ObservationsTab(QWidget):
                 )
 
         taxon_id = None
+        taxon_resolution = None
         cookies: dict = {}
         if uploader.key in {"mobile", "web"}:
-            taxon_id = self._resolve_artsobs_taxon_id(obs)
-            if not taxon_id:
+            try:
+                taxon_resolution = self._resolve_artsobs_taxon_resolution(obs)
+            except ArtsobservasjonerTaxonIdError as exc:
                 return _fail(
-                    self.tr(
-                        "Upload failed: could not resolve Artsobservasjoner taxon id from genus/species."
-                    ),
+                    self.tr(str(exc)),
                     level="warning",
                     auto_clear_ms=12000,
                 )
+            taxon_id = taxon_resolution.taxon_id
+            log_artsobservasjoner_taxon_diagnostic(obs, taxon_resolution)
             try:
                 from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
             except Exception as exc:
@@ -8201,6 +8215,7 @@ class ObservationsTab(QWidget):
             open_comment_text = "\n".join(open_comment_parts) if open_comment_parts else None
             observation_payload = {
                 "taxon_id": taxon_id,
+                "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
                 "latitude": float(lat),
                 "longitude": float(lon),
                 "observed_datetime": observed_datetime,
@@ -8362,7 +8377,10 @@ class ObservationsTab(QWidget):
                 ObservationDB.update_observation(observation_id, artsdata_id=int(obs_id))
                 self.schedule_metadata_cloud_sync(observation_id)
                 if uploader.key == "web":
-                    ImageDB.mark_observation_images_artsobs_web_uploaded(observation_id)
+                    if image_upload_error:
+                        ImageDB.mark_observation_images_artsobs_web_pending(observation_id)
+                    else:
+                        ImageDB.mark_observation_images_artsobs_web_uploaded(observation_id)
                 self._artsobs_dead_by_observation_id[observation_id] = False
                 # Newly sent observations are often still in review/preview on Artsobs.
                 self._artsobs_public_published_by_observation_id[observation_id] = False
@@ -8410,16 +8428,19 @@ class ObservationsTab(QWidget):
                 self._update_publish_controls()
         if show_status:
             if obs_id:
-                if image_upload_error or publish_warning_text:
-                    details = []
-                    if image_upload_error:
-                        details.append(str(image_upload_error))
+                if image_upload_error:
+                    message = self.tr(
+                        "Observation published, but image upload failed. Images remain pending."
+                    )
+                    message = f"{message} Details: {image_upload_error}"
                     if publish_warning_text:
-                        details.append(str(publish_warning_text))
+                        message = f"{message} {publish_warning_text}"
+                    self.set_status_message(message, level="warning", auto_clear_ms=15000)
+                elif publish_warning_text:
                     self.set_status_message(
-                        self.tr(
-                            "Observation uploaded (ID {id}), but some publish assets had issues: {error}"
-                        ).format(id=obs_id, error="; ".join(details)),
+                        self.tr("Upload completed with warnings: {warning}").format(
+                            warning=publish_warning_text
+                        ),
                         level="warning",
                         auto_clear_ms=15000,
                     )

@@ -639,6 +639,19 @@ def _hydrate_session_log_row(row) -> dict | None:
 
 
 def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
+    def _single_positive_int(rows) -> int | None:
+        values: set[int] = set()
+        for row in rows:
+            if not row or row[0] is None:
+                continue
+            try:
+                value = int(row[0])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                values.add(value)
+        return next(iter(values)) if len(values) == 1 else None
+
     try:
         from utils.vernacular_utils import resolve_vernacular_db_path
     except Exception:
@@ -653,37 +666,71 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
     try:
         cur = conn.execute("PRAGMA table_info(taxon_min)")
         columns = {(row[1] or "").lower() for row in cur.fetchall()}
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {str(row[0] or "") for row in cur.fetchall()}
+
+        if "norwegian_taxon_id" in columns:
+            rows = conn.execute(
+                """
+                SELECT norwegian_taxon_id
+                FROM taxon_min
+                WHERE genus = ? COLLATE NOCASE
+                  AND specific_epithet = ? COLLATE NOCASE
+                  AND norwegian_taxon_id IS NOT NULL
+                """,
+                (genus, species),
+            ).fetchall()
+            resolved = _single_positive_int(rows)
+            if resolved:
+                return resolved
+
+        if "taxon_external_id_min" in tables:
+            rows = conn.execute(
+                """
+                SELECT e.external_id
+                FROM taxon_min t
+                JOIN taxon_external_id_min e
+                  ON e.taxon_id = t.taxon_id
+                 AND e.source_system = 'artsdatabanken'
+                 AND e.id_role = 'accepted'
+                WHERE t.genus = ? COLLATE NOCASE
+                  AND t.specific_epithet = ? COLLATE NOCASE
+                """,
+                (genus, species),
+            ).fetchall()
+            resolved = _single_positive_int(rows)
+            if resolved:
+                return resolved
+
         if "adbtaxonid" in columns:
-            cur = conn.execute(
+            rows = conn.execute(
                 """
                 SELECT AdbTaxonId
                 FROM taxon_min
                 WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet = ? COLLATE NOCASE
                   AND AdbTaxonId IS NOT NULL
-                LIMIT 1
                 """,
                 (genus, species),
-            )
+            ).fetchall()
+            return _single_positive_int(rows)
         elif "taxon_id" in columns:
-            cur = conn.execute(
-                """
+            extra_filter = ""
+            if "source_system" in columns:
+                extra_filter = "AND COALESCE(source_system, '') != 'artportalen_only'"
+            rows = conn.execute(
+                f"""
                 SELECT taxon_id
                 FROM taxon_min
                 WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet = ? COLLATE NOCASE
-                LIMIT 1
+                  AND taxon_id > 0
+                  {extra_filter}
                 """,
                 (genus, species),
-            )
+            ).fetchall()
+            return _single_positive_int(rows)
         else:
-            return None
-        row = cur.fetchone()
-        if not row or row[0] is None:
-            return None
-        try:
-            return int(row[0])
-        except (TypeError, ValueError):
             return None
     finally:
         conn.close()
@@ -2202,6 +2249,21 @@ class ImageDB:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE images SET artsobs_web_unpublished = 0 WHERE observation_id = ?",
+            (obs_id,),
+        )
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def mark_observation_images_artsobs_web_pending(observation_id: int) -> None:
+        try:
+            obs_id = int(observation_id)
+        except (TypeError, ValueError):
+            return
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE images SET artsobs_web_unpublished = 1 WHERE observation_id = ?",
             (obs_id,),
         )
         conn.commit()
