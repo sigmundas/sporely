@@ -1,6 +1,8 @@
 """Magnified spore preview widget with draggable sides for fine-tuning."""
+from functools import lru_cache
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QPolygonF, QBrush, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QPolygonF, QBrush, QPainterPath
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 import math
 
@@ -14,6 +16,11 @@ from .measurement_overlay_style import (
     rectangle_thin_stroke_width,
     rectangle_corner_segments,
 )
+
+
+@lru_cache(maxsize=None)
+def _cursor(shape: Qt.CursorShape) -> QCursor:
+    return QCursor(shape)
 
 
 class SporePreviewWidget(QWidget):
@@ -512,10 +519,17 @@ class PreviewImageLabel(QLabel):
         self.measure_color = QColor("#0044aa")
         self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
         self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
+        self._cursor_shape: Qt.CursorShape | None = None
 
     def set_show_dimension_labels(self, show: bool):
         self.show_dimension_labels = bool(show)
         self.update()
+
+    def _set_cursor_shape(self, shape: Qt.CursorShape) -> None:
+        if self._cursor_shape == shape:
+            return
+        self._cursor_shape = shape
+        self.setCursor(_cursor(shape))
 
     def _measure_stroke_style(self, color=None):
         base = QColor(color) if color is not None else QColor(self.measure_color)
@@ -818,7 +832,7 @@ class PreviewImageLabel(QLabel):
                     if (ep - click_pos).manhattanLength() < 20:
                         self.dragging_line_endpoint = i
                         self.last_mouse_pos = click_pos
-                        self.setCursor(Qt.CrossCursor)
+                        self._set_cursor_shape(Qt.CrossCursor)
                         return
 
             # Check if clicking on a rotation arrow first (highest priority)
@@ -826,7 +840,7 @@ class PreviewImageLabel(QLabel):
                 if (arrow_pos - click_pos).manhattanLength() < 20:
                     self.dragging_rotation = True
                     self.last_mouse_pos = click_pos
-                    self.setCursor(Qt.ClosedHandCursor)
+                    self._set_cursor_shape(Qt.ClosedHandCursor)
                     return
 
             # Check if clicking on a side (second priority)
@@ -843,7 +857,7 @@ class PreviewImageLabel(QLabel):
                 if min_dist < 10 and side_idx >= 0:
                     self.dragging_side = side_idx
                     self.last_mouse_pos = click_pos
-                    self.setCursor(Qt.ClosedHandCursor)
+                    self._set_cursor_shape(Qt.ClosedHandCursor)
 
                     # Notify parent to capture initial state for side dragging
                     self.side_drag_started.emit(side_idx)
@@ -853,7 +867,7 @@ class PreviewImageLabel(QLabel):
             if len(self.screen_corners) == 4 and self.is_point_inside_polygon(click_pos, self.screen_corners):
                 self.dragging_rectangle = True
                 self.last_mouse_pos = click_pos
-                self.setCursor(Qt.ClosedHandCursor)
+                self._set_cursor_shape(Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for corner/rotation/rectangle dragging and hover."""
@@ -902,7 +916,7 @@ class PreviewImageLabel(QLabel):
                 for i, ep in enumerate(self.screen_line_endpoints):
                     if (ep - mouse_pos).manhattanLength() < 20:
                         self.hover_line_endpoint = i
-                        self.setCursor(Qt.CrossCursor)
+                        self._set_cursor_shape(Qt.CrossCursor)
                         self.update()
                         return
 
@@ -911,7 +925,7 @@ class PreviewImageLabel(QLabel):
             for i, arrow_pos in enumerate(self.rotation_arrow_positions):
                 if (arrow_pos - mouse_pos).manhattanLength() < 20:
                     self.hover_rotation_arrow = i
-                    self.setCursor(Qt.OpenHandCursor)
+                    self._set_cursor_shape(Qt.OpenHandCursor)
                     self.update()
                     return
 
@@ -929,17 +943,17 @@ class PreviewImageLabel(QLabel):
                         side_idx = i
                 if min_dist < 10 and side_idx >= 0:
                     self.hover_side = side_idx
-                    self.setCursor(Qt.OpenHandCursor)
+                    self._set_cursor_shape(Qt.OpenHandCursor)
                     self.update()
                     return
 
             # Check if hovering inside rectangle
             if len(self.screen_corners) == 4 and self.is_point_inside_polygon(mouse_pos, self.screen_corners):
-                self.setCursor(Qt.SizeAllCursor)
+                self._set_cursor_shape(Qt.SizeAllCursor)
                 self.update()
                 return
 
-            self.setCursor(Qt.ArrowCursor)
+            self._set_cursor_shape(Qt.ArrowCursor)
             if self.hover_side == -1 and self.hover_rotation_arrow == -1:
                 self.update()
 
@@ -956,7 +970,7 @@ class PreviewImageLabel(QLabel):
             self.dragging_rotation = False
             self.dragging_rectangle = False
             self.dragging_line_endpoint = -1
-            self.setCursor(Qt.ArrowCursor)
+            self._set_cursor_shape(Qt.ArrowCursor)
             if was_dragging:
                 self.interaction_finished.emit()
 

@@ -4230,7 +4230,11 @@ def _parsed_local_media_signature(signature: str | None) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def _normalized_local_media_signature_payload(payload: dict | None) -> dict:
+def _normalized_local_media_signature_payload(
+    payload: dict | None,
+    *,
+    include_measurements: bool = True,
+) -> dict:
     normalized = dict(payload or {})
     # Gallery layout state only affects desktop-local generated views.
     normalized['gallery_settings_raw'] = ''
@@ -4258,10 +4262,17 @@ def _normalized_local_media_signature_payload(payload: dict | None) -> dict:
             str(row.get('image_type') or ''),
         ),
     )
+    if not include_measurements:
+        normalized.pop('measurements', None)
     return normalized
 
 
-def _local_media_signatures_match(stored_signature: str | None, current_signature: str | None) -> bool:
+def _local_media_signatures_match(
+    stored_signature: str | None,
+    current_signature: str | None,
+    *,
+    include_measurements: bool = True,
+) -> bool:
     stored_text = str(stored_signature or '').strip()
     current_text = str(current_signature or '').strip()
     if not stored_text or not current_text:
@@ -4272,7 +4283,13 @@ def _local_media_signatures_match(stored_signature: str | None, current_signatur
     current_payload = _parsed_local_media_signature(current_text)
     if not stored_payload or not current_payload:
         return False
-    return _normalized_local_media_signature_payload(stored_payload) == _normalized_local_media_signature_payload(current_payload)
+    return _normalized_local_media_signature_payload(
+        stored_payload,
+        include_measurements=include_measurements,
+    ) == _normalized_local_media_signature_payload(
+        current_payload,
+        include_measurements=include_measurements,
+    )
 
 
 def _store_local_media_signature_if_equivalent(
@@ -5134,7 +5151,11 @@ def _path_stat_signature(path_value: str | None) -> dict:
         return {'path': path_text, 'exists': path.exists()}
 
 
-def _local_cloud_media_signature(observation_id: int | str) -> str:
+def _local_cloud_media_signature(
+    observation_id: int | str,
+    *,
+    include_measurements: bool = True,
+) -> str:
     obs_id = _safe_int(observation_id)
     if obs_id <= 0:
         return ''
@@ -5191,32 +5212,34 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
                 for row in image_rows
                 if str(row.get('cloud_id') or '').strip() not in tombstoned_cloud_ids
             ]
-        cursor.execute(
-            '''
-            SELECT
-                m.id,
-                m.image_id,
-                m.length_um,
-                m.width_um,
-                m.measurement_type,
-                m.notes,
-                m.p1_x,
-                m.p1_y,
-                m.p2_x,
-                m.p2_y,
-                m.p3_x,
-                m.p3_y,
-                m.p4_x,
-                m.p4_y,
-                m.gallery_rotation
-            FROM spore_measurements m
-            JOIN images i ON i.id = m.image_id
-            WHERE i.observation_id = ?
-            ORDER BY m.id
-            ''',
-            (obs_id,),
-        )
-        measurement_rows = [dict(row) for row in cursor.fetchall()]
+        measurement_rows: list[dict] = []
+        if include_measurements:
+            cursor.execute(
+                '''
+                SELECT
+                    m.id,
+                    m.image_id,
+                    m.length_um,
+                    m.width_um,
+                    m.measurement_type,
+                    m.notes,
+                    m.p1_x,
+                    m.p1_y,
+                    m.p2_x,
+                    m.p2_y,
+                    m.p3_x,
+                    m.p3_y,
+                    m.p4_x,
+                    m.p4_y,
+                    m.gallery_rotation
+                FROM spore_measurements m
+                JOIN images i ON i.id = m.image_id
+                WHERE i.observation_id = ?
+                ORDER BY m.id
+                ''',
+                (obs_id,),
+            )
+            measurement_rows = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
 
@@ -5256,15 +5279,20 @@ def _local_cloud_media_signature(observation_id: int | str) -> str:
             }
             for row in image_rows
         ],
-        'measurements': [
+    }
+    if include_measurements:
+        payload['measurements'] = [
             {
                 **_measurement_compare_payload(row, local=False),
                 'notes': _normalize_snapshot_value(row.get('notes')),
             }
             for row in measurement_rows
-        ],
-    }
+        ]
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+
+
+def _local_cloud_image_media_signature(observation_id: int | str) -> str:
+    return _local_cloud_media_signature(observation_id, include_measurements=False)
 
 
 def _prepared_item_remote_payload(
@@ -9946,44 +9974,62 @@ def push_all(
             images_synced = True
             if sync_images:
                 local_obs_id = _safe_int(obs.get('id'))
-                current_local_media_signature = ''
+
+                def _push_measurements_for_current_observation() -> None:
+                    if local_obs_id <= 0:
+                        return
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            f"Syncing measurements for observation {i + 1}/{max(1, total)}…",
+                        ),
+                        progress_state,
+                    )
+                    try:
+                        _push_measurements_for_observation(client, local_obs_id)
+                    except Exception as e:
+                        if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
+                            raise
+                        print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
+                    else:
+                        print(
+                            f'[cloud_sync] Observation {obs["id"]}: measurements pushed '
+                            f'(local_id={local_obs_id})'
+                        )
+
                 stored_local_media_signature = (
                     _load_local_cloud_media_signature(local_obs_id)
                     if had_existing_cloud and local_obs_id > 0
                     else ''
                 )
+                current_local_image_signature = ''
                 if had_existing_cloud and local_obs_id > 0 and stored_local_media_signature:
-                    current_local_media_signature = _local_cloud_media_signature(local_obs_id)
-                if (
+                    current_local_image_signature = _local_cloud_image_media_signature(local_obs_id)
+                image_render_unchanged = (
                     had_existing_cloud
                     and local_obs_id > 0
                     and stored_local_media_signature
+                    and current_local_image_signature
                     and _local_media_signatures_match(
                         stored_local_media_signature,
-                        current_local_media_signature,
+                        current_local_image_signature,
+                        include_measurements=False,
                     )
-                ):
-                    _store_local_media_signature_if_equivalent(
-                        local_obs_id,
-                        stored_local_media_signature,
-                        current_local_media_signature,
-                    )
+                )
+                if image_render_unchanged:
                     _emit_progress(
                         progress_cb,
                         _format_cloud_sync_observation_status(
                             obs,
-                            f"Skipping unchanged cloud media for observation {i + 1}/{max(1, total)}",
+                            (
+                                f"Image/render media unchanged; skipping image prep for "
+                                f"observation {i + 1}/{max(1, total)} (no prepared upload candidates)"
+                            ),
                         ),
                         progress_state,
                     )
-                    # Images unchanged but measurements may have been added/updated
-                    if local_obs_id > 0:
-                        try:
-                            _push_measurements_for_observation(client, local_obs_id)
-                        except Exception as e:
-                            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
-                                raise
-                            print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
+                    _push_measurements_for_current_observation()
                 else:
                     original_upload_warnings: list[str] = []
                     images_synced = _push_images_for_observation(
@@ -9999,18 +10045,10 @@ def push_all(
                         original_summary=original_upload_summary,
                     )
                     if images_synced and local_obs_id > 0:
-                        try:
-                            _push_measurements_for_observation(client, local_obs_id)
-                        except Exception as e:
-                            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
-                                raise
-                            print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
+                        _push_measurements_for_current_observation()
                 if local_obs_id > 0:
                     if images_synced:
-                        if not current_local_media_signature:
-                            current_local_media_signature = _refresh_local_cloud_media_signature(local_obs_id)
-                        else:
-                            _store_local_cloud_media_signature(local_obs_id, current_local_media_signature)
+                        _refresh_local_cloud_media_signature(local_obs_id)
                     else:
                         mark_observation_dirty(local_obs_id)
             _store_remote_snapshot(client, cloud_id)

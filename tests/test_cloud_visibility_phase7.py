@@ -193,6 +193,170 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         )
 
 
+def _seed_existing_cloud_media_observation(db_path, image_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO observations (
+                id, cloud_id, sync_status, synced_at, sync_error_code,
+                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "cloud-obs-1",
+                "dirty",
+                "2026-05-01T00:00:00Z",
+                None,
+                None,
+                None,
+                None,
+                "user-1",
+                "2026-05-02",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at,
+                synced_at, notes, crop_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                11,
+                1,
+                "cloud-image-11",
+                str(image_path),
+                None,
+                "field",
+                "local_canonical",
+                "field",
+                0,
+                "2026-05-01T10:00:00Z",
+                "2026-05-01T10:05:00Z",
+                "baseline note",
+                "full",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO spore_measurements (
+                id, image_id, length_um, width_um, measurement_type, notes,
+                p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, gallery_rotation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                21,
+                11,
+                12.3,
+                4.5,
+                "spore",
+                "baseline measurement",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _setup_push_all_existing_media_case(tmp_path, monkeypatch):
+    db_path = _init_push_all_sync_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"image-bytes")
+    _seed_existing_cloud_media_observation(db_path, image_path)
+
+    remote_obs = {
+        "id": "cloud-obs-1",
+        "desktop_id": 1,
+        "date": "2026-05-02",
+    }
+    remote_images = [
+        {
+            "id": "cloud-image-11",
+            "desktop_id": 11,
+            "sort_order": 0,
+            "image_type": "field",
+            "crop_mode": "full",
+            "notes": "baseline note",
+            "storage_path": "user/cloud-obs-1/cloud-image-11.webp",
+            "original_filename": "image.jpg",
+        }
+    ]
+    remote_measurements = [
+        {
+            "id": 21,
+            "desktop_id": 21,
+            "image_id": 11,
+            "length_um": 12.3,
+            "width_um": 4.5,
+            "measurement_type": "spore",
+            "gallery_rotation": 0,
+            "p1_x": None,
+            "p1_y": None,
+            "p2_x": None,
+            "p2_y": None,
+            "p3_x": None,
+            "p3_y": None,
+            "p4_x": None,
+            "p4_y": None,
+            "measured_at": None,
+        }
+    ]
+    stored_snapshot = cloud_sync._cloud_observation_snapshot(remote_obs, remote_images, remote_measurements)
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    stored_signature = cloud_sync._local_cloud_media_signature(1)
+    progress_messages: list[str] = []
+    refresh_calls: list[int] = []
+
+    class DummyClient:
+        def push_observation(self, obs, remote_obs=None, **kwargs):
+            return "cloud-obs-1"
+
+        def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
+            return [dict(row) for row in remote_images]
+
+        def pull_measurements_for_images(self, image_cloud_ids):
+            return [dict(row) for row in remote_measurements]
+
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
+    monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda observation_id: stored_signature)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_refresh_local_cloud_media_signature",
+        lambda observation_id: refresh_calls.append(int(observation_id)) or stored_signature,
+    )
+
+    return SimpleNamespace(
+        db_path=db_path,
+        image_path=image_path,
+        remote_obs=remote_obs,
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+        stored_signature=stored_signature,
+        stored_snapshot=stored_snapshot,
+        progress_messages=progress_messages,
+        refresh_calls=refresh_calls,
+        client=DummyClient(),
+    )
+
+
 def test_phase7_visibility_normalization_maps_cloud_draft_to_local_private():
     assert cloud_sync._normalize_sharing_scope("draft") == "private"
     assert cloud_sync._cloud_visibility_to_sharing_scope("draft") == "private"
@@ -1673,93 +1837,295 @@ def test_push_all_keeps_optional_original_upload_failure_out_of_top_level_errors
     assert len(client.upload_original_calls) == 1
 
 
-def test_push_all_announces_cloud_media_check_before_skip_message(tmp_path, monkeypatch):
-    db_path = _init_push_all_sync_db(tmp_path)
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            """
-            INSERT INTO observations (
-                id, cloud_id, sync_status, synced_at, sync_error_code,
-                sync_error_message, sync_blocked_reason, sync_blocked_at, user_id, date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                1,
-                "cloud-obs-1",
-                "dirty",
-                "2026-05-01T00:00:00Z",
-                None,
-                None,
-                None,
-                None,
-                "user-1",
-                "2026-05-02",
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def test_push_all_announces_cloud_media_check_before_skip_message(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    measurement_push_calls: list[int] = []
 
-    remote_current = {
-        "id": "cloud-obs-1",
-        "desktop_id": 1,
-        "date": "2026-05-02",
-        "genus": "Agaricus",
-        "species": "campestris",
-        "species_guess": "Agaricus campestris",
-        "notes": "baseline note",
-        "sharing_scope": "public",
-        "location_public": True,
-        "location_precision": "exact",
-        "spore_data_visibility": "public",
-        "is_draft": False,
-    }
-    stored_snapshot = cloud_sync._cloud_observation_snapshot(remote_current, [], [])
-    progress_messages: list[str] = []
+    def fail_push_images(*args, **kwargs):
+        pytest.fail("image prep should not run")
 
-    class DummyClient:
-        def push_observation(self, obs, remote_obs=None, **kwargs):
-            return "cloud-obs-1"
-
-        def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
-            return []
-
-        def pull_measurements_for_images(self, image_cloud_ids):
-            return []
-
-    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
-    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images", lambda *args, **kwargs: [])
-    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda local_id: "sig")
-    monkeypatch.setattr(cloud_sync, "_local_cloud_media_signature", lambda local_id: "sig")
-    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *args, **kwargs: "sig")
-    monkeypatch.setattr(cloud_sync, "_store_local_cloud_media_signature", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fail_push_images)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
 
     result = cloud_sync.push_all(
-        DummyClient(),
-        progress_cb=lambda text, current, total: progress_messages.append(text),
-        remote_obs=[dict(remote_current)],
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
         sync_images=True,
         sync_calibrations=False,
     )
 
+    output = capsys.readouterr().out
     check_index = next(
-        i for i, message in enumerate(progress_messages)
+        i for i, message in enumerate(ctx.progress_messages)
         if "Checking cloud media for observation 1/1" in message
     )
     skip_index = next(
-        i for i, message in enumerate(progress_messages)
-        if "Skipping unchanged cloud media for observation 1/1" in message
+        i for i, message in enumerate(ctx.progress_messages)
+        if "Image/render media unchanged; skipping image prep for observation 1/1" in message
+    )
+    measurements_index = next(
+        i for i, message in enumerate(ctx.progress_messages)
+        if "Syncing measurements for observation 1/1" in message
     )
 
     assert result["pushed"] == 1
-    assert check_index < skip_index
+    assert result["errors"] == []
+    assert measurement_push_calls == [1]
+    assert ctx.refresh_calls == [1]
+    assert check_index < skip_index < measurements_index
+    assert any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
+
+
+def test_push_all_skips_image_prep_for_measurement_only_change_but_pushes_measurements(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "UPDATE spore_measurements SET length_um = ? WHERE id = ?",
+            (13.7, 21),
+        )
+        conn.commit()
+
+    measurement_push_calls: list[int] = []
+
+    def fail_push_images(*args, **kwargs):
+        pytest.fail("image prep should not run for measurement-only changes")
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fail_push_images)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+
+    output = capsys.readouterr().out
+    skip_index = next(
+        i for i, message in enumerate(ctx.progress_messages)
+        if "Image/render media unchanged; skipping image prep for observation 1/1" in message
+    )
+    measurements_index = next(
+        i for i, message in enumerate(ctx.progress_messages)
+        if "Syncing measurements for observation 1/1" in message
+    )
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert measurement_push_calls == [1]
+    assert ctx.refresh_calls == [1]
+    assert skip_index < measurements_index
+    assert any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
+
+
+@pytest.mark.parametrize("mutation_name", ["metadata", "file", "crop", "render"])
+def test_push_all_prepares_images_for_image_render_changes(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    mutation_name,
+):
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    if mutation_name == "metadata":
+        with sqlite3.connect(ctx.db_path) as conn:
+            conn.execute(
+                "UPDATE images SET notes = ? WHERE id = ?",
+                ("updated note", 11),
+            )
+            conn.commit()
+    elif mutation_name == "file":
+        ctx.image_path.write_bytes(b"changed-image-bytes")
+    elif mutation_name == "crop":
+        with sqlite3.connect(ctx.db_path) as conn:
+            conn.execute(
+                "UPDATE images SET crop_mode = ? WHERE id = ?",
+                ("custom", 11),
+            )
+            conn.commit()
+    elif mutation_name == "render":
+        cloud_sync.SettingsDB.set_setting(cloud_sync._SETTING_IMAGE_LICENSE, "61")
+    else:
+        raise AssertionError(mutation_name)
+
+    image_prep_calls: list[tuple[int, str]] = []
+    prepare_cb_calls: list[int] = []
+    measurement_push_calls: list[int] = []
+
+    def prepare_images_cb(obs, progress_cb):
+        prepare_cb_calls.append(int(obs["id"]))
+        return (
+            [
+                {
+                    "image_row": {
+                        "id": 11,
+                        "cloud_id": "cloud-image-11",
+                        "filepath": str(ctx.image_path),
+                        "image_type": "field",
+                        "sort_order": 0,
+                    },
+                    "upload_path": str(ctx.image_path),
+                }
+            ],
+            None,
+            [],
+        )
+
+    def fake_push_images_for_observation(client, obs, cloud_id, *, prepare_images_cb=None, **kwargs):
+        image_prep_calls.append((int(obs["id"]), str(cloud_id)))
+        assert callable(prepare_images_cb)
+        prepared_items, _cleanup, _warnings = prepare_images_cb(obs, kwargs.get("progress_cb"))
+        assert prepared_items
+        return True
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fake_push_images_for_observation)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+        prepare_images_cb=prepare_images_cb,
+    )
+
+    output = capsys.readouterr().out
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert image_prep_calls == [(1, "cloud-obs-1")]
+    assert prepare_cb_calls == [1]
+    assert measurement_push_calls == [1]
+    assert ctx.refresh_calls == [1]
+    assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
+
+
+def test_push_all_prepares_images_for_new_image(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    new_image_path = tmp_path / "new-image.jpg"
+    new_image_path.write_bytes(b"new-image-bytes")
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, original_filepath,
+                image_type, source_role, file_purpose, sort_order, created_at,
+                synced_at, notes, crop_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                12,
+                1,
+                None,
+                str(new_image_path),
+                None,
+                "field",
+                "local_canonical",
+                "field",
+                1,
+                "2026-05-01T10:10:00Z",
+                None,
+                None,
+                "full",
+            ),
+        )
+        conn.commit()
+
+    image_prep_calls: list[tuple[int, str]] = []
+    prepare_cb_calls: list[int] = []
+    measurement_push_calls: list[int] = []
+
+    def prepare_images_cb(obs, progress_cb):
+        prepare_cb_calls.append(int(obs["id"]))
+        return (
+            [
+                {
+                    "image_row": {
+                        "id": 11,
+                        "cloud_id": "cloud-image-11",
+                        "filepath": str(ctx.image_path),
+                        "image_type": "field",
+                        "sort_order": 0,
+                    },
+                    "upload_path": str(ctx.image_path),
+                },
+                {
+                    "image_row": {
+                        "id": 12,
+                        "cloud_id": None,
+                        "filepath": str(new_image_path),
+                        "image_type": "field",
+                        "sort_order": 1,
+                    },
+                    "upload_path": str(new_image_path),
+                },
+            ],
+            None,
+            [],
+        )
+
+    def fake_push_images_for_observation(client, obs, cloud_id, *, prepare_images_cb=None, **kwargs):
+        image_prep_calls.append((int(obs["id"]), str(cloud_id)))
+        assert callable(prepare_images_cb)
+        prepared_items, _cleanup, _warnings = prepare_images_cb(obs, kwargs.get("progress_cb"))
+        assert len(prepared_items) == 2
+        return True
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fake_push_images_for_observation)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+        prepare_images_cb=prepare_images_cb,
+    )
+
+    output = capsys.readouterr().out
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    assert image_prep_calls == [(1, "cloud-obs-1")]
+    assert prepare_cb_calls == [1]
+    assert measurement_push_calls == [1]
+    assert ctx.refresh_calls == [1]
+    assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
+    assert "measurements pushed" in output
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):

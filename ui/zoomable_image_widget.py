@@ -1,4 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
+from functools import lru_cache
+
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
@@ -16,6 +18,11 @@ from .measurement_overlay_style import (
     rectangle_thin_stroke_width,
     rectangle_corner_segments,
 )
+
+
+@lru_cache(maxsize=None)
+def _cursor(shape: Qt.CursorShape) -> QCursor:
+    return QCursor(shape)
 
 
 class ZoomableImageLabel(QLabel):
@@ -109,6 +116,7 @@ class ZoomableImageLabel(QLabel):
         self.crop_overlay_text = "Crop"
         self.crop_overlay_color = QColor(243, 156, 18)
         self.crop_overlay_active_color = QColor(211, 84, 0)
+        self._cursor_shape: Qt.CursorShape | None = None
 
     def set_image_sources(self, pixmap, full_path=None, preview_scaled=False, preserve_view: bool = False):
         """Set image with optional full-resolution source."""
@@ -859,8 +867,14 @@ class ZoomableImageLabel(QLabel):
             self.crop_corner_dragging = False
             self.crop_corner_drag_index = -1
             self.crop_corner_drag_anchor = None
-        self.setCursor(Qt.CrossCursor if self.crop_mode else Qt.ArrowCursor)
+        self._set_cursor_shape(Qt.CrossCursor if self.crop_mode else Qt.ArrowCursor)
         self.update()
+
+    def _set_cursor_shape(self, shape: Qt.CursorShape) -> None:
+        if self._cursor_shape == shape:
+            return
+        self._cursor_shape = shape
+        self.setCursor(_cursor(shape))
 
     def set_crop_box(self, box):
         """Set current crop box (x1, y1, x2, y2) in image coords."""
@@ -1273,7 +1287,7 @@ class ZoomableImageLabel(QLabel):
             ep_hit = self._scale_bar_t_hit_test(event.position())
             if ep_hit is not None:
                 self._scale_bar_ep_drag = ep_hit
-                self.setCursor(Qt.CrossCursor)
+                self._set_cursor_shape(Qt.CrossCursor)
                 self.update()
                 return
             if self.original_pixmap and self.crop_box:
@@ -1287,7 +1301,7 @@ class ZoomableImageLabel(QLabel):
                         self.crop_corner_hover_index = corner_index
                         cursor = self._crop_corner_cursor(corner_index)
                         if cursor is not None:
-                            self.setCursor(cursor)
+                            self._set_cursor_shape(cursor)
                         self.update()
                         return
                 start = self.screen_to_image(event.position())
@@ -1296,7 +1310,7 @@ class ZoomableImageLabel(QLabel):
                     self.crop_drag_start = QPointF(start)
                     self.crop_drag_initial_box = tuple(self.crop_box)
                     self.crop_hovered = True
-                    self.setCursor(Qt.ClosedHandCursor)
+                    self._set_cursor_shape(Qt.ClosedHandCursor)
                     self.update()
                     return
             if self.crop_mode:
@@ -1316,7 +1330,7 @@ class ZoomableImageLabel(QLabel):
                 self.is_panning = True
                 self.pan_start_pos = event.position()
                 self.pan_start_offset = QPointF(self.pan_offset)
-                self.setCursor(Qt.ClosedHandCursor)
+                self._set_cursor_shape(Qt.ClosedHandCursor)
                 self.pan_click_candidate = self.pan_without_shift
             else:
                 # Regular click - emit position in original image coordinates
@@ -1393,9 +1407,9 @@ class ZoomableImageLabel(QLabel):
                 self.update()
             corner_cursor = self._crop_corner_cursor(corner_hover)
             if corner_cursor is not None:
-                self.setCursor(corner_cursor)
+                self._set_cursor_shape(corner_cursor)
             else:
-                self.setCursor(Qt.OpenHandCursor if hovered else Qt.CrossCursor)
+                self._set_cursor_shape(Qt.OpenHandCursor if hovered else Qt.CrossCursor)
             return
         # Track mouse position for preview line
         if self.original_pixmap:
@@ -1419,16 +1433,16 @@ class ZoomableImageLabel(QLabel):
                 self._scale_bar_ep_hover = _sb_ep_hover
                 self.update()
             if event.modifiers() & Qt.ShiftModifier:
-                self.setCursor(Qt.OpenHandCursor)
+                self._set_cursor_shape(Qt.OpenHandCursor)
             elif _sb_ep_hover is not None:
-                self.setCursor(Qt.CrossCursor)
+                self._set_cursor_shape(Qt.CrossCursor)
             elif self.crop_corner_hover_index >= 0 and self.crop_box:
                 cursor = self._crop_corner_cursor(self.crop_corner_hover_index)
-                self.setCursor(cursor if cursor is not None else Qt.ArrowCursor)
+                self._set_cursor_shape(cursor if cursor is not None else Qt.ArrowCursor)
             elif self.crop_hovered and self.crop_box:
-                self.setCursor(Qt.OpenHandCursor)
+                self._set_cursor_shape(Qt.OpenHandCursor)
             else:
-                self.setCursor(Qt.ArrowCursor)
+                self._set_cursor_shape(Qt.ArrowCursor)
 
             # Update if we have a preview line
             if self.preview_line is not None or self.preview_rect is not None:
@@ -1440,7 +1454,7 @@ class ZoomableImageLabel(QLabel):
             self._scale_bar_ep_drag = None
             if self.measurement_lines:
                 self.scaleBarChanged.emit(list(self.measurement_lines[0]))
-            self.setCursor(Qt.ArrowCursor)
+            self._set_cursor_shape(Qt.ArrowCursor)
             self.update()
             return
         if event.button() == Qt.LeftButton and self.crop_corner_dragging:
@@ -1452,15 +1466,15 @@ class ZoomableImageLabel(QLabel):
             if self.crop_mode:
                 corner_cursor = self._crop_corner_cursor(self.crop_corner_hover_index)
                 if corner_cursor is not None:
-                    self.setCursor(corner_cursor)
+                    self._set_cursor_shape(corner_cursor)
                 else:
-                    self.setCursor(Qt.OpenHandCursor if self.crop_hovered else Qt.CrossCursor)
+                    self._set_cursor_shape(Qt.OpenHandCursor if self.crop_hovered else Qt.CrossCursor)
             else:
                 corner_cursor = self._crop_corner_cursor(self.crop_corner_hover_index)
                 if corner_cursor is not None:
-                    self.setCursor(corner_cursor)
+                    self._set_cursor_shape(corner_cursor)
                 else:
-                    self.setCursor(Qt.OpenHandCursor if self.crop_hovered else Qt.ArrowCursor)
+                    self._set_cursor_shape(Qt.OpenHandCursor if self.crop_hovered else Qt.ArrowCursor)
             self.update()
             return
         if event.button() == Qt.LeftButton and self.crop_dragging:
@@ -1470,14 +1484,14 @@ class ZoomableImageLabel(QLabel):
             if self.crop_box:
                 self.cropChanged.emit(self.crop_box)
             if self.crop_mode:
-                self.setCursor(Qt.OpenHandCursor if self.crop_hovered else Qt.CrossCursor)
+                self._set_cursor_shape(Qt.OpenHandCursor if self.crop_hovered else Qt.CrossCursor)
             else:
-                self.setCursor(Qt.OpenHandCursor if self.crop_hovered else Qt.ArrowCursor)
+                self._set_cursor_shape(Qt.OpenHandCursor if self.crop_hovered else Qt.ArrowCursor)
             self.update()
             return
         if event.button() == Qt.LeftButton and self.is_panning:
             self.is_panning = False
-            self.setCursor(Qt.ArrowCursor)
+            self._set_cursor_shape(Qt.ArrowCursor)
             if self.pan_click_candidate and self.original_pixmap:
                 orig_pos = self.screen_to_image(event.position())
                 if orig_pos:
