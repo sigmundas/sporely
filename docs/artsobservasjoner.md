@@ -29,6 +29,10 @@ Logging in to either Artsobservasjoner target logs in to both (mobile and web) i
 
 If your session expires, Sporely will silently re-authenticate in the background using saved credentials.
 
+Sporely only publishes Artsobservasjoner with a verified Artsobservasjoner-compatible taxon id. It does not treat `ai_selected_taxon_id` as interchangeable with Artsobservasjoner, Artportalen, or Artsdatabanken ids. `artsdata_id` is the stored Artsobservasjoner sighting id returned after a successful publish; `artportalen_id` is a separate target-specific publish id. If no verified Artsobservasjoner taxon id can be resolved for the selected name, publishing stops with a clear error instead of guessing.
+
+The verified mapping comes from the local taxonomy database built from the source files under `database/reference_data/sources/`. See [Taxonomy integration](./taxonomy-integration.md) for the lookup pipeline.
+
 ### iNaturalist (awaiting approval)
 
 Click **Log in** and complete sign-in in your browser. Sporely keeps you signed in afterwards.
@@ -56,6 +60,10 @@ Cloud sync does not use the online-publishing overlay options. On desktop:
 If you change image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
 
 After the first clean cloud media sync for an observation, later startup syncs try a lightweight local signature check first. If the selected images, measurements, and relevant publish settings have not changed, Sporely skips gallery/plot/media preparation and does not re-upload unchanged cloud media.
+
+If an observation is dirty only because of tombstones or deleted-image measurement cleanup, Sporely can skip WebP/image prep and still run tombstone sync, measurement cleanup, and metadata-only image sync. Set `SPORELY_DEBUG_CLOUD_SYNC=1` to print a per-observation diagnostic line showing the signature checks, whether any local image still has `cloud_id IS NULL`, which keys changed, and whether the final decision was `skip prep`, `metadata-only image sync`, or `full image prep`.
+
+Set `SPORELY_CLOUD_SYNC_PROFILE=1` if you also want cloud-sync profiler output. The measurement push path always prints a lightweight finalization line with counts and elapsed time so the gap after **Syncing measurements…** is easier to explain.
 
 If the same linked observation changed on both desktop and web since the last synced snapshot, Sporely now skips the automatic overwrite and reports a conflict instead of silently replacing one side.
 

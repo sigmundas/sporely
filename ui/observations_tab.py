@@ -801,6 +801,133 @@ def resolve_observation_publish_target(
     return inferred or normalize_publish_target(default_target, fallback=PUBLISH_TARGET_ARTSOBS_NO)
 
 
+def _normalize_external_publication_id(value) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _publication_links_from_observation(observation: dict | None) -> dict[str, int | None]:
+    obs = observation or {}
+    return {
+        "observation_id": (
+            _normalize_external_publication_id(obs.get("observation_id"))
+            or _normalize_external_publication_id(obs.get("local_id"))
+            or _normalize_external_publication_id(obs.get("id"))
+        ),
+        "artsdata_id": (
+            _normalize_external_publication_id(obs.get("artsdata_id"))
+            or _normalize_external_publication_id(obs.get("arts_id"))
+        ),
+        "artportalen_id": _normalize_external_publication_id(obs.get("artportalen_id")),
+        "inaturalist_id": _normalize_external_publication_id(obs.get("inaturalist_id")),
+        "mushroomobserver_id": _normalize_external_publication_id(obs.get("mushroomobserver_id")),
+    }
+
+
+def _observation_row_coordinates(row_data: dict | None) -> tuple[object | None, object | None, bool]:
+    obs = row_data or {}
+    lat = obs.get("lat")
+    lon = obs.get("lon")
+    if lat is None:
+        lat = obs.get("gps_latitude")
+    if lon is None:
+        lon = obs.get("gps_longitude")
+    raw = obs.get("raw")
+    if isinstance(raw, dict):
+        if lat is None:
+            lat = raw.get("gps_latitude")
+        if lon is None:
+            lon = raw.get("gps_longitude")
+    has_coords = (
+        lat is not None
+        and lon is not None
+        and str(lat).strip() != ""
+        and str(lon).strip() != ""
+    )
+    return lat, lon, has_coords
+
+
+def _artsobservasjoner_mobile_observation_url(artsdata_id: int | str) -> str:
+    return f"https://mobil.artsobservasjoner.no/sighting/{int(artsdata_id)}"
+
+
+def _artsobservasjoner_web_observation_url(artsdata_id: int | str) -> str:
+    return f"https://www.artsobservasjoner.no/Sighting/{int(artsdata_id)}"
+
+
+def _artportalen_observation_url(artportalen_id: int | str) -> str:
+    return f"https://www.artportalen.se/Sighting/{int(artportalen_id)}"
+
+
+def _inaturalist_observation_url(inaturalist_id: int | str) -> str:
+    return f"https://www.inaturalist.org/observations/{int(inaturalist_id)}"
+
+
+def _mushroomobserver_observation_url(mushroomobserver_id: int | str) -> str:
+    return f"https://mushroomobserver.org/obs/{int(mushroomobserver_id)}"
+
+
+TABLE_LINK_LABEL_MIN_HEIGHT = 22
+
+
+def _prepare_table_link_label(
+    label: "QLabel",
+    *,
+    min_height: int = TABLE_LINK_LABEL_MIN_HEIGHT,
+    min_width: int = 0,
+) -> "QLabel":
+    """Force a non-zero minimum height and sane size policy on a link label.
+
+    QLabel cell widgets installed in a QTableWidget sometimes resolve to
+    height 0 because their natural minimumSizeHint for short rich text reports
+    zero. An explicit minimum height plus a Fixed vertical size policy keeps
+    the link visible. Kept as a module-level helper so it works with both
+    real ObservationsTab instances and the lightweight SimpleNamespace fakes
+    used in tests.
+    """
+    label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    label.setMinimumHeight(max(min_height, 1))
+    label.setMaximumHeight(16777215)
+    if min_width > 0:
+        label.setMinimumWidth(min_width)
+    label.setAlignment(Qt.AlignCenter)
+    return label
+
+
+def _install_table_link_widget(
+    table,
+    row: int,
+    col: int,
+    widget,
+    *,
+    min_height: int = TABLE_LINK_LABEL_MIN_HEIGHT,
+) -> None:
+    """Install a cell widget and guarantee the row is tall enough to show it."""
+    table.setCellWidget(row, col, widget)
+    try:
+        desired_height = max(
+            widget.sizeHint().height(),
+            widget.minimumHeight(),
+            min_height,
+        ) + 4
+    except Exception:
+        desired_height = min_height + 4
+    try:
+        current_height = table.rowHeight(row)
+    except Exception:
+        current_height = 0
+    if current_height < desired_height:
+        try:
+            table.setRowHeight(row, desired_height)
+        except Exception:
+            pass
+
+
 class ArtsobsMobileLinkCheckWorker(QThread):
     """Background worker that checks public Artsobs sighting links."""
 
@@ -1725,7 +1852,7 @@ class ObservationsTab(QWidget):
             self.tr("Location"),
             self.tr("Status"),
             self.tr("Map"),
-            self.tr("Publish")
+            self.tr("External"),
         ])
 
         # Set column properties
@@ -1751,7 +1878,7 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(6, 108)  # Location
         self.table.setColumnWidth(7, 138)  # Status
         self.table.setColumnWidth(8, 56)   # Map
-        self.table.setColumnWidth(9, 140)  # Publish
+        self.table.setColumnWidth(9, 140)  # External
         self._table_col_resize_guard = False
         self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
 
@@ -2083,16 +2210,55 @@ class ObservationsTab(QWidget):
                     common_name = "-"
 
             species_display = species_raw or species_guess or "sp."
-            cloud_id = str(obs.get("id") or "").strip() or "-"
+            cloud_id = _normalize_external_publication_id(obs.get("id"))
+            linked_local_id = _normalize_external_publication_id(
+                obs.get("desktop_id") or obs.get("local_id") or obs.get("observation_id")
+            )
+            local_obs = ObservationDB.get_observation(linked_local_id) if linked_local_id else None
+
             lat = obs.get("gps_latitude")
             lon = obs.get("gps_longitude")
+            if lat is None and local_obs:
+                lat = local_obs.get("gps_latitude")
+            if lon is None and local_obs:
+                lon = local_obs.get("gps_longitude")
+
+            arts_id = _normalize_external_publication_id(obs.get("artsdata_id") or obs.get("arts_id"))
+            if arts_id is None and local_obs:
+                arts_id = _normalize_external_publication_id(
+                    local_obs.get("artsdata_id") or local_obs.get("arts_id")
+                )
+
+            artportalen_id = _normalize_external_publication_id(obs.get("artportalen_id"))
+            if artportalen_id is None and local_obs:
+                artportalen_id = _normalize_external_publication_id(local_obs.get("artportalen_id"))
+
+            inaturalist_id = _normalize_external_publication_id(obs.get("inaturalist_id"))
+            if inaturalist_id is None and local_obs:
+                inaturalist_id = _normalize_external_publication_id(local_obs.get("inaturalist_id"))
+
+            mushroomobserver_id = _normalize_external_publication_id(obs.get("mushroomobserver_id"))
+            if mushroomobserver_id is None and local_obs:
+                mushroomobserver_id = _normalize_external_publication_id(
+                    local_obs.get("mushroomobserver_id")
+                )
+
             has_coords = lat is not None and lon is not None
             status_text, status_kind, status_sort = _observation_status_info(obs)
+            source_obs = local_obs or obs
+            publish_target_resolver = getattr(self, "_observation_publish_target", None)
+            if callable(publish_target_resolver):
+                publish_target = publish_target_resolver(source_obs)
+            else:
+                publish_target = source_obs.get("publish_target")
 
             row = {
                 "row_kind": "cloud",
+                "id": cloud_id if cloud_id is not None else linked_local_id,
+                "observation_id": linked_local_id,
+                "local_id": linked_local_id,
                 "cloud_id": cloud_id,
-                "id_display": cloud_id,
+                "id_display": str(cloud_id or obs.get("id") or linked_local_id or "-"),
                 "thumbnail_path": None,
                 "genus": genus_raw or "-",
                 "species": species_display,
@@ -2106,16 +2272,23 @@ class ObservationsTab(QWidget):
                 "is_draft": obs.get("is_draft"),
                 "sharing_scope": obs.get("sharing_scope") or obs.get("visibility"),
                 "visibility": obs.get("visibility"),
+                "gps_latitude": lat,
+                "gps_longitude": lon,
                 "lat": lat,
                 "lon": lon,
                 "has_coords": bool(has_coords),
                 "species_name": f"{genus_raw} {species_raw}".strip() or species_guess or None,
-                "arts_id": None,
-                "artportalen_id": None,
-                "publish_target": None,
+                "artsdata_id": arts_id,
+                "arts_id": arts_id,
+                "artportalen_id": artportalen_id,
+                "inaturalist_id": inaturalist_id,
+                "mushroomobserver_id": mushroomobserver_id,
+                "publish_target": publish_target,
                 "raw": obs,
             }
             search_parts = [str(v) for v in obs.values() if v is not None]
+            if local_obs:
+                search_parts.extend(str(v) for v in local_obs.values() if v is not None)
             if status_text:
                 search_parts.append(status_text)
             search_parts.extend([common_name, row["genus"], species_display, row["location"]])
@@ -3329,18 +3502,23 @@ class ObservationsTab(QWidget):
     def _render_publish_cell(
         self,
         row: int,
-        observation_id: int,
-        publish_target: str | None,
-        arts_id: int | None,
-        artportalen_id: int | None,
-        inaturalist_id: int | None = None,
+        observation_or_links: dict | None,
     ) -> None:
+        # This column represents actual external publication records only. AI suggestions and selected taxonomy do not belong here.
+        publication_links = _publication_links_from_observation(observation_or_links)
+        observation_id = publication_links["observation_id"]
+        arts_id = publication_links["artsdata_id"]
+        artportalen_id = publication_links["artportalen_id"]
+        inaturalist_id = publication_links["inaturalist_id"]
+        mushroomobserver_id = publication_links["mushroomobserver_id"]
+        rendered_labels: list[str] = []
         self.table.removeCellWidget(row, 9)
-        has_any_id = bool(arts_id or artportalen_id or inaturalist_id)
-        has_dead_artsobs = bool(self._artsobs_dead_by_observation_id.get(observation_id))
-        arts_item = SortableTableWidgetItem("" if has_any_id else "-")
+        has_any_id = bool(arts_id or artportalen_id or inaturalist_id or mushroomobserver_id)
+        has_dead_artsobs = bool(observation_id and self._artsobs_dead_by_observation_id.get(observation_id))
+        arts_item = SortableTableWidgetItem("-" if not has_any_id else "")
         arts_item.setData(Qt.UserRole, int(arts_id or 0))
         arts_item.setFlags(arts_item.flags() & ~Qt.ItemIsEditable)
+        arts_item.setTextAlignment(Qt.AlignCenter)
         self.table.setItem(row, 9, arts_item)
         if not has_any_id and not has_dead_artsobs:
             return
@@ -3353,13 +3531,19 @@ class ObservationsTab(QWidget):
             tooltip_parts.append(self.tr("▲: Artsobservasjoner link is no longer available"))
 
         if arts_id:
-            mao_url = f"https://mobil.artsobservasjoner.no/sighting/{int(arts_id)}"
-            wao_url = f"https://www.artsobservasjoner.no/Sighting/{int(arts_id)}"
-            is_publicly_published = self._artsobs_public_published_by_observation_id.get(observation_id)
+            mao_url = _artsobservasjoner_mobile_observation_url(arts_id)
+            wao_url = _artsobservasjoner_web_observation_url(arts_id)
+            is_publicly_published = (
+                self._artsobs_public_published_by_observation_id.get(observation_id)
+                if observation_id
+                else None
+            )
             link_parts.append(f'<a href="{mao_url}">MAo</a>')
+            rendered_labels.append("MAo")
             tooltip_parts.append(self.tr("MAo: Artsobservasjoner mobile app"))
             if is_publicly_published is True:
                 link_parts.append(f'<a href="{wao_url}">Ao</a>')
+                rendered_labels.append("Ao")
                 tooltip_parts.append(self.tr("Ao: Artsobservasjoner web"))
             elif is_publicly_published is False:
                 tooltip_parts.append(self.tr("Ao link shown only after the observation is publicly published."))
@@ -3367,31 +3551,44 @@ class ObservationsTab(QWidget):
                 tooltip_parts.append(self.tr("Ao link appears after link check."))
 
         if artportalen_id:
-            artportalen_url = f"https://www.artportalen.se/Sighting/{int(artportalen_id)}"
+            artportalen_url = _artportalen_observation_url(artportalen_id)
             link_parts.append(f'<a href="{artportalen_url}">AP</a>')
+            rendered_labels.append("AP")
             tooltip_parts.append(self.tr("AP: Artportalen web"))
 
         if inaturalist_id:
-            inat_url = f"https://www.inaturalist.org/observations/{int(inaturalist_id)}"
+            inat_url = _inaturalist_observation_url(inaturalist_id)
             link_parts.append(f'<a href="{inat_url}">iNat</a>')
+            rendered_labels.append("iNat")
             tooltip_parts.append(self.tr("iNat: iNaturalist observation"))
+
+        if mushroomobserver_id:
+            mo_url = _mushroomobserver_observation_url(mushroomobserver_id)
+            link_parts.append(f'<a href="{mo_url}">MO</a>')
+            rendered_labels.append("MO")
+            tooltip_parts.append(self.tr("MO: Mushroom Observer observation"))
 
         if not link_parts:
             return
 
         label_html = " | ".join(link_parts)
         link_tooltip = " · ".join(part for part in tooltip_parts if part)
+        # When a cell widget is installed it paints on top of the item delegate,
+        # but the item's own text still renders underneath the widget. Keep the
+        # item text empty so the labels don't appear twice. The link payload
+        # lives on the QLabel; UserRole already carries the sort key.
+        arts_item.setText("")
         arts_label = QLabel(label_html)
         arts_label.setTextFormat(Qt.RichText)
         arts_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         arts_label.setOpenExternalLinks(False)
-        arts_label.setAlignment(Qt.AlignCenter)
         arts_label.linkActivated.connect(
             lambda url: QDesktopServices.openUrl(QUrl(url))
         )
+        _prepare_table_link_label(arts_label)
         self._status_hint_controller.register_widget(arts_label, link_tooltip)
         arts_label.setToolTip(link_tooltip)
-        self.table.setCellWidget(row, 9, arts_label)
+        _install_table_link_widget(self.table, row, 9, arts_label)
 
     def _start_artsobs_link_check(self) -> None:
         try:
@@ -3453,13 +3650,10 @@ class ObservationsTab(QWidget):
         if arts_id <= 0:
             return
         obs = ObservationDB.get_observation(observation_id)
+        render_obs = obs or {"id": observation_id, "artsdata_id": arts_id}
         self._render_publish_cell(
             row,
-            observation_id,
-            obs.get("publish_target") if obs else None,
-            obs.get("artsdata_id") if obs else arts_id,
-            obs.get("artportalen_id") if obs else None,
-            obs.get("inaturalist_id") if obs else None,
+            render_obs,
         )
         self._update_publish_controls()
 
@@ -4262,9 +4456,11 @@ class ObservationsTab(QWidget):
             lat = obs.get("gps_latitude")
             lon = obs.get("gps_longitude")
             has_coords = lat is not None and lon is not None
-            arts_id = obs.get("artsdata_id")
-            artportalen_id = obs.get("artportalen_id")
-            inaturalist_id = obs.get("inaturalist_id")
+            arts_id = _normalize_external_publication_id(obs.get("artsdata_id") or obs.get("arts_id"))
+            artportalen_id = _normalize_external_publication_id(obs.get("artportalen_id"))
+            inaturalist_id = _normalize_external_publication_id(obs.get("inaturalist_id"))
+            mushroomobserver_id = _normalize_external_publication_id(obs.get("mushroomobserver_id"))
+            cloud_id = _normalize_external_publication_id(obs.get("cloud_id"))
             publish_target = self._observation_publish_target(obs)
             species_name = self._build_species_name(obs)
 
@@ -4280,6 +4476,8 @@ class ObservationsTab(QWidget):
             rows.append(
                 {
                     "row_kind": "local",
+                    "id": obs_id,
+                    "observation_id": obs_id,
                     "local_id": obs_id,
                     "id_display": str(obs_id),
                     "thumbnail_path": thumbnail_map.get(obs_id),
@@ -4295,13 +4493,18 @@ class ObservationsTab(QWidget):
                     "is_draft": obs.get("is_draft"),
                     "sharing_scope": obs.get("sharing_scope"),
                     "visibility": obs.get("visibility"),
+                    "gps_latitude": lat,
+                    "gps_longitude": lon,
                     "lat": lat,
                     "lon": lon,
                     "has_coords": bool(has_coords),
                     "species_name": species_name,
+                    "artsdata_id": arts_id,
                     "arts_id": arts_id,
                     "artportalen_id": artportalen_id,
                     "inaturalist_id": inaturalist_id,
+                    "mushroomobserver_id": mushroomobserver_id,
+                    "cloud_id": cloud_id,
                     "publish_target": publish_target,
                     "mark_star": obs_id in recent_cloud_ids,
                     "search_text": search_text,
@@ -4519,43 +4722,34 @@ class ObservationsTab(QWidget):
                 status_item.setTextAlignment(Qt.AlignCenter)
                 table.setItem(row_index, 7, status_item)
 
-                has_coords = bool(row_data.get("has_coords"))
+                lat, lon, has_coords = _observation_row_coordinates(row_data)
+                # Item text stays empty when a Map link widget will be installed,
+                # otherwise the delegate would paint the label below the widget.
                 map_item = SortableTableWidgetItem("" if has_coords else "-")
                 map_item.setData(Qt.UserRole, 1 if has_coords else 0)
                 map_item.setFlags(map_item.flags() & ~Qt.ItemIsEditable)
+                map_item.setTextAlignment(Qt.AlignCenter)
                 table.removeCellWidget(row_index, 8)
                 table.setItem(row_index, 8, map_item)
                 if has_coords:
-                    lat = row_data.get("lat")
-                    lon = row_data.get("lon")
                     species_name = row_data.get("species_name")
                     map_label = QLabel('<a href="#">Map</a>')
                     map_label.setTextFormat(Qt.RichText)
                     map_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
                     map_label.setOpenExternalLinks(False)
-                    map_label.setAlignment(Qt.AlignCenter)
                     map_label.linkActivated.connect(
                         lambda _=None, la=lat, lo=lon, sn=species_name: self.show_map_service_dialog(la, lo, sn)
                     )
+                    _prepare_table_link_label(map_label)
                     _map_hint = self.tr("Open map service")
                     self._status_hint_controller.register_widget(map_label, _map_hint)
                     map_label.setToolTip(_map_hint)
-                    table.setCellWidget(row_index, 8, map_label)
+                    _install_table_link_widget(table, row_index, 8, map_label)
 
-                table.removeCellWidget(row_index, 9)
-                if isinstance(local_obs_id, int):
-                    self._render_publish_cell(
-                        row_index,
-                        local_obs_id,
-                        row_data.get("publish_target"),
-                        row_data.get("arts_id"),
-                        row_data.get("artportalen_id"),
-                        row_data.get("inaturalist_id"),
-                    )
-                else:
-                    publish_item = SortableTableWidgetItem("-")
-                    publish_item.setFlags(publish_item.flags() & ~Qt.ItemIsEditable)
-                    table.setItem(row_index, 9, publish_item)
+                self._render_publish_cell(
+                    row_index,
+                    row_data,
+                )
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
@@ -8399,31 +8593,25 @@ class ObservationsTab(QWidget):
                     updated_obs = ObservationDB.get_observation(observation_id)
                     self._render_publish_cell(
                         row,
-                        observation_id,
-                        updated_obs.get("publish_target") if updated_obs else None,
-                        updated_obs.get("artsdata_id") if updated_obs else int(obs_id),
-                        updated_obs.get("artportalen_id") if updated_obs else None,
-                        updated_obs.get("inaturalist_id") if updated_obs else None,
+                        updated_obs or {"id": observation_id, "artsdata_id": int(obs_id)},
                     )
                 elif uploader.key == "artportalen":
                     updated_obs = ObservationDB.get_observation(observation_id)
                     self._render_publish_cell(
                         row,
-                        observation_id,
-                        updated_obs.get("publish_target") if updated_obs else None,
-                        updated_obs.get("artsdata_id") if updated_obs else None,
-                        updated_obs.get("artportalen_id") if updated_obs else int(obs_id),
-                        updated_obs.get("inaturalist_id") if updated_obs else None,
+                        updated_obs or {"id": observation_id, "artportalen_id": int(obs_id)},
                     )
                 elif uploader.key == "inat":
                     updated_obs = ObservationDB.get_observation(observation_id)
                     self._render_publish_cell(
                         row,
-                        observation_id,
-                        updated_obs.get("publish_target") if updated_obs else None,
-                        updated_obs.get("artsdata_id") if updated_obs else None,
-                        updated_obs.get("artportalen_id") if updated_obs else None,
-                        updated_obs.get("inaturalist_id") if updated_obs else int(obs_id),
+                        updated_obs or {"id": observation_id, "inaturalist_id": int(obs_id)},
+                    )
+                elif uploader.key == "mo":
+                    updated_obs = ObservationDB.get_observation(observation_id)
+                    self._render_publish_cell(
+                        row,
+                        updated_obs or {"id": observation_id, "mushroomobserver_id": int(obs_id)},
                     )
                 self._update_publish_controls()
         if show_status:

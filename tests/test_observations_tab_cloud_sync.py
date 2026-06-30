@@ -1116,7 +1116,58 @@ def test_observation_status_info_maps_draft_private_friends_public():
     assert observations_tab._observation_status_info({}) == ("", "", 0)
 
 
-def test_render_observations_table_places_status_before_map_and_publish(qapp):
+def _make_external_publish_cell_tab(dead_map=None, public_map=None):
+    table = QTableWidget()
+    table.setRowCount(1)
+    table.setColumnCount(10)
+    fake_tab = SimpleNamespace(
+        table=table,
+        tr=lambda text: text,
+        _artsobs_dead_by_observation_id=dead_map or {},
+        _artsobs_public_published_by_observation_id=public_map or {},
+        _status_hint_controller=SimpleNamespace(register_widget=lambda *args, **kwargs: None),
+    )
+    fake_tab.render_publish_cell = MethodType(observations_tab.ObservationsTab._render_publish_cell, fake_tab)
+    return fake_tab, table
+
+
+def _render_external_publish_cell(observation, *, dead_map=None, public_map=None):
+    fake_tab, table = _make_external_publish_cell_tab(dead_map=dead_map, public_map=public_map)
+    fake_tab.render_publish_cell(0, observation)
+    return table
+
+
+def _make_observation_table_render_tab(*, dead_map=None, public_map=None, search_text=""):
+    table = QTableWidget()
+    table.setColumnCount(10)
+    fake_tab = SimpleNamespace(
+        table=table,
+        selected_observation_id=None,
+        tr=lambda text: text,
+        search_input=SimpleNamespace(text=lambda: search_text),
+        _show_new_imports_only=lambda: False,
+        _show_observation_table_thumbnails=lambda: False,
+        _observation_table_thumbnail_size=lambda: 48,
+        _update_observations_table_geometry=lambda: None,
+        _redistribute_taxonomy_columns=lambda: None,
+        _observation_thumb_icon_cache={},
+        _status_hint_controller=SimpleNamespace(register_widget=lambda *args, **kwargs: None),
+        rename_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        delete_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        export_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
+        gallery_widget=SimpleNamespace(clear=lambda: None),
+        _update_publish_controls=lambda: None,
+        set_status_message=lambda *args, **kwargs: None,
+        show_map_service_dialog=lambda *args, **kwargs: None,
+        _artsobs_dead_by_observation_id=dead_map or {},
+        _artsobs_public_published_by_observation_id=public_map or {},
+    )
+    fake_tab._render_observations_table = MethodType(observations_tab.ObservationsTab._render_observations_table, fake_tab)
+    fake_tab._render_publish_cell = MethodType(observations_tab.ObservationsTab._render_publish_cell, fake_tab)
+    return fake_tab, table
+
+
+def test_render_observations_table_places_status_before_map_and_external(qapp):
     table = QTableWidget()
     table.setColumnCount(10)
 
@@ -1128,6 +1179,7 @@ def test_render_observations_table_places_status_before_map_and_publish(qapp):
         _show_observation_table_thumbnails=lambda: False,
         _observation_table_thumbnail_size=lambda: 48,
         _update_observations_table_geometry=lambda: None,
+        _redistribute_taxonomy_columns=lambda: None,
         _observation_thumb_icon_cache={},
         _status_hint_controller=SimpleNamespace(register_widget=lambda *args, **kwargs: None),
         rename_btn=SimpleNamespace(setEnabled=lambda *args, **kwargs: None),
@@ -1137,10 +1189,10 @@ def test_render_observations_table_places_status_before_map_and_publish(qapp):
         _update_publish_controls=lambda: None,
         set_status_message=lambda *args, **kwargs: None,
         show_map_service_dialog=lambda *args, **kwargs: None,
-        _render_publish_cell=lambda row, observation_id, publish_target, arts_id, artportalen_id, inaturalist_id: table.setItem(
+        _render_publish_cell=lambda row, observation_or_links: table.setItem(
             row,
             9,
-            QTableWidgetItem("Publish"),
+            QTableWidgetItem("External"),
         ),
     )
 
@@ -1187,7 +1239,313 @@ def test_render_observations_table_places_status_before_map_and_publish(qapp):
     assert table.item(0, 7).data(Qt.UserRole + 2) == "draft"
     assert table.cellWidget(0, 8) is not None
     assert table.item(0, 8).text() == ""
-    assert table.item(0, 9).text() == "Publish"
+    assert table.item(0, 9).text() == "External"
+
+
+def test_external_publish_cell_is_blank_without_publication_ids():
+    table = _render_external_publish_cell({"local_id": 389})
+
+    assert table.item(0, 9).text() == "-"
+    assert table.cellWidget(0, 9) is None
+
+
+def test_external_publish_cell_shows_inaturalist_link_when_id_exists():
+    table = _render_external_publish_cell({"local_id": 389, "inaturalist_id": 12345})
+    widget = table.cellWidget(0, 9)
+
+    assert table.item(0, 9).text() == ""
+    assert widget is not None
+    assert "iNat" in widget.text()
+    assert "https://www.inaturalist.org/observations/12345" in widget.text()
+
+
+def test_external_publish_cell_shows_artsobservasjoner_mobile_link_when_artsdata_id_exists():
+    table = _render_external_publish_cell({"local_id": 389, "artsdata_id": 67890})
+    widget = table.cellWidget(0, 9)
+
+    assert table.item(0, 9).text() == ""
+    assert widget is not None
+    assert "MAo" in widget.text()
+    assert "https://mobil.artsobservasjoner.no/sighting/67890" in widget.text()
+
+
+def test_external_publish_cell_accepts_raw_observation_dict_ids():
+    table = _render_external_publish_cell({"id": 389, "artsdata_id": 67890})
+    widget = table.cellWidget(0, 9)
+
+    assert table.item(0, 9).text() == ""
+    assert widget is not None
+    assert "MAo" in widget.text()
+
+
+def test_external_publish_cell_shows_artsobservasjoner_web_link_only_after_public_check():
+    private_table = _render_external_publish_cell(
+        {"local_id": 389, "artsdata_id": 67890},
+        public_map={389: False},
+    )
+    public_table = _render_external_publish_cell(
+        {"local_id": 389, "artsdata_id": 67890},
+        public_map={389: True},
+    )
+
+    private_widget = private_table.cellWidget(0, 9)
+    public_widget = public_table.cellWidget(0, 9)
+
+    assert private_widget is not None
+    assert ">Ao<" not in private_widget.text()
+    assert public_widget is not None
+    assert ">Ao<" in public_widget.text()
+    assert "https://www.artsobservasjoner.no/Sighting/67890" in public_widget.text()
+
+
+def test_external_publish_cell_shows_artportalen_link_when_id_exists():
+    table = _render_external_publish_cell({"local_id": 389, "artportalen_id": 24680})
+    widget = table.cellWidget(0, 9)
+
+    assert table.item(0, 9).text() == ""
+    assert widget is not None
+    assert "AP" in widget.text()
+    assert "https://www.artportalen.se/Sighting/24680" in widget.text()
+
+
+def test_external_publish_cell_shows_mushroom_observer_link_when_id_exists():
+    table = _render_external_publish_cell({"local_id": 389, "mushroomobserver_id": 13579})
+    widget = table.cellWidget(0, 9)
+
+    assert table.item(0, 9).text() == ""
+    assert widget is not None
+    assert "MO" in widget.text()
+    assert "https://mushroomobserver.org/obs/13579" in widget.text()
+
+
+def test_external_publish_cell_ignores_ai_selected_fields_without_publication_ids():
+    table = _render_external_publish_cell(
+        {
+            "local_id": 389,
+            "ai_selected_service": "artsorakel",
+            "ai_selected_taxon_id": "123456",
+            "ai_selected_scientific_name": "Agaricus campestris",
+        }
+    )
+
+    assert table.item(0, 9).text() == "-"
+    assert table.cellWidget(0, 9) is None
+
+
+def test_external_publish_cell_ignores_publish_target_without_publication_ids():
+    table = _render_external_publish_cell(
+        {
+            "local_id": 389,
+            "publish_target": "artsobs_no",
+        }
+    )
+
+    assert table.item(0, 9).text() == "-"
+    assert table.cellWidget(0, 9) is None
+
+
+def test_external_publish_cell_link_widget_has_visible_minimum_height():
+    table = _render_external_publish_cell({"local_id": 389, "artsdata_id": 67890})
+    widget = table.cellWidget(0, 9)
+
+    assert widget is not None
+    assert widget.minimumHeight() >= observations_tab.TABLE_LINK_LABEL_MIN_HEIGHT
+    assert widget.sizeHint().height() > 0
+    assert widget.maximumHeight() > 0
+
+
+def test_external_publish_cell_widget_combines_labels_for_multiple_ids():
+    table = _render_external_publish_cell(
+        {"local_id": 389, "artsdata_id": 67890, "inaturalist_id": 12345}
+    )
+
+    widget = table.cellWidget(0, 9)
+    item = table.item(0, 9)
+    assert widget is not None
+    assert "MAo" in widget.text()
+    assert "iNat" in widget.text()
+    # Item text stays empty so the cell widget is not duplicated underneath.
+    assert item is not None
+    assert item.text() == ""
+
+
+def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
+    obs = observations_tab.ObservationDB.get_observation(451)
+    fake_tab, table = _make_observation_table_render_tab()
+
+    row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
+        SimpleNamespace(
+            _build_common_name_map=lambda observations: {},
+            _lookup_common_name=lambda obs, name_map: None,
+            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _recent_cloud_import_ids=lambda: set(),
+            _observation_publish_target=lambda obs: obs.get("publish_target"),
+            _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+            or None,
+        ),
+        [obs],
+    )
+
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+
+    map_widget = table.cellWidget(0, 8)
+    ext_widget = table.cellWidget(0, 9)
+
+    assert map_widget is not None
+    assert ext_widget is not None
+    assert map_widget.minimumHeight() >= observations_tab.TABLE_LINK_LABEL_MIN_HEIGHT
+    assert ext_widget.minimumHeight() >= observations_tab.TABLE_LINK_LABEL_MIN_HEIGHT
+    assert map_widget.sizeHint().height() > 0
+    assert ext_widget.sizeHint().height() > 0
+    # Item text stays empty so the delegate does not draw a duplicate label
+    # underneath the cell widget.
+    assert table.item(0, 8).text() == ""
+    assert table.item(0, 9).text() == ""
+
+
+def test_observation_table_row_cache_includes_local_publication_and_coordinate_fields_for_451():
+    obs = observations_tab.ObservationDB.get_observation(451)
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+        _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+        or None,
+    )
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(fake_tab, [obs])
+    row = rows[0]
+
+    assert row["row_kind"] == "local"
+    assert row["id"] == 451
+    assert row["observation_id"] == 451
+    assert row["local_id"] == 451
+    assert row["cloud_id"] == 747
+    assert row["gps_latitude"] == pytest.approx(63.431969)
+    assert row["gps_longitude"] == pytest.approx(10.411153)
+    assert row["lat"] == pytest.approx(63.431969)
+    assert row["lon"] == pytest.approx(10.411153)
+    assert row["has_coords"] is True
+    assert row["artsdata_id"] == 40992445
+    assert row["arts_id"] == 40992445
+    assert row["inaturalist_id"] == 375341010
+    assert row["artportalen_id"] is None
+    assert row["mushroomobserver_id"] is None
+
+
+def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields():
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+    remote_rows = [
+        {
+            "id": 747,
+            "desktop_id": 451,
+            "genus": "Parasola",
+            "species": "plicatilis",
+            "common_name": "hjulsopp",
+            "species_guess": None,
+            "date": "2026-06-25 07:41:23",
+            "created_at": "2026-06-25T13:58:52",
+            "location": "Bakke kirke",
+            "sharing_scope": "public",
+            "visibility": "public",
+            "is_draft": 0,
+            "publish_target": None,
+        }
+    ]
+
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(fake_tab, remote_rows)
+    row = rows[0]
+
+    assert row["row_kind"] == "cloud"
+    assert row["id"] == 747
+    assert row["cloud_id"] == 747
+    assert row["local_id"] == 451
+    assert row["observation_id"] == 451
+    assert row["artsdata_id"] == 40992445
+    assert row["inaturalist_id"] == 375341010
+    assert row["gps_latitude"] == pytest.approx(63.431969)
+    assert row["gps_longitude"] == pytest.approx(10.411153)
+    assert row["has_coords"] is True
+
+
+def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
+    obs = observations_tab.ObservationDB.get_observation(451)
+    fake_tab, table = _make_observation_table_render_tab()
+
+    row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
+        SimpleNamespace(
+            _build_common_name_map=lambda observations: {},
+            _lookup_common_name=lambda obs, name_map: None,
+            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _recent_cloud_import_ids=lambda: set(),
+            _observation_publish_target=lambda obs: obs.get("publish_target"),
+            _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+            or None,
+        ),
+        [obs],
+    )
+
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+
+    assert table.cellWidget(0, 8) is not None
+    assert table.cellWidget(0, 9) is not None
+    assert table.cellWidget(0, 8).text() == '<a href="#">Map</a>'
+    assert "MAo" in table.cellWidget(0, 9).text()
+    assert "iNat" in table.cellWidget(0, 9).text()
+    assert ">Ao<" not in table.cellWidget(0, 9).text()
+
+
+def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
+    obs = observations_tab.ObservationDB.get_observation(451)
+    builder_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+        _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+        or None,
+    )
+    row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(builder_tab, [obs])
+    fake_tab, table = _make_observation_table_render_tab(search_text="parasola")
+    fake_tab._observation_table_rows_cache = row_cache
+
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+    first_map = table.cellWidget(0, 8)
+    first_external = table.cellWidget(0, 9)
+
+    fake_tab.search_input = SimpleNamespace(text=lambda: "parasola")
+    observations_tab.ObservationsTab._apply_search_refresh(fake_tab)
+
+    assert table.cellWidget(0, 8) is not None
+    assert table.cellWidget(0, 9) is not None
+    assert table.cellWidget(0, 8).text() == first_map.text()
+    assert table.cellWidget(0, 9).text() == first_external.text()
 
 
 def test_observation_table_row_cache_formats_date_and_spore_count():
