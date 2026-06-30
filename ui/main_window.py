@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QFontDatabase,
     QPolygonF,
     QCursor,
+    QPalette,
 )
 from PySide6.QtCore import (
     Qt,
@@ -4745,6 +4746,7 @@ class SporeDataTable(QTableWidget):
 
     def __init__(self, parent=None):
         super().__init__(0, 3, parent)
+        self.setObjectName("referenceSporeTable")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setHorizontalHeaderLabels([self.tr("Length (\u03bcm)"), self.tr("Width (\u03bcm)"), "Q"])
         header = self.horizontalHeader()
@@ -4754,7 +4756,6 @@ class SporeDataTable(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.setEditTriggers(QAbstractItemView.AllEditTriggers)
-        self.setStyleSheet("QTableWidget QLineEdit { padding: 0px; }")
         self._updating_q = False
         self.itemChanged.connect(self._on_item_changed)
         self._ensure_rows(1)
@@ -4906,6 +4907,7 @@ class ReferenceAddDialog(QDialog):
         minmax_tab = QWidget()
         minmax_layout = QVBoxLayout(minmax_tab)
         self.minmax_table = QTableWidget(3, 5)
+        self.minmax_table.setObjectName("referenceMinmaxTable")
         self.minmax_table.setFocusPolicy(Qt.StrongFocus)
         self.minmax_table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         self.minmax_table.setHorizontalHeaderLabels(
@@ -4920,8 +4922,18 @@ class ReferenceAddDialog(QDialog):
         self._minmax_header_viewport.setMouseTracking(True)
         self._minmax_header_viewport.installEventFilter(self)
         self.minmax_table.verticalHeader().setDefaultSectionSize(30)
-        self.minmax_table.setStyleSheet("QTableWidget QLineEdit { padding: 0px; }")
         self._formatting_minmax = False
+        # The reference DB schema only stores q_min, q_p50, q_max — there are
+        # no columns for q_p05 / q_p95. Lock the Q row's 5% and 95% cells so
+        # users do not type values that are silently dropped on save.
+        for _q_locked_col in (1, 3):
+            _locked_item = QTableWidgetItem("")
+            _locked_item.setFlags(_locked_item.flags() & ~Qt.ItemIsEditable)
+            _locked_item.setForeground(self.palette().color(QPalette.Disabled, QPalette.Text))
+            _locked_item.setToolTip(self.tr(
+                "Q 5% and 95% values are not stored. Only Q min, 50% (median), and max are saved."
+            ))
+            self.minmax_table.setItem(2, _q_locked_col, _locked_item)
         self.minmax_table.itemChanged.connect(self._on_minmax_item_changed)
         minmax_layout.addWidget(self.minmax_table)
         self.tabs.addTab(minmax_tab, self.tr("Min/max"))

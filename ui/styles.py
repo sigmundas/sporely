@@ -851,6 +851,20 @@ QTableWidget#referenceSeriesTable QHeaderView::section {{
     padding: 4px 8px;
 }}
 
+/* The global 16px item padding is larger than a typical 30 px row, which
+   pushes inline editors (QLineEdit) to zero height and pushes link cell
+   widgets (QLabel) to the bottom of the cell. Use compact padding on the
+   tables that use short rows so inline editors stay visible and link
+   widgets stay vertically centered. */
+QTableView#observationsTable::item,
+QTableWidget#observationsTable::item,
+QTableView#referenceMinmaxTable::item,
+QTableWidget#referenceMinmaxTable::item,
+QTableView#referenceSporeTable::item,
+QTableWidget#referenceSporeTable::item {{
+    padding: 2px 6px;
+}}
+
 /* Remove the focus rectangle Qt draws around the active cell. */
 QTableView::item:focus,
 QTableWidget::item:focus {{

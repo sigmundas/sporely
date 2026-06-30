@@ -890,12 +890,18 @@ def _prepare_table_link_label(
     real ObservationsTab instances and the lightweight SimpleNamespace fakes
     used in tests.
     """
-    label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
     label.setMinimumHeight(max(min_height, 1))
     label.setMaximumHeight(16777215)
     if min_width > 0:
         label.setMinimumWidth(min_width)
     label.setAlignment(Qt.AlignCenter)
+    # QLabel adds a few pixels of internal padding around rich text by default,
+    # which pushes the link baseline below the plain item text in adjacent
+    # cells. Zero margins keep the link vertically aligned with the rest of
+    # the row.
+    label.setContentsMargins(0, 0, 0, 0)
+    label.setIndent(0)
     return label
 
 
@@ -907,23 +913,20 @@ def _install_table_link_widget(
     *,
     min_height: int = TABLE_LINK_LABEL_MIN_HEIGHT,
 ) -> None:
-    """Install a cell widget and guarantee the row is tall enough to show it."""
+    """Install a cell widget without disturbing the row's default height.
+
+    The widget's geometry is set by Qt to the full cell rect on layout, so the
+    cell already fills the row vertically; we only bump the row when the
+    default height isn't enough to contain ``min_height``.
+    """
     table.setCellWidget(row, col, widget)
-    try:
-        desired_height = max(
-            widget.sizeHint().height(),
-            widget.minimumHeight(),
-            min_height,
-        ) + 4
-    except Exception:
-        desired_height = min_height + 4
     try:
         current_height = table.rowHeight(row)
     except Exception:
         current_height = 0
-    if current_height < desired_height:
+    if current_height < min_height:
         try:
-            table.setRowHeight(row, desired_height)
+            table.setRowHeight(row, min_height)
         except Exception:
             pass
 
@@ -1840,6 +1843,7 @@ class ObservationsTab(QWidget):
 
         # Observations table
         self.table = QTableWidget()
+        self.table.setObjectName("observationsTable")
         self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
