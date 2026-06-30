@@ -4220,10 +4220,18 @@ class ReferenceValuesDialog(QDialog):
         self.table = QTableWidget(3, 5)
         self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setHorizontalHeaderLabels(
-            [self.tr("Min"), self.tr("5%"), self.tr("50%"), self.tr("95%"), self.tr("Max")]
+            [
+                self.tr("Extreme\nmin"),
+                self.tr("Typical\nmin"),
+                self.tr("Mean"),
+                self.tr("Typical\nmax"),
+                self.tr("Extreme\nmax"),
+            ]
         )
         self.table.setVerticalHeaderLabels([self.tr("Length"), self.tr("Width"), self.tr("Q")])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.horizontalHeader().setMinimumHeight(40)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
         self.table.verticalHeader().setDefaultSectionSize(28)
         self.table.setMinimumHeight(120)
         layout.addWidget(self.table)
@@ -4233,8 +4241,9 @@ class ReferenceValuesDialog(QDialog):
         info_row.setSpacing(8)
         info_label = QLabel(
             self.tr(
-                "Percentiles assume an approximately normal distribution. "
-                "The 50% column represents the median (middle value)."
+                "Typical min/max bracket the unparenthesised range from the source; "
+                "Extreme min/max take the parenthesised outer values. "
+                "Centre is the explicit mean/median if the source gives one."
             )
         )
         info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
@@ -4247,6 +4256,7 @@ class ReferenceValuesDialog(QDialog):
             if value is None:
                 return
             item = QTableWidgetItem(f"{value:g}")
+            item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, col, item)
 
         _set_cell(0, 0, self.ref_values.get("length_min"))
@@ -4260,7 +4270,9 @@ class ReferenceValuesDialog(QDialog):
         _set_cell(1, 3, self.ref_values.get("width_p95"))
         _set_cell(1, 4, self.ref_values.get("width_max"))
         _set_cell(2, 0, self.ref_values.get("q_min"))
+        _set_cell(2, 1, self.ref_values.get("q_p05"))
         _set_cell(2, 2, self.ref_values.get("q_p50"))
+        _set_cell(2, 3, self.ref_values.get("q_p95"))
         _set_cell(2, 4, self.ref_values.get("q_max"))
 
         btn_row = QHBoxLayout()
@@ -4416,7 +4428,9 @@ class ReferenceValuesDialog(QDialog):
             "width_p95": self._cell_value(1, 3),
             "width_max": self._cell_value(1, 4),
             "q_min": self._cell_value(2, 0),
+            "q_p05": self._cell_value(2, 1),
             "q_p50": self._cell_value(2, 2),
+            "q_p95": self._cell_value(2, 3),
             "q_max": self._cell_value(2, 4),
         }
 
@@ -4541,6 +4555,7 @@ class ReferenceValuesDialog(QDialog):
             if value is None:
                 return
             item = QTableWidgetItem(f"{value:g}")
+            item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, col, item)
 
         _set_cell(0, 0, ref.get("length_min"))
@@ -4554,7 +4569,9 @@ class ReferenceValuesDialog(QDialog):
         _set_cell(1, 3, ref.get("width_p95"))
         _set_cell(1, 4, ref.get("width_max"))
         _set_cell(2, 0, ref.get("q_min"))
+        _set_cell(2, 1, ref.get("q_p05"))
         _set_cell(2, 2, ref.get("q_p50"))
+        _set_cell(2, 3, ref.get("q_p95"))
         _set_cell(2, 4, ref.get("q_max"))
 
     def _maybe_load_reference(self):
@@ -4872,9 +4889,11 @@ class ReferenceAddDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title or parent.tr("Add reference data"))
         self.setModal(True)
-        # Start compact (roughly half the old width), but keep the dialog resizable.
-        self.setMinimumSize(420, 420)
-        self.resize(440, 520)
+        # Min size keeps the five-column header readable; default size opens
+        # wide enough for the paste-field placeholder to fit on one line. The
+        # user can drag it narrower if they need to.
+        self.setMinimumSize(580, 440)
+        self.resize(820, 560)
         self._result = None
         self._genus = genus
         self._species = species
@@ -4884,12 +4903,17 @@ class ReferenceAddDialog(QDialog):
         self._allow_delete = bool(allow_delete)
         self._delete_requested = False
         self._default_hint_text = self.tr("Paste from Excel/csv or type values")
+        # Visible column labels are honest about what literature actually
+        # publishes — the unparenthesised inner range is the "typical" bulk of
+        # measurements, the parenthesised outer values are extreme observations,
+        # the centre is the mean/median if explicitly given. Internally these
+        # still write to *_min / *_p05 / *_p50 / *_p95 / *_max DB columns.
         self._minmax_header_hints = {
-            0: self.tr("Min: Minimum value in the data set"),
-            1: self.tr("5%: 5th percentile"),
-            2: self.tr("50%: Median (50th percentile)"),
-            3: self.tr("95%: 95th percentile"),
-            4: self.tr("Max: Maximum value in the data set"),
+            0: self.tr("Extreme min: outermost observed value (parenthesised in literature)."),
+            1: self.tr("Typical min: lower end of the typical range, e.g. the unparenthesised left value."),
+            2: self.tr("Mean/central value when explicitly supplied by the source. Not calculated automatically."),
+            3: self.tr("Typical max: upper end of the typical range, e.g. the unparenthesised right value."),
+            4: self.tr("Extreme max: outermost observed value (parenthesised in literature)."),
         }
 
         layout = QVBoxLayout(self)
@@ -4906,16 +4930,77 @@ class ReferenceAddDialog(QDialog):
 
         minmax_tab = QWidget()
         minmax_layout = QVBoxLayout(minmax_tab)
+
+        # --- Paste-and-parse workflow ---------------------------------------
+        # Primary input: paste the literature measurement string and click
+        # "Parse". The parser populates the table below; manual editing still
+        # works for cases the parser misses or gets wrong.
+        paste_label = QLabel(self.tr("Paste measurement string from literature:"))
+        paste_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
+        minmax_layout.addWidget(paste_label)
+
+        self.measurement_paste_input = QLineEdit()
+        self.measurement_paste_input.setPlaceholderText(
+            self.tr("e.g. (9.5–)9.8–11.3(–11.7) × (7.3–)8.0–9.4(–9.4) µm, Q = 1.2–1.3, Qm = 1.25, n = 36")
+        )
+        self.measurement_paste_input.setClearButtonEnabled(True)
+        self.measurement_paste_input.returnPressed.connect(self._on_parse_measurement_clicked)
+        minmax_layout.addWidget(self.measurement_paste_input)
+
+        paste_button_row = QHBoxLayout()
+        paste_button_row.setContentsMargins(0, 0, 0, 0)
+        self._parse_measurement_btn = QPushButton(self.tr("Parse"))
+        self._parse_measurement_btn.setToolTip(self.tr("Parse the pasted string into the table below."))
+        self._parse_measurement_btn.clicked.connect(self._on_parse_measurement_clicked)
+        self._swap_lw_btn = QPushButton(self.tr("Swap L↔W"))
+        self._swap_lw_btn.setToolTip(self.tr("Swap the Length and Width rows (in case the source lists width first)."))
+        self._swap_lw_btn.clicked.connect(self._on_swap_lw_clicked)
+        paste_button_row.addWidget(self._parse_measurement_btn)
+        paste_button_row.addWidget(self._swap_lw_btn)
+        paste_button_row.addStretch(1)
+        minmax_layout.addLayout(paste_button_row)
+
+        self._measurement_preview_label = QLabel("")
+        self._measurement_preview_label.setWordWrap(True)
+        self._measurement_preview_label.setTextFormat(Qt.RichText)
+        self._measurement_preview_label.setStyleSheet(
+            f"color: #7f8c8d; font-size: {pt(9)}pt; padding: 2px 0px;"
+        )
+        minmax_layout.addWidget(self._measurement_preview_label)
+
+        # Raw text echoed back on save so the literature source is preserved
+        # in metadata_json without a schema redesign.
+        self._raw_measurement_text: str = ""
+        prefill_meta = self._prefill_data.get("metadata_json") if self._prefill_data else None
+        if isinstance(prefill_meta, dict):
+            existing_raw = prefill_meta.get("raw_measurement")
+            if isinstance(existing_raw, str) and existing_raw.strip():
+                self._raw_measurement_text = existing_raw
+                self.measurement_paste_input.setText(existing_raw)
+
+        # --- Manual / advanced table ---------------------------------------
         self.minmax_table = QTableWidget(3, 5)
         self.minmax_table.setObjectName("referenceMinmaxTable")
         self.minmax_table.setFocusPolicy(Qt.StrongFocus)
         self.minmax_table.setEditTriggers(QAbstractItemView.AllEditTriggers)
+        # Two-line headers keep the table compact while remaining readable.
+        # The visible "Mean" label maps to the existing centre / p50 fields
+        # internally; DB column names are unchanged.
         self.minmax_table.setHorizontalHeaderLabels(
-            [self.tr("Min"), self.tr("5%"), self.tr("50%"), self.tr("95%"), self.tr("Max")]
+            [
+                self.tr("Extreme\nmin"),
+                self.tr("Typical\nmin"),
+                self.tr("Mean"),
+                self.tr("Typical\nmax"),
+                self.tr("Extreme\nmax"),
+            ]
         )
         self.minmax_table.setVerticalHeaderLabels([self.tr("Length"), self.tr("Width"), self.tr("Q")])
         minmax_header = self.minmax_table.horizontalHeader()
         minmax_header.setSectionResizeMode(QHeaderView.Stretch)
+        # Give the header room for the second line of text.
+        minmax_header.setMinimumHeight(40)
+        minmax_header.setDefaultAlignment(Qt.AlignCenter)
         minmax_header.setMouseTracking(True)
         minmax_header.sectionEntered.connect(self._on_minmax_header_entered)
         self._minmax_header_viewport = minmax_header.viewport()
@@ -4923,17 +5008,6 @@ class ReferenceAddDialog(QDialog):
         self._minmax_header_viewport.installEventFilter(self)
         self.minmax_table.verticalHeader().setDefaultSectionSize(30)
         self._formatting_minmax = False
-        # The reference DB schema only stores q_min, q_p50, q_max — there are
-        # no columns for q_p05 / q_p95. Lock the Q row's 5% and 95% cells so
-        # users do not type values that are silently dropped on save.
-        for _q_locked_col in (1, 3):
-            _locked_item = QTableWidgetItem("")
-            _locked_item.setFlags(_locked_item.flags() & ~Qt.ItemIsEditable)
-            _locked_item.setForeground(self.palette().color(QPalette.Disabled, QPalette.Text))
-            _locked_item.setToolTip(self.tr(
-                "Q 5% and 95% values are not stored. Only Q min, 50% (median), and max are saved."
-            ))
-            self.minmax_table.setItem(2, _q_locked_col, _locked_item)
         self.minmax_table.itemChanged.connect(self._on_minmax_item_changed)
         minmax_layout.addWidget(self.minmax_table)
         self.tabs.addTab(minmax_tab, self.tr("Min/max"))
@@ -5065,8 +5139,170 @@ class ReferenceAddDialog(QDialog):
         self._formatting_minmax = True
         try:
             item.setText(f"{value:.2f}")
+            # Keep manually-typed values centred so they line up with the
+            # centred two-line column headers, matching parser-filled cells.
+            item.setTextAlignment(Qt.AlignCenter)
         finally:
             self._formatting_minmax = False
+
+    # --- Paste-and-parse workflow ------------------------------------------
+
+    _MINMAX_ROW_BY_DIMENSION = {"length": 0, "width": 1, "q": 2}
+
+    def _apply_parsed_dimension(self, row: int, dim) -> None:
+        """Write a parsed DimensionRange into one row of the min/max table.
+
+        Empty fields clear the cell — the parser deliberately does not invent
+        values, so a missing extreme or centre is left blank for the user.
+        """
+        from references.measurement_parser import DimensionRange  # local import
+        assert isinstance(dim, DimensionRange)
+        column_values = (dim.min, dim.p05, dim.p50, dim.p95, dim.max)
+        self._formatting_minmax = True
+        try:
+            for col, value in enumerate(column_values):
+                if value is None:
+                    blank = QTableWidgetItem("")
+                    blank.setTextAlignment(Qt.AlignCenter)
+                    self.minmax_table.setItem(row, col, blank)
+                    continue
+                item = QTableWidgetItem(f"{float(value):.2f}")
+                # Numbers are centred to sit directly under the centred
+                # two-line column headers — otherwise sparse rows feel
+                # disconnected from the column they belong to.
+                item.setTextAlignment(Qt.AlignCenter)
+                self.minmax_table.setItem(row, col, item)
+        finally:
+            self._formatting_minmax = False
+
+    def _set_parsed_result(self, result) -> None:
+        """Push a MeasurementParseResult into the table and refresh preview."""
+        self._apply_parsed_dimension(0, result.length)
+        self._apply_parsed_dimension(1, result.width)
+        self._apply_parsed_dimension(2, result.q)
+        # Qm goes into the Parmasto biometrics "Q mean" field so it survives
+        # without confusing it with Q centre/median.
+        if result.q_mean is not None:
+            qm_widget = self.parmasto_inputs.get("parmasto_q_mean")
+            if qm_widget is not None and not qm_widget.text().strip():
+                qm_widget.setText(f"{float(result.q_mean):g}")
+        self._render_measurement_preview(result)
+        # Activate the Min/max tab so the user immediately sees the parsed
+        # values (the dialog can open on the Parmasto tab when only Parmasto
+        # values are prefilled).
+        try:
+            self.tabs.setCurrentIndex(0)
+        except Exception:
+            pass
+
+    # Parser warnings that describe normal expected gaps (no extremes, no
+    # explicit mean, no Q in source, the "first range is length" assumption)
+    # are noise in the dialog — the preview itself already shows what was
+    # parsed. Keep the parser fully informative for tests; just filter here.
+    _MEASUREMENT_PREVIEW_NOISE_PREFIXES = (
+        "Parsed first range as length.",
+        "Q not present in source.",
+        "Q: no extreme values found.",
+        "Length: no extreme values found.",
+        "Width: no extreme values found.",
+        "Length: no centre/mean value found.",
+        "Width: no centre/mean value found.",
+    )
+
+    def _filter_preview_warnings(self, warnings: list[str]) -> list[str]:
+        actionable: list[str] = []
+        for warning in warnings:
+            text = (warning or "").strip()
+            if not text:
+                continue
+            if text in self._MEASUREMENT_PREVIEW_NOISE_PREFIXES:
+                continue
+            actionable.append(text)
+        return actionable
+
+    @staticmethod
+    def _format_dimension_range(dim) -> str:
+        """Render one parsed range compactly: ``(9.5-)9.8-11.3(-11.7)``."""
+        parts: list[str] = []
+        if dim.min is not None:
+            parts.append(f"({dim.min:g}–)")
+        inner: list[str] = []
+        if dim.p05 is not None:
+            inner.append(f"{dim.p05:g}")
+        if dim.p50 is not None:
+            inner.append(f"{dim.p50:g}")
+        if dim.p95 is not None:
+            inner.append(f"{dim.p95:g}")
+        parts.append("–".join(inner) if inner else "—")
+        if dim.max is not None:
+            parts.append(f"(–{dim.max:g})")
+        return "".join(parts)
+
+    def _render_measurement_preview(self, result) -> None:
+        actionable_warnings = self._filter_preview_warnings(result.warnings)
+
+        if not result.ok:
+            warnings_html = "".join(
+                f"<div style='color:#b58900;'>• {w}</div>" for w in actionable_warnings
+            )
+            self._measurement_preview_label.setText(
+                "<i>" + self.tr("Nothing parsed.") + "</i>" + warnings_html
+            )
+            return
+
+        segments: list[str] = []
+        if not result.length.is_empty():
+            segments.append("L " + self._format_dimension_range(result.length))
+        if not result.width.is_empty():
+            segments.append("W " + self._format_dimension_range(result.width))
+        if not result.q.is_empty():
+            segments.append("Q " + self._format_dimension_range(result.q))
+        if result.q_mean is not None:
+            segments.append(f"Qm {result.q_mean:g}")
+        if result.n is not None:
+            segments.append(f"n={result.n}")
+
+        prefix = self.tr("Parsed:") + " "
+        body = prefix + " · ".join(segments) if segments else ""
+
+        warnings_html = "".join(
+            f"<div style='color:#b58900;'>• {w}</div>" for w in actionable_warnings
+        )
+        self._measurement_preview_label.setText(body + warnings_html)
+
+    def _on_parse_measurement_clicked(self) -> None:
+        raw = self.measurement_paste_input.text()
+        if not (raw or "").strip():
+            self._measurement_preview_label.setText(
+                "<i>" + self.tr("Paste a measurement string first.") + "</i>"
+            )
+            return
+        from references.measurement_parser import parse_measurement_string
+        result = parse_measurement_string(raw)
+        if not result.ok:
+            self._render_measurement_preview(result)
+            self._set_hint(self.tr("Parsing failed — manual entry preserved."), tone="warning")
+            return
+        self._raw_measurement_text = raw.strip()
+        self._set_parsed_result(result)
+        self._set_hint(self.tr("Parsed — review and edit before saving."), tone="info")
+
+    def _on_swap_lw_clicked(self) -> None:
+        # Operate directly on the table so a user who tweaked cells manually
+        # also gets a clean swap (no re-parse needed).
+        row_a, row_b = 0, 1
+        self._formatting_minmax = True
+        try:
+            for col in range(5):
+                a = self.minmax_table.item(row_a, col)
+                b = self.minmax_table.item(row_b, col)
+                text_a = a.text() if a else ""
+                text_b = b.text() if b else ""
+                self.minmax_table.setItem(row_a, col, QTableWidgetItem(text_b))
+                self.minmax_table.setItem(row_b, col, QTableWidgetItem(text_a))
+        finally:
+            self._formatting_minmax = False
+        self._set_hint(self.tr("Length and width swapped."), tone="info")
 
     def _parmasto_value(self, key: str):
         widget = self.parmasto_inputs.get(key)
@@ -5106,7 +5342,9 @@ class ReferenceAddDialog(QDialog):
             "width_p95": self._table_value(1, 3),
             "width_max": self._table_value(1, 4),
             "q_min": self._table_value(2, 0),
+            "q_p05": self._table_value(2, 1),
             "q_p50": self._table_value(2, 2),
+            "q_p95": self._table_value(2, 3),
             "q_max": self._table_value(2, 4),
         }
         has_values = any(
@@ -5122,6 +5360,11 @@ class ReferenceAddDialog(QDialog):
                 "width_p50",
                 "width_p95",
                 "width_max",
+                "q_min",
+                "q_p05",
+                "q_p50",
+                "q_p95",
+                "q_max",
                 "parmasto_length_mean",
                 "parmasto_width_mean",
                 "parmasto_q_mean",
@@ -5136,6 +5379,18 @@ class ReferenceAddDialog(QDialog):
         if not has_values:
             return None
         data["source_kind"] = "reference"
+        # Preserve any text the user pasted into the literature input. The
+        # raw measurement string lives inside metadata_json (a JSON blob the
+        # schema already supports) so no extra column is required.
+        existing_meta = self._prefill_data.get("metadata_json") if self._prefill_data else None
+        meta_dict = dict(existing_meta) if isinstance(existing_meta, dict) else {}
+        raw_text = (self._raw_measurement_text or "").strip()
+        if raw_text:
+            meta_dict["raw_measurement"] = raw_text
+        elif "raw_measurement" in meta_dict:
+            meta_dict.pop("raw_measurement", None)
+        if meta_dict:
+            data["metadata_json"] = meta_dict
         return data
 
     def _points_data(self):
@@ -5212,6 +5467,7 @@ class ReferenceAddDialog(QDialog):
             if value is None:
                 return
             item = QTableWidgetItem(f"{value:.2f}")
+            item.setTextAlignment(Qt.AlignCenter)
             self.minmax_table.setItem(row, col, item)
 
         _set_cell(0, 0, data.get("length_min"))
@@ -5225,7 +5481,9 @@ class ReferenceAddDialog(QDialog):
         _set_cell(1, 3, data.get("width_p95"))
         _set_cell(1, 4, data.get("width_max"))
         _set_cell(2, 0, data.get("q_min"))
+        _set_cell(2, 1, data.get("q_p05"))
         _set_cell(2, 2, data.get("q_p50"))
+        _set_cell(2, 3, data.get("q_p95"))
         _set_cell(2, 4, data.get("q_max"))
 
         points = data.get("points") or []

@@ -3162,6 +3162,11 @@ class ReferenceDB:
             values.get("stain"),
         ))
 
+        # NOTE: q_p05 / q_p95 are local-only at present. Cloud reference sync
+        # (ui/cloud_reference_dialog.py) and the landing page still expose
+        # only q_min / q_p50 / q_max for Q. Propagating the typical Q range
+        # upstream requires a separate Supabase schema migration and a sync-
+        # payload update — out of scope for this UI polish pass.
         cursor.execute('''
             INSERT INTO reference_values (
                 genus, species, source, mount_medium, stain,
@@ -3171,9 +3176,9 @@ class ReferenceDB:
                 parmasto_v_ind_length, parmasto_v_ind_width, parmasto_v_ind_q,
                 length_min, length_p05, length_p50, length_p95, length_max, length_avg,
                 width_min, width_p05, width_p50, width_p95, width_max, width_avg,
-                q_min, q_p50, q_max, q_avg,
+                q_min, q_p05, q_p50, q_p95, q_max, q_avg,
                 metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             values.get("genus"),
             values.get("species"),
@@ -3203,7 +3208,9 @@ class ReferenceDB:
             values.get("width_max"),
             values.get("width_avg"),
             values.get("q_min"),
+            values.get("q_p05"),
             values.get("q_p50"),
+            values.get("q_p95"),
             values.get("q_max"),
             values.get("q_avg"),
             metadata_json,

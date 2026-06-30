@@ -497,7 +497,9 @@ def init_reference_database(
             width_max REAL,
             width_avg REAL,
             q_min REAL,
+            q_p05 REAL,
             q_p50 REAL,
+            q_p95 REAL,
             q_max REAL,
             q_avg REAL,
             metadata_json TEXT,
@@ -540,7 +542,9 @@ def _ensure_reference_columns(ref_path: Path | None = None):
         "width_p05": "REAL",
         "width_p50": "REAL",
         "width_p95": "REAL",
+        "q_p05": "REAL",
         "q_p50": "REAL",
+        "q_p95": "REAL",
         "metadata_json": "TEXT",
     }
     for col, col_type in to_add.items():
