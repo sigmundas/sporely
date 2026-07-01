@@ -4910,7 +4910,8 @@ class LiveLabTab(QWidget):
         if not Path(source).exists():
             return False
         group_key = companion_group_key(source)
-        if self._pending_raw_capture_exists(source, group_key=group_key):
+        pending_raw_exists = getattr(self, "_pending_raw_capture_exists", None)
+        if callable(pending_raw_exists) and pending_raw_exists(source, group_key=group_key):
             self._seen_source_paths.add(source)
             return False
         self._seen_source_paths.add(source)

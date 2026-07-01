@@ -19,9 +19,9 @@ def qapp():
     return app
 
 
-def test_light_mode_selection_text_uses_black(qapp) -> None:
+def test_light_mode_selection_text_uses_slate(qapp) -> None:
     apply_palette("light")
     palette = QApplication.instance().palette()
 
-    assert palette.color(QPalette.HighlightedText).name() == "#000000"
-    assert "selection-color: #000000" in get_style("light")
+    assert palette.color(QPalette.HighlightedText).name() == "#1e293b"
+    assert "selection-color: #1e293b" in get_style("light")
