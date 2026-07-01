@@ -36,6 +36,7 @@ def _build_minimal_window(monkeypatch) -> main_window.MainWindow:
     window = main_window.MainWindow()
     window._refresh_analysis_gallery_frame_state = lambda *args, **kwargs: None
     window.update_graph_plots_only = lambda: None
+    window.update_image_navigation_ui = lambda: None
     window.gallery_selected_measurement_id = None
     window._gallery_thumbnail_frames = {}
     return window
@@ -136,6 +137,82 @@ def test_analysis_gallery_clear_hides_and_detaches_existing_widgets(monkeypatch,
     assert window._gallery_render_max_height == 0
     assert window._gallery_center_request_generation == 8
     assert window._gallery_center_request_id is None
+
+    window.deleteLater()
+
+
+def test_refresh_observation_images_skips_measure_gallery_rebuild_when_unchanged(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+
+    images = [
+        {"id": 1, "filepath": "/tmp/a.jpg"},
+        {"id": 2, "filepath": "/tmp/b.jpg"},
+    ]
+
+    class _GallerySpy:
+        def __init__(self):
+            self.calls = []
+
+        def set_observation_id(self, observation_id):
+            self.calls.append(("set_observation_id", observation_id))
+
+        def select_image(self, image_id):
+            self.calls.append(("select_image", image_id))
+
+        def clear(self):
+            self.calls.append(("clear", None))
+
+    window.measure_gallery = _GallerySpy()
+    window.active_observation_id = 7
+    window.current_image_id = 2
+    window.current_image_index = 0
+    window.observation_images = list(images)
+    window._measure_gallery_observation_id = 7
+    window._measure_gallery_signature = tuple((img["id"], img["filepath"]) for img in images)
+
+    monkeypatch.setattr(main_window.ImageDB, "get_images_for_observation", lambda observation_id: list(images))
+    monkeypatch.setattr(window, "_apply_measure_gallery_publish_selection", lambda: None)
+
+    refreshed = window.refresh_observation_images(select_image_id=2)
+
+    assert refreshed is False
+    assert window.measure_gallery.calls == [("select_image", 2)]
+    assert window.current_image_index == 1
+    assert window._measure_gallery_observation_id == 7
+    assert window._measure_gallery_signature == tuple((img["id"], img["filepath"]) for img in images)
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_selection_does_not_restyle_frame(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    window.gallery_selected_measurement_id = 42
+
+    class _AnalysisFrame(QFrame):
+        def __init__(self):
+            super().__init__()
+            self.style_calls = 0
+            self.selected_calls = []
+            self.hover_calls = []
+
+        def setStyleSheet(self, *args, **kwargs):
+            self.style_calls += 1
+
+        def set_measure_selected(self, selected: bool):
+            self.selected_calls.append(bool(selected))
+
+        def set_measure_hovered(self, hovered: bool):
+            self.hover_calls.append(bool(hovered))
+
+    frame = _AnalysisFrame()
+    window._gallery_thumbnail_frames = {42: frame}
+    monkeypatch.setattr(window, "_apply_analysis_gallery_frame_glow", lambda *args, **kwargs: None)
+
+    main_window.MainWindow._refresh_analysis_gallery_frame_state(window, 42)
+
+    assert frame.style_calls == 0
+    assert frame.selected_calls == [True]
+    assert frame.hover_calls == [False]
 
     window.deleteLater()
 

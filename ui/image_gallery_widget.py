@@ -341,6 +341,26 @@ class ImageGalleryWidget(QGroupBox):
         self._center_request_generation += 1
         self._center_request_key = None
 
+    def _thumbnail_selection_overlay_visible(self, frame: QFrame) -> bool:
+        return bool(
+            getattr(frame, "_thumbnail_selected", False)
+            or getattr(frame, "_thumbnail_hovered", False)
+            or getattr(frame, "raw_halo_color", None)
+        )
+
+    def _update_thumbnail_selection_overlay(self, frame: QFrame) -> None:
+        overlay = getattr(frame, "_thumbnail_selection_overlay", None)
+        if overlay is None:
+            return
+        visible = self._thumbnail_selection_overlay_visible(frame)
+        try:
+            overlay.setVisible(visible)
+            if visible:
+                overlay.raise_()
+                overlay.update()
+        except Exception:
+            pass
+
     def _queue_center_on_key(self, key) -> None:
         if key is None:
             return
@@ -381,14 +401,18 @@ class ImageGalleryWidget(QGroupBox):
         scrollbar.setValue(target)
 
     def _set_frame_selected_state(self, frame: QFrame, selected: bool) -> None:
-        frame.setProperty("selected", bool(selected))
-        frame.setStyleSheet(
-            self._frame_style(
-                selected=bool(selected),
-                border_color=getattr(frame, "frame_border_color", None),
-            )
-        )
-        self._apply_frame_glow(frame, bool(selected))
+        selected = bool(selected)
+        if bool(getattr(frame, "_thumbnail_selected", False)) == selected:
+            return
+        frame._thumbnail_selected = selected
+        self._update_thumbnail_selection_overlay(frame)
+
+    def _set_frame_hovered_state(self, frame: QFrame, hovered: bool) -> None:
+        hovered = bool(hovered)
+        if bool(getattr(frame, "_thumbnail_hovered", False)) == hovered:
+            return
+        frame._thumbnail_hovered = hovered
+        self._update_thumbnail_selection_overlay(frame)
 
     def set_fixed_thumbnail_size(self, enabled: bool) -> None:
         self._fixed_thumbnail_size = bool(enabled)
@@ -861,13 +885,17 @@ class ImageGalleryWidget(QGroupBox):
         return []
 
     def select_image(self, image_id: int | None) -> None:
+        current_keys = {image_id} if image_id is not None else set()
+        if image_id == self._selected_id and self._selected_keys == current_keys:
+            self._last_clicked_index = self._index_for_key(image_id)
+            if image_id is not None:
+                self._queue_center_on_key(image_id)
+            return
         previous_id = self._selected_id
         previous_frame = self._frame_for_key(previous_id) if previous_id is not None else None
         new_frame = self._frame_for_key(image_id) if image_id is not None else None
         self._selected_id = image_id
-        self._selected_keys = set()
-        if image_id is not None:
-            self._selected_keys.add(image_id)
+        self._selected_keys = set(current_keys)
         self._last_clicked_index = self._index_for_key(image_id)
         if previous_frame is not None and previous_id != image_id:
             self._set_frame_selected_state(previous_frame, False)
@@ -945,13 +973,7 @@ class ImageGalleryWidget(QGroupBox):
             self._grid.addWidget(frame)
             key = self._item_key(item)
             if key in self._selected_keys:
-                frame.setStyleSheet(
-                    self._frame_style(
-                        selected=True,
-                        border_color=getattr(frame, "frame_border_color", None),
-                    )
-                )
-                self._apply_frame_glow(frame, True)
+                self._set_frame_selected_state(frame, True)
         if self._selected_id is not None:
             if self._multi_select and self._selected_keys:
                 if self._selected_id not in self._selected_keys:
@@ -1005,7 +1027,7 @@ class ImageGalleryWidget(QGroupBox):
             self._update_thumbnail_sizes()
         if event.type() in (QEvent.Enter, QEvent.Leave) and isinstance(obj, QFrame) and obj in self._frames:
             is_selected = getattr(obj, "image_key", None) in self._selected_keys
-            self._apply_frame_glow(obj, is_selected, hovered=event.type() == QEvent.Enter and not is_selected)
+            self._set_frame_hovered_state(obj, event.type() == QEvent.Enter and not is_selected)
         return super().eventFilter(obj, event)
 
     def resizeEvent(self, event):
@@ -1063,6 +1085,8 @@ class ImageGalleryWidget(QGroupBox):
         frame.setFixedSize(self._thumb_size, self._thumb_size)
         frame.setCursor(Qt.PointingHandCursor)
         frame.setAcceptDrops(self._reorderable)
+        frame._thumbnail_selected = False
+        frame._thumbnail_hovered = False
         if self._compact_overlay:
             overlay_btn_size = max(12, min(14, int(round(self._thumb_size * 0.10))))
             overlay_btn_radius = max(6, overlay_btn_size // 2)
@@ -1353,6 +1377,50 @@ class ImageGalleryWidget(QGroupBox):
         frame.thumb_label = thumb_label
         frame.publish_checkbox = publish_checkbox
         frame.cloud_badge = cloud_badge
+        selection_overlay = QWidget(frame)
+        selection_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        selection_overlay.setAttribute(Qt.WA_NoSystemBackground, True)
+        selection_overlay.setGeometry(frame.rect())
+        selection_overlay.hide()
+
+        def _paint_selection_overlay(_event, *, _frame=frame, _overlay=selection_overlay):
+            selected = bool(getattr(_frame, "_thumbnail_selected", False))
+            hovered = bool(getattr(_frame, "_thumbnail_hovered", False))
+            raw_halo_color = getattr(_frame, "raw_halo_color", None)
+            if not selected and not hovered and not raw_halo_color:
+                return
+            painter = QPainter(_overlay)
+            painter.setRenderHint(QPainter.Antialiasing)
+            rect = _overlay.rect().adjusted(1, 1, -1, -1)
+            radius = 5.0
+            if selected:
+                outer = QColor(52, 152, 219, 90)
+                painter.setPen(QPen(outer, 4.0))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), radius, radius)
+                painter.setPen(QPen(QColor(52, 152, 219, 235), 2.0))
+                painter.drawRoundedRect(rect, radius, radius)
+            elif hovered:
+                palette = QApplication.instance().palette() if QApplication.instance() is not None else None
+                is_dark = bool(palette and palette.window().color().lightness() < 128)
+                hover_color = QColor(255, 255, 255, 220) if is_dark else QColor(80, 80, 80, 170)
+                painter.setPen(QPen(hover_color, 2.0))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(rect, radius, radius)
+            elif raw_halo_color:
+                halo_color = QColor(raw_halo_color)
+                if not halo_color.isValid():
+                    halo_color = QColor(231, 76, 60, 190)
+                else:
+                    halo_color.setAlpha(max(halo_color.alpha(), 190))
+                painter.setPen(QPen(halo_color, 2.5))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(rect, radius, radius)
+            painter.end()
+
+        selection_overlay.paintEvent = _paint_selection_overlay
+        frame._thumbnail_selection_overlay = selection_overlay
+        self._update_thumbnail_selection_overlay(frame)
         if self._thumbnail_tooltip:
             frame.setToolTip(self._thumbnail_tooltip)
         frame.mousePressEvent = lambda e, f=frame: self._on_frame_mouse_press(e, f)
@@ -1425,14 +1493,7 @@ class ImageGalleryWidget(QGroupBox):
         for frame in self._frames:
             key = getattr(frame, "image_key", None)
             is_selected = key in self._selected_keys if key is not None else False
-            frame.setProperty("selected", is_selected)
-            frame.setStyleSheet(
-                self._frame_style(
-                    selected=is_selected,
-                    border_color=getattr(frame, "frame_border_color", None),
-                )
-            )
-            self._apply_frame_glow(frame, is_selected)
+            self._set_frame_selected_state(frame, is_selected)
 
     def _frame_for_key(self, key) -> QFrame | None:
         if key is None:

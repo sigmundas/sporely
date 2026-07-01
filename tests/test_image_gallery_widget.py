@@ -134,20 +134,58 @@ def test_select_image_updates_only_previous_and_new_frame_state(monkeypatch, qap
 
     state_changes = []
     queued_centers = []
+    rebuild_calls = []
 
     monkeypatch.setattr(
         widget,
         "_set_frame_selected_state",
         lambda frame, selected: state_changes.append((getattr(frame, "image_key", None), bool(selected))),
     )
+    monkeypatch.setattr(widget, "_apply_selection_styles", lambda: rebuild_calls.append("_apply_selection_styles"))
+    monkeypatch.setattr(widget, "_clear_widgets", lambda: rebuild_calls.append("_clear_widgets"))
+    monkeypatch.setattr(widget, "_render_next_batch", lambda: rebuild_calls.append("_render_next_batch"))
     monkeypatch.setattr(widget, "_queue_center_on_key", lambda key: queued_centers.append(key))
 
     widget.select_image(2)
 
     assert state_changes == [(1, False), (2, True)]
     assert queued_centers == [2]
+    assert rebuild_calls == []
     assert widget._selected_id == 2
     assert widget._selected_keys == {2}
+
+
+def test_select_image_same_image_is_visual_no_op(monkeypatch, qapp):
+    widget = ImageGalleryWidget("Images")
+    frame = QFrame()
+    frame.image_key = 7
+    widget._frames = [frame]
+    widget._items = [{"id": 7}]
+    widget._selected_id = 7
+    widget._selected_keys = {7}
+    widget._last_clicked_index = 0
+
+    state_changes = []
+    queued_centers = []
+    rebuild_calls = []
+
+    monkeypatch.setattr(
+        widget,
+        "_set_frame_selected_state",
+        lambda frame, selected: state_changes.append((getattr(frame, "image_key", None), bool(selected))),
+    )
+    monkeypatch.setattr(widget, "_apply_selection_styles", lambda: rebuild_calls.append("_apply_selection_styles"))
+    monkeypatch.setattr(widget, "_clear_widgets", lambda: rebuild_calls.append("_clear_widgets"))
+    monkeypatch.setattr(widget, "_render_next_batch", lambda: rebuild_calls.append("_render_next_batch"))
+    monkeypatch.setattr(widget, "_queue_center_on_key", lambda key: queued_centers.append(key))
+
+    widget.select_image(7)
+
+    assert state_changes == []
+    assert rebuild_calls == []
+    assert queued_centers == [7]
+    assert widget._selected_id == 7
+    assert widget._selected_keys == {7}
 
 
 def test_build_raw_source_badges_marks_raw_backed_derivatives():

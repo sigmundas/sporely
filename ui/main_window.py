@@ -5755,6 +5755,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_selected_measurement_id = None
         self._gallery_center_request_generation = 0
         self._gallery_center_request_id = None
+        self._measure_gallery_observation_id = None
+        self._measure_gallery_signature = None
         self._gallery_thumbnail_frames: dict[int, QFrame] = {}
         self._gallery_thumbnail_labels: dict[int, QWidget] = {}
         self._gallery_measurement_lookup: dict[int, dict] = {}
@@ -11335,7 +11337,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.set_measure_color(QColor(stored_color))
         else:
             self.set_measure_color(self.measure_color or self.default_measure_color)
-        self.refresh_observation_images(select_image_id=self.current_image_id)
+        gallery_refreshed = self.refresh_observation_images(select_image_id=self.current_image_id)
         self.measurement_lines = {}
         self.temp_lines = []
         self.points = []
@@ -11347,7 +11349,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measurements_table.clearSelection()
             self.spore_preview.clear()
         self._set_measure_category_for_current_image()
-        if not self._suppress_gallery_update:
+        if not self._suppress_gallery_update and (gallery_refreshed or not self.active_observation_id):
             self.schedule_gallery_refresh()
 
         self._prefetch_adjacent_images()
@@ -11360,20 +11362,36 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._pixmap_cache.clear()
             self._pixmap_cache_order.clear()
             self._pixmap_cache_observation_id = None
+            self._measure_gallery_observation_id = None
+            self._measure_gallery_signature = None
             self.update_image_navigation_ui()
             if hasattr(self, "measure_gallery"):
                 self.measure_gallery.clear()
-            return
+            return True
 
         if self._pixmap_cache_observation_id != self.active_observation_id:
             self._pixmap_cache.clear()
             self._pixmap_cache_order.clear()
             self._pixmap_cache_observation_id = self.active_observation_id
 
-        self.observation_images = ImageDB.get_images_for_observation(self.active_observation_id)
-        if hasattr(self, "measure_gallery"):
+        new_observation_images = ImageDB.get_images_for_observation(self.active_observation_id)
+        new_signature = tuple(
+            (
+                img.get("id"),
+                str(img.get("filepath") or ""),
+            )
+            for img in new_observation_images
+        )
+        gallery_changed = (
+            self._measure_gallery_observation_id != self.active_observation_id
+            or self._measure_gallery_signature != new_signature
+        )
+        self.observation_images = new_observation_images
+        if hasattr(self, "measure_gallery") and gallery_changed:
             self.measure_gallery.set_observation_id(self.active_observation_id)
             self._apply_measure_gallery_publish_selection()
+        self._measure_gallery_observation_id = self.active_observation_id
+        self._measure_gallery_signature = new_signature
         if select_image_id:
             for idx, image in enumerate(self.observation_images):
                 if image['id'] == select_image_id:
@@ -11394,6 +11412,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_image_navigation_ui()
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
+        return gallery_changed
 
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -14497,7 +14516,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if frame is None:
             return
         is_selected = int(measurement_id) == int(self.gallery_selected_measurement_id or 0)
-        frame.setStyleSheet(self._analysis_gallery_frame_style(selected=is_selected))
         if hasattr(frame, "set_measure_selected"):
             frame.set_measure_selected(is_selected)
         if hasattr(frame, "set_measure_hovered"):
