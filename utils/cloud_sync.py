@@ -8261,7 +8261,6 @@ class SporelyCloudClient:
             'cloud_access_token': None,
             'cloud_user_id': None,
             'cloud_refresh_token': None,
-            'cloud_user_email': None,
         })
 
     @staticmethod

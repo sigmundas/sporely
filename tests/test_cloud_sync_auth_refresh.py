@@ -114,6 +114,28 @@ def test_cloud_auth_error_detects_auth_refresh_failure():
     assert cloud_sync.is_cloud_auth_error(error) is True
 
 
+def test_clear_session_preserves_saved_cloud_email(monkeypatch):
+    settings = {
+        "cloud_user_email": "keep@example.com",
+        "cloud_access_token": "access-token",
+        "cloud_user_id": "user-123",
+        "cloud_refresh_token": "refresh-token",
+    }
+
+    def fake_update_app_settings(updates):
+        settings.update(dict(updates))
+        return dict(settings)
+
+    monkeypatch.setattr(cloud_sync, "update_app_settings", fake_update_app_settings)
+
+    cloud_sync.SporelyCloudClient.clear_session()
+
+    assert settings["cloud_user_email"] == "keep@example.com"
+    assert settings["cloud_access_token"] is None
+    assert settings["cloud_user_id"] is None
+    assert settings["cloud_refresh_token"] is None
+
+
 def test_pull_observation_identifications_schema_cache_error_is_temporarily_unavailable(monkeypatch):
     client = cloud_sync.SporelyCloudClient("access-token", "user-123")
 
