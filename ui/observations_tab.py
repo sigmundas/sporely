@@ -72,6 +72,7 @@ from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
 from utils.heic_converter import build_local_image_provenance, save_image_as_webp
+import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
@@ -217,6 +218,19 @@ def normalize_sharing_scope(value: str | None, fallback: str = SHARING_SCOPE_PUB
         return raw
     normalized_fallback = str(fallback or SHARING_SCOPE_PUBLIC).strip().lower()
     return normalized_fallback if normalized_fallback in _VALID_SHARING_SCOPES else SHARING_SCOPE_PUBLIC
+
+
+def _current_utc_timestamp_text() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_ai_selected_service(source: str | None) -> str | None:
+    source_key = str(source or "").strip().lower()
+    if source_key == "arts":
+        return "artsorakel"
+    if source_key == "inat":
+        return "inat"
+    return source_key or None
 
 
 def sharing_scope_location_public(value: str | None) -> bool:
@@ -1427,40 +1441,15 @@ class INatAIGuessWorker(QThread):
         self,
         image_path: str,
         crop_box: tuple[float, float, float, float] | None,
-    ) -> Path:
-        from uuid import uuid4
-        from PIL import Image
-
-        with Image.open(image_path) as img:
-            img = ImageOps.exif_transpose(img)
-            orig_w, orig_h = img.size
-            if crop_box:
-                x1, y1, x2, y2 = crop_box
-                x1n = max(0.0, min(1.0, float(min(x1, x2))))
-                y1n = max(0.0, min(1.0, float(min(y1, y2))))
-                x2n = max(0.0, min(1.0, float(max(x1, x2))))
-                y2n = max(0.0, min(1.0, float(max(y1, y2))))
-                crop_x1 = int(max(0, min(orig_w, round(x1n * orig_w))))
-                crop_y1 = int(max(0, min(orig_h, round(y1n * orig_h))))
-                crop_x2 = int(max(0, min(orig_w, round(x2n * orig_w))))
-                crop_y2 = int(max(0, min(orig_h, round(y2n * orig_h))))
-                if crop_x2 <= crop_x1:
-                    crop_x2 = min(orig_w, crop_x1 + 1)
-                    crop_x1 = max(0, crop_x2 - 1)
-                if crop_y2 <= crop_y1:
-                    crop_y2 = min(orig_h, crop_y1 + 1)
-                    crop_y1 = max(0, crop_y2 - 1)
-                img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-
-            if self.max_dim and max(img.size) > self.max_dim:
-                img.thumbnail((self.max_dim, self.max_dim), Image.Resampling.LANCZOS)
-            if img.mode not in {"RGB", "L"}:
-                img = img.convert("RGB")
-
-            self.temp_dir.mkdir(parents=True, exist_ok=True)
-            temp_path = self.temp_dir / f"inat_ai_guess_{uuid4().hex}.jpg"
-            img.save(temp_path, "JPEG", quality=90)
-            return temp_path
+    ) -> ai_image_prep.PreparedAIRequestImage:
+        return ai_image_prep.prepare_ai_request_image(
+            image_path=image_path,
+            crop_box=crop_box,
+            temp_dir=self.temp_dir,
+            prefix="inat_ai_guess",
+            max_dim=self.max_dim,
+            jpeg_quality=90,
+        )
 
     @staticmethod
     def _score(item: dict) -> float:
@@ -1557,7 +1546,15 @@ class INatAIGuessWorker(QThread):
                     continue
                 temp_path: Path | None = None
                 try:
-                    temp_path = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    prepared = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    ai_image_prep.debug_log_prepared_ai_request_image(
+                        provider="inat",
+                        source_path=request["image_path"],
+                        prepared=prepared,
+                        max_dim=self.max_dim,
+                        jpeg_quality=90,
+                    )
+                    temp_path = prepared.path
                     predictions = self._suggest(client, temp_path)
                     if self.isInterruptionRequested():
                         break
@@ -1567,7 +1564,7 @@ class INatAIGuessWorker(QThread):
                         break
                     self.error.emit([int(index)], str(exc))
                 finally:
-                    if temp_path is not None:
+                    if temp_path is not None and not ai_image_prep.should_keep_ai_id_temp():
                         try:
                             temp_path.unlink(missing_ok=True)
                         except Exception:
@@ -2346,7 +2343,11 @@ class ObservationsTab(QWidget):
         return folder
 
     def _window_cloud_client(self) -> SporelyCloudClient | None:
-        window = self.window() if hasattr(self, "window") else None
+        window = None
+        try:
+            window = self.window()
+        except Exception:
+            window = None
         if window is not None and hasattr(window, "__dict__"):
             if "_cloud_client" in window.__dict__:
                 return window.__dict__.get("_cloud_client")
@@ -10849,6 +10850,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._inat_selected_by_index: dict[int, dict] = {}
         self._ai_selected_taxon: dict | None = None
         self._selected_ai_source = "arts"
+        self._current_ai_selected_fields = self._ai_selected_fields(
+            self.observation if isinstance(self.observation, dict) and self.observation else self.draft_data
+        )
         self._ai_thread = None
         self._inat_ai_thread = None
         self._artsobs_check_thread = None
@@ -12659,6 +12663,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if not genus or not species:
             self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22", source=source)
             return
+        scientific_name = f"{genus} {species}".strip() if genus and species else None
         current_tab = self.taxonomy_tabs.currentWidget() if hasattr(self, "taxonomy_tabs") else None
         target_grows = current_tab == getattr(self, "grows_tab", None)
         if target_grows:
@@ -12701,6 +12706,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._update_vernacular_suggestions_for_taxon()
                 if not vernacular:
                     self._maybe_set_vernacular_from_taxon()
+            self._current_ai_selected_fields = {
+                "ai_selected_service": _normalize_ai_selected_service(source),
+                "ai_selected_taxon_id": str(taxon.get("id") or "").strip() or None,
+                "ai_selected_scientific_name": scientific_name,
+                "ai_selected_probability": self._ai_prediction_score(selected_pred or {}),
+                "ai_selected_at": _current_utc_timestamp_text(),
+            }
+            self._update_selected_ai_summary_label(self._current_ai_selected_fields)
             self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60", source=source)
         self._update_taxonomy_tab_indicators()
         self._persist_ai_state_now()
@@ -12709,7 +12722,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return
 
     def _on_ai_guess_clicked(self, source: str | None = None) -> None:
+        source_key = "all"
         try:
+            source_key = str(source or "all").strip().lower() or "all"
+            if source_key not in {"arts", "inat", "all"}:
+                source_key = "all"
+            run_arts = source_key in {"arts", "all"}
+            run_inat = source_key in {"inat", "all"}
             indices = self._selected_gallery_indices()
             if not indices:
                 index = self._current_ai_index()
@@ -12723,8 +12742,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 (self.image_results[idx].image_type or "field").strip().lower() != "field"
                 for idx in indices
             ):
-                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="arts")
-                self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="inat")
+                if run_arts:
+                    self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="arts")
+                if run_inat:
+                    self._set_ai_status(self.tr("AI guess only works for field photos"), "#e74c3c", source="inat")
                 return
             requests = []
             for idx in indices:
@@ -12745,8 +12766,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             count = len(requests)
             temp_dir = get_images_dir() / "imports"
 
-            # --- Artsorakel ---
-            if self._ai_thread is None:
+            if run_arts and self._ai_thread is None:
                 arts_guess_btn = self.ai_guess_buttons.get("arts")
                 if arts_guess_btn:
                     arts_guess_btn.setEnabled(False)
@@ -12763,8 +12783,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._ai_thread.finished.connect(self._on_ai_thread_finished)
                 self._ai_thread.start()
 
-            # --- iNaturalist ---
-            if self._inat_ai_thread is None:
+            if run_inat and self._inat_ai_thread is None:
                 from utils.inat_oauth import INatOAuthClient
                 client_id, client_secret, redirect_uri = self._inat_credentials()
                 oauth = INatOAuthClient(
@@ -12814,8 +12833,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
             self._update_ai_button_hints()
         except Exception as exc:
-            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source="arts")
-            self._set_ai_status(self.tr("AI guess failed: {message}").format(message=str(exc)), "#e74c3c", source="inat")
+            message = self.tr("AI guess failed: {message}").format(message=str(exc))
+            if source_key in {"arts", "all"}:
+                self._set_ai_status(message, "#e74c3c", source="arts")
+            if source_key in {"inat", "all"}:
+                self._set_ai_status(message, "#e74c3c", source="inat")
             self._on_ai_thread_finished()
             self._on_inat_ai_thread_finished()
 
@@ -12947,6 +12969,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         for temp_path in temp_paths or []:
             if not temp_path:
                 continue
+            if ai_image_prep.should_keep_ai_id_temp():
+                continue
             try:
                 Path(temp_path).unlink(missing_ok=True)
             except Exception:
@@ -12979,6 +13003,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     ) -> None:
         for temp_path in temp_paths or []:
             if not temp_path:
+                continue
+            if ai_image_prep.should_keep_ai_id_temp():
                 continue
             try:
                 Path(temp_path).unlink(missing_ok=True)
@@ -13727,8 +13753,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         host_species = self.host_species_input.text().strip() if hasattr(self, "host_species_input") else ""
         host_vernacular = self.host_vernacular_input.text().strip() if hasattr(self, "host_vernacular_input") else ""
         host_scientific = f"{host_genus} {host_species}".strip()
-        ai_source = self.observation if isinstance(self.observation, dict) and self.observation else self.draft_data
-        ai_selected = self._ai_selected_fields(ai_source)
+        ai_selected = dict(
+            getattr(self, "_current_ai_selected_fields", None)
+            or self._ai_selected_fields(
+                self.observation if isinstance(self.observation, dict) and self.observation else self.draft_data
+            )
+        )
         habitat_parts: list[str] = []
         if nin2_labels:
             habitat_parts.append(f"{self._nin2_tab_title()}: {' > '.join(nin2_labels)}")

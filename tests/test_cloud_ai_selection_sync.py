@@ -391,3 +391,70 @@ def test_cloud_observation_editor_hydrates_ai_state_from_cloud_rows(tmp_path, mo
     assert ai_state["inat_predictions"][0][0]["taxon"]["preferred_common_name"] == "Chanterelle"
     assert 0 not in ai_state["selected"]
     assert ai_state["inat_selected"][0]["taxon"]["id"] == "12345"
+
+
+def test_cloud_identification_service_aliases_normalize_to_canonical_pair() -> None:
+    assert cloud_sync._normalize_cloud_identification_service("arts") == "artsorakel"
+    assert cloud_sync._normalize_cloud_identification_service("artsorakel") == "artsorakel"
+    assert cloud_sync._normalize_cloud_identification_service("inat") == "inat"
+    assert cloud_sync._normalize_cloud_identification_service("inaturalist") == "inat"
+
+    arts_state = cloud_sync.build_cloud_ai_state_from_observation_identifications(
+        {
+            "ai_selected_service": "arts",
+            "ai_selected_taxon_id": "NBIC:1001",
+            "ai_selected_scientific_name": "Cantharellus cibarius",
+            "common_name": "Kantarell",
+        },
+        [
+            {
+                "id": "row-arts",
+                "service": "arts",
+                "status": "success",
+                "created_at": "2026-05-02T12:00:00Z",
+                "results": [
+                    {
+                        "scientific_name": "Cantharellus cibarius",
+                        "taxon_id": "NBIC:1001",
+                        "probability": 0.96,
+                    },
+                ],
+            },
+        ],
+        [{"id": 1, "filepath": "/tmp/one.jpg"}],
+    )
+    assert arts_state is not None
+    assert arts_state["predictions"][0][0]["taxon"]["id"] == "NBIC:1001"
+    assert arts_state["selected"][0]["taxon"]["id"] == "NBIC:1001"
+    assert arts_state["inat_predictions"] == {}
+    assert arts_state["inat_selected"] == {}
+
+    inat_state = cloud_sync.build_cloud_ai_state_from_observation_identifications(
+        {
+            "ai_selected_service": "inaturalist",
+            "ai_selected_taxon_id": "12345",
+            "ai_selected_scientific_name": "Cantharellus cibarius",
+            "common_name": "Chanterelle",
+        },
+        [
+            {
+                "id": "row-inat",
+                "service": "inaturalist",
+                "status": "success",
+                "created_at": "2026-05-02T12:01:00Z",
+                "results": [
+                    {
+                        "scientificName": "Cantharellus cibarius",
+                        "taxonId": "12345",
+                        "probability": 0.89,
+                    },
+                ],
+            },
+        ],
+        [{"id": 1, "filepath": "/tmp/one.jpg"}],
+    )
+    assert inat_state is not None
+    assert inat_state["inat_predictions"][0][0]["taxon"]["id"] == "12345"
+    assert inat_state["inat_selected"][0]["taxon"]["id"] == "12345"
+    assert inat_state["predictions"] == {}
+    assert inat_state["selected"] == {}

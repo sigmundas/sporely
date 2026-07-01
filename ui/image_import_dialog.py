@@ -13,6 +13,7 @@ import os
 import time
 
 import numpy as np
+import utils.ai_image_prep as ai_image_prep
 
 from PySide6.QtCore import (
     Qt,
@@ -420,37 +421,15 @@ class AIGuessWorker(QThread):
         self,
         image_path: str,
         crop_box: tuple[float, float, float, float] | None,
-    ) -> Path:
-        from uuid import uuid4
-        from PIL import Image
-
-        with Image.open(image_path) as img:
-            orig_w, orig_h = img.size
-            if crop_box:
-                x1, y1, x2, y2 = crop_box
-                x1n = max(0.0, min(1.0, float(min(x1, x2))))
-                y1n = max(0.0, min(1.0, float(min(y1, y2))))
-                x2n = max(0.0, min(1.0, float(max(x1, x2))))
-                y2n = max(0.0, min(1.0, float(max(y1, y2))))
-                crop_x1 = int(max(0, min(orig_w, round(x1n * orig_w))))
-                crop_y1 = int(max(0, min(orig_h, round(y1n * orig_h))))
-                crop_x2 = int(max(0, min(orig_w, round(x2n * orig_w))))
-                crop_y2 = int(max(0, min(orig_h, round(y2n * orig_h))))
-                if crop_x2 <= crop_x1:
-                    crop_x2 = min(orig_w, crop_x1 + 1)
-                    crop_x1 = max(0, crop_x2 - 1)
-                if crop_y2 <= crop_y1:
-                    crop_y2 = min(orig_h, crop_y1 + 1)
-                    crop_y1 = max(0, crop_y2 - 1)
-                img = img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-
-            if img.mode not in {"RGB", "L"}:
-                img = img.convert("RGB")
-
-            self.temp_dir.mkdir(parents=True, exist_ok=True)
-            temp_path = self.temp_dir / f"ai_guess_{uuid4().hex}.jpg"
-            img.save(temp_path, "JPEG", quality=90)
-            return temp_path
+    ) -> ai_image_prep.PreparedAIRequestImage:
+        return ai_image_prep.prepare_ai_request_image(
+            image_path=image_path,
+            crop_box=crop_box,
+            temp_dir=self.temp_dir,
+            prefix="ai_guess",
+            max_dim=self.max_dim,
+            jpeg_quality=90,
+        )
 
     def run(self) -> None:
         if not self.requests:
@@ -467,7 +446,15 @@ class AIGuessWorker(QThread):
                 temp_path: Path | None = None
                 response = None
                 try:
-                    temp_path = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    prepared = self._prepare_image(request["image_path"], request.get("crop_box"))
+                    ai_image_prep.debug_log_prepared_ai_request_image(
+                        provider="artsorakel",
+                        source_path=request["image_path"],
+                        prepared=prepared,
+                        max_dim=self.max_dim,
+                        jpeg_quality=90,
+                    )
+                    temp_path = prepared.path
                     with open(temp_path, "rb") as handle:
                         response = requests.post(
                             url,
@@ -513,7 +500,7 @@ class AIGuessWorker(QThread):
                             response.close()
                     except Exception:
                         pass
-                    if temp_path is not None:
+                    if temp_path is not None and not ai_image_prep.should_keep_ai_id_temp():
                         try:
                             temp_path.unlink(missing_ok=True)
                         except Exception:
@@ -3154,6 +3141,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
     ) -> None:
         for temp_path in temp_paths or []:
             if not temp_path:
+                continue
+            if ai_image_prep.should_keep_ai_id_temp():
                 continue
             try:
                 Path(temp_path).unlink(missing_ok=True)
