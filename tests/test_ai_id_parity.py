@@ -80,12 +80,13 @@ def _build_dialog(
     qapp,
     *,
     image_path: Path,
+    observation: dict | None = None,
     draft_data: dict | None = None,
 ):
     _make_dialog_patches(monkeypatch)
     dialog = observations_tab.ObservationDetailsDialog(
         parent=None,
-        observation=None,
+        observation=observation,
         draft_data=draft_data,
         image_results=[ImageImportResult(filepath=str(image_path), image_type="field")],
     )
@@ -211,6 +212,24 @@ def test_ai_workers_delegate_to_shared_preparation_helper(monkeypatch, tmp_path:
     ]
 
 
+def test_image_import_dialog_normalizes_ai_prediction_taxon_from_raw_payload() -> None:
+    prediction = {
+        "scientific_name": "Amanita regalis",
+        "vernacularName": "Royal fly agaric",
+        "vernacularNames": {"no": "Kongefluesopp", "en": "Royal fly agaric"},
+        "taxon": {"id": 123, "vernacularName": "Royal fly agaric"},
+        "probability": 0.84,
+    }
+
+    taxon = image_import_dialog.ImageImportDialog._normalized_ai_prediction_taxon(SimpleNamespace(), prediction)
+
+    assert taxon["scientificName"] == "Amanita regalis"
+    assert taxon["scientific_name"] == "Amanita regalis"
+    assert taxon["vernacularNames"]["no"] == "Kongefluesopp"
+    assert taxon["vernacularName"] == "Royal fly agaric"
+    assert taxon["id"] == 123
+
+
 @pytest.mark.parametrize(
     ("source", "expected_attr", "unexpected_attr"),
     [
@@ -312,7 +331,7 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
         draft_data={
             "ai_selected_service": "legacy-service",
             "ai_selected_taxon_id": "old-1",
-            "ai_selected_scientific_name": "Old name",
+            "ai_selected_scientific_name": "Agaricus bisporus",
             "ai_selected_probability": 0.11,
             "ai_selected_at": "2026-01-01T00:00:00Z",
         },
@@ -321,32 +340,33 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
     seen_predictions = iter(
         [
             {
-                "taxon": {
-                    "id": 123,
-                    "genus": "Agaricus",
-                    "species": "bisporus",
-                    "vernacularName": "Button mushroom",
-                },
+                "scientific_name": "Amanita regalis",
+                "vernacularName": "Royal fly agaric",
+                "vernacularNames": {"no": "Kongefluesopp", "en": "Royal fly agaric"},
+                "taxon": {"id": 123, "vernacularName": "Royal fly agaric"},
                 "probability": 0.84,
             },
             {
-                "taxon": {
-                    "id": 456,
-                    "genus": "Lentinus",
-                    "species": "tigrinus",
-                    "vernacularName": "Tiger sawgill",
-                },
+                "scientific_name": "Lentinus tigrinus",
+                "vernacularName": "Tiger sawgill",
+                "vernacularNames": {"no": "Tigersopp", "en": "Tiger sawgill"},
+                "taxon": {"id": 456, "vernacularName": "Tiger sawgill"},
                 "probability": 0.61,
             },
         ]
     )
     monkeypatch.setattr(dialog, "_selected_ai_prediction", lambda _source: next(seen_predictions))
     monkeypatch.setattr(observations_tab, "_current_utc_timestamp_text", lambda: "2026-06-01T12:00:00Z")
+    monkeypatch.setattr(
+        observations_tab.SettingsDB,
+        "get_setting",
+        lambda key, default=None: "no" if key == "vernacular_language" else default,
+    )
 
     initial_data = dialog.get_data()
     assert initial_data["ai_selected_service"] == "legacy-service"
     assert initial_data["ai_selected_taxon_id"] == "old-1"
-    assert initial_data["ai_selected_scientific_name"] == "Old name"
+    assert initial_data["ai_selected_scientific_name"] == "Agaricus bisporus"
     assert initial_data["ai_selected_probability"] == 0.11
     assert initial_data["ai_selected_at"] == "2026-01-01T00:00:00Z"
 
@@ -356,10 +376,13 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
 
     assert species_data["ai_selected_service"] == "artsorakel"
     assert species_data["ai_selected_taxon_id"] == "123"
-    assert species_data["ai_selected_scientific_name"] == "Agaricus bisporus"
+    assert species_data["ai_selected_scientific_name"] == "Amanita regalis"
     assert species_data["ai_selected_probability"] == 0.84
     assert species_data["ai_selected_at"] == "2026-06-01T12:00:00Z"
-    assert "Agaricus bisporus" in dialog.ai_selected_summary_label.text()
+    assert dialog.genus_input.text() == "Amanita"
+    assert dialog.species_input.text() == "regalis"
+    assert dialog.vernacular_input.text() == "Kongefluesopp"
+    assert "Amanita regalis" in dialog.ai_selected_summary_label.text()
 
     dialog.taxonomy_tabs.setCurrentWidget(dialog.grows_tab)
     dialog._on_ai_copy_to_taxonomy("arts")
@@ -367,11 +390,42 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
 
     assert grows_data["ai_selected_service"] == "artsorakel"
     assert grows_data["ai_selected_taxon_id"] == "123"
-    assert grows_data["ai_selected_scientific_name"] == "Agaricus bisporus"
+    assert grows_data["ai_selected_scientific_name"] == "Amanita regalis"
     assert grows_data["ai_selected_probability"] == 0.84
     assert grows_data["ai_selected_at"] == "2026-06-01T12:00:00Z"
     assert dialog.host_genus_input.text() == "Lentinus"
     assert dialog.host_species_input.text() == "tigrinus"
+
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_existing_observation_hydrates_taxonomy_from_species_guess(
+    monkeypatch,
+    qapp,
+    tmp_path: Path,
+) -> None:
+    image_path = _make_oriented_image(tmp_path / "existing.jpg")
+    dialog = _build_dialog(
+        monkeypatch,
+        qapp,
+        image_path=image_path,
+        observation={
+            "id": 463,
+            "species_guess": "Amanita regalis",
+            "common_name": "",
+            "genus": "",
+            "species": "",
+        },
+    )
+
+    assert dialog.genus_input.text() == "Amanita"
+    assert dialog.species_input.text() == "regalis"
+
+    data = dialog.get_data()
+    assert data["genus"] == "Amanita"
+    assert data["species"] == "regalis"
+    assert data["species_guess"] == "Amanita regalis"
 
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
