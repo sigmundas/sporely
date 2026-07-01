@@ -48,6 +48,53 @@ def _tag_text_color(background: QColor) -> str:
     return "#ffffff"
 
 
+def _visible_fraction(viewport_rect: QRectF, item_rect: QRectF | None) -> float:
+    if item_rect is None:
+        return 0.0
+    viewport_width = float(viewport_rect.width())
+    item_width = float(item_rect.width())
+    if viewport_width <= 0.0 or item_width <= 0.0:
+        return 0.0
+    viewport_left = float(viewport_rect.x())
+    viewport_right = viewport_left + viewport_width
+    item_left = float(item_rect.x())
+    item_right = item_left + item_width
+    visible_width = max(0.0, min(viewport_right, item_right) - max(viewport_left, item_left))
+    return visible_width / item_width
+
+
+def center_horizontal_scroll_target(
+    viewport_rect: QRectF,
+    item_rect: QRectF | None,
+    minimum: int,
+    maximum: int,
+    previous_rect: QRectF | None = None,
+    next_rect: QRectF | None = None,
+    *,
+    visible_neighbor_threshold: float = 0.25,
+) -> int | None:
+    if item_rect is None:
+        return None
+    item_width = float(item_rect.width())
+    viewport_width = float(viewport_rect.width())
+    if item_width <= 0.0 or viewport_width <= 0.0:
+        return None
+
+    item_visible = _visible_fraction(viewport_rect, item_rect)
+    previous_visible = _visible_fraction(viewport_rect, previous_rect)
+    next_visible = _visible_fraction(viewport_rect, next_rect)
+    should_center = (
+        item_visible < 0.999
+        or previous_visible < float(visible_neighbor_threshold)
+        or next_visible < float(visible_neighbor_threshold)
+    )
+    if not should_center:
+        return None
+
+    target = int(round(float(item_rect.x()) + (item_width / 2.0) - (viewport_width / 2.0)))
+    return max(int(minimum), min(int(maximum), target))
+
+
 class _PublishToggle(QLabel):
     """A simple icon-based toggle that mimics QCheckBox for publish selection."""
 
@@ -188,6 +235,8 @@ class ImageGalleryWidget(QGroupBox):
         self._render_batch_size = 8
         self._render_generation = 0
         self._render_index = 0
+        self._center_request_generation = 0
+        self._center_request_key = None
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_next_batch)
@@ -246,6 +295,7 @@ class ImageGalleryWidget(QGroupBox):
     def clear(self) -> None:
         self._render_generation += 1
         self._observation_load_generation += 1
+        self._invalidate_center_requests()
         self._render_timer.stop()
         self._render_index = 0
         self._items = []
@@ -272,10 +322,73 @@ class ImageGalleryWidget(QGroupBox):
     def _clear_widgets(self) -> None:
         while self._grid.count():
             item = self._grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is None:
+                continue
+            try:
+                widget.hide()
+            except Exception:
+                pass
+            try:
+                widget.setParent(None)
+            except Exception:
+                pass
+            widget.deleteLater()
         self._frames = []
         self._sync_container_height()
+
+    def _invalidate_center_requests(self) -> None:
+        self._center_request_generation += 1
+        self._center_request_key = None
+
+    def _queue_center_on_key(self, key) -> None:
+        if key is None:
+            return
+        self._center_request_generation += 1
+        generation = self._center_request_generation
+        self._center_request_key = key
+        QTimer.singleShot(0, lambda gen=generation, requested_key=key: self._center_on_key_if_current(gen, requested_key))
+
+    def _center_on_key_if_current(self, generation: int, key) -> None:
+        if generation != self._center_request_generation or key != self._center_request_key:
+            return
+        frame = self._frame_for_key(key)
+        if frame is None or not self._scroll:
+            return
+        scrollbar = self._scroll.horizontalScrollBar()
+        viewport = self._scroll.viewport()
+        if scrollbar is None or viewport is None:
+            return
+        index = self._index_for_key(key)
+        previous_frame = self._frames[index - 1] if index is not None and index > 0 and index - 1 < len(self._frames) else None
+        next_frame = self._frames[index + 1] if index is not None and index + 1 < len(self._frames) else None
+        viewport_rect = QRectF(
+            float(scrollbar.value()),
+            0.0,
+            float(viewport.width()),
+            float(viewport.height()),
+        )
+        target = center_horizontal_scroll_target(
+            viewport_rect,
+            QRectF(frame.geometry()),
+            int(scrollbar.minimum()),
+            int(scrollbar.maximum()),
+            QRectF(previous_frame.geometry()) if previous_frame is not None else None,
+            QRectF(next_frame.geometry()) if next_frame is not None else None,
+        )
+        if target is None:
+            return
+        scrollbar.setValue(target)
+
+    def _set_frame_selected_state(self, frame: QFrame, selected: bool) -> None:
+        frame.setProperty("selected", bool(selected))
+        frame.setStyleSheet(
+            self._frame_style(
+                selected=bool(selected),
+                border_color=getattr(frame, "frame_border_color", None),
+            )
+        )
+        self._apply_frame_glow(frame, bool(selected))
 
     def set_fixed_thumbnail_size(self, enabled: bool) -> None:
         self._fixed_thumbnail_size = bool(enabled)
@@ -748,23 +861,20 @@ class ImageGalleryWidget(QGroupBox):
         return []
 
     def select_image(self, image_id: int | None) -> None:
+        previous_id = self._selected_id
+        previous_frame = self._frame_for_key(previous_id) if previous_id is not None else None
+        new_frame = self._frame_for_key(image_id) if image_id is not None else None
         self._selected_id = image_id
         self._selected_keys = set()
         if image_id is not None:
             self._selected_keys.add(image_id)
         self._last_clicked_index = self._index_for_key(image_id)
-        for frame in self._frames:
-            is_selected = getattr(frame, "image_id", None) == image_id and image_id is not None
-            frame.setProperty("selected", is_selected)
-            frame.setStyleSheet(
-                self._frame_style(
-                    selected=is_selected,
-                    border_color=getattr(frame, "frame_border_color", None),
-                )
-            )
-            self._apply_frame_glow(frame, is_selected)
+        if previous_frame is not None and previous_id != image_id:
+            self._set_frame_selected_state(previous_frame, False)
+        if new_frame is not None:
+            self._set_frame_selected_state(new_frame, True)
         if image_id is not None:
-            self._center_on_key(image_id)
+            self._queue_center_on_key(image_id)
 
     def publish_selected_ids(self) -> set[int]:
         selected: set[int] = set()
@@ -854,9 +964,9 @@ class ImageGalleryWidget(QGroupBox):
                 self._last_clicked_index = self._index_for_key(self._selected_id)
                 self._apply_selection_styles()
                 if self._selected_id is not None:
-                    self._center_on_key(self._selected_id)
+                    self._queue_center_on_key(self._selected_id)
             else:
-                self.select_image(self._selected_id)
+                self._queue_center_on_key(self._selected_id)
         elif self._selected_keys:
             self._apply_selection_styles()
         if generation == self._render_generation and self._render_index < len(self._items):
@@ -1277,7 +1387,7 @@ class ImageGalleryWidget(QGroupBox):
         return set(self._selected_keys)
 
     def center_on_key(self, key) -> None:
-        self._center_on_key(key)
+        self._queue_center_on_key(key)
 
     def select_paths(self, paths: list[str]) -> None:
         keys: set[str | int] = set()
@@ -1300,7 +1410,7 @@ class ImageGalleryWidget(QGroupBox):
                     break
         self._apply_selection_styles()
         if first_selected_key is not None:
-            self._center_on_key(first_selected_key)
+            self._queue_center_on_key(first_selected_key)
 
     def _index_for_key(self, key) -> int | None:
         if key is None:
@@ -1333,31 +1443,7 @@ class ImageGalleryWidget(QGroupBox):
         return None
 
     def _center_on_key(self, key) -> None:
-        frame = self._frame_for_key(key)
-        if frame is None:
-            return
-        QTimer.singleShot(0, lambda f=frame: self._center_on_frame(f))
-
-    def _center_on_frame(self, frame: QFrame | None) -> None:
-        if frame is None or not self._scroll:
-            return
-        scrollbar = self._scroll.horizontalScrollBar()
-        if scrollbar is None:
-            return
-        viewport = self._scroll.viewport()
-        if viewport is None:
-            return
-        view_left = float(scrollbar.value())
-        view_right = view_left + float(viewport.width())
-        frame_left = float(frame.x())
-        frame_right = frame_left + float(frame.width())
-        # Keep current scroll when selected thumbnail is fully visible.
-        if frame_left >= view_left and frame_right <= view_right:
-            return
-        frame_center_x = frame.x() + (frame.width() / 2.0)
-        target = int(round(frame_center_x - (viewport.width() / 2.0)))
-        target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
-        scrollbar.setValue(target)
+        self._queue_center_on_key(key)
 
     def prepare_for_tab_switch(self) -> None:
         """Clear transient focus/effects before a parent tab is hidden."""
@@ -1412,12 +1498,15 @@ class ImageGalleryWidget(QGroupBox):
         target_id = target_item.get("id")
         target_path = target_item.get("filepath") or ""
 
-        self._selected_id = target_id
-        self._selected_keys = {target_key} if target_key is not None else set()
-        self._last_clicked_index = target_index
-        self._apply_selection_styles()
-        if target_key is not None:
-            self._center_on_key(target_key)
+        if self._multi_select:
+            self._selected_id = target_id
+            self._selected_keys = {target_key} if target_key is not None else set()
+            self._last_clicked_index = target_index
+            self._apply_selection_styles()
+            if target_key is not None and target_key in self._selected_keys:
+                self._queue_center_on_key(target_key)
+        else:
+            self.select_image(target_id)
         if self._multi_select:
             self.selectionChanged.emit(self.selected_paths())
         else:
@@ -1481,13 +1570,11 @@ class ImageGalleryWidget(QGroupBox):
             if index is not None:
                 self._last_clicked_index = index
             self._apply_selection_styles()
+            if key is not None and key in self._selected_keys:
+                self._queue_center_on_key(key)
             self.selectionChanged.emit(self.selected_paths())
         else:
-            self._selected_id = img_id
-            self._selected_keys = {key} if key is not None else set()
-            if index is not None:
-                self._last_clicked_index = index
-            self._apply_selection_styles()
+            self.select_image(img_id)
             self.imageSelected.emit(img_id, path)
         self.imageClicked.emit(img_id, path)
 

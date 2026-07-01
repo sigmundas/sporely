@@ -173,7 +173,7 @@ from utils.vernacular_utils import (
     resolve_vernacular_db_path,
     list_available_vernacular_languages,
 )
-from .image_gallery_widget import ImageGalleryWidget
+from .image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -246,6 +246,38 @@ def _draw_gallery_rectangle_overlay(
     for seg_start, seg_end in rectangle_corner_segments(polygon):
         painter.drawLine(seg_start, seg_end)
     painter.restore()
+
+
+def _thumbnail_label_position(
+    tile_width: int,
+    tile_height: int,
+    text_width: int,
+    metrics,
+    margin: int = 4,
+) -> tuple[int, int]:
+    safe_margin = max(4, int(margin))
+    text_x = int(
+        round(
+            max(
+                float(safe_margin),
+                min(
+                    float(tile_width - text_width - safe_margin),
+                    (float(tile_width) - float(text_width)) / 2.0,
+                ),
+            )
+        )
+    )
+    ascent = float(getattr(metrics, "ascent", lambda: 0)())
+    descent = float(getattr(metrics, "descent", lambda: 0)())
+    text_y = int(
+        round(
+            max(
+                ascent + float(safe_margin),
+                float(tile_height) - descent - float(safe_margin),
+            )
+        )
+    )
+    return text_x, text_y
 
 
 class _CloudLoginWorker(QThread):
@@ -5721,6 +5753,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_pending_refresh_hint = ""
         self._gallery_render_total_items = 0
         self.gallery_selected_measurement_id = None
+        self._gallery_center_request_generation = 0
+        self._gallery_center_request_id = None
         self._gallery_thumbnail_frames: dict[int, QFrame] = {}
         self._gallery_thumbnail_labels: dict[int, QWidget] = {}
         self._gallery_measurement_lookup: dict[int, dict] = {}
@@ -14307,16 +14341,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._complete_gallery_refresh()
             return
 
-        # Clear existing gallery items
-        while self.gallery_grid.count():
-            item = self.gallery_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._gallery_thumbnail_frames = {}
-        self._gallery_thumbnail_labels = {}
-        self._gallery_measurement_lookup = {}
-        self._gallery_thumbnail_render_state = None
-        self._update_gallery_container_size(0)
+        self._clear_analysis_gallery_widgets()
 
         measurements = self._filter_gallery_measurements(all_measurements)
         measurements = self._sort_gallery_measurements(measurements)
@@ -14386,6 +14411,35 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_render_state = None
         self._gallery_render_total_items = 0
 
+    def _clear_analysis_gallery_widgets(self):
+        self._invalidate_gallery_center_requests()
+        grid = getattr(self, "gallery_grid", None)
+        if grid is not None:
+            while grid.count():
+                item = grid.takeAt(0)
+                widget = item.widget()
+                if widget is None:
+                    continue
+                try:
+                    widget.hide()
+                except Exception:
+                    pass
+                try:
+                    widget.setParent(None)
+                except Exception:
+                    pass
+                widget.deleteLater()
+        self._gallery_thumbnail_frames = {}
+        self._gallery_thumbnail_labels = {}
+        self._gallery_measurement_lookup = {}
+        self._gallery_thumbnail_render_state = None
+        self._gallery_render_queue = []
+        self._gallery_render_state = None
+        self._gallery_render_total_items = 0
+        self._gallery_render_total_width = 0
+        self._gallery_render_max_height = 0
+        self._update_gallery_container_size(0)
+
     def _render_gallery_batch(self):
         if not self._gallery_render_queue or not self._gallery_render_state:
             self._finish_gallery_render()
@@ -14403,7 +14457,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         for _ in range(min(batch_size, len(self._gallery_render_queue))):
             measurement = self._gallery_render_queue.pop(0)
             self._add_gallery_item(measurement, self._gallery_render_state)
-        QApplication.processEvents()
         if not self._gallery_render_queue:
             self._finish_gallery_render()
 
@@ -14416,6 +14469,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_last_refresh_time = time.perf_counter()
         self._gallery_refresh_in_progress = False
         self._set_gallery_busy_hint("")
+        selected_id = getattr(self, "gallery_selected_measurement_id", None)
+        if selected_id is not None:
+            self._queue_center_analysis_gallery_measurement(selected_id)
         if self._gallery_refresh_pending:
             self.schedule_gallery_refresh()
 
@@ -14448,6 +14504,72 @@ class MainWindow(GeometryMixin, QMainWindow):
             frame.set_measure_hovered(hovered and not is_selected)
         self._apply_analysis_gallery_frame_glow(frame, is_selected, hovered=hovered and not is_selected)
 
+    def _invalidate_gallery_center_requests(self) -> None:
+        self._gallery_center_request_generation += 1
+        self._gallery_center_request_id = None
+
+    def _queue_center_analysis_gallery_measurement(self, measurement_id: int | None) -> None:
+        try:
+            target_id = int(measurement_id)
+        except (TypeError, ValueError):
+            return
+        self._gallery_center_request_generation += 1
+        generation = self._gallery_center_request_generation
+        self._gallery_center_request_id = target_id
+        QTimer.singleShot(
+            0,
+            lambda mid=target_id, gen=generation: self._center_analysis_gallery_measurement(mid, gen),
+        )
+
+    def _center_analysis_gallery_measurement(self, measurement_id: int | None, generation: int | None = None) -> None:
+        try:
+            target_id = int(measurement_id)
+        except (TypeError, ValueError):
+            return
+        if generation is not None:
+            if generation != self._gallery_center_request_generation or target_id != self._gallery_center_request_id:
+                return
+        try:
+            current_selected = int(self.gallery_selected_measurement_id) if self.gallery_selected_measurement_id else None
+        except (TypeError, ValueError):
+            current_selected = None
+        if current_selected is None or current_selected != target_id:
+            return
+        frame = self._gallery_thumbnail_frames.get(target_id)
+        if frame is None or not hasattr(self, "gallery_scroll") or self.gallery_scroll is None:
+            return
+        scrollbar = self.gallery_scroll.horizontalScrollBar()
+        viewport = self.gallery_scroll.viewport()
+        if scrollbar is None or viewport is None:
+            return
+        ordered_frames = sorted(
+            self._gallery_thumbnail_frames.values(),
+            key=lambda widget: (int(widget.y()), int(widget.x())),
+        )
+        try:
+            index = ordered_frames.index(frame)
+        except ValueError:
+            index = -1
+        previous_frame = ordered_frames[index - 1] if index > 0 else None
+        next_frame = ordered_frames[index + 1] if index >= 0 and index + 1 < len(ordered_frames) else None
+        viewport_rect = QRectF(
+            float(scrollbar.value()),
+            0.0,
+            float(viewport.width()),
+            float(viewport.height()),
+        )
+        target = center_horizontal_scroll_target(
+            viewport_rect,
+            QRectF(frame.geometry()),
+            int(scrollbar.minimum()),
+            int(scrollbar.maximum()),
+            QRectF(previous_frame.geometry()) if previous_frame is not None else None,
+            QRectF(next_frame.geometry()) if next_frame is not None else None,
+        )
+        if target is None:
+            return
+        scrollbar.setValue(target)
+
     def _select_analysis_gallery_measurement(self, measurement_id: int | None, update_plot: bool = True) -> None:
         previous_selected = int(self.gallery_selected_measurement_id) if self.gallery_selected_measurement_id else None
         normalized_id = int(measurement_id) if measurement_id else None
@@ -14460,6 +14582,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._refresh_analysis_gallery_frame_state(self.gallery_selected_measurement_id, hovered=False)
         if update_plot and hasattr(self, "gallery_plot_figure"):
             self.update_graph_plots_only()
+        if previous_selected != self.gallery_selected_measurement_id and self.gallery_selected_measurement_id is not None:
+            self._queue_center_analysis_gallery_measurement(self.gallery_selected_measurement_id)
 
     def _prepare_analysis_gallery_for_tab_switch(self) -> None:
         """Clear transient Analysis gallery UI effects before hiding the tab."""
@@ -17366,8 +17490,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         metrics = painter.fontMetrics()
         dim_text = f"{float(length_um):.1f} x {float(width_um):.1f}"
         text_width = metrics.horizontalAdvance(dim_text)
-        text_x = int(max(4.0, min(float(tile_width - text_width - 4), ((rect_min_x + rect_max_x) / 2.0) - (text_width / 2.0))))
-        text_y = int(min(float(tile_height - 4), rect_max_y + 8.0 + metrics.ascent()))
+        # Keep the dimension label on a shared bottom baseline so the strip reads cleanly.
+        text_x, text_y = _thumbnail_label_position(tile_width, tile_height, text_width, metrics)
         _draw_halo_text(painter, text_x, text_y, dim_text, stroke_color)
 
         painter.end()

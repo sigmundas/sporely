@@ -2,10 +2,12 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QWidget
 from PySide6.QtGui import QImage, QColor
 
-from ui.image_gallery_widget import ImageGalleryWidget
+import ui.image_gallery_widget as gallery_module
+from ui.image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target
 from ui.adaptive_choice_selector import objective_color
 
 
@@ -14,6 +16,138 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
+
+
+def _build_scroll_scene(frame_specs):
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+    container = QWidget()
+    container.setMinimumWidth(max(x + width for _, x, width in frame_specs) + 400)
+    container.setMinimumHeight(120)
+    scroll.setWidget(container)
+    scroll.resize(500, 140)
+    scroll.show()
+
+    frames = []
+    for key, x, width in frame_specs:
+        frame = QFrame(container)
+        frame.setGeometry(x, 0, width, 120)
+        frame.image_key = key
+        frames.append(frame)
+
+    return scroll, container, frames
+
+
+def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden():
+    viewport_rect = QRectF(300, 0, 500, 120)
+
+    target_rect = QRectF(650, 0, 120, 120)
+    previous_rect = QRectF(530, 0, 120, 120)
+    next_rect = QRectF(780, 0, 120, 120)
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+        previous_rect,
+        next_rect,
+    ) == 460
+
+
+def test_center_horizontal_scroll_target_centers_when_previous_neighbor_is_mostly_hidden():
+    viewport_rect = QRectF(300, 0, 500, 120)
+
+    target_rect = QRectF(330, 0, 120, 120)
+    previous_rect = QRectF(200, 0, 120, 120)
+    next_rect = QRectF(450, 0, 120, 120)
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+        previous_rect,
+        next_rect,
+    ) == 140
+
+
+def test_center_on_key_ignores_stale_queued_requests(monkeypatch, qapp):
+    widget = ImageGalleryWidget("Images")
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (1, 100, 120),
+            (2, 650, 120),
+            (3, 1200, 120),
+        ]
+    )
+
+    widget._scroll = scroll
+    widget._frames = frames
+    widget._items = [{"id": 1}, {"id": 2}, {"id": 3}]
+    widget._selected_id = None
+    widget._selected_keys = set()
+
+    queued_callbacks = []
+
+    class _FakeTimer:
+        @staticmethod
+        def singleShot(_msec, callback):
+            queued_callbacks.append(callback)
+
+    monkeypatch.setattr(gallery_module, "QTimer", _FakeTimer)
+
+    widget.center_on_key(1)
+    widget.center_on_key(3)
+
+    assert len(queued_callbacks) == 2
+
+    expected = center_horizontal_scroll_target(
+        QRectF(scroll.horizontalScrollBar().value(), 0, scroll.viewport().width(), scroll.viewport().height()),
+        QRectF(frames[2].geometry()),
+        scroll.horizontalScrollBar().minimum(),
+        scroll.horizontalScrollBar().maximum(),
+        QRectF(frames[1].geometry()),
+        None,
+    )
+
+    queued_callbacks[1]()
+    queued_callbacks[0]()
+
+    assert scroll.horizontalScrollBar().value() == expected
+
+
+def test_select_image_updates_only_previous_and_new_frame_state(monkeypatch, qapp):
+    widget = ImageGalleryWidget("Images")
+    frames = []
+    for key in (1, 2, 3):
+        frame = QFrame()
+        frame.image_key = key
+        frames.append(frame)
+
+    widget._frames = frames
+    widget._items = [{"id": 1}, {"id": 2}, {"id": 3}]
+    widget._selected_id = 1
+    widget._selected_keys = {1}
+    widget._last_clicked_index = 0
+
+    state_changes = []
+    queued_centers = []
+
+    monkeypatch.setattr(
+        widget,
+        "_set_frame_selected_state",
+        lambda frame, selected: state_changes.append((getattr(frame, "image_key", None), bool(selected))),
+    )
+    monkeypatch.setattr(widget, "_queue_center_on_key", lambda key: queued_centers.append(key))
+
+    widget.select_image(2)
+
+    assert state_changes == [(1, False), (2, True)]
+    assert queued_centers == [2]
+    assert widget._selected_id == 2
+    assert widget._selected_keys == {2}
 
 
 def test_build_raw_source_badges_marks_raw_backed_derivatives():
