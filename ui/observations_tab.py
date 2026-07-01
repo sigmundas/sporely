@@ -119,6 +119,7 @@ from utils.cloud_sync import (
     cloud_observation_uses_privacy_slot,
     cloud_media_materialization_state_for_observation,
     build_cloud_ai_state_from_observation_identifications,
+    _cloud_identification_prediction_taxon,
     format_original_upload_summary,
     format_sync_summary,
     fetch_cloud_usage_summary,
@@ -231,6 +232,31 @@ def _normalize_ai_selected_service(source: str | None) -> str | None:
     if source_key == "inat":
         return "inat"
     return source_key or None
+
+
+def _normalize_ai_prediction_taxon(prediction: dict, source: str | None = None) -> dict:
+    pred = dict(prediction or {})
+    taxon = dict(_cloud_identification_prediction_taxon(pred, service=_normalize_ai_selected_service(source)) or {})
+    for key in (
+        "scientificName",
+        "scientific_name",
+        "name",
+        "vernacularName",
+        "vernacular_name",
+        "preferred_common_name",
+        "common_name",
+        "vernacularNames",
+        "vernacular_names",
+        "preferred_common_names",
+        "common_names",
+        "id",
+        "taxonId",
+        "taxon_id",
+    ):
+        value = pred.get(key)
+        if value not in (None, "", {}, []):
+            taxon[key] = value
+    return taxon
 
 
 def sharing_scope_location_public(value: str | None) -> bool:
@@ -12216,7 +12242,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
             self._update_ai_tab_indicator(source, bool(predictions))
             for row, pred in enumerate(predictions):
-                taxon = pred.get("taxon", {})
+                taxon = _normalize_ai_prediction_taxon(pred, source=source)
                 display_name = self._format_ai_taxon_name(taxon, source=source)
                 confidence = self._ai_prediction_score(pred)
                 name_item = QTableWidgetItem(display_name)
@@ -12488,7 +12514,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._inat_selected_by_index[index] = pred
         else:
             self._ai_selected_by_index[index] = pred
-        self._ai_selected_taxon = pred.get("taxon") or {}
+        self._ai_selected_taxon = _normalize_ai_prediction_taxon(pred, source=source)
         self._set_ai_status(None, source=source)
         self._set_ai_copy_enabled(True, source=source)
         self._persist_ai_state_now()
@@ -12603,6 +12629,24 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return False
         return bool(re.match(r"^[A-Z][A-Za-z-]+$", parts[0]) and re.match(r"^[a-z][A-Za-z-]+$", parts[1]))
 
+    @staticmethod
+    def _split_scientific_name_text(text: str | None) -> tuple[str | None, str | None]:
+        value = str(text or "").strip()
+        if not value:
+            return None, None
+        parts = [part for part in value.split() if part]
+        if len(parts) < 2:
+            return None, None
+        genus = parts[0].strip()
+        species = parts[1].strip()
+        if species.lower() in {"cf", "cf.", "aff", "aff.", "sp", "sp.", "spp", "spp."}:
+            if len(parts) < 3:
+                return None, None
+            species = parts[2].strip()
+        if not genus or not species:
+            return None, None
+        return genus, species
+
     def _scientific_name_from_taxon(self, taxon: dict) -> str:
         for key in ("scientificName", "scientific_name"):
             value = str(taxon.get(key) or "").strip()
@@ -12626,9 +12670,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return str(genus).strip(), str(species).strip()
         sci = self._scientific_name_from_taxon(taxon)
         if sci and isinstance(sci, str):
-            parts = sci.strip().split()
-            if len(parts) >= 2:
-                return parts[0], parts[1]
+            split = self._split_scientific_name_text(sci)
+            if split:
+                return split
         return None, None
 
     def _selected_ai_prediction(self, source: str) -> dict:
@@ -12658,8 +12702,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     if source == "inat"
                     else self._ai_selected_by_index.get(index)
                 ) or {}
-        taxon = (selected_pred or {}).get("taxon") or self._ai_selected_taxon or {}
+        taxon = _normalize_ai_prediction_taxon(selected_pred or {}, source=source) or self._ai_selected_taxon or {}
         genus, species = self._extract_genus_species_from_taxon(taxon)
+        if not genus or not species:
+            fallback_scientific_name = str((self._current_ai_selected_fields or {}).get("ai_selected_scientific_name") or "").strip()
+            if not fallback_scientific_name and isinstance(self.observation, dict):
+                fallback_scientific_name = str(self.observation.get("species_guess") or "").strip()
+            if not fallback_scientific_name and isinstance(self.draft_data, dict):
+                fallback_scientific_name = str(self.draft_data.get("species_guess") or "").strip()
+            fallback_genus, fallback_species = self._split_scientific_name_text(fallback_scientific_name)
+            if not genus and fallback_genus:
+                genus = fallback_genus
+            if not species and fallback_species:
+                species = fallback_species
         if not genus or not species:
             self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22", source=source)
             return
@@ -13729,7 +13784,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus = self.genus_input.text().strip() or None
         species = self.species_input.text().strip() or None
         common_name = self.vernacular_input.text().strip() or None
-        working_title = None
+        species_guess = f"{genus} {species}".strip() if genus and species else None
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -13786,7 +13841,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'sharing_scope': sharing_scope,
             'location_public': sharing_scope_location_public(sharing_scope),
             'location_precision': location_precision,
-            'species_guess': working_title,
+            'species_guess': species_guess,
             **ai_selected,
             'uncertain': self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
@@ -16202,6 +16257,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         genus = obs.get("genus") or ""
         species = obs.get("species") or ""
+        if not genus or not species:
+            for candidate in (obs.get("species_guess"), obs.get("ai_selected_scientific_name")):
+                fallback_genus, fallback_species = self._split_scientific_name_text(candidate)
+                if not genus and fallback_genus:
+                    genus = fallback_genus
+                if not species and fallback_species:
+                    species = fallback_species
+                if genus and species:
+                    break
         self.taxonomy_tabs.setCurrentIndex(0)
         self.genus_input.setText(genus)
         self.species_input.setText(species)

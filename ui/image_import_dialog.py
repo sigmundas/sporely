@@ -86,6 +86,7 @@ from database.schema import (
 )
 from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
+from utils.cloud_sync import _cloud_identification_prediction_taxon
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
 from utils.image_import_candidates import (
     IMAGE_IMPORT_STATUS_COMMITTED,
@@ -2332,7 +2333,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         predictions = self._ai_predictions_by_index.get(index, [])
         for row, pred in enumerate(predictions):
-            taxon = pred.get("taxon", {})
+            taxon = self._normalized_ai_prediction_taxon(pred)
             display_name = self._format_ai_taxon_name(taxon)
             confidence = pred.get("probability", 0.0)
             name_item = QTableWidgetItem(display_name)
@@ -2396,7 +2397,17 @@ class ImageImportDialog(GeometryMixin, QDialog):
         # 1. Local Sporely-py vernacularNames dict (from Artsdatabanken payload)
         vernacular_names = taxon.get("vernacularNames") or {}
         if isinstance(vernacular_names, dict) and lang:
-            vernacular = vernacular_names.get(lang, "")
+            direct = vernacular_names.get(lang, "")
+            if isinstance(direct, str) and direct.strip():
+                vernacular = direct.strip()
+            else:
+                for code, value in vernacular_names.items():
+                    if normalize_vernacular_language(str(code)) != lang:
+                        continue
+                    text = str(value).strip()
+                    if text:
+                        vernacular = text
+                        break
             
         if not vernacular:
             vernacular = taxon.get("vernacularName") or taxon.get("preferred_common_name") or ""
@@ -2418,6 +2429,30 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if vernacular_norm and scientific_norm and vernacular_norm.casefold() != scientific_norm.casefold():
                 return f"{vernacular_norm} ({scientific_norm})"
         return vernacular or scientific or self.tr("Unknown")
+
+    def _normalized_ai_prediction_taxon(self, prediction: dict) -> dict:
+        pred = dict(prediction or {})
+        taxon = dict(_cloud_identification_prediction_taxon(pred, service="artsorakel") or {})
+        for key in (
+            "scientificName",
+            "scientific_name",
+            "name",
+            "vernacularName",
+            "vernacular_name",
+            "preferred_common_name",
+            "common_name",
+            "vernacularNames",
+            "vernacular_names",
+            "preferred_common_names",
+            "common_names",
+            "id",
+            "taxonId",
+            "taxon_id",
+        ):
+            value = pred.get(key)
+            if value not in (None, "", {}, []):
+                taxon[key] = value
+        return taxon
 
     def _ai_prediction_link(self, pred: dict, taxon: dict) -> str | None:
         if isinstance(pred, dict):
@@ -2489,7 +2524,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         pred = row_item.data(Qt.UserRole) or {}
         self._ai_selected_by_index[index] = pred
-        self._ai_selected_taxon = pred.get("taxon") or {}
+        self._ai_selected_taxon = self._normalized_ai_prediction_taxon(pred)
         self._set_ai_status(self.tr("Applied selected species."), "#27ae60")
 
     def _crop_mode_label(self, mode: str | None) -> str:
