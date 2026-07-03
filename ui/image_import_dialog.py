@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from contextlib import ExitStack
 import hashlib
 from pathlib import Path
 from typing import Optional
@@ -347,6 +348,12 @@ def image_import_result_from_candidate(
         raw_processing = candidate.lab_metadata.get("raw_processing")
         if isinstance(raw_processing, dict):
             raw_settings = RawRenderSettings.from_dict(raw_processing.get("settings")).to_dict()
+    ai_crop_box = None
+    ai_crop_source_size = None
+    if candidate.working_width is not None and candidate.working_height is not None:
+        ai_crop_box = ai_image_prep.get_default_ai_crop_rect(candidate.working_width, candidate.working_height)
+        if ai_crop_box is not None:
+            ai_crop_source_size = (int(candidate.working_width), int(candidate.working_height))
     return ImageImportResult(
         filepath=str(working_path or source_path),
         preview_path=str(preview_path or working_path or source_path),
@@ -363,9 +370,9 @@ def image_import_result_from_candidate(
         needs_scale=False,
         exif_has_gps=bool(gps_latitude is not None or gps_longitude is not None),
         calibration_id=None,
-        ai_crop_box=None,
-        ai_crop_source_size=None,
-        crop_mode=None,
+        ai_crop_box=ai_crop_box,
+        ai_crop_source_size=ai_crop_source_size,
+        crop_mode="ai" if ai_crop_box is not None else None,
         pending_image_crop_offset=None,
         gps_source=False,
         resample_scale_factor=None,
@@ -389,12 +396,13 @@ def image_import_result_from_candidate(
 class AIGuessWorker(QThread):
     resultReady = Signal(list, list, object, object, list)
     error = Signal(list, str)
+    _ARTSORAKEL_OUTDATED_SENTINEL = "*** Utdatert versjon ***"
 
     def __init__(
         self,
         requests: list[dict],
         temp_dir: Path,
-        max_dim: int = 1600,
+        max_dim: int = ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -432,20 +440,112 @@ class AIGuessWorker(QThread):
             jpeg_quality=90,
         )
 
+    @staticmethod
+    def _flatten_artsorakel_predictions(payload: dict | None) -> list[dict]:
+        flattened: list[dict] = []
+        raw_predictions = payload.get("predictions", []) if isinstance(payload, dict) else []
+        if not isinstance(raw_predictions, list):
+            return flattened
+
+        for prediction in raw_predictions:
+            if not isinstance(prediction, dict):
+                continue
+            taxa = prediction.get("taxa")
+            items = taxa.get("items") if isinstance(taxa, dict) else None
+            if isinstance(items, list) and items:
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("taxon", {}).get("vernacularName", "")).strip() == AIGuessWorker._ARTSORAKEL_OUTDATED_SENTINEL:
+                        continue
+                    scientific_id = str(
+                        item.get("scientific_name_id")
+                        or item.get("scientificNameId")
+                        or ""
+                    ).strip()
+                    if not scientific_id:
+                        continue
+                    try:
+                        if float(item.get("probability") or 0.0) <= 0.0:
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+                    flattened.append(dict(item))
+                continue
+
+            fallback = dict(prediction)
+            if str(fallback.get("taxon", {}).get("vernacularName", "")).strip() == AIGuessWorker._ARTSORAKEL_OUTDATED_SENTINEL:
+                continue
+            scientific_name = str(
+                fallback.get("scientificName")
+                or fallback.get("scientific_name")
+                or fallback.get("name")
+                or ""
+            ).strip()
+            scientific_id = str(
+                fallback.get("scientific_name_id")
+                or fallback.get("scientificNameId")
+                or fallback.get("taxonId")
+                or fallback.get("taxon_id")
+                or ""
+            ).strip()
+            if not scientific_name and not scientific_id:
+                continue
+            try:
+                if float(fallback.get("probability") or 0.0) <= 0.0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            flattened.append(fallback)
+
+        def _score(item: dict) -> float:
+            for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
+                value = item.get(key)
+                if value is not None:
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        continue
+            return 0.0
+
+        return sorted(flattened, key=_score, reverse=True)[:5]
+
+    def _post_artsorakel_request(
+        self,
+        requests_module,
+        prepared_requests: list[dict],
+        *,
+        form_field: str = "image",
+    ):
+        data = {"application": APP_NAME}
+        headers = {"User-Agent": f"{APP_NAME}/AI"}
+        with ExitStack() as stack:
+            files: list[tuple[str, tuple[str, object, str]]] = []
+            for request in prepared_requests:
+                temp_path = Path(request["temp_path"])
+                handle = stack.enter_context(open(temp_path, "rb"))
+                files.append((form_field, (temp_path.name, handle, "image/jpeg")))
+            return requests_module.post(
+                "https://ai.artsdatabanken.no",
+                files=files,
+                data=data,
+                headers=headers,
+                timeout=30,
+            )
+
     def run(self) -> None:
         if not self.requests:
             return
         try:
             import requests
-            url = "https://ai.artsdatabanken.no"
+            prepared_requests: list[dict] = []
+            temp_paths: list[str] = []
             for request in self.requests:
                 if self.isInterruptionRequested():
                     break
                 index = request.get("index")
                 if index is None:
                     continue
-                temp_path: Path | None = None
-                response = None
                 try:
                     prepared = self._prepare_image(request["image_path"], request.get("crop_box"))
                     ai_image_prep.debug_log_prepared_ai_request_image(
@@ -455,55 +555,53 @@ class AIGuessWorker(QThread):
                         max_dim=self.max_dim,
                         jpeg_quality=90,
                     )
-                    temp_path = prepared.path
-                    with open(temp_path, "rb") as handle:
-                        response = requests.post(
-                            url,
-                            files={"image": (temp_path.name, handle, "image/jpeg")},
-                            headers={"User-Agent": f"{APP_NAME}/AI"},
-                            timeout=30,
-                        )
-                    if self.isInterruptionRequested():
-                        break
-                    if response.status_code != 200:
-                        with open(temp_path, "rb") as handle:
-                            response = requests.post(
-                                url,
-                                files={"file": (temp_path.name, handle, "image/jpeg")},
-                                headers={"User-Agent": f"{APP_NAME}/AI"},
-                                timeout=30,
-                            )
-                    if self.isInterruptionRequested():
-                        break
-                    if response is None or response.status_code != 200:
-                        detail = (response.text or "").strip() if response is not None else ""
-                        if detail:
-                            detail = detail.replace("\n", " ").strip()
-                            detail = detail[:200]
-                        suffix = f" - {detail}" if detail else ""
-                        status = response.status_code if response is not None else "no response"
-                        raise Exception(f"API request failed: {status}{suffix}")
-
-                    data = response.json()
-                    predictions = [
-                        p for p in data.get("predictions", [])
-                        if p.get("taxon", {}).get("vernacularName") != "*** Utdatert versjon ***"
-                    ]
-                    warnings = data.get("warnings")
-                    self.resultReady.emit([int(index)], predictions, None, warnings, [str(temp_path)])
+                    prepared_request = {
+                        "index": int(index),
+                        "temp_path": str(prepared.path),
+                    }
+                    prepared_requests.append(prepared_request)
+                    temp_paths.append(str(prepared.path))
                 except Exception as exc:
                     if self.isInterruptionRequested():
                         break
                     self.error.emit([int(index)], str(exc))
-                finally:
-                    try:
-                        if response is not None:
-                            response.close()
-                    except Exception:
-                        pass
-                    if temp_path is not None and not ai_image_prep.should_keep_ai_id_temp():
+            if not prepared_requests:
+                return
+
+            response = None
+            try:
+                emitted_indices = [int(req["index"]) for req in prepared_requests]
+                response = self._post_artsorakel_request(requests, prepared_requests, form_field="image")
+                if self.isInterruptionRequested():
+                    return
+                if response.status_code != 200:
+                    response.close()
+                    response = self._post_artsorakel_request(requests, prepared_requests, form_field="file")
+                if self.isInterruptionRequested():
+                    return
+                if response is None or response.status_code != 200:
+                    detail = (response.text or "").strip() if response is not None else ""
+                    if detail:
+                        detail = detail.replace("\n", " ").strip()
+                        detail = detail[:200]
+                    suffix = f" - {detail}" if detail else ""
+                    status = response.status_code if response is not None else "no response"
+                    raise Exception(f"API request failed: {status}{suffix}")
+
+                data = response.json()
+                predictions = self._flatten_artsorakel_predictions(data)
+                warnings = data.get("warnings") if isinstance(data, dict) else None
+                self.resultReady.emit(emitted_indices, predictions, None, warnings, temp_paths)
+            finally:
+                try:
+                    if response is not None:
+                        response.close()
+                except Exception:
+                    pass
+                if not ai_image_prep.should_keep_ai_id_temp():
+                    for temp_path in temp_paths:
                         try:
-                            temp_path.unlink(missing_ok=True)
+                            Path(temp_path).unlink(missing_ok=True)
                         except Exception:
                             pass
         except Exception as exc:
@@ -3092,7 +3190,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "#3498db",
         )
         temp_dir = get_images_dir() / "imports"
-        self._ai_thread = AIGuessWorker(requests, temp_dir, max_dim=1600, parent=self)
+        self._ai_thread = AIGuessWorker(
+            requests,
+            temp_dir,
+            max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+            parent=self,
+        )
         self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
         self._ai_thread.error.connect(self._on_ai_guess_error)
         self._ai_thread.finished.connect(self._ai_thread.deleteLater)

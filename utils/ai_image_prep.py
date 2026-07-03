@@ -12,10 +12,16 @@ from PIL import Image, ImageOps
 
 _KEEP_TEMP_ENV = "SPORELY_KEEP_AI_ID_TEMP"
 _DEBUG_ENV = "SPORELY_DEBUG_AI_ID"
+DEFAULT_AI_CROP_COVERAGE = 0.76
+DEFAULT_ARTSORAKEL_MAX_DIM = 500
 
 
 def _env_flag(name: str) -> bool:
     return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
 
 
 def should_keep_ai_id_temp() -> bool:
@@ -24,6 +30,36 @@ def should_keep_ai_id_temp() -> bool:
 
 def debug_ai_id_enabled() -> bool:
     return _env_flag(_DEBUG_ENV)
+
+
+def get_default_ai_crop_rect(
+    source_width: int | float,
+    source_height: int | float,
+    coverage: float = DEFAULT_AI_CROP_COVERAGE,
+) -> tuple[float, float, float, float] | None:
+    """Return the same centered square default crop used by sporely-web."""
+    width = float(source_width)
+    height = float(source_height)
+    if not (width > 0 and height > 0):
+        return None
+
+    try:
+        coverage_value = float(coverage)
+    except Exception:
+        coverage_value = DEFAULT_AI_CROP_COVERAGE
+    coverage_value = _clamp(coverage_value, 0.1, 1.0)
+
+    crop_size = min(width, height) * coverage_value
+    left = (width - crop_size) / 2.0
+    top = (height - crop_size) / 2.0
+    right = left + crop_size
+    bottom = top + crop_size
+    return (
+        _clamp(left / width, 0.0, 1.0),
+        _clamp(top / height, 0.0, 1.0),
+        _clamp(right / width, 0.0, 1.0),
+        _clamp(bottom / height, 0.0, 1.0),
+    )
 
 
 def _sanitize_prefix(prefix: str | None) -> str:

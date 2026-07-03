@@ -1599,11 +1599,156 @@ class INatAIGuessWorker(QThread):
             self.error.emit(self.indices, str(exc))
 
 
+class _ObservationImageBrowser(QWidget):
+    """Zoomable/pannable image browser with prev/next navigation."""
+
+    imageDoubleClicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._image_paths: list[str] = []
+        self._current_index: int = -1
+
+        layout = QGridLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
+
+        self.prev_btn = QToolButton(self)
+        self.prev_btn.setText("‹")
+        self.prev_btn.setToolTip(self.tr("Previous image (←)"))
+        self.prev_btn.setAutoRaise(True)
+        self.prev_btn.setFixedWidth(32)
+        self.prev_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.prev_btn.clicked.connect(self.show_previous)
+        try:
+            font = self.prev_btn.font()
+            font.setPointSize(max(font.pointSize(), 18))
+            self.prev_btn.setFont(font)
+        except Exception:
+            pass
+
+        self.next_btn = QToolButton(self)
+        self.next_btn.setText("›")
+        self.next_btn.setToolTip(self.tr("Next image (→)"))
+        self.next_btn.setAutoRaise(True)
+        self.next_btn.setFixedWidth(32)
+        self.next_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.next_btn.clicked.connect(self.show_next)
+        try:
+            font = self.next_btn.font()
+            font.setPointSize(max(font.pointSize(), 18))
+            self.next_btn.setFont(font)
+        except Exception:
+            pass
+
+        # Reuse the Measure tab's zoomable label so pan/zoom feel identical.
+        self.image_label = ZoomableImageLabel(self)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_label.setMinimumSize(1, 1)
+        self.image_label.set_measurement_active(False)
+        self.image_label.set_pan_without_shift(True)
+        self.image_label.set_show_measure_labels(False)
+        self.image_label.set_show_measure_overlays(False)
+        self.image_label.setText(self.tr("No image selected"))
+        self.image_label.installEventFilter(self)
+
+        self.counter_label = QLabel(self)
+        self.counter_label.setAlignment(Qt.AlignCenter)
+        self.counter_label.setText("")
+
+        layout.addWidget(self.prev_btn, 0, 0)
+        layout.addWidget(self.image_label, 0, 1)
+        layout.addWidget(self.next_btn, 0, 2)
+        layout.addWidget(self.counter_label, 1, 0, 1, 3)
+        layout.setColumnStretch(1, 1)
+        layout.setRowStretch(0, 1)
+
+        self._update_nav_state()
+
+    def set_images(self, paths: list[str]) -> None:
+        current_path = None
+        if 0 <= self._current_index < len(self._image_paths):
+            current_path = self._image_paths[self._current_index]
+        cleaned = [str(p) for p in paths if p]
+        self._image_paths = cleaned
+        if not cleaned:
+            self._current_index = -1
+            self._clear_image_display(self.tr("No image available"))
+        else:
+            if current_path and current_path in cleaned:
+                self._current_index = cleaned.index(current_path)
+            else:
+                self._current_index = 0
+            self._display_current()
+        self._update_nav_state()
+
+    def clear(self) -> None:
+        self._image_paths = []
+        self._current_index = -1
+        self._clear_image_display(self.tr("No image selected"))
+        self._update_nav_state()
+
+    def show_previous(self) -> None:
+        if not self._image_paths:
+            return
+        self._current_index = (self._current_index - 1) % len(self._image_paths)
+        self._display_current()
+        self._update_nav_state()
+
+    def show_next(self) -> None:
+        if not self._image_paths:
+            return
+        self._current_index = (self._current_index + 1) % len(self._image_paths)
+        self._display_current()
+        self._update_nav_state()
+
+    def _clear_image_display(self, placeholder: str) -> None:
+        self.image_label.set_image_sources(None)
+        self.image_label.setText(placeholder)
+        self.counter_label.setText("")
+
+    def _display_current(self) -> None:
+        if not (0 <= self._current_index < len(self._image_paths)):
+            self._clear_image_display(self.tr("No image available"))
+            return
+        path = self._image_paths[self._current_index]
+        try:
+            pixmap = load_oriented_pixmap(path)
+        except Exception:
+            pixmap = QPixmap()
+        if pixmap is None or pixmap.isNull():
+            self._clear_image_display(self.tr("Failed to load image"))
+            return
+        self.image_label.set_image_sources(pixmap, full_path=path)
+        self.image_label.reset_view()
+
+    def _update_nav_state(self) -> None:
+        has_multiple = len(self._image_paths) > 1
+        self.prev_btn.setEnabled(has_multiple)
+        self.next_btn.setEnabled(has_multiple)
+        if self._image_paths and 0 <= self._current_index < len(self._image_paths):
+            self.counter_label.setText(
+                f"{self._current_index + 1} / {len(self._image_paths)}"
+            )
+        else:
+            self.counter_label.setText("")
+
+    def eventFilter(self, obj, event):
+        if obj is self.image_label and event.type() == QEvent.MouseButtonDblClick:
+            self.imageDoubleClicked.emit()
+            return True
+        return super().eventFilter(obj, event)
+
+
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
     SETTING_SHOW_TABLE_THUMBNAILS = "observations_table_show_thumbnails"
     SETTING_SHOW_NEW_IMPORTS_ONLY = "observations_table_show_new_imports_only"
+    SETTING_VIEW_MODE = "observations_view_mode"
+    VIEW_MODE_TABLE = "table"
+    VIEW_MODE_IMAGES = "images"
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
     SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
     SETTING_INCLUDE_SPORE_STATS = "artsobs_publish_include_spore_stats"
@@ -1835,7 +1980,23 @@ class ObservationsTab(QWidget):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         left_panel_layout.addWidget(self.search_input)
 
-        # Table filters - separate rows for better text display
+        # View mode: Table vs Images (segmented pill, same style as Measure tab).
+        self.view_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        initial_view_mode = self._current_view_mode_setting()
+        self.view_mode_selector.add_option(
+            self.tr("Table"),
+            self.VIEW_MODE_TABLE,
+            checked=(initial_view_mode == self.VIEW_MODE_TABLE),
+        )
+        self.view_mode_selector.add_option(
+            self.tr("Images"),
+            self.VIEW_MODE_IMAGES,
+            checked=(initial_view_mode == self.VIEW_MODE_IMAGES),
+        )
+        self.view_mode_selector.selectionChanged.connect(self._on_view_mode_selection_changed)
+        left_panel_layout.addWidget(self.view_mode_selector)
+
+        # "Show thumbnail" — applies to whichever mode is active (icon in first column).
         self.show_table_thumbnails_checkbox = QCheckBox(self.tr("Show thumbnail"))
         self.show_table_thumbnails_checkbox.setChecked(
             self._observation_setting_enabled(self.SETTING_SHOW_TABLE_THUMBNAILS, default=False)
@@ -1921,7 +2082,20 @@ class ObservationsTab(QWidget):
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
         self.table.setSortingEnabled(True)
         self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
-        splitter.addWidget(self.table)
+
+        # Horizontal splitter — same table on the left (with columns collapsed
+        # in image mode) and a zoomable image browser on the right that is
+        # revealed when image mode is active.
+        self.view_splitter = QSplitter(Qt.Horizontal)
+        self.view_splitter.setObjectName("observationsViewSplitter")
+        self.view_splitter.setChildrenCollapsible(False)
+        self.view_splitter.addWidget(self.table)
+        self.image_browser = _ObservationImageBrowser(self)
+        self.image_browser.imageDoubleClicked.connect(self._on_image_browser_double_clicked)
+        self.view_splitter.addWidget(self.image_browser)
+        self.view_splitter.setStretchFactor(0, 1)
+        self.view_splitter.setStretchFactor(1, 3)
+        splitter.addWidget(self.view_splitter)
 
         # Image gallery in a resizable splitter.
         self.gallery_widget = ImageGalleryWidget(
@@ -1949,8 +2123,10 @@ class ObservationsTab(QWidget):
             self,
             left_panel,
             splitter,
+            self.view_splitter,
             self.table,
             self.table.viewport(),
+            self.image_browser,
             self.gallery_widget,
         ]
         drop_targets.extend(self.findChildren(QWidget))
@@ -1970,6 +2146,12 @@ class ObservationsTab(QWidget):
             key="observations_main_splitter_sizes",
             default_sizes=[600, GALLERY_DEFAULT_HEIGHT],
             minimum_sizes=[200, GALLERY_MIN_HEIGHT],
+        )
+        install_persistent_splitter(
+            self.view_splitter,
+            key="observations_view_splitter_sizes",
+            default_sizes=[280, 900],
+            minimum_sizes=[180, 200],
         )
 
         content_layout.addWidget(splitter, 1)
@@ -2058,6 +2240,8 @@ class ObservationsTab(QWidget):
             )
         self._register_gallery_publish_hint_widgets()
         self._init_shortcuts()
+        # Apply the saved view mode now that all widgets exist.
+        self._apply_view_mode(self._current_view_mode_setting(), persist=False)
 
     def _init_shortcuts(self) -> None:
         self._shortcut_refresh = QShortcut(QKeySequence("R"), self)
@@ -2087,6 +2271,24 @@ class ObservationsTab(QWidget):
         self._shortcut_edit_enter = QShortcut(QKeySequence(Qt.Key_Enter), self)
         self._shortcut_edit_enter.setContext(Qt.WidgetWithChildrenShortcut)
         self._shortcut_edit_enter.activated.connect(self._on_edit_shortcut)
+
+        # Arrow keys navigate the image browser: left/right cycle images,
+        # up/down move to the previous/next observation row.
+        self._shortcut_image_prev = QShortcut(QKeySequence(Qt.Key_Left), self)
+        self._shortcut_image_prev.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_image_prev.activated.connect(self._on_image_prev_shortcut)
+
+        self._shortcut_image_next = QShortcut(QKeySequence(Qt.Key_Right), self)
+        self._shortcut_image_next.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_image_next.activated.connect(self._on_image_next_shortcut)
+
+        self._shortcut_image_row_up = QShortcut(QKeySequence(Qt.Key_Up), self)
+        self._shortcut_image_row_up.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_image_row_up.activated.connect(self._on_image_row_up_shortcut)
+
+        self._shortcut_image_row_down = QShortcut(QKeySequence(Qt.Key_Down), self)
+        self._shortcut_image_row_down.setContext(Qt.WidgetWithChildrenShortcut)
+        self._shortcut_image_row_down.activated.connect(self._on_image_row_down_shortcut)
 
     def _shortcut_blocked_by_text_input(self) -> bool:
         widget = QApplication.focusWidget()
@@ -5758,6 +5960,143 @@ class ObservationsTab(QWidget):
                 self._observations_table_default_row_height
             )
 
+    def _current_view_mode_setting(self) -> str:
+        raw = SettingsDB.get_setting(self.SETTING_VIEW_MODE, self.VIEW_MODE_TABLE)
+        text = str(raw or "").strip().lower()
+        if text == self.VIEW_MODE_IMAGES:
+            return self.VIEW_MODE_IMAGES
+        return self.VIEW_MODE_TABLE
+
+    def _current_view_mode(self) -> str:
+        selector = getattr(self, "view_mode_selector", None)
+        if selector is not None:
+            value = selector.selected_value(fallback=self.VIEW_MODE_TABLE)
+            if value == self.VIEW_MODE_IMAGES:
+                return self.VIEW_MODE_IMAGES
+        return self.VIEW_MODE_TABLE
+
+    def _on_view_mode_selection_changed(self, value) -> None:
+        mode = self.VIEW_MODE_IMAGES if value == self.VIEW_MODE_IMAGES else self.VIEW_MODE_TABLE
+        self._apply_view_mode(mode, persist=True)
+
+    # In image mode only these two columns of the observations table stay visible.
+    _IMAGE_MODE_VISIBLE_COLUMNS = (0, 1)
+
+    def _apply_view_mode(self, mode: str, persist: bool = True) -> None:
+        if mode != self.VIEW_MODE_IMAGES:
+            mode = self.VIEW_MODE_TABLE
+        table = getattr(self, "table", None)
+        if table is not None:
+            column_count = table.columnCount()
+            if mode == self.VIEW_MODE_IMAGES:
+                keep = set(self._IMAGE_MODE_VISIBLE_COLUMNS)
+                for col in range(column_count):
+                    table.setColumnHidden(col, col not in keep)
+            else:
+                for col in range(column_count):
+                    table.setColumnHidden(col, False)
+        browser = getattr(self, "image_browser", None)
+        if browser is not None:
+            browser.setVisible(mode == self.VIEW_MODE_IMAGES)
+        # Arrow shortcuts (prev/next/up/down) are only meaningful in image mode.
+        for attr in (
+            "_shortcut_image_prev",
+            "_shortcut_image_next",
+            "_shortcut_image_row_up",
+            "_shortcut_image_row_down",
+        ):
+            shortcut = getattr(self, attr, None)
+            if shortcut is not None:
+                shortcut.setEnabled(mode == self.VIEW_MODE_IMAGES)
+        if persist:
+            SettingsDB.set_setting(self.SETTING_VIEW_MODE, mode)
+        if mode == self.VIEW_MODE_IMAGES:
+            self._refresh_image_browser_for_current_selection()
+
+    def _refresh_image_browser_for_current_selection(self) -> None:
+        browser = getattr(self, "image_browser", None)
+        if browser is None:
+            return
+        obs_id = self.selected_observation_id
+        if not obs_id:
+            browser.clear()
+            return
+        try:
+            images = ImageDB.get_images_for_observation(int(obs_id))
+        except Exception:
+            images = []
+        paths: list[str] = []
+        for img in images:
+            for key in ("filepath", "original_filepath"):
+                path = str((img or {}).get(key) or "").strip()
+                if path and Path(path).exists():
+                    paths.append(path)
+                    break
+        browser.set_images(paths)
+
+    def _on_image_prev_shortcut(self) -> None:
+        if self._shortcut_blocked_by_text_input():
+            return
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        browser = getattr(self, "image_browser", None)
+        if browser is not None:
+            browser.show_previous()
+
+    def _on_image_next_shortcut(self) -> None:
+        if self._shortcut_blocked_by_text_input():
+            return
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        browser = getattr(self, "image_browser", None)
+        if browser is not None:
+            browser.show_next()
+
+    def _on_image_browser_double_clicked(self) -> None:
+        if self.selected_observation_id:
+            self.edit_observation()
+
+    def _on_image_row_up_shortcut(self) -> None:
+        if self._shortcut_blocked_by_text_input():
+            return
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        self._move_table_selection(-1)
+
+    def _on_image_row_down_shortcut(self) -> None:
+        if self._shortcut_blocked_by_text_input():
+            return
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        self._move_table_selection(+1)
+
+    def _move_table_selection(self, delta: int) -> None:
+        table = getattr(self, "table", None)
+        if table is None:
+            return
+        row_count = table.rowCount()
+        if row_count <= 0 or delta == 0:
+            return
+        selection = table.selectionModel()
+        current_rows = selection.selectedRows()
+        if current_rows:
+            current_row = current_rows[0].row()
+        else:
+            current_row = -1 if delta > 0 else row_count
+        new_row = current_row + delta
+        if new_row < 0:
+            new_row = 0
+        elif new_row >= row_count:
+            new_row = row_count - 1
+        if new_row == current_row:
+            return
+        table.clearSelection()
+        table.selectRow(new_row)
+        # Ensure the row is visible even though the table has NoFocus.
+        item = table.item(new_row, 0)
+        if item is not None:
+            table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+
     def _on_show_table_thumbnails_toggled(self, checked: bool) -> None:
         SettingsDB.set_setting(self.SETTING_SHOW_TABLE_THUMBNAILS, bool(checked))
         self._update_table_headers()
@@ -5965,6 +6304,8 @@ class ObservationsTab(QWidget):
         if not observation_id or observation_id != self.selected_observation_id:
             return
         self.gallery_widget.set_observation_id_async(int(observation_id))
+        if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+            self._refresh_image_browser_for_current_selection()
 
     def _on_gallery_observation_loaded(self, observation_id: object) -> None:
         try:
@@ -6102,6 +6443,8 @@ class ObservationsTab(QWidget):
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
+            if hasattr(self, "image_browser"):
+                self.image_browser.clear()
             self._update_publish_controls()
             return
         if len(selected_rows) > 1:
@@ -6113,6 +6456,8 @@ class ObservationsTab(QWidget):
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
+            if hasattr(self, "image_browser"):
+                self.image_browser.clear()
             self._update_publish_controls()
             self.selection_count_changed.emit(len(selected_rows))
             return
@@ -9687,6 +10032,9 @@ class ObservationsTab(QWidget):
             ai_crop_box = None
             if all(v is not None for v in (crop_x1, crop_y1, crop_x2, crop_y2)):
                 ai_crop_box = (float(crop_x1), float(crop_y1), float(crop_x2), float(crop_y2))
+            crop_mode = str(img.get("crop_mode") or "").strip().lower() or None
+            if ai_crop_box is not None and crop_mode is None:
+                crop_mode = "ai"
             crop_w = img.get("ai_crop_source_w")
             crop_h = img.get("ai_crop_source_h")
             ai_crop_source_size = None
@@ -9765,7 +10113,7 @@ class ObservationsTab(QWidget):
                     exif_has_gps=exif_has_gps,
                     ai_crop_box=ai_crop_box,
                     ai_crop_source_size=ai_crop_source_size,
-                    crop_mode=img.get("crop_mode"),
+                    crop_mode=crop_mode,
                     gps_source=gps_source,
                     resample_scale_factor=resample_factor,
                     original_filepath=img.get("original_filepath") or filepath,
@@ -12943,7 +13291,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     "#3498db",
                     source="arts",
                 )
-                self._ai_thread = AIGuessWorker(requests, temp_dir, max_dim=1600, parent=self)
+                self._ai_thread = AIGuessWorker(
+                    requests,
+                    temp_dir,
+                    max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+                    parent=self,
+                )
                 self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
                 self._ai_thread.error.connect(self._on_ai_guess_error)
                 self._ai_thread.finished.connect(self._ai_thread.deleteLater)
