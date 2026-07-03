@@ -328,3 +328,124 @@ def test_upload_observation_to_artsobs_marks_pending_images_and_persists_artsdat
     assert status_messages[-1][1] == "warning"
     assert "Observation published, but image upload failed. Images remain pending." in status_messages[-1][0]
     assert "One or more web image uploads failed." in status_messages[-1][0]
+
+
+def test_collect_artsobs_image_paths_prefers_smallest_candidate(tmp_path, monkeypatch):
+    small_path = tmp_path / "small.jpg"
+    large_path = tmp_path / "large.jpg"
+    second_path = tmp_path / "second.jpg"
+    small_path.write_bytes(b"12")
+    large_path.write_bytes(b"123456")
+    second_path.write_bytes(b"1234")
+
+    fake_tab = SimpleNamespace(
+        _publish_excluded_image_ids=lambda observation_id: set(),
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "ImageDB",
+        SimpleNamespace(
+            get_images_for_observation=lambda observation_id: [
+                {
+                    "id": 1,
+                    "image_type": "field",
+                    "filepath": str(large_path),
+                    "original_filepath": str(small_path),
+                },
+                {
+                    "id": 2,
+                    "image_type": "microscope",
+                    "filepath": str(second_path),
+                    "original_filepath": None,
+                },
+            ]
+        ),
+    )
+
+    paths = observations_tab.ObservationsTab._collect_artsobs_image_paths(fake_tab, 7)
+
+    assert paths == [str(small_path), str(second_path)]
+
+
+def test_publish_selected_observations_both_triggers_web_and_inat(monkeypatch):
+    calls: list[tuple[int, str, bool, bool]] = []
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        _selected_observation_ids=lambda: [7],
+        _publish_target_login_status=lambda force_refresh=False: {"web": True, "inat": True},
+        _publish_target_saved_login_status=lambda force_refresh=False: {"web": True, "inat": True},
+        _open_online_publishing_settings=lambda: False,
+        _invalidate_publish_login_status_cache=lambda: None,
+        _update_publish_controls=lambda: None,
+        _publish_actions={},
+        _selection_has_existing_upload_for_uploader=lambda key: False,
+        _selection_matches_uploader_target=lambda key: True,
+        _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
+        refresh_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: None,
+        upload_observation_to_artsobs=lambda observation_id, uploader_key, show_status, refresh_table: (
+            calls.append((observation_id, uploader_key, show_status, refresh_table))
+            or (True, 123 if uploader_key == "web" else 456, None)
+        ),
+    )
+
+    observations_tab.ObservationsTab._publish_selected_observations(fake_tab, "both")
+
+    assert calls == [
+        (7, "web", False, False),
+        (7, "inat", False, False),
+    ]
+
+
+def test_publish_render_preferences_allows_scale_bar_without_annotations():
+    fake_tab = SimpleNamespace(
+        window=lambda: SimpleNamespace(
+            show_scale_bar_checkbox=SimpleNamespace(isChecked=lambda: False),
+            scale_size_spin=SimpleNamespace(value=lambda: 12.5),
+        ),
+        SETTING_INCLUDE_ANNOTATIONS="include_annotations",
+        SETTING_SHOW_SCALE_BAR="show_scale_bar",
+        _publish_option_enabled=lambda key, default=False: key == "show_scale_bar",
+    )
+
+    prefs = observations_tab.ObservationsTab._publish_render_preferences(fake_tab)
+
+    assert prefs == {
+        "show_overlays": False,
+        "show_labels": False,
+        "show_scale_bar": True,
+        "scale_bar_um": 12.5,
+    }
+
+
+def test_prepare_publish_media_assets_generates_scale_bar_only_images(tmp_path, monkeypatch):
+    base_path = tmp_path / "base.jpg"
+    base_path.write_bytes(b"base")
+    annotated_path = tmp_path / "annotated.jpg"
+    generated_calls: list[dict[str, object]] = []
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        _publish_render_preferences=lambda: {"show_scale_bar": True},
+        _generate_publish_annotated_images=lambda **kwargs: generated_calls.append(dict(kwargs)) or [str(annotated_path)],
+    )
+
+    monkeypatch.setattr(observations_tab.tempfile, "mkdtemp", lambda prefix: str(tmp_path / "publish_tmp"))
+
+    upload_paths, temp_dir, warnings = observations_tab.ObservationsTab._prepare_publish_media_assets(
+        fake_tab,
+        observation_id=7,
+        base_image_paths=[str(base_path)],
+        include_annotations=False,
+        include_measure_plots=False,
+        include_thumbnail_gallery=False,
+        include_plate=False,
+        include_copyright=False,
+        copyright_text=None,
+    )
+
+    assert generated_calls and generated_calls[0]["observation_id"] == 7
+    assert upload_paths == [str(annotated_path)]
+    assert temp_dir == tmp_path / "publish_tmp"
+    assert warnings == []

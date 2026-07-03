@@ -173,7 +173,7 @@ from utils.vernacular_utils import (
     resolve_vernacular_db_path,
     list_available_vernacular_languages,
 )
-from .image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target
+from .image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target, paint_thumbnail_selection_overlay
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -318,12 +318,17 @@ class AnalysisGalleryTile(QWidget):
         self._overlay.raise_()
 
         def _overlay_paint(_event):
-            if self._measurement_polygon.isEmpty():
-                return
-            if not (self._hovered_measure or self._selected_measure):
+            if self._measurement_polygon.isEmpty() and not (self._hovered_measure or self._selected_measure):
                 return
             painter = QPainter(self._overlay)
             painter.setRenderHint(QPainter.Antialiasing)
+            paint_thumbnail_selection_overlay(
+                painter,
+                QRectF(self._overlay.rect()),
+                selected=self._selected_measure,
+                hovered=self._hovered_measure,
+                palette=self.palette(),
+            )
             if self._selected_measure:
                 _draw_gallery_rectangle_overlay(
                     painter,
@@ -8268,6 +8273,16 @@ class MainWindow(GeometryMixin, QMainWindow):
                 best_cols = cols
                 best_rows = rows
         return best_cols, best_rows
+
+    @staticmethod
+    def _gallery_export_tile_size(thumbnails: list[QPixmap]) -> tuple[int, int]:
+        """Return the shared export tile size for a set of gallery thumbnails."""
+        if not thumbnails:
+            return 0, 0
+        return (
+            max(1, max(thumbnail.width() for thumbnail in thumbnails)),
+            max(1, max(thumbnail.height() for thumbnail in thumbnails)),
+        )
 
     def _on_gallery_collapse_toggled(self, collapsed):
         self._gallery_collapsed = bool(collapsed)
@@ -17673,24 +17688,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
 
         num_items = len(thumbnails)
-        average_tile_width = int(round(sum(thumbnail.width() for thumbnail in thumbnails) / max(1, num_items)))
-        tile_height = max(thumbnail.height() for thumbnail in thumbnails)
+        tile_width, tile_height = self._gallery_export_tile_size(thumbnails)
         items_per_row, num_rows = self._gallery_export_grid_shape(
             num_items,
-            average_tile_width,
+            tile_width,
             tile_height,
         )
 
         spacing = 0
-        row_widths = []
-        for row in range(num_rows):
-            row_items = thumbnails[row * items_per_row:(row + 1) * items_per_row]
-            row_width = sum(thumbnail.width() for thumbnail in row_items)
-            if row_items:
-                row_width += max(0, len(row_items) - 1) * spacing
-            row_widths.append(row_width)
-        composite_width = max(row_widths) if row_widths else 0
+        composite_width = items_per_row * tile_width + max(0, items_per_row - 1) * spacing
         composite_height = num_rows * tile_height + (num_rows - 1) * spacing
+
+        def _thumbnail_top_left(index: int, thumbnail: QPixmap) -> tuple[int, int]:
+            row = index // items_per_row
+            col = index % items_per_row
+            x = col * (tile_width + spacing)
+            y = row * (tile_height + spacing)
+            x += max(0, int(round((tile_width - thumbnail.width()) / 2.0)))
+            y += max(0, int(round((tile_height - thumbnail.height()) / 2.0)))
+            return x, y
 
         if export_format == "svg":
             from PySide6.QtSvg import QSvgGenerator
@@ -17701,12 +17717,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             generator.setViewBox(QRect(0, 0, composite_width, composite_height))
             painter = QPainter(generator)
             for idx, thumbnail in enumerate(thumbnails):
-                row = idx // items_per_row
-                x = sum(
-                    thumbnails[row * items_per_row + col_index].width() + spacing
-                    for col_index in range(idx % items_per_row)
-                )
-                y = row * (tile_height + spacing)
+                x, y = _thumbnail_top_left(idx, thumbnail)
                 painter.drawPixmap(x, y, thumbnail)
             painter.end()
         else:
@@ -17714,12 +17725,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             composite.fill(QColor(255, 255, 255))
             painter = QPainter(composite)
             for idx, thumbnail in enumerate(thumbnails):
-                row = idx // items_per_row
-                x = sum(
-                    thumbnails[row * items_per_row + col_index].width() + spacing
-                    for col_index in range(idx % items_per_row)
-                )
-                y = row * (tile_height + spacing)
+                x, y = _thumbnail_top_left(idx, thumbnail)
                 painter.drawPixmap(x, y, thumbnail)
             painter.end()
             if export_format == "jpg":

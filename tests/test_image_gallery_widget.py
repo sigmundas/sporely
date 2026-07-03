@@ -4,10 +4,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QWidget
-from PySide6.QtGui import QImage, QColor
+from PySide6.QtGui import QImage, QColor, QPalette
 
 import ui.image_gallery_widget as gallery_module
-from ui.image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target
+from ui.image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target, thumbnail_selection_colors
 from ui.adaptive_choice_selector import objective_color
 
 
@@ -186,6 +186,97 @@ def test_select_image_same_image_is_visual_no_op(monkeypatch, qapp):
     assert queued_centers == [7]
     assert widget._selected_id == 7
     assert widget._selected_keys == {7}
+
+
+def test_select_image_does_not_restyle_frames(monkeypatch, qapp):
+    class _SpyFrame(QFrame):
+        def __init__(self):
+            super().__init__()
+            self.style_calls = 0
+
+        def setStyleSheet(self, *args, **kwargs):
+            self.style_calls += 1
+            return super().setStyleSheet(*args, **kwargs)
+
+    widget_style_calls = []
+    original_set_style_sheet = gallery_module.ImageGalleryWidget.setStyleSheet
+
+    def _spy_widget_set_style_sheet(self, *args, **kwargs):
+        widget_style_calls.append(args[0] if args else "")
+        return original_set_style_sheet(self, *args, **kwargs)
+
+    monkeypatch.setattr(gallery_module.ImageGalleryWidget, "setStyleSheet", _spy_widget_set_style_sheet)
+
+    widget = ImageGalleryWidget("Images")
+    widget_style_calls.clear()
+
+    frames = []
+    for key in (1, 2, 3):
+        frame = _SpyFrame()
+        frame.image_key = key
+        frames.append(frame)
+
+    widget._frames = frames
+    widget._items = [{"id": 1}, {"id": 2}, {"id": 3}]
+    widget._selected_id = 1
+    widget._selected_keys = {1}
+    widget._last_clicked_index = 0
+
+    monkeypatch.setattr(widget, "_queue_center_on_key", lambda key: None)
+
+    widget.select_image(2)
+
+    assert [frame.style_calls for frame in frames] == [0, 0, 0]
+    assert widget_style_calls == []
+
+
+def test_thumbnail_selection_overlay_tracks_resized_frame(monkeypatch, qapp):
+    widget = ImageGalleryWidget("Images")
+    frame = QFrame()
+    frame.image_key = 1
+    frame._thumbnail_selected = True
+    frame._thumbnail_hovered = False
+    frame.raw_halo_color = None
+    frame.thumb_label = QLabel(frame)
+    frame.thumb_label.setFixedSize(80, 80)
+    overlay = QWidget(frame)
+    overlay.setGeometry(0, 0, 80, 80)
+    frame._thumbnail_selection_overlay = overlay
+    widget._frames = [frame]
+    widget._thumb_size = 80
+    widget._base_thumb_size = 80
+    widget._min_thumb_size = 80
+    widget._scroll.resize(160, 120)
+
+    monkeypatch.setattr(widget, "_target_thumb_size", lambda: 120)
+
+    widget._update_thumbnail_sizes()
+
+    assert frame.size().width() == 120
+    assert frame.size().height() == 120
+    assert overlay.geometry() == frame.rect()
+
+
+def test_thumbnail_selection_colors_are_theme_aware():
+    light_palette = QPalette()
+    light_palette.setColor(QPalette.Window, QColor("#ffffff"))
+    light_palette.setColor(QPalette.WindowText, QColor("#1e293b"))
+    light_palette.setColor(QPalette.Highlight, QColor("#dbeafe"))
+
+    dark_palette = QPalette()
+    dark_palette.setColor(QPalette.Window, QColor("#131313"))
+    dark_palette.setColor(QPalette.WindowText, QColor("#e8e8e8"))
+    dark_palette.setColor(QPalette.Highlight, QColor("#3d5a52"))
+
+    light = thumbnail_selection_colors(False, light_palette)
+    dark = thumbnail_selection_colors(True, dark_palette)
+
+    assert dark.outer.lightness() > light.outer.lightness()
+    assert dark.fill.alpha() > light.fill.alpha()
+    assert light.inner.name() == "#3498db"
+    assert dark.inner.name() == "#3498db"
+    assert light.badge_text.name() == "#ffffff"
+    assert dark.badge_text.name() == "#ffffff"
 
 
 def test_build_raw_source_badges_marks_raw_backed_derivatives():

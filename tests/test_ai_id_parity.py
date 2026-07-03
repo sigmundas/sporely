@@ -80,6 +80,7 @@ def _build_dialog(
     qapp,
     *,
     image_path: Path,
+    image_results: list[ImageImportResult] | None = None,
     observation: dict | None = None,
     draft_data: dict | None = None,
 ):
@@ -88,7 +89,9 @@ def _build_dialog(
         parent=None,
         observation=observation,
         draft_data=draft_data,
-        image_results=[ImageImportResult(filepath=str(image_path), image_type="field")],
+        image_results=image_results
+        if image_results is not None
+        else [ImageImportResult(filepath=str(image_path), image_type="field")],
     )
     qapp.processEvents()
     return dialog
@@ -282,6 +285,43 @@ def test_provider_specific_guess_only_starts_requested_worker(
     expected_instances = getattr(expected_worker, "instances", [])
     assert len(expected_instances) == 1
     assert expected_instances[0].started is True
+
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_guess_uses_all_field_images_when_no_thumbnail_is_selected(monkeypatch, qapp, tmp_path: Path) -> None:
+    first_path = _make_oriented_image(tmp_path / "first.jpg")
+    second_path = _make_oriented_image(tmp_path / "second.jpg")
+    third_path = _make_oriented_image(tmp_path / "third.jpg")
+    dialog = _build_dialog(
+        monkeypatch,
+        qapp,
+        image_path=first_path,
+        image_results=[
+            ImageImportResult(filepath=str(first_path), image_type="microscope"),
+            ImageImportResult(filepath=str(second_path), image_type="field"),
+            ImageImportResult(filepath=str(third_path), image_type="field"),
+        ],
+    )
+    dialog._refresh_image_gallery_summary()
+    qapp.processEvents()
+
+    dialog.image_gallery.select_paths([])
+    dialog._update_ai_controls_state()
+
+    assert dialog.ai_guess_buttons["arts"].isEnabled() is True
+
+    recording_worker = _recording_worker_class()
+    monkeypatch.setattr(observations_tab, "AIGuessWorker", recording_worker)
+
+    dialog._on_ai_guess_clicked("arts")
+
+    assert dialog.image_gallery.selected_paths() == [str(second_path), str(third_path)]
+    assert len(recording_worker.instances) == 1
+    requests = recording_worker.instances[0].args[0]
+    assert [request["index"] for request in requests] == [1, 2]
+    assert [request["image_path"] for request in requests] == [str(second_path), str(third_path)]
 
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()

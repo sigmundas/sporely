@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QThread
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from PySide6.QtWidgets import (
     QApplication,
@@ -46,6 +47,260 @@ def _tag_text_color(background: QColor) -> str:
     if background.isValid() and background.lightness() >= 180:
         return "#000000"
     return "#ffffff"
+
+
+@dataclass(frozen=True)
+class ThumbnailSelectionColors:
+    fill: QColor
+    outer: QColor
+    inner: QColor
+    corner: QColor
+    badge_fill: QColor
+    badge_border: QColor
+    badge_text: QColor
+
+
+def _mix_qcolors(base: QColor, target: QColor, ratio: float) -> QColor:
+    ratio = max(0.0, min(1.0, float(ratio)))
+    inverse = 1.0 - ratio
+    return QColor(
+        int(round(base.red() * inverse + target.red() * ratio)),
+        int(round(base.green() * inverse + target.green() * ratio)),
+        int(round(base.blue() * inverse + target.blue() * ratio)),
+        int(round(base.alpha() * inverse + target.alpha() * ratio)),
+    )
+
+
+def _palette_is_dark(palette: QPalette | None = None) -> bool:
+    palette = palette or (QApplication.instance().palette() if QApplication.instance() is not None else None)
+    if palette is None:
+        return False
+    try:
+        return palette.window().color().lightness() < 128
+    except Exception:
+        return False
+
+
+def thumbnail_selection_colors(dark_theme: bool, palette: QPalette | None = None) -> ThumbnailSelectionColors:
+    palette = palette or QPalette()
+    window_color = QColor(palette.window().color())
+    text_color = QColor(palette.windowText().color())
+    highlight_color = QColor(palette.highlight().color())
+    accent_color = QColor("#3498db")
+    corner_color = QColor("#2a7fff")
+
+    if dark_theme:
+        fill = _mix_qcolors(window_color, highlight_color, 0.55)
+        fill.setAlpha(90)
+        outer = QColor(text_color)
+        outer.setAlpha(220)
+        inner = QColor(accent_color)
+        inner.setAlpha(240)
+        corner = QColor(corner_color)
+        corner.setAlpha(220)
+        badge_fill = QColor(accent_color)
+        badge_fill.setAlpha(235)
+        badge_border = QColor(255, 255, 255, 80)
+        badge_text = QColor(255, 255, 255, 255)
+    else:
+        fill = _mix_qcolors(window_color, highlight_color, 0.9)
+        fill.setAlpha(72)
+        outer = QColor(text_color)
+        outer.setAlpha(170)
+        inner = QColor(accent_color)
+        inner.setAlpha(238)
+        corner = QColor(corner_color)
+        corner.setAlpha(230)
+        badge_fill = QColor(accent_color)
+        badge_fill.setAlpha(230)
+        badge_border = QColor(255, 255, 255, 140)
+        badge_text = QColor(255, 255, 255, 255)
+
+    return ThumbnailSelectionColors(
+        fill=fill,
+        outer=outer,
+        inner=inner,
+        corner=corner,
+        badge_fill=badge_fill,
+        badge_border=badge_border,
+        badge_text=badge_text,
+    )
+
+
+def _draw_thumbnail_corner_brackets(
+    painter: QPainter,
+    rect: QRectF,
+    color: QColor,
+    stroke_width: float,
+    corner_len: float,
+) -> None:
+    if rect.isEmpty() or corner_len <= 0.0:
+        return
+    edge = rect.adjusted(stroke_width / 2.0, stroke_width / 2.0, -stroke_width / 2.0, -stroke_width / 2.0)
+    if edge.width() <= 0.0 or edge.height() <= 0.0:
+        return
+    painter.save()
+    pen = QPen(QColor(color), max(1.0, stroke_width))
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    left = edge.left()
+    top = edge.top()
+    right = edge.right()
+    bottom = edge.bottom()
+    painter.drawLine(QPointF(left, top + corner_len), QPointF(left, top))
+    painter.drawLine(QPointF(left, top), QPointF(left + corner_len, top))
+    painter.drawLine(QPointF(right - corner_len, top), QPointF(right, top))
+    painter.drawLine(QPointF(right, top), QPointF(right, top + corner_len))
+    painter.drawLine(QPointF(left, bottom - corner_len), QPointF(left, bottom))
+    painter.drawLine(QPointF(left, bottom), QPointF(left + corner_len, bottom))
+    painter.drawLine(QPointF(right - corner_len, bottom), QPointF(right, bottom))
+    painter.drawLine(QPointF(right, bottom - corner_len), QPointF(right, bottom))
+    painter.restore()
+
+
+def _draw_thumbnail_selection_badge(
+    painter: QPainter,
+    rect: QRectF,
+    text: str,
+    colors: ThumbnailSelectionColors,
+    size_hint: float,
+) -> None:
+    badge_text = str(text or "").strip()
+    if not badge_text:
+        return
+    badge_margin = max(3.0, min(5.0, size_hint * 0.04))
+    badge_pad_x = max(4.0, min(7.0, size_hint * 0.06))
+    badge_pad_y = max(2.0, min(4.0, size_hint * 0.03))
+
+    badge_font = painter.font()
+    badge_font.setBold(True)
+    badge_font.setPixelSize(max(8, min(12, int(round(size_hint * 0.11)))))
+    painter.setFont(badge_font)
+
+    metrics = painter.fontMetrics()
+    text_width = float(metrics.horizontalAdvance(badge_text))
+    text_height = float(metrics.height())
+    badge_width = min(max(0.0, rect.width() - (badge_margin * 2.0)), text_width + (badge_pad_x * 2.0))
+    badge_height = min(max(0.0, rect.height() - (badge_margin * 2.0)), text_height + (badge_pad_y * 2.0))
+    if badge_width <= 0.0 or badge_height <= 0.0:
+        return
+
+    badge_rect = QRectF(rect.left() + badge_margin, rect.top() + badge_margin, badge_width, badge_height)
+    badge_radius = max(3.0, min(5.5, badge_height / 2.0))
+    painter.setPen(QPen(colors.badge_border, max(1.0, min(2.0, size_hint * 0.012))))
+    painter.setBrush(colors.badge_fill)
+    painter.drawRoundedRect(badge_rect, badge_radius, badge_radius)
+    painter.setPen(colors.badge_text)
+    painter.drawText(badge_rect.adjusted(0.0, -1.0, 0.0, 1.0), Qt.AlignCenter, badge_text)
+
+
+def paint_thumbnail_selection_overlay(
+    painter: QPainter,
+    rect: QRectF,
+    *,
+    selected: bool = False,
+    hovered: bool = False,
+    raw_halo_color: str | QColor | None = None,
+    palette: QPalette | None = None,
+    badge_text: str | None = None,
+) -> None:
+    if rect.isEmpty():
+        return
+    dark_theme = _palette_is_dark(palette)
+    colors = thumbnail_selection_colors(dark_theme, palette)
+    size_hint = min(float(rect.width()), float(rect.height()))
+    if size_hint <= 0.0:
+        return
+
+    selection_inset = max(0.5, min(1.8, size_hint * 0.012))
+    base_rect = QRectF(rect).adjusted(selection_inset, selection_inset, -selection_inset, -selection_inset)
+    if base_rect.width() <= 0.0 or base_rect.height() <= 0.0:
+        return
+
+    radius = max(4.0, min(8.0, size_hint * 0.055))
+    outer_width = max(1.4, min(3.0, size_hint * 0.022))
+    inner_width = max(1.1, min(2.4, size_hint * 0.016))
+
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    if selected:
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(colors.fill)
+        painter.drawRoundedRect(base_rect, radius, radius)
+
+        outer_rect = base_rect.adjusted(
+            outer_width / 2.0,
+            outer_width / 2.0,
+            -outer_width / 2.0,
+            -outer_width / 2.0,
+        )
+        if outer_rect.width() > 0.0 and outer_rect.height() > 0.0:
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(colors.outer, outer_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawRoundedRect(
+                outer_rect,
+                max(1.0, radius - outer_width * 0.45),
+                max(1.0, radius - outer_width * 0.45),
+            )
+
+        inner_gap = max(1.0, size_hint * 0.01)
+        inner_rect = base_rect.adjusted(
+            outer_width + inner_gap + inner_width / 2.0,
+            outer_width + inner_gap + inner_width / 2.0,
+            -(outer_width + inner_gap + inner_width / 2.0),
+            -(outer_width + inner_gap + inner_width / 2.0),
+        )
+        if inner_rect.width() > 0.0 and inner_rect.height() > 0.0:
+            painter.setPen(QPen(colors.inner, inner_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawRoundedRect(
+                inner_rect,
+                max(1.0, radius - outer_width - inner_gap),
+                max(1.0, radius - outer_width - inner_gap),
+            )
+            corner_len = max(5.0, min(10.0, size_hint * 0.11))
+            corner_rect = base_rect.adjusted(outer_width * 0.75, outer_width * 0.75, -outer_width * 0.75, -outer_width * 0.75)
+            _draw_thumbnail_corner_brackets(painter, corner_rect, colors.corner, max(1.0, inner_width * 0.9), corner_len)
+
+        if badge_text:
+            _draw_thumbnail_selection_badge(painter, base_rect, badge_text, colors, size_hint)
+    elif hovered:
+        hover_fill = QColor(colors.fill)
+        hover_fill.setAlpha(max(18, hover_fill.alpha() // 2))
+        hover_outer = QColor(colors.outer)
+        hover_outer.setAlpha(max(100, hover_outer.alpha() - 60))
+        painter.setBrush(hover_fill)
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(base_rect, radius, radius)
+        hover_rect = base_rect.adjusted(
+            outer_width / 2.0,
+            outer_width / 2.0,
+            -outer_width / 2.0,
+            -outer_width / 2.0,
+        )
+        if hover_rect.width() > 0.0 and hover_rect.height() > 0.0:
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(hover_outer, max(1.0, outer_width * 0.75), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawRoundedRect(hover_rect, max(1.0, radius - 0.5), max(1.0, radius - 0.5))
+    elif raw_halo_color:
+        halo_color = QColor(raw_halo_color)
+        if not halo_color.isValid():
+            halo_color = QColor(231, 76, 60, 190)
+        else:
+            halo_color.setAlpha(max(halo_color.alpha(), 190))
+        halo_rect = base_rect.adjusted(
+            outer_width / 2.0,
+            outer_width / 2.0,
+            -outer_width / 2.0,
+            -outer_width / 2.0,
+        )
+        if halo_rect.width() > 0.0 and halo_rect.height() > 0.0:
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(halo_color, max(1.0, outer_width), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawRoundedRect(halo_rect, max(1.0, radius - 0.5), max(1.0, radius - 0.5))
+
+    painter.restore()
 
 
 def _visible_fraction(viewport_rect: QRectF, item_rect: QRectF | None) -> float:
@@ -354,6 +609,7 @@ class ImageGalleryWidget(QGroupBox):
             return
         visible = self._thumbnail_selection_overlay_visible(frame)
         try:
+            overlay.setGeometry(frame.rect())
             overlay.setVisible(visible)
             if visible:
                 overlay.raise_()
@@ -1377,6 +1633,7 @@ class ImageGalleryWidget(QGroupBox):
         frame.thumb_label = thumb_label
         frame.publish_checkbox = publish_checkbox
         frame.cloud_badge = cloud_badge
+        frame._thumbnail_index_text = str(image_num) if image_num is not None else None
         selection_overlay = QWidget(frame)
         selection_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         selection_overlay.setAttribute(Qt.WA_NoSystemBackground, True)
@@ -1390,32 +1647,15 @@ class ImageGalleryWidget(QGroupBox):
             if not selected and not hovered and not raw_halo_color:
                 return
             painter = QPainter(_overlay)
-            painter.setRenderHint(QPainter.Antialiasing)
-            rect = _overlay.rect().adjusted(1, 1, -1, -1)
-            radius = 5.0
-            if selected:
-                outer = QColor(52, 152, 219, 90)
-                painter.setPen(QPen(outer, 4.0))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), radius, radius)
-                painter.setPen(QPen(QColor(52, 152, 219, 235), 2.0))
-                painter.drawRoundedRect(rect, radius, radius)
-            elif hovered:
-                palette = QApplication.instance().palette() if QApplication.instance() is not None else None
-                is_dark = bool(palette and palette.window().color().lightness() < 128)
-                hover_color = QColor(255, 255, 255, 220) if is_dark else QColor(80, 80, 80, 170)
-                painter.setPen(QPen(hover_color, 2.0))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(rect, radius, radius)
-            elif raw_halo_color:
-                halo_color = QColor(raw_halo_color)
-                if not halo_color.isValid():
-                    halo_color = QColor(231, 76, 60, 190)
-                else:
-                    halo_color.setAlpha(max(halo_color.alpha(), 190))
-                painter.setPen(QPen(halo_color, 2.5))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(rect, radius, radius)
+            paint_thumbnail_selection_overlay(
+                painter,
+                QRectF(_overlay.rect()),
+                selected=selected,
+                hovered=hovered,
+                raw_halo_color=raw_halo_color,
+                palette=_overlay.palette(),
+                badge_text=getattr(_frame, "_thumbnail_index_text", None) if selected else None,
+            )
             painter.end()
 
         selection_overlay.paintEvent = _paint_selection_overlay
@@ -1707,6 +1947,7 @@ class ImageGalleryWidget(QGroupBox):
             pixmap = getattr(frame.thumb_label, "_orig_pixmap", None)
             if isinstance(pixmap, QPixmap) and not pixmap.isNull():
                 frame.thumb_label.setPixmap(self._scaled_thumb(pixmap, self._thumb_size))
+            self._update_thumbnail_selection_overlay(frame)
 
     def _load_pixmap(self, item: dict) -> QPixmap | None:
         def _cache_key(path: str, variant: str = "") -> str:

@@ -3777,6 +3777,7 @@ class ObservationsTab(QWidget):
         self.publish_menu.clear()
         self._publish_actions = {}
         self._publish_direct_target_key = None
+        self._publish_both_action = None
         self._disconnect_publish_click_if_needed()
         try:
             from utils.artsobs_uploaders import list_uploaders
@@ -3801,7 +3802,6 @@ class ObservationsTab(QWidget):
             action.setEnabled(False)
             self.publish_btn.setMenu(self.publish_menu)
             return
-
         if len(enabled_uploaders) == 1:
             uploader = enabled_uploaders[0]
             self._publish_direct_target_key = uploader.key
@@ -3818,6 +3818,12 @@ class ObservationsTab(QWidget):
             return
 
         self.publish_btn.setMenu(self.publish_menu)
+        if {"web", "inat"}.issubset({uploader.key for uploader in enabled_uploaders}):
+            both_action = self.publish_menu.addAction(self.tr("Both"))
+            both_action.triggered.connect(
+                lambda _checked=False: self._publish_selected_observations("both")
+            )
+            self._publish_both_action = both_action
         for uploader in enabled_uploaders:
             action = self.publish_menu.addAction(self.tr(uploader.label))
             action.triggered.connect(
@@ -3848,6 +3854,8 @@ class ObservationsTab(QWidget):
         key = str(uploader_key or "").strip().lower()
         if not key:
             return self.tr("selected service")
+        if key == "both":
+            return self.tr("Both")
         action = self._publish_actions.get(key)
         if action is not None and action.text():
             return action.text()
@@ -4250,9 +4258,12 @@ class ObservationsTab(QWidget):
     def _update_publish_controls(self) -> None:
         if not hasattr(self, "publish_btn"):
             return
+        both_action = getattr(self, "_publish_both_action", None)
         if self._delete_in_progress:
             for action in self._publish_actions.values():
                 action.setEnabled(False)
+            if both_action is not None:
+                both_action.setEnabled(False)
             self.publish_btn.setEnabled(False)
             if hasattr(self, "plate_btn"):
                 self.plate_btn.setEnabled(False)
@@ -4264,6 +4275,8 @@ class ObservationsTab(QWidget):
         if not has_selection:
             for action in self._publish_actions.values():
                 action.setEnabled(False)
+            if both_action is not None:
+                both_action.setEnabled(False)
             self.publish_btn.setEnabled(False)
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
             if hasattr(self, "plate_btn"):
@@ -4279,6 +4292,15 @@ class ObservationsTab(QWidget):
             if action is not None:
                 action.setEnabled(enabled)
             if enabled:
+                any_target_enabled = True
+
+        if both_action is not None:
+            both_enabled = has_selection and not any(
+                self._selection_has_existing_upload_for_uploader(key)
+                for key in ("web", "inat")
+            )
+            both_action.setEnabled(bool(both_enabled))
+            if both_enabled:
                 any_target_enabled = True
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
@@ -4318,13 +4340,15 @@ class ObservationsTab(QWidget):
                 ).format(target=target_label),
             )
         else:
-            enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
+            enabled_labels = self._enabled_uploader_labels(enabled_keys)
+            if both_action is not None and {"web", "inat"}.issubset(set(enabled_keys)):
+                enabled_labels = [self.tr("Both")] + enabled_labels
             self.publish_btn.setProperty(
                 "_hint_text",
                 self.tr(
                     "Choose where to publish: {targets}. Saved logins will be used automatically when available."
                 ).format(
-                    targets=enabled_labels or self.tr("available services")
+                    targets=", ".join(enabled_labels) or self.tr("available services")
                 ),
             )
 
@@ -4351,6 +4375,10 @@ class ObservationsTab(QWidget):
         dlg.exec()
 
     def _publish_selected_observations(self, uploader_key: str) -> None:
+        key = str(uploader_key or "").strip().lower()
+        if key == "both":
+            ObservationsTab._publish_selected_observations_both(self)
+            return
         self._invalidate_publish_login_status_cache()
         observation_ids = self._selected_observation_ids()
         if not observation_ids:
@@ -4447,6 +4475,33 @@ class ObservationsTab(QWidget):
         if first_error:
             summary = f"{summary} {first_error}"
         self.set_status_message(summary, level=level, auto_clear_ms=15000)
+
+    def _publish_selected_observations_both(self) -> None:
+        observation_ids = self._selected_observation_ids()
+        if not observation_ids:
+            self.set_status_message(
+                self.tr("Select one or more observations to publish."),
+                level="warning",
+            )
+            return
+
+        login_status = self._publish_target_login_status(force_refresh=True)
+        saved_login_status = self._publish_target_saved_login_status(force_refresh=True)
+        for key in ("web", "inat"):
+            if not login_status.get(key, False) and not saved_login_status.get(key, False):
+                opened = self._open_online_publishing_settings()
+                if not opened:
+                    self.set_status_message(
+                        self.tr("Open Online publishing and log in before publishing."),
+                        level="warning",
+                        auto_clear_ms=12000,
+                    )
+                self._invalidate_publish_login_status_cache()
+                self._update_publish_controls()
+                return
+
+        ObservationsTab._publish_selected_observations(self, "web")
+        ObservationsTab._publish_selected_observations(self, "inat")
 
     def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
@@ -6165,6 +6220,7 @@ class ObservationsTab(QWidget):
         images = ImageDB.get_images_for_observation(observation_id)
         excluded_ids = self._publish_excluded_image_ids(observation_id)
         ordered = []
+        seen_paths: set[str] = set()
         for image in images:
             image_id = image.get("id")
             if image_id is not None:
@@ -6176,12 +6232,45 @@ class ObservationsTab(QWidget):
             image_type = (image.get("image_type") or "").strip().lower()
             if image_type not in {"field", "microscope"}:
                 continue
-            filepath = image.get("filepath") or image.get("original_filepath")
-            if not filepath or not Path(filepath).exists():
+            # Prefer the smallest local copy so both publish targets can reuse the
+            # same compact source image when an original and a working derivative
+            # are both present.
+            filepath = ObservationsTab._smallest_existing_publish_path(
+                ObservationsTab._publish_image_path_candidates(image)
+            )
+            if not filepath or filepath in seen_paths:
                 continue
-            if filepath not in ordered:
-                ordered.append(filepath)
+            seen_paths.add(filepath)
+            ordered.append(filepath)
         return ordered
+
+    @staticmethod
+    def _publish_image_path_candidates(image: dict) -> list[str]:
+        candidates: list[str] = []
+        for key in ("filepath", "original_filepath"):
+            path = str((image or {}).get(key) or "").strip()
+            if path and Path(path).exists():
+                candidates.append(path)
+        return candidates
+
+    @staticmethod
+    def _smallest_existing_publish_path(paths: list[str]) -> str | None:
+        smallest_path: str | None = None
+        smallest_size: int | None = None
+        for path in paths or []:
+            try:
+                size = int(Path(path).stat().st_size)
+            except Exception:
+                continue
+            if smallest_size is None or size < smallest_size:
+                smallest_size = size
+                smallest_path = path
+        if smallest_path is not None:
+            return smallest_path
+        for path in paths or []:
+            if Path(path).exists():
+                return path
+        return None
 
     def _collect_publish_selected_image_rows(self, observation_id: int) -> list[dict]:
         images = ImageDB.get_images_for_observation(observation_id)
@@ -6788,7 +6877,7 @@ class ObservationsTab(QWidget):
         scale_default = False
         if scale_toggle is not None and hasattr(scale_toggle, "isChecked"):
             scale_default = bool(scale_toggle.isChecked())
-        show_scale_bar = show_overlays and self._publish_option_enabled(
+        show_scale_bar = self._publish_option_enabled(
             self.SETTING_SHOW_SCALE_BAR,
             default=scale_default,
         )
@@ -7117,7 +7206,7 @@ class ObservationsTab(QWidget):
                     if scale_bar_um and scale_bar_um > 0:
                         widget.set_microns_per_pixel(mpp_value)
                         widget.set_scale_bar(True, float(scale_bar_um), unit=unit)
-                    has_scale_bar = True
+                        has_scale_bar = True
 
             if not show_overlays and not has_scale_bar:
                 continue
@@ -7742,12 +7831,15 @@ class ObservationsTab(QWidget):
     ) -> tuple[list[str], Path | None, list[str]]:
         upload_paths = list(base_image_paths)
         warnings: list[str] = []
+        publish_preferences = self._publish_render_preferences()
+        show_scale_bar = bool(publish_preferences.get("show_scale_bar"))
         if not (
             include_annotations
             or include_measure_plots
             or include_thumbnail_gallery
             or include_plate
             or include_copyright
+            or show_scale_bar
         ):
             return upload_paths, None, warnings
 
@@ -7760,10 +7852,14 @@ class ObservationsTab(QWidget):
                 self.tr("Watermark was skipped because profile name is missing.")
             )
 
-        if include_annotations:
+        if include_annotations or show_scale_bar:
             try:
                 if progress_cb:
-                    progress_cb(self.tr("Preparing annotated images..."), 1, 3)
+                    progress_cb(
+                        self.tr("Preparing annotated images..." if include_annotations else "Preparing scale bar images..."),
+                        1,
+                        3,
+                    )
                 annotated_paths = self._generate_publish_annotated_images(
                     observation_id=observation_id,
                     base_image_paths=base_image_paths,
@@ -11900,11 +11996,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _update_ai_button_hints(self) -> None:
         for _source, guess_btn in getattr(self, "ai_guess_buttons", {}).items():
-            guess_hint = (
-                self.tr("Guess species using AI - select one or more thumbnails (shift/ctrl + click)")
-                if guess_btn.isEnabled()
-                else self.tr("Select a field image to use AI recognition")
-            )
+            selected_indices = self._selected_gallery_indices()
+            if guess_btn.isEnabled():
+                if selected_indices:
+                    guess_hint = self.tr("Guess species using AI - select one or more thumbnails (shift/ctrl + click)")
+                elif self._field_gallery_indices():
+                    guess_hint = self.tr("Guess species using AI - all field images are used when nothing is selected")
+                else:
+                    guess_hint = self.tr("Select a field image to use AI recognition")
+            else:
+                guess_hint = self.tr("Select a field image to use AI recognition")
             self._set_widget_hint(
                 guess_btn,
                 guess_hint,
@@ -11931,11 +12032,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
 
     def _ai_selection_has_non_field_image(self) -> bool:
-        indices = self._selected_gallery_indices()
-        if not indices:
-            current = self._current_ai_index()
-            if current is not None:
-                indices = [current]
+        indices = self._ai_guess_indices()
         indices = [idx for idx in indices if 0 <= idx < len(self.image_results)]
         if not indices:
             return False
@@ -12165,6 +12262,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     break
         return sorted(set(indices))
 
+    def _field_gallery_indices(self) -> list[int]:
+        indices: list[int] = []
+        for idx, item in enumerate(self.image_results):
+            if (item.image_type or "field").strip().lower() == "field":
+                indices.append(idx)
+        return indices
+
+    def _ai_guess_indices(self) -> list[int]:
+        indices = self._selected_gallery_indices()
+        if indices:
+            return indices
+        return self._field_gallery_indices()
+
     def _on_gallery_image_clicked(self, _image_id, path: str) -> None:
         if not path:
             return
@@ -12191,11 +12301,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _update_ai_controls_state(self) -> None:
         if not hasattr(self, "ai_guess_buttons"):
             return
-        indices = self._selected_gallery_indices()
-        if not indices:
-            index = self._current_ai_index()
-            if index is not None:
-                indices = [index]
+        indices = self._ai_guess_indices()
         enable = False
         if indices:
             indices = [idx for idx in indices if 0 <= idx < len(self.image_results)]
@@ -12786,10 +12892,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             run_inat = source_key in {"inat", "all"}
             indices = self._selected_gallery_indices()
             if not indices:
-                index = self._current_ai_index()
-                if index is None or index < 0 or index >= len(self.image_results):
-                    return
-                indices = [index]
+                indices = self._field_gallery_indices()
+                if indices and hasattr(self, "image_gallery"):
+                    field_paths = [
+                        self.image_results[idx].filepath
+                        for idx in indices
+                        if 0 <= idx < len(self.image_results) and self.image_results[idx].filepath
+                    ]
+                    if field_paths:
+                        self.image_gallery.select_paths(field_paths)
+                        self._update_ai_controls_state()
             indices = [idx for idx in indices if 0 <= idx < len(self.image_results)]
             if not indices:
                 return
