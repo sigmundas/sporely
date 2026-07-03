@@ -24,6 +24,7 @@ from utils.image_import_candidates import (
     IMAGE_IMPORT_STATUS_SKIPPED,
     ImageImportCandidate,
 )
+import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.raw_render import RawRenderSettings
 
@@ -202,6 +203,39 @@ def test_image_import_result_from_candidate_preserves_prepared_metadata_and_fail
     assert result.raw_settings["white_balance_mode"] == "auto"
     assert result.raw_settings["auto_levels"] is False
     assert result.raw_settings["tone_curve_enabled"] is True
+
+
+def test_image_import_result_from_candidate_seeds_default_ai_crop(tmp_path):
+    source_path = tmp_path / "sample.jpg"
+    source_path.write_bytes(b"jpeg-bytes")
+    candidate = ImageImportCandidate(
+        source_path=source_path,
+        selected_path=source_path,
+        working_path=source_path,
+        preview_path=source_path,
+        source_kind="raster",
+        status=IMAGE_IMPORT_STATUS_READY,
+        companion_paths=(source_path,),
+        has_raw_companion=False,
+        selected_source_policy="prefer_raw",
+        working_width=1000,
+        working_height=500,
+    )
+
+    result = image_import_result_from_candidate(
+        candidate,
+        image_type="field",
+        contrast=None,
+        mount_medium=None,
+        stain=None,
+        sample_type=None,
+        resize_to_optimal=False,
+        store_original=False,
+    )
+
+    assert result.ai_crop_box == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
+    assert result.ai_crop_source_size == (1000, 500)
+    assert result.crop_mode == "ai"
 
 
 def test_set_preview_for_result_uses_preview_path_as_full_source_when_preview_is_scaled(qapp):

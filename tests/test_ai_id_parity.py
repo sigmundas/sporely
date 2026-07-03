@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -176,10 +178,23 @@ def test_prepare_ai_request_image_transposes_crops_and_resizes(tmp_path: Path) -
     assert prepared_again.sha256 == prepared.sha256
 
 
+def test_default_ai_crop_rect_matches_sporely_web() -> None:
+    rect = ai_image_prep.get_default_ai_crop_rect(1000, 500)
+
+    assert rect == pytest.approx((0.31, 0.12, 0.69, 0.88))
+
+
 def test_ai_workers_delegate_to_shared_preparation_helper(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[str, tuple[float, float, float, float] | None, Path, str, int, int]] = []
 
-    def fake_prepare(image_path, crop_box, temp_dir, prefix, max_dim=1600, jpeg_quality=90):
+    def fake_prepare(
+        image_path,
+        crop_box,
+        temp_dir,
+        prefix,
+        max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+        jpeg_quality=90,
+    ):
         calls.append((str(image_path), crop_box, Path(temp_dir), prefix, max_dim, jpeg_quality))
         return SimpleNamespace(
             path=Path(temp_dir) / f"{prefix}.jpg",
@@ -193,7 +208,10 @@ def test_ai_workers_delegate_to_shared_preparation_helper(monkeypatch, tmp_path:
 
     monkeypatch.setattr(ai_image_prep, "prepare_ai_request_image", fake_prepare)
 
-    import_worker = SimpleNamespace(temp_dir=tmp_path / "import", max_dim=1600)
+    import_worker = SimpleNamespace(
+        temp_dir=tmp_path / "import",
+        max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+    )
     inat_worker = SimpleNamespace(temp_dir=tmp_path / "inat", max_dim=777)
 
     import_result = image_import_dialog.AIGuessWorker._prepare_image(
@@ -210,9 +228,117 @@ def test_ai_workers_delegate_to_shared_preparation_helper(monkeypatch, tmp_path:
     assert import_result.path == tmp_path / "import" / "ai_guess.jpg"
     assert inat_result.path == tmp_path / "inat" / "inat_ai_guess.jpg"
     assert calls == [
-        ("source-a.jpg", (0.1, 0.2, 0.3, 0.4), tmp_path / "import", "ai_guess", 1600, 90),
+        (
+            "source-a.jpg",
+            (0.1, 0.2, 0.3, 0.4),
+            tmp_path / "import",
+            "ai_guess",
+            ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+            90,
+        ),
         ("source-b.jpg", None, tmp_path / "inat", "inat_ai_guess", 777, 90),
     ]
+
+
+def test_artsorakel_worker_batches_selected_images_and_flattens_combined_response(
+    monkeypatch,
+    qapp,
+    tmp_path: Path,
+) -> None:
+    reference_path = Path(__file__).resolve().parents[1] / "database" / "reference_data" / "sources" / "artsorakel_3images.txt"
+    reference_text = reference_path.read_text()
+    reference_payload = json.loads(reference_text[reference_text.index("{"):])
+
+    source_paths = [tmp_path / f"source-{idx}.jpg" for idx in range(3)]
+    for path in source_paths:
+        path.write_bytes(b"source")
+
+    temp_dir = tmp_path / "ai"
+    prepared_paths: list[Path] = []
+
+    def fake_prepare(self, image_path, crop_box):
+        prepared_path = temp_dir / f"prepared-{len(prepared_paths)}.jpg"
+        prepared_path.parent.mkdir(parents=True, exist_ok=True)
+        prepared_path.write_bytes(f"prepared:{image_path}".encode("utf-8"))
+        prepared_paths.append(prepared_path)
+        return SimpleNamespace(
+            path=prepared_path,
+            original_size=(10, 10),
+            crop_box=crop_box,
+            crop_pixels=None,
+            final_size=(10, 10),
+            sha256="a" * 64,
+            byte_size=prepared_path.stat().st_size,
+        )
+
+    monkeypatch.setattr(image_import_dialog.AIGuessWorker, "_prepare_image", fake_prepare, raising=False)
+    monkeypatch.setattr(ai_image_prep, "debug_log_prepared_ai_request_image", lambda *args, **kwargs: None)
+
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __init__(self, payload: dict) -> None:
+            self.status_code = 200
+            self._payload = payload
+            self.text = ""
+            self.closed = False
+
+        def json(self):
+            return self._payload
+
+        def close(self) -> None:
+            self.closed = True
+
+    def fake_post(url, *, files, headers, data, timeout):
+        captured["url"] = url
+        captured["files"] = files
+        captured["headers"] = headers
+        captured["data"] = data
+        captured["timeout"] = timeout
+        return FakeResponse(reference_payload)
+
+    monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(post=fake_post))
+
+    worker = image_import_dialog.AIGuessWorker(
+        [
+            {"index": idx, "image_path": str(path), "crop_box": None}
+            for idx, path in enumerate(source_paths)
+        ],
+        temp_dir,
+        max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+    )
+
+    emitted: list[tuple[list, list, object, object, list]] = []
+    worker.resultReady.connect(lambda *args: emitted.append(args))
+
+    worker.run()
+
+    assert captured["url"] == "https://ai.artsdatabanken.no"
+    assert captured["data"] == {"application": "Sporely"}
+    assert captured["headers"] == {"User-Agent": "Sporely/AI"}
+    assert isinstance(captured["files"], list)
+    assert len(captured["files"]) == 3
+    assert [field_name for field_name, _part in captured["files"]] == ["image", "image", "image"]
+    assert [part[0] for _field_name, part in captured["files"]] == [path.name for path in prepared_paths]
+
+    assert len(emitted) == 1
+    indices, predictions, _box, warnings, temp_paths = emitted[0]
+    assert indices == [0, 1, 2]
+    assert [pred["scientificName"] for pred in predictions[:3]] == [
+        "Entoloma",
+        "Entoloma asprellum",
+        "Entoloma sericeum",
+    ]
+    assert [pred["scientific_name_id"] for pred in predictions[:3]] == [
+        "NBIC:53377",
+        "NBIC:53442",
+        "NBIC:53669",
+    ]
+    assert warnings is not None
+    assert isinstance(warnings, dict)
+    assert isinstance(temp_paths, list)
+    assert temp_paths == [str(path) for path in prepared_paths]
+    assert all(not path.exists() for path in prepared_paths)
 
 
 def test_image_import_dialog_normalizes_ai_prediction_taxon_from_raw_payload() -> None:
@@ -285,6 +411,12 @@ def test_provider_specific_guess_only_starts_requested_worker(
     expected_instances = getattr(expected_worker, "instances", [])
     assert len(expected_instances) == 1
     assert expected_instances[0].started is True
+    expected_max_dim = (
+        ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM
+        if source == "arts"
+        else 1600
+    )
+    assert expected_instances[0].kwargs.get("max_dim") == expected_max_dim
 
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
@@ -319,6 +451,7 @@ def test_guess_uses_all_field_images_when_no_thumbnail_is_selected(monkeypatch, 
 
     assert dialog.image_gallery.selected_paths() == [str(second_path), str(third_path)]
     assert len(recording_worker.instances) == 1
+    assert recording_worker.instances[0].kwargs.get("max_dim") == ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM
     requests = recording_worker.instances[0].args[0]
     assert [request["index"] for request in requests] == [1, 2]
     assert [request["image_path"] for request in requests] == [str(second_path), str(third_path)]
