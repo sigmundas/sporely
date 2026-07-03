@@ -1087,28 +1087,43 @@ class ZoomableImageLabel(QLabel):
             return
         exponent = abs(delta) / 120.0
         zoom_factor = (1.1 if delta > 0 else (1.0 / 1.1)) ** exponent
+        self._apply_zoom_around(event.position(), zoom_factor)
 
+    def _apply_zoom_around(self, cursor_pos: QPointF, zoom_factor: float) -> None:
+        """Zoom by `zoom_factor` keeping the point under `cursor_pos` fixed."""
+        if zoom_factor == 1.0 or zoom_factor <= 0:
+            return
         old_zoom = self.zoom_level
         self.zoom_level = max(self.min_zoom, min(self.max_zoom, self.zoom_level * zoom_factor))
 
         if old_zoom != self.zoom_level:
-            # Get mouse position relative to widget center
-            cursor_pos = event.position()
             widget_center = QPointF(self.width() / 2, self.height() / 2)
-
-            # Calculate cursor position relative to center + current pan offset
             relative_pos = cursor_pos - widget_center - self.pan_offset
-
-            # Scale the relative position by the zoom change
             zoom_ratio = self.zoom_level / old_zoom
             new_relative_pos = relative_pos * zoom_ratio
-
-            # Update pan offset to keep point under cursor fixed
             self.pan_offset = cursor_pos - widget_center - new_relative_pos
 
         if self.zoom_level > 1.0 and self._preview_is_scaled and not self._full_loaded:
             self._load_full_resolution()
         self.update()
+
+    def nativeGestureEvent(self, event):
+        """Handle trackpad pinch gestures (macOS) for zooming."""
+        if not self.original_pixmap:
+            super().nativeGestureEvent(event)
+            return
+        gesture_type = event.gestureType()
+        if gesture_type == Qt.ZoomNativeGesture:
+            self._auto_fit_pending = False
+            # `value()` is a delta in the range roughly [-1, 1]; treat it as a
+            # small proportional zoom step. Positive → zoom in.
+            factor = 1.0 + float(event.value())
+            if factor <= 0:
+                factor = 1e-3
+            self._apply_zoom_around(QPointF(event.position()), factor)
+            event.accept()
+            return
+        super().nativeGestureEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

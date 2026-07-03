@@ -5,6 +5,8 @@ from typing import Optional, Tuple, Dict, Any
 from PIL import Image
 from PIL import ExifTags
 
+from .raw_detection import is_raw_image_path
+
 
 def _gps_info_to_dict(value: Any) -> Dict[Any, Any] | None:
     """Return a GPS IFD mapping, ignoring raw EXIF pointer values."""
@@ -30,6 +32,13 @@ def get_exif_data(image_path: str) -> Dict[str, Any]:
         if not image_path or not Path(image_path).exists():
             return {}
         suffix = Path(image_path).suffix.lower()
+
+        # PIL cannot open camera RAW formats (.ORF, .CR2, .NEF, .ARW, etc.).
+        # Return an empty dict rather than logging a spurious "cannot identify
+        # image file" error — callers that need RAW metadata should extract
+        # it via rawpy elsewhere.
+        if is_raw_image_path(image_path):
+            return {}
 
         # Handle HEIC/HEIF files with pillow_heif
         if suffix in ('.heic', '.heif'):

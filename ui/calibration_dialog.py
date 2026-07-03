@@ -6362,6 +6362,21 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if idx >= 0:
             self.objective_combo.setCurrentIndex(idx)
 
+    def clear_objective_selection(self) -> None:
+        """Leave no objective pre-selected — user must choose or add one."""
+        combo = getattr(self, "objective_combo", None)
+        if combo is None:
+            return
+        placeholder_label = self.tr("— Select objective —")
+        with QSignalBlocker(combo):
+            if combo.count() == 0 or combo.itemData(0) is not None:
+                combo.insertItem(0, placeholder_label, None)
+            combo.setCurrentIndex(0)
+        self.current_objective_key = None
+        active_label = getattr(self, "active_cal_label", None)
+        if active_label is not None:
+            active_label.setText("")
+
     def select_calibration(self, calibration_id: int) -> None:
         """Select a calibration row in the history table and load it."""
         if not calibration_id or not hasattr(self, "history_table"):

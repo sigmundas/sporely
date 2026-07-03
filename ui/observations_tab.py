@@ -1609,15 +1609,23 @@ class _ObservationImageBrowser(QWidget):
     """Zoomable/pannable image browser with prev/next navigation."""
 
     imageDoubleClicked = Signal()
+    # (image_id, is_checked) — emitted when the user toggles the "upload/publish
+    # this image" checkbox overlay. image_id is 0 when the current entry is not
+    # backed by a database row.
+    publishToggled = Signal(int, bool)
+    # Emitted whenever the displayed image changes (prev/next, thumbnail click,
+    # observation swap) so the host can refresh the publish checkbox state.
+    currentImageChanged = Signal()
 
     _PIXMAP_CACHE_MAX = 8
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._image_paths: list[str] = []
+        self._items: list[dict] = []  # each: {"id": int|None, "path": str}
         self._current_index: int = -1
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_order: list[str] = []
+        self._suppress_publish_signal = False
 
         layout = QGridLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -1667,23 +1675,57 @@ class _ObservationImageBrowser(QWidget):
         self.counter_label.setAlignment(Qt.AlignCenter)
         self.counter_label.setText("")
 
+        # "Upload to cloud / publish this image" toggle — sits in the bottom
+        # right corner of the image area and mirrors the gallery thumbnail's
+        # publish checkbox for the currently displayed image.
+        self.publish_checkbox = QCheckBox(
+            self.tr("Upload to cloud / publish this image"), self
+        )
+        self.publish_checkbox.setEnabled(False)
+        self.publish_checkbox.toggled.connect(self._on_publish_toggle)
+
         layout.addWidget(self.prev_btn, 0, 0)
         layout.addWidget(self.image_label, 0, 1)
         layout.addWidget(self.next_btn, 0, 2)
-        layout.addWidget(self.counter_label, 1, 0, 1, 3)
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.setSpacing(6)
+        bottom_row.addWidget(self.counter_label, 1)
+        bottom_row.addWidget(self.publish_checkbox, 0, Qt.AlignRight)
+        layout.addLayout(bottom_row, 1, 0, 1, 3)
         layout.setColumnStretch(1, 1)
         layout.setRowStretch(0, 1)
 
         self._update_nav_state()
 
-    def set_images(self, paths: list[str]) -> None:
+    def _sanitize_items(self, raw_items) -> list[dict]:
+        cleaned: list[dict] = []
+        for entry in raw_items or []:
+            if isinstance(entry, str):
+                path = entry.strip()
+                image_id: int | None = None
+            elif isinstance(entry, dict):
+                path = str(entry.get("path") or "").strip()
+                raw_id = entry.get("id")
+                try:
+                    image_id = int(raw_id) if raw_id is not None else None
+                except (TypeError, ValueError):
+                    image_id = None
+            else:
+                continue
+            if not path:
+                continue
+            cleaned.append({"id": image_id, "path": path})
+        return cleaned
+
+    def set_items(self, items) -> None:
         current_path = None
-        if 0 <= self._current_index < len(self._image_paths):
-            current_path = self._image_paths[self._current_index]
-        cleaned = [str(p) for p in paths if p]
-        self._image_paths = cleaned
+        if 0 <= self._current_index < len(self._items):
+            current_path = self._items[self._current_index]["path"]
+        cleaned = self._sanitize_items(items)
+        self._items = cleaned
         # Drop cache entries for paths no longer in the current observation.
-        allowed = set(cleaned)
+        allowed = {item["path"] for item in cleaned}
         self._pixmap_cache_order = [p for p in self._pixmap_cache_order if p in allowed]
         for cached_path in list(self._pixmap_cache.keys()):
             if cached_path not in allowed:
@@ -1692,15 +1734,16 @@ class _ObservationImageBrowser(QWidget):
             self._current_index = -1
             self._clear_image_display(self.tr("No image available"))
         else:
-            if current_path and current_path in cleaned:
-                self._current_index = cleaned.index(current_path)
-            else:
-                self._current_index = 0
+            match_index = next(
+                (i for i, item in enumerate(cleaned) if item["path"] == current_path),
+                0,
+            )
+            self._current_index = match_index
             self._display_current()
         self._update_nav_state()
 
     def clear(self) -> None:
-        self._image_paths = []
+        self._items = []
         self._current_index = -1
         self._pixmap_cache.clear()
         self._pixmap_cache_order.clear()
@@ -1708,16 +1751,16 @@ class _ObservationImageBrowser(QWidget):
         self._update_nav_state()
 
     def show_previous(self) -> None:
-        if not self._image_paths:
+        if not self._items:
             return
-        self._current_index = (self._current_index - 1) % len(self._image_paths)
+        self._current_index = (self._current_index - 1) % len(self._items)
         self._display_current()
         self._update_nav_state()
 
     def show_next(self) -> None:
-        if not self._image_paths:
+        if not self._items:
             return
-        self._current_index = (self._current_index + 1) % len(self._image_paths)
+        self._current_index = (self._current_index + 1) % len(self._items)
         self._display_current()
         self._update_nav_state()
 
@@ -1725,8 +1768,8 @@ class _ObservationImageBrowser(QWidget):
         if not path:
             return False
         target = str(path)
-        for i, existing in enumerate(self._image_paths):
-            if existing == target:
+        for i, item in enumerate(self._items):
+            if item["path"] == target:
                 if i != self._current_index:
                     self._current_index = i
                     self._display_current()
@@ -1734,16 +1777,41 @@ class _ObservationImageBrowser(QWidget):
                 return True
         return False
 
+    def current_image_id(self) -> int | None:
+        if 0 <= self._current_index < len(self._items):
+            return self._items[self._current_index].get("id")
+        return None
+
+    def current_image_path(self) -> str | None:
+        if 0 <= self._current_index < len(self._items):
+            return self._items[self._current_index].get("path")
+        return None
+
+    def set_publish_state(self, checked: bool, enabled: bool = True) -> None:
+        self._suppress_publish_signal = True
+        try:
+            self.publish_checkbox.setChecked(bool(checked))
+        finally:
+            self._suppress_publish_signal = False
+        self.publish_checkbox.setEnabled(bool(enabled))
+
+    def _on_publish_toggle(self, checked: bool) -> None:
+        if self._suppress_publish_signal:
+            return
+        image_id = self.current_image_id() or 0
+        self.publishToggled.emit(int(image_id), bool(checked))
+
     def _clear_image_display(self, placeholder: str) -> None:
         self.image_label.set_image_sources(None)
         self.image_label.setText(placeholder)
         self.counter_label.setText("")
+        self.set_publish_state(False, enabled=False)
 
     def _display_current(self) -> None:
-        if not (0 <= self._current_index < len(self._image_paths)):
+        if not (0 <= self._current_index < len(self._items)):
             self._clear_image_display(self.tr("No image available"))
             return
-        path = self._image_paths[self._current_index]
+        path = self._items[self._current_index]["path"]
         pixmap = self._pixmap_cache.get(path)
         if pixmap is None:
             try:
@@ -1761,14 +1829,15 @@ class _ObservationImageBrowser(QWidget):
             return
         self.image_label.set_image_sources(pixmap, full_path=path)
         self.image_label.reset_view()
+        self.currentImageChanged.emit()
 
     def _update_nav_state(self) -> None:
-        has_multiple = len(self._image_paths) > 1
+        has_multiple = len(self._items) > 1
         self.prev_btn.setEnabled(has_multiple)
         self.next_btn.setEnabled(has_multiple)
-        if self._image_paths and 0 <= self._current_index < len(self._image_paths):
+        if self._items and 0 <= self._current_index < len(self._items):
             self.counter_label.setText(
-                f"{self._current_index + 1} / {len(self._image_paths)}"
+                f"{self._current_index + 1} / {len(self._items)}"
             )
         else:
             self.counter_label.setText("")
@@ -2131,6 +2200,8 @@ class ObservationsTab(QWidget):
         self.view_splitter.addWidget(self.table)
         self.image_browser = _ObservationImageBrowser(self)
         self.image_browser.imageDoubleClicked.connect(self._on_image_browser_double_clicked)
+        self.image_browser.publishToggled.connect(self._on_image_browser_publish_toggled)
+        self.image_browser.currentImageChanged.connect(self._sync_image_browser_publish_state)
         self.view_splitter.addWidget(self.image_browser)
         self.view_splitter.setStretchFactor(0, 1)
         self.view_splitter.setStretchFactor(1, 3)
@@ -6097,14 +6168,20 @@ class ObservationsTab(QWidget):
             images = ImageDB.get_images_for_observation(int(obs_id))
         except Exception:
             images = []
-        paths: list[str] = []
+        items: list[dict] = []
         for img in images:
+            path: str | None = None
             for key in ("filepath", "original_filepath"):
-                path = str((img or {}).get(key) or "").strip()
-                if path and Path(path).exists():
-                    paths.append(path)
+                candidate = str((img or {}).get(key) or "").strip()
+                if candidate and Path(candidate).exists():
+                    path = candidate
                     break
-        browser.set_images(paths)
+            if not path:
+                continue
+            image_id = img.get("id") if isinstance(img, dict) else None
+            items.append({"id": image_id, "path": path})
+        browser.set_items(items)
+        self._sync_image_browser_publish_state()
 
     def _on_image_prev_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
@@ -6127,6 +6204,42 @@ class ObservationsTab(QWidget):
     def _on_image_browser_double_clicked(self) -> None:
         if self.selected_observation_id:
             self.edit_observation()
+
+    def _sync_image_browser_publish_state(self) -> None:
+        browser = getattr(self, "image_browser", None)
+        if browser is None:
+            return
+        image_id = browser.current_image_id()
+        obs_id = self.selected_observation_id
+        if not image_id or not obs_id:
+            browser.set_publish_state(False, enabled=bool(image_id))
+            return
+        excluded = self._publish_excluded_image_ids(int(obs_id))
+        try:
+            checked = int(image_id) not in excluded
+        except (TypeError, ValueError):
+            checked = False
+        browser.set_publish_state(checked, enabled=True)
+
+    def _on_image_browser_publish_toggled(self, image_id: int, checked: bool) -> None:
+        obs_id = self.selected_observation_id
+        if not obs_id or not image_id:
+            return
+        gallery = getattr(self, "gallery_widget", None)
+        if gallery is None:
+            return
+        try:
+            current_ids = {int(v) for v in (gallery.publish_selected_ids() or set())}
+        except Exception:
+            current_ids = set()
+        target_id = int(image_id)
+        if checked:
+            current_ids.add(target_id)
+        else:
+            current_ids.discard(target_id)
+        # Route the change through the gallery so all existing publish
+        # persistence, tombstone bookkeeping, and cloud-dirty flags run.
+        gallery.set_publish_selected_ids(current_ids, emit_signal=True)
 
     def _on_view_splitter_moved(self, _pos: int, _index: int) -> None:
         # Only remember the ratio when the image pane is actually visible;
@@ -6419,6 +6532,8 @@ class ObservationsTab(QWidget):
         if not observation_id or not hasattr(self, "gallery_widget"):
             return
         images = ImageDB.get_images_for_observation(int(observation_id))
+        # Microscope images are unchecked by default; the user opts in per image.
+        self._ensure_microscope_publish_defaults(observation_id, images)
         all_ids = {
             int(img.get("id"))
             for img in images
@@ -6429,6 +6544,8 @@ class ObservationsTab(QWidget):
         selected_ids = all_ids - excluded
         self.gallery_widget.set_publish_selected_ids(selected_ids, emit_signal=False)
         self._register_gallery_publish_hint_widgets()
+        if hasattr(self, "_sync_image_browser_publish_state"):
+            self._sync_image_browser_publish_state()
 
     def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.selected_observation_id:
@@ -6482,6 +6599,20 @@ class ObservationsTab(QWidget):
                 except Exception:
                     pass
         self._set_publish_excluded_image_ids(obs_id, excluded)
+        # Once the user has interacted with a microscope image's publish state,
+        # record it as "seeded" so the default (unchecked) is not re-applied
+        # on subsequent gallery loads.
+        touched_ids = unchecked_ids | rechecked_ids
+        touched_microscope_ids = {
+            img_id for img_id in touched_ids
+            if (image_by_id.get(img_id) or {}).get("image_type", "").strip().lower() == "microscope"
+        }
+        if touched_microscope_ids:
+            seeded = self._publish_seeded_microscope_ids(obs_id)
+            seeded.update(touched_microscope_ids)
+            self._set_publish_seeded_microscope_ids(obs_id, seeded)
+        if hasattr(self, "_sync_image_browser_publish_state"):
+            self._sync_image_browser_publish_state()
         try:
             from utils.cloud_sync import mark_observation_dirty
 
@@ -7150,6 +7281,77 @@ class ObservationsTab(QWidget):
             )
         except Exception:
             pass
+
+    @staticmethod
+    def _publish_seeded_microscope_ids_key(observation_id: int | None) -> str:
+        return f"artsobs_publish_micro_seeded_ids_{int(observation_id or 0)}"
+
+    @classmethod
+    def _publish_seeded_microscope_ids(cls, observation_id: int | None) -> set[int]:
+        if not observation_id:
+            return set()
+        key = cls._publish_seeded_microscope_ids_key(observation_id)
+        raw = SettingsDB.get_setting(key, "[]")
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                return {int(v) for v in loaded}
+        except Exception:
+            pass
+        return set()
+
+    @classmethod
+    def _set_publish_seeded_microscope_ids(cls, observation_id: int | None, seeded_ids: set[int]) -> None:
+        if not observation_id:
+            return
+        normalized = sorted({int(v) for v in (seeded_ids or set())})
+        key = cls._publish_seeded_microscope_ids_key(observation_id)
+        try:
+            SettingsDB.set_setting(key, json.dumps(normalized))
+        except Exception:
+            pass
+
+    @classmethod
+    def _ensure_microscope_publish_defaults(
+        cls,
+        observation_id: int | None,
+        images: list[dict],
+    ) -> None:
+        """Auto-exclude microscope images we haven't seen before.
+
+        Microscope images default to unchecked for publish/upload; the user
+        must explicitly opt in. A per-observation "seeded" set records which
+        microscope IDs the default has already been applied to, so a user's
+        explicit inclusion is not overwritten on the next gallery load.
+        """
+        if not observation_id or not images:
+            return
+        seeded = cls._publish_seeded_microscope_ids(observation_id)
+        excluded = cls._publish_excluded_image_ids(observation_id)
+        seeded_changed = False
+        excluded_changed = False
+        for img in images:
+            image_id = img.get("id") if isinstance(img, dict) else None
+            if image_id is None:
+                continue
+            try:
+                img_id = int(image_id)
+            except (TypeError, ValueError):
+                continue
+            image_type = (img.get("image_type") or "").strip().lower() if isinstance(img, dict) else ""
+            if image_type != "microscope":
+                continue
+            if img_id in seeded:
+                continue
+            seeded.add(img_id)
+            seeded_changed = True
+            if img_id not in excluded:
+                excluded.add(img_id)
+                excluded_changed = True
+        if excluded_changed:
+            cls._set_publish_excluded_image_ids(observation_id, excluded)
+        if seeded_changed:
+            cls._set_publish_seeded_microscope_ids(observation_id, seeded)
 
     @staticmethod
     def _publish_option_enabled(key: str, default: bool = False) -> bool:
@@ -15104,6 +15306,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if preview_path:
                 return preview_path
         return item.filepath or ""
+
+    @staticmethod
+    def _get_image_size(path: str | None) -> tuple[int, int] | None:
+        if not path:
+            return None
+        try:
+            with Image.open(path) as img:
+                return img.width, img.height
+        except Exception:
+            return None
 
     def _image_gallery_ai_crop_preview(
         self,

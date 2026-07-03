@@ -753,6 +753,21 @@ class LiveLabTab(QWidget):
 
         self.pending_raw_frame.setVisible(False)
 
+        # Separate floating action bar for "Use for calibration" — visible
+        # whenever any image is on screen (RAW pending capture, JPEG session
+        # image, etc.), unlike the pending-RAW bar above.
+        self.calibration_action_frame = QFrame()
+        self.calibration_action_frame.setFrameShape(QFrame.NoFrame)
+        self.calibration_action_frame.setObjectName("sectionCard")
+        self.calibration_action_frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        calibration_action_layout = QHBoxLayout(self.calibration_action_frame)
+        calibration_action_layout.setContentsMargins(8, 6, 8, 6)
+        calibration_action_layout.setSpacing(6)
+        self.use_for_calibration_btn = QPushButton(self.tr("Use for calibration"))
+        self.use_for_calibration_btn.clicked.connect(self._on_use_current_image_for_calibration)
+        calibration_action_layout.addWidget(self.use_for_calibration_btn)
+        self.calibration_action_frame.setVisible(False)
+
         self.raw_processing_body.setVisible(False)
         raw_card_layout.addWidget(self.raw_processing_body)
         self._sync_raw_processing_controls_from_settings(self._raw_render_settings)
@@ -820,6 +835,24 @@ class LiveLabTab(QWidget):
         )
         self.pending_raw_frame.raise_()
         self.live_image_label.installEventFilter(self)
+        # Pin the "Use for calibration" bar to the image viewer as well; it
+        # sits at the top-right so it doesn't collide with the pending-RAW
+        # controls at the bottom.
+        self.calibration_action_frame.setParent(self.live_image_label)
+        self.calibration_action_frame.setAttribute(Qt.WA_StyledBackground, True)
+        self.calibration_action_frame.setStyleSheet(
+            "QFrame#sectionCard {"
+            " background-color: rgba(255, 255, 255, 215);"
+            " border: 1px solid rgba(0, 0, 0, 40);"
+            " border-radius: 8px;"
+            "}"
+        )
+        self.calibration_action_frame.raise_()
+        # Forward wheel and native pinch-gesture events that land on either
+        # floating action bar down to the image viewer beneath, so zooming
+        # while the controls are visible still works.
+        self._install_viewer_gesture_forwarding(self.pending_raw_frame)
+        self._install_viewer_gesture_forwarding(self.calibration_action_frame)
 
         self.session_gallery = ImageGalleryWidget(
             self.tr("Session Gallery"),
@@ -945,6 +978,10 @@ class LiveLabTab(QWidget):
             self.pending_raw_save_all_btn,
             self.tr("Commit every pending RAW capture using its current RAW settings."),
             disabled_hint=self.tr("No pending RAW captures are waiting to be saved."),
+        )
+        self._register_hint_widget(
+            self.use_for_calibration_btn,
+            self.tr("Open the currently displayed image in the Calibration dialog."),
         )
         self._register_hint_widget(
             self.pending_raw_copy_btn,
@@ -2178,6 +2215,21 @@ class LiveLabTab(QWidget):
             self.live_image_label.set_scale_bar(False, 0.0)
         self.viewer_title_label.setText(title)
         self.viewer_meta_label.setText(meta)
+        update_calibration_action_visibility = getattr(self, "_update_calibration_action_visibility", None)
+        if callable(update_calibration_action_visibility):
+            update_calibration_action_visibility()
+
+    def _update_calibration_action_visibility(self) -> None:
+        """Show the 'Use for calibration' overlay whenever an image is loaded."""
+        frame = getattr(self, "calibration_action_frame", None)
+        label = getattr(self, "live_image_label", None)
+        if frame is None or label is None:
+            return
+        pixmap = getattr(label, "original_pixmap", None)
+        has_image = bool(pixmap is not None and not pixmap.isNull())
+        frame.setVisible(has_image)
+        if has_image:
+            self._reposition_pending_raw_floating_tab()
 
     def _schedule_raw_edit_preview_save(self, session: RawEditSession | None = None) -> None:
         self._raw_edit_preview_save_target = session or getattr(self, "_raw_edit_session", None)
@@ -3840,22 +3892,66 @@ class LiveLabTab(QWidget):
                 if active_target:
                     self._cancel_raw_background_wb_selection(target=active_target)
                     return True
+        # Wheel/gesture events on the pending-RAW floating overlay would
+        # otherwise be swallowed by the frame or its child buttons; forward
+        # them to the image viewer so zoom keeps working while the overlay
+        # is on screen.
+        if event.type() in (QEvent.Wheel, QEvent.NativeGesture):
+            forwarded = self._forward_gesture_event_to_viewer(obj, event)
+            if forwarded:
+                return True
         return super().eventFilter(obj, event)
 
-    def _reposition_pending_raw_floating_tab(self) -> None:
-        frame = getattr(self, "pending_raw_frame", None)
+    def _install_viewer_gesture_forwarding(self, widget) -> None:
+        if widget is None:
+            return
+        widget.installEventFilter(self)
+        try:
+            widget.grabGesture(Qt.PinchGesture)
+        except Exception:
+            pass
+        for child in widget.findChildren(QWidget):
+            child.installEventFilter(self)
+
+    def _forward_gesture_event_to_viewer(self, obj, event) -> bool:
         image_label = getattr(self, "live_image_label", None)
-        if frame is None or image_label is None:
+        if image_label is None:
+            return False
+        frames = [
+            getattr(self, "pending_raw_frame", None),
+            getattr(self, "calibration_action_frame", None),
+        ]
+        for frame in frames:
+            if frame is None:
+                continue
+            if obj is frame or (isinstance(obj, QWidget) and frame.isAncestorOf(obj)):
+                QApplication.sendEvent(image_label, event)
+                return True
+        return False
+
+    def _reposition_pending_raw_floating_tab(self) -> None:
+        image_label = getattr(self, "live_image_label", None)
+        if image_label is None:
             return
-        if frame.parentWidget() is not image_label:
-            return
-        hint = frame.sizeHint()
-        width = max(hint.width(), frame.minimumSizeHint().width())
-        height = max(hint.height(), frame.minimumSizeHint().height())
-        x = max(0, (image_label.width() - width) // 2)
-        y = max(0, image_label.height() - height)
-        frame.setGeometry(x, y, width, height)
-        frame.raise_()
+        frame = getattr(self, "pending_raw_frame", None)
+        if frame is not None and frame.parentWidget() is image_label:
+            hint = frame.sizeHint()
+            width = max(hint.width(), frame.minimumSizeHint().width())
+            height = max(hint.height(), frame.minimumSizeHint().height())
+            x = max(0, (image_label.width() - width) // 2)
+            y = max(0, image_label.height() - height)
+            frame.setGeometry(x, y, width, height)
+            frame.raise_()
+        calibration_frame = getattr(self, "calibration_action_frame", None)
+        if calibration_frame is not None and calibration_frame.parentWidget() is image_label:
+            hint = calibration_frame.sizeHint()
+            width = max(hint.width(), calibration_frame.minimumSizeHint().width())
+            height = max(hint.height(), calibration_frame.minimumSizeHint().height())
+            # Top-right corner with a small inset.
+            x = max(0, image_label.width() - width - 8)
+            y = 8
+            calibration_frame.setGeometry(x, y, width, height)
+            calibration_frame.raise_()
 
     def _finalize_pending_raw_background_wb_from_preview(self) -> None:
         self._finalize_raw_background_wb_from_preview(target="pending")
@@ -3971,6 +4067,100 @@ class LiveLabTab(QWidget):
             if callable(refresh_viewer_objective_tag):
                 refresh_viewer_objective_tag()
         return changed
+
+    _SESSION_IMAGE_TOP_LEVEL_METADATA_KEYS = (
+        ("objective_name", "objective_name"),
+        ("contrast", "contrast"),
+        ("mount_medium", "mount_medium"),
+        ("stain", "stain"),
+        ("sample_type", "sample_type"),
+    )
+
+    def _selected_session_image_ids_for_metadata_sync(self) -> list[int]:
+        session_ids = set(int(v) for v in getattr(self, "_session_image_ids", []) or [])
+        if not session_ids:
+            return []
+        collected: list[int] = []
+        seen: set[int] = set()
+        for key in self._session_gallery_selected_keys():
+            # Skip pending-RAW keys — those are handled by the pending sync.
+            if self._pending_raw_capture_index_for_key(key) is not None:
+                continue
+            try:
+                image_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen or image_id not in session_ids:
+                continue
+            collected.append(image_id)
+            seen.add(image_id)
+        if collected:
+            return collected
+        # Fall back to the currently viewed session image when nothing is
+        # multi-selected in the gallery.
+        fallback = self._selected_committed_image_id()
+        if fallback and fallback not in seen:
+            return [int(fallback)]
+        return []
+
+    def _sync_selected_session_image_metadata_from_controls(self) -> bool:
+        """Persist sidebar metadata changes to the selected saved session images."""
+        if getattr(self, "_raw_edit_session", None) is not None:
+            return False
+        image_ids = self._selected_session_image_ids_for_metadata_sync()
+        if not image_ids:
+            return False
+
+        current_lab_metadata = getattr(self, "_current_lab_metadata", None)
+        if not callable(current_lab_metadata):
+            return False
+        try:
+            metadata_updates = dict(current_lab_metadata() or {})
+        except Exception:
+            return False
+
+        changed_any = False
+        for image_id in image_ids:
+            try:
+                image = ImageDB.get_image(image_id)
+            except Exception:
+                image = None
+            if not image:
+                continue
+            existing_metadata = image.get("lab_metadata") or {}
+            merged = merge_image_lab_metadata(existing_metadata, metadata_updates)
+            top_level_updates: dict[str, object] = {}
+            for metadata_key, column_key in self._SESSION_IMAGE_TOP_LEVEL_METADATA_KEYS:
+                new_value = metadata_updates.get(metadata_key)
+                if new_value is None:
+                    continue
+                if image.get(column_key) == new_value:
+                    continue
+                top_level_updates[column_key] = new_value
+            metadata_changed = merged != existing_metadata
+            if not metadata_changed and not top_level_updates:
+                continue
+            update_kwargs: dict[str, object] = dict(top_level_updates)
+            if metadata_changed:
+                update_kwargs["lab_metadata"] = merged
+            try:
+                ImageDB.update_image(int(image_id), **update_kwargs)
+                changed_any = True
+            except Exception:
+                continue
+
+        if changed_any:
+            self._refresh_session_gallery()
+            refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+            if callable(refresh_viewer_objective_tag):
+                refresh_viewer_objective_tag()
+            refresh_main = getattr(self, "_refresh_main_window_after_import", None)
+            if callable(refresh_main):
+                try:
+                    refresh_main(image_ids[0])
+                except Exception:
+                    pass
+        return changed_any
 
     def _pending_raw_gallery_key(self, capture: PendingRawCapture | None) -> str | None:
         if capture is None:
@@ -4554,6 +4744,92 @@ class LiveLabTab(QWidget):
             timeout_ms=5000,
         )
         return False
+
+    def _prepare_calibration_source_image(self) -> tuple[str | None, bool]:
+        """Return `(path, is_temp)` for the full-resolution image to calibrate.
+
+        For pending RAW captures we render the RAW at full resolution using
+        the user's current live settings (so their exposure, white balance,
+        curve, etc. are applied) into a temporary JPEG. For saved session
+        images we return the on-disk path directly. `is_temp` indicates
+        whether the caller should delete the file after the dialog closes.
+        """
+        pending = self._current_pending_raw_capture()
+        if pending is not None:
+            source = getattr(pending, "source_path", None)
+            source_text = str(source or "").strip()
+            if source_text and Path(source_text).exists():
+                try:
+                    output_dir = Path(tempfile.gettempdir()) / "sporely" / "calibration_from_livelab"
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    from utils.raw_render import render_raw_image
+                    rendered = render_raw_image(
+                        source_text,
+                        settings=getattr(pending, "raw_settings", None),
+                        output_dir=output_dir,
+                        preview=False,
+                    )
+                    return str(rendered), True
+                except Exception as exc:
+                    self._show_status(
+                        self.tr("Could not render RAW for calibration: {error}").format(error=exc),
+                        tone="warning",
+                        timeout_ms=5000,
+                    )
+                    return None, False
+        image = self._selected_committed_image()
+        if isinstance(image, dict):
+            for key in ("filepath", "original_filepath"):
+                candidate = str(image.get(key) or "").strip()
+                if candidate and Path(candidate).exists():
+                    return candidate, False
+        label = getattr(self, "live_image_label", None)
+        fallback = str(getattr(label, "_full_image_path", "") or "").strip()
+        if fallback and Path(fallback).exists() and not is_raw_image_path(fallback):
+            return fallback, False
+        return None, False
+
+    def _on_use_current_image_for_calibration(self) -> None:
+        source_path, is_temp = self._prepare_calibration_source_image()
+        if not source_path:
+            self._show_status(
+                self.tr("No image to send to the Calibration dialog."),
+                tone="warning",
+                timeout_ms=4000,
+            )
+            return
+
+        # Preselect the objective the user has currently chosen in Live Lab so
+        # the calibration lands on the right row without extra clicks.
+        try:
+            current_metadata = dict(self._current_lab_metadata() or {})
+        except Exception:
+            current_metadata = {}
+        objective_key = str(current_metadata.get("objective_name") or "").strip() or None
+
+        from .calibration_dialog import CalibrationDialog
+
+        host = self.window()
+        dialog = CalibrationDialog(host or self)
+        dialog.select_custom_tab()
+        if objective_key:
+            dialog.select_objective_key(objective_key)
+        else:
+            dialog.clear_objective_selection()
+        dialog._load_calibration_image_candidates([source_path])
+        if host is not None and hasattr(host, "_on_calibration_saved_from_dialog"):
+            try:
+                dialog.calibration_saved.connect(host._on_calibration_saved_from_dialog)
+            except Exception:
+                pass
+        try:
+            dialog.exec()
+        finally:
+            if is_temp:
+                try:
+                    Path(source_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _commit_all_pending_raw_captures(self) -> bool:
         captures = list(getattr(self, "_pending_raw_captures", []) or [])
@@ -5205,6 +5481,7 @@ class LiveLabTab(QWidget):
         self.objective_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.objective_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.objective_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.objective_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
         self.contrast_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "contrast",
@@ -5215,6 +5492,7 @@ class LiveLabTab(QWidget):
         self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.contrast_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.contrast_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.contrast_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
         self.mount_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "mount_medium",
@@ -5225,6 +5503,7 @@ class LiveLabTab(QWidget):
         self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.mount_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.mount_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.mount_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
         self.stain_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "stain",
@@ -5235,6 +5514,7 @@ class LiveLabTab(QWidget):
         self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.stain_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.stain_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.stain_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
         self.sample_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "sample_type",
@@ -5245,6 +5525,7 @@ class LiveLabTab(QWidget):
         self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         self.sample_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.sample_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.sample_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
 
     def _restore_watch_dir(self) -> None:
         saved = str(SettingsDB.get_setting(self.SETTING_WATCH_DIR, "") or "").strip()
@@ -6210,6 +6491,9 @@ class LiveLabTab(QWidget):
         self.live_image_label.set_microns_per_pixel(0.0)
         self.live_image_label.set_scale_bar(False, 0.0)
         self.live_image_label.set_image(None)
+        frame = getattr(self, "calibration_action_frame", None)
+        if frame is not None:
+            frame.setVisible(False)
         update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
         if callable(update_viewer_objective_tag):
             update_viewer_objective_tag(None)
@@ -6306,6 +6590,9 @@ class LiveLabTab(QWidget):
         )
         self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
         self.reset_view_btn.setEnabled(True)
+        update_calibration_action_visibility = getattr(self, "_update_calibration_action_visibility", None)
+        if callable(update_calibration_action_visibility):
+            update_calibration_action_visibility()
 
         mpp_value = self._image_microns_per_pixel(image)
         self.live_image_label.set_microns_per_pixel(mpp_value or 0.0)
