@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from datetime import datetime
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -127,6 +127,12 @@ def _make_add_images_dummy(*, source_preference: str) -> SimpleNamespace:
     dummy._update_ai_overlay = lambda: None
     dummy._restore_scale_bar_overlay = lambda result: None
     dummy._stage_raw_candidates = lambda new_results: None
+    dummy._stored_crop_mode_for_index = lambda index: None
+    dummy._source_image_size_for_index = lambda index, prefer_ai_size=False: None
+    dummy._ai_crop_preview_data_for_index = MethodType(
+        image_import_dialog.ImageImportDialog._ai_crop_preview_data_for_index,
+        dummy,
+    )
     return dummy
 
 
@@ -236,6 +242,58 @@ def test_image_import_result_from_candidate_seeds_default_ai_crop(tmp_path):
     assert result.ai_crop_box == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
     assert result.ai_crop_source_size == (1000, 500)
     assert result.crop_mode == "ai"
+
+
+def test_refresh_gallery_includes_ai_crop_preview_for_default_crop(qapp):
+    dialog = _make_add_images_dummy(source_preference="camera_jpeg")
+    dialog.image_paths = ["/tmp/sample.jpg"]
+    dialog._source_image_size_for_index = lambda index, prefer_ai_size=False: (1000, 500)
+    dialog.import_results = [
+        ImageImportResult(
+            filepath="/tmp/sample.jpg",
+            preview_path="/tmp/sample.jpg",
+            image_type="field",
+            crop_mode=None,
+        )
+    ]
+
+    ImageImportDialog._refresh_gallery(dialog)
+
+    assert dialog.gallery.items[0]["crop_box"] == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
+    assert dialog.gallery.items[0]["crop_source_size"] == (1000, 500)
+
+
+def test_update_ai_overlay_uses_default_crop_when_no_crop_is_stored(qapp):
+    crop_boxes: list[tuple[float, float, float, float] | None] = []
+    dialog = SimpleNamespace(
+        import_results=[
+            ImageImportResult(
+                filepath="/tmp/sample.jpg",
+                preview_path="/tmp/sample.jpg",
+                image_type="field",
+                crop_mode=None,
+            )
+        ],
+        preview=SimpleNamespace(
+            original_pixmap=QPixmap(1000, 500),
+            set_crop_box=lambda box: crop_boxes.append(box),
+            set_overlay_boxes=lambda boxes: None,
+        ),
+        _current_single_index=lambda: 0,
+        _crop_active_mode=None,
+        _stored_crop_mode_for_index=lambda index: None,
+        _source_image_size_for_index=lambda index, prefer_ai_size=False: (1000, 500),
+        _apply_crop_overlay_style=lambda *args, **kwargs: None,
+        _update_ai_crop_size_label=lambda: None,
+    )
+    dialog._ai_crop_preview_data_for_index = MethodType(
+        ImageImportDialog._ai_crop_preview_data_for_index,
+        dialog,
+    )
+
+    ImageImportDialog._update_ai_overlay(dialog)
+
+    assert crop_boxes[-1] == pytest.approx((310.0, 60.0, 690.0, 440.0))
 
 
 def test_set_preview_for_result_uses_preview_path_as_full_source_when_preview_is_scaled(qapp):

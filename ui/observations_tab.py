@@ -636,10 +636,16 @@ def _format_observation_datetime_for_table(value: str | None) -> str:
 
     dt_value = _parse_observation_datetime(text)
     if dt_value and dt_value.isValid():
-        return dt_value.toString("yyyy-MM-dd HH:mm")
+        # DB stores UTC (see _current_utc_timestamp_text); display in local time.
+        # If the parsed value already has LocalTime spec (no offset in string),
+        # toLocalTime() is a no-op.
+        return dt_value.toLocalTime().toString("yyyy-MM-dd HH:mm")
 
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed.strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return text
 
@@ -1604,10 +1610,14 @@ class _ObservationImageBrowser(QWidget):
 
     imageDoubleClicked = Signal()
 
+    _PIXMAP_CACHE_MAX = 8
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._image_paths: list[str] = []
         self._current_index: int = -1
+        self._pixmap_cache: dict[str, QPixmap] = {}
+        self._pixmap_cache_order: list[str] = []
 
         layout = QGridLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -1672,6 +1682,12 @@ class _ObservationImageBrowser(QWidget):
             current_path = self._image_paths[self._current_index]
         cleaned = [str(p) for p in paths if p]
         self._image_paths = cleaned
+        # Drop cache entries for paths no longer in the current observation.
+        allowed = set(cleaned)
+        self._pixmap_cache_order = [p for p in self._pixmap_cache_order if p in allowed]
+        for cached_path in list(self._pixmap_cache.keys()):
+            if cached_path not in allowed:
+                self._pixmap_cache.pop(cached_path, None)
         if not cleaned:
             self._current_index = -1
             self._clear_image_display(self.tr("No image available"))
@@ -1686,6 +1702,8 @@ class _ObservationImageBrowser(QWidget):
     def clear(self) -> None:
         self._image_paths = []
         self._current_index = -1
+        self._pixmap_cache.clear()
+        self._pixmap_cache_order.clear()
         self._clear_image_display(self.tr("No image selected"))
         self._update_nav_state()
 
@@ -1703,6 +1721,19 @@ class _ObservationImageBrowser(QWidget):
         self._display_current()
         self._update_nav_state()
 
+    def show_image_for_path(self, path: str) -> bool:
+        if not path:
+            return False
+        target = str(path)
+        for i, existing in enumerate(self._image_paths):
+            if existing == target:
+                if i != self._current_index:
+                    self._current_index = i
+                    self._display_current()
+                    self._update_nav_state()
+                return True
+        return False
+
     def _clear_image_display(self, placeholder: str) -> None:
         self.image_label.set_image_sources(None)
         self.image_label.setText(placeholder)
@@ -1713,10 +1744,18 @@ class _ObservationImageBrowser(QWidget):
             self._clear_image_display(self.tr("No image available"))
             return
         path = self._image_paths[self._current_index]
-        try:
-            pixmap = load_oriented_pixmap(path)
-        except Exception:
-            pixmap = QPixmap()
+        pixmap = self._pixmap_cache.get(path)
+        if pixmap is None:
+            try:
+                pixmap = load_oriented_pixmap(path)
+            except Exception:
+                pixmap = QPixmap()
+            if pixmap is not None and not pixmap.isNull():
+                self._pixmap_cache[path] = pixmap
+                self._pixmap_cache_order.append(path)
+                while len(self._pixmap_cache_order) > self._PIXMAP_CACHE_MAX:
+                    oldest = self._pixmap_cache_order.pop(0)
+                    self._pixmap_cache.pop(oldest, None)
         if pixmap is None or pixmap.isNull():
             self._clear_image_display(self.tr("Failed to load image"))
             return
@@ -2153,6 +2192,11 @@ class ObservationsTab(QWidget):
             default_sizes=[280, 900],
             minimum_sizes=[180, 200],
         )
+        # Remember the user-chosen table width in image mode so switching back
+        # to Images preserves their preferred ratio (persistent-splitter save
+        # kicks in immediately when we manually setSizes for table mode).
+        self._view_splitter_table_width = self.view_splitter.sizes()[0] if self.view_splitter.sizes() else 280
+        self.view_splitter.splitterMoved.connect(self._on_view_splitter_moved)
 
         content_layout.addWidget(splitter, 1)
 
@@ -2380,16 +2424,24 @@ class ObservationsTab(QWidget):
         self._table_col_resize_guard = True
         try:
             header = self.table.horizontalHeader()
+            column_count = self.table.columnCount()
+            # In image mode most columns are hidden — sectionSize() still
+            # reports their configured width, which would overshoot and starve
+            # the visible columns (0 and 1). Only count what's actually shown.
             fixed = sum(
                 header.sectionSize(i)
-                for i in range(self.table.columnCount())
-                if i not in (1, 2, 3)
+                for i in range(column_count)
+                if i not in (1, 2, 3) and not self.table.isColumnHidden(i)
             )
             available = max(0, total - fixed)
-            # Proportions: vernacular 45%, genus 20%, species 35%
-            self.table.setColumnWidth(1, max(80, int(available * 0.45)))
-            self.table.setColumnWidth(2, max(50, int(available * 0.20)))
-            self.table.setColumnWidth(3, max(80, int(available * 0.35)))
+            if self.table.isColumnHidden(2) and self.table.isColumnHidden(3):
+                # Only column 1 is stretchy — give it all the available room.
+                self.table.setColumnWidth(1, max(80, available))
+            else:
+                # Proportions: vernacular 45%, genus 20%, species 35%.
+                self.table.setColumnWidth(1, max(80, int(available * 0.45)))
+                self.table.setColumnWidth(2, max(50, int(available * 0.20)))
+                self.table.setColumnWidth(3, max(80, int(available * 0.35)))
         finally:
             self._table_col_resize_guard = False
 
@@ -5998,6 +6050,21 @@ class ObservationsTab(QWidget):
         browser = getattr(self, "image_browser", None)
         if browser is not None:
             browser.setVisible(mode == self.VIEW_MODE_IMAGES)
+        splitter = getattr(self, "view_splitter", None)
+        if splitter is not None:
+            total = max(splitter.width(), sum(splitter.sizes()) or 400)
+            if mode == self.VIEW_MODE_TABLE:
+                # Table mode: give all space to the table so it reflows to the
+                # full pane width (QSplitter keeps hidden panes' saved sizes
+                # otherwise, leaving the table stuck at 25% until the next
+                # window resize).
+                splitter.setSizes([total, 0])
+            else:
+                table_width = getattr(self, "_view_splitter_table_width", None)
+                if not table_width or table_width < 120:
+                    table_width = max(220, total // 4)
+                table_width = min(table_width, max(220, total - 200))
+                splitter.setSizes([table_width, max(200, total - table_width)])
         # Arrow shortcuts (prev/next/up/down) are only meaningful in image mode.
         for attr in (
             "_shortcut_image_prev",
@@ -6010,6 +6077,11 @@ class ObservationsTab(QWidget):
                 shortcut.setEnabled(mode == self.VIEW_MODE_IMAGES)
         if persist:
             SettingsDB.set_setting(self.SETTING_VIEW_MODE, mode)
+        if table is not None:
+            # Column visibility changes can leave the viewport with stale
+            # paints (rows appear blank even though the model is intact).
+            self._redistribute_taxonomy_columns()
+            table.viewport().update()
         if mode == self.VIEW_MODE_IMAGES:
             self._refresh_image_browser_for_current_selection()
 
@@ -6055,6 +6127,15 @@ class ObservationsTab(QWidget):
     def _on_image_browser_double_clicked(self) -> None:
         if self.selected_observation_id:
             self.edit_observation()
+
+    def _on_view_splitter_moved(self, _pos: int, _index: int) -> None:
+        # Only remember the ratio when the image pane is actually visible;
+        # otherwise the sizes are [total, 0] from Table mode.
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        sizes = self.view_splitter.sizes()
+        if sizes and sizes[0] > 0 and sizes[1] > 0:
+            self._view_splitter_table_width = sizes[0]
 
     def _on_image_row_up_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
@@ -6261,9 +6342,19 @@ class ObservationsTab(QWidget):
             self.refresh_observations()
             self.set_status_message(self.tr("Image deleted."), level="success")
 
-    def _on_gallery_image_clicked(self, _image_id, _filepath):
-        """Keep selection in Observations tab; do not jump to Measure tab."""
-        return
+    def _on_gallery_image_clicked(self, _image_id, filepath):
+        """In image-browser mode, show the clicked thumbnail in the main view."""
+        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
+            return
+        browser = getattr(self, "image_browser", None)
+        if browser is None or not filepath:
+            return
+        # If the browser's cached list is out of date (e.g. selection just
+        # switched observations), rebuild and try again so the click still
+        # lands on the right image.
+        if not browser.show_image_for_path(str(filepath)):
+            self._refresh_image_browser_for_current_selection()
+            browser.show_image_for_path(str(filepath))
 
     def _on_gallery_measure_badge_clicked(self, image_id, _filepath):
         """Open the clicked gallery image in the Measure tab."""
@@ -6305,7 +6396,15 @@ class ObservationsTab(QWidget):
             return
         self.gallery_widget.set_observation_id_async(int(observation_id))
         if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+            # load_oriented_pixmap can block the UI thread for hundreds of ms
+            # on large images. Force the table to flush its pending paint
+            # first, otherwise the row we just selected renders blank until
+            # the next unrelated repaint.
+            if hasattr(self, "table"):
+                self.table.viewport().repaint()
             self._refresh_image_browser_for_current_selection()
+            if hasattr(self, "table"):
+                self.table.viewport().update()
 
     def _on_gallery_observation_loaded(self, observation_id: object) -> None:
         try:
@@ -15006,6 +15105,43 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 return preview_path
         return item.filepath or ""
 
+    def _image_gallery_ai_crop_preview(
+        self,
+        item: ImageImportResult,
+    ) -> tuple[tuple[float, float, float, float] | None, tuple[int, int] | None]:
+        crop_box = ImageImportDialog._normalize_crop_box(getattr(item, "ai_crop_box", None))
+        crop_source_size = getattr(item, "ai_crop_source_size", None)
+        if crop_box:
+            if not (crop_source_size and len(crop_source_size) == 2):
+                crop_source_size = self._get_image_size(item.filepath or item.preview_path or item.original_filepath)
+            if crop_source_size and len(crop_source_size) == 2:
+                try:
+                    crop_source_size = (
+                        max(1, int(crop_source_size[0])),
+                        max(1, int(crop_source_size[1])),
+                    )
+                except (TypeError, ValueError):
+                    crop_source_size = None
+            return crop_box, crop_source_size
+        image_type = str(getattr(item, "image_type", "") or "").strip().lower()
+        crop_mode = str(getattr(item, "crop_mode", "") or "").strip().lower()
+        if image_type != "field" or crop_mode == "image":
+            return None, None
+        crop_source_size = self._get_image_size(item.filepath or item.preview_path or item.original_filepath)
+        if not (crop_source_size and len(crop_source_size) == 2):
+            return None, None
+        try:
+            crop_source_size = (
+                max(1, int(crop_source_size[0])),
+                max(1, int(crop_source_size[1])),
+            )
+        except (TypeError, ValueError):
+            return None, None
+        crop_box = ai_image_prep.get_default_ai_crop_rect(crop_source_size[0], crop_source_size[1])
+        if not crop_box:
+            return None, None
+        return crop_box, crop_source_size
+
     @staticmethod
     def _image_result_key(item: ImageImportResult):
         if item.image_id is not None:
@@ -15099,14 +15235,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             cloud_tombstone_synced = None
             if item.image_id:
                 cloud_id, cloud_uploaded, cloud_tombstone_synced = _cloud_state_for_image_id(item.image_id)
+            crop_box, crop_source_size = self._image_gallery_ai_crop_preview(item)
             items.append(
                 {
                     "id": item.image_id,
                     "filepath": item.filepath,
                     "preview_path": self._image_gallery_preview_path(item),
                     "image_number": idx + 1,
-                    "crop_box": item.ai_crop_box,
-                    "crop_source_size": item.ai_crop_source_size,
+                    "crop_box": crop_box,
+                    "crop_source_size": crop_source_size,
                     "gps_tag_text": self.tr("GPS") if gps_match else None,
                     "gps_tag_highlight": gps_match,
                     "badges": badges,

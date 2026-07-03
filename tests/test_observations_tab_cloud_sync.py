@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
 from ui import observations_tab
 import ui.main_window as main_window
 import utils.cloud_sync as cloud_sync
+import utils.ai_image_prep as ai_image_prep
 
 
 @pytest.fixture(scope="module")
@@ -912,6 +913,11 @@ def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_defau
         tr=lambda text: text,
         image_gallery=SimpleNamespace(set_items=lambda items: captured.setdefault("items", items)),
         _image_gallery_preview_path=lambda item: item.filepath,
+        _get_image_size=lambda path: None,
+    )
+    fake_dialog._image_gallery_ai_crop_preview = MethodType(
+        observations_tab.ObservationDetailsDialog._image_gallery_ai_crop_preview,
+        fake_dialog,
     )
 
     observations_tab.ObservationDetailsDialog._refresh_image_gallery_summary(fake_dialog)
@@ -919,6 +925,50 @@ def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_defau
     items = captured["items"]
     assert items[0]["publish_selected_default"] is False
     assert items[1]["publish_selected_default"] is True
+
+
+def test_refresh_image_gallery_summary_shows_default_ai_crop_for_field_images(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(observations_tab.ImageGalleryWidget, "build_gallery_badges", lambda **kwargs: [])
+    monkeypatch.setattr(observations_tab.MeasurementDB, "get_measurements_for_image", lambda image_id: [])
+
+    fake_dialog = SimpleNamespace(
+        image_results=[
+            SimpleNamespace(
+                image_id=None,
+                filepath="/tmp/field.jpg",
+                preview_path="/tmp/field.jpg",
+                original_filepath="/tmp/field.jpg",
+                image_type="field",
+                exif_has_gps=False,
+                needs_scale=False,
+                objective=None,
+                custom_scale=False,
+                contrast=None,
+                lab_metadata=None,
+                ai_crop_box=None,
+                ai_crop_source_size=None,
+                crop_mode=None,
+            )
+        ],
+        _gps_source_index=None,
+        objectives={},
+        tr=lambda text: text,
+        image_gallery=SimpleNamespace(set_items=lambda items: captured.setdefault("items", items)),
+        _image_gallery_preview_path=lambda item: item.filepath,
+        _get_image_size=lambda path: (1000, 500),
+    )
+    fake_dialog._image_gallery_ai_crop_preview = MethodType(
+        observations_tab.ObservationDetailsDialog._image_gallery_ai_crop_preview,
+        fake_dialog,
+    )
+
+    observations_tab.ObservationDetailsDialog._refresh_image_gallery_summary(fake_dialog)
+
+    items = captured["items"]
+    assert items[0]["crop_box"] == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
+    assert items[0]["crop_source_size"] == (1000, 500)
 
 
 def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):
@@ -1558,6 +1608,7 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip() or None,
     )
 
+    utc_date = "2026-06-16T10:57:17+00:00"
     rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(
         fake_tab,
         [
@@ -1567,14 +1618,17 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
                 "species": "campestris",
                 "species_guess": "Agaricus campestris",
                 "spore_statistics": "Spores: 12.0-15.0 x 4.0-5.0 um  n = 18",
-                "date": "2026-06-16T10:57:17+00:00",
+                "date": utc_date,
                 "location": "Meadow",
             }
         ],
     )
 
+    from datetime import datetime as _dt
+    expected_date = _dt.fromisoformat(utc_date).astimezone().strftime("%Y-%m-%d %H:%M")
+
     assert rows[0]["spore_short"] == "18"
-    assert rows[0]["date"] == "2026-06-16 10:57"
+    assert rows[0]["date"] == expected_date
 
 
 def test_cloud_observation_table_row_cache_formats_date_and_spore_count():

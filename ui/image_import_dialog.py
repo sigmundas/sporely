@@ -2470,7 +2470,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if index is not None and preview_pixmap:
             width = preview_pixmap.width()
             height = preview_pixmap.height()
-            crop_box = self._ai_crop_boxes.get(index)
+            crop_box, _ = self._ai_crop_preview_data_for_index(index)
             crop_mode = self._stored_crop_mode_for_index(index)
             self._apply_crop_overlay_style(crop_mode)
             if crop_box and width > 0 and height > 0:
@@ -2653,6 +2653,45 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if mode in {"ai", "image"}:
                 return mode
         return None
+
+    def _ai_crop_preview_data_for_index(
+        self,
+        index: int | None,
+    ) -> tuple[tuple[float, float, float, float] | None, tuple[int, int] | None]:
+        if index is None or index < 0 or index >= len(self.import_results):
+            return None, None
+        result = self.import_results[index]
+        crop_box = ImageImportDialog._normalize_crop_box(getattr(result, "ai_crop_box", None))
+        crop_source_size = getattr(result, "ai_crop_source_size", None)
+        if crop_box:
+            if not (crop_source_size and len(crop_source_size) == 2):
+                crop_source_size = self._source_image_size_for_index(index, prefer_ai_size=True)
+            if crop_source_size and len(crop_source_size) == 2:
+                try:
+                    crop_source_size = (
+                        max(1, int(crop_source_size[0])),
+                        max(1, int(crop_source_size[1])),
+                    )
+                except (TypeError, ValueError):
+                    crop_source_size = None
+            return crop_box, crop_source_size
+        image_type = str(getattr(result, "image_type", "") or "").strip().lower()
+        if image_type != "field" or self._stored_crop_mode_for_index(index) == "image":
+            return None, None
+        crop_source_size = self._source_image_size_for_index(index, prefer_ai_size=True)
+        if not (crop_source_size and len(crop_source_size) == 2):
+            return None, None
+        try:
+            crop_source_size = (
+                max(1, int(crop_source_size[0])),
+                max(1, int(crop_source_size[1])),
+            )
+        except (TypeError, ValueError):
+            return None, None
+        crop_box = ai_image_prep.get_default_ai_crop_rect(crop_source_size[0], crop_source_size[1])
+        if not crop_box:
+            return None, None
+        return crop_box, crop_source_size
 
     @staticmethod
     def _normalize_crop_box(
@@ -3117,13 +3156,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         dimensions: tuple[int, int] | None = None
         crop_mode = self._stored_crop_mode_for_index(index) or self._crop_active_mode or "ai"
         if index is not None:
-            crop_box = self._ai_crop_boxes.get(index)
+            crop_box, crop_source_size = self._ai_crop_preview_data_for_index(index)
             crop_mode = self._stored_crop_mode_for_index(index) or self._crop_active_mode or "ai"
-            if 0 <= index < len(self.import_results):
-                result = self.import_results[index]
-                if crop_box is None:
-                    crop_box = getattr(result, "ai_crop_box", None)
-            source_size = self._source_image_size_for_index(index, prefer_ai_size=(crop_mode == "ai"))
+            source_size = crop_source_size or self._source_image_size_for_index(index, prefer_ai_size=(crop_mode == "ai"))
             if crop_mode == "image" and not crop_box and source_size and len(source_size) == 2:
                 try:
                     dimensions = (max(1, int(source_size[0])), max(1, int(source_size[1])))
@@ -5531,6 +5566,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 bool(getattr(result, "resize_to_optimal", False))
                 and self._compute_resample_scale_factor(result) < 0.999
             )
+            crop_box, crop_source_size = self._ai_crop_preview_data_for_index(idx)
             badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=result.image_type,
                 objective_name=objective_label,
@@ -5559,6 +5595,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "filepath": result.filepath,
                     "preview_path": result.preview_path or result.filepath,
                     "image_number": idx + 1,
+                    "crop_box": crop_box,
+                    "crop_source_size": crop_source_size,
                     "badges": badges,
                     "center_badge": center_badge,
                     "gps_tag_text": gps_tag,
