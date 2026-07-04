@@ -259,6 +259,16 @@ class _PendingRawPreviewJobResult:
     error: str | None = None
 
 
+def _pending_raw_preview_cache_has_entry(
+    cache: dict[tuple[str, int, int, str], object] | None,
+    cache_key: tuple[str, int, int, str] | None,
+) -> bool:
+    if cache is None or cache_key is None:
+        return False
+    cached = cache.get(cache_key)
+    return isinstance(cached, (_RawPreviewCacheEntry, np.ndarray))
+
+
 def _build_pending_raw_preview_job_result(
     request: _PendingRawPreviewJobRequest,
 ) -> _PendingRawPreviewJobResult:
@@ -1064,6 +1074,11 @@ class LiveLabTab(QWidget):
         hint_area_layout.setContentsMargins(0, 0, 0, 0)
         hint_area_layout.setSpacing(4)
 
+        self.hint_bar = HintBar(self)
+        self.hint_bar.set_wrap_mode(True)
+        self._hint_controller = HintStatusController(self.hint_bar, self)
+        hint_area_layout.addWidget(self.hint_bar)
+
         self.pending_raw_preview_progress_widget = QWidget(self)
         pending_progress_layout = QVBoxLayout(self.pending_raw_preview_progress_widget)
         pending_progress_layout.setContentsMargins(0, 0, 0, 0)
@@ -1085,11 +1100,6 @@ class LiveLabTab(QWidget):
         pending_progress_layout.addWidget(self.pending_raw_preview_progress_label, 0)
         self.pending_raw_preview_progress_widget.setVisible(False)
         hint_area_layout.addWidget(self.pending_raw_preview_progress_widget)
-
-        self.hint_bar = HintBar(self)
-        self.hint_bar.set_wrap_mode(True)
-        self._hint_controller = HintStatusController(self.hint_bar, self)
-        hint_area_layout.addWidget(self.hint_bar)
         root_layout.addWidget(hint_area)
 
     def _register_hint_widgets(self) -> None:
@@ -1996,7 +2006,6 @@ class LiveLabTab(QWidget):
             # sample-coord metadata stripped) along with the other settings.
             updated_settings = self._propagate_raw_wb_for_multi_select(resolved_settings)
         capture.raw_settings = updated_settings
-        capture.rendered_settings = None
         if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
             return True
 
@@ -2014,6 +2023,48 @@ class LiveLabTab(QWidget):
             )
             return True
 
+        cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+        cache_key = self._raw_preview_proxy_cache_key(capture.source_path, updated_settings)
+        if _pending_raw_preview_cache_has_entry(cache, cache_key):
+            try:
+                preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, updated_settings)
+                capture.preview_rgb = preview_rgb
+                capture.rendered_settings = updated_settings
+                preview_dir = self._pending_raw_preview_dir()
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                preview_path = capture.preview_path
+                if preview_path is None:
+                    preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
+                capture.preview_path = Path(preview_path)
+                capture.status = "pending"
+                _raw_timing_log(
+                    "pending RAW capture settings applied",
+                    start,
+                    detail=f"{capture.source_path.name} preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+                )
+                return True
+            except RawRenderingUnavailableError as exc:
+                capture.status = "failed"
+                self._show_status(
+                    self.tr("RAW preview unavailable for {name}: {error}").format(
+                        name=capture.source_path.name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+            except RuntimeError as exc:
+                capture.status = "failed"
+                self._show_status(
+                    self.tr("Could not render RAW preview for {name}: {error}").format(
+                        name=capture.source_path.name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+            return False
+
         request_builder = getattr(self, "_pending_raw_preview_request_for_capture", None)
         enqueue_request = getattr(self, "_enqueue_pending_raw_preview_job", None)
         if callable(request_builder) and callable(enqueue_request):
@@ -2026,44 +2077,6 @@ class LiveLabTab(QWidget):
                     detail=f"{capture.source_path.name} queued job={request.job_id}",
                 )
                 return True
-
-        try:
-            preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, updated_settings)
-            capture.preview_rgb = preview_rgb
-            capture.rendered_settings = updated_settings
-            preview_dir = self._pending_raw_preview_dir()
-            preview_dir.mkdir(parents=True, exist_ok=True)
-            preview_path = capture.preview_path
-            if preview_path is None:
-                preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
-            capture.preview_path = Path(preview_path)
-            capture.status = "pending"
-            _raw_timing_log(
-                "pending RAW capture settings applied",
-                start,
-                detail=f"{capture.source_path.name} preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
-            )
-            return True
-        except RawRenderingUnavailableError as exc:
-            capture.status = "failed"
-            self._show_status(
-                self.tr("RAW preview unavailable for {name}: {error}").format(
-                    name=capture.source_path.name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
-        except RuntimeError as exc:
-            capture.status = "failed"
-            self._show_status(
-                self.tr("Could not render RAW preview for {name}: {error}").format(
-                    name=capture.source_path.name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
         return False
 
     def _commit_raw_edit_session(self, session: RawEditSession) -> bool:
@@ -2595,55 +2608,7 @@ class LiveLabTab(QWidget):
                 if request is not None:
                     enqueue_request(request)
                 return
-            try:
-                preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(
-                    capture.source_path, capture.raw_settings
-                )
-            except RawRenderingUnavailableError as exc:
-                capture.status = "failed"
-                if _RAW_DEBUG_TIMING:
-                    print(
-                        f"[raw-timing] background render failed (rawpy unavailable): {capture.source_path.name}: {exc}",
-                        flush=True,
-                    )
-                return
-            except Exception as exc:
-                capture.status = "failed"
-                if _RAW_DEBUG_TIMING:
-                    print(
-                        f"[raw-timing] background render failed: {capture.source_path.name}: {exc!r}",
-                        flush=True,
-                    )
-                return
-            capture.rendered_settings = capture.raw_settings
-            try:
-                preview_dir = self._pending_raw_preview_dir()
-                preview_dir.mkdir(parents=True, exist_ok=True)
-                preview_path = capture.preview_path
-                if preview_path is None:
-                    preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
-                preview_path = Path(str(preview_path))
-                capture.preview_path = preview_path
-                save_raw_preview_jpeg(preview_rgb, preview_path, capture.source_path)
-            except Exception as exc:
-                if _RAW_DEBUG_TIMING:
-                    print(
-                        f"[raw-timing] background JPEG save failed: {capture.source_path.name}: {exc!r}",
-                        flush=True,
-                    )
-                return
-            # save_raw_preview_jpeg resets the JPEG mtime back to the source
-            # RAW's mtime, so the gallery's (path|mtime|variant) cache key
-            # is unchanged — we have to evict it explicitly or the thumbnail
-            # keeps rendering the previous bytes.
-            gallery = getattr(self, "session_gallery", None)
-            if gallery is not None:
-                invalidate_gallery = getattr(gallery, "invalidate_pixmap_cache", None)
-                if callable(invalidate_gallery):
-                    invalidate_gallery(preview_path)
-            if self._current_pending_raw_capture() is not capture:
-                capture.preview_rgb = None
-            self._refresh_session_gallery()
+            return
         finally:
             if isinstance(timer, QTimer) and queue:
                 timer.start()
@@ -4743,6 +4708,10 @@ class LiveLabTab(QWidget):
             self._prune_pending_raw_preview_buffers(clear_proxy_cache=False)
             needs_refresh = settings_are_stale or not preview_path or not Path(preview_path).exists()
             if needs_refresh:
+                active_request = getattr(self, "_pending_raw_preview_active_request", None)
+                if isinstance(active_request, _PendingRawPreviewJobRequest) and active_request.capture is capture:
+                    self._update_pending_raw_controls()
+                    return
                 busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
                 if callable(busy_setter):
                     busy_setter(True, self.tr("Preparing RAW preview…"))
@@ -4796,6 +4765,12 @@ class LiveLabTab(QWidget):
             return
         if LiveLabTab._pending_raw_capture_preview_is_current(capture):
             return
+        active_request = getattr(self, "_pending_raw_preview_active_request", None)
+        if isinstance(active_request, _PendingRawPreviewJobRequest) and active_request.capture is capture:
+            return
+        queue = getattr(self, "_pending_raw_preview_job_queue", None)
+        if any(isinstance(request, _PendingRawPreviewJobRequest) and request.capture is capture for request in list(queue or [])):
+            return
         request_builder = getattr(self, "_pending_raw_preview_request_for_capture", None)
         enqueue_request = getattr(self, "_enqueue_pending_raw_preview_job", None)
         if callable(request_builder) and callable(enqueue_request):
@@ -4811,69 +4786,37 @@ class LiveLabTab(QWidget):
                     detail=f"{capture.source_path.name} queued job={request.job_id}",
                 )
                 return
-        try:
-            preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(capture.source_path, capture.raw_settings)
-            capture.preview_rgb = preview_rgb
-            capture.rendered_settings = capture.raw_settings
-            preview_dir = self._pending_raw_preview_dir()
-            preview_dir.mkdir(parents=True, exist_ok=True)
-            preview_path = capture.preview_path
-            if preview_path is None:
-                preview_path = preview_dir / f"{capture.source_path.stem}_{uuid4().hex}.jpg"
-            capture.preview_path = Path(preview_path)
-            capture.status = "pending"
-            _raw_timing_log(
-                "refresh selected pending RAW preview",
-                start,
-                detail=f"{capture.source_path.name} preview={preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
-            )
-            self._show_pending_raw_capture(self._selected_pending_raw_index)
-        except RawRenderingUnavailableError as exc:
-            companion_jpeg_path = getattr(capture, "companion_jpeg_path", None)
-            if companion_jpeg_path and Path(str(companion_jpeg_path)).exists():
-                try:
-                    if self._ingest_detected_image(str(companion_jpeg_path)):
-                        self._remove_pending_raw_capture(capture, status="discarded", refresh_ui=False)
-                        self._update_pending_raw_controls()
-                        return
-                except Exception:
-                    pass
-            capture.status = "failed"
-            _raw_timing_log(
-                "refresh selected pending RAW preview failed",
-                start,
-                detail=f"{capture.source_path.name}: {exc}",
-            )
-            self._show_status(
-                self.tr("RAW preview unavailable for {name}: {error}").format(name=capture.source_path.name, error=str(exc)),
-                tone="warning",
-                timeout_ms=6000,
-            )
-        except RuntimeError as exc:
-            companion_jpeg_path = getattr(capture, "companion_jpeg_path", None)
-            if companion_jpeg_path and Path(str(companion_jpeg_path)).exists():
-                try:
-                    if self._ingest_detected_image(str(companion_jpeg_path)):
-                        self._remove_pending_raw_capture(capture, status="discarded", refresh_ui=False)
-                        self._update_pending_raw_controls()
-                        return
-                except Exception:
-                    pass
-            capture.status = "failed"
-            self._show_status(
-                self.tr("Could not render preview for {name}: {error}").format(name=capture.source_path.name, error=str(exc)),
-                tone="warning",
-                timeout_ms=6000,
-            )
+        busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
+        if callable(busy_setter):
+            busy_setter(False, "")
+        _raw_timing_log(
+            "refresh selected pending RAW preview",
+            start,
+            detail=f"{capture.source_path.name} skipped (no worker request)",
+        )
 
-    def _set_pending_raw_preview_busy(self, visible: bool, text: str | None = None) -> None:
+    def _set_pending_raw_preview_busy(
+        self,
+        visible: bool,
+        text: str | None = None,
+        *,
+        value: int | None = None,
+        maximum: int | None = None,
+    ) -> None:
+        hint_bar = getattr(self, "hint_bar", None)
+        if hint_bar is not None:
+            hint_bar.setVisible(not bool(visible))
         widget = getattr(self, "pending_raw_preview_progress_widget", None)
         if widget is not None:
             widget.setVisible(bool(visible))
         bar = getattr(self, "pending_raw_preview_progress_bar", None)
         if bar is not None:
             if visible:
-                bar.setRange(0, 0)
+                if value is not None and maximum is not None and int(maximum) > 0:
+                    bar.setRange(0, int(maximum))
+                    bar.setValue(int(max(0, min(int(value), int(maximum)))))
+                else:
+                    bar.setRange(0, 0)
             else:
                 bar.setRange(0, 100)
                 bar.setValue(0)
@@ -4953,6 +4896,7 @@ class LiveLabTab(QWidget):
         self._pending_raw_preview_worker_thread = thread
         self._pending_raw_preview_worker = worker
         thread.start()
+        QApplication.processEvents()
 
     def _on_pending_raw_preview_job_finished(self, result: object) -> None:
         thread = getattr(self, "_pending_raw_preview_worker_thread", None)
@@ -4978,6 +4922,19 @@ class LiveLabTab(QWidget):
                 return
             if _pending_raw_settings_signature(capture.raw_settings) != current_request.settings_signature:
                 return
+
+            if isinstance(result.raw_rgb, np.ndarray) and result.raw_rgb.size:
+                cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+                if cache is None:
+                    cache = {}
+                    self._pending_raw_preview_proxy_cache = cache
+                cache_key = self._raw_preview_proxy_cache_key(capture.source_path, current_request.raw_settings)
+                if cache_key is not None:
+                    raw_rgb = np.ascontiguousarray(np.asarray(result.raw_rgb, dtype=np.float32))
+                    cache[cache_key] = _RawPreviewCacheEntry(
+                        raw_rgb=raw_rgb,
+                        preview_rgb=np.ascontiguousarray(_resize_preview_rgb(raw_rgb).astype(np.float32, copy=False)),
+                    )
 
             if result.preview_rgb is None:
                 if current_request.kind != "selected":
@@ -5092,8 +5049,6 @@ class LiveLabTab(QWidget):
         resolved_lab_metadata = merge_image_lab_metadata(self._current_lab_metadata(), lab_metadata)
         resolved_lab_metadata["image_type"] = "microscope"
         resolved_settings = RawRenderSettings.from_dict(raw_settings or self._current_raw_render_settings())
-        if source.exists() and bool(resolved_settings.auto_levels):
-            resolved_settings = self._raw_auto_level_settings_for_source(source, resolved_settings)
         pending = PendingRawCapture(
             source_path=source,
             companion_jpeg_path=Path(companion_jpeg_path) if companion_jpeg_path else None,
@@ -5347,16 +5302,37 @@ class LiveLabTab(QWidget):
         captures = list(getattr(self, "_pending_raw_captures", []) or [])
         if not captures:
             return False
+        total = len(captures)
         saved = 0
         failed = 0
-        for pending in captures:
+        self._set_pending_raw_preview_busy(
+            True,
+            self.tr("Saving RAW 0 of {total}…").format(total=total),
+            value=0,
+            maximum=total,
+        )
+        QApplication.processEvents()
+        for index, pending in enumerate(captures, start=1):
             if pending not in getattr(self, "_pending_raw_captures", []):
                 continue
+            self._set_pending_raw_preview_busy(
+                True,
+                self.tr("Saving RAW {current} of {total}: {name}").format(
+                    current=index,
+                    total=total,
+                    name=pending.source_path.name,
+                ),
+                value=index,
+                maximum=total,
+            )
+            QApplication.processEvents()
             if self._commit_pending_raw_capture(pending):
                 saved += 1
                 self._remove_pending_raw_capture(pending, status="committed", refresh_ui=False)
             else:
                 failed += 1
+            QApplication.processEvents()
+        self._set_pending_raw_preview_busy(False, "")
         self._update_pending_raw_controls()
         if self._current_pending_raw_capture() is not None:
             self._show_pending_raw_capture(self._selected_pending_raw_index)
