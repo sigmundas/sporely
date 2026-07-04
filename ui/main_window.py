@@ -14784,6 +14784,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
         container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
+        # Match Observations-gallery behaviour: double-click opens Prepare
+        # Images for this measurement's source image.
+        container.mouseDoubleClickEvent = (
+            lambda _event, mid=int(measurement_id): self._open_prepare_images_from_analysis_gallery(mid)
+        )
         self._refresh_analysis_gallery_frame_state(int(measurement_id))
         render_state["display_index"] = display_index + 1
         render_state["running_width"] = int(render_state.get("running_width", 0)) + tile_width
@@ -16731,6 +16736,44 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self._prepare_analysis_gallery_for_tab_switch()
         QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
+
+    def _open_prepare_images_from_analysis_gallery(self, measurement_id: int) -> None:
+        """Open the Prepare Images dialog for the measurement's source image.
+
+        Mirrors the Observations-gallery behaviour where double-clicking a
+        thumbnail jumps into Prepare Images with that image pre-selected.
+        """
+        measurement_id = int(measurement_id or 0)
+        if not measurement_id:
+            return
+        measurement = self._get_measurement_by_id(measurement_id)
+        if not measurement:
+            return
+        image_id = measurement.get("image_id")
+        if not image_id:
+            return
+        image_data = ImageDB.get_image(image_id)
+        if not image_data:
+            return
+        observation_id = image_data.get("observation_id") or self.active_observation_id
+        if not observation_id:
+            return
+        target_path = (image_data.get("filepath") or "").strip() or None
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is None:
+            return
+        # open_edit_images_direct works on the observation currently selected in
+        # the observations table. Ensure the analysis-tab's active observation
+        # is the one that ends up in Prepare Images, even if the user hasn't
+        # re-selected the row since switching tabs.
+        table = getattr(observations_tab, "table", None)
+        if table is not None:
+            for row_index in range(table.rowCount()):
+                if observations_tab._observation_id_for_row(row_index) == int(observation_id):
+                    table.selectRow(row_index)
+                    observations_tab.selected_observation_id = int(observation_id)
+                    break
+        observations_tab.open_edit_images_direct(selected_image_path=target_path)
 
     def _open_measurement_from_gallery_impl(self, measurement_id: int):
         """Deferred gallery-to-measure navigation to avoid tab-switch crashes mid-click."""
