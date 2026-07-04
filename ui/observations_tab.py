@@ -3338,9 +3338,7 @@ class ObservationsTab(QWidget):
             try:
                 if int(total) > 0:
                     display_total = int(total)
-                    display_current = int(current)
-                    if display_current >= display_total:
-                        display_current = max(0, display_total - 1)
+                    display_current = max(0, min(int(current), display_total))
             except Exception:
                 display_current = current
                 display_total = total

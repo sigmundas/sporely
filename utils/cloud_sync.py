@@ -3377,13 +3377,103 @@ def _trace_progress_gap(message: str) -> None:
     trace['last_msg'] = message
 
 
+# Weighted global progress model for cloud sync.
+#
+# The UI shows a single progress bar; each sync phase maps onto a fixed
+# percentage range. Per-phase (done, total) counters are turned into a global
+# 0–100 value by _sync_progress_percent so the bar advances monotonically at
+# roughly the pace of real work — never jumping to 99% while phases like
+# "Loading cloud measurements" or "Checking cloud observation N/M" are still
+# running.
+#
+# Ordered by execution — the tuple is (name, start_percent, end_percent).
+_SYNC_PROGRESS_PHASES: tuple[tuple[str, int, int], ...] = (
+    ('auth', 0, 5),
+    ('calibration_push', 5, 12),
+    ('observation_preflight', 12, 18),
+    ('push_observations', 18, 45),
+    ('refresh_remote', 45, 50),
+    ('pull_preflight', 50, 65),
+    ('pull_measurements', 65, 75),
+    ('pull_observations', 75, 92),
+    ('calibration_pull', 92, 97),
+    ('finalize', 97, 100),
+)
+_SYNC_PROGRESS_PHASE_RANGES: dict[str, tuple[int, int]] = {
+    name: (start, end) for name, start, end in _SYNC_PROGRESS_PHASES
+}
+_SYNC_PROGRESS_TOTAL_UNITS = 100
+
+
+def _sync_progress_percent(phase: str | None, done: int, total: int) -> int:
+    """Map per-phase (done, total) onto the global 0–100 progress scale.
+
+    Unknown or missing phases resolve to 0 so a bug in phase wiring can never
+    silently pin the bar to 99%.
+    """
+    start, end = _SYNC_PROGRESS_PHASE_RANGES.get(str(phase or ''), (0, 0))
+    try:
+        done_int = max(0, int(done))
+        total_int = max(0, int(total))
+    except Exception:
+        done_int, total_int = 0, 0
+    if total_int <= 0:
+        return int(start)
+    frac = min(1.0, done_int / total_int)
+    return int(round(start + frac * (end - start)))
+
+
+def _set_progress_phase(
+    progress_state: dict | None,
+    phase_name: str,
+    phase_total: int = 0,
+) -> None:
+    """Enter a named sync phase and reset the per-phase (done, total) counter.
+
+    Progress is tracked *per phase*, not globally: each phase gets a fresh
+    ``done``/``total`` pair which the ``_emit_progress`` mapper then squeezes
+    into that phase's slice of the global 0–100 range. The finalize phase is
+    the only one allowed to reach 100%; other phases cap at their configured
+    end percentage even if more work than expected turns out to be needed.
+    """
+    if not isinstance(progress_state, dict):
+        return
+    if phase_name not in _SYNC_PROGRESS_PHASE_RANGES:
+        # Silently ignore unknown phases so tests that seed a raw
+        # {done, total} dict without wiring phases keep working.
+        return
+    progress_state['phase'] = phase_name
+    progress_state['done'] = 0
+    try:
+        progress_state['total'] = max(0, int(phase_total or 0))
+    except Exception:
+        progress_state['total'] = 0
+
+
+def _current_progress_phase(progress_state: dict | None) -> str | None:
+    if not isinstance(progress_state, dict):
+        return None
+    phase = progress_state.get('phase')
+    if isinstance(phase, str) and phase in _SYNC_PROGRESS_PHASE_RANGES:
+        return phase
+    return None
+
+
 def _emit_progress(
     progress_cb: ProgressCallback | None,
     message: str,
     progress_state: dict | None,
 ) -> None:
     _trace_progress_gap(message)
-    if callable(progress_cb):
+    if not callable(progress_cb):
+        return
+    phase = _current_progress_phase(progress_state)
+    if phase is not None:
+        phase_done = _progress_done(progress_state)
+        phase_total = _progress_total(progress_state)
+        percent = _sync_progress_percent(phase, phase_done, phase_total)
+        progress_cb(message, percent, _SYNC_PROGRESS_TOTAL_UNITS)
+    else:
         progress_cb(message, _progress_done(progress_state), max(1, _progress_total(progress_state)))
 
 
@@ -4160,8 +4250,12 @@ def sync_all(
         with _cloud_sync_phase_scope(profiler, 'ensure_database_linked_to_cloud_user'):
             ensure_database_linked_to_cloud_user(client)
 
-        # Initialize a shared progress state to keep the bar moving smoothly across both phases
-        progress_state = {'done': 0, 'total': 0}
+        # Progress state feeds a weighted global bar: each phase maps onto a
+        # fixed percentage range so the bar never sits at 99% while real work
+        # is still running. Sub-functions update the per-phase (done, total)
+        # counters; _emit_progress projects that onto the 0–100 range.
+        progress_state: dict = {'done': 0, 'total': 0}
+        _set_progress_phase(progress_state, 'auth')
         _emit_progress(progress_cb, "Connecting to Sporely Cloud...", progress_state)
 
         # Pre-fetch remote metadata once to reuse in both phases
@@ -4172,6 +4266,7 @@ def sync_all(
         with _cloud_sync_phase_scope(profiler, 'list_remote_calibrations'):
             remote_calibrations = client.list_remote_calibrations()
 
+        _set_progress_phase(progress_state, 'calibration_push')
         with _cloud_sync_phase_scope(profiler, 'push_calibrations'):
             calibration_push_result = push_calibrations(
                 client,
@@ -4196,6 +4291,7 @@ def sync_all(
         # comparisons see the cloud state that now includes any local metadata
         # edits we just pushed. This network round-trip runs before the first
         # pull-side progress update, so announce it and time it.
+        _set_progress_phase(progress_state, 'refresh_remote')
         _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
         refresh_start = _cloud_sync_perf_counter()
         with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
@@ -4218,6 +4314,7 @@ def sync_all(
                 materialize_remote_images=materialize_remote_images,
             )
 
+        _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
             calibration_pull_result = pull_calibrations(
                 client,
@@ -4227,7 +4324,10 @@ def sync_all(
             )
 
         # Leave the UI on a neutral phase rather than the last per-calibration
-        # message while the worker finishes and the table refreshes.
+        # message while the worker finishes and the table refreshes. The
+        # finalize phase is the only slot that may reach 100%.
+        _set_progress_phase(progress_state, 'finalize', phase_total=1)
+        _advance_progress(progress_state, 1)
         _emit_progress(progress_cb, "Finalizing cloud sync…", progress_state)
         print(
             f"[cloud_sync] sync progress complete "
@@ -10151,6 +10251,7 @@ def push_all(
     # progress update, so on a no-change sync (0 dirty rows) they were a silent
     # gap that left the UI stuck on the last calibration label. Emit a neutral
     # message first and time each sub-step so a slow scan is named in the log.
+    _set_progress_phase(progress_state, 'observation_preflight', phase_total=1)
     preflight_start = _cloud_sync_perf_counter()
     print("[cloud_sync] observation preflight: start", flush=True)
     _emit_progress(progress_cb, "Checking local observation changes…", progress_state)
@@ -10207,8 +10308,10 @@ def push_all(
     pushed = 0
     errors = list(calibration_result.get('errors') or [])
     progress_state = progress_state if isinstance(progress_state, dict) else {}
-    progress_state['done'] = _progress_done(progress_state)
-    progress_state['total'] = _progress_total(progress_state) + total
+    # Mark the preflight complete before switching to the per-observation
+    # phase so the bar sits at the push_observations start value.
+    _advance_progress(progress_state, 1)
+    _set_progress_phase(progress_state, 'push_observations', phase_total=total)
     original_upload_summary = _new_original_upload_summary(is_full_resolution_original_sync_enabled())
     remote_lookup = {
         str(row.get('id') or '').strip(): row
@@ -11495,6 +11598,7 @@ def pull_all(
     # UI on the last calibration label, so emit messages and time each sub-step.
     pull_preflight_start = _cloud_sync_perf_counter()
     progress_state = progress_state if isinstance(progress_state, dict) else {}
+    _set_progress_phase(progress_state, 'pull_preflight', phase_total=3)
     _emit_progress(progress_cb, "Preparing cloud observations…", progress_state)
 
     _emit_progress(progress_cb, "Checking image EXIF metadata…", progress_state)
@@ -11511,14 +11615,23 @@ def pull_all(
         flush=True,
     )
 
+    # EXIF backfill step complete.
+    _advance_progress(progress_state, 1)
+
     remote_obs = list(remote_obs or client.list_remote_observations())
     calibration_result = {'pulled': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
+        # A standalone pull_all(sync_calibrations=True) uses the calibration_pull
+        # phase for the calibration work, then returns here to keep going with
+        # the pull-side observation flow.
+        _set_progress_phase(progress_state, 'calibration_pull')
         calibration_result = pull_calibrations(
             client,
             progress_cb=progress_cb,
             progress_state=progress_state,
         )
+        _set_progress_phase(progress_state, 'pull_preflight', phase_total=3)
+        _advance_progress(progress_state, 1)
     pulled = 0
     errors = list(calibration_result.get('errors') or [])
     imported_local_ids: list[int] = []
@@ -11541,7 +11654,8 @@ def pull_all(
         f"count={total} duration={candidate_elapsed * 1000:.0f}ms",
         flush=True,
     )
-    _extend_progress_total(progress_state, total)
+    # Candidate-build step complete.
+    _advance_progress(progress_state, 1)
     if total:
         _emit_progress(progress_cb, "Loading cloud image metadata…", progress_state)
     bulk_start = _cloud_sync_perf_counter()
@@ -11566,6 +11680,9 @@ def pull_all(
         obs_id = str(img.get('observation_id') or '').strip()
         if obs_id:
             remote_images_by_obs.setdefault(obs_id, []).append(img)
+    # Bulk image metadata fetch complete.
+    _advance_progress(progress_state, 1)
+    _set_progress_phase(progress_state, 'pull_measurements', phase_total=1)
     if total:
         _emit_progress(progress_cb, "Loading cloud measurements…", progress_state)
     measurements_start = _cloud_sync_perf_counter()
@@ -11583,12 +11700,14 @@ def pull_all(
         f"count={len(remote_measurements or [])} duration={measurements_elapsed * 1000:.0f}ms",
         flush=True,
     )
+    _advance_progress(progress_state, 1)
     print(
         f"[cloud_sync] pull preflight: complete candidates={total} "
         f"duration={(_cloud_sync_perf_counter() - pull_preflight_start) * 1000:.0f}ms",
         flush=True,
     )
 
+    _set_progress_phase(progress_state, 'pull_observations', phase_total=total)
     for i, (remote, local_obs, stored_snapshot) in enumerate(candidates):
         cloud_id = str(remote.get('id') or '').strip()
         _emit_progress(

@@ -319,9 +319,7 @@ class CloudSyncDialog(QDialog):
     def _on_sync_progress(self, msg: str, cur: int, total: int) -> None:
         if total > 0:
             display_total = int(total)
-            display_cur = int(cur)
-            if display_cur >= display_total:
-                display_cur = max(0, display_total - 1)
+            display_cur = max(0, min(int(cur), display_total))
             self._progress.setRange(0, display_total)
             self._progress.setValue(display_cur)
         self._status_label.setText(msg)
