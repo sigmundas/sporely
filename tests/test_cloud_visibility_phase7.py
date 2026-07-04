@@ -2256,7 +2256,7 @@ def test_push_measurements_for_observation_logs_finalization_timing(
     assert "pushed=1" in output
 
 
-@pytest.mark.parametrize("mutation_name", ["metadata", "file", "crop", "render"])
+@pytest.mark.parametrize("mutation_name", ["file", "render"])
 def test_push_all_prepares_images_for_image_render_changes(
     tmp_path,
     monkeypatch,
@@ -2265,22 +2265,8 @@ def test_push_all_prepares_images_for_image_render_changes(
 ):
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
-    if mutation_name == "metadata":
-        with sqlite3.connect(ctx.db_path) as conn:
-            conn.execute(
-                "UPDATE images SET notes = ? WHERE id = ?",
-                ("updated note", 11),
-            )
-            conn.commit()
-    elif mutation_name == "file":
+    if mutation_name == "file":
         ctx.image_path.write_bytes(b"changed-image-bytes")
-    elif mutation_name == "crop":
-        with sqlite3.connect(ctx.db_path) as conn:
-            conn.execute(
-                "UPDATE images SET crop_mode = ? WHERE id = ?",
-                ("custom", 11),
-            )
-            conn.commit()
     elif mutation_name == "render":
         cloud_sync.SettingsDB.set_setting(cloud_sync._SETTING_IMAGE_LICENSE, "61")
     else:
@@ -2343,17 +2329,98 @@ def test_push_all_prepares_images_for_image_render_changes(
     assert "image prep diagnostics" in output
     assert "decision=full image prep" in output
     assert "changed_keys=[" in output
-    if mutation_name == "metadata":
-        assert "image_file_signature_changed=False" in output
-        assert "render_affecting_field_changed=False" in output
-        assert "only_metadata_fields_changed=True" in output
-        assert "notes" in output
-    elif mutation_name == "file":
+    if mutation_name == "file":
         assert "image_file_signature_changed=True" in output
-    elif mutation_name in {"crop", "render"}:
+    elif mutation_name == "render":
         assert "render_affecting_field_changed=True" in output
     assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
     assert "measurements pushed" in output
+
+
+@pytest.mark.parametrize("mutation_name", ["notes", "crop_mode", "ai_crop"])
+def test_push_all_uses_metadata_only_image_sync_for_metadata_mutations(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    mutation_name,
+):
+    """AI crop / notes / crop_mode / calibration reference are metadata-only.
+
+    A change to any of these must go through the metadata-only image sync
+    branch — no WebP preparation, no prepare_images_cb call — and the
+    diagnostic log line must name the decision so the sync can be debugged.
+    """
+    ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
+    if mutation_name == "notes":
+        with sqlite3.connect(ctx.db_path) as conn:
+            conn.execute(
+                "UPDATE images SET notes = ? WHERE id = ?",
+                ("updated note", 11),
+            )
+            conn.commit()
+    elif mutation_name == "crop_mode":
+        with sqlite3.connect(ctx.db_path) as conn:
+            conn.execute(
+                "UPDATE images SET crop_mode = ? WHERE id = ?",
+                ("custom", 11),
+            )
+            conn.commit()
+    elif mutation_name == "ai_crop":
+        with sqlite3.connect(ctx.db_path) as conn:
+            conn.execute(
+                "UPDATE images SET ai_crop_x1 = ?, ai_crop_y1 = ?, ai_crop_x2 = ?, "
+                "ai_crop_y2 = ?, ai_crop_source_w = ?, ai_crop_source_h = ?, "
+                "ai_crop_is_custom = ? WHERE id = ?",
+                (0.1, 0.1, 0.9, 0.9, 4000, 3000, 1, 11),
+            )
+            conn.commit()
+    else:
+        raise AssertionError(mutation_name)
+
+    image_prep_calls: list[tuple[int, str, bool]] = []
+    prepare_cb_calls: list[int] = []
+    measurement_push_calls: list[int] = []
+
+    def prepare_images_cb(obs, progress_cb):
+        prepare_cb_calls.append(int(obs["id"]))
+        return ([], None, [])
+
+    def fake_push_images_for_observation(client, obs, cloud_id, *, prepare_images_cb=None, **kwargs):
+        image_prep_calls.append((int(obs["id"]), str(cloud_id), prepare_images_cb is not None))
+        return True
+
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", fake_push_images_for_observation)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: measurement_push_calls.append(int(args[1])),
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+        prepare_images_cb=prepare_images_cb,
+    )
+
+    output = capsys.readouterr().out
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+    # Metadata-only branch runs _push_images_for_observation WITHOUT
+    # prepare_images_cb — no WebP is prepared, no bytes are uploaded.
+    assert image_prep_calls == [(1, "cloud-obs-1", False)]
+    assert prepare_cb_calls == []
+    assert measurement_push_calls == [1]
+    # The metadata-only decision emits a diagnostic even without debug env.
+    assert "decision=metadata-only image sync" in output
+    assert "only_metadata_fields_changed=True" in output
+    assert "changed_keys=[" in output
+    assert any(
+        "metadata_only" in message and "no prepared upload candidates" in message
+        for message in ctx.progress_messages
+    )
 
 
 def test_push_all_prepares_images_for_new_image(

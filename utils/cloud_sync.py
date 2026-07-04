@@ -390,6 +390,11 @@ _CALIBRATION_SYNC_COLS = [
     'is_active',
 ]
 
+# is_active is per-device state (which calibration the desktop currently uses).
+# The cloud row still stores a value, but a mismatch on it should never emit a
+# push/pull conflict — it's noise that blocks real content diffs.
+_CALIBRATION_CONFLICT_IGNORED_FIELDS = frozenset({'is_active'})
+
 # Float fields can drift by tiny amounts across database versions or JSON
 # serialization paths. Treat those as equivalent during conflict detection.
 _CALIBRATION_FLOAT_FIELDS = {
@@ -558,6 +563,8 @@ def _calibration_field_changes(local_row: dict | None, remote_row: dict | None) 
     remote_payload = _calibration_sync_payload(remote_row)
     changes: dict[str, tuple[object, object]] = {}
     for field in _CALIBRATION_SYNC_COLS:
+        if field in _CALIBRATION_CONFLICT_IGNORED_FIELDS:
+            continue
         local_value = local_payload.get(field)
         remote_value = remote_payload.get(field)
         if not _calibration_field_values_match(field, local_value, remote_value):
@@ -1459,10 +1466,24 @@ _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
     'ai_crop_source_w',
     'ai_crop_source_h',
     'ai_crop_is_custom',
+    # calibration_uuid was added to the signature so retroactive recalibration
+    # (which only reassigns the image's calibration link) is picked up as a
+    # metadata-only change. Older stored signatures don't have it — normalize
+    # missing to None to keep those comparisons stable.
+    'calibration_uuid',
 )
 
-_LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS = frozenset({
-    'crop_mode',
+# Fields whose change forces re-encoding of the uploaded WebP. AI crop is
+# stored as descriptive metadata alongside the image — _prepare_cloud_image_upload_file
+# does NOT apply it to the uploaded bytes — so a change to any AI crop field
+# only patches the cloud row and must NOT force prepare_images_cb / WebP prep.
+# Everything in this set must actually change the encoded bytes.
+_LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS = frozenset()
+
+# Descriptive image-row fields we may sync via a metadata-only patch (no WebP
+# encoded, no bytes uploaded). Used both to classify sync changes and to
+# document what the "metadata-only image sync" decision covers.
+_IMAGE_METADATA_ONLY_FIELDS = frozenset({
     'ai_crop_x1',
     'ai_crop_y1',
     'ai_crop_x2',
@@ -1470,6 +1491,20 @@ _LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS = frozenset({
     'ai_crop_source_w',
     'ai_crop_source_h',
     'ai_crop_is_custom',
+    'crop_mode',
+    'notes',
+    'calibration_uuid',
+    'sort_order',
+    'image_type',
+    'micro_category',
+    'objective_name',
+    'scale_microns_per_pixel',
+    'mount_medium',
+    'stain',
+    'sample_type',
+    'contrast',
+    'measure_color',
+    'gps_source',
 })
 
 _LOCAL_MEDIA_PREP_RENDER_AFFECTING_TOP_LEVEL_FIELDS = frozenset({
@@ -5186,42 +5221,72 @@ def _local_cloud_media_signature(
     conn.row_factory = __import__('sqlite3').Row
     cursor = conn.cursor()
     try:
+        try:
+            image_columns = {
+                str(info["name"])
+                for info in cursor.execute("PRAGMA table_info(images)").fetchall()
+            }
+        except Exception:
+            image_columns = set()
+        try:
+            calibration_table_exists = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='calibrations'"
+            ).fetchone() is not None
+        except Exception:
+            calibration_table_exists = False
+        has_image_calibration_id = 'calibration_id' in image_columns
+        calibration_id_column_sql = (
+            "images.calibration_id" if has_image_calibration_id else "NULL AS calibration_id"
+        )
+        calibration_uuid_column_sql = (
+            "calibrations.calibration_uuid AS calibration_uuid"
+            if calibration_table_exists and has_image_calibration_id
+            else "NULL AS calibration_uuid"
+        )
+        calibration_join_sql = (
+            "LEFT JOIN calibrations ON calibrations.id = images.calibration_id"
+            if calibration_table_exists and has_image_calibration_id
+            else ""
+        )
         cursor.execute(
-            '''
+            f'''
             SELECT
-                id,
-                filepath,
-                original_filepath,
-                sort_order,
-                image_type,
-                micro_category,
-                objective_name,
-                scale_microns_per_pixel,
-                resample_scale_factor,
-                mount_medium,
-                stain,
-                sample_type,
-                contrast,
-                measure_color,
-                crop_mode,
-                notes,
-                gps_source,
-                ai_crop_x1,
-                ai_crop_y1,
-                ai_crop_x2,
-                ai_crop_y2,
-                ai_crop_source_w,
-                ai_crop_source_h,
-                ai_crop_is_custom
+                images.id,
+                images.filepath,
+                images.original_filepath,
+                images.sort_order,
+                images.image_type,
+                images.micro_category,
+                images.objective_name,
+                images.scale_microns_per_pixel,
+                images.resample_scale_factor,
+                images.mount_medium,
+                images.stain,
+                images.sample_type,
+                images.contrast,
+                images.measure_color,
+                images.crop_mode,
+                images.notes,
+                images.gps_source,
+                images.ai_crop_x1,
+                images.ai_crop_y1,
+                images.ai_crop_x2,
+                images.ai_crop_y2,
+                images.ai_crop_source_w,
+                images.ai_crop_source_h,
+                images.ai_crop_is_custom,
+                {calibration_id_column_sql},
+                {calibration_uuid_column_sql}
             FROM images
-            WHERE observation_id = ?
+            {calibration_join_sql}
+            WHERE images.observation_id = ?
             ORDER BY
-                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
-                sort_order,
-                image_type,
-                micro_category,
-                created_at,
-                id
+                CASE WHEN images.sort_order IS NULL THEN 1 ELSE 0 END,
+                images.sort_order,
+                images.image_type,
+                images.micro_category,
+                images.created_at,
+                images.id
             ''',
             (obs_id,),
         )
@@ -5299,6 +5364,7 @@ def _local_cloud_media_signature(
                 'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
                 'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
                 'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
+                'calibration_uuid': _normalize_snapshot_value(row.get('calibration_uuid')),
             }
             for row in image_rows
         ],
@@ -7289,6 +7355,86 @@ def _rename_to_detected_image_extension(path: Path) -> Path:
     return target
 
 
+def _apply_remote_image_metadata_only_to_local(
+    local_image: dict,
+    remote_image: dict,
+) -> None:
+    """Patch the local image row from remote metadata without touching bytes.
+
+    Used when the remote row differs only in descriptive fields (AI crop,
+    calibration reference, notes, sort order, etc.). Skips the download,
+    thumbnail regeneration and file signature bookkeeping that
+    ``_sync_existing_remote_image_to_local`` performs.
+    """
+    image_id = int(local_image.get('id'))
+    calibration_id = _local_calibration_id_for_image(remote_image)
+    update_kwargs = {
+        'image_type': str(remote_image.get('image_type') or 'field'),
+        'scale': remote_image.get('scale_microns_per_pixel'),
+        'notes': remote_image.get('notes'),
+        'micro_category': remote_image.get('micro_category'),
+        'objective_name': remote_image.get('objective_name'),
+        'measure_color': remote_image.get('measure_color'),
+        'mount_medium': remote_image.get('mount_medium'),
+        'stain': remote_image.get('stain'),
+        'sample_type': remote_image.get('sample_type'),
+        'contrast': remote_image.get('contrast'),
+        'crop_mode': remote_image.get('crop_mode'),
+        'sort_order': remote_image.get('sort_order'),
+        'gps_source': remote_image.get('gps_source'),
+        'resample_scale_factor': remote_image.get('resample_scale_factor'),
+        'ai_crop_box': _remote_ai_crop_box(remote_image),
+        'ai_crop_source_size': _remote_ai_crop_source_size(remote_image),
+        'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_image),
+    }
+    if calibration_id is not None:
+        update_kwargs['calibration_id'] = calibration_id
+    ImageDB.update_image(image_id, **update_kwargs)
+    conn = get_connection()
+    try:
+        conn.execute(
+            'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
+            (str(remote_image.get('id') or '').strip() or None, datetime.now(timezone.utc).isoformat(), image_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _remote_image_bytes_match_local(local_image: dict, remote_image: dict) -> bool:
+    """True when the remote row points at bytes the local copy already has.
+
+    Guards the metadata-only pull path: we only skip the download when the
+    local file exists and its file-content signature matches the signature we
+    recorded the last time we synced from the same cloud row. That signature
+    is stamped both after upload and after previous downloads, so a cloud-side
+    metadata-only edit (AI crop, calibration reference, notes …) keeps the
+    signature stable and lets us patch the DB row without re-downloading.
+    """
+    local_cloud_id = str(local_image.get('cloud_id') or '').strip()
+    remote_cloud_id = str(remote_image.get('id') or '').strip()
+    if not local_cloud_id or not remote_cloud_id or local_cloud_id != remote_cloud_id:
+        return False
+    existing_path = str(local_image.get('filepath') or '').strip()
+    if not existing_path:
+        return False
+    try:
+        if not Path(existing_path).exists():
+            return False
+    except Exception:
+        return False
+    try:
+        current_sig = _file_content_signature(existing_path)
+    except Exception:
+        return False
+    if not current_sig:
+        return False
+    stored_sig = _load_cloud_image_file_signature(
+        local_image.get('observation_id'), local_image.get('id')
+    )
+    return bool(stored_sig) and stored_sig == current_sig
+
+
 def _sync_existing_remote_image_to_local(
     client: "SporelyCloudClient",
     local_image: dict,
@@ -7296,6 +7442,11 @@ def _sync_existing_remote_image_to_local(
     materialize_remote_images: bool = True,
 ) -> None:
     if not materialize_remote_images:
+        return
+    if _remote_image_bytes_match_local(local_image, remote_image):
+        # Metadata-only remote change (e.g. AI crop or calibration reference).
+        # Skip the download and thumbnail regeneration — patch the row only.
+        _apply_remote_image_metadata_only_to_local(local_image, remote_image)
         return
     image_id = int(local_image.get('id'))
     existing_path = str(local_image.get('filepath') or '').strip()
@@ -10217,19 +10368,37 @@ def push_all(
                         current_local_image_signature,
                     )
                 )
-                if _cloud_sync_debug_enabled():
-                    prep_diagnostics = _local_media_prep_diagnostics(
+                prep_diagnostics = (
+                    _local_media_prep_diagnostics(
                         local_obs_id,
                         stored_local_media_signature,
                         current_local_image_signature,
                     )
-                    prep_decision = (
-                        'skip prep'
-                        if image_render_unchanged
-                        else 'metadata-only image sync'
-                        if tombstone_cleanup_only
-                        else 'full image prep'
-                    )
+                    if had_existing_cloud
+                    and local_obs_id > 0
+                    and stored_local_media_signature
+                    and current_local_image_signature
+                    else None
+                )
+                metadata_only_image_sync = bool(
+                    prep_diagnostics
+                    and not image_render_unchanged
+                    and not tombstone_cleanup_only
+                    and prep_diagnostics.get('only_metadata_fields_changed')
+                    and not prep_diagnostics.get('has_local_image_cloud_id_null')
+                )
+                prep_decision = (
+                    'skip prep'
+                    if image_render_unchanged
+                    else 'metadata-only image sync (tombstone_cleanup)'
+                    if tombstone_cleanup_only
+                    else 'metadata-only image sync'
+                    if metadata_only_image_sync
+                    else 'full image prep'
+                )
+                if prep_diagnostics is not None and (
+                    _cloud_sync_debug_enabled() or metadata_only_image_sync
+                ):
                     print(
                         (
                             f'[cloud_sync] Observation {obs["id"]}: image prep diagnostics '
@@ -10277,6 +10446,34 @@ def push_all(
                                 f"Image/render media unchanged after tombstone cleanup; "
                                 f"skipping image prep for observation {i + 1}/{max(1, total)} "
                                 f"(reason=tombstone_only, metadata-only image sync)"
+                            ),
+                        ),
+                        progress_state,
+                    )
+                    original_upload_warnings = []
+                    images_synced = _push_images_for_observation(
+                        client,
+                        obs,
+                        cloud_id,
+                        prepare_images_cb=None,
+                        progress_cb=progress_cb,
+                        progress_state=progress_state,
+                        observation_index=i + 1,
+                        observation_total=total,
+                        summary_warnings=original_upload_warnings,
+                        original_summary=original_upload_summary,
+                    )
+                    if images_synced and local_obs_id > 0:
+                        _push_measurements_for_current_observation()
+                elif metadata_only_image_sync:
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            (
+                                f"Image bytes unchanged; syncing image metadata only for "
+                                f"observation {i + 1}/{max(1, total)} "
+                                f"(reason=metadata_only, no prepared upload candidates)"
                             ),
                         ),
                         progress_state,

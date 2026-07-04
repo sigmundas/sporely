@@ -1021,17 +1021,16 @@ def test_repair_calibrations_local_wins_updates_only_conflicting_fields(monkeypa
     assert result["repairs"][0]["fields"] == [
         "microns_per_pixel",
         "microns_per_pixel_std",
-        "is_active",
     ]
     assert calibration_uuid in result["repairs"][0]["message"]
     assert "microns_per_pixel" in result["repairs"][0]["message"]
+    # is_active is per-device state and is not repaired via the conflict path.
     assert client.patches == [
         (
             "calibrations?user_id=eq.user-123&id=eq.cloud-cal-1",
             {
                 "microns_per_pixel": 0.0315,
                 "microns_per_pixel_std": 0.0001,
-                "is_active": True,
             },
         )
     ]
@@ -1124,7 +1123,13 @@ def test_measurements_json_conflict_is_cleared_by_local_wins_repair_and_followup
     assert pull_result["pulled"] == 0
 
 
-def test_is_active_conflict_is_cleared_by_local_wins_repair_and_followup_sync(monkeypatch, tmp_path):
+def test_is_active_difference_does_not_produce_a_conflict(monkeypatch, tmp_path):
+    """is_active is per-device state; a mismatch must not surface as a conflict.
+
+    The web app may flip is_active on the cloud row for its own device without
+    affecting which calibration the desktop treats as active. Reporting that
+    difference as a conflict blocks real content diffs and confuses users.
+    """
     db_path = _prepare_db(tmp_path)
     _patch_connections(monkeypatch, db_path)
     calibration_uuid = str(uuid.uuid4())
@@ -1167,32 +1172,12 @@ def test_is_active_conflict_is_cleared_by_local_wins_repair_and_followup_sync(mo
 
         def _patch(self, path, payload):
             self.patches.append((path, dict(payload)))
-            if "is_active" in payload:
-                remote_rows[0]["is_active"] = payload["is_active"]
 
     client = DummyClient()
 
-    conflicts = cloud_sync.list_calibration_conflicts(client, remote_calibrations=remote_rows)
-    assert len(conflicts) == 1
-    assert conflicts[0]["fields"] == ["is_active"]
-
-    repair_result = cloud_sync.repair_calibrations_local_wins(
-        client,
-        calibration_uuids=[calibration_uuid],
-        remote_calibrations=remote_rows,
-    )
-    assert repair_result["repaired"] == 1
-    assert repair_result["errors"] == []
-    assert repair_result["repairs"][0]["fields"] == ["is_active"]
-    assert client.patches == [
-        (
-            "calibrations?user_id=eq.user-123&id=eq.cloud-cal-9",
-            {
-                "is_active": True,
-            },
-        )
-    ]
-    assert remote_rows[0]["is_active"] is True
+    assert cloud_sync.list_calibration_conflicts(
+        client, remote_calibrations=remote_rows
+    ) == []
 
     push_result = cloud_sync.push_calibrations(client, remote_calibrations=remote_rows)
     pull_result = cloud_sync.pull_calibrations(client, remote_calibrations=remote_rows)
@@ -1200,6 +1185,8 @@ def test_is_active_conflict_is_cleared_by_local_wins_repair_and_followup_sync(mo
     assert pull_result["errors"] == []
     assert push_result["pushed"] == 0
     assert pull_result["pulled"] == 0
+    assert push_result["conflicts"] == 0
+    assert pull_result["conflicts"] == 0
 
 
 def test_push_calibrations_keeps_same_objective_date_separate_by_uuid(monkeypatch, tmp_path):

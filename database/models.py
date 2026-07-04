@@ -4243,14 +4243,17 @@ class CalibrationDB:
 
         Updates the images to use the new calibration and recalculates their measurements.
         Returns the number of measurements updated.
+
+        Also flags any linked observations as ``dirty`` so that cloud sync picks
+        up the retroactive calibration reference change as a metadata-only patch
+        (no image bytes need to change).
         """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Get images using the old calibration
         cursor.execute(
-            "SELECT id, scale_microns_per_pixel FROM images WHERE calibration_id = ?",
+            "SELECT id, observation_id, scale_microns_per_pixel FROM images WHERE calibration_id = ?",
             (calibration_id,)
         )
         images = cursor.fetchall()
@@ -4260,23 +4263,33 @@ class CalibrationDB:
             return 0
 
         total_updated = 0
+        touched_observation_ids: set[int] = set()
 
         for img in images:
             image_id = img["id"]
+            observation_id = img["observation_id"]
             old_scale = img["scale_microns_per_pixel"] or 0
 
             if old_scale <= 0 or new_scale <= 0:
+                # Even without a rescale we still want to reassign the
+                # calibration link so the metadata reflects the new UUID.
+                cursor.execute(
+                    "UPDATE images SET calibration_id = ? WHERE id = ?",
+                    (new_calibration_id, image_id),
+                )
+                if observation_id is not None:
+                    touched_observation_ids.add(int(observation_id))
                 continue
 
             scale_ratio = new_scale / old_scale
 
-            # Update the image's calibration and scale
             cursor.execute(
                 "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
                 (new_calibration_id, new_scale, image_id)
             )
+            if observation_id is not None:
+                touched_observation_ids.add(int(observation_id))
 
-            # Update measurements for this image
             cursor.execute('''
                 UPDATE spore_measurements
                 SET length_um = length_um * ?,
@@ -4285,6 +4298,16 @@ class CalibrationDB:
             ''', (scale_ratio, scale_ratio, image_id))
 
             total_updated += cursor.rowcount
+
+        if touched_observation_ids:
+            placeholders = ",".join("?" for _ in touched_observation_ids)
+            cursor.execute(
+                (
+                    "UPDATE observations SET sync_status = 'dirty' "
+                    "WHERE id IN (" + placeholders + ") AND cloud_id IS NOT NULL"
+                ),
+                tuple(touched_observation_ids),
+            )
 
         conn.commit()
         conn.close()
