@@ -543,6 +543,8 @@ def _save_local_derivative_jpeg(
     destination: Path,
     source_path: Path,
     source_capture_datetime: datetime | str | None = None,
+    source_camera_make: str | None = None,
+    source_camera_model: str | None = None,
 ) -> None:
     rgb8 = np.asarray(rgb, dtype=np.float64)
     if rgb8.ndim == 2:
@@ -560,12 +562,19 @@ def _save_local_derivative_jpeg(
             "optimize": RAW_DERIVATIVE_OPTIMIZE,
         }
         exif_timestamp = _format_capture_datetime(source_capture_datetime)
-        if exif_timestamp:
+        make_text = str(source_camera_make or "").strip()
+        model_text = str(source_camera_model or "").strip()
+        if exif_timestamp or make_text or model_text:
             exif_factory = getattr(Image, "Exif", None)
             if callable(exif_factory):
                 exif = exif_factory()
-                for tag_id in (306, 36867, 36868):
-                    exif[tag_id] = exif_timestamp
+                if exif_timestamp:
+                    for tag_id in (306, 36867, 36868):
+                        exif[tag_id] = exif_timestamp
+                if make_text:
+                    exif[271] = make_text  # Make
+                if model_text:
+                    exif[272] = model_text  # Model
                 try:
                     save_kwargs["exif"] = exif.tobytes()
                 except Exception:
@@ -658,6 +667,8 @@ def render_raw_image(
     output_dir: str | Path | None = None,
     preview: bool = False,
     source_capture_datetime: datetime | str | None = None,
+    source_camera_make: str | None = None,
+    source_camera_model: str | None = None,
     **_kwargs: Any,
 ) -> Path:
     """Render a RAW source file to a high-quality local JPEG derivative."""
@@ -713,6 +724,8 @@ def render_raw_image(
             destination,
             source,
             source_capture_datetime=source_capture_datetime,
+            source_camera_make=source_camera_make,
+            source_camera_model=source_camera_model,
         )
         return destination
     except RawRenderingUnavailableError:

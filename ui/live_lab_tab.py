@@ -4785,6 +4785,48 @@ class LiveLabTab(QWidget):
         )
         return False
 
+    def _pending_raw_source_exif(
+        self, pending: "PendingRawCapture"
+    ) -> tuple[str | None, str | None, str | None]:
+        """Return (make, model, capture_datetime) for a pending RAW capture.
+
+        rawpy does not expose camera Make/Model, so we read them from the
+        companion JPEG when present. Falls back to the pending capture's
+        recorded source_capture_datetime for the timestamp.
+        """
+        make: str | None = None
+        model: str | None = None
+        capture_dt: str | None = str(getattr(pending, "source_capture_datetime", "") or "").strip() or None
+
+        companion = getattr(pending, "companion_jpeg_path", None)
+        companion_text = str(companion or "").strip()
+        if companion_text and Path(companion_text).exists():
+            try:
+                from utils.exif_reader import get_exif_data
+                exif = get_exif_data(companion_text)
+            except Exception:
+                exif = {}
+            if isinstance(exif, dict):
+                raw_make = exif.get("Make")
+                raw_model = exif.get("Model")
+                if isinstance(raw_make, bytes):
+                    raw_make = raw_make.decode("utf-8", errors="ignore")
+                if isinstance(raw_model, bytes):
+                    raw_model = raw_model.decode("utf-8", errors="ignore")
+                make = str(raw_make or "").strip() or None
+                model = str(raw_model or "").strip() or None
+                if not capture_dt:
+                    for field in ("DateTimeOriginal", "DateTimeDigitized", "DateTime"):
+                        value = exif.get(field)
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8", errors="ignore")
+                        text = str(value or "").strip()
+                        if text:
+                            capture_dt = text
+                            break
+
+        return make, model, capture_dt
+
     def _prepare_calibration_source_image(self) -> tuple[str | None, bool]:
         """Return `(path, is_temp)` for the full-resolution image to calibrate.
 
@@ -4803,11 +4845,15 @@ class LiveLabTab(QWidget):
                     output_dir = Path(tempfile.gettempdir()) / "sporely" / "calibration_from_livelab"
                     output_dir.mkdir(parents=True, exist_ok=True)
                     from utils.raw_render import render_raw_image
+                    make, model, capture_dt = self._pending_raw_source_exif(pending)
                     rendered = render_raw_image(
                         source_text,
                         settings=getattr(pending, "raw_settings", None),
                         output_dir=output_dir,
                         preview=False,
+                        source_capture_datetime=capture_dt,
+                        source_camera_make=make,
+                        source_camera_model=model,
                     )
                     return str(rendered), True
                 except Exception as exc:
