@@ -875,8 +875,10 @@ class LiveLabTab(QWidget):
             min_height=GALLERY_MIN_HEIGHT,
         )
         self.session_gallery.set_multi_select(True)
+        self.session_gallery.set_reorderable(True)
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
         self.session_gallery.selectionChanged.connect(self._on_session_gallery_selection_changed)
+        self.session_gallery.itemsReordered.connect(self._on_session_gallery_items_reordered)
         self.session_gallery.deleteRequested.connect(self._on_session_gallery_delete_requested)
 
         content_splitter = QSplitter(Qt.Vertical)
@@ -6443,6 +6445,68 @@ class LiveLabTab(QWidget):
                 timeout_ms=3500,
             )
         self._update_raw_processing_visibility()
+
+    def _on_session_gallery_items_reordered(self, ordered_keys) -> None:
+        # Session gallery mixes committed session images (int DB ids) with
+        # pending RAW captures (string keys "pending:..."). Committed images
+        # get persisted through ImageDB; pending captures get their in-memory
+        # list rebuilt so a subsequent commit lands them in the desired order.
+        committed_ids: list[int] = []
+        pending_keys: list[str] = []
+        for key in ordered_keys or []:
+            if isinstance(key, int):
+                committed_ids.append(key)
+                continue
+            key_text = str(key or "")
+            if key_text.startswith("pending:"):
+                pending_keys.append(key_text)
+                continue
+            try:
+                committed_ids.append(int(key_text))
+            except (TypeError, ValueError):
+                continue
+
+        if committed_ids:
+            obs_id = int(self._session_observation_id or 0)
+            if obs_id > 0:
+                try:
+                    ImageDB.reorder_images(obs_id, committed_ids)
+                except Exception:
+                    pass
+            existing = set(int(v) for v in getattr(self, "_session_image_ids", []) or [])
+            reordered_committed = [int(v) for v in committed_ids if int(v) in existing]
+            for image_id in getattr(self, "_session_image_ids", []) or []:
+                if int(image_id) not in reordered_committed:
+                    reordered_committed.append(int(image_id))
+            self._session_image_ids = reordered_committed
+
+        if pending_keys:
+            captures_by_key = {}
+            for capture in getattr(self, "_pending_raw_captures", []) or []:
+                if not isinstance(capture, PendingRawCapture):
+                    continue
+                key = self._pending_raw_gallery_key(capture)
+                if key is not None:
+                    captures_by_key[str(key)] = capture
+            reordered_captures = []
+            seen = set()
+            for pending_key in pending_keys:
+                capture = captures_by_key.get(pending_key)
+                if capture is None or id(capture) in seen:
+                    continue
+                reordered_captures.append(capture)
+                seen.add(id(capture))
+            for capture in getattr(self, "_pending_raw_captures", []) or []:
+                if isinstance(capture, PendingRawCapture) and id(capture) not in seen:
+                    reordered_captures.append(capture)
+                    seen.add(id(capture))
+            if reordered_captures:
+                self._pending_raw_captures = reordered_captures
+                current = self._current_pending_raw_capture()
+                if current is not None and current in reordered_captures:
+                    self._selected_pending_raw_index = reordered_captures.index(current)
+
+        self._refresh_session_gallery()
 
     def _on_session_gallery_delete_requested(self, key) -> None:
         if self._delete_session_gallery_item(key):

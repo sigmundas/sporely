@@ -7497,9 +7497,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
         self.measure_gallery.set_multi_select(True)
+        self.measure_gallery.set_reorderable(True)
         self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
         self.measure_gallery.deleteRequested.connect(self._on_measure_gallery_delete_requested)
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
+        self.measure_gallery.itemsReordered.connect(self._on_measure_gallery_items_reordered)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
@@ -11687,6 +11689,27 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if hasattr(self, "measure_gallery"):
                     self.measure_gallery.select_image(image_id)
                 return
+
+    def _on_measure_gallery_items_reordered(self, ordered_keys) -> None:
+        obs_id = int(getattr(self, "active_observation_id", 0) or 0)
+        if obs_id <= 0:
+            return
+        ordered_ids: list[int] = []
+        for key in ordered_keys or []:
+            try:
+                ordered_ids.append(int(key))
+            except (TypeError, ValueError):
+                continue
+        if not ordered_ids:
+            return
+        try:
+            ImageDB.reorder_images(obs_id, ordered_ids)
+        except Exception:
+            return
+        try:
+            self.refresh_observation_images(select_image_id=self.current_image_id)
+        except Exception:
+            pass
 
     def _on_measure_gallery_delete_requested(self, image_key):
         image_id = None

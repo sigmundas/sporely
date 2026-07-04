@@ -265,8 +265,10 @@ class IngestionHubTab(QWidget):
             min_height=GALLERY_MIN_HEIGHT,
         )
         self.staging_gallery.set_multi_select(True)
+        self.staging_gallery.set_reorderable(True)
         self.staging_gallery.imageClicked.connect(self._on_gallery_clicked)
         self.staging_gallery.selectionChanged.connect(self._on_gallery_selection_changed)
+        self.staging_gallery.itemsReordered.connect(self._on_staging_gallery_items_reordered)
 
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
@@ -907,6 +909,31 @@ class IngestionHubTab(QWidget):
         match = self._match_for_path(target_path)
         if match:
             self._show_match(match)
+
+    def _on_staging_gallery_items_reordered(self, ordered_keys) -> None:
+        obs_id = self._selected_observation_id()
+        if obs_id is None:
+            return
+        matches = list(self._matches_by_observation.get(obs_id, []))
+        if not matches:
+            return
+        by_path = {str(m.get("filepath") or ""): m for m in matches}
+        new_matches: list[dict] = []
+        seen: set[int] = set()
+        for key in ordered_keys or []:
+            path = str(key or "")
+            match = by_path.get(path)
+            if match is None or id(match) in seen:
+                continue
+            new_matches.append(match)
+            seen.add(id(match))
+        for match in matches:
+            if id(match) not in seen:
+                new_matches.append(match)
+        if new_matches == matches:
+            return
+        self._matches_by_observation[obs_id] = new_matches
+        self._refresh_gallery()
 
     def _match_for_path(self, filepath: str | None) -> dict | None:
         target = str(filepath or "").strip()

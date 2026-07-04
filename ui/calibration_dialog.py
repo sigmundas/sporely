@@ -1427,8 +1427,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
         )
         self.image_gallery.setFocusPolicy(Qt.StrongFocus)
         self.image_gallery.setFixedHeight(120)  # Thumbnail (80) + title bar + margins
+        self.image_gallery.set_reorderable(True)
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteRequested.connect(self._on_gallery_image_deleted)
+        self.image_gallery.itemsReordered.connect(self._on_calibration_gallery_items_reordered)
         left_layout.addWidget(self.image_gallery)
 
         layout.addWidget(left_panel, 2)
@@ -4363,6 +4365,45 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 "crop_source_size": img_data.get("crop_source_size"),
             })
         self.image_gallery.set_items(items)
+
+    def _on_calibration_gallery_items_reordered(self, ordered_keys) -> None:
+        # Keys are "cal_<original-index>" strings assigned at set_items time.
+        # Parse them back to indices and rebuild `calibration_images` in the
+        # new order.
+        old_images = list(self.calibration_images)
+        if not old_images:
+            return
+        new_images: list[dict] = []
+        seen: set[int] = set()
+        for key in ordered_keys or []:
+            text = str(key or "")
+            if not text.startswith("cal_"):
+                continue
+            try:
+                index = int(text.split("_", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            if index < 0 or index >= len(old_images) or index in seen:
+                continue
+            new_images.append(old_images[index])
+            seen.add(index)
+        for index, img in enumerate(old_images):
+            if index not in seen:
+                new_images.append(img)
+        if new_images == old_images:
+            return
+        # Preserve which image was being viewed so the panel stays put.
+        current_path = None
+        if 0 <= self.current_image_index < len(old_images):
+            current_path = old_images[self.current_image_index].get("path")
+        self.calibration_images = new_images
+        self._modified = True
+        if current_path is not None:
+            for idx, img in enumerate(new_images):
+                if img.get("path") == current_path:
+                    self.current_image_index = idx
+                    break
+        self._refresh_image_gallery()
 
     def _extract_camera_text(self, path: str) -> str | None:
         if not path:

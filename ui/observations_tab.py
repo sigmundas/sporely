@@ -2220,12 +2220,14 @@ class ObservationsTab(QWidget):
         )
         self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
+        self.gallery_widget.set_reorderable(True)
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
+        self.gallery_widget.itemsReordered.connect(self._on_gallery_widget_items_reordered)
 
         splitter.addWidget(self.gallery_widget)
 
@@ -6527,6 +6529,26 @@ class ObservationsTab(QWidget):
         if loaded_observation_id != self.selected_observation_id:
             return
         self._apply_gallery_publish_selection_for_observation(loaded_observation_id)
+
+    def _on_gallery_widget_items_reordered(self, ordered_keys) -> None:
+        obs_id = self.selected_observation_id
+        if not obs_id:
+            return
+        ordered_ids: list[int] = []
+        for key in ordered_keys or []:
+            try:
+                ordered_ids.append(int(key))
+            except (TypeError, ValueError):
+                continue
+        if not ordered_ids:
+            return
+        try:
+            ImageDB.reorder_images(int(obs_id), ordered_ids)
+        except Exception:
+            return
+        # Reload from the DB so the badges/numbering reflect the new order.
+        if hasattr(self, "gallery_widget"):
+            self.gallery_widget.set_observation_id_async(int(obs_id))
 
     def _apply_gallery_publish_selection_for_observation(self, observation_id: int | None) -> None:
         if not observation_id or not hasattr(self, "gallery_widget"):
