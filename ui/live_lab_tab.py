@@ -482,6 +482,17 @@ class LiveLabTab(QWidget):
         self._watcher: LabWatcherWorker | None = None
         self._session_image_ids: list[int] = []
         self._selected_session_image_id: int | None = None
+        # Sidebar-metadata binding rules:
+        #   - False: sidebar changes represent a NEW microscope state to be
+        #     applied to the NEXT capture. Never mutates already-captured
+        #     images. `_session_microscope_state` shadows the sidebar.
+        #   - True: user explicitly clicked a thumbnail; sidebar changes are
+        #     an edit of that image (or the currently multi-selected images).
+        self._sidebar_binds_to_selection: bool = False
+        # Snapshot of the microscope state used for the next capture. Kept in
+        # sync with the sidebar while unbound, and reset to the most recent
+        # capture's metadata after each ingest.
+        self._session_microscope_state: dict = {}
         self._raw_render_settings = RawRenderSettings.default()
         self._raw_capture_mode = self.RAW_CAPTURE_MODE_AUTO_SAVE
         self._raw_companion_source_preference = RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW
@@ -4041,6 +4052,15 @@ class LiveLabTab(QWidget):
         return [current_pending] if current_pending is not None else []
 
     def _sync_selected_pending_raw_metadata_from_controls(self) -> bool:
+        # Sidebar changes only mutate already-captured images when the user
+        # has explicitly bound the sidebar to a thumbnail via a click. When
+        # unbound the change is a preparation for the next capture — keep the
+        # session state shadow in sync so the next ingest picks it up.
+        if not getattr(self, "_sidebar_binds_to_selection", False):
+            refresh_state = getattr(self, "_refresh_session_microscope_state_from_sidebar", None)
+            if callable(refresh_state):
+                refresh_state()
+            return False
         if getattr(self, "_raw_edit_session", None) is not None:
             return False
         selected_captures = self._selected_pending_raw_captures()
@@ -4105,6 +4125,14 @@ class LiveLabTab(QWidget):
 
     def _sync_selected_session_image_metadata_from_controls(self) -> bool:
         """Persist sidebar metadata changes to the selected saved session images."""
+        # See _sync_selected_pending_raw_metadata_from_controls: without an
+        # explicit user selection the sidebar is a staging area for the next
+        # capture, not an edit surface for existing images.
+        if not getattr(self, "_sidebar_binds_to_selection", False):
+            refresh_state = getattr(self, "_refresh_session_microscope_state_from_sidebar", None)
+            if callable(refresh_state):
+                refresh_state()
+            return False
         if getattr(self, "_raw_edit_session", None) is not None:
             return False
         image_ids = self._selected_session_image_ids_for_metadata_sync()
@@ -4207,6 +4235,10 @@ class LiveLabTab(QWidget):
         items: list[dict[str, object]] = []
         selected_key: str | int | None = None
         current_pending = self._current_pending_raw_capture()
+        # Continue numbering from the last committed session image so the
+        # newest pending capture — the freshest photo in the session — carries
+        # the highest visible number.
+        number_offset = len(getattr(self, "_session_image_ids", None) or [])
         for index, capture in enumerate(getattr(self, "_pending_raw_captures", []) or []):
             if not isinstance(capture, PendingRawCapture):
                 continue
@@ -4229,7 +4261,9 @@ class LiveLabTab(QWidget):
                 "id": self._pending_raw_gallery_key(capture),
                 "filepath": str(capture.source_path),
                 "preview_path": preview_path,
-                "image_number": f"P{index + 1}",
+                # Continue the visual sequence from the last committed image so
+                # the newest capture always shows the highest number.
+                "image_number": f"P{number_offset + index + 1}",
                 "badges": badges,
                 "frame_border_color": "#e74c3c" if capture.status == "failed" else "#e67e22",
                 "raw_halo_color": "#e74c3c",
@@ -4244,9 +4278,12 @@ class LiveLabTab(QWidget):
         return items, selected_key
 
     def _session_gallery_items(self) -> tuple[list[dict[str, object]], str | int | None]:
+        # Chronological ordering: the oldest committed image sits on the left,
+        # newer committed captures fill in to the right of it, and pending RAW
+        # captures — the freshest photos in the session, not yet saved — hang
+        # off the right edge in the order they arrived.
         items: list[dict[str, object]] = []
         pending_items, selected_pending_key = self._pending_raw_gallery_items()
-        items.extend(pending_items)
         objectives = load_objectives()
         for idx, image_id in enumerate(self._session_image_ids, start=1):
             image = ImageDB.get_image(image_id)
@@ -4296,6 +4333,7 @@ class LiveLabTab(QWidget):
                     "gps_tag_color": microscope_tag_color,
                 }
             )
+        items.extend(pending_items)
         selected_key: str | int | None = selected_pending_key
         if selected_key is None and self._selected_session_image_id is not None:
             selected_key = self._selected_session_image_id
@@ -5730,6 +5768,27 @@ class LiveLabTab(QWidget):
             "sample_label": str(self.sample_combo.currentText() or "").strip() or None,
         }
 
+    def _refresh_session_microscope_state_from_sidebar(self) -> None:
+        """Snapshot the current sidebar as the state to use for the next capture."""
+        try:
+            self._session_microscope_state = dict(self._current_lab_metadata() or {})
+        except Exception:
+            pass
+
+    def _capture_time_metadata(self) -> dict:
+        """Return the metadata to bake into a newly-captured image.
+
+        Falls back to the sidebar when no session snapshot has been taken yet
+        (e.g. the very first capture in a fresh session).
+        """
+        state = dict(getattr(self, "_session_microscope_state", None) or {})
+        if state:
+            return state
+        try:
+            return dict(self._current_lab_metadata() or {})
+        except Exception:
+            return {}
+
     def _log_session_event(
         self,
         event_type: str,
@@ -5889,6 +5948,13 @@ class LiveLabTab(QWidget):
         self._reset_companion_dedupe_state()
         self._session_import_count = 0
         self._session_active = True
+        # Seed the microscope-state shadow from the current sidebar; every
+        # subsequent capture will refresh it. Sidebar starts unbound.
+        self._sidebar_binds_to_selection = False
+        try:
+            self._session_microscope_state = dict(self._current_lab_metadata() or {})
+        except Exception:
+            self._session_microscope_state = {}
         self._session_id = uuid4().hex
         self._active_session_mode = selected_mode
         self._session_stop_pending = False
@@ -6071,26 +6137,34 @@ class LiveLabTab(QWidget):
         if observation_id <= 0:
             return False
 
+        capture_time_helper = getattr(self, "_capture_time_metadata", None)
+        if callable(capture_time_helper):
+            try:
+                capture_time_state = capture_time_helper() or {}
+            except Exception:
+                capture_time_state = self._current_lab_metadata()
+        else:
+            capture_time_state = self._current_lab_metadata()
         ingest_lab_metadata = merge_image_lab_metadata(
-            self._current_lab_metadata(),
+            capture_time_state,
             lab_metadata,
             getattr(ingest, "lab_metadata", None),
         )
         objective_key = ingest_lab_metadata.get("objective_name")
         if objective_key is None or not str(objective_key).strip():
-            objective_key = self._selected_combo_value(self.objective_combo)
+            objective_key = capture_time_state.get("objective_name") or self._selected_combo_value(self.objective_combo)
         contrast_value = ingest_lab_metadata.get("contrast")
         mount_value = ingest_lab_metadata.get("mount_medium")
         stain_value = ingest_lab_metadata.get("stain")
         sample_value = ingest_lab_metadata.get("sample_type")
         if not str(contrast_value or "").strip():
-            contrast_value = self._selected_combo_value(self.contrast_combo)
+            contrast_value = capture_time_state.get("contrast") or self._selected_combo_value(self.contrast_combo)
         if not str(mount_value or "").strip():
-            mount_value = self._selected_combo_value(self.mount_combo)
+            mount_value = capture_time_state.get("mount_medium") or self._selected_combo_value(self.mount_combo)
         if not str(stain_value or "").strip():
-            stain_value = self._selected_combo_value(self.stain_combo)
+            stain_value = capture_time_state.get("stain") or self._selected_combo_value(self.stain_combo)
         if not str(sample_value or "").strip():
-            sample_value = self._selected_combo_value(self.sample_combo)
+            sample_value = capture_time_state.get("sample_type") or self._selected_combo_value(self.sample_combo)
         objective_key = str(objective_key or "").strip() or None
         objective = load_objectives().get(objective_key) if objective_key else None
         scale = objective.get("microns_per_pixel") if isinstance(objective, dict) else None
@@ -6130,6 +6204,17 @@ class LiveLabTab(QWidget):
         self._session_image_ids.append(int(image_id))
         self._selected_session_image_id = int(image_id)
         self._session_import_count += 1
+        # After a fresh capture the sidebar is no longer bound to any thumbnail
+        # the user was inspecting — subsequent sidebar edits must be treated as
+        # preparation for the next capture, not as edits to this new image.
+        try:
+            self._sidebar_binds_to_selection = False
+            # Track the state this capture was actually taken with so it seeds
+            # the next capture (and matches whatever `_show_session_image` will
+            # now populate into the sidebar).
+            self._session_microscope_state = dict(ingest_lab_metadata or {})
+        except Exception:
+            pass
         self._update_observation_thumbnail()
         self._refresh_session_gallery()
         self._show_session_image(image_id)
@@ -6180,7 +6265,15 @@ class LiveLabTab(QWidget):
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
-        ingest_context = merge_image_lab_metadata(self._current_lab_metadata(), lab_metadata)
+        capture_time_helper = getattr(self, "_capture_time_metadata", None)
+        if callable(capture_time_helper):
+            try:
+                capture_time_state = capture_time_helper() or {}
+            except Exception:
+                capture_time_state = self._current_lab_metadata()
+        else:
+            capture_time_state = self._current_lab_metadata()
+        ingest_context = merge_image_lab_metadata(capture_time_state, lab_metadata)
         ingest_context["image_type"] = "microscope"
         resolved_raw_settings = RawRenderSettings.from_dict(raw_settings or self._current_raw_render_settings())
         try:
@@ -6280,6 +6373,9 @@ class LiveLabTab(QWidget):
                     is_multi_select = bool(is_multi_select_fn())
                 except Exception:
                     is_multi_select = False
+        # A user click is an explicit selection; sidebar edits from now on
+        # should apply to the clicked image(s) rather than the next capture.
+        self._sidebar_binds_to_selection = True
         current_edit_session = getattr(self, "_raw_edit_session", None)
         try:
             clicked_image_id = int(image_id or 0)
@@ -6335,6 +6431,11 @@ class LiveLabTab(QWidget):
             selected_count = len([path for path in selected_paths or [] if path])
         except Exception:
             selected_count = 0
+        # Multi-selection or clearing the selection are both user actions.
+        # Any surviving selection keeps the sidebar bound to those images; an
+        # empty selection releases it so future edits queue for the next
+        # capture instead of mutating whatever was previously highlighted.
+        self._sidebar_binds_to_selection = selected_count > 0
         if selected_count > 1:
             self._show_status(
                 self.tr("Settings will be applied to selected images."),

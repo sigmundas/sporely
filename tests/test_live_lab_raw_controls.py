@@ -2698,6 +2698,8 @@ def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_micro
 
     state.objective_combo.setCurrentIndex(1)
     state.contrast_combo.setCurrentIndex(1)
+    # User has multi-selected these captures — sidebar edits are for them.
+    state._sidebar_binds_to_selection = True
     assert live_lab_tab.LiveLabTab._sync_selected_pending_raw_metadata_from_controls(state) is True
 
     assert state.session_gallery.selected_keys() == expected_selected_keys
@@ -3167,6 +3169,9 @@ def test_live_lab_review_mode_pending_metadata_changes_stick_to_each_capture_on_
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
 
     live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+    # Simulate that the user is now editing the first pending capture — the
+    # sidebar is bound to their selection, so sidebar changes should stick.
+    state._sidebar_binds_to_selection = True
     state.objective_combo.setCurrentIndex(1)
     state.contrast_combo.setCurrentIndex(1)
     state.mount_combo.setCurrentIndex(1)

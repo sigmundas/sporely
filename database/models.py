@@ -2119,21 +2119,19 @@ class ImageDB:
 
     @staticmethod
     def get_images_for_observation(observation_id: int) -> List[dict]:
-        """Get all images for an observation"""
+        """Get all images for an observation, oldest-first by capture order."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
+        # SQLite sorts NULL sort_order rows before any numeric value, so
+        # legacy images predating the sort_order column stay ahead of newer
+        # rows (which always get MAX+1 via add_image). id ASC breaks ties
+        # deterministically, preserving insertion order.
         cursor.execute('''
             SELECT * FROM images
             WHERE observation_id = ?
-            ORDER BY
-                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
-                sort_order,
-                image_type,
-                micro_category,
-                created_at,
-                id
+            ORDER BY sort_order ASC, id ASC
         ''', (observation_id,))
 
         rows = cursor.fetchall()
@@ -2150,12 +2148,7 @@ class ImageDB:
         cursor.execute('''
             SELECT * FROM images
             WHERE observation_id = ? AND image_type = ?
-            ORDER BY
-                CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
-                sort_order,
-                micro_category,
-                created_at,
-                id
+            ORDER BY sort_order ASC, id ASC
         ''', (observation_id, image_type))
 
         rows = cursor.fetchall()
