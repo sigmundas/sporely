@@ -338,11 +338,17 @@ def _build_raw_controls_state() -> SimpleNamespace:
         capture,
         kind=kind,
     )
+    state._pending_raw_preview_has_request_for_capture = lambda capture, *, kind=None: live_lab_tab.LiveLabTab._pending_raw_preview_has_request_for_capture(
+        state,
+        capture,
+        kind=kind,
+    )
     state._enqueue_pending_raw_preview_job = lambda request: live_lab_tab.LiveLabTab._enqueue_pending_raw_preview_job(state, request)
     state._start_next_pending_raw_preview_job = lambda: live_lab_tab.LiveLabTab._start_next_pending_raw_preview_job(state)
     def _start_pending_raw_preview_job(request):
         state._pending_raw_preview_active_request = request
-        state._set_pending_raw_preview_busy(True, state.tr("Preparing RAW preview…"))
+        if getattr(request, "kind", "selected") == "selected":
+            state._set_pending_raw_preview_busy(True, state.tr("Preparing RAW preview…"))
         result = live_lab_tab._build_pending_raw_preview_job_result(request)
         live_lab_tab.LiveLabTab._on_pending_raw_preview_job_finished(state, result)
         live_lab_tab.LiveLabTab._finish_pending_raw_preview_job(state)
@@ -1822,6 +1828,8 @@ def test_live_lab_refresh_selected_pending_raw_preview_enqueues_worker_without_s
     busy_calls: list[tuple[bool, str | None]] = []
     request_calls: list[object] = []
     state._set_pending_raw_preview_busy = lambda visible, text=None: busy_calls.append((bool(visible), text))
+    background_request = state._pending_raw_preview_request_for_capture(pending, kind="background")
+    state._pending_raw_preview_job_queue = [background_request]
     state._pending_raw_preview_request_for_capture = lambda capture, *, kind="selected": SimpleNamespace(
         job_id=7,
         kind=kind,
@@ -1895,6 +1903,95 @@ def test_live_lab_pending_raw_preview_result_ignored_when_source_changes(tmp_pat
 
     assert present_calls == []
     assert pending.preview_rgb is None
+
+
+def test_live_lab_background_pending_raw_preview_enqueue_stays_silent(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=tmp_path / "preview.jpg",
+    )
+    state._pending_raw_captures = [pending]
+    state._selected_pending_raw_index = 0
+
+    busy_calls: list[tuple[bool, str | None, int | None, int | None]] = []
+    start_calls: list[object] = []
+    state._set_pending_raw_preview_busy = lambda visible, text=None, value=None, maximum=None: busy_calls.append(
+        (bool(visible), text, value, maximum)
+    )
+    state._start_pending_raw_preview_job = lambda request: start_calls.append(request)
+
+    request = state._pending_raw_preview_request_for_capture(pending, kind="background")
+    state._enqueue_pending_raw_preview_job(request)
+
+    assert start_calls
+    assert start_calls[0].kind == "background"
+    assert busy_calls == []
+
+
+def test_live_lab_background_pending_raw_preview_result_not_rejected_by_newer_job(
+    tmp_path,
+    monkeypatch,
+):
+    _qapp()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    pending_one = live_lab_tab.PendingRawCapture(
+        source_path=source_one,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=tmp_path / "preview1.jpg",
+    )
+    pending_two = live_lab_tab.PendingRawCapture(
+        source_path=source_two,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=tmp_path / "preview2.jpg",
+    )
+    state = _build_raw_controls_state()
+    state._pending_raw_captures = [pending_one, pending_two]
+    state._selected_pending_raw_index = 1
+
+    request_one = state._pending_raw_preview_request_for_capture(pending_one, kind="background")
+    request_two = state._pending_raw_preview_request_for_capture(pending_two, kind="background")
+    state._pending_raw_preview_active_request = request_one
+    state._pending_raw_preview_job_queue = [request_two]
+    state._pending_raw_preview_latest_job_id = request_two.job_id
+
+    present_calls: list[dict[str, object]] = []
+    state._present_raw_preview = lambda **kwargs: present_calls.append(kwargs)
+    state._refresh_session_gallery = lambda: None
+
+    result = live_lab_tab._PendingRawPreviewJobResult(
+        job_id=request_one.job_id,
+        kind="background",
+        source_signature=request_one.source_signature,
+        settings_signature=request_one.settings_signature,
+        raw_rgb=np.ones((2, 2, 3), dtype=np.float32),
+        preview_rgb=np.ones((2, 2, 3), dtype=np.float32),
+        processed_settings=pending_one.raw_settings,
+        auto_level_settings=pending_one.raw_settings,
+        curve=None,
+        preview_path=str(pending_one.preview_path),
+        error=None,
+    )
+
+    live_lab_tab.LiveLabTab._on_pending_raw_preview_job_finished(state, result)
+
+    assert present_calls == []
+    assert isinstance(pending_one.preview_rgb, np.ndarray)
+    assert pending_one.rendered_settings == pending_one.raw_settings
+    assert str(pending_one.preview_path) == result.preview_path
 
 
 def test_live_lab_active_pending_raw_control_change_uses_cached_fast_path_without_busy(

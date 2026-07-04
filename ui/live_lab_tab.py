@@ -670,7 +670,6 @@ class LiveLabTab(QWidget):
             tuple[str, int, int, str], "_RawPreviewCacheEntry"
         ] = {}
         self._pending_raw_preview_job_counter = 0
-        self._pending_raw_preview_latest_job_id = 0
         self._pending_raw_preview_active_request: _PendingRawPreviewJobRequest | None = None
         self._pending_raw_preview_job_queue: list[_PendingRawPreviewJobRequest] = []
         self._pending_raw_preview_worker_thread: QThread | None = None
@@ -2543,6 +2542,27 @@ class LiveLabTab(QWidget):
             if isinstance(cache, dict):
                 cache.clear()
 
+    def _pending_raw_preview_has_request_for_capture(
+        self,
+        capture: PendingRawCapture,
+        *,
+        kind: str | None = None,
+    ) -> bool:
+        active_request = getattr(self, "_pending_raw_preview_active_request", None)
+        if isinstance(active_request, _PendingRawPreviewJobRequest):
+            if active_request.capture is capture and (kind is None or active_request.kind == kind):
+                return True
+        queue = getattr(self, "_pending_raw_preview_job_queue", None)
+        for request in list(queue or []):
+            if not isinstance(request, _PendingRawPreviewJobRequest):
+                continue
+            if request.capture is not capture:
+                continue
+            if kind is not None and request.kind != kind:
+                continue
+            return True
+        return False
+
     @staticmethod
     def _pending_raw_capture_preview_is_current(capture: PendingRawCapture) -> bool:
         """Return True when the on-disk preview matches the capture's current settings."""
@@ -2575,6 +2595,8 @@ class LiveLabTab(QWidget):
                 continue
             if LiveLabTab._pending_raw_capture_preview_is_current(capture):
                 continue
+            if self._pending_raw_preview_has_request_for_capture(capture, kind="selected"):
+                continue
             queue.append(capture)
             added = True
         if (added or queue) and not timer.isActive():
@@ -2595,6 +2617,8 @@ class LiveLabTab(QWidget):
             if getattr(candidate, "status", "pending") != "pending":
                 continue
             if LiveLabTab._pending_raw_capture_preview_is_current(candidate):
+                continue
+            if self._pending_raw_preview_has_request_for_capture(candidate, kind="selected"):
                 continue
             capture = candidate
             break
@@ -4709,7 +4733,11 @@ class LiveLabTab(QWidget):
             needs_refresh = settings_are_stale or not preview_path or not Path(preview_path).exists()
             if needs_refresh:
                 active_request = getattr(self, "_pending_raw_preview_active_request", None)
-                if isinstance(active_request, _PendingRawPreviewJobRequest) and active_request.capture is capture:
+                if (
+                    isinstance(active_request, _PendingRawPreviewJobRequest)
+                    and active_request.capture is capture
+                    and active_request.kind == "selected"
+                ):
                     self._update_pending_raw_controls()
                     return
                 busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
@@ -4765,11 +4793,7 @@ class LiveLabTab(QWidget):
             return
         if LiveLabTab._pending_raw_capture_preview_is_current(capture):
             return
-        active_request = getattr(self, "_pending_raw_preview_active_request", None)
-        if isinstance(active_request, _PendingRawPreviewJobRequest) and active_request.capture is capture:
-            return
-        queue = getattr(self, "_pending_raw_preview_job_queue", None)
-        if any(isinstance(request, _PendingRawPreviewJobRequest) and request.capture is capture for request in list(queue or [])):
+        if self._pending_raw_preview_has_request_for_capture(capture, kind="selected"):
             return
         request_builder = getattr(self, "_pending_raw_preview_request_for_capture", None)
         enqueue_request = getattr(self, "_enqueue_pending_raw_preview_job", None)
@@ -4834,7 +4858,6 @@ class LiveLabTab(QWidget):
             return None
         job_id = int(getattr(self, "_pending_raw_preview_job_counter", 0)) + 1
         self._pending_raw_preview_job_counter = job_id
-        self._pending_raw_preview_latest_job_id = job_id
         source_path = Path(capture.source_path)
         source_signature = _pending_raw_source_signature(source_path)
         settings = RawRenderSettings.from_dict(capture.raw_settings)
@@ -4865,12 +4888,26 @@ class LiveLabTab(QWidget):
         if isinstance(active, _PendingRawPreviewJobRequest) and active.job_id == request.job_id:
             return
         if request.kind == "selected":
-            queue[:] = [queued for queued in queue if getattr(queued, "kind", "") != "selected"]
+            queue[:] = [
+                queued
+                for queued in queue
+                if not (
+                    isinstance(queued, _PendingRawPreviewJobRequest)
+                    and (
+                        queued.kind == "selected"
+                        or (queued.kind == "background" and queued.capture is request.capture)
+                    )
+                )
+            ]
             queue.insert(0, request)
         else:
-            if not any(getattr(queued, "job_id", None) == request.job_id for queued in queue):
-                queue.append(request)
-        self._set_pending_raw_preview_busy(True, self.tr("Preparing RAW preview…"))
+            if self._pending_raw_preview_has_request_for_capture(request.capture, kind="selected"):
+                return
+            if self._pending_raw_preview_has_request_for_capture(request.capture, kind="background"):
+                return
+            queue.append(request)
+        if request.kind == "selected":
+            self._set_pending_raw_preview_busy(True, self.tr("Preparing RAW preview…"))
         if getattr(self, "_pending_raw_preview_worker_thread", None) is None:
             self._start_next_pending_raw_preview_job()
 
@@ -4886,7 +4923,8 @@ class LiveLabTab(QWidget):
 
     def _start_pending_raw_preview_job(self, request: _PendingRawPreviewJobRequest) -> None:
         self._pending_raw_preview_active_request = request
-        self._set_pending_raw_preview_busy(True, self.tr("Preparing RAW preview…"))
+        if request.kind == "selected":
+            self._set_pending_raw_preview_busy(True, self.tr("Preparing RAW preview…"))
         thread = QThread(self)
         worker = _PendingRawPreviewWorker(request)
         worker.moveToThread(thread)
@@ -4907,9 +4945,6 @@ class LiveLabTab(QWidget):
             if not isinstance(result, _PendingRawPreviewJobResult):
                 return
             if result.job_id != request.job_id:
-                return
-            latest_job_id = int(getattr(self, "_pending_raw_preview_latest_job_id", 0) or 0)
-            if latest_job_id and result.job_id != latest_job_id:
                 return
             current_request = request
             capture = current_request.capture
@@ -5028,6 +5063,12 @@ class LiveLabTab(QWidget):
         self._pending_raw_preview_worker = None
         self._pending_raw_preview_worker_thread = None
         self._pending_raw_preview_active_request = None
+        queue = getattr(self, "_pending_raw_preview_job_queue", None)
+        next_request = queue[0] if queue else None
+        if not (isinstance(next_request, _PendingRawPreviewJobRequest) and next_request.kind == "selected"):
+            busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
+            if callable(busy_setter):
+                busy_setter(False, "")
         self._start_next_pending_raw_preview_job()
 
     def _schedule_pending_raw_preview_refresh(self) -> None:
