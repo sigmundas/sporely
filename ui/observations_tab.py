@@ -3097,6 +3097,12 @@ class ObservationsTab(QWidget):
         current: int | None = None,
         total: int | None = None,
     ) -> None:
+        # NB: This used to `max(previous_value, new_pct)` to keep the bar from
+        # flapping across phases with different totals. Cloud sync now maps
+        # progress through a weighted phase model that is monotonic *within* a
+        # run, so the anti-flap clamp is no longer needed — and it prevented a
+        # fresh run from resetting the bar back to 0%, so a second sync in the
+        # same session would appear stuck at the previous run's finish value.
         if hasattr(self, "status_progress_text"):
             self.status_progress_text.setText((status_text or "").strip())
         if hasattr(self, "status_progress_bar"):
@@ -3105,12 +3111,8 @@ class ObservationsTab(QWidget):
                     total_i = max(1, int(total))
                     current_i = 0 if current is None else max(0, min(int(current), total_i))
                     pct = int(round((current_i / total_i) * 100.0))
-                    self.status_progress_bar.setRange(0, 100)
-                    try:
-                        pct = max(int(self.status_progress_bar.value()), pct)
-                    except Exception:
-                        pass
                     pct = max(0, min(100, pct))
+                    self.status_progress_bar.setRange(0, 100)
                     self.status_progress_bar.setValue(pct)
                     if hasattr(self, "status_progress_pct"):
                         self.status_progress_pct.setText(f"{pct}%")
@@ -3226,6 +3228,9 @@ class ObservationsTab(QWidget):
 
         self._cloud_sync_show_status = bool(show_status)
         self._cloud_sync_run_refresh_flow = bool(run_refresh_flow)
+        # Clear any completion state left over from a previous sync run so the
+        # new run starts at 0% instead of appearing stuck at 99–100%.
+        self._reset_status_progress()
         self._cloud_sync_worker = _CloudAutoSyncWorker(
             prepare_images_cb=self.prepare_cloud_sync_image_uploads if sync_images else None,
             materialize_remote_images=materialize_remote_images,

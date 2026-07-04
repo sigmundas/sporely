@@ -10802,6 +10802,202 @@ def _associate_persisted_cloud_images(
     return associated_ids, kept_cloud_ids
 
 
+def _stored_local_media_signature_image_stats(
+    observation_id: int | str,
+) -> dict[int, dict]:
+    """Return the last-synced path/stat signature per local image id.
+
+    Reads the stored per-observation local media signature and pulls out the
+    ``filepath`` :func:`_path_stat_signature` dict for each image row. Used to
+    decide whether an image's source file has changed since the last sync
+    without hashing its content.
+    """
+    stored_text = _load_local_cloud_media_signature(observation_id)
+    parsed = _parsed_local_media_signature(stored_text)
+    result: dict[int, dict] = {}
+    for row in (parsed.get('images') or []):
+        if not isinstance(row, dict):
+            continue
+        try:
+            image_id = int(row.get('id') or 0)
+        except Exception:
+            image_id = 0
+        if image_id <= 0:
+            continue
+        filepath_sig = row.get('filepath')
+        if isinstance(filepath_sig, dict):
+            result[image_id] = dict(filepath_sig)
+    return result
+
+
+def _local_image_source_bytes_unchanged(
+    stored_stats: dict[int, dict],
+    image_row: dict,
+) -> bool:
+    """Best-effort: True when the image's local source file hasn't changed.
+
+    Compares the stored path/stat signature captured at the last successful
+    sync against the current signature. Mismatches (file replaced, edited,
+    resized) fall through to the full prepare path so a stale WebP is never
+    reused. If we don't have a stored signature we conservatively return
+    False so the caller falls back to the encode-and-hash path.
+    """
+    try:
+        image_id = int(image_row.get('id') or 0)
+    except Exception:
+        image_id = 0
+    if image_id <= 0:
+        return False
+    stored_sig = stored_stats.get(image_id)
+    if not isinstance(stored_sig, dict):
+        return False
+    filepath = str(image_row.get('filepath') or '').strip()
+    if not filepath:
+        return False
+    current_sig = _path_stat_signature(filepath)
+    if not current_sig.get('exists'):
+        return False
+    # mtime_ns can be missing on stored payloads normalized via
+    # _normalized_local_media_signature_payload — fall back to (path, size).
+    def _cmp_key(sig: dict) -> tuple:
+        return (
+            str(sig.get('path') or ''),
+            int(sig.get('size') or 0),
+            int(sig.get('mtime_ns') or 0),
+        )
+    return _cmp_key(stored_sig) == _cmp_key(current_sig)
+
+
+def _reconcile_metadata_only_linked_images(
+    client: SporelyCloudClient,
+    obs: dict,
+    obs_cloud_id: str,
+    existing_rows: list[dict],
+) -> tuple[set[int], set[str]]:
+    """Skip WebP prep for linked images whose bytes haven't changed.
+
+    Companion to :func:`_associate_persisted_cloud_images`. When an
+    observation is re-dirtied for a *different* image (e.g. a new local image
+    that still has ``cloud_id IS NULL``), the sibling images that are already
+    correctly linked and whose local source file hasn't changed should not be
+    re-encoded to WebP just to end up as a metadata-only patch. This pass
+    applies any pending metadata delta directly and returns their ids so the
+    prepare callback skips them.
+
+    Returns ``(skip_prepare_image_ids, kept_remote_cloud_ids)``.
+    """
+    skip_ids: set[int] = set()
+    kept_cloud_ids: set[str] = set()
+    try:
+        obs_local_id = int(obs.get('id'))
+    except Exception:
+        return skip_ids, kept_cloud_ids
+    if not existing_rows:
+        return skip_ids, kept_cloud_ids
+
+    existing_by_id = {
+        str(row.get('id') or '').strip(): row
+        for row in existing_rows
+        if str(row.get('id') or '').strip()
+    }
+    existing_by_desktop_id = {
+        _safe_int(row.get('desktop_id')): row
+        for row in existing_rows
+        if _safe_int(row.get('desktop_id')) != 0
+    }
+
+    include_ai_crop = client._observation_images_support_ai_crop()
+    include_upload_meta = client._observation_images_support_upload_metadata()
+    upload_derived_keys = {
+        'id',
+        'storage_path',
+        'original_filename',
+        'source_width',
+        'source_height',
+        'stored_width',
+        'stored_height',
+        'stored_bytes',
+        'upload_mode',
+    }
+
+    stored_stats = _stored_local_media_signature_image_stats(obs_local_id)
+    if not stored_stats:
+        # Without a baseline we can't tell if bytes changed — leave the
+        # normal encode-and-check path in charge.
+        return skip_ids, kept_cloud_ids
+
+    for image_row in ImageDB.get_images_for_observation(obs_local_id):
+        img = dict(image_row or {})
+        local_image_id = _safe_int(img.get('id'))
+        if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
+            continue
+        local_cloud_id = str(img.get('cloud_id') or '').strip()
+        if not local_cloud_id:
+            continue
+        if not str(img.get('synced_at') or '').strip():
+            continue
+        remote_row = existing_by_id.get(local_cloud_id) or existing_by_desktop_id.get(local_image_id)
+        if not remote_row:
+            continue
+        remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
+        if not remote_storage_path:
+            continue
+        if not _local_image_source_bytes_unchanged(stored_stats, img):
+            continue
+
+        # Detect metadata drift without any WebP encoding.
+        expected_payload = _prepared_item_remote_payload(
+            img,
+            str(img.get('filepath') or ''),
+            remote_storage_path,
+            include_ai_crop=include_ai_crop,
+            include_upload_meta=include_upload_meta,
+        )
+        remote_payload = _remote_image_payload(
+            remote_row,
+            include_ai_crop=include_ai_crop,
+            include_upload_meta=include_upload_meta,
+        )
+        if not _image_calibration_uuid(img):
+            expected_payload.pop('calibration_uuid', None)
+            remote_payload.pop('calibration_uuid', None)
+        for key in upload_derived_keys:
+            expected_payload.pop(key, None)
+            remote_payload.pop(key, None)
+
+        if expected_payload != remote_payload:
+            try:
+                client.push_image_metadata(img, obs_cloud_id, remote_storage_path)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                # Fall back to the normal path if the direct patch failed.
+                print(
+                    f'[cloud_sync] Observation {obs_local_id}: metadata-only patch '
+                    f'for cloud image {local_cloud_id} failed ({exc}); using the '
+                    f'prepare/upload path as fallback'
+                )
+                continue
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: metadata patch for cloud image '
+                f'actual_upload=False image_id={local_image_id} cloud_image_id={local_cloud_id} '
+                f'storage_path={remote_storage_path} '
+                f'(source bytes unchanged since last sync)'
+            )
+        else:
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: skipped already synced cloud image '
+                f'actual_upload=False image_id={local_image_id} cloud_image_id={local_cloud_id} '
+                f'storage_path={remote_storage_path} '
+                f'(source bytes unchanged since last sync, metadata matches)'
+            )
+
+        skip_ids.add(local_image_id)
+        kept_cloud_ids.add(local_cloud_id)
+
+    return skip_ids, kept_cloud_ids
+
+
 def _push_images_for_observation(
     client: SporelyCloudClient,
     obs: dict,
@@ -10841,6 +11037,15 @@ def _push_images_for_observation(
             skip_prepare_image_ids, prepass_kept_cloud_ids = _associate_persisted_cloud_images(
                 client, obs, prepass_existing_rows
             )
+            # Also skip WebP prep for sibling images that are already linked
+            # and whose local bytes haven't changed since last sync. Their
+            # metadata delta (if any) is patched in place here so the
+            # prepare_images_cb can focus on images that actually need bytes.
+            metadata_only_ids, metadata_only_kept = _reconcile_metadata_only_linked_images(
+                client, obs, obs_cloud_id, prepass_existing_rows
+            )
+            skip_prepare_image_ids = skip_prepare_image_ids | metadata_only_ids
+            prepass_kept_cloud_ids = prepass_kept_cloud_ids | metadata_only_kept
     if callable(prepare_images_cb):
         try:
             def prepare_progress(message: str, _current: int | None = None, _total: int | None = None) -> None:
