@@ -10440,6 +10440,30 @@ def push_all(
                             f'[cloud_sync] Observation {obs["id"]}: measurements pushed '
                             f'(local_id={local_obs_id})'
                         )
+                    # Public spore mosaic (atlas + tile manifest).
+                    #
+                    # Runs unconditionally after the measurement attempt so a
+                    # first-time mosaic still generates when measurements
+                    # already exist in the cloud and this sync is a pure
+                    # noop for measurements (all cache-hit). The mosaic
+                    # pusher is best-effort: it queries the local DB itself,
+                    # reads whichever measurement cloud_ids are already
+                    # populated, and no-ops (with a `Mosaic skip …` log) if
+                    # there aren't enough of them. A mosaic failure never
+                    # aborts the observation sync — the public RPC falls
+                    # back to per-spore `cropUrl` when no mosaic row exists.
+                    try:
+                        _push_spore_mosaic_for_observation(
+                            client, local_obs_id, cloud_id,
+                        )
+                    except Exception as mosaic_exc:
+                        if is_cloud_auth_error(mosaic_exc) or is_cloud_temporary_unavailable_error(mosaic_exc):
+                            raise
+                        print(
+                            f'[cloud_sync] Mosaic push errored obs {local_obs_id}: '
+                            f'{mosaic_exc}',
+                            flush=True,
+                        )
 
                 stored_local_media_signature = (
                     _load_local_cloud_media_signature(local_obs_id)
@@ -11639,6 +11663,287 @@ def _push_measurements_for_observation(
             f'[cloud_sync] Observation {obs_local_id}: measurement push finalized '
             f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)} '
             f'duration={push_elapsed * 1000:.0f}ms'
+        ),
+        flush=True,
+    )
+
+
+def _push_spore_mosaic_for_observation(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+) -> None:
+    """Generate + upload one public spore mosaic (atlas + tile manifest).
+
+    Best-effort: any failure logs a `[cloud_sync] Mosaic …` warning and
+    returns without raising, so a mosaic problem never breaks the rest of
+    an observation sync. The per-measurement `thumb_key` / `cropUrl`
+    fallback on the public RPC remains authoritative when this step is
+    skipped or fails.
+
+    Runs only when the observation has `spore_data_visibility='public'`
+    and at least one microscope measurement has been pushed with a
+    resolvable cloud id — matching the visibility surface of the public
+    observation RPC.
+    """
+    if not obs_cloud_id:
+        return
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT spore_data_visibility FROM observations WHERE id = ?',
+            (obs_local_id,),
+        )
+        obs_row = cursor.fetchone()
+        if obs_row is None:
+            return
+        visibility = str(obs_row['spore_data_visibility'] or 'public').strip().lower()
+        if visibility != 'public':
+            print(
+                f'[cloud_sync] Mosaic skip obs {obs_local_id}: '
+                f'spore_data_visibility={visibility!r}',
+                flush=True,
+            )
+            return
+
+        cursor.execute(
+            '''
+            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+                   m.gallery_rotation, m.cloud_id,
+                   i.cloud_id  AS image_cloud_id,
+                   i.filepath  AS image_filepath
+            FROM spore_measurements m
+            JOIN images i ON i.id = m.image_id
+            WHERE i.observation_id = ?
+              AND i.image_type = 'microscope'
+              AND i.cloud_id IS NOT NULL
+              AND m.cloud_id IS NOT NULL
+              AND m.length_um IS NOT NULL
+              AND m.width_um  IS NOT NULL
+              AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
+              AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
+              AND (
+                m.measurement_type IS NULL
+                OR m.measurement_type = ''
+                OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
+              )
+            ORDER BY m.id
+            ''',
+            (obs_local_id,),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    if not rows:
+        print(
+            f'[cloud_sync] Mosaic skip obs {obs_local_id}: no eligible public measurements',
+            flush=True,
+        )
+        return
+
+    # Local import to keep the top-level cloud_sync import graph unchanged
+    # for tests that stub PIL or the mosaic module.
+    from utils.cloud_spore_mosaic import (
+        DEFAULT_TILE_SIZE_PX,
+        build_spore_mosaic,
+        build_storage_key,
+        compute_content_digest,
+        sources_from_measurement_rows,
+    )
+
+    print(
+        f'[cloud_sync] Mosaic start obs {obs_local_id}: measurements={len(rows)}',
+        flush=True,
+    )
+    sources, source_skipped = sources_from_measurement_rows(
+        rows,
+        image_dir=get_images_dir(),
+    )
+    for mid, reason in source_skipped:
+        print(f'[cloud_sync]   Mosaic source skip m={mid}: {reason}', flush=True)
+
+    if not sources:
+        print(
+            f'[cloud_sync] Mosaic abort obs {obs_local_id}: no usable sources',
+            flush=True,
+        )
+        return
+
+    try:
+        manifest = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX)
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic build failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    if manifest is None or not manifest.tiles:
+        print(
+            f'[cloud_sync] Mosaic empty obs {obs_local_id}: nothing to upload',
+            flush=True,
+        )
+        return
+
+    for mid, reason in manifest.skipped:
+        print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
+
+    version = 1
+    # Content-address the storage key so `Cache-Control: immutable` is safe:
+    # the URL changes on every byte change, so browsers/CDNs never return
+    # stale mosaic bytes for an updated observation. The DB version stays
+    # 1 — only the storage key rotates.
+    content_digest = compute_content_digest(manifest.image_bytes)
+    storage_key = build_storage_key(client.user_id, obs_cloud_id, version, content_digest)
+    cache_control = 'public, max-age=31536000, immutable'
+    upload_meta = {
+        'user_id': client.user_id,
+        'uploaded_at': datetime.now(timezone.utc).isoformat(),
+        'uploaded_by': client.user_id,
+        'upload_mode': 'full',
+        'upload_variant': 'spore_mosaic',
+        'stored_width': str(manifest.width_px),
+        'stored_height': str(manifest.height_px),
+        'stored_bytes': str(len(manifest.image_bytes)),
+    }
+
+    try:
+        if direct_r2_runtime_available():
+            client._get_r2().put_bytes(
+                manifest.image_bytes,
+                storage_key,
+                content_type=manifest.content_type,
+                cache_control=cache_control,
+                timeout=120,
+                custom_metadata=upload_meta,
+            )
+        else:
+            worker = client._get_media_worker()
+            response = worker.put_bytes(
+                manifest.image_bytes,
+                storage_key,
+                content_type=manifest.content_type,
+                cache_control=cache_control,
+                timeout=120,
+                upload_meta=upload_meta,
+                options={
+                    'uploadMode': 'full',
+                    'uploadVariant': 'spore_mosaic',
+                    'sourceWidth': manifest.width_px,
+                    'sourceHeight': manifest.height_px,
+                    'storedWidth': manifest.width_px,
+                    'storedHeight': manifest.height_px,
+                },
+            )
+            confirmed = _normalize_cloud_media_key(
+                str((response or {}).get('key') or storage_key)
+            )
+            if confirmed:
+                storage_key = confirmed
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic upload failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    try:
+        existing = client._get(
+            f'spore_measurement_mosaics'
+            f'?observation_id=eq.{obs_cloud_id}'
+            f'&version=eq.{version}'
+            f'&user_id=eq.{client.user_id}'
+            f'&select=id'
+        )
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic lookup failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    mosaic_payload: dict = {
+        'observation_id': obs_cloud_id,
+        'user_id': client.user_id,
+        'storage_key': storage_key,
+        'width_px': manifest.width_px,
+        'height_px': manifest.height_px,
+        'tile_size_px': manifest.tile_size_px,
+        'version': version,
+    }
+
+    try:
+        if existing:
+            mosaic_id = str(existing[0]['id'])
+            patch_payload = dict(mosaic_payload)
+            patch_payload['updated_at'] = datetime.now(timezone.utc).isoformat()
+            client._patch(f'spore_measurement_mosaics?id=eq.{mosaic_id}', patch_payload)
+        else:
+            rows_ret = client._post('spore_measurement_mosaics', mosaic_payload)
+            mosaic_id = str(rows_ret[0]['id']) if rows_ret else ''
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic upsert failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    if not mosaic_id:
+        print(
+            f'[cloud_sync] Mosaic upsert returned no id obs {obs_local_id}',
+            flush=True,
+        )
+        return
+
+    # Refresh tile manifest: DELETE all rows for this mosaic then bulk INSERT.
+    # PostgREST accepts a list payload as a bulk insert.
+    try:
+        client._delete(
+            f'spore_measurement_mosaic_tiles?mosaic_id=eq.{mosaic_id}'
+        )
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic tile cleanup failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    tile_payload = [
+        {
+            'measurement_id': tile.cloud_measurement_id,
+            'mosaic_id': mosaic_id,
+            'x_px': tile.x_px,
+            'y_px': tile.y_px,
+            'w_px': tile.w_px,
+            'h_px': tile.h_px,
+            'overlay_json': tile.overlay_json,
+        }
+        for tile in manifest.tiles
+    ]
+
+    try:
+        client._post('spore_measurement_mosaic_tiles', tile_payload)  # bulk insert
+    except Exception as exc:
+        print(
+            f'[cloud_sync] Mosaic tile insert failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return
+
+    overlay_count = sum(1 for t in manifest.tiles if t.overlay_json is not None)
+    print(
+        (
+            f'[cloud_sync] Mosaic done obs {obs_local_id}: '
+            f'tiles={len(manifest.tiles)} overlays={overlay_count} '
+            f'size={manifest.width_px}x{manifest.height_px} '
+            f'tile_size={manifest.tile_size_px} '
+            f'bytes={len(manifest.image_bytes)} '
+            f'storage_key={storage_key}'
         ),
         flush=True,
     )
