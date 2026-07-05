@@ -4471,7 +4471,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         source_kind = str(img_data.get("source_kind") or "").strip().lower()
         if source_kind == "raw":
-            return self.tr("RAW-derived"), "#8e44ad"
+            return self.tr("From raw"), "#8e44ad"
         if source_kind == "heic":
             return self.tr("HEIC-converted"), "#2980b9"
         if source_kind == "camera_jpeg":

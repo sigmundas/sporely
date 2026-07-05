@@ -2219,6 +2219,7 @@ class ObservationsTab(QWidget):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_move_to_observation=True,
+            show_edit=True,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
@@ -2228,6 +2229,7 @@ class ObservationsTab(QWidget):
         self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
+        self.gallery_widget.editRequested.connect(self._on_gallery_edit_requested)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
         self.gallery_widget.deleteSelectionRequested.connect(self._confirm_delete_selected_images)
         self.gallery_widget.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
@@ -9942,7 +9944,17 @@ class ObservationsTab(QWidget):
                         pass
 
     def _on_gallery_image_double_clicked(self, _image_id, filepath: str) -> None:
-        """Open Prepare Images from Observations-gallery double-click."""
+        """Switch to image mode and show the double-clicked photo."""
+        target_path = (filepath or "").strip() or None
+        self._apply_view_mode(self.VIEW_MODE_IMAGES, persist=True)
+        browser = getattr(self, "image_browser", None)
+        if browser is None or not target_path:
+            return
+        if not browser.show_image_for_path(target_path):
+            self._refresh_image_browser_for_current_selection()
+            browser.show_image_for_path(target_path)
+
+    def _on_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         target_path = (filepath or "").strip() or None
         self.open_edit_images_direct(selected_image_path=target_path)
 

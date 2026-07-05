@@ -200,3 +200,16 @@ def test_delete_single_image_uses_light_refresh(monkeypatch, qapp):
     assert deleted_ids == [11]
     assert state.light_refresh_calls == [True]
     assert state.refresh_calls == []
+
+
+def test_gallery_double_click_switches_to_image_mode_and_shows_path(qapp):
+    shown_paths: list[str] = []
+    state = SimpleNamespace()
+    state.VIEW_MODE_IMAGES = "images"
+    state._apply_view_mode = lambda mode, persist=True: shown_paths.append(f"mode:{mode}")
+    state._refresh_image_browser_for_current_selection = lambda: shown_paths.append("refresh")
+    state.image_browser = SimpleNamespace(show_image_for_path=lambda path: shown_paths.append(path) or True)
+
+    ObservationsTab._on_gallery_image_double_clicked(state, 11, "/tmp/example.jpg")
+
+    assert shown_paths == ["mode:images", "/tmp/example.jpg"]

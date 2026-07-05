@@ -846,6 +846,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._hint_controller: HintStatusController | None = None
         self._pending_hint_widgets: list[tuple[QWidget, str, str]] = []
         self._continue_to_observation_details = bool(continue_to_observation_details)
+        self._raw_copied_settings: dict | None = None
         self._dialog_gallery_splitter_syncing = False
 
         self._build_ui()
@@ -1566,8 +1567,42 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.preview_stack.addWidget(self.preview)
         self.preview_stack.addWidget(self.preview_message)
         layout.addLayout(self.preview_stack, 1)
+        self._build_raw_action_tab()
         self._update_rotate_button_state()
         return panel
+
+    def _build_raw_action_tab(self) -> None:
+        self.raw_action_frame = QFrame(self.preview)
+        self.raw_action_frame.setAttribute(Qt.WA_StyledBackground, True)
+        self.raw_action_frame.setObjectName("sectionCard")
+        self.raw_action_frame.setStyleSheet(
+            "QFrame#sectionCard {"
+            " background-color: rgba(255, 255, 255, 225);"
+            " border: 1px solid rgba(0, 0, 0, 40);"
+            " border-radius: 8px;"
+            "}"
+        )
+        raw_action_layout = QHBoxLayout(self.raw_action_frame)
+        raw_action_layout.setContentsMargins(8, 6, 8, 6)
+        raw_action_layout.setSpacing(6)
+
+        self.raw_convert_btn = QPushButton(self.tr("Apply new raw settings"), self.raw_action_frame)
+        self.raw_convert_btn.clicked.connect(self._on_raw_convert_clicked)
+        raw_action_layout.addWidget(self.raw_convert_btn)
+
+        self.raw_copy_btn = QPushButton(self.tr("Copy settings"), self.raw_action_frame)
+        self.raw_copy_btn.clicked.connect(self._on_raw_copy_clicked)
+        raw_action_layout.addWidget(self.raw_copy_btn)
+
+        self.raw_paste_btn = QPushButton(self.tr("Paste settings"), self.raw_action_frame)
+        self.raw_paste_btn.clicked.connect(self._on_raw_paste_clicked)
+        self.raw_paste_btn.setVisible(False)
+        raw_action_layout.addWidget(self.raw_paste_btn)
+
+        raw_action_layout.addStretch(1)
+        self.raw_action_frame.adjustSize()
+        self.raw_action_frame.hide()
+        self.raw_action_frame.raise_()
 
     def _build_right_panel(self) -> QWidget:
         panel = QWidget()
@@ -4412,6 +4447,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return True
         if obj is getattr(self, "preview", None) and event.type() == QEvent.Resize:
             self._position_rotate_button()
+            self._position_raw_convert_button()
             return False
         if (
             obj is getattr(self, "target_sampling_input", None)
@@ -5589,6 +5625,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             is_source = self._observation_source_index == idx
             gps_highlight = is_source and result.exif_has_gps
             gps_tag = self.tr("GPS") if gps_highlight else None
+            raw_source = result.lab_metadata.get("raw_processing") if isinstance(result.lab_metadata, dict) else None
+            raw_source_kind = ""
+            if isinstance(raw_source, dict):
+                raw_source_kind = str((raw_source.get("source") or {}).get("kind") or "").strip().lower()
             items.append(
                 {
                     "id": result.image_id,
@@ -5602,6 +5642,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "gps_tag_text": gps_tag,
                     "gps_tag_highlight": gps_highlight,
                     "has_measurements": has_measurements,
+                    "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
         self.gallery.set_items(items)
@@ -6059,36 +6100,34 @@ class ImageImportDialog(GeometryMixin, QDialog):
         layout.addWidget(self.raw_group)
 
     def _ensure_raw_convert_button(self) -> None:
-        if getattr(self, "raw_convert_btn", None) is not None:
+        if getattr(self, "raw_action_frame", None) is not None:
             return
         if not hasattr(self, "preview"):
             return
-        self.raw_convert_btn = QPushButton(self.tr("Convert RAW"), self.preview)
-        self.raw_convert_btn.setStyleSheet(
-            "QPushButton { background-color: rgba(39, 174, 96, 230); color: white;"
-            " border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; }"
-            "QPushButton:hover { background-color: rgba(33, 150, 83, 245); }"
-        )
-        self.raw_convert_btn.clicked.connect(self._on_raw_convert_clicked)
-        self.raw_convert_btn.hide()
+        self._build_raw_action_tab()
 
     def _position_raw_convert_button(self) -> None:
-        btn = getattr(self, "raw_convert_btn", None)
-        if btn is None or not hasattr(self, "preview"):
+        frame = getattr(self, "raw_action_frame", None)
+        if frame is None or not hasattr(self, "preview"):
             return
         margin = 12
-        x = max(margin, self.preview.width() - btn.sizeHint().width() - margin)
-        btn.move(x, margin)
+        frame.adjustSize()
+        x = max(margin, self.preview.width() - frame.sizeHint().width() - margin)
+        y = max(margin, self.preview.height() - frame.sizeHint().height() - margin)
+        frame.move(x, y)
 
     def _update_raw_panel_for_result(self, result: ImageImportResult | None) -> None:
         self._ensure_raw_convert_button()
         is_raw = self._result_is_raw_backed(result)
         if hasattr(self, "raw_group"):
             self.raw_group.setVisible(bool(is_raw))
-        btn = getattr(self, "raw_convert_btn", None)
+        frame = getattr(self, "raw_action_frame", None)
+        convert_btn = getattr(self, "raw_convert_btn", None)
+        copy_btn = getattr(self, "raw_copy_btn", None)
+        paste_btn = getattr(self, "raw_paste_btn", None)
         if not is_raw or result is None:
-            if btn is not None:
-                btn.hide()
+            if frame is not None:
+                frame.hide()
             return
         original_settings = RawRenderSettings.from_dict(result.raw_settings or RawRenderSettings.default())
         settings = self._ensure_raw_settings(result)
@@ -6096,18 +6135,56 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._load_raw_settings_into_form(settings, source=source)
         if source and RawRenderSettings.from_dict(settings) != original_settings:
             self._schedule_raw_preview_refresh(result)
-        if btn is not None:
-            pending = bool(getattr(result, "raw_pending", False)) or bool(
-                getattr(result, "raw_unsaved_changes", False)
-            )
-            if pending:
-                self.raw_convert_btn.setText(self.tr("Convert RAW"))
-                self.raw_convert_btn.show()
-                self.raw_convert_btn.raise_()
-                self._position_raw_convert_button()
-            else:
-                self.raw_convert_btn.setText(self.tr("Converted"))
-                self.raw_convert_btn.hide()
+        if convert_btn is not None:
+            convert_btn.setText(self.tr("Apply new raw settings"))
+        edit_mode = not bool(self._continue_to_observation_details)
+        if copy_btn is not None:
+            copy_btn.setVisible(edit_mode)
+            copy_btn.setEnabled(edit_mode)
+        if paste_btn is not None:
+            paste_visible = bool(edit_mode and self._raw_copied_settings is not None)
+            paste_btn.setVisible(paste_visible)
+            paste_btn.setEnabled(paste_visible)
+        if frame is not None:
+            frame.setVisible(True)
+            frame.raise_()
+            self._position_raw_convert_button()
+
+    def _on_raw_copy_clicked(self) -> None:
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return
+        result = self.import_results[index]
+        if not self._result_is_raw_backed(result) or bool(getattr(result, "raw_pending", False)):
+            return
+        self._raw_copied_settings = dict(self._ensure_raw_settings(result))
+        self._update_raw_panel_for_result(result)
+        source_name = Path(result.filepath or result.original_filepath or result.preview_path or "").name or self.tr("the selected image")
+        self._set_settings_hint(
+            self.tr("Copied RAW settings from {name}.").format(name=source_name),
+            "#27ae60",
+        )
+
+    def _on_raw_paste_clicked(self) -> None:
+        index = self._current_single_index()
+        if index is None or index < 0 or index >= len(self.import_results):
+            return
+        result = self.import_results[index]
+        if not self._result_is_raw_backed(result) or bool(getattr(result, "raw_pending", False)):
+            return
+        copied = self._raw_copied_settings
+        if not isinstance(copied, dict) or not copied:
+            return
+        result.raw_settings = dict(copied)
+        result.raw_unsaved_changes = True
+        self._load_raw_settings_into_form(result.raw_settings, source=self._raw_source_path_for_result(result))
+        self._schedule_raw_preview_refresh(result)
+        self._update_raw_panel_for_result(result)
+        target_name = Path(result.filepath or result.original_filepath or result.preview_path or "").name or self.tr("the selected image")
+        self._set_settings_hint(
+            self.tr("Pasted RAW settings to {name}.").format(name=target_name),
+            "#27ae60",
+        )
 
     def _load_raw_settings_into_form(self, settings: dict | RawRenderSettings | None, *, source: str | None = None) -> None:
         controls = getattr(self, "raw_controls", None)
@@ -6344,7 +6421,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._invalidate_cached_pixmap(derivative_str)
         self._refresh_gallery()
         self._select_image(index)
-        self._set_settings_hint(self.tr("RAW converted to JPEG derivative"), "#27ae60")
+        self._set_settings_hint(self.tr("RAW settings applied to JPEG derivative"), "#27ae60")
 
     def _stage_raw_candidates(self, new_results: list[ImageImportResult]) -> None:
         for result in new_results:

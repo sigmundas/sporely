@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ui import image_import_dialog
 from ui.image_import_dialog import ImageImportDialog, ImageImportResult
@@ -55,6 +55,7 @@ def _build_raw_dialog_dummy(result: ImageImportResult) -> SimpleNamespace:
     dummy._raw_preview_proxy_cache = {}
     dummy._pending_raw_preview_result = None
     dummy._converted_import_paths = set()
+    dummy._continue_to_observation_details = True
     dummy._raw_preview_refresh_timer = QTimer()
     dummy._raw_preview_refresh_timer.setSingleShot(True)
     dummy._raw_preview_refresh_timer.setInterval(60)
@@ -189,6 +190,48 @@ def test_raw_panel_uses_metadata_settings_when_result_raw_settings_missing(qapp,
     assert controls.tone_curve_checkbox.isChecked() is True
     assert controls.curve_strength_slider.value() == 72
     assert controls.curve_midpoint_slider.value() == 31
+
+
+def test_raw_action_tab_shows_apply_copy_and_paste_in_raw_edit_mode(qapp, tmp_path):
+    result = _build_raw_result(tmp_path)
+    result.raw_pending = False
+    result.lab_metadata = {
+        "raw_processing": {
+            "source": {"kind": "camera_raw"},
+            "settings": RawRenderSettings.default().to_dict(),
+        }
+    }
+    dummy = _build_raw_dialog_dummy(result)
+    dummy.preview = QWidget()
+    dummy.preview.resize(640, 420)
+    dummy.preview.show()
+    dummy._continue_to_observation_details = False
+    dummy._result_is_raw_backed = lambda candidate: True
+    dummy._raw_source_path_for_result = lambda candidate: candidate.filepath
+    dummy._schedule_raw_preview_refresh = lambda *_args, **_kwargs: None
+    dummy._load_raw_settings_into_form = lambda *_args, **_kwargs: None
+    dummy._ensure_raw_settings = lambda candidate: dict(candidate.raw_settings or RawRenderSettings.default().to_dict())
+    dummy._build_raw_action_tab = lambda: ImageImportDialog._build_raw_action_tab(dummy)
+    dummy._ensure_raw_convert_button = lambda: ImageImportDialog._ensure_raw_convert_button(dummy)
+    dummy._on_raw_convert_clicked = lambda *_args, **_kwargs: None
+    dummy._on_raw_copy_clicked = lambda *_args, **_kwargs: None
+    dummy._on_raw_paste_clicked = lambda *_args, **_kwargs: None
+    dummy._position_raw_convert_button = lambda: None
+    dummy._set_settings_hint = lambda *_args, **_kwargs: None
+    dummy._raw_copied_settings = None
+
+    ImageImportDialog._update_raw_panel_for_result(dummy, result)
+    qapp.processEvents()
+
+    assert dummy.raw_action_frame.isVisible() is True
+    assert dummy.raw_convert_btn.text() == "Apply new raw settings"
+    assert dummy.raw_copy_btn.isVisible() is True
+    assert dummy.raw_paste_btn.isVisible() is False
+
+    dummy._raw_copied_settings = RawRenderSettings.default().to_dict()
+    ImageImportDialog._update_raw_panel_for_result(dummy, result)
+
+    assert dummy.raw_paste_btn.isVisible() is True
 
 
 def test_raw_convert_still_calls_final_render_immediately(monkeypatch, qapp, tmp_path):

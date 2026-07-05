@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -336,6 +337,52 @@ def test_delete_menu_emits_all_selected_keys_for_multiselect(monkeypatch, qapp, 
     assert widget.selected_keys() == {1, 2}
 
 
+def test_edit_menu_emits_clicked_item_path(monkeypatch, qapp, tmp_path):
+    widget = ImageGalleryWidget("Images", show_edit=True)
+    widget.set_multi_select(True)
+    items = _build_gallery_items(tmp_path, 3)
+    widget.set_items(items)
+    widget.select_paths([items[0]["filepath"], items[1]["filepath"]])
+
+    edits: list[tuple[object, str]] = []
+    widget.editRequested.connect(lambda image_id, path: edits.append((image_id, path)))
+
+    class _FakeMenu:
+        def __init__(self, parent=None):
+            self._actions = []
+
+        def addAction(self, text):
+            action = SimpleNamespace(text=lambda: text)
+            self._actions.append(action)
+            return action
+
+        def actions(self):
+            return list(self._actions)
+
+        def exec(self, global_pos):
+            for action in self._actions:
+                if action.text() == "Edit photo":
+                    return action
+            return None
+
+    monkeypatch.setattr(gallery_module, "QMenu", _FakeMenu)
+
+    frame = widget._frames[2]
+    widget._show_thumbnail_context_menu(frame, frame.mapToGlobal(frame.rect().center()))
+
+    assert edits == [(3, items[2]["filepath"])]
+    assert widget.selected_keys() == {3}
+
+
+def test_raw_source_badge_uses_raw_label():
+    badges = ImageGalleryWidget.build_raw_source_badges(
+        {"raw_processing": {"source": {"kind": "camera_raw"}}},
+        translate=lambda text: text,
+    )
+
+    assert badges == ["From raw"]
+
+
 def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path):
     widget = ImageGalleryWidget("Images")
     items = _build_gallery_items(tmp_path, 1)
@@ -420,7 +467,7 @@ def test_build_raw_source_badges_marks_raw_backed_derivatives():
         }
     }
 
-    assert ImageGalleryWidget.build_raw_source_badges(metadata) == ["RAW-derived"]
+    assert ImageGalleryWidget.build_raw_source_badges(metadata) == ["From raw"]
     assert ImageGalleryWidget.build_raw_source_badges({"raw_processing": {"source": {"kind": "local_derivative"}}}) == []
     assert ImageGalleryWidget.build_raw_source_badges({"image_type": "microscope"}) == []
 
@@ -440,7 +487,7 @@ def test_build_gallery_badges_combines_image_and_raw_badges():
     )
 
     assert badges[0] == "Micro"
-    assert badges[-1] == "RAW-derived"
+    assert badges[-1] == "From raw"
 
 
 def test_objective_color_matches_live_lab_palette():
@@ -457,7 +504,7 @@ def test_thumbnail_widget_renders_microscope_tag_above_raw_badge(qapp, tmp_path)
             {
                 "id": 1,
                 "filepath": str(tmp_path / "placeholder.jpg"),
-                "badges": ["UNSAVED RAW", "Preview pending"],
+                "badges": ["From raw", "Preview pending"],
                 "microscope_tag_text": "63x DIC",
                 "microscope_tag_color": "#1f4ea8",
             }
@@ -471,13 +518,13 @@ def test_thumbnail_widget_renders_microscope_tag_above_raw_badge(qapp, tmp_path)
     labels = {
         label.text(): label
         for label in frame.findChildren(QLabel)
-        if label.text() in {"63x DIC", "UNSAVED RAW", "Preview pending"}
+        if label.text() in {"63x DIC", "From raw", "Preview pending"}
     }
 
     assert "63x DIC" in labels
-    assert "UNSAVED RAW" in labels
-    assert labels["63x DIC"].geometry().y() < labels["UNSAVED RAW"].geometry().y()
-    assert labels["63x DIC"].geometry().x() <= labels["UNSAVED RAW"].geometry().x()
+    assert "From raw" in labels
+    assert labels["63x DIC"].geometry().y() < labels["From raw"].geometry().y()
+    assert labels["63x DIC"].geometry().x() <= labels["From raw"].geometry().x()
     assert "color: #ffffff" in labels["63x DIC"].styleSheet()
 
 
@@ -488,7 +535,7 @@ def test_thumbnail_widget_renders_light_100x_tag_with_black_text(qapp, tmp_path)
             {
                 "id": 1,
                 "filepath": str(tmp_path / "placeholder.jpg"),
-                "badges": ["UNSAVED RAW"],
+                "badges": ["From raw"],
                 "microscope_tag_text": "100x DIC",
                 "microscope_tag_color": objective_color(None, "100x"),
             }
@@ -502,12 +549,39 @@ def test_thumbnail_widget_renders_light_100x_tag_with_black_text(qapp, tmp_path)
     labels = {
         label.text(): label
         for label in frame.findChildren(QLabel)
-        if label.text() in {"100x DIC", "UNSAVED RAW"}
+        if label.text() in {"100x DIC", "From raw"}
     }
 
     assert "100x DIC" in labels
-    assert "UNSAVED RAW" in labels
+    assert "From raw" in labels
     assert "color: #000000" in labels["100x DIC"].styleSheet()
+
+
+def test_thumbnail_widget_renders_raw_badge_below_objective_badge(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_items(
+        [
+            {
+                "id": 1,
+                "filepath": str(tmp_path / "placeholder.jpg"),
+                "badges": ["20X BR", "From raw"],
+            }
+        ]
+    )
+    widget.resize(220, 180)
+    widget.show()
+    qapp.processEvents()
+
+    frame = widget._frames[0]
+    labels = {
+        label.text(): label
+        for label in frame.findChildren(QLabel)
+        if label.text() in {"20X BR", "From raw"}
+    }
+
+    assert "20X BR" in labels
+    assert "From raw" in labels
+    assert labels["20X BR"].geometry().y() < labels["From raw"].geometry().y()
 
 
 def test_observation_gallery_rows_include_raw_badges(monkeypatch):
@@ -538,7 +612,7 @@ def test_observation_gallery_rows_include_raw_badges(monkeypatch):
     widget = ImageGalleryWidget("Images")
     widget.set_observation_id(7)
 
-    assert widget._items[0]["badges"] == ["Micro", "(!) needs scale", "RAW-derived"]
+    assert widget._items[0]["badges"] == ["Micro", "(!) needs scale", "From raw"]
     assert widget._items[0]["has_measurements"] is True
 
 

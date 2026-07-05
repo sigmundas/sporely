@@ -434,6 +434,7 @@ class ImageGalleryWidget(QGroupBox):
     imageSelected = Signal(object, str)
     imageDoubleClicked = Signal(object, str)
     measureBadgeClicked = Signal(object, str)
+    editRequested = Signal(object, str)
     deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
     deleteSelectionRequested = Signal(list)
     moveToObservationRequested = Signal(list)
@@ -454,6 +455,7 @@ class ImageGalleryWidget(QGroupBox):
         thumbnail_tooltip: str = "",
         show_publish_checkbox: bool = False,
         show_move_to_observation: bool = False,
+        show_edit: bool = False,
         publish_checkbox_hint: str = "",
     ) -> None:
         super().__init__(title, parent)
@@ -471,6 +473,7 @@ class ImageGalleryWidget(QGroupBox):
         self._thumbnail_tooltip = thumbnail_tooltip
         self._show_publish_checkbox = bool(show_publish_checkbox)
         self._show_move_to_observation = bool(show_move_to_observation)
+        self._show_edit = bool(show_edit)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
@@ -1019,6 +1022,9 @@ class ImageGalleryWidget(QGroupBox):
             return
 
         menu = QMenu(self)
+        edit_action = None
+        if self._show_edit:
+            edit_action = menu.addAction(self.tr("Edit photo"))
         delete_text = self.tr("Delete selected photos") if len(selected_keys) > 1 else self.tr("Delete photo")
         delete_action = menu.addAction(delete_text)
         move_action = None
@@ -1026,6 +1032,11 @@ class ImageGalleryWidget(QGroupBox):
             move_action = menu.addAction(self.tr("Move to observation"))
 
         chosen = menu.exec(global_pos)
+        if edit_action is not None and chosen == edit_action:
+            image_id = getattr(frame, "image_id", None)
+            image_path = getattr(frame, "image_path", "") or ""
+            self.editRequested.emit(image_id, image_path)
+            return
         if chosen == delete_action:
             self.deleteSelectionRequested.emit(list(selected_keys))
         elif move_action is not None and chosen == move_action:
@@ -1177,7 +1188,7 @@ class ImageGalleryWidget(QGroupBox):
         if not isinstance(source, dict):
             return []
         if str(source.get("kind") or "").strip().lower() == "camera_raw":
-            return [tr("RAW-derived")]
+            return [tr("From raw")]
         return []
 
     def select_image(self, image_id: int | None) -> None:
@@ -1548,6 +1559,13 @@ class ImageGalleryWidget(QGroupBox):
                     consumed = 2
                 first_row.addStretch(1)
                 bottom_left_layout.addLayout(first_row)
+                if raw_badge_text:
+                    raw_row = QHBoxLayout()
+                    raw_row.setContentsMargins(0, 0, 0, 0)
+                    raw_row.setSpacing(2)
+                    raw_row.addWidget(_make_badge(raw_badge_text, raw_badge_text == "R"))
+                    raw_row.addStretch(1)
+                    bottom_left_layout.addLayout(raw_row)
                 for extra_text in clean_badges[consumed:]:
                     bottom_left_layout.addWidget(_make_badge(extra_text, extra_text == "R"))
 
@@ -1569,11 +1587,18 @@ class ImageGalleryWidget(QGroupBox):
                     consumed = 2
                 first_row.addStretch(1)
                 badge_layout.addLayout(first_row)
+                if raw_badge_text:
+                    raw_row = QHBoxLayout()
+                    raw_row.setContentsMargins(0, 0, 0, 0)
+                    raw_row.setSpacing(2)
+                    raw_row.addWidget(_make_badge(raw_badge_text, raw_badge_text == "R"))
+                    raw_row.addStretch(1)
+                    badge_layout.addLayout(raw_row)
                 for extra_text in clean_badges[consumed:]:
                     badge_layout.addWidget(_make_badge(extra_text, extra_text == "R"))
                 image_layout.addWidget(badge_container, 0, 0, alignment=Qt.AlignBottom | Qt.AlignLeft)
 
-            if gps_tag_text or raw_badge_text:
+            if gps_tag_text:
                 bottom_right = QWidget()
                 bottom_right.setAttribute(Qt.WA_TransparentForMouseEvents, True)
                 bottom_right_layout = QVBoxLayout(bottom_right)
@@ -1610,10 +1635,6 @@ class ImageGalleryWidget(QGroupBox):
                         gps_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
                     gps_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
                     bottom_right_layout.addWidget(gps_label, 0, Qt.AlignRight)
-
-                if raw_badge_text:
-                    raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
-                    bottom_right_layout.addWidget(raw_label, 0, Qt.AlignRight)
 
                 image_layout.addWidget(bottom_right, 0, 0, alignment=Qt.AlignBottom | Qt.AlignRight)
 

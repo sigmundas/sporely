@@ -12,6 +12,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QWidget
 
 from ui import image_import_dialog
+from ui.image_gallery_widget import ImageGalleryWidget
 from ui.image_import_dialog import (
     ImageImportDialog,
     ImageImportResult,
@@ -261,6 +262,40 @@ def test_refresh_gallery_includes_ai_crop_preview_for_default_crop(qapp):
 
     assert dialog.gallery.items[0]["crop_box"] == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
     assert dialog.gallery.items[0]["crop_source_size"] == (1000, 500)
+
+
+def test_refresh_gallery_marks_raw_derived_items_with_red_frame(qapp):
+    dialog = _make_add_images_dummy(source_preference="camera_jpeg")
+    dialog.image_paths = ["/tmp/sample.jpg"]
+    dialog._source_image_size_for_index = lambda index, prefer_ai_size=False: (1000, 500)
+    dialog.import_results = [
+        ImageImportResult(
+            filepath="/tmp/sample.jpg",
+            preview_path="/tmp/sample.jpg",
+            image_type="field",
+            raw_candidate=True,
+            raw_pending=False,
+            raw_settings=RawRenderSettings.default().to_dict(),
+            lab_metadata={
+                "raw_processing": {
+                    "source": {"kind": "camera_raw"},
+                    "settings": RawRenderSettings.default().to_dict(),
+                }
+            },
+        )
+    ]
+
+    ImageImportDialog._refresh_gallery(dialog)
+
+    assert "From raw" in dialog.gallery.items[0]["badges"]
+    assert dialog.gallery.items[0]["frame_border_color"] == "#e74c3c"
+
+
+def test_raw_badge_helper_uses_raw_label():
+    assert ImageGalleryWidget.build_raw_source_badges(
+        {"raw_processing": {"source": {"kind": "camera_raw"}}},
+        translate=lambda text: text,
+    ) == ["From raw"]
 
 
 def test_update_ai_overlay_uses_default_crop_when_no_crop_is_stored(qapp):
@@ -564,7 +599,7 @@ def test_add_images_uses_candidates_and_shows_failed_rows_without_stopping_batch
     assert "failed to prepare" in dialog.set_status_messages[-1][0].lower()
     assert dialog.gallery.items[0]["center_badge"] is None
     assert dialog.gallery.items[1]["center_badge"] == "Failed"
-    assert "RAW-derived" in dialog.gallery.items[0]["badges"]
+    assert "From raw" in dialog.gallery.items[0]["badges"]
 
 
 def test_accept_and_close_filters_failed_and_skipped_results_before_continue(monkeypatch):
