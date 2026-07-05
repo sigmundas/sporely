@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QPlainTextEdit,
     QProgressBar,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QToolButton,
@@ -749,6 +750,8 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_completed = 0
         self._pending_raw_commit_batch_saved = 0
         self._pending_raw_commit_batch_failed = 0
+        self._pending_raw_commit_batch_skipped = 0
+        self._pending_raw_commit_cancel_requested = False
         self._pending_raw_commit_defer_start = False
         self._raw_curve_preview_analysis_signature: tuple[str, int, int, str] | None = None
         self._raw_curve_preview_analysis_rgb: np.ndarray | None = None
@@ -1152,29 +1155,62 @@ class LiveLabTab(QWidget):
         self.hint_bar = HintBar(self)
         self.hint_bar.set_wrap_mode(True)
         self._hint_controller = HintStatusController(self.hint_bar, self)
-        hint_area_layout.addWidget(self.hint_bar)
 
         self.pending_raw_preview_progress_widget = QWidget(self)
-        pending_progress_layout = QVBoxLayout(self.pending_raw_preview_progress_widget)
+        pending_progress_layout = QGridLayout(self.pending_raw_preview_progress_widget)
         pending_progress_layout.setContentsMargins(0, 0, 0, 0)
-        pending_progress_layout.setSpacing(4)
+        pending_progress_layout.setHorizontalSpacing(6)
+        pending_progress_layout.setVerticalSpacing(2)
+        self.pending_raw_preview_progress_label = QLabel("")
+        self.pending_raw_preview_progress_label.setWordWrap(False)
+        self.pending_raw_preview_progress_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.pending_raw_preview_progress_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.pending_raw_preview_progress_bar = QProgressBar(self.pending_raw_preview_progress_widget)
         self.pending_raw_preview_progress_bar.setRange(0, 0)
         self.pending_raw_preview_progress_bar.setTextVisible(False)
-        self.pending_raw_preview_progress_bar.setFixedHeight(18)
+        self.pending_raw_preview_progress_bar.setFormat("")
+        self.pending_raw_preview_progress_bar.setFixedHeight(5)
         self.pending_raw_preview_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.pending_raw_preview_progress_label = QLabel("")
-        self.pending_raw_preview_progress_label.setWordWrap(True)
-        self.pending_raw_preview_progress_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.pending_raw_preview_progress_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.pending_raw_commit_cancel_btn = QToolButton(self.pending_raw_preview_progress_widget)
+        self.pending_raw_commit_cancel_btn.setText("✕")
+        self.pending_raw_commit_cancel_btn.setToolTip(self.tr("Stop RAW save after current file"))
+        self.pending_raw_commit_cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.pending_raw_commit_cancel_btn.setFixedSize(22, 22)
+        self.pending_raw_commit_cancel_btn.setVisible(False)
+        self.pending_raw_commit_cancel_btn.setStyleSheet(
+            "QToolButton {"
+            " border: 1px solid #b91c1c;"
+            " border-radius: 4px;"
+            " color: #ffffff;"
+            " background-color: #dc2626;"
+            " font-weight: 700;"
+            " padding: 0px;"
+            "}"
+            "QToolButton:hover { background-color: #b91c1c; }"
+            "QToolButton:pressed { background-color: #991b1b; }"
+        )
+        self.pending_raw_commit_cancel_btn.clicked.connect(self._cancel_pending_raw_commit_jobs)
         style_progress_widgets(
             self.pending_raw_preview_progress_bar,
             self.pending_raw_preview_progress_label,
         )
-        pending_progress_layout.addWidget(self.pending_raw_preview_progress_bar, 0)
-        pending_progress_layout.addWidget(self.pending_raw_preview_progress_label, 0)
-        self.pending_raw_preview_progress_widget.setVisible(False)
-        hint_area_layout.addWidget(self.pending_raw_preview_progress_widget)
+        pending_progress_layout.addWidget(self.pending_raw_preview_progress_label, 0, 0, 1, 1)
+        pending_progress_layout.addWidget(self.pending_raw_preview_progress_bar, 1, 0, 1, 1)
+        pending_progress_layout.addWidget(self.pending_raw_commit_cancel_btn, 0, 1, 2, 1, Qt.AlignRight | Qt.AlignVCenter)
+        pending_progress_layout.setColumnStretch(0, 1)
+        # Keep hint and progress in one fixed-height stack so RAW worker
+        # progress never makes the Live Lab viewer/gallery jump vertically.
+        self.hint_progress_stack = QStackedWidget(self)
+        self.hint_progress_stack.addWidget(self.hint_bar)
+        self.hint_progress_stack.addWidget(self.pending_raw_preview_progress_widget)
+        stable_hint_height = max(
+            int(self.hint_bar.sizeHint().height() or 0),
+            int(self.pending_raw_preview_progress_widget.sizeHint().height() or 0),
+            32,
+        )
+        self.hint_progress_stack.setFixedHeight(stable_hint_height)
+        self.hint_progress_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        hint_area_layout.addWidget(self.hint_progress_stack)
         root_layout.addWidget(hint_area)
 
     def _register_hint_widgets(self) -> None:
@@ -2666,6 +2702,34 @@ class LiveLabTab(QWidget):
             or getattr(self, "_pending_raw_commit_job_queue", None)
         )
 
+    def _pending_raw_commit_capture_is_busy(self, capture: PendingRawCapture | None) -> bool:
+        if capture is None:
+            return False
+        return self._pending_raw_commit_has_request_for_capture(capture)
+
+    @staticmethod
+    def _cleanup_local_ingest_result(ingest: LocalIngestResult | None) -> None:
+        if ingest is None:
+            return
+        for attr in ("working_path",):
+            candidate = str(getattr(ingest, attr, "") or "").strip()
+            if not candidate:
+                continue
+            try:
+                Path(candidate).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _cleanup_preview_result_path(result: "_PendingRawPreviewJobResult | None") -> None:
+        preview_path = str(getattr(result, "preview_path", "") or "").strip()
+        if not preview_path:
+            return
+        try:
+            Path(preview_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
     @staticmethod
     def _pending_raw_capture_preview_is_current(capture: PendingRawCapture) -> bool:
         """Return True when the on-disk preview matches the capture's current settings."""
@@ -3314,6 +3378,7 @@ class LiveLabTab(QWidget):
         if session is None:
             return
 
+        was_dirty = bool(getattr(session, "dirty", False))
         self._cancel_raw_background_wb_selection(target="edit")
         preview_path = Path(session.preview_path) if session.preview_path else None
         if preview_path is not None:
@@ -3332,6 +3397,12 @@ class LiveLabTab(QWidget):
         self._update_pending_raw_controls()
         if restore_selection and int(session.image_id) > 0:
             self._show_session_image(int(session.image_id))
+        if was_dirty:
+            self._show_status(
+                self.tr("RAW preview changes discarded."),
+                tone="info",
+                timeout_ms=3000,
+            )
 
     def _copy_raw_edit_settings(self) -> None:
         session = getattr(self, "_raw_edit_session", None)
@@ -3382,6 +3453,24 @@ class LiveLabTab(QWidget):
         if session is None:
             return False
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+
+        cache_key = self._raw_preview_proxy_cache_key(session.source_raw_path, session.working_settings)
+        cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+        cached_proxy_available = _pending_raw_preview_cache_has_entry(cache, cache_key)
+        existing_preview_rgb = getattr(session, "preview_rgb", None)
+        if not cached_proxy_available and isinstance(existing_preview_rgb, np.ndarray) and existing_preview_rgb.size:
+            session.dirty = session.working_settings != session.original_settings
+            self._update_raw_edit_controls()
+            if self._selected_committed_image_id() == session.image_id:
+                self._show_session_image(session.image_id)
+            else:
+                self._schedule_raw_edit_preview_save(session)
+            _raw_timing_log(
+                "RAW edit preview refresh",
+                start,
+                detail=f"{session.source_raw_path.name} reused existing preview (proxy cache cold)",
+            )
+            return True
 
         try:
             preview_rgb, _processing_settings = self._raw_preview_rgb_for_source(session.source_raw_path, session.working_settings)
@@ -4856,11 +4945,12 @@ class LiveLabTab(QWidget):
         )
         preview_rgb = getattr(capture, "preview_rgb", None)
         rendered_settings = getattr(capture, "rendered_settings", None)
-        settings_are_stale = (
+        memory_preview_is_current = (
             isinstance(rendered_settings, RawRenderSettings)
-            and rendered_settings != capture.raw_settings
+            and rendered_settings == capture.raw_settings
         )
-        if settings_are_stale:
+        disk_preview_is_current = LiveLabTab._pending_raw_capture_preview_is_current(capture)
+        if not memory_preview_is_current:
             # Multi-select left this capture with new raw_settings but no
             # fresh preview. Force a re-render so the viewer reflects the
             # current sliders rather than the old JPEG on disk.
@@ -4896,7 +4986,7 @@ class LiveLabTab(QWidget):
             )
         else:
             self._prune_pending_raw_preview_buffers(clear_proxy_cache=False)
-            needs_refresh = settings_are_stale or not preview_path or not Path(preview_path).exists()
+            needs_refresh = not disk_preview_is_current
             if needs_refresh:
                 active_request = getattr(self, "_pending_raw_preview_active_request", None)
                 if (
@@ -4993,12 +5083,15 @@ class LiveLabTab(QWidget):
         value: int | None = None,
         maximum: int | None = None,
     ) -> None:
-        hint_bar = getattr(self, "hint_bar", None)
-        if hint_bar is not None:
-            hint_bar.setVisible(not bool(visible))
+        stack = getattr(self, "hint_progress_stack", None)
+        if isinstance(stack, QStackedWidget):
+            stack.setCurrentWidget(
+                self.pending_raw_preview_progress_widget if bool(visible) else self.hint_bar
+            )
         widget = getattr(self, "pending_raw_preview_progress_widget", None)
         if widget is not None:
-            widget.setVisible(bool(visible))
+            widget.setVisible(True)
+        progress_text = str(text or "").strip()
         bar = getattr(self, "pending_raw_preview_progress_bar", None)
         if bar is not None:
             if visible:
@@ -5007,12 +5100,18 @@ class LiveLabTab(QWidget):
                     bar.setValue(int(max(0, min(int(value), int(maximum)))))
                 else:
                     bar.setRange(0, 0)
+                    bar.setValue(0)
+                bar.setFormat("")
             else:
                 bar.setRange(0, 100)
                 bar.setValue(0)
+                bar.setFormat("")
         label = getattr(self, "pending_raw_preview_progress_label", None)
         if label is not None:
-            label.setText(str(text or "").strip())
+            label.setText(progress_text)
+        cancel_btn = getattr(self, "pending_raw_commit_cancel_btn", None)
+        if cancel_btn is not None:
+            cancel_btn.setVisible(False)
 
     def _set_pending_raw_commit_busy(
         self,
@@ -5025,6 +5124,10 @@ class LiveLabTab(QWidget):
         busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
         if callable(busy_setter):
             busy_setter(visible, text, value=value, maximum=maximum)
+        cancel_btn = getattr(self, "pending_raw_commit_cancel_btn", None)
+        if cancel_btn is not None:
+            cancel_btn.setVisible(bool(visible))
+            cancel_btn.setEnabled(bool(visible and not getattr(self, "_pending_raw_commit_cancel_requested", False)))
 
     def _pending_raw_preview_request_for_capture(
         self,
@@ -5108,6 +5211,9 @@ class LiveLabTab(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_pending_raw_preview_job_finished)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._finish_pending_raw_preview_job)
         self._pending_raw_preview_worker_thread = thread
         self._pending_raw_preview_worker = worker
@@ -5123,17 +5229,22 @@ class LiveLabTab(QWidget):
             if not isinstance(result, _PendingRawPreviewJobResult):
                 return
             if result.job_id != request.job_id:
+                LiveLabTab._cleanup_preview_result_path(result)
                 return
             current_request = request
             capture = current_request.capture
             pending_captures = list(getattr(self, "_pending_raw_captures", []) or [])
             if capture not in pending_captures:
+                LiveLabTab._cleanup_preview_result_path(result)
                 return
             if current_request.kind == "selected" and self._current_pending_raw_capture() is not capture:
+                LiveLabTab._cleanup_preview_result_path(result)
                 return
             if _pending_raw_source_signature(capture.source_path) != current_request.source_signature:
+                LiveLabTab._cleanup_preview_result_path(result)
                 return
             if _pending_raw_settings_signature(capture.raw_settings) != current_request.settings_signature:
+                LiveLabTab._cleanup_preview_result_path(result)
                 return
 
             if isinstance(result.raw_rgb, np.ndarray) and result.raw_rgb.size:
@@ -5219,25 +5330,9 @@ class LiveLabTab(QWidget):
                 self._refresh_raw_processing_context_ui()
             self._refresh_session_gallery()
         finally:
-            if isinstance(thread, QThread):
-                try:
-                    thread.quit()
-                except Exception:
-                    pass
+            pass
 
     def _finish_pending_raw_preview_job(self) -> None:
-        thread = getattr(self, "_pending_raw_preview_worker_thread", None)
-        worker = getattr(self, "_pending_raw_preview_worker", None)
-        if worker is not None:
-            try:
-                worker.deleteLater()
-            except Exception:
-                pass
-        if thread is not None:
-            try:
-                thread.deleteLater()
-            except Exception:
-                pass
         self._pending_raw_preview_worker = None
         self._pending_raw_preview_worker_thread = None
         self._pending_raw_preview_active_request = None
@@ -5360,6 +5455,24 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_completed = 0
         self._pending_raw_commit_batch_saved = 0
         self._pending_raw_commit_batch_failed = 0
+        self._pending_raw_commit_batch_skipped = 0
+        self._pending_raw_commit_cancel_requested = False
+
+    def _cancel_pending_raw_commit_jobs(self) -> None:
+        if not self._pending_raw_commit_is_busy():
+            return
+        self._pending_raw_commit_cancel_requested = True
+        cancel_btn = getattr(self, "pending_raw_commit_cancel_btn", None)
+        if cancel_btn is not None:
+            cancel_btn.setEnabled(False)
+        queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        if getattr(self, "_pending_raw_commit_worker_thread", None) is None:
+            skipped = len(list(queue or []))
+            if isinstance(queue, list):
+                queue.clear()
+            self._pending_raw_commit_batch_completed += skipped
+            self._pending_raw_commit_batch_skipped += skipped
+            self._finish_pending_raw_commit_job()
 
     def _enqueue_pending_raw_commit_job(self, request: _PendingRawCommitJobRequest | None) -> None:
         if request is None:
@@ -5398,6 +5511,14 @@ class LiveLabTab(QWidget):
         if getattr(self, "_pending_raw_commit_worker_thread", None) is not None:
             return
         queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        if bool(getattr(self, "_pending_raw_commit_cancel_requested", False)):
+            skipped = len(list(queue or []))
+            if isinstance(queue, list):
+                queue.clear()
+            self._pending_raw_commit_batch_completed += skipped
+            self._pending_raw_commit_batch_skipped += skipped
+            self._finish_pending_raw_commit_job()
+            return
         if not queue:
             self._finish_pending_raw_commit_job()
             return
@@ -5407,9 +5528,11 @@ class LiveLabTab(QWidget):
                 continue
             if request.capture not in list(getattr(self, "_pending_raw_captures", []) or []):
                 self._pending_raw_commit_batch_completed += 1
+                self._pending_raw_commit_batch_skipped += 1
                 continue
             if _pending_raw_source_signature(request.capture.source_path) != request.source_signature:
                 self._pending_raw_commit_batch_completed += 1
+                self._pending_raw_commit_batch_skipped += 1
                 continue
             self._start_pending_raw_commit_job(request)
             return
@@ -5421,6 +5544,7 @@ class LiveLabTab(QWidget):
         total = int(self._pending_raw_commit_batch_total or 0)
         if batch_mode == "save_all" and total > 0:
             current = min(int(self._pending_raw_commit_batch_completed) + 1, total)
+            completed = max(0, min(int(self._pending_raw_commit_batch_completed), total))
             self._set_pending_raw_commit_busy(
                 True,
                 self.tr("Saving RAW {current} of {total}: {name}").format(
@@ -5428,7 +5552,7 @@ class LiveLabTab(QWidget):
                     total=total,
                     name=request.source_path.name,
                 ),
-                value=current,
+                value=completed,
                 maximum=total,
             )
         else:
@@ -5442,6 +5566,9 @@ class LiveLabTab(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_pending_raw_commit_job_finished)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._finish_pending_raw_commit_job)
         self._pending_raw_commit_worker_thread = thread
         self._pending_raw_commit_worker = worker
@@ -5470,6 +5597,8 @@ class LiveLabTab(QWidget):
 
             if stale_request:
                 self._pending_raw_commit_batch_completed += 1
+                self._pending_raw_commit_batch_skipped += 1
+                LiveLabTab._cleanup_local_ingest_result(result.prepared_ingest)
                 return
 
             if result.prepared_ingest is None:
@@ -5513,6 +5642,7 @@ class LiveLabTab(QWidget):
                 capture.status = "failed"
                 self._pending_raw_commit_batch_completed += 1
                 self._pending_raw_commit_batch_failed += 1
+                LiveLabTab._cleanup_local_ingest_result(result.prepared_ingest)
                 self._show_status(
                     self.tr("Could not save pending RAW capture {name}: {error}").format(
                         name=capture.source_path.name,
@@ -5533,6 +5663,7 @@ class LiveLabTab(QWidget):
                 return
 
             self._pending_raw_commit_batch_failed += 1
+            LiveLabTab._cleanup_local_ingest_result(result.prepared_ingest)
             capture.status = "failed"
             error_text = result.error or self.tr("RAW save failed.")
             self._show_status(
@@ -5544,30 +5675,21 @@ class LiveLabTab(QWidget):
                 timeout_ms=6000,
             )
         finally:
-            if isinstance(thread, QThread):
-                try:
-                    thread.quit()
-                except Exception:
-                    pass
+            pass
 
     def _finish_pending_raw_commit_job(self) -> None:
-        thread = getattr(self, "_pending_raw_commit_worker_thread", None)
-        worker = getattr(self, "_pending_raw_commit_worker", None)
         active_request = getattr(self, "_pending_raw_commit_active_request", None)
-        if worker is not None:
-            try:
-                worker.deleteLater()
-            except Exception:
-                pass
-        if thread is not None:
-            try:
-                thread.deleteLater()
-            except Exception:
-                pass
         self._pending_raw_commit_worker = None
         self._pending_raw_commit_worker_thread = None
         self._pending_raw_commit_active_request = None
         queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        cancel_requested = bool(getattr(self, "_pending_raw_commit_cancel_requested", False))
+        if cancel_requested and queue:
+            skipped = len(list(queue or []))
+            if isinstance(queue, list):
+                queue.clear()
+            self._pending_raw_commit_batch_completed += skipped
+            self._pending_raw_commit_batch_skipped += skipped
         if queue:
             self._update_pending_raw_controls()
             self._start_next_pending_raw_commit_job()
@@ -5579,12 +5701,31 @@ class LiveLabTab(QWidget):
         total = int(self._pending_raw_commit_batch_total or 0)
         saved = int(self._pending_raw_commit_batch_saved or 0)
         failed = int(self._pending_raw_commit_batch_failed or 0)
-        if batch_mode == "save_all":
+        skipped = int(getattr(self, "_pending_raw_commit_batch_skipped", 0) or 0)
+        if cancel_requested:
+            message = self.tr("RAW save cancelled. Saved {saved}, skipped {skipped}.").format(
+                saved=saved,
+                skipped=skipped,
+            )
+            self._show_status(message, tone="warning", timeout_ms=5000)
+        elif batch_mode == "save_all":
             message = self.tr("Saved {saved} RAW captures.").format(saved=saved)
             tone = "success"
             timeout_ms = 3500
-            if failed:
+            if failed and skipped:
+                message = self.tr("Saved {saved} RAW captures, {failed} failed, {skipped} skipped.").format(
+                    saved=saved,
+                    failed=failed,
+                    skipped=skipped,
+                )
+                tone = "warning"
+                timeout_ms = 5000
+            elif failed:
                 message = self.tr("Saved {saved} RAW captures, {failed} failed.").format(saved=saved, failed=failed)
+                tone = "warning"
+                timeout_ms = 5000
+            elif skipped:
+                message = self.tr("Saved {saved} RAW captures, {skipped} skipped.").format(saved=saved, skipped=skipped)
                 tone = "warning"
                 timeout_ms = 5000
             self._show_status(
@@ -5610,6 +5751,8 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_completed = 0
         self._pending_raw_commit_batch_saved = 0
         self._pending_raw_commit_batch_failed = 0
+        self._pending_raw_commit_batch_skipped = 0
+        self._pending_raw_commit_cancel_requested = False
 
     def _remove_pending_raw_capture(self, pending: PendingRawCapture, *, status: str, refresh_ui: bool = True) -> bool:
         captures = getattr(self, "_pending_raw_captures", [])
@@ -5823,6 +5966,13 @@ class LiveLabTab(QWidget):
     def _discard_selected_pending_raw_capture(self) -> bool:
         pending = self._current_pending_raw_capture()
         if pending is None:
+            return False
+        if self._pending_raw_commit_capture_is_busy(pending):
+            self._show_status(
+                self.tr("Wait for RAW saving to finish before removing this capture."),
+                tone="info",
+                timeout_ms=3000,
+            )
             return False
         self._cancel_pending_raw_background_wb_selection()
         if self._remove_pending_raw_capture(pending, status="discarded", refresh_ui=True):
@@ -7442,6 +7592,13 @@ class LiveLabTab(QWidget):
         capture = captures[pending_index]
         if not isinstance(capture, PendingRawCapture):
             return False
+        if self._pending_raw_commit_capture_is_busy(capture):
+            self._show_status(
+                self.tr("Wait for RAW saving to finish before removing this capture."),
+                tone="info",
+                timeout_ms=3000,
+            )
+            return False
 
         current_capture = self._current_pending_raw_capture()
         current_index = self._selected_pending_raw_index_value()
@@ -7664,7 +7821,7 @@ class LiveLabTab(QWidget):
             preview_scaled,
             preserve_view=preserve_view,
         )
-        self._prune_pending_raw_preview_buffers(clear_proxy_cache=True)
+        self._prune_pending_raw_preview_buffers(clear_proxy_cache=not edit_mode)
         self.reset_view_btn.setEnabled(True)
         update_calibration_action_visibility = getattr(self, "_update_calibration_action_visibility", None)
         if callable(update_calibration_action_visibility):
@@ -7685,7 +7842,15 @@ class LiveLabTab(QWidget):
             )
             self.viewer_meta_label.setText(self._raw_settings_info_text(edit_session.working_settings))
             auto_settings = None
-            if edit_session.source_raw_path.exists():
+            edit_cache_key = self._raw_preview_proxy_cache_key(
+                edit_session.source_raw_path,
+                edit_session.working_settings,
+            )
+            edit_cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+            if (
+                edit_session.source_raw_path.exists()
+                and _pending_raw_preview_cache_has_entry(edit_cache, edit_cache_key)
+            ):
                 auto_settings = self._raw_auto_level_settings_for_source(
                     edit_session.source_raw_path,
                     edit_session.working_settings,

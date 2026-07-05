@@ -370,6 +370,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._pending_raw_commit_batch_completed = 0
     state._pending_raw_commit_batch_saved = 0
     state._pending_raw_commit_batch_failed = 0
+    state._pending_raw_commit_batch_skipped = 0
+    state._pending_raw_commit_cancel_requested = False
     state._pending_raw_commit_request_for_capture = lambda pending, *, kind="save_current": live_lab_tab.LiveLabTab._pending_raw_commit_request_for_capture(
         state,
         pending,
@@ -386,6 +388,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
         kind=kind,
     )
     state._pending_raw_commit_is_busy = lambda: live_lab_tab.LiveLabTab._pending_raw_commit_is_busy(state)
+    state._pending_raw_commit_capture_is_busy = lambda capture: live_lab_tab.LiveLabTab._pending_raw_commit_capture_is_busy(state, capture)
+    state._cancel_pending_raw_commit_jobs = lambda: live_lab_tab.LiveLabTab._cancel_pending_raw_commit_jobs(state)
     state._set_pending_raw_commit_busy = lambda *args, **kwargs: live_lab_tab.LiveLabTab._set_pending_raw_commit_busy(
         state,
         *args,
@@ -405,7 +409,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
                     total=total,
                     name=request.source_path.name,
                 ),
-                value=min(int(state._pending_raw_commit_batch_completed) + 1, total),
+                value=min(int(state._pending_raw_commit_batch_completed), total),
                 maximum=total,
             )
         else:
@@ -1062,6 +1066,102 @@ def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_sele
     assert "preview only" in state.raw_edit_summary_label.text()
     assert update_calls == []
     assert generate_calls == []
+
+
+def test_live_lab_committed_raw_slider_after_cache_clear_does_not_sync_decode(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    derivative_path = tmp_path / "imports" / "sample.jpg"
+    derivative_path.parent.mkdir(parents=True, exist_ok=True)
+    _fake_render_raw_jpeg(source_path, output_path=derivative_path)
+
+    state = _build_raw_controls_state()
+    state._session_image_ids = [101]
+    state._selected_session_image_id = 101
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
+    state._load_viewer_pixmap = lambda path: (QPixmap(12, 8), False)
+
+    images = {101: _make_raw_image_row(101, source_path=source_path, derivative_path=derivative_path)}
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None,
+    )
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+
+    assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
+    assert isinstance(state._raw_edit_session.preview_rgb, np.ndarray)
+
+    live_lab_tab.LiveLabTab._show_session_image(state, 101)
+    state._pending_raw_preview_proxy_cache.clear()
+    monkeypatch.setattr(
+        live_lab_tab,
+        "render_raw_preview_proxy_rgb",
+        lambda *args, **kwargs: pytest.fail("committed RAW slider tick should not synchronously decode when cache is cold"),
+    )
+
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(75)
+    live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
+
+    assert state._raw_edit_session is not None
+    assert state._raw_edit_session.dirty is True
+    assert state._raw_edit_session.working_settings.tone_curve_strength == pytest.approx(0.75)
+
+
+def test_live_lab_dirty_committed_raw_edit_switch_discards_with_status(tmp_path, monkeypatch):
+    _qapp()
+    source_one = tmp_path / "sample_1.nef"
+    source_two = tmp_path / "sample_2.nef"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    derivative_one = tmp_path / "imports" / "sample_1.jpg"
+    derivative_two = tmp_path / "imports" / "sample_2.jpg"
+    derivative_one.parent.mkdir(parents=True, exist_ok=True)
+    _fake_render_raw_jpeg(source_one, output_path=derivative_one)
+    _fake_render_raw_jpeg(source_two, output_path=derivative_two)
+
+    state = _build_raw_controls_state()
+    state._session_image_ids = [101, 102]
+    state._selected_session_image_id = 101
+    statuses: list[tuple[str, str, int]] = []
+    state._show_status = lambda text, tone="info", timeout_ms=4000: statuses.append((text, tone, timeout_ms))
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
+    state._load_viewer_pixmap = lambda path: (QPixmap(12, 8), False)
+
+    images = {
+        101: _make_raw_image_row(101, source_path=source_one, derivative_path=derivative_one),
+        102: _make_raw_image_row(102, source_path=source_two, derivative_path=derivative_two),
+    }
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None,
+    )
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        live_lab_tab,
+        "render_raw_image",
+        lambda *args, **kwargs: pytest.fail("dirty switch should not silently full-render"),
+    )
+
+    assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
+    state.raw_controls.tone_curve_checkbox.setChecked(True)
+    state.raw_controls.curve_strength_slider.setValue(70)
+    live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
+    assert state._raw_edit_session.dirty is True
+
+    live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, 102, str(derivative_two))
+
+    assert state._raw_edit_session is None
+    assert state._selected_session_image_id == 102
+    assert any(text == "RAW preview changes discarded." and tone == "info" for text, tone, _ in statuses)
 
 
 def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
@@ -2029,6 +2129,48 @@ def test_live_lab_pending_raw_preview_result_ignored_when_source_changes(tmp_pat
     assert pending.preview_rgb is None
 
 
+def test_live_lab_removed_pending_raw_preview_result_cleans_written_file(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "preview.jpg"
+    preview_path.write_text("worker-output", encoding="utf-8")
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=preview_path,
+    )
+    state = _build_raw_controls_state()
+    state._pending_raw_captures = []
+    request = live_lab_tab._PendingRawPreviewJobRequest(
+        job_id=1,
+        kind="background",
+        capture=pending,
+        source_path=source_path,
+        raw_settings=pending.raw_settings,
+        source_signature=live_lab_tab._pending_raw_source_signature(source_path),
+        settings_signature=live_lab_tab._pending_raw_settings_signature(pending.raw_settings),
+    )
+    state._pending_raw_preview_active_request = request
+    result = live_lab_tab._PendingRawPreviewJobResult(
+        job_id=1,
+        kind="background",
+        source_signature=request.source_signature,
+        settings_signature=request.settings_signature,
+        raw_rgb=np.ones((2, 2, 3), dtype=np.float32),
+        preview_rgb=np.ones((2, 2, 3), dtype=np.float32),
+        processed_settings=pending.raw_settings,
+        auto_level_settings=pending.raw_settings,
+        preview_path=str(preview_path),
+    )
+
+    live_lab_tab.LiveLabTab._on_pending_raw_preview_job_finished(state, result)
+
+    assert not preview_path.exists()
+
+
 def test_live_lab_background_pending_raw_preview_enqueue_stays_silent(tmp_path):
     _qapp()
     state = _build_raw_controls_state()
@@ -2207,6 +2349,45 @@ def test_live_lab_first_missing_pending_raw_preview_enqueues_worker(tmp_path, mo
     assert busy_calls[0][0] is True
 
 
+def test_live_lab_stale_pending_raw_preview_path_is_not_loaded_as_current(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "preview.jpg"
+    preview_path.write_text("old-preview", encoding="utf-8")
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=preview_path,
+        rendered_settings=None,
+    )
+    state._pending_raw_captures = [pending]
+    state._selected_pending_raw_index = 0
+    request_calls: list[object] = []
+    busy_calls: list[tuple[bool, str | None]] = []
+    state._set_pending_raw_preview_busy = lambda visible, text=None, **_kwargs: busy_calls.append((bool(visible), text))
+    state._pending_raw_preview_request_for_capture = lambda capture, *, kind="selected": SimpleNamespace(
+        job_id=12,
+        kind=kind,
+        capture=capture,
+        source_path=capture.source_path,
+        raw_settings=capture.raw_settings,
+        source_signature=live_lab_tab._pending_raw_source_signature(capture.source_path),
+        settings_signature=live_lab_tab._pending_raw_settings_signature(capture.raw_settings),
+    )
+    state._enqueue_pending_raw_preview_job = lambda request: request_calls.append(request)
+    state._load_viewer_pixmap = lambda path: pytest.fail("stale pending RAW preview path should not be loaded")
+
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+
+    assert request_calls
+    assert request_calls[0].kind == "selected"
+    assert busy_calls and busy_calls[0][0] is True
+
+
 def test_live_lab_commit_all_pending_raw_captures_reports_determinate_progress(tmp_path, monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
@@ -2249,6 +2430,7 @@ def test_live_lab_commit_all_pending_raw_captures_reports_determinate_progress(t
         state._pending_raw_commit_worker_thread = object()
         batch_total = int(state._pending_raw_commit_batch_total or 0)
         current = min(int(state._pending_raw_commit_batch_completed) + 1, batch_total) if batch_total else 0
+        completed = min(int(state._pending_raw_commit_batch_completed), batch_total) if batch_total else 0
         state._set_pending_raw_commit_busy(
             True,
             state.tr("Saving RAW {current} of {total}: {name}").format(
@@ -2256,7 +2438,7 @@ def test_live_lab_commit_all_pending_raw_captures_reports_determinate_progress(t
                 total=batch_total or 1,
                 name=request.source_path.name,
             ),
-            value=current or 1,
+            value=completed,
             maximum=batch_total or 1,
         )
 
@@ -2275,8 +2457,132 @@ def test_live_lab_commit_all_pending_raw_captures_reports_determinate_progress(t
     assert progress_calls
     assert progress_calls[0][0] is True
     assert progress_calls[0][1] == "Saving RAW 1 of 2: P070020_1.ORF"
-    assert progress_calls[0][2] == 1
+    assert progress_calls[0][2] == 0
     assert progress_calls[0][3] == 2
+
+
+def test_live_lab_commit_all_pending_raw_captures_advances_progress_after_each_file(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    preview_one = tmp_path / "preview1.jpg"
+    preview_two = tmp_path / "preview2.jpg"
+    preview_one.write_text("preview-1", encoding="utf-8")
+    preview_two.write_text("preview-2", encoding="utf-8")
+    state._pending_raw_captures = [
+        live_lab_tab.PendingRawCapture(
+            source_path=source_one,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_one,
+            observation_id=1,
+        ),
+        live_lab_tab.PendingRawCapture(
+            source_path=source_two,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_two,
+            observation_id=1,
+        ),
+    ]
+    state._selected_pending_raw_index = 0
+    captured_calls: list[dict[str, object]] = []
+    add_image_calls: list[dict[str, object]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: tmp_path / "imports" / f"{source.stem}.jpg",
+        captured_calls=captured_calls,
+        add_image_calls=add_image_calls,
+    )
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: {
+            "id": int(image_id),
+            "filepath": str(tmp_path / "imports" / ("P070020_1.jpg" if int(image_id) == 1 else "P070021_1.jpg")),
+            "lab_metadata": {"image_type": "microscope"},
+        },
+    )
+    progress_calls: list[tuple[bool, str | None, int | None, int | None]] = []
+    state._set_pending_raw_commit_busy = lambda visible, text=None, value=None, maximum=None: progress_calls.append(
+        (bool(visible), text, value, maximum)
+    )
+    state._show_status = lambda *args, **kwargs: None
+
+    assert live_lab_tab.LiveLabTab._commit_all_pending_raw_captures(state) is True
+
+    active_progress = [call for call in progress_calls if call[0]]
+    assert active_progress[0][1] == "Saving RAW 1 of 2: P070020_1.ORF"
+    assert active_progress[0][2:] == (0, 2)
+    assert active_progress[1][1] == "Saving RAW 2 of 2: P070021_1.ORF"
+    assert active_progress[1][2:] == (1, 2)
+    assert progress_calls[-1][0] is False
+
+
+def test_live_lab_raw_commit_cancel_prevents_next_queued_save_from_starting(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    pending_one = live_lab_tab.PendingRawCapture(
+        source_path=source_one,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    pending_two = live_lab_tab.PendingRawCapture(
+        source_path=source_two,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    state._pending_raw_captures = [pending_one, pending_two]
+    state._selected_pending_raw_index = 0
+    started_requests: list[object] = []
+    statuses: list[tuple[str, str, int]] = []
+    state._show_status = lambda text, tone="info", timeout_ms=4000: statuses.append((text, tone, timeout_ms))
+    state._set_pending_raw_commit_busy = lambda *args, **kwargs: None
+    state._finalize_local_ingest = lambda *args, **kwargs: True
+
+    def fake_start_pending_raw_commit_job(request):
+        started_requests.append(request)
+        state._pending_raw_commit_active_request = request
+        state._pending_raw_commit_worker_thread = object()
+
+    state._start_pending_raw_commit_job = fake_start_pending_raw_commit_job
+
+    assert live_lab_tab.LiveLabTab._commit_all_pending_raw_captures(state) is True
+    assert len(started_requests) == 1
+    assert len(state._pending_raw_commit_job_queue) == 1
+
+    live_lab_tab.LiveLabTab._cancel_pending_raw_commit_jobs(state)
+    active_request = state._pending_raw_commit_active_request
+    prepared = SimpleNamespace(working_path=str(tmp_path / "imports" / "P070020_1.jpg"))
+    result = live_lab_tab._PendingRawCommitJobResult(
+        job_id=active_request.job_id,
+        kind="save_all",
+        source_signature=active_request.source_signature,
+        source_path=active_request.source_path,
+        pending_capture_id=id(active_request.capture),
+        pending_capture_source_path=str(active_request.capture.source_path),
+        prepared_ingest=prepared,
+    )
+
+    live_lab_tab.LiveLabTab._on_pending_raw_commit_job_finished(state, result)
+    live_lab_tab.LiveLabTab._finish_pending_raw_commit_job(state)
+
+    assert len(started_requests) == 1
+    assert state._pending_raw_commit_job_queue == []
+    assert any("RAW save cancelled. Saved 1, skipped 1." in text for text, _, _ in statuses)
 
 
 def _build_offscreen_live_lab_tab(monkeypatch):
@@ -2295,6 +2601,54 @@ def _build_offscreen_live_lab_tab(monkeypatch):
     monkeypatch.setattr(live_lab_tab.SettingsDB, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
     return live_lab_tab.LiveLabTab(SimpleNamespace())
+
+
+def test_live_lab_hint_progress_area_keeps_stable_height(monkeypatch, qapp):
+    tab = _build_offscreen_live_lab_tab(monkeypatch)
+    tab.show()
+    qapp.processEvents()
+
+    stack = tab.hint_progress_stack
+    fixed_height = stack.height()
+    fixed_min_height = stack.minimumHeight()
+    fixed_max_height = stack.maximumHeight()
+
+    tab._set_pending_raw_commit_busy(True, "Saving RAW 1 of 3: P070020_1.ORF", value=0, maximum=3)
+    qapp.processEvents()
+    progress_fixed_height = stack.height()
+    assert tab.pending_raw_preview_progress_label.text() == "Saving RAW 1 of 3: P070020_1.ORF"
+    assert tab.pending_raw_preview_progress_bar.format() == ""
+
+    tab._set_pending_raw_commit_busy(False, "")
+    qapp.processEvents()
+
+    assert fixed_min_height == fixed_max_height
+    assert stack.minimumHeight() == fixed_min_height
+    assert stack.maximumHeight() == fixed_max_height
+    assert progress_fixed_height == fixed_height
+    assert stack.height() == fixed_height
+
+
+def test_live_lab_raw_commit_progress_cancel_button_visible_and_separate_label(monkeypatch, qapp):
+    tab = _build_offscreen_live_lab_tab(monkeypatch)
+    tab.show()
+    qapp.processEvents()
+
+    tab._pending_raw_commit_active_request = object()
+    tab._pending_raw_commit_worker_thread = object()
+    tab._set_pending_raw_commit_busy(True, "Saving RAW 1 of 5: P070020_1.ORF", value=0, maximum=5)
+    qapp.processEvents()
+
+    assert tab.pending_raw_commit_cancel_btn.isVisible() is True
+    assert tab.pending_raw_commit_cancel_btn.toolTip() == "Stop RAW save after current file"
+    assert tab.pending_raw_preview_progress_label.text() == "Saving RAW 1 of 5: P070020_1.ORF"
+    assert tab.pending_raw_preview_progress_bar.isTextVisible() is False
+    assert tab.pending_raw_preview_progress_bar.format() == ""
+
+    QTest.mouseClick(tab.pending_raw_commit_cancel_btn, Qt.LeftButton)
+    qapp.processEvents()
+    assert tab._pending_raw_commit_cancel_requested is True
+    assert tab.pending_raw_commit_cancel_btn.isEnabled() is False
 
 
 def test_live_lab_instantiates_without_committed_raw_edit_panel(monkeypatch, qapp):
@@ -3710,6 +4064,129 @@ def test_live_lab_pending_raw_commit_failure_clears_busy_and_reenables_controls(
     assert state.pending_raw_save_all_btn.isEnabled() is True
     assert progress_calls and progress_calls[-1][0] is False
     assert any("Could not save pending RAW capture P070020_1.ORF: decode failed" in text for text, _, _ in statuses)
+
+
+def test_live_lab_discard_active_pending_raw_commit_is_blocked(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "previews" / "P070020_1_preview.jpg"
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    preview_path.write_text("preview", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=preview_path,
+        observation_id=1,
+    )
+    state._pending_raw_captures = [pending]
+    state._selected_pending_raw_index = 0
+    request = state._pending_raw_commit_request_for_capture(pending, kind="save_current")
+    state._pending_raw_commit_active_request = request
+    statuses: list[tuple[str, str, int]] = []
+    state._show_status = lambda text, tone="info", timeout_ms=4000: statuses.append((text, tone, timeout_ms))
+
+    assert live_lab_tab.LiveLabTab._discard_selected_pending_raw_capture(state) is False
+
+    assert state._pending_raw_captures == [pending]
+    assert preview_path.exists()
+    assert any("Wait for RAW saving to finish" in text for text, _, _ in statuses)
+
+
+def test_live_lab_save_all_removed_and_source_changed_captures_report_skipped(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    pending_one = live_lab_tab.PendingRawCapture(
+        source_path=source_one,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    pending_two = live_lab_tab.PendingRawCapture(
+        source_path=source_two,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    request_removed = state._pending_raw_commit_request_for_capture(pending_one, kind="save_all")
+    request_changed = state._pending_raw_commit_request_for_capture(pending_two, kind="save_all")
+    assert request_removed is not None
+    assert request_changed is not None
+    state._pending_raw_captures = [pending_two]
+    source_two.write_bytes(b"raw-2-updated")
+    state._pending_raw_commit_job_queue = [request_removed, request_changed]
+    state._pending_raw_commit_batch_mode = "save_all"
+    state._pending_raw_commit_batch_total = 2
+    statuses: list[tuple[str, str, int]] = []
+    state._show_status = lambda text, tone="info", timeout_ms=4000: statuses.append((text, tone, timeout_ms))
+    progress_calls: list[tuple[bool, str | None, int | None, int | None]] = []
+    state._set_pending_raw_commit_busy = lambda visible, text=None, value=None, maximum=None: progress_calls.append(
+        (bool(visible), text, value, maximum)
+    )
+
+    live_lab_tab.LiveLabTab._start_next_pending_raw_commit_job(state)
+
+    assert state._pending_raw_commit_batch_completed == 0
+    assert state._pending_raw_commit_batch_skipped == 0
+    assert progress_calls and progress_calls[-1][0] is False
+    assert any("Saved 0 RAW captures, 2 skipped." in text and tone == "warning" for text, tone, _ in statuses)
+
+
+def test_live_lab_stale_pending_raw_commit_result_cleans_prepared_output(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    working_path = tmp_path / "imports" / "P070020_1.jpg"
+    working_path.parent.mkdir(parents=True, exist_ok=True)
+    working_path.write_text("prepared", encoding="utf-8")
+    state = _build_raw_controls_state()
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    request = state._pending_raw_commit_request_for_capture(pending, kind="save_all")
+    assert request is not None
+    state._pending_raw_captures = []
+    state._pending_raw_commit_active_request = request
+    state._pending_raw_commit_batch_mode = "save_all"
+    state._pending_raw_commit_batch_total = 1
+    prepared = live_lab_tab.LocalIngestResult(
+        source_path=str(source_path),
+        working_path=str(working_path),
+        original_path=str(source_path),
+        source_role="converted_local",
+        file_purpose="microscope",
+        original_mime_type="image/x-raw",
+        working_mime_type="image/jpeg",
+    )
+    result = live_lab_tab._PendingRawCommitJobResult(
+        job_id=request.job_id,
+        kind="save_all",
+        source_signature=request.source_signature,
+        source_path=request.source_path,
+        pending_capture_id=id(pending),
+        pending_capture_source_path=str(pending.source_path),
+        prepared_ingest=prepared,
+    )
+
+    live_lab_tab.LiveLabTab._on_pending_raw_commit_job_finished(state, result)
+
+    assert not working_path.exists()
+    assert state._pending_raw_commit_batch_completed == 1
+    assert state._pending_raw_commit_batch_skipped == 1
 
 
 def test_live_lab_review_mode_save_all_after_session_stop_commits_every_pending_raw(tmp_path, monkeypatch):
