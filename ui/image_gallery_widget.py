@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QScrollArea,
     QToolButton,
     QVBoxLayout,
@@ -434,6 +435,8 @@ class ImageGalleryWidget(QGroupBox):
     imageDoubleClicked = Signal(object, str)
     measureBadgeClicked = Signal(object, str)
     deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
+    deleteSelectionRequested = Signal(list)
+    moveToObservationRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
     itemsReordered = Signal(object)
@@ -450,6 +453,7 @@ class ImageGalleryWidget(QGroupBox):
         default_height: int = 140,
         thumbnail_tooltip: str = "",
         show_publish_checkbox: bool = False,
+        show_move_to_observation: bool = False,
         publish_checkbox_hint: str = "",
     ) -> None:
         super().__init__(title, parent)
@@ -466,6 +470,7 @@ class ImageGalleryWidget(QGroupBox):
         self._multi_select = False
         self._thumbnail_tooltip = thumbnail_tooltip
         self._show_publish_checkbox = bool(show_publish_checkbox)
+        self._show_move_to_observation = bool(show_move_to_observation)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
@@ -991,6 +996,41 @@ class ImageGalleryWidget(QGroupBox):
                 return frame
         return None
 
+    def _set_context_menu_selection(self, frame: QFrame | None) -> None:
+        if frame is None:
+            return
+        key = getattr(frame, "image_key", None)
+        if key is None or key in self._selected_keys:
+            return
+        image_id = getattr(frame, "image_id", None)
+        if self._multi_select:
+            self._selected_id = image_id
+            self._selected_keys = {key}
+            self._last_clicked_index = self._index_for_key(key)
+            self._apply_selection_styles()
+            self.selectionChanged.emit(self.selected_paths())
+        else:
+            self.select_image(image_id)
+
+    def _show_thumbnail_context_menu(self, frame: QFrame, global_pos: QPoint) -> None:
+        self._set_context_menu_selection(frame)
+        selected_keys = self.selected_image_keys()
+        if not selected_keys:
+            return
+
+        menu = QMenu(self)
+        delete_text = self.tr("Delete selected photos") if len(selected_keys) > 1 else self.tr("Delete photo")
+        delete_action = menu.addAction(delete_text)
+        move_action = None
+        if self._show_move_to_observation:
+            move_action = menu.addAction(self.tr("Move to observation"))
+
+        chosen = menu.exec(global_pos)
+        if chosen == delete_action:
+            self.deleteSelectionRequested.emit(list(selected_keys))
+        elif move_action is not None and chosen == move_action:
+            self.moveToObservationRequested.emit(list(selected_keys))
+
     def _reorder_item(self, source_key, target_key, insert_after: bool = False) -> bool:
         ordered_keys = self._ordered_item_keys()
         if source_key not in ordered_keys or target_key not in ordered_keys:
@@ -1369,6 +1409,7 @@ class ImageGalleryWidget(QGroupBox):
         thumb_label = QLabel()
         thumb_label.setAlignment(Qt.AlignCenter)
         thumb_label.setFixedSize(self._thumb_size, self._thumb_size)
+        thumb_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         pixmap = self._load_pixmap(item)
         if pixmap and not pixmap.isNull():
@@ -1388,6 +1429,10 @@ class ImageGalleryWidget(QGroupBox):
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(0)
         image_layout.addWidget(thumb_label, 0, 0, alignment=Qt.AlignCenter)
+        image_container.mousePressEvent = lambda e, f=frame: self._on_frame_mouse_press(e, f)
+        image_container.mouseMoveEvent = lambda e, f=frame: self._on_frame_mouse_move(e, f)
+        image_container.mouseReleaseEvent = lambda e: setattr(self, "_drag_start_pos", None)
+        image_container.mouseDoubleClickEvent = lambda e, img_id=item.get("id"), path=item.get("filepath"): self.imageDoubleClicked.emit(img_id, path or "")
 
         image_num = item.get("image_number")
         if image_num is not None:
@@ -1694,6 +1739,14 @@ class ImageGalleryWidget(QGroupBox):
     def selected_keys(self) -> set[str | int]:
         return set(self._selected_keys)
 
+    def selected_image_keys(self) -> list[str | int]:
+        keys: list[str | int] = []
+        for item in self._items:
+            key = self._item_key(item)
+            if key is not None and key in self._selected_keys:
+                keys.append(key)
+        return keys
+
     def center_on_key(self, key) -> None:
         self._queue_center_on_key(key)
 
@@ -1771,7 +1824,19 @@ class ImageGalleryWidget(QGroupBox):
             except Exception:
                 self._drag_start_pos = QPoint()
             self._drag_start_key = getattr(frame, "image_key", None)
-        self._on_click(event, getattr(frame, "image_id", None), getattr(frame, "image_path", ""))
+            self._on_click(event, getattr(frame, "image_id", None), getattr(frame, "image_path", ""))
+            return
+        if event.button() == Qt.RightButton:
+            try:
+                global_pos = event.globalPosition().toPoint()
+            except Exception:
+                global_pos = None
+            if global_pos is not None:
+                self._show_thumbnail_context_menu(frame, global_pos)
+            try:
+                event.accept()
+            except Exception:
+                pass
 
     def _select_adjacent_image(self, step: int) -> None:
         if step == 0 or not self._items:

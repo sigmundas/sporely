@@ -1916,6 +1916,9 @@ class ObservationsTab(QWidget):
         self._search_refresh_timer.setInterval(180)
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
         self._pending_gallery_observation_id: int | None = None
+        self._pending_gallery_move_image_ids: list[int] = []
+        self._pending_gallery_move_source_observation_id: int | None = None
+        self._pending_gallery_move_previous_table_stylesheet: str = ""
         self._gallery_load_timer = QTimer(self)
         self._gallery_load_timer.setSingleShot(True)
         self._gallery_load_timer.setInterval(45)
@@ -2215,6 +2218,7 @@ class ObservationsTab(QWidget):
             show_badges=True,
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
+            show_move_to_observation=True,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
@@ -2225,6 +2229,8 @@ class ObservationsTab(QWidget):
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
+        self.gallery_widget.deleteSelectionRequested.connect(self._confirm_delete_selected_images)
+        self.gallery_widget.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
         self.gallery_widget.itemsReordered.connect(self._on_gallery_widget_items_reordered)
@@ -2474,6 +2480,34 @@ class ObservationsTab(QWidget):
         super().dropEvent(event)
 
     def eventFilter(self, obj, event):
+        if self._pending_gallery_move_image_ids:
+            if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+                self._clear_pending_gallery_move()
+                return True
+            table_widget = getattr(self, "table", None)
+            table_viewport = getattr(table_widget, "viewport", lambda: None)() if table_widget is not None else None
+            if obj in {table_widget, table_viewport} and event.type() == QEvent.MouseButtonPress:
+                try:
+                    pos = event.position().toPoint()
+                except Exception:
+                    pos = None
+                if pos is not None:
+                    row = self.table.rowAt(pos.y())
+                    if row >= 0:
+                        obs_id = self._observation_id_for_row(row)
+                        if obs_id is None:
+                            return True
+                        if self._pending_gallery_move_source_observation_id is not None and int(obs_id) == int(
+                            self._pending_gallery_move_source_observation_id
+                        ):
+                            self.set_status_message(
+                                self.tr("Select a different observation to move the photos to."),
+                                level="warning",
+                                auto_clear_ms=0,
+                            )
+                            return True
+                        self._complete_pending_gallery_move(int(obs_id))
+                        return True
         if event.type() == QEvent.DragEnter and self._accept_image_drag(event):
             return True
         if event.type() == QEvent.DragMove and self._accept_image_drag(event):
@@ -6414,6 +6448,47 @@ class ObservationsTab(QWidget):
         names = [Path(p).name for p in paths]
         return len(names)
 
+    def _refresh_current_observation_after_image_delete(self) -> None:
+        obs_id = int(self.selected_observation_id or 0)
+        if obs_id <= 0:
+            return
+
+        gallery = getattr(self, "gallery_widget", None)
+        if gallery is not None:
+            try:
+                gallery.set_observation_id_async(obs_id)
+            except Exception:
+                pass
+
+        if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+            self._refresh_image_browser_for_current_selection()
+
+        if not hasattr(self, "table") or not self._show_observation_table_thumbnails():
+            return
+
+        row = self._find_table_row_for_observation(obs_id)
+        if row < 0:
+            return
+
+        row_data = self._observation_row_data_for_row(row) or {}
+        thumbnail_map = self._build_observation_thumbnail_map([obs_id])
+        thumbnail_path = thumbnail_map.get(obs_id)
+        if isinstance(row_data, dict):
+            row_data["thumbnail_path"] = thumbnail_path
+        item = self.table.item(row, 0)
+        if item is None:
+            return
+        is_cloud = str(row_data.get("row_kind") or "") == "cloud"
+        mark_star = bool(row_data.get("mark_star")) or is_cloud
+        if thumbnail_path:
+            icon = self._observation_thumbnail_icon(thumbnail_path, mark_cloud=mark_star)
+            if icon is not None:
+                item.setIcon(icon)
+                item.setText("")
+                return
+        item.setIcon(QIcon())
+        item.setText("⭐" if mark_star else "")
+
     def _get_measurements_for_image(self, image_id):
         """Get measurements for a specific image."""
         return MeasurementDB.get_measurements_for_image(image_id)
@@ -6454,11 +6529,175 @@ class ObservationsTab(QWidget):
                 self.tr("Confirm Delete"),
                 self.tr("Delete image?"),
                 default_yes=False
-            )
+        )
         if confirmed:
             ImageDB.delete_image(image_id)
-            self.refresh_observations()
+            self._refresh_current_observation_after_image_delete()
             self.set_status_message(self.tr("Image deleted."), level="success")
+
+    def _confirm_delete_selected_images(self, image_keys) -> None:
+        image_ids: list[int] = []
+        seen: set[int] = set()
+        for key in image_keys or []:
+            try:
+                image_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen:
+                continue
+            seen.add(image_id)
+            image_ids.append(image_id)
+        if not image_ids:
+            return
+
+        image_rows: list[tuple[int, dict]] = []
+        measured_count = 0
+        for image_id in image_ids:
+            image = ImageDB.get_image(image_id)
+            if not image:
+                continue
+            image_rows.append((image_id, image))
+            if MeasurementDB.get_measurements_for_image(image_id):
+                measured_count += 1
+        if not image_rows:
+            return
+
+        if measured_count:
+            confirmed = ask_measurements_exist_delete(self, count=measured_count)
+        elif len(image_rows) == 1:
+            confirmed = self._question_yes_no(
+                self.tr("Confirm Delete"),
+                self.tr("Delete image?"),
+                default_yes=False,
+            )
+        else:
+            confirmed = self._question_yes_no(
+                self.tr("Confirm Delete"),
+                self.tr("Delete {count} selected images?").format(count=len(image_rows)),
+                default_yes=False,
+            )
+        if not confirmed:
+            return
+
+        deleted_names: list[str] = []
+        for image_id, image in image_rows:
+            try:
+                ImageDB.delete_image(image_id)
+            except Exception:
+                continue
+            deleted_names.append(Path(str(image.get("filepath") or "")).name or self.tr("selected image"))
+
+        if not deleted_names:
+            return
+
+        self._refresh_current_observation_after_image_delete()
+        if len(deleted_names) == 1:
+            self.set_status_message(self.tr("Image deleted."), level="success")
+        else:
+            self.set_status_message(
+                self.tr("{count} images deleted.").format(count=len(deleted_names)),
+                level="success",
+            )
+
+    def _clear_pending_gallery_move(self, *, restore_hint: bool = True) -> None:
+        self._pending_gallery_move_image_ids = []
+        self._pending_gallery_move_source_observation_id = None
+        previous_stylesheet = self._pending_gallery_move_previous_table_stylesheet
+        self._pending_gallery_move_previous_table_stylesheet = ""
+        if hasattr(self, "table"):
+            try:
+                self.table.setStyleSheet(previous_stylesheet)
+            except Exception:
+                pass
+        if restore_hint:
+            self.set_status_message(self.tr("Ready."), level="info", auto_clear_ms=0)
+
+    def _begin_move_selected_gallery_images(self, image_keys) -> None:
+        image_ids: list[int] = []
+        seen: set[int] = set()
+        for key in image_keys or []:
+            try:
+                image_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen:
+                continue
+            seen.add(image_id)
+            image_ids.append(image_id)
+        if not image_ids:
+            return
+        source_observation_id = int(self.selected_observation_id or 0)
+        if source_observation_id <= 0:
+            return
+        self._pending_gallery_move_image_ids = image_ids
+        self._pending_gallery_move_source_observation_id = source_observation_id
+        if hasattr(self, "table"):
+            self._pending_gallery_move_previous_table_stylesheet = self.table.styleSheet()
+            self.table.setStyleSheet("QTableWidget { border: 2px solid #e74c3c; }")
+        self.set_status_message(
+            self.tr("Select observation to move the selected photos to."),
+            level="warning",
+            auto_clear_ms=0,
+        )
+
+    def _complete_pending_gallery_move(self, target_observation_id: int) -> None:
+        image_ids = list(self._pending_gallery_move_image_ids or [])
+        source_observation_id = self._pending_gallery_move_source_observation_id
+        if not image_ids or source_observation_id is None:
+            return
+        if int(target_observation_id) == int(source_observation_id):
+            self.set_status_message(
+                self.tr("Select a different observation to move the photos to."),
+                level="warning",
+                auto_clear_ms=0,
+            )
+            return
+
+        conn = None
+        try:
+            conn = get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM images WHERE observation_id = ?",
+                (int(target_observation_id),),
+            )
+            next_sort_order = int(cursor.fetchone()[0] or 0)
+            for image_id in image_ids:
+                cursor.execute(
+                    "UPDATE images SET observation_id = ?, sort_order = ? WHERE id = ?",
+                    (int(target_observation_id), int(next_sort_order), int(image_id)),
+                )
+                next_sort_order += 1
+            conn.commit()
+        except Exception as exc:
+            self._clear_pending_gallery_move()
+            self.set_status_message(
+                self.tr("Could not move selected images: {error}").format(error=exc),
+                level="warning",
+                auto_clear_ms=8000,
+            )
+            return
+        finally:
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+
+        self._clear_pending_gallery_move(restore_hint=False)
+        self.refresh_observations(restore_selection=False)
+        target_row = self._find_table_row_for_observation(int(target_observation_id))
+        if target_row >= 0:
+            self.table.selectRow(target_row)
+        self.set_status_message(self.tr("Ready."), level="info", auto_clear_ms=0)
+        self.set_status_message(
+            self.tr("Moved {count} images to observation {obs_id}.").format(
+                count=len(image_ids),
+                obs_id=int(target_observation_id),
+            ),
+            level="success",
+        )
 
     def _on_gallery_image_clicked(self, _image_id, filepath):
         """In image-browser mode, show the clicked thumbnail in the main view."""
@@ -12430,6 +12669,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteRequested.connect(self._on_gallery_delete_requested)
+        self.image_gallery.deleteSelectionRequested.connect(self._on_gallery_delete_selection_requested)
         self.image_gallery.imageDoubleClicked.connect(self._on_image_double_clicked)
         self.image_gallery.itemsReordered.connect(self._on_gallery_items_reordered)
 
@@ -15588,6 +15828,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._ai_selected_taxon = None
 
     def _on_gallery_delete_requested(self, image_key) -> None:
+        if isinstance(image_key, (list, tuple, set)):
+            self._on_gallery_delete_selection_requested(list(image_key))
+            return
         if image_key is None:
             return
         index = None
@@ -15635,6 +15878,74 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         self._gps_source_index = self._resolve_gps_source_index()
         self._refresh_image_gallery_summary()
+        self._select_initial_ai_image()
+        self._update_ai_controls_state()
+        self._update_ai_table()
+
+    def _on_gallery_delete_selection_requested(self, image_keys) -> None:
+        if not image_keys:
+            return
+
+        selected_indices: list[int] = []
+        seen_indices: set[int] = set()
+        measured_count = 0
+        for key in image_keys or []:
+            index = None
+            for idx, item in enumerate(self.image_results):
+                if key == item.image_id or key == item.filepath:
+                    index = idx
+                    break
+            if index is None or index in seen_indices:
+                continue
+            seen_indices.add(index)
+            selected_indices.append(index)
+            result = self.image_results[index]
+            if result.image_id and MeasurementDB.get_measurements_for_image(result.image_id):
+                measured_count += 1
+
+        if not selected_indices:
+            return
+
+        if measured_count:
+            confirmed = ask_measurements_exist_delete(self, count=measured_count)
+        else:
+            confirmed = self._question_yes_no(
+                self.tr("Confirm Delete"),
+                self.tr("Delete {count} selected image(s)?").format(count=len(selected_indices)),
+                default_yes=False,
+            )
+        if not confirmed:
+            return
+
+        selected_paths = set(self.image_gallery.selected_paths()) if hasattr(self, "image_gallery") else set()
+        removed_indices = sorted(selected_indices)
+        for index in sorted(selected_indices, reverse=True):
+            if 0 <= index < len(self.image_results):
+                self.image_results.pop(index)
+
+        self._remap_ai_indices(removed_indices)
+
+        def _shift_index(old_index: int | None) -> int | None:
+            if old_index is None:
+                return None
+            if old_index in removed_indices:
+                return None
+            return old_index - sum(1 for removed in removed_indices if removed < old_index)
+
+        self.primary_index = _shift_index(self.primary_index)
+        self._ai_selected_index = _shift_index(self._ai_selected_index)
+        self._gps_source_index = self._resolve_gps_source_index()
+        self._refresh_image_gallery_summary()
+
+        if selected_paths:
+            remaining_paths = [
+                item.filepath
+                for item in self.image_results
+                if item.filepath in selected_paths
+            ]
+            if remaining_paths:
+                self.image_gallery.select_paths(remaining_paths)
+
         self._select_initial_ai_image()
         self._update_ai_controls_state()
         self._update_ai_table()

@@ -3,8 +3,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QToolButton, QWidget
 from PySide6.QtGui import QImage, QColor, QPalette
+from PySide6.QtTest import QTest
 
 import ui.image_gallery_widget as gallery_module
 from ui.image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target, thumbnail_selection_colors
@@ -39,6 +40,23 @@ def _build_scroll_scene(frame_specs):
         frames.append(frame)
 
     return scroll, container, frames
+
+
+def _build_gallery_items(tmp_path, count: int = 3) -> list[dict]:
+    items: list[dict] = []
+    for index in range(count):
+        image_path = tmp_path / f"gallery-{index + 1}.png"
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(QColor.fromHsv((index * 70) % 360, 180, 220))
+        assert image.save(str(image_path))
+        items.append(
+            {
+                "id": index + 1,
+                "filepath": str(image_path),
+                "image_number": index + 1,
+            }
+        )
+    return items
 
 
 def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden():
@@ -228,6 +246,118 @@ def test_select_image_does_not_restyle_frames(monkeypatch, qapp):
 
     assert [frame.style_calls for frame in frames] == [0, 0, 0]
     assert widget_style_calls == []
+
+
+def test_right_click_on_unselected_thumbnail_selects_only_that_item_before_menu_action(monkeypatch, qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_multi_select(True)
+    items = _build_gallery_items(tmp_path, 3)
+    widget.set_items(items)
+    widget.select_paths([items[0]["filepath"], items[1]["filepath"]])
+    widget.resize(420, 180)
+    widget.show()
+    qapp.processEvents()
+
+    seen = {}
+
+    monkeypatch.setattr(
+        widget,
+        "_show_thumbnail_context_menu",
+        lambda frame, global_pos: (
+            widget._set_context_menu_selection(frame),
+            seen.update(selected_keys=widget.selected_keys()),
+        ),
+    )
+
+    frame = widget._frames[2]
+    QTest.mouseClick(frame, Qt.RightButton, pos=frame.rect().center())
+    qapp.processEvents()
+
+    assert seen["selected_keys"] == {3}
+    assert widget.selected_keys() == {3}
+
+
+def test_right_click_on_selected_thumbnail_preserves_multi_selection(monkeypatch, qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_multi_select(True)
+    items = _build_gallery_items(tmp_path, 3)
+    widget.set_items(items)
+    widget.select_paths([items[0]["filepath"], items[1]["filepath"]])
+    widget.resize(420, 180)
+    widget.show()
+    qapp.processEvents()
+
+    seen = {}
+
+    monkeypatch.setattr(
+        widget,
+        "_show_thumbnail_context_menu",
+        lambda frame, global_pos: (
+            widget._set_context_menu_selection(frame),
+            seen.update(selected_keys=widget.selected_keys()),
+        ),
+    )
+
+    frame = widget._frames[1]
+    QTest.mouseClick(frame, Qt.RightButton, pos=frame.rect().center())
+    qapp.processEvents()
+
+    assert seen["selected_keys"] == {1, 2}
+    assert widget.selected_keys() == {1, 2}
+
+
+def test_delete_menu_emits_all_selected_keys_for_multiselect(monkeypatch, qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_multi_select(True)
+    items = _build_gallery_items(tmp_path, 3)
+    widget.set_items(items)
+    widget.select_paths([items[0]["filepath"], items[1]["filepath"]])
+    widget.resize(420, 180)
+    widget.show()
+    qapp.processEvents()
+
+    deleted_keys: list[list[object]] = []
+    widget.deleteSelectionRequested.connect(lambda keys: deleted_keys.append(list(keys)))
+
+    monkeypatch.setattr(
+        widget,
+        "_show_thumbnail_context_menu",
+        lambda frame, global_pos: (
+            widget._set_context_menu_selection(frame),
+            widget.deleteSelectionRequested.emit(widget.selected_image_keys()),
+        ),
+    )
+
+    frame = widget._frames[0]
+    QTest.mouseClick(frame, Qt.RightButton, pos=frame.rect().center())
+    qapp.processEvents()
+
+    assert deleted_keys == [[1, 2]]
+    assert widget.selected_keys() == {1, 2}
+
+
+def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    items = _build_gallery_items(tmp_path, 1)
+    widget.set_items(items)
+    widget.resize(220, 180)
+    widget.show()
+    qapp.processEvents()
+
+    deleted_keys: list[object] = []
+    widget.deleteRequested.connect(deleted_keys.append)
+
+    delete_btn = None
+    for candidate in widget._frames[0].findChildren(QToolButton):
+        if candidate.text() == "X":
+            delete_btn = candidate
+            break
+    assert delete_btn is not None
+
+    QTest.mouseClick(delete_btn, Qt.LeftButton)
+    qapp.processEvents()
+
+    assert deleted_keys == [1]
 
 
 def test_thumbnail_selection_overlay_tracks_resized_frame(monkeypatch, qapp):

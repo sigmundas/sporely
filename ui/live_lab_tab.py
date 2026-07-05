@@ -1127,6 +1127,7 @@ class LiveLabTab(QWidget):
         self.session_gallery.selectionChanged.connect(self._on_session_gallery_selection_changed)
         self.session_gallery.itemsReordered.connect(self._on_session_gallery_items_reordered)
         self.session_gallery.deleteRequested.connect(self._on_session_gallery_delete_requested)
+        self.session_gallery.deleteSelectionRequested.connect(self._on_session_gallery_delete_requested)
 
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
@@ -7760,8 +7761,34 @@ class LiveLabTab(QWidget):
         self._refresh_session_gallery()
 
     def _on_session_gallery_delete_requested(self, key) -> None:
+        if isinstance(key, (list, tuple, set)):
+            if self._delete_session_gallery_items(list(key)):
+                return
         if self._delete_session_gallery_item(key):
             return
+
+    def _delete_session_gallery_items(self, keys: list[object]) -> bool:
+        pending_indices: list[int] = []
+        committed_ids: list[int] = []
+        for key in keys or []:
+            pending_index = self._pending_raw_capture_index_for_key(key)
+            if pending_index is not None:
+                if pending_index not in pending_indices:
+                    pending_indices.append(int(pending_index))
+                continue
+            try:
+                image_id = int(key or 0)
+            except Exception:
+                image_id = 0
+            if image_id > 0 and image_id not in committed_ids:
+                committed_ids.append(image_id)
+
+        deleted = False
+        for pending_index in sorted(pending_indices, reverse=True):
+            deleted = self._delete_session_gallery_pending_capture(int(pending_index)) or deleted
+        if committed_ids:
+            deleted = self._delete_committed_session_images(committed_ids) or deleted
+        return deleted
 
     def _delete_session_gallery_item(self, key) -> bool:
         pending_index = self._pending_raw_capture_index_for_key(key)
