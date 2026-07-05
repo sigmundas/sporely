@@ -91,7 +91,7 @@ from utils.image_processing_pipeline import (
     raw_basic_controls_from_settings,
     raw_settings_from_basic_controls,
 )
-from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
+from utils.local_image_ingest import LocalIngestResult, RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.lab_watcher import LabWatcherWorker
 from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
 from utils.raw_render import (
@@ -362,6 +362,71 @@ class _PendingRawPreviewWorker(QObject):
     @Slot()
     def run(self) -> None:
         self.finished.emit(_build_pending_raw_preview_job_result(self.request))
+
+
+@dataclass(slots=True)
+class _PendingRawCommitJobRequest:
+    job_id: int
+    kind: str
+    capture: PendingRawCapture
+    source_path: Path
+    raw_settings: RawRenderSettings
+    lab_metadata: dict[str, object]
+    observation_id: int
+    source_signature: tuple[str, int, int]
+
+
+@dataclass(slots=True)
+class _PendingRawCommitJobResult:
+    job_id: int
+    kind: str
+    source_signature: tuple[str, int, int]
+    source_path: Path
+    pending_capture_id: int
+    pending_capture_source_path: str
+    prepared_ingest: LocalIngestResult | None = None
+    error: str | None = None
+
+
+def _build_pending_raw_commit_job_result(
+    request: _PendingRawCommitJobRequest,
+) -> _PendingRawCommitJobResult:
+    resolved_settings = RawRenderSettings.from_dict(request.raw_settings)
+    prepared_ingest: LocalIngestResult | None = None
+    error: str | None = None
+    try:
+        prepared_ingest = prepare_local_ingest_image(
+            request.source_path,
+            raw_settings=resolved_settings,
+            lab_metadata=copy.deepcopy(request.lab_metadata),
+            output_dir=get_images_dir() / "imports",
+        )
+    except RawRenderingUnavailableError as exc:
+        error = str(exc)
+    except Exception as exc:
+        error = str(exc)
+    return _PendingRawCommitJobResult(
+        job_id=request.job_id,
+        kind=request.kind,
+        source_signature=request.source_signature,
+        source_path=request.source_path,
+        pending_capture_id=id(request.capture),
+        pending_capture_source_path=str(request.capture.source_path),
+        prepared_ingest=prepared_ingest,
+        error=error,
+    )
+
+
+class _PendingRawCommitWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, request: _PendingRawCommitJobRequest) -> None:
+        super().__init__()
+        self.request = request
+
+    @Slot()
+    def run(self) -> None:
+        self.finished.emit(_build_pending_raw_commit_job_result(self.request))
 
 
 def _resize_preview_rgb(rgb: np.ndarray, max_dim: int = RAW_PREVIEW_MAX_DIM) -> np.ndarray:
@@ -674,6 +739,17 @@ class LiveLabTab(QWidget):
         self._pending_raw_preview_job_queue: list[_PendingRawPreviewJobRequest] = []
         self._pending_raw_preview_worker_thread: QThread | None = None
         self._pending_raw_preview_worker: _PendingRawPreviewWorker | None = None
+        self._pending_raw_commit_job_counter = 0
+        self._pending_raw_commit_active_request: _PendingRawCommitJobRequest | None = None
+        self._pending_raw_commit_job_queue: list[_PendingRawCommitJobRequest] = []
+        self._pending_raw_commit_worker_thread: QThread | None = None
+        self._pending_raw_commit_worker: _PendingRawCommitWorker | None = None
+        self._pending_raw_commit_batch_mode: str | None = None
+        self._pending_raw_commit_batch_total = 0
+        self._pending_raw_commit_batch_completed = 0
+        self._pending_raw_commit_batch_saved = 0
+        self._pending_raw_commit_batch_failed = 0
+        self._pending_raw_commit_defer_start = False
         self._raw_curve_preview_analysis_signature: tuple[str, int, int, str] | None = None
         self._raw_curve_preview_analysis_rgb: np.ndarray | None = None
         self._raw_curve_preview_histogram: np.ndarray | None = None
@@ -2562,6 +2638,33 @@ class LiveLabTab(QWidget):
                 continue
             return True
         return False
+
+    def _pending_raw_commit_has_request_for_capture(
+        self,
+        capture: PendingRawCapture,
+        *,
+        kind: str | None = None,
+    ) -> bool:
+        active_request = getattr(self, "_pending_raw_commit_active_request", None)
+        if isinstance(active_request, _PendingRawCommitJobRequest):
+            if active_request.capture is capture and (kind is None or active_request.kind == kind):
+                return True
+        queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        for request in list(queue or []):
+            if not isinstance(request, _PendingRawCommitJobRequest):
+                continue
+            if request.capture is not capture:
+                continue
+            if kind is not None and request.kind != kind:
+                continue
+            return True
+        return False
+
+    def _pending_raw_commit_is_busy(self) -> bool:
+        return bool(
+            getattr(self, "_pending_raw_commit_active_request", None)
+            or getattr(self, "_pending_raw_commit_job_queue", None)
+        )
 
     @staticmethod
     def _pending_raw_capture_preview_is_current(capture: PendingRawCapture) -> bool:
@@ -4580,14 +4683,18 @@ class LiveLabTab(QWidget):
             and getattr(current_capture, "preview_path", None)
             and Path(str(current_capture.preview_path)).exists()
         )
+        commit_busy = bool(
+            getattr(self, "_pending_raw_commit_active_request", None)
+            or getattr(self, "_pending_raw_commit_job_queue", None)
+        )
 
         save_btn = getattr(self, "pending_raw_save_btn", None)
         if save_btn is not None:
-            save_btn.setEnabled(bool(has_selection and not self._pending_raw_background_wb_armed))
+            save_btn.setEnabled(bool(has_selection and not self._pending_raw_background_wb_armed and not commit_busy))
 
         save_all_btn = getattr(self, "pending_raw_save_all_btn", None)
         if save_all_btn is not None:
-            save_all_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed))
+            save_all_btn.setEnabled(bool(count and not self._pending_raw_background_wb_armed and not commit_busy))
 
         copy_btn = getattr(self, "pending_raw_copy_btn", None)
         if copy_btn is not None:
@@ -4847,6 +4954,18 @@ class LiveLabTab(QWidget):
         label = getattr(self, "pending_raw_preview_progress_label", None)
         if label is not None:
             label.setText(str(text or "").strip())
+
+    def _set_pending_raw_commit_busy(
+        self,
+        visible: bool,
+        text: str | None = None,
+        *,
+        value: int | None = None,
+        maximum: int | None = None,
+    ) -> None:
+        busy_setter = getattr(self, "_set_pending_raw_preview_busy", None)
+        if callable(busy_setter):
+            busy_setter(visible, text, value=value, maximum=maximum)
 
     def _pending_raw_preview_request_for_capture(
         self,
@@ -5149,6 +5268,290 @@ class LiveLabTab(QWidget):
             pending.status = "committed"
         return committed
 
+    def _pending_raw_commit_request_for_capture(
+        self,
+        pending: PendingRawCapture | None,
+        *,
+        kind: str = "save_current",
+    ) -> _PendingRawCommitJobRequest | None:
+        if pending is None:
+            return None
+        job_id = int(getattr(self, "_pending_raw_commit_job_counter", 0)) + 1
+        self._pending_raw_commit_job_counter = job_id
+        source_path = Path(pending.source_path)
+        source_signature = _pending_raw_source_signature(source_path)
+        raw_settings = RawRenderSettings.from_dict(pending.raw_settings)
+        lab_metadata = copy.deepcopy(getattr(pending, "lab_metadata", None) or {})
+        observation_id = int(getattr(pending, "observation_id", 0) or getattr(self, "_session_observation_id", 0) or 0)
+        request_kind = "save_all" if str(kind or "").strip().lower() == "save_all" else "save_current"
+        return _PendingRawCommitJobRequest(
+            job_id=job_id,
+            kind=request_kind,
+            capture=pending,
+            source_path=source_path,
+            raw_settings=raw_settings,
+            lab_metadata=lab_metadata,
+            observation_id=observation_id,
+            source_signature=source_signature,
+        )
+
+    def _pending_raw_commit_begin_batch(self, *, kind: str, total: int) -> None:
+        self._pending_raw_commit_batch_mode = "save_all" if str(kind or "").strip().lower() == "save_all" else "save_current"
+        self._pending_raw_commit_batch_total = max(0, int(total))
+        self._pending_raw_commit_batch_completed = 0
+        self._pending_raw_commit_batch_saved = 0
+        self._pending_raw_commit_batch_failed = 0
+
+    def _enqueue_pending_raw_commit_job(self, request: _PendingRawCommitJobRequest | None) -> None:
+        if request is None:
+            return
+        queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        if queue is None:
+            queue = []
+            self._pending_raw_commit_job_queue = queue
+        active = getattr(self, "_pending_raw_commit_active_request", None)
+        if isinstance(active, _PendingRawCommitJobRequest) and active.job_id == request.job_id:
+            return
+        if request.kind == "save_current":
+            queue[:] = [
+                queued
+                for queued in queue
+                if not (
+                    isinstance(queued, _PendingRawCommitJobRequest)
+                    and (
+                        queued.kind == "save_current"
+                        or (queued.kind == "save_all" and queued.capture is request.capture)
+                    )
+                )
+            ]
+            queue.insert(0, request)
+        else:
+            if self._pending_raw_commit_has_request_for_capture(request.capture):
+                return
+            queue.append(request)
+        self._update_pending_raw_controls()
+        if getattr(self, "_pending_raw_commit_worker_thread", None) is None and not bool(
+            getattr(self, "_pending_raw_commit_defer_start", False)
+        ):
+            self._start_next_pending_raw_commit_job()
+
+    def _start_next_pending_raw_commit_job(self) -> None:
+        if getattr(self, "_pending_raw_commit_worker_thread", None) is not None:
+            return
+        queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        if not queue:
+            self._finish_pending_raw_commit_job()
+            return
+        while queue:
+            request = queue.pop(0)
+            if not isinstance(request, _PendingRawCommitJobRequest):
+                continue
+            if request.capture not in list(getattr(self, "_pending_raw_captures", []) or []):
+                self._pending_raw_commit_batch_completed += 1
+                continue
+            if _pending_raw_source_signature(request.capture.source_path) != request.source_signature:
+                self._pending_raw_commit_batch_completed += 1
+                continue
+            self._start_pending_raw_commit_job(request)
+            return
+        self._finish_pending_raw_commit_job()
+
+    def _start_pending_raw_commit_job(self, request: _PendingRawCommitJobRequest) -> None:
+        self._pending_raw_commit_active_request = request
+        batch_mode = self._pending_raw_commit_batch_mode or request.kind
+        total = int(self._pending_raw_commit_batch_total or 0)
+        if batch_mode == "save_all" and total > 0:
+            current = min(int(self._pending_raw_commit_batch_completed) + 1, total)
+            self._set_pending_raw_commit_busy(
+                True,
+                self.tr("Saving RAW {current} of {total}: {name}").format(
+                    current=current,
+                    total=total,
+                    name=request.source_path.name,
+                ),
+                value=current,
+                maximum=total,
+            )
+        else:
+            self._set_pending_raw_commit_busy(
+                True,
+                self.tr("Saving RAW: {name}").format(name=request.source_path.name),
+            )
+        self._update_pending_raw_controls()
+        thread = QThread(self)
+        worker = _PendingRawCommitWorker(request)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_pending_raw_commit_job_finished)
+        thread.finished.connect(self._finish_pending_raw_commit_job)
+        self._pending_raw_commit_worker_thread = thread
+        self._pending_raw_commit_worker = worker
+        thread.start()
+        QApplication.processEvents()
+
+    def _on_pending_raw_commit_job_finished(self, result: object) -> None:
+        thread = getattr(self, "_pending_raw_commit_worker_thread", None)
+        try:
+            request = getattr(self, "_pending_raw_commit_active_request", None)
+            if not isinstance(request, _PendingRawCommitJobRequest):
+                return
+            if not isinstance(result, _PendingRawCommitJobResult):
+                return
+            if result.job_id != request.job_id:
+                return
+
+            pending_captures = list(getattr(self, "_pending_raw_captures", []) or [])
+            capture = request.capture
+            stale_request = capture not in pending_captures
+            if not stale_request:
+                try:
+                    stale_request = _pending_raw_source_signature(capture.source_path) != request.source_signature
+                except Exception:
+                    stale_request = True
+
+            if stale_request:
+                self._pending_raw_commit_batch_completed += 1
+                return
+
+            if result.prepared_ingest is None:
+                self._pending_raw_commit_batch_completed += 1
+                self._pending_raw_commit_batch_failed += 1
+                capture.status = "failed"
+                if result.error:
+                    self._show_status(
+                        self.tr("Could not save pending RAW capture {name}: {error}").format(
+                            name=capture.source_path.name,
+                            error=result.error,
+                        ),
+                        tone="warning",
+                        timeout_ms=6000,
+                    )
+                return
+
+            finalize_helper = getattr(self, "_finalize_local_ingest", None)
+            try:
+                if callable(finalize_helper):
+                    committed = finalize_helper(
+                        str(request.source_path),
+                        result.prepared_ingest,
+                        raw_settings=request.raw_settings,
+                        lab_metadata=request.lab_metadata,
+                        capture_time_state=request.lab_metadata,
+                        observation_id=request.observation_id,
+                    )
+                else:
+                    committed = LiveLabTab._finalize_local_ingest(
+                        self,
+                        str(request.source_path),
+                        result.prepared_ingest,
+                        raw_settings=request.raw_settings,
+                        lab_metadata=request.lab_metadata,
+                        capture_time_state=request.lab_metadata,
+                        observation_id=request.observation_id,
+                    )
+            except Exception as exc:
+                committed = False
+                capture.status = "failed"
+                self._pending_raw_commit_batch_completed += 1
+                self._pending_raw_commit_batch_failed += 1
+                self._show_status(
+                    self.tr("Could not save pending RAW capture {name}: {error}").format(
+                        name=capture.source_path.name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+                return
+
+            self._pending_raw_commit_batch_completed += 1
+            if committed:
+                self._pending_raw_commit_batch_saved += 1
+                if request.kind == "save_current":
+                    self._remove_pending_raw_capture(capture, status="committed", refresh_ui=True)
+                else:
+                    self._remove_pending_raw_capture(capture, status="committed", refresh_ui=False)
+                return
+
+            self._pending_raw_commit_batch_failed += 1
+            capture.status = "failed"
+            error_text = result.error or self.tr("RAW save failed.")
+            self._show_status(
+                self.tr("Could not save pending RAW capture {name}: {error}").format(
+                    name=capture.source_path.name,
+                    error=error_text,
+                ),
+                tone="warning",
+                timeout_ms=6000,
+            )
+        finally:
+            if isinstance(thread, QThread):
+                try:
+                    thread.quit()
+                except Exception:
+                    pass
+
+    def _finish_pending_raw_commit_job(self) -> None:
+        thread = getattr(self, "_pending_raw_commit_worker_thread", None)
+        worker = getattr(self, "_pending_raw_commit_worker", None)
+        active_request = getattr(self, "_pending_raw_commit_active_request", None)
+        if worker is not None:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+        if thread is not None:
+            try:
+                thread.deleteLater()
+            except Exception:
+                pass
+        self._pending_raw_commit_worker = None
+        self._pending_raw_commit_worker_thread = None
+        self._pending_raw_commit_active_request = None
+        queue = getattr(self, "_pending_raw_commit_job_queue", None)
+        if queue:
+            self._update_pending_raw_controls()
+            self._start_next_pending_raw_commit_job()
+            return
+
+        batch_mode = self._pending_raw_commit_batch_mode
+        self._set_pending_raw_commit_busy(False, "")
+        self._update_pending_raw_controls()
+        total = int(self._pending_raw_commit_batch_total or 0)
+        saved = int(self._pending_raw_commit_batch_saved or 0)
+        failed = int(self._pending_raw_commit_batch_failed or 0)
+        if batch_mode == "save_all":
+            message = self.tr("Saved {saved} RAW captures.").format(saved=saved)
+            tone = "success"
+            timeout_ms = 3500
+            if failed:
+                message = self.tr("Saved {saved} RAW captures, {failed} failed.").format(saved=saved, failed=failed)
+                tone = "warning"
+                timeout_ms = 5000
+            self._show_status(
+                message,
+                tone=tone,
+                timeout_ms=timeout_ms,
+            )
+        elif batch_mode == "save_current":
+            if saved:
+                name = None
+                if isinstance(active_request, _PendingRawCommitJobRequest):
+                    name = str(active_request.capture.source_path.name or "").strip() or None
+                if not name:
+                    pending = self._current_pending_raw_capture()
+                    name = pending.source_path.name if pending is not None else self.tr("selected capture")
+                self._show_status(
+                    self.tr("Saved pending RAW capture {name}.").format(name=name),
+                    tone="success",
+                    timeout_ms=3500,
+                )
+        self._pending_raw_commit_batch_mode = None
+        self._pending_raw_commit_batch_total = 0
+        self._pending_raw_commit_batch_completed = 0
+        self._pending_raw_commit_batch_saved = 0
+        self._pending_raw_commit_batch_failed = 0
+
     def _remove_pending_raw_capture(self, pending: PendingRawCapture, *, status: str, refresh_ui: bool = True) -> bool:
         captures = getattr(self, "_pending_raw_captures", [])
         if pending not in captures:
@@ -5192,20 +5595,14 @@ class LiveLabTab(QWidget):
         if pending is None:
             return False
         self._cancel_pending_raw_background_wb_selection()
-        if self._commit_pending_raw_capture(pending):
-            self._remove_pending_raw_capture(pending, status="committed", refresh_ui=True)
-            self._show_status(
-                self.tr("Saved pending RAW capture {name}.").format(name=pending.source_path.name),
-                tone="success",
-                timeout_ms=3500,
-            )
-            return True
-        self._show_status(
-            self.tr("Could not save pending RAW capture {name}.").format(name=pending.source_path.name),
-            tone="warning",
-            timeout_ms=5000,
-        )
-        return False
+        if self._pending_raw_commit_is_busy():
+            return False
+        request = self._pending_raw_commit_request_for_capture(pending, kind="save_current")
+        if request is None:
+            return False
+        self._pending_raw_commit_begin_batch(kind="save_current", total=1)
+        self._enqueue_pending_raw_commit_job(request)
+        return True
 
     def _pending_raw_source_exif(
         self, pending: "PendingRawCapture"
@@ -5343,66 +5740,25 @@ class LiveLabTab(QWidget):
         captures = list(getattr(self, "_pending_raw_captures", []) or [])
         if not captures:
             return False
-        total = len(captures)
-        saved = 0
-        failed = 0
-        self._set_pending_raw_preview_busy(
-            True,
-            self.tr("Saving RAW 0 of {total}…").format(total=total),
-            value=0,
-            maximum=total,
-        )
-        QApplication.processEvents()
-        for index, pending in enumerate(captures, start=1):
-            if pending not in getattr(self, "_pending_raw_captures", []):
-                continue
-            self._set_pending_raw_preview_busy(
-                True,
-                self.tr("Saving RAW {current} of {total}: {name}").format(
-                    current=index,
-                    total=total,
-                    name=pending.source_path.name,
-                ),
-                value=index,
-                maximum=total,
-            )
-            QApplication.processEvents()
-            if self._commit_pending_raw_capture(pending):
-                saved += 1
-                self._remove_pending_raw_capture(pending, status="committed", refresh_ui=False)
-            else:
-                failed += 1
-            QApplication.processEvents()
-        self._set_pending_raw_preview_busy(False, "")
-        self._update_pending_raw_controls()
-        if self._current_pending_raw_capture() is not None:
-            self._show_pending_raw_capture(self._selected_pending_raw_index)
-        elif self._session_image_ids:
-            self._show_session_image(self._session_image_ids[-1])
-        else:
-            self._clear_session_viewer(
-                title=self.tr("Waiting for first import"),
-                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
-            )
-        if saved == 0:
-            self._show_status(
-                self.tr("Could not save any pending RAW captures."),
-                tone="warning",
-                timeout_ms=5000,
-            )
+        if self._pending_raw_commit_is_busy():
             return False
-        if failed:
-            self._show_status(
-                self.tr("Saved {saved} RAW capture(s), but {failed} failed.").format(saved=saved, failed=failed),
-                tone="warning",
-                timeout_ms=5000,
-            )
-        else:
-            self._show_status(
-                self.tr("Saved {count} RAW capture(s).").format(count=saved),
-                tone="success",
-                timeout_ms=3500,
-            )
+        total = len(captures)
+        requests: list[_PendingRawCommitJobRequest] = []
+        for pending in captures:
+            request = self._pending_raw_commit_request_for_capture(pending, kind="save_all")
+            if request is not None:
+                requests.append(request)
+        if not requests:
+            return False
+        self._pending_raw_commit_begin_batch(kind="save_all", total=total)
+        self._pending_raw_commit_defer_start = True
+        try:
+            for request in requests:
+                self._enqueue_pending_raw_commit_job(request)
+        finally:
+            self._pending_raw_commit_defer_start = False
+        if getattr(self, "_pending_raw_commit_worker_thread", None) is None:
+            self._start_next_pending_raw_commit_job()
         return True
 
     def _discard_selected_pending_raw_capture(self) -> bool:
@@ -6623,19 +6979,24 @@ class LiveLabTab(QWidget):
         *,
         raw_settings: RawRenderSettings | None = None,
         lab_metadata: dict[str, object] | None = None,
+        capture_time_state: dict[str, object] | None = None,
+        observation_id: int | None = None,
     ) -> bool:
-        observation_id = int(self._session_observation_id or 0)
+        observation_id = int(observation_id or self._session_observation_id or 0)
         if observation_id <= 0:
             return False
 
-        capture_time_helper = getattr(self, "_capture_time_metadata", None)
-        if callable(capture_time_helper):
-            try:
-                capture_time_state = capture_time_helper() or {}
-            except Exception:
+        if capture_time_state is None:
+            capture_time_helper = getattr(self, "_capture_time_metadata", None)
+            if callable(capture_time_helper):
+                try:
+                    capture_time_state = capture_time_helper() or {}
+                except Exception:
+                    capture_time_state = self._current_lab_metadata()
+            else:
                 capture_time_state = self._current_lab_metadata()
         else:
-            capture_time_state = self._current_lab_metadata()
+            capture_time_state = dict(capture_time_state or {})
         ingest_lab_metadata = merge_image_lab_metadata(
             capture_time_state,
             lab_metadata,
@@ -6802,6 +7163,7 @@ class LiveLabTab(QWidget):
                 ingest,
                 raw_settings=resolved_raw_settings,
                 lab_metadata=ingest_context,
+                observation_id=observation_id,
             )
         return LiveLabTab._finalize_local_ingest(
             self,
@@ -6809,6 +7171,7 @@ class LiveLabTab(QWidget):
             ingest,
             raw_settings=resolved_raw_settings,
             lab_metadata=ingest_context,
+            observation_id=observation_id,
         )
 
     def _refresh_session_gallery(self) -> None:
