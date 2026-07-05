@@ -3254,8 +3254,6 @@ class LiveLabTab(QWidget):
 
         raw_settings = RawRenderSettings.from_dict(raw_processing.get("settings"))
         resolved_settings = RawRenderSettings.from_dict(settings or raw_settings)
-        if source_path.exists() and bool(resolved_settings.auto_levels):
-            resolved_settings = self._raw_auto_level_settings_for_source(source_path, resolved_settings)
         source_capture_datetime = str(source.get("captured_at") or image_data.get("captured_at") or "").strip() or None
 
         return RawEditSession(
@@ -4731,6 +4729,7 @@ class LiveLabTab(QWidget):
         return items, selected_key
 
     def _session_gallery_items(self) -> tuple[list[dict[str, object]], str | int | None]:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         # Chronological ordering: the oldest committed image sits on the left,
         # newer committed captures fill in to the right of it, and pending RAW
         # captures — the freshest photos in the session, not yet saved — hang
@@ -4790,15 +4789,19 @@ class LiveLabTab(QWidget):
         selected_key: str | int | None = selected_pending_key
         if selected_key is None and self._selected_session_image_id is not None:
             selected_key = self._selected_session_image_id
+        _raw_timing_log("session gallery items rebuild", start, detail=f"items={len(items)}")
         return items, selected_key
 
     def _refresh_pending_raw_gallery(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         self._refresh_session_gallery()
+        _raw_timing_log("refresh pending RAW gallery", start)
 
     def _on_pending_raw_gallery_clicked(self, image_id, path) -> None:
         self._on_session_gallery_clicked(image_id, path)
 
     def _update_pending_raw_controls(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         captures = getattr(self, "_pending_raw_captures", [])
         count = len(captures)
         selected_index = self._selected_pending_raw_index_value()
@@ -4831,7 +4834,10 @@ class LiveLabTab(QWidget):
         if count_label is not None:
             count_label.setText(self.tr("Pending RAW captures: {count}").format(count=count))
 
-        self._refresh_pending_raw_gallery()
+        if not bool(getattr(self, "_suppress_pending_raw_gallery_refresh", False)):
+            gallery_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._refresh_pending_raw_gallery()
+            _raw_timing_log("update pending RAW controls gallery refresh", gallery_start, detail=f"captures={count}")
 
         current_capture = self._current_pending_raw_capture()
         has_selection = current_capture is not None
@@ -4892,6 +4898,7 @@ class LiveLabTab(QWidget):
 
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
         self._refresh_raw_processing_context_ui()
+        _raw_timing_log("update pending RAW controls", start, detail=f"captures={count}")
 
     def _show_pending_raw_capture(self, index: int | None = None) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
@@ -5510,7 +5517,8 @@ class LiveLabTab(QWidget):
             if self._pending_raw_commit_has_request_for_capture(request.capture):
                 return
             queue.append(request)
-        self._update_pending_raw_controls()
+        if not bool(getattr(self, "_pending_raw_commit_defer_start", False)):
+            self._update_pending_raw_controls()
         if self._pending_raw_commit_active_worker_count() < PENDING_RAW_COMMIT_MAX_WORKERS and not bool(
             getattr(self, "_pending_raw_commit_defer_start", False)
         ):
@@ -5569,7 +5577,8 @@ class LiveLabTab(QWidget):
                 True,
                 self.tr("Saving RAW: {name}").format(name=request.source_path.name),
             )
-        self._update_pending_raw_controls()
+        if batch_mode != "save_all":
+            self._update_pending_raw_controls()
         thread = QThread(self)
         worker = _PendingRawCommitWorker(request)
         worker.moveToThread(thread)
@@ -5700,13 +5709,17 @@ class LiveLabTab(QWidget):
             self._pending_raw_commit_batch_completed += skipped
             self._pending_raw_commit_batch_skipped += skipped
         if queue:
-            self._update_pending_raw_controls()
+            if self._pending_raw_commit_batch_mode != "save_all":
+                self._update_pending_raw_controls()
             self._start_next_pending_raw_commit_job()
             return
 
         batch_mode = self._pending_raw_commit_batch_mode
         self._set_pending_raw_commit_busy(False, "")
-        self._update_pending_raw_controls()
+        if batch_mode == "save_all":
+            self._sync_pending_raw_commit_batch_ui()
+        else:
+            self._update_pending_raw_controls()
         total = int(self._pending_raw_commit_batch_total or 0)
         saved = int(self._pending_raw_commit_batch_saved or 0)
         failed = int(self._pending_raw_commit_batch_failed or 0)
@@ -5763,7 +5776,43 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_skipped = 0
         self._pending_raw_commit_cancel_requested = False
 
+    def _sync_pending_raw_commit_batch_ui(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        observation_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._update_observation_thumbnail()
+        _raw_timing_log("RAW batch UI observation thumbnail", observation_start)
+        controls_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._update_pending_raw_controls()
+        _raw_timing_log("RAW batch UI pending controls", controls_start)
+        selected_id = self._selected_session_image_id
+        if selected_id is not None:
+            show_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._show_session_image(int(selected_id))
+            _raw_timing_log("RAW batch UI show selected image", show_start, detail=f"image_id={selected_id}")
+        elif self._session_image_ids:
+            selected_id = int(self._session_image_ids[-1])
+            self._selected_session_image_id = selected_id
+            show_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._show_session_image(selected_id)
+            _raw_timing_log("RAW batch UI show fallback image", show_start, detail=f"image_id={selected_id}")
+        else:
+            clear_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._clear_session_viewer(
+                title=self.tr("Waiting for first import"),
+                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
+            )
+            _raw_timing_log("RAW batch UI clear viewer", clear_start)
+        controls_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._update_session_controls()
+        _raw_timing_log("RAW batch UI session controls", controls_start)
+        if selected_id is not None:
+            main_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._refresh_main_window_after_import(int(selected_id))
+            _raw_timing_log("RAW batch UI main window refresh", main_start, detail=f"image_id={selected_id}")
+        _raw_timing_log("RAW batch UI sync", start)
+
     def _remove_pending_raw_capture(self, pending: PendingRawCapture, *, status: str, refresh_ui: bool = True) -> bool:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         captures = getattr(self, "_pending_raw_captures", [])
         if pending not in captures:
             return False
@@ -5772,7 +5821,9 @@ class LiveLabTab(QWidget):
         pending.status = status
         if preview_path is not None:
             try:
+                preview_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
                 preview_path.unlink(missing_ok=True)
+                _raw_timing_log("pending RAW capture preview unlink", preview_start, detail=preview_path.name)
             except Exception:
                 pass
         captures.pop(index)
@@ -5785,6 +5836,7 @@ class LiveLabTab(QWidget):
                 self._selected_pending_raw_index = min(index, len(captures) - 1)
             else:
                 self._selected_pending_raw_index = -1
+            _raw_timing_log("remove pending RAW capture", start, detail=f"{pending.source_path.name} refresh=False")
             return True
         if captures:
             self._selected_pending_raw_index = min(index, len(captures) - 1)
@@ -5799,6 +5851,7 @@ class LiveLabTab(QWidget):
                     title=self.tr("Waiting for first import"),
                     meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
                 )
+        _raw_timing_log("remove pending RAW capture", start, detail=f"{pending.source_path.name} refresh=True")
         return True
 
     def _commit_selected_pending_raw_capture(self) -> bool:
@@ -5968,6 +6021,7 @@ class LiveLabTab(QWidget):
                 self._enqueue_pending_raw_commit_job(request)
         finally:
             self._pending_raw_commit_defer_start = False
+        self._update_pending_raw_controls()
         if self._pending_raw_commit_active_worker_count() < PENDING_RAW_COMMIT_MAX_WORKERS:
             self._start_next_pending_raw_commit_job()
         return True
@@ -5994,6 +6048,7 @@ class LiveLabTab(QWidget):
         return False
 
     def _delete_current_raw_review_item(self) -> bool:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         if self._raw_edit_session is not None:
             return False
 
@@ -6001,69 +6056,148 @@ class LiveLabTab(QWidget):
         if pending is not None:
             return self._discard_selected_pending_raw_capture()
 
-        image_id = self._selected_committed_image_id()
-        if image_id is None:
+        image_ids = self._selected_committed_session_image_ids_for_delete()
+        if not image_ids:
             return False
+        deleted = self._delete_committed_session_images(image_ids)
+        _raw_timing_log("delete current RAW review item", start, detail=f"images={len(image_ids)} deleted={deleted}")
+        return deleted
 
-        image = ImageDB.get_image(image_id)
-        image_name = Path(str((image or {}).get("filepath") or "")).name or self.tr("selected image")
+    def _selected_committed_session_image_ids_for_delete(self) -> list[int]:
         session_image_ids = list(getattr(self, "_session_image_ids", []) or [])
-        try:
-            image_index = session_image_ids.index(image_id)
-        except ValueError:
-            image_index = -1
+        session_id_set = {int(value) for value in session_image_ids}
+        collected: list[int] = []
+        seen: set[int] = set()
+        for key in self._session_gallery_selected_keys():
+            if self._pending_raw_capture_index_for_key(key) is not None:
+                continue
+            try:
+                image_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen or image_id not in session_id_set:
+                continue
+            collected.append(image_id)
+            seen.add(image_id)
+        if collected:
+            return collected
+        selected_id = self._selected_committed_image_id()
+        if selected_id is not None and int(selected_id) in session_id_set:
+            return [int(selected_id)]
+        return []
 
-        try:
-            ImageDB.delete_image(image_id)
-        except Exception as exc:
-            self._show_status(
-                self.tr("Could not delete local processed image {name}: {error}").format(
-                    name=image_name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
+    def _delete_committed_session_images(self, image_ids: list[int]) -> bool:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        session_image_ids = [int(value) for value in list(getattr(self, "_session_image_ids", []) or [])]
+        requested_ids: list[int] = []
+        seen: set[int] = set()
+        for image_id in image_ids:
+            try:
+                normalized = int(image_id)
+            except Exception:
+                continue
+            if normalized <= 0 or normalized in seen or normalized not in session_image_ids:
+                continue
+            requested_ids.append(normalized)
+            seen.add(normalized)
+        if not requested_ids:
             return False
 
-        self._session_image_ids = [existing_id for existing_id in session_image_ids if int(existing_id) != int(image_id)]
-        if self._session_image_ids:
-            next_index = image_index if image_index >= 0 else 0
+        first_deleted_index = min((session_image_ids.index(image_id) for image_id in requested_ids), default=-1)
+        current_pending_capture = self._current_pending_raw_capture()
+        current_pending_index = self._selected_pending_raw_index_value()
+        current_committed_id = self._selected_committed_image_id()
+        image_names: list[str] = []
+        deleted_ids: list[int] = []
+
+        for image_id in requested_ids:
+            image_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            get_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            image = ImageDB.get_image(image_id)
+            _raw_timing_log("delete session image DB get_image", get_start, detail=f"image_id={image_id}")
+            image_name = Path(str((image or {}).get("filepath") or "")).name or self.tr("selected image")
+            try:
+                delete_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                ImageDB.delete_image(image_id)
+                _raw_timing_log("delete session image DB/file delete", delete_start, detail=f"image_id={image_id}")
+            except Exception as exc:
+                self._show_status(
+                    self.tr("Could not delete local processed image {name}: {error}").format(
+                        name=image_name,
+                        error=str(exc),
+                    ),
+                    tone="warning",
+                    timeout_ms=6000,
+                )
+                continue
+            image_names.append(image_name)
+            deleted_ids.append(image_id)
+            _raw_timing_log("delete session image item", image_start, detail=f"image_id={image_id}")
+
+        if not deleted_ids:
+            return False
+
+        deleted_set = set(deleted_ids)
+        self._session_image_ids = [existing_id for existing_id in session_image_ids if int(existing_id) not in deleted_set]
+
+        if current_pending_capture is not None:
+            if current_pending_index >= 0:
+                self._selected_pending_raw_index = current_pending_index
+            selected_image_id = None
+        elif current_committed_id is not None and int(current_committed_id) in set(int(item) for item in self._session_image_ids):
+            selected_image_id = int(current_committed_id)
+            self._selected_session_image_id = selected_image_id
+        elif self._session_image_ids:
+            next_index = first_deleted_index if first_deleted_index >= 0 else 0
             if next_index >= len(self._session_image_ids):
                 next_index = len(self._session_image_ids) - 1
-            next_image_id = int(self._session_image_ids[next_index])
-            self._selected_session_image_id = next_image_id
-            self._refresh_session_gallery()
-            self._show_session_image(next_image_id)
+            selected_image_id = int(self._session_image_ids[next_index])
+            self._selected_session_image_id = selected_image_id
         else:
+            selected_image_id = None
             self._selected_session_image_id = None
-            self._refresh_session_gallery()
+
+        gallery_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._refresh_session_gallery()
+        _raw_timing_log("delete session images gallery refresh", gallery_start, detail=f"deleted={len(deleted_ids)}")
+
+        if current_pending_capture is not None:
+            show_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            if current_pending_index >= 0:
+                self._show_pending_raw_capture(current_pending_index)
+            else:
+                self._show_pending_raw_capture(self._selected_pending_raw_index)
+            _raw_timing_log("delete session images show pending", show_start)
+        elif selected_image_id is not None:
+            show_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._show_session_image(selected_image_id)
+            _raw_timing_log("delete session images show selected", show_start, detail=f"image_id={selected_image_id}")
+        else:
+            clear_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             self._clear_session_viewer(
                 title=self.tr("Waiting for first import"),
                 meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
             )
-        self._update_pending_raw_controls()
+            _raw_timing_log("delete session images clear viewer", clear_start)
 
-        observation_id = int(self._session_observation_id or 0)
-        if observation_id > 0 and int(getattr(self._main_window, "active_observation_id", 0) or 0) == observation_id:
-            try:
-                if hasattr(self._main_window, "observations_tab"):
-                    self._main_window.observations_tab.refresh_observations(show_status=False)
-            except Exception:
-                pass
-            try:
-                self._main_window.refresh_observation_images(select_image_id=self._selected_session_image_id)
-                self._main_window.update_measurements_table()
-                if getattr(self._main_window, "is_analysis_visible", None) and self._main_window.is_analysis_visible():
-                    self._main_window.schedule_gallery_refresh()
-            except Exception:
-                pass
+        controls_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._suppress_pending_raw_gallery_refresh = True
+        try:
+            self._update_pending_raw_controls()
+        finally:
+            self._suppress_pending_raw_gallery_refresh = False
+        _raw_timing_log("delete session images pending controls", controls_start)
 
-        self._show_status(
-            self.tr("Deleted local processed image {name}.").format(name=image_name),
-            tone="success",
-            timeout_ms=3500,
-        )
+        main_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._refresh_main_window_for_live_lab_image_change(self._selected_session_image_id)
+        _raw_timing_log("delete session images main window light refresh", main_start, detail=f"deleted={len(deleted_ids)}")
+
+        if len(deleted_ids) == 1:
+            message = self.tr("Deleted local processed image {name}.").format(name=image_names[0])
+        else:
+            message = self.tr("Deleted {count} local processed images.").format(count=len(deleted_ids))
+        self._show_status(message, tone="success", timeout_ms=3500)
+        _raw_timing_log("delete committed session images", start, detail=f"deleted={len(deleted_ids)}")
         return True
 
     def _copy_selected_pending_raw_settings(self) -> None:
@@ -6777,14 +6911,19 @@ class LiveLabTab(QWidget):
         self.current_observation_thumb_label.setText(self.tr("No image"))
 
     def _update_observation_thumbnail(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         observation_id = int(self._target_observation_id or 0)
         if observation_id <= 0:
             self._clear_observation_thumbnail()
+            _raw_timing_log("update observation thumbnail", start, detail="no-observation")
             return
 
+        db_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         images = ImageDB.get_images_for_observation(observation_id)
+        _raw_timing_log("update observation thumbnail DB images", db_start, detail=f"observation_id={observation_id}")
         if not images:
             self._clear_observation_thumbnail()
+            _raw_timing_log("update observation thumbnail", start, detail="no-images")
             return
 
         field_images = [img for img in images if str(img.get("image_type") or "").strip().lower() == "field"]
@@ -6797,18 +6936,23 @@ class LiveLabTab(QWidget):
             candidate_path = str(image.get("filepath") or "").strip()
         if not candidate_path or not Path(candidate_path).exists():
             self._clear_observation_thumbnail()
+            _raw_timing_log("update observation thumbnail", start, detail="missing-thumbnail")
             return
 
+        pixmap_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         pixmap = QPixmap(candidate_path)
         if pixmap.isNull():
             reader = QImageReader(candidate_path)
             reader.setAutoTransform(True)
             image_data = reader.read()
             pixmap = QPixmap.fromImage(image_data) if not image_data.isNull() else QPixmap()
+        _raw_timing_log("update observation thumbnail load pixmap", pixmap_start, detail=Path(candidate_path).name)
         if pixmap.isNull():
             self._clear_observation_thumbnail()
+            _raw_timing_log("update observation thumbnail", start, detail="null-pixmap")
             return
 
+        scale_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         scaled = pixmap.scaled(
             self.current_observation_thumb_label.size(),
             Qt.KeepAspectRatio,
@@ -6816,6 +6960,8 @@ class LiveLabTab(QWidget):
         )
         self.current_observation_thumb_label.setPixmap(scaled)
         self.current_observation_thumb_label.setText("")
+        _raw_timing_log("update observation thumbnail scale/set", scale_start, detail=Path(candidate_path).name)
+        _raw_timing_log("update observation thumbnail", start, detail=Path(candidate_path).name)
 
     def _current_lab_metadata(self) -> dict:
         return {
@@ -7283,6 +7429,7 @@ class LiveLabTab(QWidget):
         self._session_image_ids.append(int(image_id))
         self._selected_session_image_id = int(image_id)
         self._session_import_count += 1
+        defer_ui_refresh = self._pending_raw_commit_batch_mode == "save_all"
         # After a fresh capture the sidebar is no longer bound to any thumbnail
         # the user was inspecting — subsequent sidebar edits must be treated as
         # preparation for the next capture, not as edits to this new image.
@@ -7294,10 +7441,19 @@ class LiveLabTab(QWidget):
             self._session_microscope_state = dict(ingest_lab_metadata or {})
         except Exception:
             pass
-        self._update_observation_thumbnail()
-        self._refresh_session_gallery()
-        self._show_session_image(image_id)
-        self._update_session_controls()
+        if not defer_ui_refresh:
+            observation_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._update_observation_thumbnail()
+            _raw_timing_log("RAW finalize observation thumbnail", observation_start, detail=Path(stored_path).name)
+            gallery_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._refresh_session_gallery()
+            _raw_timing_log("RAW finalize session gallery refresh", gallery_start, detail=Path(stored_path).name)
+            show_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._show_session_image(image_id)
+            _raw_timing_log("RAW finalize show session image", show_start, detail=f"image_id={image_id}")
+            controls_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._update_session_controls()
+            _raw_timing_log("RAW finalize session controls", controls_start, detail=Path(stored_path).name)
 
         status_text = self.tr("Imported {name} into the current observation.").format(
             name=Path(stored_path).name,
@@ -7329,7 +7485,10 @@ class LiveLabTab(QWidget):
                     raw_settings or self._current_raw_render_settings(),
                 )
             _raw_timing_log("RAW finalize settings save", settings_start, detail=Path(stored_path).name)
-        self._refresh_main_window_after_import(image_id)
+        if not defer_ui_refresh:
+            main_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            self._refresh_main_window_after_import(image_id)
+            _raw_timing_log("RAW finalize main window refresh", main_start, detail=f"image_id={image_id}")
         _raw_timing_log("RAW finalize local ingest", start, detail=Path(str(source_path)).name)
         return True
 
@@ -7405,6 +7564,7 @@ class LiveLabTab(QWidget):
         )
 
     def _refresh_session_gallery(self) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         gallery = getattr(self, "session_gallery", None)
         if gallery is None:
             return
@@ -7415,8 +7575,12 @@ class LiveLabTab(QWidget):
                 selected_paths = [str(path) for path in selected_paths_fn() if path]
             except Exception:
                 selected_paths = []
+        items_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         items, selected_key = self._session_gallery_items()
+        _raw_timing_log("refresh session gallery build items", items_start, detail=f"items={len(items)}")
+        set_items_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         gallery.set_items(items)
+        _raw_timing_log("refresh session gallery set_items", set_items_start, detail=f"items={len(items)}")
         is_multi_select = False
         is_multi_select_fn = getattr(gallery, "is_multi_select", None)
         if callable(is_multi_select_fn):
@@ -7427,7 +7591,9 @@ class LiveLabTab(QWidget):
         if is_multi_select and selected_paths:
             select_paths = getattr(gallery, "select_paths", None)
             if callable(select_paths):
+                select_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
                 select_paths(selected_paths)
+                _raw_timing_log("refresh session gallery restore selected paths", select_start, detail=f"paths={len(selected_paths)}")
                 selected_paths_fn = getattr(gallery, "selected_paths", None)
                 restored_paths = []
                 if callable(selected_paths_fn):
@@ -7445,7 +7611,10 @@ class LiveLabTab(QWidget):
                     if fallback_paths:
                         select_paths(fallback_paths)
         elif selected_key is not None:
+            select_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             gallery.select_image(selected_key)
+            _raw_timing_log("refresh session gallery select image", select_start, detail=str(selected_key))
+        _raw_timing_log("refresh session gallery", start, detail=f"items={len(items)}")
 
     def _on_session_gallery_clicked(self, image_id, _path: str) -> None:
         gallery = getattr(self, "session_gallery", None)
@@ -7664,79 +7833,7 @@ class LiveLabTab(QWidget):
         return True
 
     def _delete_session_gallery_committed_image(self, image_id: int) -> bool:
-        image = ImageDB.get_image(image_id)
-        image_name = Path(str((image or {}).get("filepath") or "")).name or self.tr("selected image")
-        session_image_ids = list(getattr(self, "_session_image_ids", []) or [])
-        try:
-            image_index = session_image_ids.index(image_id)
-        except ValueError:
-            image_index = -1
-
-        current_pending_capture = self._current_pending_raw_capture()
-        current_pending_index = self._selected_pending_raw_index_value()
-        current_committed_id = self._selected_committed_image_id()
-
-        try:
-            ImageDB.delete_image(image_id)
-        except Exception as exc:
-            self._show_status(
-                self.tr("Could not delete local processed image {name}: {error}").format(
-                    name=image_name,
-                    error=str(exc),
-                ),
-                tone="warning",
-                timeout_ms=6000,
-            )
-            return False
-
-        self._session_image_ids = [existing_id for existing_id in session_image_ids if int(existing_id) != int(image_id)]
-        self._refresh_session_gallery()
-
-        if current_pending_capture is not None:
-            if current_pending_index >= 0:
-                self._show_pending_raw_capture(current_pending_index)
-            else:
-                self._show_pending_raw_capture(self._selected_pending_raw_index)
-        elif current_committed_id is not None and int(current_committed_id) in set(int(item) for item in self._session_image_ids):
-            self._selected_session_image_id = int(current_committed_id)
-            self._show_session_image(int(current_committed_id))
-        elif self._session_image_ids:
-            next_index = image_index if image_index >= 0 else 0
-            if next_index >= len(self._session_image_ids):
-                next_index = len(self._session_image_ids) - 1
-            next_image_id = int(self._session_image_ids[next_index])
-            self._selected_session_image_id = next_image_id
-            self._show_session_image(next_image_id)
-        else:
-            self._selected_session_image_id = None
-            self._clear_session_viewer(
-                title=self.tr("Waiting for first import"),
-                meta=self.tr("New microscope captures from the watched folder will appear here automatically."),
-            )
-
-        self._update_pending_raw_controls()
-
-        observation_id = int(self._session_observation_id or 0)
-        if observation_id > 0 and int(getattr(self._main_window, "active_observation_id", 0) or 0) == observation_id:
-            try:
-                if hasattr(self._main_window, "observations_tab"):
-                    self._main_window.observations_tab.refresh_observations(show_status=False)
-            except Exception:
-                pass
-            try:
-                self._main_window.refresh_observation_images(select_image_id=self._selected_session_image_id)
-                self._main_window.update_measurements_table()
-                if getattr(self._main_window, "is_analysis_visible", None) and self._main_window.is_analysis_visible():
-                    self._main_window.schedule_gallery_refresh()
-            except Exception:
-                pass
-
-        self._show_status(
-            self.tr("Deleted local processed image {name}.").format(name=image_name),
-            tone="success",
-            timeout_ms=3500,
-        )
-        return True
+        return self._delete_committed_session_images([int(image_id)])
 
     def _clear_session_viewer(self, title: str | None = None, meta: str | None = None) -> None:
         self.viewer_title_label.setText(title or self.tr("Last import"))
@@ -7757,7 +7854,9 @@ class LiveLabTab(QWidget):
 
     def _show_session_image(self, image_id: int) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        db_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         image = ImageDB.get_image(image_id)
+        _raw_timing_log("show session image DB get_image", db_start, detail=f"image_id={image_id}")
         if not image:
             self._clear_session_viewer()
             self._update_raw_edit_controls()
@@ -7777,7 +7876,9 @@ class LiveLabTab(QWidget):
 
         apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
         if callable(apply_microscope_state):
+            apply_state_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             apply_microscope_state(image)
+            _raw_timing_log("show session image apply microscope state", apply_state_start, detail=f"image_id={image_id}")
         edit_session = getattr(self, "_raw_edit_session", None)
         edit_mode = edit_session is not None and int(edit_session.image_id) == int(image_id)
         preview_scaled = False
@@ -7810,7 +7911,9 @@ class LiveLabTab(QWidget):
                 return
 
         if pixmap is None:
+            load_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             pixmap, preview_scaled = self._load_viewer_pixmap(image_path)
+            _raw_timing_log("show session image load viewer pixmap", load_start, detail=Path(image_path).name)
             if pixmap is None or pixmap.isNull():
                 self._clear_session_viewer(
                     title=self.tr("Selected image unavailable"),
@@ -7836,13 +7939,17 @@ class LiveLabTab(QWidget):
                 preserve_view = False
         if edit_mode:
             preview_scaled = True
+        set_image_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         self.live_image_label.set_image_sources(
             pixmap,
             image_path,
             preview_scaled,
             preserve_view=preserve_view,
         )
+        _raw_timing_log("show session image set viewer image", set_image_start, detail=Path(image_path).name)
+        prune_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         self._prune_pending_raw_preview_buffers(clear_proxy_cache=not edit_mode)
+        _raw_timing_log("show session image prune RAW buffers", prune_start, detail=Path(image_path).name)
         self.reset_view_btn.setEnabled(True)
         update_calibration_action_visibility = getattr(self, "_update_calibration_action_visibility", None)
         if callable(update_calibration_action_visibility):
@@ -7894,18 +8001,16 @@ class LiveLabTab(QWidget):
             self.viewer_meta_label.setText(self._viewer_meta_text(image))
             editable_session = self._raw_editable_image_session(image)
             if editable_session is not None:
-                auto_settings = None
-                if editable_session.source_raw_path.exists():
-                    auto_settings = self._raw_auto_level_settings_for_source(
-                        editable_session.source_raw_path,
-                        editable_session.working_settings,
-                    )
+                sync_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
                 self._sync_raw_processing_controls_from_settings(
                     editable_session.working_settings,
                     update_session_settings=False,
-                    auto_level_settings=auto_settings,
+                    auto_level_settings=None,
                 )
+                _raw_timing_log("show session image sync RAW controls", sync_start, detail=Path(image_path).name)
+        controls_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         self._update_raw_edit_controls()
+        _raw_timing_log("show session image update RAW edit controls", controls_start, detail=Path(image_path).name)
         _raw_timing_log(
             "show session image",
             start,
@@ -7992,22 +8097,47 @@ class LiveLabTab(QWidget):
             parts.append(self.tr("{scale:.4g} \u03bcm/px").format(scale=mpp_value))
         return " \u2022 ".join(parts) if parts else self.tr("Scroll to zoom and drag to pan.")
 
-    def _refresh_main_window_after_import(self, image_id: int) -> None:
+    def _refresh_main_window_for_live_lab_image_change(self, image_id: int | None) -> None:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         observation_id = int(self._session_observation_id or 0)
-        try:
-            if hasattr(self._main_window, "observations_tab"):
-                self._main_window.observations_tab.refresh_observations(show_status=False)
-        except Exception:
-            pass
         if int(getattr(self._main_window, "active_observation_id", 0) or 0) != observation_id:
+            _raw_timing_log("main window light image refresh", start, detail="inactive-observation")
             return
         try:
-            self._main_window.refresh_observation_images(select_image_id=image_id)
-            self._main_window.update_measurements_table()
-            if getattr(self._main_window, "is_analysis_visible", None) and self._main_window.is_analysis_visible():
-                self._main_window.schedule_gallery_refresh()
+            refresh_images = getattr(self._main_window, "refresh_observation_images", None)
+            if callable(refresh_images):
+                images_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                refresh_images(select_image_id=image_id)
+                _raw_timing_log("main window refresh observation images", images_start, detail=f"image_id={image_id}")
+            update_measurements = getattr(self._main_window, "update_measurements_table", None)
+            if callable(update_measurements):
+                measurements_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                update_measurements()
+                _raw_timing_log("main window update measurements", measurements_start, detail=f"image_id={image_id}")
+            is_analysis_visible = getattr(self._main_window, "is_analysis_visible", None)
+            schedule_refresh = getattr(self._main_window, "schedule_gallery_refresh", None)
+            if callable(is_analysis_visible) and is_analysis_visible() and callable(schedule_refresh):
+                schedule_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                schedule_refresh()
+                _raw_timing_log("main window schedule analysis gallery", schedule_start, detail=f"image_id={image_id}")
         except Exception:
             pass
+        _raw_timing_log("main window light image refresh", start, detail=f"image_id={image_id}")
+
+    def _refresh_main_window_after_import(self, image_id: int, *, full_observations_refresh: bool = False) -> None:
+        if full_observations_refresh:
+            start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            try:
+                observations_tab = getattr(self._main_window, "observations_tab", None)
+                refresh_observations = getattr(observations_tab, "refresh_observations", None)
+                if callable(refresh_observations):
+                    obs_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                    refresh_observations(show_status=False)
+                    _raw_timing_log("main window refresh observations", obs_start, detail=f"image_id={image_id}")
+            except Exception:
+                pass
+            _raw_timing_log("main window full observations refresh", start, detail=f"image_id={image_id}")
+        self._refresh_main_window_for_live_lab_image_change(image_id)
 
     def closeEvent(self, event) -> None:
         self.shutdown()

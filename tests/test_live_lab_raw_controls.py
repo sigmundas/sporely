@@ -418,7 +418,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
                 True,
                 state.tr("Saving RAW: {name}").format(name=request.source_path.name),
             )
-        state._update_pending_raw_controls()
+        if batch_mode != "save_all":
+            state._update_pending_raw_controls()
         result = live_lab_tab._build_pending_raw_commit_job_result(request)
         live_lab_tab.LiveLabTab._on_pending_raw_commit_job_finished(state, result)
         live_lab_tab.LiveLabTab._finish_pending_raw_commit_job(state)
@@ -610,7 +611,10 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._commit_selected_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._commit_selected_pending_raw_capture(state)
     state._commit_all_pending_raw_captures = lambda: live_lab_tab.LiveLabTab._commit_all_pending_raw_captures(state)
     state._discard_selected_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._discard_selected_pending_raw_capture(state)
+    state._selected_committed_session_image_ids_for_delete = lambda: live_lab_tab.LiveLabTab._selected_committed_session_image_ids_for_delete(state)
+    state._delete_committed_session_images = lambda image_ids: live_lab_tab.LiveLabTab._delete_committed_session_images(state, image_ids)
     state._delete_current_raw_review_item = lambda: live_lab_tab.LiveLabTab._delete_current_raw_review_item(state)
+    state._sync_pending_raw_commit_batch_ui = lambda: live_lab_tab.LiveLabTab._sync_pending_raw_commit_batch_ui(state)
     state._copy_selected_pending_raw_settings = lambda: live_lab_tab.LiveLabTab._copy_selected_pending_raw_settings(state)
     state._paste_copied_settings_to_selected_pending = lambda: live_lab_tab.LiveLabTab._paste_copied_settings_to_selected_pending(state)
     state._finalize_local_ingest = lambda *args, **kwargs: live_lab_tab.LiveLabTab._finalize_local_ingest(state, *args, **kwargs)
@@ -638,6 +642,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._show_session_image = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._refresh_main_window_for_live_lab_image_change = lambda image_id: live_lab_tab.LiveLabTab._refresh_main_window_for_live_lab_image_change(state, image_id)
     state._log_session_event = lambda *args, **kwargs: None
     state.is_session_running = lambda: True
     state._selected_session_image_id = None
@@ -2584,6 +2589,202 @@ def test_live_lab_raw_commit_cancel_prevents_next_queued_save_from_starting(tmp_
     assert len(started_requests) == 1
     assert state._pending_raw_commit_job_queue == []
     assert any("RAW save cancelled. Saved 1, skipped 1." in text for text, _, _ in statuses)
+
+
+def test_live_lab_save_all_defers_full_gallery_and_viewer_refresh_until_batch_end(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    state._session_observation_id = 1
+    state._pending_raw_captures = [
+        live_lab_tab.PendingRawCapture(
+            source_path=source_one,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            observation_id=1,
+        ),
+        live_lab_tab.PendingRawCapture(
+            source_path=source_two,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            observation_id=1,
+        ),
+    ]
+    state._selected_pending_raw_index = 0
+    committed_one = tmp_path / "imports" / "P070020_1.jpg"
+    committed_two = tmp_path / "imports" / "P070021_1.jpg"
+    committed_one.parent.mkdir(parents=True, exist_ok=True)
+    captured_calls: list[dict[str, object]] = []
+    add_image_calls: list[dict[str, object]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: committed_one if source == source_one else committed_two,
+        captured_calls=captured_calls,
+        add_image_calls=add_image_calls,
+    )
+    images = {
+        1: _make_raw_image_row(1, source_path=source_one, derivative_path=committed_one),
+        2: _make_raw_image_row(2, source_path=source_two, derivative_path=committed_two),
+    }
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
+    )
+    state._show_status = lambda *args, **kwargs: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    refresh_calls: list[None] = []
+    shown_ids: list[int] = []
+    full_observation_refresh_calls: list[object] = []
+    light_image_refresh_calls: list[int | None] = []
+    measurement_refresh_calls: list[None] = []
+    state._main_window = SimpleNamespace(
+        active_observation_id=1,
+        observations_tab=SimpleNamespace(
+            refresh_observations=lambda *args, **kwargs: full_observation_refresh_calls.append((args, kwargs))
+        ),
+        refresh_observation_images=lambda select_image_id=None: light_image_refresh_calls.append(select_image_id),
+        update_measurements_table=lambda: measurement_refresh_calls.append(None),
+        is_analysis_visible=lambda: False,
+    )
+    state._refresh_main_window_for_live_lab_image_change = (
+        lambda image_id: live_lab_tab.LiveLabTab._refresh_main_window_for_live_lab_image_change(state, image_id)
+    )
+    state._refresh_main_window_after_import = (
+        lambda image_id, **kwargs: live_lab_tab.LiveLabTab._refresh_main_window_after_import(state, image_id, **kwargs)
+    )
+
+    def refresh_gallery():
+        refresh_calls.append(None)
+        live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+
+    state._refresh_session_gallery = refresh_gallery
+    state._show_session_image = lambda image_id: shown_ids.append(int(image_id))
+
+    assert state._commit_all_pending_raw_captures() is True
+
+    assert len(captured_calls) == 2
+    assert state._pending_raw_captures == []
+    assert state._session_image_ids == [1, 2]
+    assert state._selected_session_image_id == 2
+    assert shown_ids == [2]
+    assert len(refresh_calls) == 2
+    assert state.session_gallery.selected == 2
+    assert full_observation_refresh_calls == []
+    assert light_image_refresh_calls == [2]
+    assert measurement_refresh_calls == [None]
+
+
+def test_live_lab_delete_multiple_committed_images_batches_gallery_refresh_and_selects_next(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = [101, 102, 103]
+    state._selected_session_image_id = 102
+    paths = {
+        101: tmp_path / "imports" / "one.jpg",
+        102: tmp_path / "imports" / "two.jpg",
+        103: tmp_path / "imports" / "three.jpg",
+    }
+    paths[101].parent.mkdir(parents=True, exist_ok=True)
+    for path in paths.values():
+        path.write_text("image", encoding="utf-8")
+    images = {
+        image_id: {
+            "id": image_id,
+            "filepath": str(path),
+            "image_type": "microscope",
+            "lab_metadata": {"image_type": "microscope"},
+        }
+        for image_id, path in paths.items()
+    }
+    deleted_ids: list[int] = []
+    shown_ids: list[int] = []
+    statuses: list[tuple[str, str, int]] = []
+    full_observation_refresh_calls: list[object] = []
+    light_image_refresh_calls: list[int | None] = []
+    measurement_refresh_calls: list[None] = []
+    state._main_window = SimpleNamespace(
+        active_observation_id=1,
+        observations_tab=SimpleNamespace(
+            refresh_observations=lambda *args, **kwargs: full_observation_refresh_calls.append((args, kwargs))
+        ),
+        refresh_observation_images=lambda select_image_id=None: light_image_refresh_calls.append(select_image_id),
+        update_measurements_table=lambda: measurement_refresh_calls.append(None),
+        is_analysis_visible=lambda: False,
+    )
+    state._refresh_main_window_for_live_lab_image_change = (
+        lambda image_id: live_lab_tab.LiveLabTab._refresh_main_window_for_live_lab_image_change(state, image_id)
+    )
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
+    )
+
+    def fake_delete_image(image_id):
+        deleted_ids.append(int(image_id))
+        paths[int(image_id)].unlink(missing_ok=True)
+        images.pop(int(image_id), None)
+
+    monkeypatch.setattr(live_lab_tab.ImageDB, "delete_image", fake_delete_image)
+    state.session_gallery.set_multi_select(True)
+    state._refresh_session_gallery()
+    state.session_gallery._selected_keys = {101, 102}
+    refresh_calls: list[None] = []
+
+    def refresh_gallery():
+        refresh_calls.append(None)
+        live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+
+    state._refresh_session_gallery = refresh_gallery
+    state._show_session_image = lambda image_id: shown_ids.append(int(image_id))
+    state._show_status = lambda text, tone="info", timeout_ms=4000: statuses.append((text, tone, timeout_ms))
+
+    assert state._delete_current_raw_review_item() is True
+
+    assert deleted_ids == [101, 102]
+    assert state._session_image_ids == [103]
+    assert state._selected_session_image_id == 103
+    assert shown_ids == [103]
+    assert len(refresh_calls) == 1
+    assert state.session_gallery.selected == 103
+    assert full_observation_refresh_calls == []
+    assert light_image_refresh_calls == [103]
+    assert measurement_refresh_calls == [None]
+    assert any("Deleted 2 local processed images." in text and tone == "success" for text, tone, _ in statuses)
+
+
+def test_live_lab_show_saved_raw_image_uses_stored_settings_without_sync_auto_decode(tmp_path, monkeypatch):
+    _qapp()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    derivative_path = tmp_path / "imports" / "sample.jpg"
+    derivative_path.parent.mkdir(parents=True, exist_ok=True)
+    _fake_render_raw_jpeg(source_path, output_path=derivative_path)
+    state = _build_raw_controls_state()
+    state._session_image_ids = [101]
+    state._selected_session_image_id = None
+    image_row = _make_raw_image_row(101, source_path=source_path, derivative_path=derivative_path)
+    monkeypatch.setattr(
+        live_lab_tab.ImageDB,
+        "get_image",
+        lambda image_id: copy.deepcopy(image_row) if int(image_id) == 101 else None,
+    )
+    state._load_viewer_pixmap = lambda path: (QPixmap(12, 8), False)
+    state._raw_auto_level_settings_for_source = lambda *args, **kwargs: pytest.fail(
+        "showing a saved RAW-derived JPEG should not synchronously decode RAW for auto settings"
+    )
+
+    live_lab_tab.LiveLabTab._show_session_image(state, 101)
+
+    assert state._selected_session_image_id == 101
+    assert state.raw_controls.auto_levels_checkbox.isChecked() is True
 
 
 def _build_offscreen_live_lab_tab(monkeypatch):
