@@ -388,6 +388,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
         kind=kind,
     )
     state._pending_raw_commit_is_busy = lambda: live_lab_tab.LiveLabTab._pending_raw_commit_is_busy(state)
+    state._pending_raw_commit_active_worker_count = lambda: live_lab_tab.LiveLabTab._pending_raw_commit_active_worker_count(state)
     state._pending_raw_commit_capture_is_busy = lambda capture: live_lab_tab.LiveLabTab._pending_raw_commit_capture_is_busy(state, capture)
     state._cancel_pending_raw_commit_jobs = lambda: live_lab_tab.LiveLabTab._cancel_pending_raw_commit_jobs(state)
     state._set_pending_raw_commit_busy = lambda *args, **kwargs: live_lab_tab.LiveLabTab._set_pending_raw_commit_busy(

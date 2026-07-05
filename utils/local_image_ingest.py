@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import time
 from typing import Any, Mapping
 
 from utils.heic_converter import build_local_image_provenance, maybe_convert_heic
@@ -15,6 +17,18 @@ from utils.raw_render import (
     render_raw_image,
 )
 from utils.rawpy_import import read_rawpy_capture_datetime
+
+_RAW_DEBUG_TIMING = str(os.environ.get("SPORELY_DEBUG_RAW_TIMING") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _raw_timing_log(label: str, start: float | None, *, detail: str | None = None) -> None:
+    if not _RAW_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    message = f"[raw-timing] {label}: {elapsed_ms:.1f} ms"
+    if detail:
+        message = f"{message} | {detail}"
+    print(message, flush=True)
 
 
 def _default_import_dir() -> Path:
@@ -84,6 +98,7 @@ def prepare_local_ingest_image(
     output_dir=None,
 ) -> LocalIngestResult:
     """Prepare a local file for ingestion without changing non-RAW behavior."""
+    start = time.perf_counter() if _RAW_DEBUG_TIMING else None
     source_text = str(source_path or "").strip()
     if not source_text:
         raise ValueError("source_path is required")
@@ -99,20 +114,26 @@ def prepare_local_ingest_image(
         if raw_settings_source is None and isinstance(existing_raw_processing, Mapping):
             raw_settings_source = existing_raw_processing.get("settings")
         render_settings = RawRenderSettings.from_dict(_normalize_raw_settings(raw_settings_source))
+        timestamp_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         source_capture_datetime = read_rawpy_capture_datetime(source_text)
+        _raw_timing_log("RAW capture timestamp read", timestamp_start, detail=source.name)
         resolved_output_dir = Path(output_dir) if output_dir is not None else _default_import_dir()
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
+        render_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         working_path = render_raw_image(
             source_text,
             settings=render_settings,
             output_dir=resolved_output_dir,
             source_capture_datetime=source_capture_datetime,
         )
+        _raw_timing_log("prepare_local_ingest_image render_raw_image", render_start, detail=source.name)
         try:
             from PIL import Image
 
+            size_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             with Image.open(working_path) as rendered_image:
                 width, height = rendered_image.size
+            _raw_timing_log("RAW derivative size read", size_start, detail=Path(working_path).name)
         except Exception:
             width = height = 0
         raw_render_snapshot = build_raw_processing_metadata(
@@ -137,7 +158,7 @@ def prepare_local_ingest_image(
         working_path = source_text
 
     provenance = build_local_image_provenance(source_text, working_path, image_type=image_type)
-    return LocalIngestResult(
+    result = LocalIngestResult(
         source_path=source_text,
         working_path=str(working_path),
         original_path=source_text,
@@ -145,6 +166,8 @@ def prepare_local_ingest_image(
         lab_metadata=lab_metadata_dict or None,
         **provenance,
     )
+    _raw_timing_log("prepare_local_ingest_image", start, detail=source.name)
+    return result
 
 
 __all__ = [

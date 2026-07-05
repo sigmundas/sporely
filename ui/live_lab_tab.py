@@ -134,7 +134,11 @@ from .splitter_state import (
 from .zoomable_image_widget import ZoomableImageLabel
 
 
-_RAW_DEBUG_TIMING = False
+_RAW_DEBUG_TIMING = str(os.environ.get("SPORELY_DEBUG_RAW_TIMING") or "").strip().lower() in {"1", "true", "yes", "on"}
+PENDING_RAW_COMMIT_MAX_WORKERS = 1
+# Keep RAW commit concurrency at one worker until output path reservation is
+# atomic, 20 MP RAW memory use is profiled, and packaged rawpy/LibRaw
+# thread-safety is verified instead of assumed.
 
 
 def _raw_timing_log(label: str, start: float | None, *, detail: str | None = None) -> None:
@@ -392,6 +396,7 @@ class _PendingRawCommitJobResult:
 def _build_pending_raw_commit_job_result(
     request: _PendingRawCommitJobRequest,
 ) -> _PendingRawCommitJobResult:
+    start = time.perf_counter() if _RAW_DEBUG_TIMING else None
     resolved_settings = RawRenderSettings.from_dict(request.raw_settings)
     prepared_ingest: LocalIngestResult | None = None
     error: str | None = None
@@ -406,6 +411,7 @@ def _build_pending_raw_commit_job_result(
         error = str(exc)
     except Exception as exc:
         error = str(exc)
+    _raw_timing_log("pending RAW commit prepare", start, detail=request.source_path.name)
     return _PendingRawCommitJobResult(
         job_id=request.job_id,
         kind=request.kind,
@@ -2701,6 +2707,9 @@ class LiveLabTab(QWidget):
             getattr(self, "_pending_raw_commit_active_request", None)
             or getattr(self, "_pending_raw_commit_job_queue", None)
         )
+
+    def _pending_raw_commit_active_worker_count(self) -> int:
+        return 1 if getattr(self, "_pending_raw_commit_worker_thread", None) is not None else 0
 
     def _pending_raw_commit_capture_is_busy(self, capture: PendingRawCapture | None) -> bool:
         if capture is None:
@@ -5502,13 +5511,13 @@ class LiveLabTab(QWidget):
                 return
             queue.append(request)
         self._update_pending_raw_controls()
-        if getattr(self, "_pending_raw_commit_worker_thread", None) is None and not bool(
+        if self._pending_raw_commit_active_worker_count() < PENDING_RAW_COMMIT_MAX_WORKERS and not bool(
             getattr(self, "_pending_raw_commit_defer_start", False)
         ):
             self._start_next_pending_raw_commit_job()
 
     def _start_next_pending_raw_commit_job(self) -> None:
-        if getattr(self, "_pending_raw_commit_worker_thread", None) is not None:
+        if self._pending_raw_commit_active_worker_count() >= PENDING_RAW_COMMIT_MAX_WORKERS:
             return
         queue = getattr(self, "_pending_raw_commit_job_queue", None)
         if bool(getattr(self, "_pending_raw_commit_cancel_requested", False)):
@@ -5959,7 +5968,7 @@ class LiveLabTab(QWidget):
                 self._enqueue_pending_raw_commit_job(request)
         finally:
             self._pending_raw_commit_defer_start = False
-        if getattr(self, "_pending_raw_commit_worker_thread", None) is None:
+        if self._pending_raw_commit_active_worker_count() < PENDING_RAW_COMMIT_MAX_WORKERS:
             self._start_next_pending_raw_commit_job()
         return True
 
@@ -7191,6 +7200,7 @@ class LiveLabTab(QWidget):
         capture_time_state: dict[str, object] | None = None,
         observation_id: int | None = None,
     ) -> bool:
+        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         observation_id = int(observation_id or self._session_observation_id or 0)
         if observation_id <= 0:
             return False
@@ -7232,6 +7242,7 @@ class LiveLabTab(QWidget):
         calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
         original_filepath = ingest.original_path if ingest.original_path != ingest.working_path else None
 
+        db_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         image_id = ImageDB.add_image(
             observation_id=observation_id,
             filepath=ingest.working_path,
@@ -7248,19 +7259,26 @@ class LiveLabTab(QWidget):
             lab_metadata=ingest_lab_metadata or None,
             **ingest.provenance_kwargs(),
         )
+        _raw_timing_log("RAW finalize DB add_image", db_start, detail=Path(str(source_path)).name)
 
+        db_read_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         image_data = ImageDB.get_image(image_id)
+        _raw_timing_log("RAW finalize DB get_image", db_read_start, detail=f"image_id={image_id}")
         stored_path = str((image_data or {}).get("filepath") or ingest.working_path)
         output_dir = get_images_dir() / "imports"
         warning_text = ""
         try:
+            thumb_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             generate_all_sizes(stored_path, image_id)
+            _raw_timing_log("RAW thumbnail generation", thumb_start, detail=Path(stored_path).name)
         except Exception as exc:
             warning_text = self.tr("Thumbnail generation warning for {name}: {error}").format(
                 name=Path(stored_path).name,
                 error=str(exc),
             )
+        cleanup_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         cleanup_import_temp_file(source_path, ingest.working_path, stored_path, output_dir)
+        _raw_timing_log("RAW finalize temp cleanup", cleanup_start, detail=Path(str(source_path)).name)
 
         self._session_image_ids.append(int(image_id))
         self._selected_session_image_id = int(image_id)
@@ -7301,6 +7319,7 @@ class LiveLabTab(QWidget):
             },
         )
         if getattr(ingest, "raw_render_snapshot", None) is not None:
+            settings_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             save_helper = getattr(self, "_save_raw_processing_settings_for_current_context", None)
             if callable(save_helper):
                 save_helper(raw_settings or self._current_raw_render_settings())
@@ -7309,7 +7328,9 @@ class LiveLabTab(QWidget):
                     self,
                     raw_settings or self._current_raw_render_settings(),
                 )
+            _raw_timing_log("RAW finalize settings save", settings_start, detail=Path(stored_path).name)
         self._refresh_main_window_after_import(image_id)
+        _raw_timing_log("RAW finalize local ingest", start, detail=Path(str(source_path)).name)
         return True
 
     def _ingest_detected_image(

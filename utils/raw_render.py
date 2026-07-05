@@ -6,6 +6,7 @@ from datetime import datetime
 import math
 import os
 from pathlib import Path
+import time
 from typing import Any, Mapping
 
 import numpy as np
@@ -28,6 +29,17 @@ RAW_DERIVATIVE_SUBSAMPLING = 0
 RAW_DERIVATIVE_OPTIMIZE = True
 RAW_PREVIEW_MAX_DIM = 1600
 _EPSILON = np.finfo(np.float64).eps
+_RAW_DEBUG_TIMING = str(os.environ.get("SPORELY_DEBUG_RAW_TIMING") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _raw_timing_log(label: str, start: float | None, *, detail: str | None = None) -> None:
+    if not _RAW_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    message = f"[raw-timing] {label}: {elapsed_ms:.1f} ms"
+    if detail:
+        message = f"{message} | {detail}"
+    print(message, flush=True)
 
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
@@ -533,8 +545,14 @@ def _render_raw_array(
     user_wb: list[float] | None = None,
 ) -> np.ndarray:
     kwargs = _build_postprocess_kwargs(settings, preview=preview, wb_mode=wb_mode, user_wb=user_wb)
-    with rawpy_module.imread(str(source_path)) as raw:
+    detail = Path(source_path).name
+    open_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+    raw_handle = rawpy_module.imread(str(source_path))
+    _raw_timing_log("rawpy open", open_start, detail=detail)
+    with raw_handle as raw:
+        postprocess_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         rgb = raw.postprocess(**kwargs)
+        _raw_timing_log("rawpy postprocess", postprocess_start, detail=detail)
     return np.asarray(rgb)
 
 
@@ -546,6 +564,7 @@ def _save_local_derivative_jpeg(
     source_camera_make: str | None = None,
     source_camera_model: str | None = None,
 ) -> None:
+    start = time.perf_counter() if _RAW_DEBUG_TIMING else None
     rgb8 = np.asarray(rgb, dtype=np.float64)
     if rgb8.ndim == 2:
         rgb8 = np.repeat(rgb8[..., None], 3, axis=2)
@@ -582,6 +601,7 @@ def _save_local_derivative_jpeg(
         image.save(destination, "JPEG", **save_kwargs)
         source_stat = source_path.stat()
         os.utime(destination, (source_stat.st_atime, source_stat.st_mtime))
+        _raw_timing_log("JPEG save", start, detail=destination.name)
     except Exception:
         if not existed_before:
             try:
@@ -672,6 +692,7 @@ def render_raw_image(
     **_kwargs: Any,
 ) -> Path:
     """Render a RAW source file to a high-quality local JPEG derivative."""
+    start = time.perf_counter() if _RAW_DEBUG_TIMING else None
     source = Path(source_path)
     if not str(source).strip():
         raise ValueError("source_path is required")
@@ -704,10 +725,12 @@ def render_raw_image(
             and render_settings.wb_multipliers is None
             and render_settings.wb_selection is not None
         ):
+            wb_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             background_wb = estimate_white_balance_from_background(
                 to_float_rgb(rgb),
                 rect=render_settings.wb_selection,
             )
+            _raw_timing_log("background WB estimate", wb_start, detail=source.name)
             processing_settings = replace(
                 render_settings,
                 white_balance_mode="custom",
@@ -716,7 +739,9 @@ def render_raw_image(
                 wb_sample_base_mode=rawpy_mode,
             )
 
+        process_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         rgb_float = apply_post_decode_processing(rgb, processing_settings)
+        _raw_timing_log("post-decode processing", process_start, detail=source.name)
         if preview:
             rgb_float = _resize_rgb_preview(rgb_float)
         _save_local_derivative_jpeg(
@@ -727,6 +752,7 @@ def render_raw_image(
             source_camera_make=source_camera_make,
             source_camera_model=source_camera_model,
         )
+        _raw_timing_log("render_raw_image", start, detail=source.name)
         return destination
     except RawRenderingUnavailableError:
         raise
