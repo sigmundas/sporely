@@ -2770,6 +2770,39 @@ class LiveLabTab(QWidget):
         ramp = np.linspace(0.0, 1.0, 256, dtype=np.float32)
         return np.repeat(ramp[:, None, None], 3, axis=2)
 
+    def _raw_curve_preview_rgb_from_active_preview(
+        self,
+        source_path: Path,
+    ) -> np.ndarray | None:
+        def _same_path(left: str | Path | None, right: Path) -> bool:
+            if left is None:
+                return False
+            try:
+                return Path(str(left)).resolve() == right.resolve()
+            except Exception:
+                return str(left) == str(right)
+
+        session = getattr(self, "_raw_edit_session", None)
+        if session is not None and _same_path(getattr(session, "source_raw_path", None), source_path):
+            preview_rgb = getattr(session, "preview_rgb", None)
+            if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
+                return np.asarray(preview_rgb, dtype=np.float32)
+
+        capture = self._current_pending_raw_capture()
+        if capture is not None and _same_path(getattr(capture, "source_path", None), source_path):
+            preview_rgb = getattr(capture, "preview_rgb", None)
+            if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
+                return np.asarray(preview_rgb, dtype=np.float32)
+
+        live_image_label = getattr(self, "live_image_label", None)
+        preview_path = getattr(live_image_label, "_full_image_path", None)
+        if _same_path(preview_path, source_path):
+            rgb = self._pixmap_rgb_array(getattr(live_image_label, "original_pixmap", None))
+            if isinstance(rgb, np.ndarray) and rgb.size:
+                return np.asarray(rgb, dtype=np.float32)
+
+        return None
+
     def _raw_curve_preview_analysis_from_path(
         self,
         source_path: Path | None,
@@ -2783,9 +2816,16 @@ class LiveLabTab(QWidget):
             return None
 
         resolved_settings = RawRenderSettings.from_dict(settings or getattr(self, "_raw_render_settings", None))
-        signature = (str(source_path), int(stat.st_mtime_ns), int(stat.st_size), self._raw_preview_decode_mode(resolved_settings))
+        decode_mode = self._raw_preview_decode_mode(resolved_settings)
+        settings_signature = json.dumps(
+            resolved_settings.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
         cached_signature = getattr(self, "_raw_curve_preview_analysis_signature", None)
-        if signature == cached_signature:
+        base_signature = (str(source_path), int(stat.st_mtime_ns), int(stat.st_size), decode_mode)
+        if cached_signature == base_signature:
             cached_rgb = getattr(self, "_raw_curve_preview_analysis_rgb", None)
             cached_histogram = getattr(self, "_raw_curve_preview_histogram", None)
             if isinstance(cached_rgb, np.ndarray) and isinstance(cached_histogram, np.ndarray):
@@ -2793,8 +2833,26 @@ class LiveLabTab(QWidget):
 
         try:
             if is_raw_image_path(source_path):
-                rgb = self._raw_preview_proxy_for_source(source_path, resolved_settings)
-                rgb = _resize_preview_rgb(rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
+                cache = getattr(self, "_pending_raw_preview_proxy_cache", None)
+                cache_key = self._raw_preview_proxy_cache_key(source_path, resolved_settings)
+                cached_proxy_rgb = None
+                if cache_key is not None and isinstance(cache, dict):
+                    cached_proxy = cache.get(cache_key)
+                    if isinstance(cached_proxy, _RawPreviewCacheEntry):
+                        cached_proxy_rgb = cached_proxy.raw_rgb
+                    elif isinstance(cached_proxy, np.ndarray):
+                        cached_proxy_rgb = cached_proxy
+                if isinstance(cached_proxy_rgb, np.ndarray) and cached_proxy_rgb.size:
+                    rgb = _resize_preview_rgb(cached_proxy_rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
+                    signature = base_signature
+                else:
+                    preview_rgb = self._raw_curve_preview_rgb_from_active_preview(source_path)
+                    if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
+                        rgb = _resize_preview_rgb(preview_rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
+                        signature = ("preview",) + base_signature + (settings_signature,)
+                    else:
+                        rgb = self._raw_curve_preview_fallback_rgb()
+                        signature = ("fallback",) + base_signature
             else:
                 with Image.open(source_path) as image:
                     image.load()
@@ -2809,6 +2867,7 @@ class LiveLabTab(QWidget):
                         resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", Image.BILINEAR)
                         image = image.resize(resized_size, resample)
                     rgb = np.asarray(image, dtype=np.float32) / np.float32(255.0)
+                signature = base_signature
         except Exception:
             return None
 
@@ -2944,6 +3003,7 @@ class LiveLabTab(QWidget):
             active_pending_applied = False
             active_committed_applied = False
             any_applied = False
+            image_target = None
             for kind, target_key, target in selected_targets:
                 if kind == "pending" and isinstance(target, PendingRawCapture):
                     is_active_pending = active_pending_capture is target
@@ -2958,19 +3018,8 @@ class LiveLabTab(QWidget):
                     else:
                         any_applied = True
                 elif kind == "image":
-                    try:
-                        image_id = int(target_key)
-                    except Exception:
-                        continue
-                    editable_session = self._raw_editable_image_session(target, settings=settings if isinstance(target, dict) else None)
-                    if editable_session is None:
-                        continue
-                    editable_session.working_settings = self._preserve_raw_wb_fields(editable_session.original_settings, settings)
-                    editable_session.dirty = editable_session.working_settings != editable_session.original_settings
-                    if self._commit_raw_edit_session(editable_session):
-                        any_applied = True
-                        if active_committed_image_id is not None and int(active_committed_image_id) == image_id:
-                            active_committed_applied = True
+                    if image_target is None:
+                        image_target = target
             if any_applied:
                 self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
                 self._update_pending_raw_controls()
@@ -2996,6 +3045,16 @@ class LiveLabTab(QWidget):
                         f"pending={active_pending_applied} committed={active_committed_applied} "
                         f"sender={type(sender).__name__ if sender is not None else 'unknown'}"
                     ),
+                )
+                return
+            if image_target is not None:
+                begin_helper = getattr(self, "_begin_raw_edit_for_selected_image", None)
+                if callable(begin_helper):
+                    begin_helper(settings, source_image=image_target)
+                _raw_timing_log(
+                    "RAW controls changed (selected targets)",
+                    start,
+                    detail=f"targets={len(selected_targets)} pending={active_pending_applied} committed=True sender={type(sender).__name__ if sender is not None else 'unknown'}",
                 )
                 return
 
@@ -3179,7 +3238,7 @@ class LiveLabTab(QWidget):
                 summary=self._raw_settings_info_text(session.working_settings),
             )
             if session.dirty:
-                summary_text = f"{summary_text} {self.tr('· modified')}"
+                summary_text = f"{summary_text} {self.tr('· preview only')}"
         elif editable_session is not None:
             summary_text = self.tr("RAW-backed image: {name} · {summary}").format(
                 name=Path(str(editable_session.current_derivative_path)).name,
