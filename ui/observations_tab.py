@@ -2270,13 +2270,13 @@ class ObservationsTab(QWidget):
         install_persistent_splitter(
             self.view_splitter,
             key="observations_view_splitter_sizes",
-            default_sizes=[280, 900],
+            default_sizes=[320, 880],
             minimum_sizes=[180, 200],
         )
         # Remember the user-chosen table width in image mode so switching back
         # to Images preserves their preferred ratio (persistent-splitter save
         # kicks in immediately when we manually setSizes for table mode).
-        self._view_splitter_table_width = self.view_splitter.sizes()[0] if self.view_splitter.sizes() else 280
+        self._view_splitter_table_width = self.view_splitter.sizes()[0] if self.view_splitter.sizes() else 320
         self.view_splitter.splitterMoved.connect(self._on_view_splitter_moved)
 
         content_layout.addWidget(splitter, 1)
@@ -6174,7 +6174,7 @@ class ObservationsTab(QWidget):
             else:
                 table_width = getattr(self, "_view_splitter_table_width", None)
                 if not table_width or table_width < 120:
-                    table_width = max(220, total // 4)
+                    table_width = max(320, total // 3)
                 table_width = min(table_width, max(220, total - 200))
                 splitter.setSizes([table_width, max(200, total - table_width)])
         # Arrow shortcuts (prev/next/up/down) are only meaningful in image mode.

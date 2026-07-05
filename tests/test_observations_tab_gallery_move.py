@@ -33,6 +33,24 @@ class _FakeTable:
         self.selected_rows.append(int(row))
 
 
+class _FakeSplitter:
+    def __init__(self, width: int = 1200, sizes: list[int] | None = None) -> None:
+        self._width = int(width)
+        self._sizes = list(sizes or [280, 920])
+        self.set_sizes_calls: list[list[int]] = []
+
+    def width(self) -> int:
+        return self._width
+
+    def sizes(self) -> list[int]:
+        return list(self._sizes)
+
+    def setSizes(self, sizes) -> None:  # noqa: N802 - Qt-style name
+        values = [int(value) for value in sizes]
+        self._sizes = list(values)
+        self.set_sizes_calls.append(values)
+
+
 def _build_move_state():
     state = SimpleNamespace()
     state.tr = lambda text: text
@@ -213,3 +231,30 @@ def test_gallery_double_click_switches_to_image_mode_and_shows_path(qapp):
     ObservationsTab._on_gallery_image_double_clicked(state, 11, "/tmp/example.jpg")
 
     assert shown_paths == ["mode:images", "/tmp/example.jpg"]
+
+
+def test_image_mode_uses_wider_table_splitter_default(qapp):
+    state = SimpleNamespace()
+    state.VIEW_MODE_TABLE = "table"
+    state.VIEW_MODE_IMAGES = "images"
+    state.table = SimpleNamespace(
+        columnCount=lambda: 10,
+        setColumnHidden=lambda *args, **kwargs: None,
+        viewport=lambda: SimpleNamespace(update=lambda: None),
+    )
+    state._IMAGE_MODE_VISIBLE_COLUMNS = (0, 1)
+    state.image_browser = SimpleNamespace(setVisible=lambda *_args, **_kwargs: None)
+    state.view_splitter = _FakeSplitter(width=1200, sizes=[0, 0])
+    state._view_splitter_table_width = 0
+    state._shortcut_image_prev = None
+    state._shortcut_image_next = None
+    state._shortcut_image_row_up = None
+    state._shortcut_image_row_down = None
+    state._redistribute_taxonomy_columns = lambda: None
+    state._refresh_image_browser_for_current_selection = lambda: None
+
+    ObservationsTab._apply_view_mode(state, state.VIEW_MODE_IMAGES, persist=False)
+
+    assert state.view_splitter.set_sizes_calls
+    assert state.view_splitter.set_sizes_calls[-1][0] >= 320
+    assert state.view_splitter.set_sizes_calls[-1][0] > 280
