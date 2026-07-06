@@ -13204,6 +13204,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_gallery_image_clicked(self, _image_id, path: str) -> None:
         if not path:
             return
+        image_index = None
+        for idx, meta in enumerate(getattr(self, "image_metadata", []) or []):
+            if str(meta.get("filepath") or "") == path:
+                image_index = idx
+                break
+        if image_index is not None and hasattr(self, "image_table"):
+            try:
+                self.image_table.selectRow(image_index)
+            except Exception:
+                pass
+            try:
+                self.on_image_selected()
+            except Exception:
+                pass
         for idx, item in enumerate(self.image_results):
             if item.filepath == path:
                 self._ai_selected_index = idx
