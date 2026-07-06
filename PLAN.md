@@ -98,6 +98,161 @@ Status: Done.
 - Keep the table desktop-only for now; the cloud contract still uses `calibration_uuid` and
   calibration metadata, not a calibration-asset mirror.
 
+### Stage J — Public spore mosaic: metadata-only microscope image sync
+
+Status: proposed. Depends on a small Supabase schema loosening.
+
+Goal:
+Let the public spore mosaic include every public-eligible measurement in
+an observation without uploading the underlying microscope frames. The
+public visual is the atlas tile, not the 20-megapixel source, so full
+image bytes must stay optional.
+
+Diagnostic evidence (observation cloud 745, local id 449):
+
+    total_local=28
+    with_p1_p2_p3_p4=28
+    image_has_cloud_id=8
+    measurement_has_cloud_id=8
+    excluded_by_measurement_type=2
+    by_image_type={'microscope': 28}
+    pusher_would_select=8
+    remote_microscope_images=3
+    remote_measurements=8
+    public_rpc_sporePoints=8
+
+Interpretation: 18 of 26 non-calibration spores live on microscope
+images that were never uploaded, so their local `images.cloud_id` is
+NULL, so the mosaic pusher's `image.cloud_id IS NOT NULL` gate drops
+them. The fix is a metadata-only cloud image row per source frame — no
+source bytes.
+
+Findings against current schema:
+
+- `public.observation_images.storage_path` is `text NOT NULL` in the
+  baseline. Metadata-only rows are not currently insertable.
+- INSERT RLS requires `storage_path LIKE '{auth.uid}/%'`.
+- UPDATE RLS already allows `storage_path IS NULL`.
+- `search_public_observation_images` derives `thumbUrl` from
+  `storage_path`. Metadata-only rows would yield a broken URL, which
+  we do not want on the observation image gallery.
+- `search_public_species` derives `representativeThumbUrl` the same way.
+- `get_public_observation` `sporePoints` join does not reference
+  `storage_path` and works fine for metadata-only rows.
+- `spore_measurement_mosaic_tiles` RLS only requires
+  `mosaic.user_id = auth.uid()` plus the measurement's image belonging
+  to the mosaic's observation; no `storage_path` dependency.
+- Desktop `push_image_metadata(img, obs_cloud_id, storage_path)`
+  currently requires a non-empty `storage_path` argument at the call
+  sites.
+
+Required Supabase migration (new, e.g. `20260703…_allow_metadata_only_observation_images.sql`):
+
+1. `ALTER TABLE public.observation_images ALTER COLUMN storage_path DROP NOT NULL`.
+2. Replace INSERT RLS: allow `storage_path IS NULL` OR the existing
+   `'{auth.uid}/%'` prefix pattern (keep the prefix guard for uploaded
+   rows).
+3. Update `search_public_observation_images` /
+   `search_public_species`: skip rows where `storage_path IS NULL OR
+   btrim(storage_path) = ''` before building `thumbUrl` /
+   `representativeThumbUrl`. Metadata-only rows must not appear in the
+   observation image gallery or the species representative thumb.
+4. `get_public_observation` sporePoints: no change; it never references
+   `storage_path`.
+5. Extend `supabase/tests/public_observation_rpc_validation.sql`:
+   insert one row with `storage_path IS NULL` and one with a real
+   path; assert the NULL row is excluded from image RPCs but its
+   spore measurements still land in `sporePoints`.
+
+Required desktop changes:
+
+- New helper `_ensure_metadata_only_microscope_image(client, local_image_id) -> str | None`
+  that upserts a remote `observation_images` row with the following
+  fields (mirroring `push_image_metadata` today):
+
+    - `observation_id`      = cloud observation id
+    - `user_id`             = `auth.uid()`
+    - `desktop_id`          = local image id
+    - `image_type`          = `'microscope'`
+    - `sort_order`, `micro_category`, `objective_name`,
+      `calibration_uuid`, `scale_microns_per_pixel`,
+      `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
+      `contrast`, `measure_color`, `crop_mode`, `notes`,
+      `gps_source`, AI-crop fields when present, `original_filename`
+    - `storage_path`        = **NULL**
+    - `source_width` / `source_height` — populated from PIL when the
+      local file is present (needed for later mosaic geometry and any
+      display maths); left NULL when not resolvable.
+  On success, write `images.cloud_id` locally.
+- Modify the backfill / normal-sync spore pipeline: before pushing
+  spore measurements for a given local microscope image, if
+  `images.cloud_id IS NULL` AND the image carries at least one
+  public-eligible measurement AND `spore_data_visibility='public'`
+  on the observation, call the new helper. Do NOT call the helper
+  for field images or microscope images that have no public spore
+  measurements.
+- Add `--ensure-image-metadata` (default on) and
+  `--no-ensure-image-metadata` flags to
+  `python -m utils.cloud_spore_mosaic_backfill`.
+
+Kept as-is:
+
+- Full microscope source upload remains opt-in
+  (`sync_full_resolution_originals`) and untouched by this stage.
+- Per-measurement `spore_measurements.thumb_key` / `cropUrl` fallback
+  on the public RPC remains.
+- Mosaic bytes are still built from local source files at
+  backfill/sync time.
+- Landing observation image gallery must not surface metadata-only
+  rows (achieved by the RPC filter above).
+
+Non-goals:
+
+- Do not upload thumbnails for microscope images by default. If we
+  later want a small on-image preview for the observation gallery,
+  that is a separate opt-in and does not gate the mosaic.
+- Do not fake or synthesise `measurement.image_id`.
+- Do not bypass RLS.
+- Do not remove the existing full-resolution / opt-in upload path.
+
+Expected diagnostic after this stage ships and backfill runs for 745:
+
+    total_local=28
+    with_p1_p2_p3_p4=28
+    image_has_cloud_id=26        # 28 minus 2 excluded by measurement_type
+    measurement_has_cloud_id=26
+    excluded_by_measurement_type=2
+    pusher_would_select=26
+    remote_microscope_images=26  # remote row per local microscope image
+    remote_measurements=26
+    public_rpc_sporePoints=26
+
+Storage impact per additional metadata-only image row:
+
+- Zero R2 bytes uploaded.
+- One `observation_images` row (~200 bytes of metadata).
+- One `spore_measurements` row per measurement on that image (existing
+  size).
+- One `spore_measurement_mosaic_tiles` row per measurement (existing
+  size, unchanged by this stage).
+- One `spore_measurement_mosaics` row per observation
+  (mosaic-per-observation, already exists).
+
+If the schema migration turns out to be non-trivial (e.g. downstream
+code discovered later that requires `storage_path`), fall back to
+proposing a `bytes_uploaded boolean` flag column instead of dropping
+NOT NULL. Do NOT fall back to uploading source images without an
+explicit user opt-in.
+
+Rollout order:
+
+1. Land the Supabase migration + RPC tests in `sporely-web`.
+2. Land the desktop helper + backfill wiring + unit tests in
+   `sporely-py`.
+3. Run `python -m utils.cloud_spore_mosaic_backfill --observation-cloud-id 745 --diagnose`.
+4. Verify diagnostic + landing display of the 26-tile mosaic before
+   sweeping older observations.
+
 ### Stage I — Optional full-resolution original sync
 
 Status: Done (default-off opt-in upload, recovery cache path, and conservative settings/status surface shipped; explicit restore/promotion remains deferred).

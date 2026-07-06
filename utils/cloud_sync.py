@@ -11668,26 +11668,281 @@ def _push_measurements_for_observation(
     )
 
 
+# Public status codes returned by `_push_spore_mosaic_for_observation`. Kept
+# as short kebab-cased strings so callers can aggregate them into counters
+# and log them verbatim. Auth / temporary errors are NOT translated to a
+# code — they propagate as exceptions so the caller can abort cleanly.
+MOSAIC_STATUS_GENERATED = 'generated'
+MOSAIC_STATUS_SKIP_NO_OBSERVATION = 'skip_no_observation'
+MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA = 'skip_no_public_spore_data'
+MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS = 'skip_no_eligible_measurements'
+MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES = 'skip_missing_source_images'
+MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES = 'skip_no_usable_sources'
+MOSAIC_STATUS_FAIL_BUILD = 'fail_build'
+MOSAIC_STATUS_FAIL_UPLOAD = 'fail_upload'
+MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP = 'fail_mosaic_lookup'
+MOSAIC_STATUS_FAIL_MOSAIC_UPSERT = 'fail_mosaic_upsert'
+MOSAIC_STATUS_FAIL_NO_MOSAIC_ID = 'fail_no_mosaic_id'
+MOSAIC_STATUS_FAIL_TILE_CLEANUP = 'fail_tile_cleanup'
+MOSAIC_STATUS_FAIL_TILE_INSERT = 'fail_tile_insert'
+
+
+def diagnose_public_spore_mosaic_gates(
+    client: 'SporelyCloudClient | None',
+    obs_local_id: int,
+    obs_cloud_id: str | None = None,
+    *,
+    include_remote: bool = True,
+    log: bool = True,
+) -> dict:
+    """Report why the mosaic pusher would (or would not) include each spore.
+
+    Counts measurements at every gate between "row exists locally" and
+    "spore point is served by `get_public_observation`" so an operator
+    can see, at a glance, which predicate is dropping measurements.
+    Local counts are always populated. Remote counts (Supabase +
+    `get_public_observation`) are best-effort; on failure the error
+    string lands in the result under `*_error` keys and the local counts
+    are still returned. Pass `client=None` to skip the remote step
+    entirely.
+
+    Returns a dict with these keys:
+      obs_local_id, obs_cloud_id,
+      total_local,
+      with_p1_p2,
+      with_p1_p2_p3_p4,
+      with_length_and_width_um,
+      image_has_cloud_id,
+      measurement_has_cloud_id,
+      excluded_by_measurement_type,
+      by_image_type   -> {image_type: count},
+      pusher_would_select,
+      remote_images (optional),
+      remote_microscope_images (optional),
+      remote_measurements (optional),
+      public_rpc_sporePoints (optional).
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+
+        def _count(sql: str, params: tuple = ()) -> int:
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+            return int(row[0]) if row else 0
+
+        total_local = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ?',
+            (obs_local_id,),
+        )
+        with_p1p2 = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL '
+            '  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL',
+            (obs_local_id,),
+        )
+        with_p1234 = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL '
+            '  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL '
+            '  AND m.p3_x IS NOT NULL AND m.p3_y IS NOT NULL '
+            '  AND m.p4_x IS NOT NULL AND m.p4_y IS NOT NULL',
+            (obs_local_id,),
+        )
+        with_um = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL',
+            (obs_local_id,),
+        )
+        image_has_cloud_id = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? AND i.cloud_id IS NOT NULL',
+            (obs_local_id,),
+        )
+        meas_has_cloud_id = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? AND m.cloud_id IS NOT NULL',
+            (obs_local_id,),
+        )
+        excluded_by_type = _count(
+            "SELECT COUNT(*) FROM spore_measurements m "
+            "JOIN images i ON i.id = m.image_id "
+            "WHERE i.observation_id = ? "
+            "  AND m.measurement_type IS NOT NULL "
+            "  AND m.measurement_type != '' "
+            "  AND lower(m.measurement_type) NOT IN ('manual', 'spore', 'spores')",
+            (obs_local_id,),
+        )
+        pusher_selected = _count(
+            "SELECT COUNT(*) "
+            "FROM spore_measurements m "
+            "JOIN images i ON i.id = m.image_id "
+            "WHERE i.observation_id = ? "
+            "  AND i.image_type = 'microscope' "
+            "  AND i.cloud_id IS NOT NULL "
+            "  AND m.cloud_id IS NOT NULL "
+            "  AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL "
+            "  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL "
+            "  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL "
+            "  AND ("
+            "    m.measurement_type IS NULL"
+            "    OR m.measurement_type = ''"
+            "    OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')"
+            "  )",
+            (obs_local_id,),
+        )
+        cursor.execute(
+            'SELECT i.image_type, COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? GROUP BY i.image_type',
+            (obs_local_id,),
+        )
+        by_image_type = {
+            str(row[0] or 'NULL'): int(row[1]) for row in cursor.fetchall()
+        }
+    finally:
+        conn.close()
+
+    result: dict = {
+        'obs_local_id': obs_local_id,
+        'obs_cloud_id': obs_cloud_id,
+        'total_local': total_local,
+        'with_p1_p2': with_p1p2,
+        'with_p1_p2_p3_p4': with_p1234,
+        'with_length_and_width_um': with_um,
+        'image_has_cloud_id': image_has_cloud_id,
+        'measurement_has_cloud_id': meas_has_cloud_id,
+        'excluded_by_measurement_type': excluded_by_type,
+        'by_image_type': by_image_type,
+        'pusher_would_select': pusher_selected,
+    }
+
+    obs_cloud_id_str = str(obs_cloud_id or '').strip()
+    if include_remote and client is not None and obs_cloud_id_str:
+        try:
+            img_rows = client._get(
+                'observation_images'
+                f'?observation_id=eq.{obs_cloud_id_str}'
+                f'&user_id=eq.{client.user_id}'
+                '&select=id,image_type,deleted_at,purged_at&limit=1000'
+            )
+        except Exception as exc:
+            result['remote_images_error'] = str(exc)
+            img_rows = []
+        result['remote_images'] = len(img_rows)
+        microscope_ids: list[str] = []
+        for row in img_rows:
+            if row.get('deleted_at') or row.get('purged_at'):
+                continue
+            if row.get('image_type') != 'microscope':
+                continue
+            image_id = str(row.get('id') or '').strip()
+            if image_id:
+                microscope_ids.append(image_id)
+        result['remote_microscope_images'] = len(microscope_ids)
+
+        if microscope_ids:
+            try:
+                ids_in = ','.join(microscope_ids)
+                m_rows = client._get(
+                    'spore_measurements'
+                    f'?image_id=in.({ids_in})'
+                    f'&user_id=eq.{client.user_id}'
+                    '&select=id,measurement_type&limit=2000'
+                )
+                result['remote_measurements'] = len(m_rows)
+            except Exception as exc:
+                result['remote_measurements_error'] = str(exc)
+        else:
+            result['remote_measurements'] = 0
+
+        try:
+            rpc_result = client._rpc(
+                'get_public_observation',
+                {'p_observation_id': int(obs_cloud_id_str)},
+            )
+            row = None
+            if isinstance(rpc_result, list) and rpc_result:
+                row = rpc_result[0]
+            elif isinstance(rpc_result, dict):
+                row = rpc_result
+            spore_points = row.get('sporePoints') if isinstance(row, dict) else None
+            result['public_rpc_sporePoints'] = (
+                len(spore_points) if isinstance(spore_points, list) else 0
+            )
+        except Exception as exc:
+            result['public_rpc_error'] = str(exc)
+
+    if log:
+        prefix = f'[cloud_sync] Mosaic gate obs {obs_local_id} cloud={obs_cloud_id_str or "?"}:'
+        print(f'{prefix} total_local={result["total_local"]}', flush=True)
+        print(
+            f'{prefix}   with_p1_p2={result["with_p1_p2"]} '
+            f'with_p1_p2_p3_p4={result["with_p1_p2_p3_p4"]} '
+            f'with_length_and_width_um={result["with_length_and_width_um"]}',
+            flush=True,
+        )
+        print(
+            f'{prefix}   image_has_cloud_id={result["image_has_cloud_id"]} '
+            f'measurement_has_cloud_id={result["measurement_has_cloud_id"]} '
+            f'excluded_by_measurement_type={result["excluded_by_measurement_type"]}',
+            flush=True,
+        )
+        print(f'{prefix}   by_image_type={result["by_image_type"]}', flush=True)
+        print(f'{prefix}   pusher_would_select={result["pusher_would_select"]}', flush=True)
+        if 'remote_images' in result:
+            print(
+                f'{prefix}   remote_images={result["remote_images"]} '
+                f'remote_microscope_images={result["remote_microscope_images"]} '
+                f'remote_measurements={result.get("remote_measurements", "?")}',
+                flush=True,
+            )
+        if 'public_rpc_sporePoints' in result:
+            print(
+                f'{prefix}   public_rpc_sporePoints={result["public_rpc_sporePoints"]}',
+                flush=True,
+            )
+        for key in ('remote_images_error', 'remote_measurements_error', 'public_rpc_error'):
+            if key in result:
+                print(f'{prefix}   {key}={result[key]!r}', flush=True)
+
+    return result
+
+
 def _push_spore_mosaic_for_observation(
     client: 'SporelyCloudClient',
     obs_local_id: int,
     obs_cloud_id: str,
-) -> None:
+) -> str:
     """Generate + upload one public spore mosaic (atlas + tile manifest).
 
-    Best-effort: any failure logs a `[cloud_sync] Mosaic …` warning and
-    returns without raising, so a mosaic problem never breaks the rest of
-    an observation sync. The per-measurement `thumb_key` / `cropUrl`
-    fallback on the public RPC remains authoritative when this step is
-    skipped or fails.
+    Best-effort: for anything other than an auth / temporary-unavailable
+    error, the function logs a `[cloud_sync] Mosaic …` line and returns a
+    short status string (see `MOSAIC_STATUS_*` constants) instead of
+    raising, so a mosaic problem never breaks the rest of an observation
+    sync. Auth / temporary errors DO propagate so a stale token or 503
+    aborts the caller cleanly instead of quietly turning every remaining
+    observation into a `fail_*` line.
 
     Runs only when the observation has `spore_data_visibility='public'`
-    and at least one microscope measurement has been pushed with a
-    resolvable cloud id — matching the visibility surface of the public
-    observation RPC.
+    and at least one microscope measurement already has a cloud id —
+    matching the visibility surface of the public observation RPC. The
+    per-measurement `thumb_key` / `cropUrl` fallback on the public RPC
+    remains authoritative when this step is skipped or fails.
     """
     if not obs_cloud_id:
-        return
+        return MOSAIC_STATUS_SKIP_NO_OBSERVATION
 
     conn = get_connection()
     conn.row_factory = sqlite3.Row
@@ -11699,7 +11954,7 @@ def _push_spore_mosaic_for_observation(
         )
         obs_row = cursor.fetchone()
         if obs_row is None:
-            return
+            return MOSAIC_STATUS_SKIP_NO_OBSERVATION
         visibility = str(obs_row['spore_data_visibility'] or 'public').strip().lower()
         if visibility != 'public':
             print(
@@ -11707,12 +11962,13 @@ def _push_spore_mosaic_for_observation(
                 f'spore_data_visibility={visibility!r}',
                 flush=True,
             )
-            return
+            return MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA
 
         cursor.execute(
             '''
             SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
                    m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
                    m.gallery_rotation, m.cloud_id,
                    i.cloud_id  AS image_cloud_id,
                    i.filepath  AS image_filepath
@@ -11744,7 +12000,7 @@ def _push_spore_mosaic_for_observation(
             f'[cloud_sync] Mosaic skip obs {obs_local_id}: no eligible public measurements',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS
 
     # Local import to keep the top-level cloud_sync import graph unchanged
     # for tests that stub PIL or the mosaic module.
@@ -11768,30 +12024,78 @@ def _push_spore_mosaic_for_observation(
         print(f'[cloud_sync]   Mosaic source skip m={mid}: {reason}', flush=True)
 
     if not sources:
+        # Distinguish "we couldn't open any file" (fixable by resyncing
+        # media) from "the source rows themselves were malformed".
+        all_missing = bool(source_skipped) and all(
+            reason == 'source image missing' for _mid, reason in source_skipped
+        )
+        code = (
+            MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+            if all_missing
+            else MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES
+        )
         print(
-            f'[cloud_sync] Mosaic abort obs {obs_local_id}: no usable sources',
+            f'[cloud_sync] Mosaic abort obs {obs_local_id}: no usable sources ({code})',
             flush=True,
         )
-        return
+        return code
 
     try:
         manifest = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX)
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic build failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_BUILD
 
     if manifest is None or not manifest.tiles:
         print(
             f'[cloud_sync] Mosaic empty obs {obs_local_id}: nothing to upload',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
 
     for mid, reason in manifest.skipped:
         print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
+
+    # Diagnostic log for the first few tiles so we can see, at a glance,
+    # whether the polygon geometry landed for a given observation. Useful
+    # when a backfill run "succeeds" but the landing tile still looks
+    # empty — the log makes it obvious whether the pipeline is emitting
+    # polygon overlays or falling back to bare tiles.
+    _DIAG_TILE_LIMIT = 3
+    with_polygon = sum(
+        1 for tile in manifest.tiles if tile.overlay_json is not None
+    )
+    print(
+        (
+            f'[cloud_sync] Mosaic diag obs {obs_local_id}: '
+            f'tiles={len(manifest.tiles)} with_polygon={with_polygon}'
+        ),
+        flush=True,
+    )
+    for tile in manifest.tiles[:_DIAG_TILE_LIMIT]:
+        diag = tile.diagnostics or {}
+        print(
+            (
+                f'[cloud_sync]   Mosaic diag m={tile.measurement_id} '
+                f'p1={diag.get("have_p1")} p2={diag.get("have_p2")} '
+                f'p3={diag.get("have_p3")} p4={diag.get("have_p4")} '
+                f'gallery_rot={diag.get("gallery_rotation_deg")} '
+                f'rot={diag.get("rotation_deg")} '
+                f'crop_src={diag.get("crop_rect_source_pixels")} '
+                f'tile_render={diag.get("tile_size_after_render")} '
+                f'tile_slot={diag.get("tile_size_after_fit")} '
+                f'paste_off={diag.get("paste_offset")} '
+                f'polygon={diag.get("polygon_present")} '
+                f'reason={diag.get("reason_no_polygon")} '
+                f'poly_bounds={diag.get("polygon_bounds")}'
+            ),
+            flush=True,
+        )
 
     version = 1
     # Content-address the storage key so `Cache-Control: immutable` is safe:
@@ -11846,11 +12150,13 @@ def _push_spore_mosaic_for_observation(
             if confirmed:
                 storage_key = confirmed
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic upload failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_UPLOAD
 
     try:
         existing = client._get(
@@ -11861,11 +12167,13 @@ def _push_spore_mosaic_for_observation(
             f'&select=id'
         )
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic lookup failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP
 
     mosaic_payload: dict = {
         'observation_id': obs_cloud_id,
@@ -11887,18 +12195,20 @@ def _push_spore_mosaic_for_observation(
             rows_ret = client._post('spore_measurement_mosaics', mosaic_payload)
             mosaic_id = str(rows_ret[0]['id']) if rows_ret else ''
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic upsert failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
 
     if not mosaic_id:
         print(
             f'[cloud_sync] Mosaic upsert returned no id obs {obs_local_id}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
 
     # Refresh tile manifest: DELETE all rows for this mosaic then bulk INSERT.
     # PostgREST accepts a list payload as a bulk insert.
@@ -11907,11 +12217,13 @@ def _push_spore_mosaic_for_observation(
             f'spore_measurement_mosaic_tiles?mosaic_id=eq.{mosaic_id}'
         )
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic tile cleanup failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_TILE_CLEANUP
 
     tile_payload = [
         {
@@ -11929,11 +12241,13 @@ def _push_spore_mosaic_for_observation(
     try:
         client._post('spore_measurement_mosaic_tiles', tile_payload)  # bulk insert
     except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
         print(
             f'[cloud_sync] Mosaic tile insert failed obs {obs_local_id}: {exc}',
             flush=True,
         )
-        return
+        return MOSAIC_STATUS_FAIL_TILE_INSERT
 
     overlay_count = sum(1 for t in manifest.tiles if t.overlay_json is not None)
     print(
@@ -11947,6 +12261,236 @@ def _push_spore_mosaic_for_observation(
         ),
         flush=True,
     )
+    return MOSAIC_STATUS_GENERATED
+
+
+def backfill_public_spore_mosaics(
+    client: 'SporelyCloudClient',
+    *,
+    observation_cloud_ids: list[int] | list[str] | None = None,
+    limit: int | None = None,
+    push_measurements: bool = True,
+    diagnose: bool = False,
+) -> dict:
+    """Explicit backfill/repair path for public spore mosaics.
+
+    Iterates every locally-known observation that already has a cloud id
+    and calls `_push_spore_mosaic_for_observation` for each — same code
+    path normal sync uses, but bypassing the "dirty observation" filter
+    that skips clean rows during regular pushes. This lets a user
+    (re)generate mosaics for observations that were synced before mosaic
+    support existed, or for a specific set of `--observation-cloud-id`
+    values during debugging.
+
+    Arguments:
+    * `observation_cloud_ids` — optional whitelist. Values may be ints or
+      digit strings; they are compared as strings against the local
+      `observations.cloud_id` column.
+    * `limit` — optional cap on how many observations to process. Applied
+      after the whitelist filter.
+
+    Auth / temporary-unavailable errors from the underlying pusher
+    propagate here, aborting the backfill mid-run so a bad token doesn't
+    silently mark every remaining observation as `failed`. Every other
+    per-observation failure is logged and the loop continues.
+
+    Returns a counts dict with these keys (all ints):
+      candidates, generated,
+      skipped_no_cloud_id, skipped_no_public_spores,
+      skipped_no_measurement_cloud_ids, skipped_missing_source_images,
+      failed.
+    """
+    id_filter: set[str] | None = None
+    if observation_cloud_ids is not None:
+        id_filter = {
+            str(value).strip()
+            for value in observation_cloud_ids
+            if str(value or '').strip()
+        }
+
+    print(
+        (
+            f'[cloud_sync] Mosaic backfill: start '
+            f'observation_cloud_ids='
+            f'{sorted(id_filter) if id_filter is not None else None} '
+            f'limit={limit}'
+        ),
+        flush=True,
+    )
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id AS local_id,
+                   cloud_id,
+                   spore_data_visibility
+            FROM observations
+            WHERE cloud_id IS NOT NULL AND cloud_id != ''
+            ORDER BY id
+            '''
+        )
+        all_rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    filtered: list[dict] = []
+    for row in all_rows:
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if id_filter is not None and cloud_id not in id_filter:
+            continue
+        filtered.append({**row, 'cloud_id': cloud_id})
+        if limit is not None and len(filtered) >= limit:
+            break
+
+    counts = {
+        'candidates': len(filtered),
+        'generated': 0,
+        'skipped_no_cloud_id': 0,          # placeholder for symmetry — pre-filtered
+        'skipped_no_public_spores': 0,
+        'skipped_no_measurement_cloud_ids': 0,
+        'skipped_missing_source_images': 0,
+        'failed': 0,
+    }
+
+    if id_filter is not None:
+        # Whitelist entries that never matched anything locally deserve a log.
+        matched = {str(row.get('cloud_id') or '').strip() for row in filtered}
+        for wanted in sorted(id_filter - matched):
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local=? cloud={wanted} '
+                f'reason=no_local_observation_with_cloud_id',
+                flush=True,
+            )
+
+    for row in filtered:
+        local_id = int(row['local_id'])
+        cloud_id = str(row['cloud_id'])
+        print(
+            f'[cloud_sync] Mosaic backfill: candidate local={local_id} cloud={cloud_id}',
+            flush=True,
+        )
+
+        # Ensure every locally-known measurement for this observation exists
+        # in the cloud before we build a mosaic. Otherwise the pusher's
+        # `m.cloud_id IS NOT NULL` gate drops measurements that were made
+        # in the desktop app after the last regular sync — which is exactly
+        # what caused observations to show only a subset of their spores in
+        # the public strip.
+        if push_measurements:
+            try:
+                _push_measurements_for_observation(client, local_id)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                print(
+                    f'[cloud_sync] Mosaic backfill: measurement push failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+
+        if diagnose:
+            try:
+                diagnose_public_spore_mosaic_gates(
+                    client, local_id, cloud_id, include_remote=True, log=True,
+                )
+            except Exception as exc:
+                print(
+                    f'[cloud_sync] Mosaic backfill: diagnose failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+
+        try:
+            status = _push_spore_mosaic_for_observation(client, local_id, cloud_id)
+        except Exception as exc:
+            # Auth / temporary errors abort the whole backfill run. Everything
+            # else was translated to a status code inside the pusher; if we
+            # still see an exception it's a real unexpected error, so count
+            # it as a failure but don't stop the loop.
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                print(
+                    f'[cloud_sync] Mosaic backfill: aborting on auth/temporary error '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+                raise
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: unexpected failure local={local_id} '
+                f'cloud={cloud_id}: {exc}',
+                flush=True,
+            )
+            continue
+
+        if status == MOSAIC_STATUS_GENERATED:
+            counts['generated'] += 1
+        elif status == MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA:
+            counts['skipped_no_public_spores'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_public_spore_data',
+                flush=True,
+            )
+        elif status == MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS:
+            counts['skipped_no_measurement_cloud_ids'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_measurement_cloud_ids',
+                flush=True,
+            )
+        elif status in (
+            MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES,
+            MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES,
+        ):
+            counts['skipped_missing_source_images'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=missing_source_images',
+                flush=True,
+            )
+        elif status == MOSAIC_STATUS_SKIP_NO_OBSERVATION:
+            # We only ever queue observations that came from the DB, so this
+            # shouldn't fire. Count it as a failure rather than silently drop.
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_observation_row',
+                flush=True,
+            )
+        elif status.startswith('fail_'):
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: failed local={local_id} '
+                f'cloud={cloud_id} reason={status}',
+                flush=True,
+            )
+        else:
+            # Unknown status — count as failed so we notice.
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: unknown status local={local_id} '
+                f'cloud={cloud_id} reason={status!r}',
+                flush=True,
+            )
+
+    total_skipped = (
+        counts['skipped_no_cloud_id']
+        + counts['skipped_no_public_spores']
+        + counts['skipped_no_measurement_cloud_ids']
+        + counts['skipped_missing_source_images']
+    )
+    print(
+        (
+            f'[cloud_sync] Mosaic backfill: complete '
+            f'candidates={counts["candidates"]} generated={counts["generated"]} '
+            f'skipped={total_skipped} failed={counts["failed"]}'
+        ),
+        flush=True,
+    )
+    return counts
 
 
 _SETTING_CLOUD_EXIF_BACKFILL_STATE = 'cloud_exif_backfill_checked'
