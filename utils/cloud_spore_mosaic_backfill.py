@@ -70,6 +70,22 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        '--no-ensure-image-metadata',
+        dest='ensure_image_metadata',
+        action='store_false',
+        default=True,
+        help=(
+            'Skip creating metadata-only microscope image rows before '
+            'pushing measurements. Default is on: local microscope images '
+            'that have public-eligible spore measurements but no remote '
+            'observation_images row get a metadata-only anchor row '
+            '(storage_path = NULL, image_type = microscope) so their '
+            'measurements can sync. No image bytes are uploaded — only '
+            'metadata. Turn off if you already know every needed image is '
+            'linked, or to debug the previous "8 of 26" gate.'
+        ),
+    )
+    parser.add_argument(
         '--diagnose',
         action='store_true',
         default=False,
@@ -120,6 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         observation_cloud_ids=args.observation_cloud_id,
         limit=args.limit,
         push_measurements=args.push_measurements,
+        ensure_image_metadata=args.ensure_image_metadata,
         diagnose=args.diagnose,
     )
     # Machine-friendly one-liner at the very end, on top of the human logs.

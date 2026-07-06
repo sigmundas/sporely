@@ -11564,6 +11564,289 @@ def _push_images_for_observation(
                 pass
 
 
+# Column subset that is safe to send on a metadata-only microscope image
+# insert. Excludes storage_path (NULL), desktop_id/observation_id/user_id
+# (set explicitly by the helper), and original_filename (derived).
+_METADATA_ONLY_IMG_FIELDS = [
+    'sort_order', 'image_type', 'micro_category', 'objective_name',
+    'calibration_uuid',
+    'scale_microns_per_pixel', 'resample_scale_factor',
+    'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
+    'crop_mode', 'notes',
+    'gps_source',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h', 'ai_crop_is_custom',
+]
+
+
+def _ensure_metadata_only_microscope_image_for_public_spores(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+    image_row: dict,
+) -> str | None:
+    """Create or reuse a metadata-only cloud row for a microscope image.
+
+    The row anchors ``spore_measurements.image_id`` without uploading the
+    microscope frame. It has ``storage_path = NULL`` and
+    ``image_type = 'microscope'``, which the web migration
+    ``20260706100000_add_metadata_only_microscope_images.sql`` explicitly
+    allows and hides from public image galleries. Public sporePoints /
+    mosaic tile RPCs still see the row because they don't require
+    ``storage_path``.
+
+    Contract:
+    * Only microscope images qualify. Non-microscope rows are skipped —
+      the cloud CHECK constraint would reject them anyway.
+    * Only images that have at least one *public-eligible* spore
+      measurement locally (``length_um`` and ``width_um`` present, and
+      the measurement_type is one of NULL/''/'manual'/'spore'/'spores')
+      get an anchor. This avoids polluting the cloud with anchors that
+      can never contribute to public sporePoints.
+    * Idempotent — if the local row already has a ``cloud_id``, it is
+      returned unchanged. If the remote has a row by ``desktop_id``, we
+      reconcile the local cloud_id and return the existing id.
+    * Never uploads image bytes. Never calls ``upload_image_file`` or
+      the R2 client — the caller can guarantee "no full microscope
+      source uploads" simply by using this helper.
+
+    Returns the cloud id (str) on success, or ``None`` when the row was
+    skipped. Auth / temporary-unavailable errors propagate so the
+    caller can abort the whole backfill cleanly.
+    """
+    if not obs_cloud_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image=? obs={obs_local_id} reason=no_obs_cloud_id',
+            flush=True,
+        )
+        return None
+
+    row = dict(image_row or {})
+    local_image_id = _safe_int(row.get('id'))
+    if local_image_id <= 0:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image=? obs={obs_local_id} reason=no_local_id',
+            flush=True,
+        )
+        return None
+
+    image_type = str(row.get('image_type') or '').strip().lower()
+    if image_type != 'microscope':
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image={local_image_id} reason=not_microscope',
+            flush=True,
+        )
+        return None
+
+    existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
+    if existing_local_cloud_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: linked '
+            f'local_image={local_image_id} cloud_image={existing_local_cloud_id}',
+            flush=True,
+        )
+        return existing_local_cloud_id
+
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) FROM spore_measurements
+            WHERE image_id = ?
+              AND length_um IS NOT NULL
+              AND width_um  IS NOT NULL
+              AND (
+                measurement_type IS NULL
+                OR measurement_type = ''
+                OR lower(measurement_type) IN ('manual', 'spore', 'spores')
+              )
+            """,
+            (local_image_id,),
+        )
+        public_spore_count = int(cursor.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+    if public_spore_count <= 0:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image={local_image_id} reason=no_public_spore_measurements',
+            flush=True,
+        )
+        return None
+
+    # Missing local source file is informational, not a hard skip: we
+    # still want the metadata row so the measurement lands in public
+    # sporePoints. The mosaic pusher will separately skip the tile.
+    filepath = str(row.get('filepath') or '').strip()
+    if filepath and not Path(filepath).exists():
+        print(
+            f'[cloud_sync] Mosaic image metadata: note '
+            f'local_image={local_image_id} reason=missing_source_file',
+            flush=True,
+        )
+
+    # Reuse a remote row by desktop_id so a lost local cloud_id doesn't
+    # produce a duplicate observation_images row.
+    try:
+        remote_cloud_id = client._find_cloud_image(local_image_id)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic image metadata: lookup failed '
+            f'local_image={local_image_id}: {exc}',
+            flush=True,
+        )
+        remote_cloud_id = None
+
+    if remote_cloud_id:
+        _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True)
+        print(
+            f'[cloud_sync] Mosaic image metadata: linked '
+            f'local_image={local_image_id} cloud_image={remote_cloud_id} (reused)',
+            flush=True,
+        )
+        return str(remote_cloud_id)
+
+    payload: dict = {}
+    for field in _METADATA_ONLY_IMG_FIELDS:
+        if field in row:
+            payload[field] = row.get(field)
+    calibration_uuid = _image_calibration_uuid(row)
+    if calibration_uuid:
+        payload['calibration_uuid'] = calibration_uuid
+    else:
+        payload.pop('calibration_uuid', None)
+    payload['image_type'] = 'microscope'
+    payload['storage_path'] = None
+    payload['observation_id'] = obs_cloud_id
+    payload['user_id'] = client.user_id
+    payload['desktop_id'] = local_image_id
+    payload['original_filename'] = (
+        str(row.get('original_filename') or '').strip()
+        or Path(str(row.get('filepath') or '')).name
+        or None
+    )
+    if payload.get('gps_source') is not None:
+        payload['gps_source'] = bool(payload['gps_source'])
+    if hasattr(client, '_observation_images_support_ai_crop'):
+        try:
+            if not client._observation_images_support_ai_crop():
+                for key in (
+                    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+                    'ai_crop_source_w', 'ai_crop_source_h',
+                ):
+                    payload.pop(key, None)
+        except Exception:
+            pass
+    if hasattr(client, '_observation_images_support_ai_crop_custom'):
+        try:
+            if not client._observation_images_support_ai_crop_custom():
+                payload.pop('ai_crop_is_custom', None)
+        except Exception:
+            pass
+
+    print(
+        f'[cloud_sync] Mosaic image metadata: create '
+        f'local_image={local_image_id} obs={obs_local_id} '
+        f'cloud_obs={obs_cloud_id} type=microscope storage_path=NULL',
+        flush=True,
+    )
+
+    rows = client._post('observation_images', payload)
+    cloud_image_id = ''
+    if isinstance(rows, list) and rows:
+        cloud_image_id = str(rows[0].get('id') or '').strip()
+    elif isinstance(rows, dict):
+        cloud_image_id = str(rows.get('id') or '').strip()
+
+    if not cloud_image_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: create returned no id '
+            f'local_image={local_image_id}',
+            flush=True,
+        )
+        return None
+
+    _reconcile_local_image_cloud_id(local_image_id, cloud_image_id, mark_synced=True)
+    print(
+        f'[cloud_sync] Mosaic image metadata: linked '
+        f'local_image={local_image_id} cloud_image={cloud_image_id}',
+        flush=True,
+    )
+    return cloud_image_id
+
+
+def _ensure_metadata_only_microscope_images_for_observation(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+) -> dict:
+    """Loop wrapper around ``_ensure_metadata_only_microscope_image_for_public_spores``.
+
+    Walks every local microscope image on the observation that is missing
+    a ``cloud_id`` and tries to establish a metadata-only anchor for it.
+    Non-fatal per-image failures are logged and counted, but do not stop
+    the loop. Auth / temporary errors propagate so the backfill aborts.
+    Returns a counters dict with ``considered``, ``created``, ``linked``,
+    ``skipped``, ``failed``.
+    """
+    counters = {'considered': 0, 'ensured': 0, 'skipped': 0, 'failed': 0}
+    if not obs_cloud_id:
+        return counters
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute(
+            """
+            SELECT id, observation_id, filepath, original_filepath,
+                   cloud_id, sort_order, image_type, micro_category,
+                   objective_name, scale_microns_per_pixel,
+                   resample_scale_factor, mount_medium, stain, sample_type,
+                   contrast, measure_color, crop_mode, notes, gps_source,
+                   ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
+                   ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom
+            FROM images
+            WHERE observation_id = ?
+              AND image_type = 'microscope'
+              AND (cloud_id IS NULL OR cloud_id = '')
+            ORDER BY id
+            """,
+            (obs_local_id,),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    for image_row in rows:
+        counters['considered'] += 1
+        local_image_id = _safe_int(image_row.get('id'))
+        try:
+            result = _ensure_metadata_only_microscope_image_for_public_spores(
+                client, obs_local_id, obs_cloud_id, image_row,
+            )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            counters['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic image metadata: failed '
+                f'local_image={local_image_id}: {exc}',
+                flush=True,
+            )
+            continue
+        if result:
+            counters['ensured'] += 1
+        else:
+            counters['skipped'] += 1
+
+    return counters
+
+
 def _push_measurements_for_observation(
     client: SporelyCloudClient,
     obs_local_id: int,
@@ -12270,6 +12553,7 @@ def backfill_public_spore_mosaics(
     observation_cloud_ids: list[int] | list[str] | None = None,
     limit: int | None = None,
     push_measurements: bool = True,
+    ensure_image_metadata: bool = True,
     diagnose: bool = False,
 ) -> dict:
     """Explicit backfill/repair path for public spore mosaics.
@@ -12372,6 +12656,25 @@ def backfill_public_spore_mosaics(
             f'[cloud_sync] Mosaic backfill: candidate local={local_id} cloud={cloud_id}',
             flush=True,
         )
+
+        # Anchor every local microscope image that has public-eligible spore
+        # measurements to a metadata-only cloud row (storage_path = NULL).
+        # This is what unlocks the "26 vs 8 sporePoints" gap for
+        # observations whose microscope frames were intentionally not
+        # uploaded. No image bytes are uploaded here — only metadata.
+        if ensure_image_metadata:
+            try:
+                _ensure_metadata_only_microscope_images_for_observation(
+                    client, local_id, cloud_id,
+                )
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                print(
+                    f'[cloud_sync] Mosaic image metadata: observation failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
 
         # Ensure every locally-known measurement for this observation exists
         # in the cloud before we build a mosaic. Otherwise the pusher's

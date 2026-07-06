@@ -37,11 +37,83 @@ def _init_backfill_db(tmp_path: Path) -> Path:
             cloud_id TEXT,
             spore_data_visibility TEXT
         );
+        CREATE TABLE images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observation_id INTEGER,
+            filepath TEXT,
+            original_filepath TEXT,
+            cloud_id TEXT,
+            synced_at TEXT,
+            image_type TEXT,
+            sort_order INTEGER,
+            micro_category TEXT,
+            objective_name TEXT,
+            scale_microns_per_pixel REAL,
+            resample_scale_factor REAL,
+            mount_medium TEXT,
+            stain TEXT,
+            sample_type TEXT,
+            contrast TEXT,
+            measure_color TEXT,
+            crop_mode TEXT,
+            notes TEXT,
+            gps_source INTEGER,
+            ai_crop_x1 REAL, ai_crop_y1 REAL,
+            ai_crop_x2 REAL, ai_crop_y2 REAL,
+            ai_crop_source_w INTEGER, ai_crop_source_h INTEGER,
+            ai_crop_is_custom INTEGER
+        );
+        CREATE TABLE spore_measurements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_id INTEGER,
+            cloud_id TEXT,
+            length_um REAL,
+            width_um REAL,
+            measurement_type TEXT
+        );
         """
     )
     conn.commit()
     conn.close()
     return db_path
+
+
+def _insert_image(db_path: Path, **kwargs) -> int:
+    cols = list(kwargs.keys())
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            f"INSERT INTO images ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+            [kwargs[c] for c in cols],
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def _insert_measurement(db_path: Path, **kwargs) -> int:
+    cols = list(kwargs.keys())
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute(
+            f"INSERT INTO spore_measurements ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+            [kwargs[c] for c in cols],
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def _select_image(db_path: Path, image_id: int) -> dict:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
 
 
 def _insert_obs(db_path: Path, *, cloud_id: str | None, spore_data_visibility: str = 'public') -> int:
@@ -501,6 +573,357 @@ def test_backfill_diagnose_default_off(db, monkeypatch):
     assert calls == []
 
 
+# ── Metadata-only microscope image anchor helper ────────────────────────────
+
+
+class _RecordingClient:
+    """Records every mutating cloud call so we can assert what was (and
+    wasn't) sent."""
+
+    def __init__(self, *, user_id: str = 'user-uuid', existing_cloud_id: str | None = None,
+                 post_id: str = 'cloud-img-42'):
+        self.user_id = user_id
+        self._existing = existing_cloud_id
+        self._post_id = post_id
+        self.calls: list[tuple[str, object]] = []
+
+    def _observation_images_support_ai_crop(self):
+        return True
+
+    def _observation_images_support_ai_crop_custom(self):
+        return True
+
+    def _find_cloud_image(self, desktop_id: int) -> str | None:
+        self.calls.append(('_find_cloud_image', desktop_id))
+        return self._existing
+
+    def _post(self, path: str, payload):
+        self.calls.append(('_post', (path, payload)))
+        return [{'id': self._post_id}]
+
+    def _patch(self, path: str, payload):  # pragma: no cover — should not fire here
+        self.calls.append(('_patch', (path, payload)))
+        return None
+
+    def upload_image_file(self, *a, **kw):  # pragma: no cover — must never be called
+        self.calls.append(('upload_image_file', (a, kw)))
+        raise AssertionError('upload_image_file must not be called for metadata-only rows')
+
+    def _get_r2(self):  # pragma: no cover — must never be called
+        raise AssertionError('R2 client must not be used for metadata-only rows')
+
+
+def test_ensure_metadata_only_creates_row_with_null_storage_path(db, monkeypatch, capfd):
+    """The helper posts a row with storage_path=None and image_type=microscope,
+    never touches R2 / upload_image_file, and persists the returned cloud_id."""
+    obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
+    image_id = _insert_image(
+        db,
+        observation_id=obs_local,
+        filepath='/tmp/does-not-need-to-exist.jpg',
+        image_type='microscope',
+        cloud_id=None,
+        sort_order=0,
+        micro_category='spores',
+        objective_name='100x',
+        scale_microns_per_pixel=0.12,
+        resample_scale_factor=1.0,
+        mount_medium='water',
+        stain='none',
+        sample_type='fresh',
+        contrast='brightfield',
+        measure_color='#ff0',
+        crop_mode='ai',
+        notes='meta test',
+        gps_source=0,
+        ai_crop_x1=10.0, ai_crop_y1=20.0,
+        ai_crop_x2=110.0, ai_crop_y2=120.0,
+        ai_crop_source_w=4000, ai_crop_source_h=3000,
+        ai_crop_is_custom=0,
+    )
+    _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
+
+    client = _RecordingClient(post_id='cloud-img-777')
+    image_row = _select_image(db, image_id)
+
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+
+    assert result == 'cloud-img-777'
+    posts = [c for c in client.calls if c[0] == '_post']
+    assert len(posts) == 1
+    path, payload = posts[0][1]
+    assert path == 'observation_images'
+    assert payload['storage_path'] is None
+    assert payload['image_type'] == 'microscope'
+    assert payload['observation_id'] == '745'
+    assert payload['user_id'] == 'user-uuid'
+    assert payload['desktop_id'] == image_id
+    # Metadata fields carried through:
+    for expected in ('sort_order', 'micro_category', 'objective_name',
+                     'scale_microns_per_pixel', 'mount_medium', 'sample_type',
+                     'contrast', 'crop_mode', 'notes'):
+        assert expected in payload
+    # gps_source coerced to boolean like push_image_metadata does.
+    assert isinstance(payload['gps_source'], bool)
+    # No upload paths hit.
+    forbidden = [c for c in client.calls if c[0] in {'upload_image_file'}]
+    assert forbidden == []
+
+    # Local cloud_id persisted.
+    stored = _select_image(db, image_id).get('cloud_id')
+    assert stored == 'cloud-img-777'
+
+    stdout, _stderr = capfd.readouterr()
+    assert 'Mosaic image metadata: create' in stdout
+    assert 'storage_path=NULL' in stdout
+    assert 'Mosaic image metadata: linked' in stdout
+    assert f'cloud_image=cloud-img-777' in stdout
+
+
+def test_ensure_metadata_only_short_circuits_when_row_already_linked(db, monkeypatch, capfd):
+    obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
+    image_id = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/x.jpg',
+        image_type='microscope', cloud_id='pre-existing-uuid',
+    )
+    image_row = _select_image(db, image_id)
+    client = _RecordingClient()
+
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+
+    assert result == 'pre-existing-uuid'
+    # No lookups, no writes.
+    assert client.calls == []
+    stdout, _stderr = capfd.readouterr()
+    assert 'Mosaic image metadata: linked' in stdout
+
+
+def test_ensure_metadata_only_reuses_remote_row_by_desktop_id(db, monkeypatch, capfd):
+    obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
+    image_id = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/x.jpg',
+        image_type='microscope', cloud_id=None,
+    )
+    _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
+    image_row = _select_image(db, image_id)
+
+    client = _RecordingClient(existing_cloud_id='remote-uuid-9')
+
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+
+    assert result == 'remote-uuid-9'
+    # Lookup happened, no POST created a duplicate.
+    assert ('_find_cloud_image', image_id) in client.calls
+    posts = [c for c in client.calls if c[0] == '_post']
+    assert posts == []
+    # Local cloud_id updated.
+    assert _select_image(db, image_id).get('cloud_id') == 'remote-uuid-9'
+    stdout, _stderr = capfd.readouterr()
+    assert 'reused' in stdout
+
+
+def test_ensure_metadata_only_skips_non_microscope(db, capfd):
+    obs_local = _insert_obs(db, cloud_id='745')
+    image_id = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/x.jpg',
+        image_type='field', cloud_id=None,
+    )
+    _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
+    image_row = _select_image(db, image_id)
+
+    client = _RecordingClient()
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+    assert result is None
+    assert client.calls == []
+    stdout, _stderr = capfd.readouterr()
+    assert 'reason=not_microscope' in stdout
+
+
+def test_ensure_metadata_only_skips_when_no_public_spore_measurements(db, capfd):
+    obs_local = _insert_obs(db, cloud_id='745')
+    image_id = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/x.jpg',
+        image_type='microscope', cloud_id=None,
+    )
+    # Non-eligible measurement_type: excluded.
+    _insert_measurement(
+        db, image_id=image_id, length_um=10.0, width_um=5.0,
+        measurement_type='cystidia',
+    )
+    image_row = _select_image(db, image_id)
+
+    client = _RecordingClient()
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+    assert result is None
+    posts = [c for c in client.calls if c[0] == '_post']
+    assert posts == []
+    stdout, _stderr = capfd.readouterr()
+    assert 'reason=no_public_spore_measurements' in stdout
+
+
+def test_ensure_metadata_only_missing_source_file_still_creates_row(db, capfd):
+    obs_local = _insert_obs(db, cloud_id='745')
+    image_id = _insert_image(
+        db, observation_id=obs_local,
+        filepath='/definitely/does/not/exist.jpg',
+        image_type='microscope', cloud_id=None,
+    )
+    _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
+    image_row = _select_image(db, image_id)
+
+    client = _RecordingClient(post_id='cloud-img-88')
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client, obs_local, '745', image_row,
+    )
+
+    # Missing source is a note, not a hard skip — the anchor row still
+    # exists so its measurements reach public sporePoints.
+    assert result == 'cloud-img-88'
+    posts = [c for c in client.calls if c[0] == '_post']
+    assert len(posts) == 1
+    stdout, _stderr = capfd.readouterr()
+    assert 'reason=missing_source_file' in stdout
+
+
+# ── Backfill integration with the helper ───────────────────────────────────
+
+
+def test_backfill_calls_metadata_helper_before_measurement_push(db, monkeypatch):
+    _insert_obs(db, cloud_id='745', spore_data_visibility='public')
+    order: list[str] = []
+
+    monkeypatch.setattr(
+        cloud_sync,
+        '_ensure_metadata_only_microscope_images_for_observation',
+        lambda client, local_id, cloud_id: order.append('ensure') or {},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        '_push_measurements_for_observation',
+        lambda client, local_id: order.append('measurements'),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        '_push_spore_mosaic_for_observation',
+        lambda *a, **kw: order.append('mosaic') or cloud_sync.MOSAIC_STATUS_GENERATED,
+    )
+
+    cloud_sync.backfill_public_spore_mosaics(_FakeClient())
+    assert order == ['ensure', 'measurements', 'mosaic']
+
+
+def test_backfill_no_ensure_image_metadata_skips_helper(db, monkeypatch):
+    _insert_obs(db, cloud_id='745')
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        cloud_sync,
+        '_ensure_metadata_only_microscope_images_for_observation',
+        lambda *a, **kw: calls.append('ensure') or {},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        '_push_spore_mosaic_for_observation',
+        lambda *a, **kw: cloud_sync.MOSAIC_STATUS_GENERATED,
+    )
+
+    cloud_sync.backfill_public_spore_mosaics(_FakeClient(), ensure_image_metadata=False)
+    assert calls == []
+
+
+def test_backfill_metadata_helper_auth_error_aborts(db, monkeypatch):
+    _insert_obs(db, cloud_id='1')
+    _insert_obs(db, cloud_id='2')
+
+    class AuthError(Exception):
+        pass
+
+    def failing(client, local_id, cloud_id):
+        raise AuthError('token expired')
+
+    monkeypatch.setattr(cloud_sync, '_ensure_metadata_only_microscope_images_for_observation', failing)
+    monkeypatch.setattr(cloud_sync, 'is_cloud_auth_error', lambda exc: isinstance(exc, AuthError))
+    monkeypatch.setattr(cloud_sync, 'is_cloud_temporary_unavailable_error', lambda exc: False)
+    monkeypatch.setattr(
+        cloud_sync,
+        '_push_spore_mosaic_for_observation',
+        lambda *a, **kw: cloud_sync.MOSAIC_STATUS_GENERATED,
+    )
+
+    with pytest.raises(AuthError):
+        cloud_sync.backfill_public_spore_mosaics(_FakeClient())
+
+
+def test_backfill_metadata_helper_non_auth_failure_does_not_stop_mosaic(db, monkeypatch, capfd):
+    _insert_obs(db, cloud_id='1')
+
+    monkeypatch.setattr(
+        cloud_sync,
+        '_ensure_metadata_only_microscope_images_for_observation',
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('meta boom')),
+    )
+    calls: list[int] = []
+    monkeypatch.setattr(
+        cloud_sync,
+        '_push_spore_mosaic_for_observation',
+        lambda client, local_id, cloud_id: (calls.append(local_id) or cloud_sync.MOSAIC_STATUS_GENERATED),
+    )
+
+    result = cloud_sync.backfill_public_spore_mosaics(_FakeClient())
+    assert calls == [1]
+    assert result['generated'] == 1
+    stdout, _stderr = capfd.readouterr()
+    assert 'Mosaic image metadata: observation failed' in stdout
+    assert 'meta boom' in stdout
+
+
+def test_ensure_wrapper_iterates_only_unlinked_microscope_images(db, monkeypatch, capfd):
+    obs_local = _insert_obs(db, cloud_id='745')
+    linked = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/a.jpg',
+        image_type='microscope', cloud_id='already-linked',
+    )
+    unlinked = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/b.jpg',
+        image_type='microscope', cloud_id=None,
+    )
+    _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/c.jpg',
+        image_type='field', cloud_id=None,
+    )
+    _insert_measurement(db, image_id=unlinked, length_um=9.0, width_um=4.0, measurement_type='manual')
+
+    seen: list[int] = []
+
+    def fake_helper(client, local_id, cloud_id, image_row):
+        seen.append(image_row['id'])
+        return 'x'
+
+    monkeypatch.setattr(
+        cloud_sync,
+        '_ensure_metadata_only_microscope_image_for_public_spores',
+        fake_helper,
+    )
+
+    counts = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
+        _FakeClient(), obs_local, '745',
+    )
+    assert seen == [unlinked]  # only unlinked microscope image is considered
+    assert counts['considered'] == 1
+    assert counts['ensured'] == 1
+    assert linked not in seen
+
+
 # ── CLI smoke: --help parses ────────────────────────────────────────────────
 
 
@@ -522,4 +945,5 @@ def test_cli_help_runs_without_touching_db_or_cloud():
     assert '--observation-cloud-id' in result.stdout
     assert '--limit' in result.stdout
     assert '--no-push-measurements' in result.stdout
+    assert '--no-ensure-image-metadata' in result.stdout
     assert '--diagnose' in result.stdout
