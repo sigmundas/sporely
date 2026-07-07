@@ -22,7 +22,9 @@ from utils.spore_thumbnail_render import (
     DESKTOP_PADDING_X,
     DESKTOP_PADDING_Y,
     SporeThumbnailInputs,
+    plan_spore_thumbnail,
     render_spore_thumbnail,
+    render_spore_thumbnail_common_crop,
     rotate_point_qt,
 )
 
@@ -194,6 +196,66 @@ def test_render_gallery_rotation_composes_with_orient():
 
 
 # ── Sanity: crop centred on measurement after orient ────────────────────────
+
+
+def test_plan_matches_render_natural_crop_dimensions():
+    """The plan's natural crop dims match the crop rect the single-shot
+    renderer would produce for a source that is large enough for the
+    natural crop to fit without clamping."""
+    src = _solid((1000, 1000))
+    inputs = SporeThumbnailInputs(
+        p1_x=500, p1_y=550, p2_x=500, p2_y=450,   # length 100 UP
+        p3_x=480, p3_y=500, p4_x=520, p4_y=500,   # width 40 horizontal
+        orient=True,
+    )
+    plan = plan_spore_thumbnail(inputs, src.width, src.height)
+    # Natural padded crop = width+2*px, length+2*py.
+    assert plan.natural_crop_width == pytest.approx(40 + 2 * DESKTOP_PADDING_X, abs=1e-6)
+    assert plan.natural_crop_height == pytest.approx(100 + 2 * DESKTOP_PADDING_Y, abs=1e-6)
+    # Rotation is 0 → oriented dims match source.
+    assert (plan.oriented_width, plan.oriented_height) == (src.width, src.height)
+
+
+def test_common_crop_render_produces_exact_output_size():
+    src = _solid((1000, 1000))
+    inputs = SporeThumbnailInputs(
+        p1_x=500, p1_y=550, p2_x=500, p2_y=450,
+        p3_x=480, p3_y=500, p4_x=520, p4_y=500,
+        orient=True,
+    )
+    plan = plan_spore_thumbnail(inputs, src.width, src.height)
+    out = render_spore_thumbnail_common_crop(
+        src, plan,
+        common_crop_width=200, common_crop_height=300,
+        output_width=213, output_height=320,
+    )
+    assert out.image.size == (213, 320)
+    # Fits inside a large source → no padding.
+    assert out.padded_x is False and out.padded_y is False
+    # Polygon inside output bounds.
+    assert out.polygon_tile_local is not None
+    for x, y in out.polygon_tile_local:
+        assert 0 <= x <= 213
+        assert 0 <= y <= 320
+
+
+def test_common_crop_pads_when_source_smaller():
+    src = _solid((30, 30))
+    inputs = SporeThumbnailInputs(
+        p1_x=15, p1_y=18, p2_x=15, p2_y=12,
+        p3_x=14, p3_y=15, p4_x=16, p4_y=15,
+        orient=True,
+    )
+    plan = plan_spore_thumbnail(inputs, src.width, src.height)
+    out = render_spore_thumbnail_common_crop(
+        src, plan,
+        common_crop_width=200, common_crop_height=200,
+        output_width=200, output_height=200,
+    )
+    # Source is much smaller than the requested crop on both axes.
+    assert out.padded_x is True
+    assert out.padded_y is True
+    assert out.image.size == (200, 200)
 
 
 def test_render_polygon_centered_in_tile():

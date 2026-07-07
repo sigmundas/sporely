@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
 
 from ui import observations_tab
@@ -969,6 +970,62 @@ def test_refresh_image_gallery_summary_shows_default_ai_crop_for_field_images(mo
     items = captured["items"]
     assert items[0]["crop_box"] == pytest.approx(ai_image_prep.get_default_ai_crop_rect(1000, 500))
     assert items[0]["crop_source_size"] == (1000, 500)
+
+
+def test_gallery_click_updates_thumbnail_preview_and_ai_selection(qapp, tmp_path):
+    image_path = tmp_path / "gallery-image.png"
+    image = QImage(24, 24, QImage.Format_ARGB32)
+    image.fill(QColor("#ff6600"))
+    assert image.save(str(image_path))
+
+    selected_rows: list[int] = []
+    preview_pixmaps: list[object] = []
+    ai_updates: list[str] = []
+
+    class _FakeSelectionModel:
+        def selectedRows(self):
+            if not selected_rows:
+                return []
+            return [SimpleNamespace(row=lambda: selected_rows[-1])]
+
+    class _FakeImageTable:
+        def selectRow(self, row):
+            selected_rows.append(int(row))
+
+        def selectionModel(self):
+            return _FakeSelectionModel()
+
+    fake_dialog = SimpleNamespace(
+        image_metadata=[
+            {
+                "filepath": str(image_path),
+                "filename": image_path.name,
+            }
+        ],
+        image_results=[SimpleNamespace(filepath=str(image_path))],
+        image_table=_FakeImageTable(),
+        thumbnail_label=SimpleNamespace(
+            width=lambda: 120,
+            height=lambda: 120,
+            setPixmap=lambda pixmap: preview_pixmaps.append(pixmap),
+            setText=lambda _text: None,
+        ),
+        tr=lambda text: text,
+        _apply_metadata_from_index=lambda _index: None,
+        _update_ai_controls_state=lambda: ai_updates.append("controls"),
+        _update_ai_table=lambda: ai_updates.append("table"),
+        _ai_selected_index=None,
+        selected_image_index=-1,
+    )
+    fake_dialog.on_image_selected = MethodType(observations_tab.ObservationDetailsDialog.on_image_selected, fake_dialog)
+
+    observations_tab.ObservationDetailsDialog._on_gallery_image_clicked(fake_dialog, 7, str(image_path))
+
+    assert selected_rows == [0]
+    assert fake_dialog.selected_image_index == 0
+    assert fake_dialog._ai_selected_index == 0
+    assert preview_pixmaps
+    assert ai_updates == ["controls", "table"]
 
 
 def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):

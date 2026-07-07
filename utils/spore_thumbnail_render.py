@@ -7,17 +7,25 @@ doubt about any behavior here, the source of truth is
 `ui/main_window.py::create_spore_thumbnail` — the constants, the rotation
 formula, and the corner-computation math are copied verbatim.
 
-Deliberate simplifications relative to the Qt version:
+Two-phase interface:
 
-* No painting inside the returned tile (no rectangle draw, no dimension
-  text). The web frontend draws the overlay itself, so we return the
-  polygon as data.
-* No colour matching / stroke picking — that's a paint concern.
-* No `selected` / `measurement_num` numbering.
+* `plan_spore_thumbnail(inputs, source_width, source_height)` computes
+  the oriented image size, the oriented measurement corners, the
+  measurement centre, and the *natural* padded crop rectangle for one
+  measurement — without opening the source image. Callers use these to
+  pick a common crop size across an observation.
+* `render_spore_thumbnail_common_crop(source, plan, common_crop_w,
+  common_crop_h, output_w, output_h)` rotates the image, cuts a fixed
+  `common_crop_w × common_crop_h` window centred on the measurement
+  (edge-shifted to stay inside the source when possible), resizes to
+  `output_w × output_h`, and transforms the polygon into the tile's
+  local frame.
 
-Everything else — the orient rotation, the source-rect origin offset, the
-crop bounds, and the tile-local polygon coordinates — matches the desktop
-pipeline exactly.
+`render_spore_thumbnail` is the desktop-parity single-shot wrapper
+(variable width, height-fixed) used by the desktop Analysis gallery and
+by the older single-tile call path. Cloud mosaic generation now goes
+through the two-phase interface so every tile in an observation shares
+the same visible size.
 """
 
 from __future__ import annotations
@@ -38,7 +46,13 @@ DESKTOP_PADDING_Y_EXPORT = 10.0
 
 @dataclass(frozen=True)
 class SporeThumbnailInputs:
-    """One measurement, in source-image pixel space."""
+    """One measurement, in source-image pixel space.
+
+    `length_um` / `width_um` are the physical measurements (µm). They are
+    optional so the desktop single-shot path keeps working without them,
+    but the cloud mosaic path uses them to plan a common physical crop
+    frame — see `plan_spore_thumbnail`.
+    """
 
     p1_x: float
     p1_y: float
@@ -53,6 +67,45 @@ class SporeThumbnailInputs:
     padding_x_px: float = DESKTOP_PADDING_X
     padding_y_px: float = DESKTOP_PADDING_Y
     background_rgb: tuple[int, int, int] = (18, 18, 22)
+    length_um: float | None = None
+    width_um: float | None = None
+
+
+@dataclass(frozen=True)
+class SporeThumbnailPlan:
+    """Per-measurement geometry needed to pick a common crop size.
+
+    All coordinates in `oriented_*` and `natural_*` fields are in the
+    *oriented* image frame (after the QT-parity rotation).
+
+    `length_axis_px_per_um` / `width_axis_px_per_um` are derived per
+    measurement from the pixel distance between p1/p2 (length) and
+    p3/p4 (width) divided by the user's physical measurement in µm.
+    Cross-image scale variance is why the mosaic pipeline needs a
+    common *physical* crop rather than a common pixel crop.
+    """
+
+    inputs: SporeThumbnailInputs
+    source_width: int
+    source_height: int
+    rotation_deg: float
+    oriented_width: int
+    oriented_height: int
+    oriented_corners: list[tuple[float, float]] | None
+    oriented_p1: tuple[float, float]
+    oriented_p2: tuple[float, float]
+    center_x: float
+    center_y: float
+    natural_crop_width: float
+    natural_crop_height: float
+    reason_no_polygon: str | None
+    length_axis_px: float = 0.0
+    width_axis_px: float = 0.0
+    length_axis_px_per_um: float | None = None
+    width_axis_px_per_um: float | None = None
+    natural_crop_width_um: float | None = None
+    natural_crop_height_um: float | None = None
+    scale_fallback_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +126,28 @@ class SporeThumbnailRenderResult:
     polygon_tile_local: list[tuple[float, float]] | None
     crop_rect_source_pixels: tuple[int, int, int, int]
     rotation_deg: float
+    reason_no_polygon: str | None
+
+
+@dataclass(frozen=True)
+class SporeThumbnailCommonCropResult:
+    """Output of `render_spore_thumbnail_common_crop`.
+
+    `image` is exactly `output_width × output_height` for every tile in
+    the observation. `padded_x`/`padded_y` are True when the crop needed
+    background fill on that axis (source smaller than the common crop);
+    they should be rare because the common crop is chosen from the
+    widest natural crop actually seen.
+    """
+
+    image: Image.Image
+    output_width: int
+    output_height: int
+    polygon_tile_local: list[tuple[float, float]] | None
+    crop_rect_before_shift: tuple[float, float, float, float]
+    crop_rect_after_shift: tuple[int, int, int, int]
+    padded_x: bool
+    padded_y: bool
     reason_no_polygon: str | None
 
 
@@ -117,6 +192,26 @@ def _rotated_source_offset(src_w: int, src_h: int, angle_deg: float) -> tuple[fl
     return -min_x, -min_y
 
 
+def _rotated_bounding_box(src_w: int, src_h: int, angle_deg: float) -> tuple[int, int]:
+    """Return the bounding-box size of an image after Qt-style rotation.
+
+    Matches PIL's `img.rotate(-angle, expand=True)` output size.
+    """
+    cx = src_w / 2.0
+    cy = src_h / 2.0
+    corners = [
+        rotate_point_qt(0.0, 0.0, cx, cy, angle_deg),
+        rotate_point_qt(float(src_w), 0.0, cx, cy, angle_deg),
+        rotate_point_qt(float(src_w), float(src_h), cx, cy, angle_deg),
+        rotate_point_qt(0.0, float(src_h), cx, cy, angle_deg),
+    ]
+    xs = [c[0] for c in corners]
+    ys = [c[1] for c in corners]
+    width = int(math.ceil(max(xs) - min(xs)))
+    height = int(math.ceil(max(ys) - min(ys)))
+    return max(1, width), max(1, height)
+
+
 def _rotate_pil_qt_style(
     img: Image.Image,
     angle_deg: float,
@@ -138,7 +233,7 @@ def _rotate_pil_qt_style(
     )
 
 
-# ── Renderer ────────────────────────────────────────────────────────────────
+# ── Utilities ───────────────────────────────────────────────────────────────
 
 
 def _to_rgb(img: Image.Image, background_rgb: tuple[int, int, int]) -> Image.Image:
@@ -149,6 +244,339 @@ def _to_rgb(img: Image.Image, background_rgb: tuple[int, int, int]) -> Image.Ima
         flat.paste(img, mask=img.split()[3])
         return flat
     return img.convert("RGB")
+
+
+def _compute_rotation_and_axes(
+    inputs: SporeThumbnailInputs,
+) -> tuple[float, tuple[float, float], tuple[float, float]]:
+    """Return (rotation_deg, unit_length_axis, unit_width_axis) for the
+    orient direction. Small `line1_len == 0` case returns 0-length axes;
+    callers must handle it as a `zero_length_axis` degenerate."""
+    line1_vx = inputs.p2_x - inputs.p1_x
+    line1_vy = inputs.p2_y - inputs.p1_y
+    line1_len = math.hypot(line1_vx, line1_vy)
+    rotation_angle = float(inputs.extra_rotation_deg or 0.0)
+    if inputs.orient and line1_len > 0:
+        current_angle = math.atan2(line1_vx, -line1_vy)
+        rotation_angle += -math.degrees(current_angle)
+    return rotation_angle, (line1_vx, line1_vy), (line1_len, 0.0)
+
+
+def _map_point_to_oriented(
+    x: float, y: float,
+    src_w: int, src_h: int,
+    rotation_angle: float,
+    offset: tuple[float, float],
+) -> tuple[float, float]:
+    rx, ry = rotate_point_qt(x, y, src_w / 2.0, src_h / 2.0, rotation_angle)
+    return rx + offset[0], ry + offset[1]
+
+
+# ── Plan phase ──────────────────────────────────────────────────────────────
+
+
+def plan_spore_thumbnail(
+    inputs: SporeThumbnailInputs,
+    source_width: int,
+    source_height: int,
+) -> SporeThumbnailPlan:
+    """Compute oriented geometry + natural padded crop without opening the source.
+
+    The returned plan tells the caller:
+    * the size of the rotated image (needed to bound the common crop),
+    * the measurement centre in the oriented frame (the crop is centred here),
+    * the oriented rectangle corners (or None + reason_no_polygon), and
+    * the natural width/height of the padded crop for this measurement.
+
+    Callers combine the natural dims across the observation to pick a
+    single common crop size that fits the widest and tallest measurement.
+    """
+    if source_width < 1 or source_height < 1:
+        raise ValueError("source_width and source_height must be positive")
+
+    src_w = int(source_width)
+    src_h = int(source_height)
+
+    p1x, p1y = float(inputs.p1_x), float(inputs.p1_y)
+    p2x, p2y = float(inputs.p2_x), float(inputs.p2_y)
+    have_p34 = (
+        inputs.p3_x is not None and inputs.p3_y is not None
+        and inputs.p4_x is not None and inputs.p4_y is not None
+    )
+    p3x = float(inputs.p3_x) if have_p34 else 0.0
+    p3y = float(inputs.p3_y) if have_p34 else 0.0
+    p4x = float(inputs.p4_x) if have_p34 else 0.0
+    p4y = float(inputs.p4_y) if have_p34 else 0.0
+
+    line1_vx = p2x - p1x
+    line1_vy = p2y - p1y
+    line1_len = math.hypot(line1_vx, line1_vy)
+
+    rotation_angle = float(inputs.extra_rotation_deg or 0.0)
+    if inputs.orient and line1_len > 0:
+        current_angle = math.atan2(line1_vx, -line1_vy)
+        rotation_angle += -math.degrees(current_angle)
+
+    if abs(rotation_angle) > 0.1:
+        offset = _rotated_source_offset(src_w, src_h, rotation_angle)
+        oriented_w, oriented_h = _rotated_bounding_box(src_w, src_h, rotation_angle)
+        p1x_o, p1y_o = _map_point_to_oriented(p1x, p1y, src_w, src_h, rotation_angle, offset)
+        p2x_o, p2y_o = _map_point_to_oriented(p2x, p2y, src_w, src_h, rotation_angle, offset)
+        if have_p34:
+            p3x_o, p3y_o = _map_point_to_oriented(p3x, p3y, src_w, src_h, rotation_angle, offset)
+            p4x_o, p4y_o = _map_point_to_oriented(p4x, p4y, src_w, src_h, rotation_angle, offset)
+        else:
+            p3x_o = p3y_o = p4x_o = p4y_o = 0.0
+    else:
+        rotation_angle = 0.0
+        oriented_w, oriented_h = src_w, src_h
+        p1x_o, p1y_o = p1x, p1y
+        p2x_o, p2y_o = p2x, p2y
+        p3x_o, p3y_o = p3x, p3y
+        p4x_o, p4y_o = p4x, p4y
+
+    # Recompute in oriented frame.
+    line1_vx = p2x_o - p1x_o
+    line1_vy = p2y_o - p1y_o
+    line1_len = math.hypot(line1_vx, line1_vy)
+
+    reason_no_polygon: str | None = None
+    corners_oriented: list[tuple[float, float]] | None = None
+    if line1_len <= 0:
+        reason_no_polygon = "zero_length_axis"
+    elif not have_p34:
+        reason_no_polygon = "missing_p3p4"
+    else:
+        line2_vx = p4x_o - p3x_o
+        line2_vy = p4y_o - p3y_o
+        width_px = math.hypot(line2_vx, line2_vy)
+        if width_px <= 0:
+            reason_no_polygon = "zero_width_axis"
+        else:
+            center_x = ((p1x_o + p2x_o) * 0.5 + (p3x_o + p4x_o) * 0.5) * 0.5
+            center_y = ((p1y_o + p2y_o) * 0.5 + (p3y_o + p4y_o) * 0.5) * 0.5
+            axis_length_x = -line1_vx / line1_len
+            axis_length_y = -line1_vy / line1_len
+            axis_width_x = -axis_length_y
+            axis_width_y = axis_length_x
+            hl = line1_len * 0.5
+            hw = width_px * 0.5
+            corners_oriented = [
+                (center_x + axis_width_x * (-hw) + axis_length_x * (-hl),
+                 center_y + axis_width_y * (-hw) + axis_length_y * (-hl)),
+                (center_x + axis_width_x * (hw) + axis_length_x * (-hl),
+                 center_y + axis_width_y * (hw) + axis_length_y * (-hl)),
+                (center_x + axis_width_x * (hw) + axis_length_x * (hl),
+                 center_y + axis_width_y * (hw) + axis_length_y * (hl)),
+                (center_x + axis_width_x * (-hw) + axis_length_x * (hl),
+                 center_y + axis_width_y * (-hw) + axis_length_y * (hl)),
+            ]
+
+    if corners_oriented is not None:
+        source_points: Sequence[tuple[float, float]] = corners_oriented
+    else:
+        source_points = [(p1x_o, p1y_o), (p2x_o, p2y_o)]
+
+    min_x = min(p[0] for p in source_points) - inputs.padding_x_px
+    max_x = max(p[0] for p in source_points) + inputs.padding_x_px
+    min_y = min(p[1] for p in source_points) - inputs.padding_y_px
+    max_y = max(p[1] for p in source_points) + inputs.padding_y_px
+
+    natural_w = max_x - min_x
+    natural_h = max_y - min_y
+    center_x = (min_x + max_x) * 0.5
+    center_y = (min_y + max_y) * 0.5
+
+    # Physical-scale planning. Distances are rotation-invariant, so we
+    # can compute px_per_um from the *unoriented* points (line1_len /
+    # line2_len were preserved through rotation, but working directly
+    # from the unoriented axis lengths avoids any ambiguity if the
+    # caller passed unoriented p1/p2 with a non-zero orient rotation
+    # and the caller expected the raw axis measurements).
+    length_axis_px = math.hypot(
+        inputs.p2_x - inputs.p1_x, inputs.p2_y - inputs.p1_y,
+    )
+    if have_p34:
+        width_axis_px = math.hypot(
+            float(inputs.p4_x) - float(inputs.p3_x),
+            float(inputs.p4_y) - float(inputs.p3_y),
+        )
+    else:
+        width_axis_px = 0.0
+
+    length_um = inputs.length_um if inputs.length_um and inputs.length_um > 0 else None
+    width_um = inputs.width_um if inputs.width_um and inputs.width_um > 0 else None
+
+    length_axis_px_per_um: float | None = None
+    if length_um is not None and length_axis_px > 0:
+        length_axis_px_per_um = length_axis_px / length_um
+
+    width_axis_px_per_um: float | None = None
+    scale_fallback_reason: str | None = None
+    if width_um is not None and width_axis_px > 0:
+        width_axis_px_per_um = width_axis_px / width_um
+    elif length_axis_px_per_um is not None:
+        width_axis_px_per_um = length_axis_px_per_um
+        if width_um is None:
+            scale_fallback_reason = "width_um_missing_use_length_scale"
+        elif width_axis_px <= 0:
+            scale_fallback_reason = "width_axis_px_missing_use_length_scale"
+
+    natural_crop_width_um: float | None = None
+    natural_crop_height_um: float | None = None
+    if length_um is not None and length_axis_px_per_um and length_axis_px_per_um > 0:
+        natural_crop_height_um = length_um + 2.0 * (
+            inputs.padding_y_px / length_axis_px_per_um
+        )
+    if width_axis_px_per_um and width_axis_px_per_um > 0:
+        # Prefer the measured width if we have it, otherwise fall back
+        # to the width axis's pixel span (which is 0 without p3/p4 —
+        # tile then relies on the length-derived width padding alone).
+        effective_width_um = width_um if width_um is not None else 0.0
+        natural_crop_width_um = effective_width_um + 2.0 * (
+            inputs.padding_x_px / width_axis_px_per_um
+        )
+
+    return SporeThumbnailPlan(
+        inputs=inputs,
+        source_width=src_w,
+        source_height=src_h,
+        rotation_deg=rotation_angle,
+        oriented_width=oriented_w,
+        oriented_height=oriented_h,
+        oriented_corners=corners_oriented,
+        oriented_p1=(p1x_o, p1y_o),
+        oriented_p2=(p2x_o, p2y_o),
+        center_x=center_x,
+        center_y=center_y,
+        natural_crop_width=natural_w,
+        natural_crop_height=natural_h,
+        reason_no_polygon=reason_no_polygon,
+        length_axis_px=length_axis_px,
+        width_axis_px=width_axis_px,
+        length_axis_px_per_um=length_axis_px_per_um,
+        width_axis_px_per_um=width_axis_px_per_um,
+        natural_crop_width_um=natural_crop_width_um,
+        natural_crop_height_um=natural_crop_height_um,
+        scale_fallback_reason=scale_fallback_reason,
+    )
+
+
+# ── Common-crop render ─────────────────────────────────────────────────────
+
+
+def _rotate_source_if_needed(
+    source: Image.Image,
+    rotation_deg: float,
+    background_rgb: tuple[int, int, int],
+) -> Image.Image:
+    if abs(rotation_deg) <= 0.1:
+        return _to_rgb(source, background_rgb)
+    rotated = _rotate_pil_qt_style(source, rotation_deg, background_rgb)
+    return _to_rgb(rotated, background_rgb)
+
+
+def render_spore_thumbnail_common_crop(
+    source: Image.Image,
+    plan: SporeThumbnailPlan,
+    *,
+    common_crop_width: int,
+    common_crop_height: int,
+    output_width: int,
+    output_height: int,
+) -> SporeThumbnailCommonCropResult:
+    """Render a fixed-size crop centred on the measurement.
+
+    * `common_crop_width` / `common_crop_height` are the size in oriented
+      source-image pixels of the crop window. Chosen from
+      `max(plan.natural_crop_*)` across the observation.
+    * The window is centred on `plan.center_x/y` and edge-shifted so it
+      stays inside the oriented source image where possible.
+    * If the oriented source is smaller than the crop on either axis,
+      background pixels fill the remainder (`padded_x` / `padded_y`
+      report that condition).
+    * The resulting `common_crop_width × common_crop_height` canvas is
+      resized to `output_width × output_height` (LANCZOS).
+    """
+    if common_crop_width < 1 or common_crop_height < 1:
+        raise ValueError("common crop dimensions must be positive")
+    if output_width < 1 or output_height < 1:
+        raise ValueError("output dimensions must be positive")
+
+    background_rgb = plan.inputs.background_rgb
+    oriented = _rotate_source_if_needed(source, plan.rotation_deg, background_rgb)
+    working_w, working_h = oriented.size
+
+    # Ideal crop rect centred on the measurement.
+    crop_x_ideal = plan.center_x - common_crop_width / 2.0
+    crop_y_ideal = plan.center_y - common_crop_height / 2.0
+    crop_rect_before = (crop_x_ideal, crop_y_ideal, float(common_crop_width), float(common_crop_height))
+
+    padded_x = working_w < common_crop_width
+    padded_y = working_h < common_crop_height
+
+    if not padded_x:
+        crop_x_shifted = max(0.0, min(crop_x_ideal, working_w - common_crop_width))
+    else:
+        crop_x_shifted = 0.0
+    if not padded_y:
+        crop_y_shifted = max(0.0, min(crop_y_ideal, working_h - common_crop_height))
+    else:
+        crop_y_shifted = 0.0
+
+    crop_x_int = int(round(crop_x_shifted))
+    crop_y_int = int(round(crop_y_shifted))
+
+    if not padded_x and not padded_y:
+        canvas = oriented.crop((
+            crop_x_int, crop_y_int,
+            crop_x_int + common_crop_width, crop_y_int + common_crop_height,
+        ))
+        paste_dx = -crop_x_int
+        paste_dy = -crop_y_int
+    else:
+        canvas = Image.new("RGB", (common_crop_width, common_crop_height), background_rgb)
+        # Where the oriented image's (0, 0) lands in canvas coords.
+        paste_dx = (
+            (common_crop_width - working_w) // 2
+            if padded_x
+            else -crop_x_int
+        )
+        paste_dy = (
+            (common_crop_height - working_h) // 2
+            if padded_y
+            else -crop_y_int
+        )
+        canvas.paste(oriented, (paste_dx, paste_dy))
+
+    crop_rect_after = (crop_x_int, crop_y_int, common_crop_width, common_crop_height)
+
+    if (common_crop_width, common_crop_height) != (output_width, output_height):
+        canvas = canvas.resize((output_width, output_height), Image.LANCZOS)
+
+    scale_x = output_width / float(common_crop_width)
+    scale_y = output_height / float(common_crop_height)
+    polygon_tile_local: list[tuple[float, float]] | None = None
+    if plan.oriented_corners is not None:
+        polygon_tile_local = [
+            ((x + paste_dx) * scale_x, (y + paste_dy) * scale_y)
+            for x, y in plan.oriented_corners
+        ]
+
+    return SporeThumbnailCommonCropResult(
+        image=canvas,
+        output_width=output_width,
+        output_height=output_height,
+        polygon_tile_local=polygon_tile_local,
+        crop_rect_before_shift=crop_rect_before,
+        crop_rect_after_shift=crop_rect_after,
+        padded_x=padded_x,
+        padded_y=padded_y,
+        reason_no_polygon=plan.reason_no_polygon,
+    )
+
+
+# ── Desktop-parity single-shot renderer ─────────────────────────────────────
 
 
 def render_spore_thumbnail(
@@ -169,109 +597,30 @@ def render_spore_thumbnail(
         raise ValueError("height_px too small")
 
     src_w, src_h = source.size
+    plan = plan_spore_thumbnail(inputs, src_w, src_h)
 
-    p1x, p1y = inputs.p1_x, inputs.p1_y
-    p2x, p2y = inputs.p2_x, inputs.p2_y
-    have_p34 = (
-        inputs.p3_x is not None and inputs.p3_y is not None
-        and inputs.p4_x is not None and inputs.p4_y is not None
-    )
-    p3x = float(inputs.p3_x) if have_p34 else 0.0
-    p3y = float(inputs.p3_y) if have_p34 else 0.0
-    p4x = float(inputs.p4_x) if have_p34 else 0.0
-    p4y = float(inputs.p4_y) if have_p34 else 0.0
+    oriented = _rotate_source_if_needed(source, plan.rotation_deg, inputs.background_rgb)
+    working_w, working_h = oriented.size
 
-    line1_vx = p2x - p1x
-    line1_vy = p2y - p1y
-    line1_len = math.hypot(line1_vx, line1_vy)
+    # Desktop behaviour: crop is AABB(natural crop) *clamped* to oriented
+    # image bounds. That may make it smaller than the natural size, but
+    # this preserves the single-shot desktop output. The common-crop
+    # path above deliberately avoids clamping so cross-tile widths are
+    # comparable.
+    natural_min_x = plan.center_x - plan.natural_crop_width / 2.0
+    natural_max_x = plan.center_x + plan.natural_crop_width / 2.0
+    natural_min_y = plan.center_y - plan.natural_crop_height / 2.0
+    natural_max_y = plan.center_y + plan.natural_crop_height / 2.0
 
-    # Rotation exactly as in create_spore_thumbnail.
-    rotation_angle = float(inputs.extra_rotation_deg or 0.0)
-    if inputs.orient and line1_len > 0:
-        current_angle = math.atan2(line1_vx, -line1_vy)
-        rotation_angle += -math.degrees(current_angle)
-
-    applied_rotation = 0.0
-    working_img = source
-    working_w, working_h = src_w, src_h
-    if abs(rotation_angle) > 0.1:
-        rotated_img = _rotate_pil_qt_style(source, rotation_angle, inputs.background_rgb)
-        off_x, off_y = _rotated_source_offset(src_w, src_h, rotation_angle)
-
-        def _map(px: float, py: float) -> tuple[float, float]:
-            rx, ry = rotate_point_qt(px, py, src_w / 2.0, src_h / 2.0, rotation_angle)
-            return rx + off_x, ry + off_y
-
-        p1x, p1y = _map(p1x, p1y)
-        p2x, p2y = _map(p2x, p2y)
-        if have_p34:
-            p3x, p3y = _map(p3x, p3y)
-            p4x, p4y = _map(p4x, p4y)
-        # Recompute in rotated frame — matches lines 17444-17454 of main_window.py.
-        line1_vx = p2x - p1x
-        line1_vy = p2y - p1y
-        line1_len = math.hypot(line1_vx, line1_vy)
-        applied_rotation = rotation_angle
-        working_img = rotated_img
-        working_w, working_h = rotated_img.size
-
-    # Compute the measurement rectangle in the (possibly rotated) frame.
-    reason_no_polygon: str | None = None
-    corners_img: list[tuple[float, float]] | None = None
-    if line1_len <= 0:
-        reason_no_polygon = "zero_length_axis"
-    elif not have_p34:
-        reason_no_polygon = "missing_p3p4"
-    else:
-        line2_vx = p4x - p3x
-        line2_vy = p4y - p3y
-        width_px = math.hypot(line2_vx, line2_vy)
-        if width_px <= 0:
-            reason_no_polygon = "zero_width_axis"
-        else:
-            center_x = ((p1x + p2x) * 0.5 + (p3x + p4x) * 0.5) * 0.5
-            center_y = ((p1y + p2y) * 0.5 + (p3y + p4y) * 0.5) * 0.5
-            axis_length_x = -line1_vx / line1_len
-            axis_length_y = -line1_vy / line1_len
-            axis_width_x = -axis_length_y
-            axis_width_y = axis_length_x
-            hl = line1_len * 0.5
-            hw = width_px * 0.5
-            corners_img = [
-                (center_x + axis_width_x * (-hw) + axis_length_x * (-hl),
-                 center_y + axis_width_y * (-hw) + axis_length_y * (-hl)),
-                (center_x + axis_width_x * (hw) + axis_length_x * (-hl),
-                 center_y + axis_width_y * (hw) + axis_length_y * (-hl)),
-                (center_x + axis_width_x * (hw) + axis_length_x * (hl),
-                 center_y + axis_width_y * (hw) + axis_length_y * (hl)),
-                (center_x + axis_width_x * (-hw) + axis_length_x * (hl),
-                 center_y + axis_width_y * (-hw) + axis_length_y * (hl)),
-            ]
-
-    # Crop bounds. Follow desktop math: AABB(corners) + padding, clamped.
-    # When we can't build a rectangle, fall back to p1/p2 AABB so we still
-    # produce a tile the caller can display without a measurement outline.
-    if corners_img is not None:
-        crop_source_points: Sequence[tuple[float, float]] = corners_img
-    else:
-        crop_source_points = [(p1x, p1y), (p2x, p2y)]
-
-    min_x = min(p[0] for p in crop_source_points) - inputs.padding_x_px
-    max_x = max(p[0] for p in crop_source_points) + inputs.padding_x_px
-    min_y = min(p[1] for p in crop_source_points) - inputs.padding_y_px
-    max_y = max(p[1] for p in crop_source_points) + inputs.padding_y_px
-
-    crop_x = max(0, int(math.floor(min_x)))
-    crop_y = max(0, int(math.floor(min_y)))
-    crop_x2 = min(working_w, int(math.ceil(max_x)))
-    crop_y2 = min(working_h, int(math.ceil(max_y)))
+    crop_x = max(0, int(math.floor(natural_min_x)))
+    crop_y = max(0, int(math.floor(natural_min_y)))
+    crop_x2 = min(working_w, int(math.ceil(natural_max_x)))
+    crop_y2 = min(working_h, int(math.ceil(natural_max_y)))
     crop_w = max(1, crop_x2 - crop_x)
     crop_h = max(1, crop_y2 - crop_y)
 
-    cropped = working_img.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
-    cropped = _to_rgb(cropped, inputs.background_rgb)
+    cropped = oriented.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
 
-    # scale_factor = size / crop.height  — same as create_spore_thumbnail.
     scale_factor = float(height_px) / float(max(1, crop_h))
     tile_h = int(round(crop_h * scale_factor))
     tile_w = max(1, int(round(crop_w * scale_factor)))
@@ -279,10 +628,10 @@ def render_spore_thumbnail(
         cropped = cropped.resize((tile_w, tile_h), Image.LANCZOS)
 
     polygon_tile_local: list[tuple[float, float]] | None = None
-    if corners_img is not None:
+    if plan.oriented_corners is not None:
         polygon_tile_local = [
             ((cx_ - crop_x) * scale_factor, (cy_ - crop_y) * scale_factor)
-            for cx_, cy_ in corners_img
+            for cx_, cy_ in plan.oriented_corners
         ]
 
     return SporeThumbnailRenderResult(
@@ -291,6 +640,6 @@ def render_spore_thumbnail(
         tile_height_px=tile_h,
         polygon_tile_local=polygon_tile_local,
         crop_rect_source_pixels=(crop_x, crop_y, crop_w, crop_h),
-        rotation_deg=applied_rotation,
-        reason_no_polygon=reason_no_polygon,
+        rotation_deg=plan.rotation_deg,
+        reason_no_polygon=plan.reason_no_polygon,
     )

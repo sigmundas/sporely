@@ -12344,6 +12344,15 @@ def _push_spore_mosaic_for_observation(
     for mid, reason in manifest.skipped:
         print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
 
+    print(
+        (
+            f'[cloud_sync] Mosaic physical crop plan obs {obs_local_id}: '
+            f'common_crop_um=({manifest.common_crop_width_um:.3f},{manifest.common_crop_height_um:.3f}) '
+            f'output_tile=({manifest.tile_width_px},{manifest.tile_height_px})'
+        ),
+        flush=True,
+    )
+
     # Diagnostic log for the first few tiles so we can see, at a glance,
     # whether the polygon geometry landed for a given observation. Useful
     # when a backfill run "succeeds" but the landing tile still looks
@@ -12365,14 +12374,21 @@ def _push_spore_mosaic_for_observation(
         print(
             (
                 f'[cloud_sync]   Mosaic diag m={tile.measurement_id} '
-                f'p1={diag.get("have_p1")} p2={diag.get("have_p2")} '
                 f'p3={diag.get("have_p3")} p4={diag.get("have_p4")} '
                 f'gallery_rot={diag.get("gallery_rotation_deg")} '
                 f'rot={diag.get("rotation_deg")} '
-                f'crop_src={diag.get("crop_rect_source_pixels")} '
-                f'tile_render={diag.get("tile_size_after_render")} '
-                f'tile_slot={diag.get("tile_size_after_fit")} '
-                f'paste_off={diag.get("paste_offset")} '
+                f'L_um={diag.get("length_um")} W_um={diag.get("width_um")} '
+                f'L_axis_px={diag.get("length_axis_px")} '
+                f'W_axis_px={diag.get("width_axis_px")} '
+                f'L_pxpum={diag.get("length_axis_px_per_um")} '
+                f'W_pxpum={diag.get("width_axis_px_per_um")} '
+                f'fallback={diag.get("scale_fallback_reason")} '
+                f'natural_um={diag.get("natural_crop_um")} '
+                f'common_um={diag.get("common_crop_um")} '
+                f'crop_px={diag.get("crop_px")} '
+                f'crop_after={diag.get("crop_rect_after_shift")} '
+                f'padded=({diag.get("padded_x")},{diag.get("padded_y")}) '
+                f'tile=({tile.w_px},{tile.h_px}) '
                 f'polygon={diag.get("polygon_present")} '
                 f'reason={diag.get("reason_no_polygon")} '
                 f'poly_bounds={diag.get("polygon_bounds")}'

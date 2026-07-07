@@ -6,25 +6,30 @@ module composes a single WebP sprite atlas containing one tile per
 measurement plus a manifest describing where each tile lives in the atlas
 and the tile-local polygon of the measurement rectangle.
 
-The actual orient/crop/polygon math is delegated to
-`utils.spore_thumbnail_render.render_spore_thumbnail`, which is a
-line-for-line PIL port of `main_window.create_spore_thumbnail`. Both
-paths therefore produce the same rectangle for the same measurement.
+Common-crop model
+-----------------
+All tiles for one observation share a single visible size. The pipeline:
 
-Design notes
-------------
-* Pure layout helpers (grid math, atlas placement, content-digest, storage
-  key) stay in this file and can be tested without Pillow.
-* Each atlas slot is `tile_size_px × tile_size_px` (default 320). The
-  rendered tile may be narrower than the slot (desktop tiles are
-  height-fixed with variable width); we paste it centred and adjust the
-  polygon coords so they land on the pasted pixels.
-* Overlay JSON stores `{"polygon": [{x, y}, …], "style": "b"}`. The old
-  line overlay is not emitted. Landing ignores unknown / missing overlays.
-* When p3/p4 are missing on a measurement we DO NOT synthesise a
-  rectangle from the µm ratio — the tile still renders (oriented, cropped
-  around p1/p2 with padding), but `overlay_json` is `None` and the
-  landing site falls back to a bare tile.
+1. Plans each measurement (oriented rotation, corners, centre, and the
+   natural padded crop) via `plan_spore_thumbnail` — no PIL work.
+2. Picks a common crop size = max natural crop width across the
+   observation × max natural crop height across the observation. That
+   size is centred on each measurement, edge-shifted to stay inside the
+   oriented source, and only padded with background when the source is
+   genuinely smaller than the requested crop.
+3. Rescales every crop to the same output tile size (height fixed to
+   `tile_size_px`; width follows the common aspect ratio).
+4. Composes tiles into a grid with cells equal to the output tile size,
+   so there is no filler and every mosaic tile row exposes the same
+   `w_px`/`h_px`.
+
+Overlay JSON stores `{"polygon": [{x, y}, …], "style": "b"}` in the
+final visible tile's local coordinate system. The old line overlay is
+not emitted. Landing ignores unknown / missing overlays.
+
+When p3/p4 are missing on a measurement we DO NOT synthesise a
+rectangle — the tile still renders (oriented, cropped around p1/p2 with
+padding), but `overlay_json` is `None`.
 """
 
 from __future__ import annotations
@@ -40,7 +45,9 @@ from PIL import Image
 
 from utils.spore_thumbnail_render import (
     SporeThumbnailInputs,
-    render_spore_thumbnail,
+    SporeThumbnailPlan,
+    plan_spore_thumbnail,
+    render_spore_thumbnail_common_crop,
 )
 
 
@@ -112,6 +119,12 @@ class SporeMosaicManifest:
     width_px: int
     height_px: int
     tile_size_px: int
+    tile_width_px: int = 0
+    tile_height_px: int = 0
+    common_crop_width_px: int = 0
+    common_crop_height_px: int = 0
+    common_crop_width_um: float = 0.0
+    common_crop_height_um: float = 0.0
     tiles: list[SporeMosaicTile] = field(default_factory=list)
     skipped: list[tuple[int, str]] = field(default_factory=list)
 
@@ -130,6 +143,21 @@ def compute_mosaic_grid(tile_count: int, tile_size_px: int) -> tuple[int, int, i
     return cols, rows, cols * tile_size_px, rows * tile_size_px
 
 
+def compute_mosaic_grid_cells(
+    tile_count: int,
+    cell_width_px: int,
+    cell_height_px: int,
+) -> tuple[int, int, int, int]:
+    """Grid math when atlas cells are non-square (common-crop model)."""
+    if tile_count < 1:
+        raise ValueError("tile_count must be >= 1")
+    if cell_width_px < 1 or cell_height_px < 1:
+        raise ValueError("cell dimensions must be positive")
+    cols = max(1, math.ceil(math.sqrt(tile_count)))
+    rows = max(1, math.ceil(tile_count / cols))
+    return cols, rows, cols * cell_width_px, rows * cell_height_px
+
+
 def place_tiles(tile_count: int, tile_size_px: int) -> list[tuple[int, int, int, int]]:
     """Return per-slot (x_px, y_px, w_px, h_px) rectangles in row-major order."""
     cols, _rows, _w, _h = compute_mosaic_grid(tile_count, tile_size_px)
@@ -139,6 +167,99 @@ def place_tiles(tile_count: int, tile_size_px: int) -> list[tuple[int, int, int,
         col = index % cols
         out.append((col * tile_size_px, row * tile_size_px, tile_size_px, tile_size_px))
     return out
+
+
+def place_tiles_cells(
+    tile_count: int,
+    cell_width_px: int,
+    cell_height_px: int,
+) -> list[tuple[int, int, int, int]]:
+    """Row-major placement using rectangular atlas cells."""
+    cols, _rows, _w, _h = compute_mosaic_grid_cells(tile_count, cell_width_px, cell_height_px)
+    out: list[tuple[int, int, int, int]] = []
+    for index in range(tile_count):
+        row = index // cols
+        col = index % cols
+        out.append((
+            col * cell_width_px, row * cell_height_px,
+            cell_width_px, cell_height_px,
+        ))
+    return out
+
+
+# ── Crop plan ───────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class MosaicCropPlan:
+    """Plan describing the common visible tile geometry for an observation.
+
+    Fields are named after the *physical* crop. `common_crop_width` /
+    `common_crop_height` are kept in **pixels** for backward-compatible
+    diagnostics, but the source of truth is `common_crop_width_um` /
+    `common_crop_height_um`. Per-tile pixel dims are derived at render
+    time from each measurement's own `px_per_um` (see
+    `build_spore_mosaic`).
+    """
+
+    common_crop_width_um: float
+    common_crop_height_um: float
+    output_tile_width: int
+    output_tile_height: int
+    common_crop_width: int = 0   # legacy: representative pixel width
+    common_crop_height: int = 0  # legacy: representative pixel height
+
+
+def plan_common_crop(
+    plans: Sequence[SporeThumbnailPlan],
+    output_height_px: int,
+) -> MosaicCropPlan | None:
+    """Pick a common crop size from per-measurement natural crops.
+
+    The plan is expressed in **micrometres**: the widest / tallest
+    natural crop across all measurements, in µm, becomes the common
+    physical crop for the observation. The visible tile height is
+    fixed to `output_height_px`; the visible tile width follows the
+    common physical aspect ratio. That guarantees a consistent
+    µm-per-output-pixel mapping across every tile in the observation,
+    even when the underlying microscope frames have different
+    px-per-µm.
+
+    Plans without a valid physical scale (missing length_um or a zero
+    length axis) are silently ignored — the caller filters them.
+    """
+    if not plans:
+        return None
+    scaled = [
+        p for p in plans
+        if p.natural_crop_width_um and p.natural_crop_height_um
+        and p.natural_crop_width_um > 0 and p.natural_crop_height_um > 0
+    ]
+    if not scaled:
+        return None
+    if output_height_px < 8:
+        raise ValueError("output_height_px too small")
+
+    common_w_um = max(p.natural_crop_width_um for p in scaled)
+    common_h_um = max(p.natural_crop_height_um for p in scaled)
+    out_h = int(output_height_px)
+    out_w = max(1, int(round(common_w_um * out_h / common_h_um)))
+
+    # Representative pixel dims (rounded off the widest measurement).
+    # Kept only for backwards-compatible diagnostics; the per-tile
+    # pixel crop is recomputed from each plan's own scale.
+    rep_plan = max(scaled, key=lambda p: p.natural_crop_height_um)
+    rep_w_px = max(1, int(math.ceil(common_w_um * (rep_plan.width_axis_px_per_um or 0))))
+    rep_h_px = max(1, int(math.ceil(common_h_um * (rep_plan.length_axis_px_per_um or 0))))
+
+    return MosaicCropPlan(
+        common_crop_width_um=float(common_w_um),
+        common_crop_height_um=float(common_h_um),
+        output_tile_width=out_w,
+        output_tile_height=out_h,
+        common_crop_width=rep_w_px,
+        common_crop_height=rep_h_px,
+    )
 
 
 # ── Storage key ─────────────────────────────────────────────────────────────
@@ -204,12 +325,12 @@ def build_spore_mosaic(
     background: tuple[int, int, int] = DEFAULT_BACKGROUND_RGB,
     overlay_style: str = DEFAULT_RECTANGLE_STYLE,
 ) -> SporeMosaicManifest | None:
-    """Compose a WebP atlas + tile manifest for the given measurements.
+    """Compose a common-crop WebP atlas + tile manifest.
 
-    Each source is rendered through the desktop-parity renderer. The
-    resulting non-square tile is pasted centred into a `tile_size_px`
-    square slot; the polygon coordinates are shifted by the paste offset
-    so they land on the pasted pixels.
+    Every tile in the returned manifest has the SAME `w_px` / `h_px`,
+    chosen from the widest and tallest natural padded crops across the
+    input measurements. Landing therefore renders a uniform strip
+    without extra padding logic.
     """
     if tile_size_px < 8:
         raise ValueError("tile_size_px too small")
@@ -217,16 +338,69 @@ def build_spore_mosaic(
         return None
 
     ordered = list(sources)
-    slot_rects = place_tiles(len(ordered), tile_size_px)
-    _cols, _rows, mosaic_w, mosaic_h = compute_mosaic_grid(len(ordered), tile_size_px)
+
+    # ── Plan phase ──────────────────────────────────────────────────────
+    plans: list[tuple[SporeCropSource, SporeThumbnailPlan]] = []
+    plan_skipped: list[tuple[int, str]] = []
+    for src in ordered:
+        if src.source_width < 1 or src.source_height < 1:
+            plan_skipped.append((src.measurement_id, "invalid source dims"))
+            continue
+        inputs = SporeThumbnailInputs(
+            p1_x=src.p1_x, p1_y=src.p1_y,
+            p2_x=src.p2_x, p2_y=src.p2_y,
+            p3_x=src.p3_x, p3_y=src.p3_y,
+            p4_x=src.p4_x, p4_y=src.p4_y,
+            orient=True,
+            extra_rotation_deg=float(src.gallery_rotation_deg or 0),
+            background_rgb=background,
+            length_um=src.length_um,
+            width_um=src.width_um,
+        )
+        try:
+            plan = plan_spore_thumbnail(inputs, src.source_width, src.source_height)
+        except Exception as exc:  # pragma: no cover
+            plan_skipped.append((src.measurement_id, f"plan failed: {exc}"))
+            continue
+        if (
+            plan.length_axis_px_per_um is None
+            or plan.width_axis_px_per_um is None
+            or plan.natural_crop_width_um is None
+            or plan.natural_crop_height_um is None
+        ):
+            # Physical scale could not be derived. Rather than render at
+            # the wrong scale, skip the measurement and record why.
+            plan_skipped.append((
+                src.measurement_id,
+                "missing physical scale (need length_um / p1p2)",
+            ))
+            continue
+        plans.append((src, plan))
+
+    if not plans:
+        return None
+
+    crop_plan = plan_common_crop([p for _s, p in plans], output_height_px=tile_size_px)
+    if crop_plan is None:
+        return None
+
+    common_w_um = crop_plan.common_crop_width_um
+    common_h_um = crop_plan.common_crop_height_um
+    out_w = crop_plan.output_tile_width
+    out_h = crop_plan.output_tile_height
+
+    # ── Layout ──────────────────────────────────────────────────────────
+    tile_count = len(plans)
+    slot_rects = place_tiles_cells(tile_count, out_w, out_h)
+    _cols, _rows, mosaic_w, mosaic_h = compute_mosaic_grid_cells(tile_count, out_w, out_h)
     canvas = Image.new("RGB", (mosaic_w, mosaic_h), background)
 
-    tiles: list[SporeMosaicTile] = []
-    skipped: list[tuple[int, str]] = []
+    tiles: list[SporeMosaicTile] = list()
+    skipped: list[tuple[int, str]] = list(plan_skipped)
     open_cache: dict[Path, Image.Image] = {}
 
     try:
-        for src, (slot_x, slot_y, slot_w, slot_h) in zip(ordered, slot_rects):
+        for (src, plan), (slot_x, slot_y, slot_w, slot_h) in zip(plans, slot_rects):
             try:
                 img = open_cache.get(src.source_path)
                 if img is None:
@@ -239,62 +413,45 @@ def build_spore_mosaic(
                 skipped.append((src.measurement_id, f"open failed: {exc}"))
                 continue
 
-            inputs = SporeThumbnailInputs(
-                p1_x=src.p1_x, p1_y=src.p1_y,
-                p2_x=src.p2_x, p2_y=src.p2_y,
-                p3_x=src.p3_x, p3_y=src.p3_y,
-                p4_x=src.p4_x, p4_y=src.p4_y,
-                orient=True,
-                extra_rotation_deg=float(src.gallery_rotation_deg or 0),
-                background_rgb=background,
-            )
+            # Per-tile physical → oriented pixel crop, using this
+            # measurement's own scale. Two measurements with the same
+            # length_um / width_um but different px_per_um therefore
+            # end up cropping different oriented pixel windows — which
+            # is exactly what makes them display at the same physical
+            # scale after the resize below.
+            length_scale = plan.length_axis_px_per_um or 0.0
+            width_scale = plan.width_axis_px_per_um or 0.0
+            crop_w_px = max(1, int(round(common_w_um * width_scale)))
+            crop_h_px = max(1, int(round(common_h_um * length_scale)))
+
             try:
-                result = render_spore_thumbnail(img, inputs, height_px=tile_size_px)
+                result = render_spore_thumbnail_common_crop(
+                    img, plan,
+                    common_crop_width=crop_w_px,
+                    common_crop_height=crop_h_px,
+                    output_width=out_w,
+                    output_height=out_h,
+                )
             except Exception as exc:  # pragma: no cover
                 skipped.append((src.measurement_id, f"render failed: {exc}"))
                 continue
 
-            # Scale down further if the rendered width exceeds a slot (e.g.
-            # unusually wide-aspect crop). Rare in practice because oriented
-            # spores are taller-than-wide, but a safety net.
-            fitted_img = result.image
-            fitted_w = result.tile_width_px
-            fitted_h = result.tile_height_px
-            if fitted_w > slot_w or fitted_h > slot_h:
-                downscale = min(slot_w / fitted_w, slot_h / fitted_h)
-                fitted_w = max(1, int(round(fitted_w * downscale)))
-                fitted_h = max(1, int(round(fitted_h * downscale)))
-                fitted_img = fitted_img.resize((fitted_w, fitted_h), Image.LANCZOS)
-                polygon_local: list[tuple[float, float]] | None = (
-                    [(x * downscale, y * downscale) for x, y in result.polygon_tile_local]
-                    if result.polygon_tile_local is not None
-                    else None
-                )
-            else:
-                polygon_local = (
-                    list(result.polygon_tile_local)
-                    if result.polygon_tile_local is not None
-                    else None
-                )
+            canvas.paste(result.image, (slot_x, slot_y))
 
-            # Centre the (possibly non-square) tile in its square atlas slot.
-            paste_off_x = (slot_w - fitted_w) // 2
-            paste_off_y = (slot_h - fitted_h) // 2
-            canvas.paste(fitted_img, (slot_x + paste_off_x, slot_y + paste_off_y))
-
-            # The public tile row exposes the VISIBLE sub-rect of the atlas,
-            # not the whole square slot — otherwise the landing frontend
-            # would show black side bands wherever the rendered tile was
-            # narrower than the slot. Overlay coordinates therefore stay
-            # in the visible tile's local frame (0..fitted_w × 0..fitted_h)
-            # and never need to be shifted by the paste offset.
-            visible_x = slot_x + paste_off_x
-            visible_y = slot_y + paste_off_y
             overlay = (
-                build_overlay_polygon(polygon_local, style=overlay_style)
-                if polygon_local is not None
+                build_overlay_polygon(result.polygon_tile_local, style=overlay_style)
+                if result.polygon_tile_local is not None
                 else None
             )
+
+            polygon_bounds = None
+            if result.polygon_tile_local is not None:
+                xs = [p[0] for p in result.polygon_tile_local]
+                ys = [p[1] for p in result.polygon_tile_local]
+                polygon_bounds = (
+                    round(min(xs), 2), round(min(ys), 2),
+                    round(max(xs), 2), round(max(ys), 2),
+                )
 
             diagnostics = {
                 "measurement_id": src.measurement_id,
@@ -303,33 +460,42 @@ def build_spore_mosaic(
                 "have_p3": src.p3_x is not None and src.p3_y is not None,
                 "have_p4": src.p4_x is not None and src.p4_y is not None,
                 "gallery_rotation_deg": src.gallery_rotation_deg,
-                "rotation_deg": round(result.rotation_deg, 3),
-                "crop_rect_source_pixels": result.crop_rect_source_pixels,
-                "tile_size_after_render": (
-                    result.tile_width_px, result.tile_height_px,
+                "rotation_deg": round(plan.rotation_deg, 3),
+                "length_um": src.length_um,
+                "width_um": src.width_um,
+                "length_axis_px": round(plan.length_axis_px, 3),
+                "width_axis_px": round(plan.width_axis_px, 3),
+                "length_axis_px_per_um": (
+                    round(plan.length_axis_px_per_um, 4)
+                    if plan.length_axis_px_per_um is not None else None
                 ),
-                "tile_size_after_fit": (fitted_w, fitted_h),
-                "paste_offset": (paste_off_x, paste_off_y),
-                "visible_rect_in_atlas": (visible_x, visible_y, fitted_w, fitted_h),
+                "width_axis_px_per_um": (
+                    round(plan.width_axis_px_per_um, 4)
+                    if plan.width_axis_px_per_um is not None else None
+                ),
+                "scale_fallback_reason": plan.scale_fallback_reason,
+                "natural_crop_um": (
+                    round(plan.natural_crop_width_um or 0.0, 3),
+                    round(plan.natural_crop_height_um or 0.0, 3),
+                ),
+                "common_crop_um": (round(common_w_um, 3), round(common_h_um, 3)),
+                "crop_px": (crop_w_px, crop_h_px),
+                "output_tile": (out_w, out_h),
+                "crop_rect_before_shift": tuple(round(v, 2) for v in result.crop_rect_before_shift),
+                "crop_rect_after_shift": result.crop_rect_after_shift,
+                "padded_x": result.padded_x,
+                "padded_y": result.padded_y,
+                "visible_rect_in_atlas": (slot_x, slot_y, out_w, out_h),
                 "polygon_present": overlay is not None,
                 "reason_no_polygon": result.reason_no_polygon,
-                "polygon_bounds": (
-                    (
-                        round(min(p[0] for p in polygon_local), 2),
-                        round(min(p[1] for p in polygon_local), 2),
-                        round(max(p[0] for p in polygon_local), 2),
-                        round(max(p[1] for p in polygon_local), 2),
-                    )
-                    if polygon_local
-                    else None
-                ),
+                "polygon_bounds": polygon_bounds,
             }
 
             tiles.append(SporeMosaicTile(
                 measurement_id=src.measurement_id,
                 cloud_measurement_id=src.cloud_measurement_id,
                 cloud_image_id=src.cloud_image_id,
-                x_px=visible_x, y_px=visible_y, w_px=fitted_w, h_px=fitted_h,
+                x_px=slot_x, y_px=slot_y, w_px=out_w, h_px=out_h,
                 overlay_json=overlay,
                 diagnostics=diagnostics,
             ))
@@ -353,6 +519,12 @@ def build_spore_mosaic(
         width_px=mosaic_w,
         height_px=mosaic_h,
         tile_size_px=tile_size_px,
+        tile_width_px=out_w,
+        tile_height_px=out_h,
+        common_crop_width_px=crop_plan.common_crop_width,
+        common_crop_height_px=crop_plan.common_crop_height,
+        common_crop_width_um=common_w_um,
+        common_crop_height_um=common_h_um,
         tiles=tiles,
         skipped=skipped,
     )
