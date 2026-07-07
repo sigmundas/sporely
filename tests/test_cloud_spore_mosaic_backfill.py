@@ -177,6 +177,7 @@ def test_backfill_finds_eligible_observation_and_calls_pusher(db, monkeypatch):
         'skipped_no_public_spores': 0,
         'skipped_no_measurement_cloud_ids': 0,
         'skipped_missing_source_images': 0,
+        'skipped_unchanged': 0,
         'failed': 0,
     }
 

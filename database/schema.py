@@ -1777,6 +1777,12 @@ def init_database():
         "ALTER TABLE observations ADD COLUMN location_public INTEGER DEFAULT 1",
         "ALTER TABLE observations ADD COLUMN location_precision TEXT DEFAULT 'exact'",
         "ALTER TABLE observations ADD COLUMN spore_data_visibility TEXT DEFAULT 'public'",
+        # Local-only cache of the last sync's public spore-mosaic input signature
+        # (SHA-1 over eligible measurements + source-file fingerprints + pipeline
+        # version). Never synced to cloud. Cleared when local mosaic inputs
+        # change (see _clear_local_mosaic_signature). NULL means "no cached
+        # signature yet"; treated as "always rebuild".
+        "ALTER TABLE observations ADD COLUMN mosaic_signature TEXT",
         "ALTER TABLE images ADD COLUMN cloud_id TEXT",
         "ALTER TABLE images ADD COLUMN synced_at TIMESTAMP",
     ):

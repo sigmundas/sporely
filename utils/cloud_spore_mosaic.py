@@ -58,6 +58,13 @@ DEFAULT_WEBP_QUALITY = 82
 DEFAULT_BACKGROUND_RGB: tuple[int, int, int] = (18, 18, 22)
 CONTENT_DIGEST_HEX_CHARS = 16
 
+# Bumped when the rendered bytes or tile manifest can change semantically
+# (crop math, orient logic, tile grid, overlay payload schema, WebP quality,
+# background colour, etc). The sync-time mosaic signature includes this
+# constant so a version bump forces every observation to rebuild once and
+# store its new signature — even if the local rows didn't change.
+MOSAIC_PIPELINE_VERSION = 1
+
 RECTANGLE_STYLE_A = "a"
 RECTANGLE_STYLE_B = "b"
 DEFAULT_RECTANGLE_STYLE = RECTANGLE_STYLE_B
