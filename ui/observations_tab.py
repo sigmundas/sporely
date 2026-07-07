@@ -3030,7 +3030,7 @@ class ObservationsTab(QWidget):
             noun = self.tr("observation ID") if len(ids) == 1 else self.tr("observation IDs")
             return f"{noun} {ids_text}" if ids_text else noun
 
-        if last_status in {"error", "blocked"} and not blocked_ids:
+        if last_status in {"error", "blocked", "warning"} and not blocked_ids:
             failure = last_summary or (error_messages[0] if error_messages else self.tr("Cloud sync failed."))
             action = (
                 self.tr("Logged in, click Sync now to sync.")
@@ -3072,7 +3072,7 @@ class ObservationsTab(QWidget):
             message = self.tr("Ready.")
             tone = "info"
 
-        self._status_hint_controller.set_status(message, tone=tone)
+        self._status_hint_controller.set_hint(message, tone=tone)
 
     def _set_status_progress_visible(self, visible: bool) -> None:
         visible = bool(visible)
@@ -3649,12 +3649,13 @@ class ObservationsTab(QWidget):
         if original_summary:
             message = f"{message}\n{original_summary}"
         self._record_cloud_sync_status(message, errors=errors, status="warning" if (errors or deleted_count) else "ok")
+        self._refresh_cloud_sync_idle_hint()
         if not self._cloud_sync_show_status:
             return
         self._set_status_progress_visible(False)
         self._set_status_progress_cancel_visible(False)
         self._set_status_progress("", 0, 1)
-        self.set_status_message(message, level=level, auto_clear_ms=12000 if level != "success" else 5000)
+        self.set_status_message(message, level=level, auto_clear_ms=20000 if level != "success" else 5000)
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
         if conflicts:
@@ -3667,6 +3668,7 @@ class ObservationsTab(QWidget):
         summary = self._summarize_sync_error(message)
         is_account_mismatch = str(message or "").strip() == ACCOUNT_MISMATCH_MESSAGE
         self._record_cloud_sync_status(summary, errors=[message], status="blocked" if is_account_mismatch else "error")
+        self._refresh_cloud_sync_idle_hint()
         if not self._cloud_sync_show_status:
             return
         self._set_status_progress_visible(False)
@@ -3681,13 +3683,13 @@ class ObservationsTab(QWidget):
             self.set_status_message(
                 self.tr("Cloud sync blocked: this database is linked to another account."),
                 level="warning",
-                auto_clear_ms=12000,
+                auto_clear_ms=20000,
             )
             return
         self.set_status_message(
             summary,
             level="warning",
-            auto_clear_ms=12000,
+            auto_clear_ms=20000,
         )
         if is_image_too_large_for_plan_error(message):
             self._build_cloud_sync_error_details_dialog(

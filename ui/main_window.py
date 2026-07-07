@@ -162,7 +162,7 @@ from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
-from utils.cloud_sync import is_cloud_auth_error
+from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
 from .delegates import SpeciesItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
@@ -1916,16 +1916,16 @@ class SettingsHubDialog(QDialog):
         try:
             user_info = client.fetch_current_user_info()
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             user_info = {}
         account_email = str(user_info.get("email") or account_email or "").strip()
         try:
             cloud_profile = client.fetch_profile()
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             cloud_profile = {}
         from utils.cloud_sync import fetch_cloud_usage_summary
@@ -1933,8 +1933,8 @@ class SettingsHubDialog(QDialog):
         try:
             summary = fetch_cloud_usage_summary(client)
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             summary = {}
 
@@ -2406,6 +2406,42 @@ class SettingsHubDialog(QDialog):
             pass
         self._on_cloud_logout_changed()
 
+    def _mark_cloud_session_needs_reauth(self, exc: Exception | None = None) -> None:
+        """Flag the session as needing sign-in without wiping stored tokens.
+
+        Called when profile fetch/save hits an auth-shaped error.  The
+        stored refresh token might still be valid — a rotation race or
+        transient Supabase blip can look identical to a truly dead
+        session — so we leave the tokens on disk and surface a sticky
+        hint instead of forcing a re-login on next restart.
+        """
+        summary = self.tr(
+            "Sporely Cloud session needs sign-in.  Sign in again, then click Sync now."
+        )
+        error_text = str(exc or "").strip()
+        try:
+            update_app_settings(
+                {
+                    "cloud_last_sync_status": "reauth_required",
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_error_count": 1 if error_text else 0,
+                    "cloud_last_sync_errors_json": json.dumps(
+                        [error_text] if error_text else []
+                    ),
+                }
+            )
+        except Exception:
+            pass
+        main_window = self._settings_hub_main_window()
+        observations_tab = getattr(main_window, "observations_tab", None) if main_window else None
+        if observations_tab is not None:
+            updater = getattr(observations_tab, "_refresh_cloud_sync_idle_hint", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
+
     def _save_profile(self) -> bool:
         username = self._profile_username.text().strip().lstrip("@")
         name = self._profile_name.text().strip()
@@ -2429,8 +2465,8 @@ class SettingsHubDialog(QDialog):
                 )
                 self._cloud_profile_loaded_user_id = str(getattr(client, "user_id", "") or "").strip()
             except Exception as exc:
-                if is_cloud_auth_error(exc):
-                    self._clear_invalid_cloud_session()
+                if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                    self._mark_cloud_session_needs_reauth(exc)
                 QMessageBox.warning(
                     self,
                     self.tr("Profile Not Synced"),
@@ -3796,16 +3832,16 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     hide_progress(False)
                 except Exception:
                     pass
-            set_status = getattr(observations_tab, "set_status_message", None)
-            if callable(set_status):
-                try:
-                    set_status(summary, level="warning", auto_clear_ms=12000)
-                except Exception:
-                    pass
             updater = getattr(observations_tab, "_refresh_cloud_sync_idle_hint", None)
             if callable(updater):
                 try:
                     updater()
+                except Exception:
+                    pass
+            set_status = getattr(observations_tab, "set_status_message", None)
+            if callable(set_status):
+                try:
+                    set_status(summary, level="warning", auto_clear_ms=20000)
                 except Exception:
                     pass
         self._refresh_cloud_sync_ui()

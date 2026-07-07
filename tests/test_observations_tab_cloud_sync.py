@@ -483,6 +483,7 @@ def test_cloud_sync_plan_limit_error_opens_detail_dialog(monkeypatch):
         _cloud_sync_run_refresh_flow=False,
         _finish_manual_refresh_flow=lambda: calls.setdefault("finished", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("recorded", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _cloud_sync_show_status=True,
         _set_status_progress_visible=lambda *args, **kwargs: None,
         _set_status_progress_cancel_visible=lambda *args, **kwargs: None,
@@ -523,6 +524,7 @@ def test_cloud_sync_error_for_invalid_login_clears_progress_and_reports_sign_in_
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
         _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
         set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
@@ -702,6 +704,7 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
         _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
         set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
@@ -1115,9 +1118,9 @@ def test_cloud_sync_idle_hint_lists_observation_ids(monkeypatch):
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Cloud sync blocked for observation ID 401." in message
     assert "Cloud sync pending for observation IDs 390, 389, 385." in message
     assert "Open Sync now to review the error details, then click Sync now to retry uploads." in message
@@ -1152,9 +1155,9 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Cloud sync sign-in failed. Please check your email and password." in message
     assert "Sign in again, then click Sync now to retry uploads." in message
     assert "Cloud sync pending" not in message
@@ -1191,11 +1194,260 @@ def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkey
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Logged in, click Sync now to sync." in message
     assert "Sign in again, then click Sync now to retry uploads." not in message
+
+
+def test_refresh_cloud_sync_idle_hint_uses_persistent_channel(monkeypatch):
+    """The failure summary must go through set_hint, not set_status, so it
+    stays visible instead of reverting to 'Ready.' after the toast timer."""
+    hint_controller = _DummyHintController()
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync failed.",
+            "cloud_last_sync_errors_json": json.dumps(["Cloud sync failed."]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert [call[0] for call in hint_controller.calls] == ["hint"]
+    _, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert timeout_ms is None
+    assert tone == "warning"
+    assert "Cloud sync failed." in message
+
+
+def test_on_cloud_sync_error_installs_sticky_hint_even_when_toast_hidden(monkeypatch):
+    """After a sync error, the persistent hint must reflect the failure so
+    that when the temporary toast expires the bar does not fall back to
+    'Ready.'.  Must happen regardless of _cloud_sync_show_status."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {}
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        observations_tab,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        refresh_observations=lambda **kwargs: None,
+        _cloud_sync_run_refresh_flow=False,
+        _finish_manual_refresh_flow=lambda: None,
+        _summarize_sync_error=lambda msg: "Cloud sync failed.",
+        _record_cloud_sync_status=(
+            lambda summary, *, errors, status: stored_settings.update(
+                {
+                    "cloud_last_sync_status": status,
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_errors_json": json.dumps(errors or []),
+                }
+            )
+        ),
+        _cloud_sync_show_status=False,
+        _notify_active_settings_hub_cloud_status=lambda: None,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+        ),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_error(tab, "boom")
+
+    # No toast (show_status is False), but a persistent hint must be installed.
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected persistent hint to be installed"
+    _, message, tone, _ = hint_calls[-1]
+    assert tone == "warning"
+    assert "Cloud sync failed." in message
+
+
+def test_on_cloud_sync_finished_clean_resets_persistent_hint(monkeypatch):
+    """A clean, no-error sync must reset the persistent hint away from any
+    prior failure state."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {
+        "cloud_last_sync_status": "error",
+        "cloud_last_sync_summary": "Cloud sync failed.",
+        "cloud_last_sync_errors_json": json.dumps(["Cloud sync failed."]),
+    }
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        observations_tab,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "summarize_sync_change_activity",
+        lambda result: {"any_real_change": False},
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "summarize_sync_issues",
+        lambda errors: {
+            "conflicts": [],
+            "conflict_count": 0,
+            "blocked_count": 0,
+            "retryable_count": 0,
+            "other_count": 0,
+            "blocked_errors": [],
+            "retryable_errors": [],
+            "other_errors": [],
+            "display_count": 0,
+        },
+    )
+    monkeypatch.setattr(observations_tab, "format_sync_summary", lambda summary: "")
+    monkeypatch.setattr(
+        observations_tab, "format_original_upload_summary", lambda summary: ""
+    )
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        refresh_observations=lambda **kwargs: None,
+        _cloud_sync_run_refresh_flow=False,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=(
+            lambda summary, *, errors, status: stored_settings.update(
+                {
+                    "cloud_last_sync_status": status,
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_errors_json": json.dumps(errors or []),
+                }
+            )
+        ),
+        _cloud_sync_show_status=False,
+        _notify_active_settings_hub_cloud_status=lambda: None,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+        ),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        tab,
+        {"pushed": 0, "pulled": 0, "errors": [], "deleted_remote": []},
+    )
+
+    assert stored_settings.get("cloud_last_sync_status") == "ok"
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected persistent hint to be installed after clean sync"
+    _, message, tone, _ = hint_calls[-1]
+    assert tone == "info"
+    assert message == "Ready."
+
+
+def test_on_cloud_login_failure_toast_survives_idle_hint_refresh(monkeypatch, qapp):
+    """_on_cloud_login_failure must call the persistent hint refresh FIRST
+    and only THEN overlay a long-lived warning toast, so that the visible
+    toast is not cut short by the default 4 s timer of a later set_status."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {}
+
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        main_window,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+
+    fake_settings_db = SimpleNamespace(set_setting=lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window, "SettingsDB", fake_settings_db)
+
+    status_calls: list[tuple[str, str, int]] = []
+
+    def _fake_set_status_message(message, level="info", auto_clear_ms=8000):
+        status_calls.append((str(message), str(level), int(auto_clear_ms)))
+
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    observations_tab_fake = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        _reset_status_progress=lambda: None,
+        _set_status_progress_visible=lambda visible: None,
+        set_status_message=_fake_set_status_message,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(
+                observations_tab_fake
+            )
+        ),
+    )
+
+    dialog = SimpleNamespace(
+        tr=lambda text: text,
+        observations_tab=observations_tab_fake,
+        _refresh_cloud_sync_ui=lambda: None,
+        parent=lambda: None,
+    )
+
+    # Bypass the modal QMessageBox to keep the test headless.
+    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: 0)
+
+    main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_failure(dialog, "Bad creds")
+
+    # 1) Persistent hint installed (via set_hint), reflecting the failure.
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected _refresh_cloud_sync_idle_hint to run first"
+    _, hint_message, hint_tone, _ = hint_calls[-1]
+    assert hint_tone == "warning"
+    assert "sign-in failed" in hint_message.lower()
+
+    # 2) Toast came AFTER the hint, and lasts at least 20 s.
+    assert status_calls, "expected set_status_message toast"
+    toast_message, toast_level, toast_ms = status_calls[-1]
+    assert toast_level == "warning"
+    assert toast_ms >= 20000
+    assert "sign-in failed" in toast_message.lower()
+
+    # 3) The hint refresh ran before the toast — verify no additional
+    #    set_status went to the controller AFTER the hint was installed
+    #    (which would otherwise reset the timer to the 4 s default).
+    last_hint_idx = max(i for i, c in enumerate(hint_controller.calls) if c[0] == "hint")
+    later_status_calls = [c for c in hint_controller.calls[last_hint_idx + 1 :] if c[0] == "status"]
+    assert later_status_calls == [], "no set_status must run after the persistent hint is installed"
 
 
 def test_observation_status_info_maps_draft_private_friends_public():

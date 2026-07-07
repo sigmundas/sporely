@@ -472,22 +472,33 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     assert events[:4] == [
         "reset_progress",
         "progress_visible:False",
-        "status:Cloud sync sign-in failed. Please check your email and password.:warning",
         "idle_hint",
+        "status:Cloud sync sign-in failed. Please check your email and password.:warning",
     ]
     assert "settings_refresh" in events
     assert "badge_refresh" in events
     assert warning_calls
 
 
-def test_cloud_profile_refresh_auth_failure_clears_invalid_session(monkeypatch):
+def test_cloud_profile_refresh_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatch):
+    """A CloudTemporarilyUnavailableError chained from a generic
+    ``auth refresh failed`` string is a benign rotation-race shape.  It
+    must NOT wipe the stored refresh token and must NOT flag the
+    session for re-auth — the next request may well succeed after the
+    rotated token is picked up from settings."""
     events: list[str] = []
     clear_calls: list[str] = []
+    settings_payload: dict[str, object] = {}
 
     fake_client = SimpleNamespace(
         user_id="user-123",
         fetch_current_user_info=lambda: (_ for _ in ()).throw(_auth_refresh_failure()),
-        fetch_profile=lambda: pytest.fail("profile fetch should not run after auth failure"),
+        fetch_profile=lambda: {},
+    )
+    fake_main_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _refresh_cloud_sync_idle_hint=lambda: events.append("idle_hint"),
+        ),
     )
     fake_dialog = SimpleNamespace(
         tr=lambda text: text,
@@ -499,6 +510,76 @@ def test_cloud_profile_refresh_auth_failure_clears_invalid_session(monkeypatch):
         _cloud_profile_loaded_user_id="user-123",
         _cached_cloud_client=lambda: fake_client,
         _on_cloud_logout_changed=lambda: events.append("logout"),
+        _settings_hub_main_window=lambda: fake_main_window,
+        _render_profile_avatar=lambda: None,
+        _artsobs_dialog=None,
+    )
+    fake_dialog._mark_cloud_session_needs_reauth = MethodType(
+        main_window.SettingsHubDialog._mark_cloud_session_needs_reauth,
+        fake_dialog,
+    )
+    fake_dialog._clear_invalid_cloud_session = MethodType(
+        main_window.SettingsHubDialog._clear_invalid_cloud_session,
+        fake_dialog,
+    )
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
+    monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+    monkeypatch.setattr(
+        main_window, "update_app_settings", lambda payload: settings_payload.update(payload)
+    )
+    monkeypatch.setattr(
+        cloud_sync, "fetch_cloud_usage_summary", lambda client: {}, raising=False
+    )
+
+    main_window.SettingsHubDialog._refresh_cloud_profile_fields(fake_dialog, force=True)
+
+    # Stored tokens preserved: no wipe, no logout emitted.
+    assert clear_calls == []
+    assert "logout" not in events
+    # Session state NOT flagged for re-auth — this wrapper is transient.
+    assert "cloud_last_sync_status" not in settings_payload
+    # Idle hint NOT re-computed either.
+    assert "idle_hint" not in events
+
+
+def test_cloud_profile_refresh_reauth_required_flags_session_without_wiping(monkeypatch):
+    """A terminal CloudReauthRequiredError must flag the session as
+    needing sign-in AND leave the stored tokens alone.  Wiping happens
+    only via explicit user logout."""
+    events: list[str] = []
+    clear_calls: list[str] = []
+    settings_payload: dict[str, object] = {}
+
+    reauth_exc = cloud_sync.CloudReauthRequiredError(
+        'Refresh failed (status=400): {"error":"invalid_grant"}'
+    )
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        fetch_current_user_info=lambda: (_ for _ in ()).throw(reauth_exc),
+        fetch_profile=lambda: pytest.fail("profile fetch should stop after reauth-required"),
+    )
+    fake_main_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _refresh_cloud_sync_idle_hint=lambda: events.append("idle_hint"),
+        ),
+    )
+    fake_dialog = SimpleNamespace(
+        tr=lambda text: text,
+        _profile_email=QLineEdit("sigmund.as@gmail.com"),
+        _profile_username=QLineEdit("sigmundas"),
+        _profile_name=QLineEdit("Sigmundas"),
+        _profile_bio=QPlainTextEdit("Bio"),
+        _profile_avatar_url="",
+        _cloud_profile_loaded_user_id="user-123",
+        _cached_cloud_client=lambda: fake_client,
+        _on_cloud_logout_changed=lambda: events.append("logout"),
+        _settings_hub_main_window=lambda: fake_main_window,
+    )
+    fake_dialog._mark_cloud_session_needs_reauth = MethodType(
+        main_window.SettingsHubDialog._mark_cloud_session_needs_reauth,
+        fake_dialog,
     )
     fake_dialog._clear_invalid_cloud_session = MethodType(
         main_window.SettingsHubDialog._clear_invalid_cloud_session,
@@ -508,11 +589,19 @@ def test_cloud_profile_refresh_auth_failure_clears_invalid_session(monkeypatch):
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: pytest.fail("set_profile should not run"))
     monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+    monkeypatch.setattr(
+        main_window, "update_app_settings", lambda payload: settings_payload.update(payload)
+    )
 
     main_window.SettingsHubDialog._refresh_cloud_profile_fields(fake_dialog, force=True)
 
-    assert clear_calls == ["clear_session"]
-    assert events == ["logout"]
+    # Tokens preserved.
+    assert clear_calls == []
+    assert "logout" not in events
+    # Session flagged for re-auth so the UI can prompt sign-in.
+    assert settings_payload["cloud_last_sync_status"] == "reauth_required"
+    assert "sign in" in str(settings_payload["cloud_last_sync_summary"]).lower()
+    assert "idle_hint" in events
 
 
 def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
@@ -564,17 +653,7 @@ def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
     assert "refresh_ui" in events
 
 
-def test_profile_save_auth_failure_clears_invalid_session(monkeypatch):
-    events: list[str] = []
-    warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
-    settings_payload: dict[str, object] = {}
-    profile_rows: list[tuple[tuple[object, ...], dict[str, object]]] = []
-    clear_calls: list[str] = []
-
-    fake_client = SimpleNamespace(
-        user_id="user-123",
-        update_profile=lambda **kwargs: (_ for _ in ()).throw(_auth_refresh_failure()),
-    )
+def _build_profile_save_fake_dialog(events, fake_client, fake_main_window, profile_rows):
     fake_dialog = SimpleNamespace(
         tr=lambda text: text,
         _profile_username=QLineEdit("sigmundas"),
@@ -586,35 +665,114 @@ def test_profile_save_auth_failure_clears_invalid_session(monkeypatch):
         _profile_email_for_save=lambda: "sigmund.as@gmail.com",
         _get_cloud_client=lambda: fake_client,
         _on_cloud_logout_changed=lambda: events.append("logout"),
+        _settings_hub_main_window=lambda: fake_main_window,
         parent=lambda: None,
     )
     fake_dialog._profile_sync_error_message = MethodType(
         main_window.SettingsHubDialog._profile_sync_error_message,
         fake_dialog,
     )
+    fake_dialog._mark_cloud_session_needs_reauth = MethodType(
+        main_window.SettingsHubDialog._mark_cloud_session_needs_reauth,
+        fake_dialog,
+    )
     fake_dialog._clear_invalid_cloud_session = MethodType(
         main_window.SettingsHubDialog._clear_invalid_cloud_session,
         fake_dialog,
     )
+    return fake_dialog
+
+
+def test_profile_save_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatch):
+    """A transient refresh failure during profile save must NOT touch
+    the stored tokens and must NOT preemptively flag the session for
+    re-auth.  The user still sees a warning dialog."""
+    events: list[str] = []
+    warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    settings_payload: dict[str, object] = {}
+    profile_rows: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    clear_calls: list[str] = []
+
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        update_profile=lambda **kwargs: (_ for _ in ()).throw(_auth_refresh_failure()),
+    )
+    fake_main_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _refresh_cloud_sync_idle_hint=lambda: events.append("idle_hint"),
+        ),
+    )
+    fake_dialog = _build_profile_save_fake_dialog(events, fake_client, fake_main_window, profile_rows)
 
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: profile_rows.append((args, kwargs)))
     monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+    monkeypatch.setattr(
+        main_window, "update_app_settings", lambda payload: settings_payload.update(payload)
+    )
     monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: warning_calls.append((args, kwargs)))
 
     result = main_window.SettingsHubDialog._save_profile(fake_dialog)
 
     assert result is False
-    assert clear_calls == ["clear_session"]
-    assert events == ["logout"]
+    # Tokens preserved.
+    assert clear_calls == []
+    assert "logout" not in events
+    # Session state NOT flagged — transient wrapper alone is not terminal.
+    assert "cloud_last_sync_status" not in settings_payload
+    assert "idle_hint" not in events
     assert profile_rows == [
         (
             ("Sigmundas", "sigmund.as@gmail.com", "Bio", "sigmundas", ""),
             {},
         )
     ]
+    # User is still warned about the failure (via _profile_sync_error_message).
     assert warning_calls
-    assert "session expired" in str(warning_calls[0][0][2]).lower()
+
+
+def test_profile_save_reauth_required_flags_session_without_wiping(monkeypatch):
+    """A terminal CloudReauthRequiredError from update_profile flags the
+    session for re-auth but must NOT delete tokens."""
+    events: list[str] = []
+    warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    settings_payload: dict[str, object] = {}
+    profile_rows: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    clear_calls: list[str] = []
+
+    reauth_exc = cloud_sync.CloudReauthRequiredError(
+        'Refresh failed (status=400): {"error":"invalid_grant"}'
+    )
+    fake_client = SimpleNamespace(
+        user_id="user-123",
+        update_profile=lambda **kwargs: (_ for _ in ()).throw(reauth_exc),
+    )
+    fake_main_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _refresh_cloud_sync_idle_hint=lambda: events.append("idle_hint"),
+        ),
+    )
+    fake_dialog = _build_profile_save_fake_dialog(events, fake_client, fake_main_window, profile_rows)
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
+    monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: profile_rows.append((args, kwargs)))
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
+    monkeypatch.setattr(
+        main_window, "update_app_settings", lambda payload: settings_payload.update(payload)
+    )
+    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: warning_calls.append((args, kwargs)))
+
+    result = main_window.SettingsHubDialog._save_profile(fake_dialog)
+
+    assert result is False
+    # Tokens preserved.
+    assert clear_calls == []
+    assert "logout" not in events
+    # Session flagged for re-auth so the UI can prompt sign-in.
+    assert settings_payload["cloud_last_sync_status"] == "reauth_required"
+    assert "idle_hint" in events
+    # User still warned.
+    assert warning_calls
 
 
 def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, qapp):

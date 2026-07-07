@@ -24,6 +24,7 @@ import random
 import sqlite3
 import shutil
 import tempfile
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1979,6 +1980,35 @@ class CloudTemporarilyUnavailableError(CloudSyncError):
     pass
 
 
+class CloudReauthRequiredError(CloudSyncError):
+    """Raised when the refresh endpoint proves the refresh token is dead.
+
+    Distinct from CloudTemporarilyUnavailableError (Supabase glitch, retry
+    likely fine) and from generic CloudSyncError (transport-level noise).
+    Reaching this state means the current session cannot be resumed and the
+    user must sign in again — but callers still must not wipe stored tokens
+    unless the user explicitly signs out.
+    """
+
+
+class CloudSessionAccountMismatchError(AccountMismatchError):
+    """Raised when a stale SporelyCloudClient sees on-disk session tokens
+    that belong to a different Sporely Cloud user than the one this
+    client is bound to.
+
+    Usually happens when the user signed out and signed back in as a
+    different account while an old worker/thread was still alive: the
+    worker's in-memory ``user_id`` still points at the previous
+    account, but the on-disk tokens now belong to the new one.  We
+    refuse to adopt the new account's tokens or call the refresh
+    endpoint with them — the worker should surface this and stop.
+    Inherits from :class:`AccountMismatchError` so existing handlers
+    that only catch that base class keep working; catch this subclass
+    to distinguish "stale worker" from "database linked to a different
+    account".
+    """
+
+
 ACCOUNT_MISMATCH_MESSAGE = (
     "This local database is permanently linked to another Sporely Cloud account. "
     "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
@@ -2524,7 +2554,6 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'invalid jwt',
     'expired access token',
     'access token expired',
-    'auth refresh failed',
     'token expired',
     'session expired',
     'authentication failed',
@@ -2535,14 +2564,69 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'pgrst303',
 )
 
+# Hints that identify a *terminal* refresh-token invalidation coming from
+# Supabase's refresh endpoint.  Anything matching this list means the
+# session cannot be resumed and the user must sign in again.  A plain
+# 401 or an expired-JWT hint is NOT enough — those are recoverable by
+# refreshing.
+_CLOUD_REAUTH_REQUIRED_HINTS = (
+    'invalid_grant',
+    'invalid refresh token',
+    'refresh token not found',
+    'refresh_token_not_found',
+    'refresh_token_already_used',
+)
+
 
 def is_cloud_auth_error(error) -> bool:
+    """Broad classification: does *error* smell like an auth/token issue?
+
+    Used by the request layer to decide whether to try a refresh and by
+    the sync loops to decide whether to abort early.  Deliberately does
+    not match a raw ``403`` — PostgREST returns 403 for RLS denials,
+    which are authorization (not authentication) failures and must not
+    be conflated with an expired session.
+    """
+    if isinstance(error, CloudReauthRequiredError):
+        return True
     code, texts = _collect_sync_error_details(error)
     haystack = ' '.join(dict.fromkeys(texts)).lower()
     code_text = str(code or '').strip().lower()
-    if code_text in {'401', '403'}:
+    if code_text == '401':
         return True
     return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
+
+
+def is_cloud_reauth_required_error(error) -> bool:
+    """Strict classification: is this error terminal for the current session?
+
+    Returns True only when we can prove the stored refresh token itself
+    is dead — e.g. the refresh endpoint returned ``invalid_grant`` — so
+    the UI can prompt the user to sign in again.  A wrapper such as
+    ``CloudTemporarilyUnavailableError`` chained from a generic ``"auth
+    refresh failed"`` string is NOT sufficient: that shape can result
+    from a rotation race or a transient Supabase blip, and treating it
+    as terminal would wipe a still-valid refresh token on next restart.
+    """
+    if isinstance(error, CloudReauthRequiredError):
+        return True
+    seen: set[int] = set()
+    value = error
+    while value is not None:
+        if isinstance(value, CloudReauthRequiredError):
+            return True
+        try:
+            marker = id(value)
+        except Exception:
+            marker = None
+        if marker is not None:
+            if marker in seen:
+                break
+            seen.add(marker)
+        value = getattr(value, '__cause__', None) or getattr(value, '__context__', None)
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    return any(hint in haystack for hint in _CLOUD_REAUTH_REQUIRED_HINTS)
 
 
 def _sleep_supabase_backoff(attempt: int) -> None:
@@ -2584,8 +2668,11 @@ def _response_indicates_auth_error(response: requests.Response) -> bool:
         status_code = int(getattr(response, 'status_code', 0) or 0)
     except Exception:
         status_code = 0
-    if status_code in {401, 403}:
+    if status_code == 401:
         return True
+    # 403 is intentionally excluded: PostgREST/Supabase return 403 for
+    # RLS denials, which are authorization failures and must not trigger
+    # a token refresh or session wipe.
     try:
         return is_cloud_auth_error(getattr(response, 'text', ''))
     except Exception:
@@ -2639,12 +2726,16 @@ def _request_with_transient_retry(
                 refreshed_ok = bool(refresh_callback()) if callable(refresh_callback) else False
             except CloudTemporarilyUnavailableError:
                 raise
+            except CloudReauthRequiredError:
+                # Propagate untouched — this is the only way callers can
+                # tell that the refresh token itself is dead.
+                raise
             except Exception as exc:
                 raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
             if refreshed_ok:
                 continue
             raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
-                f'{method} {url} status={getattr(response, "status_code", "")}: auth refresh failed'
+                f'{method} {url} status={getattr(response, "status_code", "")}: refresh unavailable'
             )
 
         if _response_indicates_transient_supabase_error(response):
@@ -2677,6 +2768,129 @@ def _decode_jwt_subject(access_token: str | None) -> str:
     except Exception:
         return ''
     return _normalize_cloud_user_id(data.get('sub') if isinstance(data, dict) else None)
+
+
+def _decode_jwt_expiry(access_token: str | None) -> int | None:
+    """Return the ``exp`` claim (unix seconds) of *access_token* or None.
+
+    None signals the token is either missing or not decodable — callers
+    should treat that as "unknown expiry" rather than "expired".
+    """
+    token = str(access_token or '').strip()
+    parts = token.split('.')
+    if len(parts) < 2:
+        return None
+    payload = parts[1]
+    padding = '=' * (-len(payload) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode((payload + padding).encode('ascii')).decode('utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    exp = data.get('exp')
+    try:
+        return int(exp) if exp is not None else None
+    except Exception:
+        return None
+
+
+# Number of seconds before ``exp`` at which we treat a JWT as "about to
+# expire" and refresh proactively.  Supabase access tokens are typically
+# 60 minutes, so 5 minutes gives comfortable headroom without spamming
+# the refresh endpoint on healthy sessions.
+_CLOUD_JWT_EXPIRY_LEEWAY_SECONDS = 5 * 60
+
+
+def _jwt_expires_soon(
+    access_token: str | None,
+    *,
+    leeway_seconds: int = _CLOUD_JWT_EXPIRY_LEEWAY_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """True when *access_token* has expired or is within *leeway_seconds*.
+
+    An undecodable token returns False here — callers rely on a normal
+    401 to detect death for tokens whose expiry we can't inspect.
+    """
+    exp = _decode_jwt_expiry(access_token)
+    if exp is None:
+        return False
+    current = float(now) if now is not None else time.time()
+    return exp <= current + max(0, int(leeway_seconds))
+
+
+def _read_current_cloud_session_settings() -> tuple[str | None, str | None, str | None]:
+    """Snapshot the current on-disk session tokens.
+
+    Returns a triple ``(access_token, user_id, refresh_token)`` where
+    each element is either a non-empty string or None.  Reading through
+    a single helper keeps every call site symmetric with respect to
+    ``get_app_settings()`` monkeypatches in tests.
+    """
+    settings = get_app_settings()
+    access_raw = str(settings.get('cloud_access_token') or '').strip()
+    user_raw = _normalize_cloud_user_id(settings.get('cloud_user_id'))
+    refresh_raw = str(settings.get('cloud_refresh_token') or '').strip()
+    return (
+        access_raw or None,
+        user_raw or None,
+        refresh_raw or None,
+    )
+
+
+# Serializes refresh attempts across every :class:`SporelyCloudClient`
+# instance in this process.  Supabase refresh tokens are single-use with
+# reuse detection, so two workers racing to refresh with the same token
+# is a common cause of spurious "invalid_grant" errors.  Holding this
+# lock while re-reading settings, choosing the newest refresh token,
+# calling the refresh endpoint, and persisting the result turns that
+# race into a wait — the second thread arrives after the first has
+# already saved rotated tokens and simply adopts them.
+_CLOUD_REFRESH_LOCK = threading.RLock()
+
+
+def _settings_session_is_compatible(
+    client_user_id: str | None,
+    settings_user_id: str | None,
+    settings_access_token: str | None,
+) -> bool:
+    """Return True when on-disk session tokens are safe to adopt.
+
+    The rules mirror the Stage-4 spec:
+
+    * A client with no identity yet (``client_user_id`` empty/None) can
+      adopt anything — this is the fresh-startup / just-signed-in shape.
+    * If both the client and settings carry an explicit ``user_id``,
+      they must match.
+    * If settings does not carry a ``user_id`` but does carry an
+      access token, we accept adoption iff the token's ``sub`` claim
+      decodes to the client's user id.
+    * If settings carries neither a matching ``user_id`` nor a
+      decodable access-token subject, and the client already has an
+      identity, we refuse — we cannot prove ownership.
+    * If settings is entirely empty (no user id and no access token),
+      there is nothing to adopt and nothing to conflict with; the
+      caller may proceed with its own tokens.
+    """
+    client_id = _normalize_cloud_user_id(client_user_id) or None
+    if not client_id:
+        return True
+    settings_id = _normalize_cloud_user_id(settings_user_id) or None
+    if settings_id:
+        return settings_id == client_id
+    # No settings user id.  If settings holds no access token either,
+    # there is no on-disk session to conflict with — treat as
+    # compatible so the caller can proceed with its own refresh token.
+    token_text = str(settings_access_token or '').strip()
+    if not token_text:
+        return True
+    subject = _decode_jwt_subject(token_text)
+    if not subject:
+        # Access token present but its subject is undecodable — refuse
+        # to adopt because we cannot verify ownership.
+        return False
+    return subject == client_id
 
 
 def _load_linked_cloud_user_id() -> str:
@@ -8215,28 +8429,133 @@ class SporelyCloudClient:
     def _response_indicates_auth_error(self, response: requests.Response) -> bool:
         return _response_indicates_auth_error(response)
 
-    def _refresh_session_if_possible(self) -> bool:
-        refresh_token = str(self.refresh_token or '').strip()
-        if not refresh_token:
-            return False
-        try:
-            refreshed = type(self).refresh_login(refresh_token)
-        except CloudTemporarilyUnavailableError:
-            raise
-        except CloudSyncError:
-            return False
-        self.access_token = refreshed.access_token
-        self.user_id = refreshed.user_id
-        self.refresh_token = refreshed.refresh_token
-        self._s.headers.update({
-            'Authorization': f'Bearer {self.access_token}',
-        })
+    def _adopt_session_from_values(
+        self,
+        access_token: str,
+        user_id: str | None,
+        refresh_token: str | None,
+    ) -> None:
+        """Copy a freshly-observed session onto this client in-memory.
+
+        Kept small so both the "adopt from settings" and "adopt from
+        refresh response" branches of :meth:`_refresh_session_if_possible`
+        stay symmetric.
+        """
+        self.access_token = access_token
+        self.user_id = (
+            _decode_jwt_subject(access_token)
+            or _normalize_cloud_user_id(user_id)
+            or self.user_id
+        )
+        if refresh_token:
+            self.refresh_token = refresh_token
+        self._s.headers.update({'Authorization': f'Bearer {self.access_token}'})
         self._media_worker = None
-        try:
-            self.save_credentials()
-        except Exception:
-            pass
-        return True
+
+    def _refresh_session_if_possible(self) -> bool:
+        # Serialize every refresh attempt so concurrent clients cannot
+        # race Supabase into rotating the same refresh token twice.
+        with _CLOUD_REFRESH_LOCK:
+            settings_access, settings_user_id, settings_refresh = (
+                _read_current_cloud_session_settings()
+            )
+            self_access = str(self.access_token or '').strip() or None
+
+            # Account-safety guard: if the on-disk session belongs to a
+            # *different* Sporely Cloud user than this client is bound
+            # to, refuse to adopt or refresh with any of it.  A stale
+            # worker must not authenticate as another account just
+            # because settings rotated under it.
+            if not _settings_session_is_compatible(
+                self.user_id, settings_user_id, settings_access
+            ):
+                raise CloudSessionAccountMismatchError(
+                    "Stored cloud session belongs to a different account "
+                    "than this client instance; refusing to adopt or refresh."
+                )
+
+            # Fast path: another thread already rotated tokens while we
+            # were waiting for the lock.  Adopt the newer access token
+            # and skip the network round-trip entirely.
+            if (
+                settings_access
+                and settings_access != self_access
+                and not _jwt_expires_soon(settings_access)
+            ):
+                self._adopt_session_from_values(
+                    settings_access, settings_user_id, settings_refresh
+                )
+                return True
+
+            # Refresh path: prefer whichever refresh token settings has
+            # right now over our in-memory copy.  The account-safety
+            # guard above has already confirmed settings belongs to the
+            # same user, so preferring the settings refresh token is
+            # safe.
+            candidate_refresh = settings_refresh or (
+                str(self.refresh_token or '').strip() or None
+            )
+            if not candidate_refresh:
+                return False
+
+            try:
+                refreshed = type(self).refresh_login(candidate_refresh)
+            except CloudTemporarilyUnavailableError:
+                raise
+            except CloudReauthRequiredError:
+                # Before treating the session as dead, re-read settings
+                # one more time — another thread may have just rotated
+                # the refresh token so ``candidate_refresh`` looks dead
+                # to Supabase (reuse detection) even though the session
+                # is fine.
+                after_access, after_user_id, after_refresh = (
+                    _read_current_cloud_session_settings()
+                )
+                # Re-apply the account guard to the fresh snapshot.  If
+                # the user switched accounts while we were mid-refresh
+                # we must not adopt or retry with the new account's
+                # tokens.  Propagate the original reauth-required
+                # signal so the caller can prompt sign-in.
+                if not _settings_session_is_compatible(
+                    self.user_id, after_user_id, after_access
+                ):
+                    raise
+                if (
+                    after_access
+                    and after_access != settings_access
+                    and not _jwt_expires_soon(after_access)
+                ):
+                    self._adopt_session_from_values(
+                        after_access, after_user_id, after_refresh
+                    )
+                    return True
+                if after_refresh and after_refresh != candidate_refresh:
+                    # A newer refresh token appeared on disk after we
+                    # snapshotted.  Retry once with it before giving up.
+                    try:
+                        refreshed = type(self).refresh_login(after_refresh)
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudReauthRequiredError:
+                        # The newer token is also dead — this session
+                        # really does need sign-in.  Do NOT clear tokens
+                        # here; the UI decides how to prompt the user.
+                        raise
+                    except CloudSyncError:
+                        return False
+                else:
+                    raise
+            except CloudSyncError:
+                return False
+
+            self._adopt_session_from_values(
+                refreshed.access_token, refreshed.user_id, refreshed.refresh_token
+            )
+            try:
+                self.save_credentials()
+            except Exception:
+                pass
+            return True
 
     def _request_with_refresh(self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs):
         return _request_with_transient_retry(
@@ -8351,7 +8670,22 @@ class SporelyCloudClient:
             timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'Refresh failed (status={resp.status_code}): {resp.text}')
+            body_text = str(getattr(resp, 'text', '') or '')
+            body_lower = body_text.lower()
+            status_code = int(getattr(resp, 'status_code', 0) or 0)
+            # Supabase returns 400 with an ``invalid_grant`` (or similar)
+            # body only when it can prove the refresh token itself is dead:
+            # revoked, rotated, expired, or reused past the detection
+            # window.  Any *other* non-ok status is treated as a generic
+            # CloudSyncError so a rotation race or transient blip does not
+            # look terminal to callers.
+            if status_code == 400 and any(
+                hint in body_lower for hint in _CLOUD_REAUTH_REQUIRED_HINTS
+            ):
+                raise CloudReauthRequiredError(
+                    f'Refresh failed (status={status_code}): {body_text}'
+                )
+            raise CloudSyncError(f'Refresh failed (status={status_code}): {body_text}')
         d = resp.json()
         return cls(
             access_token=d['access_token'],
@@ -8367,16 +8701,40 @@ class SporelyCloudClient:
         refresh_token = settings.get('cloud_refresh_token')
         token_text = str(token or '').strip()
         user_id_text = _normalize_cloud_user_id(user_id)
+        refresh_text = str(refresh_token or '').strip() or None
         if token_text and user_id_text:
             token_user_id = _decode_jwt_subject(token_text)
-            return cls(
+            client = cls(
                 access_token=token_text,
                 user_id=token_user_id or user_id_text,
-                refresh_token=refresh_token,
+                refresh_token=refresh_text,
             )
-        if refresh_token:
+            expiry_seconds = _decode_jwt_expiry(token_text)
+            # Only refresh proactively when we can *prove* the token is
+            # near expiry AND we have a refresh token to spend.  If the
+            # JWT is undecodable, keep the historical fast path and rely
+            # on a first-request 401 to trigger the locked refresh.
+            if (
+                expiry_seconds is not None
+                and _jwt_expires_soon(token_text)
+                and refresh_text
+            ):
+                try:
+                    client._refresh_session_if_possible()
+                    return client
+                except CloudTemporarilyUnavailableError:
+                    # Transient — return the client anyway.  A first API
+                    # call will retry the refresh through the same lock.
+                    return client
+                except CloudReauthRequiredError:
+                    # Session is genuinely dead — fall through to the
+                    # saved-password path below without wiping tokens.
+                    pass
+            else:
+                return client
+        if refresh_text:
             try:
-                client = cls.refresh_login(str(refresh_token))
+                client = cls.refresh_login(str(refresh_text))
                 client.save_credentials()
                 return client
             except CloudTemporarilyUnavailableError:
