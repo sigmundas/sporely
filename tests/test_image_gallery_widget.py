@@ -60,14 +60,12 @@ def _build_gallery_items(tmp_path, count: int = 3) -> list[dict]:
     return items
 
 
-def test_center_horizontal_scroll_target_returns_none_when_item_fully_visible():
-    # Fully-visible target with partially-hidden neighbours must not move
-    # the strip — the old "recenter when a neighbour < 25% visible" rule
-    # caused rightmost-visible clicks to jump the viewport around.
-    viewport_rect = QRectF(300, 0, 500, 120)
+def test_center_horizontal_scroll_target_returns_none_when_item_and_neighbours_visible():
+    # Target and both neighbours fully inside the viewport → no scroll.
+    viewport_rect = QRectF(300, 0, 700, 120)
     target_rect = QRectF(650, 0, 120, 120)
     previous_rect = QRectF(530, 0, 120, 120)
-    next_rect = QRectF(780, 0, 120, 120)
+    next_rect = QRectF(780, 0, 120, 120)  # ends at 900 < viewport_right (1000)
     assert center_horizontal_scroll_target(
         viewport_rect,
         target_rect,
@@ -78,9 +76,42 @@ def test_center_horizontal_scroll_target_returns_none_when_item_fully_visible():
     ) is None
 
 
-def test_center_horizontal_scroll_target_nudges_right_when_item_off_right():
-    # Item is clipped on the right — scroll just enough to reveal it with
-    # the default margin (24px), not all the way to a centered position.
+def test_center_horizontal_scroll_target_nudges_left_to_reveal_previous_neighbour():
+    # Regression: clicking a thumbnail that's already fully visible but
+    # whose previous neighbour is only partially visible should nudge the
+    # strip left so the neighbour becomes fully visible + margin.
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(420, 0, 120, 120)  # fully in [300, 800]
+    previous_rect = QRectF(260, 0, 120, 120)  # left edge clipped
+    next_rect = QRectF(540, 0, 120, 120)  # fully in view
+    # must_left = 260 → target = 260 - margin(24) = 236
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+        previous_rect,
+        next_rect,
+    ) == 236
+
+
+def test_center_horizontal_scroll_target_nudges_right_to_reveal_next_neighbour():
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(560, 0, 120, 120)  # fully in [300, 800]
+    previous_rect = QRectF(440, 0, 120, 120)  # fully in view
+    next_rect = QRectF(720, 0, 120, 120)  # ends at 840, clipped
+    # must_right = 840 → target = 840 + margin(24) - viewport_width(500) = 364
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+        previous_rect,
+        next_rect,
+    ) == 364
+
+
+def test_center_horizontal_scroll_target_nudges_right_when_item_off_right_no_neighbours():
     viewport_rect = QRectF(300, 0, 500, 120)
     target_rect = QRectF(720, 0, 120, 120)  # extends to x=840, past view right 800
     assert center_horizontal_scroll_target(
@@ -88,10 +119,10 @@ def test_center_horizontal_scroll_target_nudges_right_when_item_off_right():
         target_rect,
         0,
         2000,
-    ) == 720 + 120 + 24 - 500  # item_right + margin - viewport_width = 364
+    ) == 720 + 120 + 24 - 500  # 364
 
 
-def test_center_horizontal_scroll_target_nudges_left_when_item_off_left():
+def test_center_horizontal_scroll_target_nudges_left_when_item_off_left_no_neighbours():
     viewport_rect = QRectF(300, 0, 500, 120)
     target_rect = QRectF(220, 0, 120, 120)  # left edge is left of viewport
     assert center_horizontal_scroll_target(
@@ -99,7 +130,7 @@ def test_center_horizontal_scroll_target_nudges_left_when_item_off_left():
         target_rect,
         0,
         2000,
-    ) == 220 - 24  # item_left - margin = 196
+    ) == 220 - 24  # 196
 
 
 def test_center_horizontal_scroll_target_clamps_to_scrollbar_range():

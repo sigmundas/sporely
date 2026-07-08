@@ -105,17 +105,18 @@ def test_analysis_gallery_selection_nudges_offscreen_thumbnail_into_view(monkeyp
     window.deleteLater()
 
 
-def test_analysis_gallery_selection_leaves_visible_thumbnail_alone(monkeypatch, qapp):
-    # Regression: clicking a thumbnail that's already fully visible must
-    # not shift the strip. Old algorithm recentered whenever a neighbour
-    # was less than 25% visible, causing jumpy behaviour on right-edge
-    # clicks.
+def test_analysis_gallery_selection_leaves_comfortable_thumbnail_alone(monkeypatch, qapp):
+    # Clicking a thumbnail that's fully visible AND whose immediate
+    # neighbours are also fully visible must not shift the strip. The old
+    # "recenter when a neighbour < 25% visible" algorithm caused jumpy
+    # behaviour on right-edge clicks.
     window = _build_minimal_window(monkeypatch)
+    # 41, 42, 43 all fit inside viewport [300, 800] with room to spare.
     scroll, _, frames = _build_scroll_scene(
         [
-            (41, 530, 120),
-            (42, 650, 120),
-            (43, 780, 120),
+            (41, 400, 120),
+            (42, 520, 120),
+            (43, 640, 120),
         ]
     )
     qapp.processEvents()
@@ -130,6 +131,35 @@ def test_analysis_gallery_selection_leaves_visible_thumbnail_alone(monkeypatch, 
     qapp.processEvents()
 
     assert scroll.horizontalScrollBar().value() == 300  # unchanged
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_selection_nudges_to_reveal_partial_neighbour(monkeypatch, qapp):
+    # Clicking a fully-visible thumbnail whose previous neighbour is only
+    # partially visible must nudge the strip left so the neighbour is
+    # comfortably reachable on the next click.
+    window = _build_minimal_window(monkeypatch)
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (41, 260, 120),  # 260..380 — starts left of viewport (300)
+            (42, 380, 120),  # 380..500 — fully visible
+            (43, 500, 120),  # 500..620 — fully visible
+        ]
+    )
+    qapp.processEvents()
+
+    window.gallery_scroll = scroll
+    window._gallery_thumbnail_frames = frames
+    scroll.horizontalScrollBar().setValue(300)
+    qapp.processEvents()
+
+    window._select_analysis_gallery_measurement(42, update_plot=False)
+    qapp.processEvents()
+    qapp.processEvents()
+
+    # must_left = 260 (previous neighbour's left) → target = 260 - 24 = 236
+    assert scroll.horizontalScrollBar().value() == 236
 
     window.deleteLater()
 

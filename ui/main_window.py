@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
                                  QPlainTextEdit, QSlider, QGraphicsOpacityEffect,
                                  QListWidget, QListWidgetItem, QStackedWidget,
-                                 QScrollArea, QGridLayout)
+                                 QScrollArea, QGridLayout, QMenu)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -14819,7 +14819,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         row = (display_index - 1) // items_per_row
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
-        container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
+        container.mousePressEvent = (
+            lambda event, mid=int(measurement_id), c=container:
+                self._on_analysis_gallery_thumbnail_mouse_press(event, c, mid)
+        )
         # Match Observations-gallery behaviour: double-click opens Prepare
         # Images for this measurement's source image.
         container.mouseDoubleClickEvent = (
@@ -16772,6 +16775,42 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self._prepare_analysis_gallery_for_tab_switch()
         QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
+
+    def _on_analysis_gallery_thumbnail_mouse_press(
+        self,
+        event,
+        container,
+        measurement_id: int,
+    ) -> None:
+        button = event.button() if event is not None else Qt.NoButton
+        if button == Qt.RightButton:
+            try:
+                global_pos = event.globalPosition().toPoint()
+            except Exception:
+                global_pos = None
+            self._select_analysis_gallery_measurement(int(measurement_id))
+            if global_pos is not None:
+                self._show_analysis_gallery_thumbnail_context_menu(
+                    int(measurement_id), global_pos
+                )
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        if button == Qt.LeftButton:
+            self._select_analysis_gallery_measurement(int(measurement_id))
+
+    def _show_analysis_gallery_thumbnail_context_menu(
+        self,
+        measurement_id: int,
+        global_pos,
+    ) -> None:
+        menu = QMenu(self)
+        edit_action = menu.addAction(self.tr("Edit photo"))
+        chosen = menu.exec(global_pos)
+        if chosen == edit_action:
+            self._open_prepare_images_from_analysis_gallery(int(measurement_id))
 
     def _open_prepare_images_from_analysis_gallery(self, measurement_id: int) -> None:
         """Open the Prepare Images dialog for the measurement's source image.

@@ -330,19 +330,22 @@ def center_horizontal_scroll_target(
     visible_neighbor_threshold: float = 0.25,
     margin: float = 24.0,
 ) -> int | None:
-    """Return the scroll offset needed to bring `item_rect` into view, or
-    None when no scrolling is required.
+    """Return the scroll offset needed to bring `item_rect` (plus its
+    immediate neighbours) into view, or None when no scrolling is required.
 
     Rules:
-    - If the item is already fully visible → return None (don't move).
-    - Otherwise, scroll the minimum distance needed to bring the item into
-      view with a small margin. Items off the right edge nudge right; items
-      off the left edge nudge left. This avoids the "click the rightmost
-      visible thumbnail → strip jumps to center it" surprise.
-    - The `previous_rect` / `next_rect` / `visible_neighbor_threshold`
-      parameters are accepted for backward compatibility and ignored.
+    - Compute a "must be visible" range = item ∪ previous neighbour ∪ next
+      neighbour. If the whole range already fits inside the viewport, return
+      None. Extending the range means clicking a thumbnail near the visible
+      edge nudges the strip enough to make the adjacent thumbnails easy to
+      reach on the next click.
+    - Otherwise, scroll the minimum distance needed to bring the range into
+      view with a small margin. Range off the right edge nudges right; off
+      the left edge nudges left.
+    - `visible_neighbor_threshold` is accepted for backward compatibility
+      and ignored.
     """
-    del previous_rect, next_rect, visible_neighbor_threshold  # unused
+    del visible_neighbor_threshold  # unused
     if item_rect is None:
         return None
     item_width = float(item_rect.width())
@@ -350,23 +353,41 @@ def center_horizontal_scroll_target(
     if item_width <= 0.0 or viewport_width <= 0.0:
         return None
 
-    if _visible_fraction(viewport_rect, item_rect) >= 0.999:
-        return None
-
     item_left = float(item_rect.x())
     item_right = item_left + item_width
+    must_left = item_left
+    must_right = item_right
+    if previous_rect is not None and previous_rect.width() > 0.0:
+        must_left = min(must_left, float(previous_rect.x()))
+    if next_rect is not None and next_rect.width() > 0.0:
+        must_right = max(
+            must_right, float(next_rect.x()) + float(next_rect.width())
+        )
+
     view_left = float(viewport_rect.x())
     view_right = view_left + viewport_width
     margin_val = max(0.0, float(margin))
 
-    if item_left < view_left:
-        target = int(round(item_left - margin_val))
-    elif item_right > view_right:
-        target = int(round(item_right + margin_val - viewport_width))
-    else:
-        # Item is wider than the viewport and only partially visible on both
-        # sides — center it.
-        target = int(round(item_left + (item_width / 2.0) - (viewport_width / 2.0)))
+    # Whole must-visible range already fits inside the viewport → done.
+    if must_left >= view_left and must_right <= view_right:
+        return None
+
+    must_width = must_right - must_left
+    if must_width > viewport_width:
+        # Can't fit the whole must-visible range. Prefer to reveal the
+        # clicked item itself, nudged toward whichever edge it's clipped
+        # against — never dead-center it just because a neighbour is off
+        # the other side.
+        if item_left < view_left:
+            target = int(round(item_left - margin_val))
+        elif item_right > view_right:
+            target = int(round(item_right + margin_val - viewport_width))
+        else:
+            target = int(round(item_left + (item_width / 2.0) - (viewport_width / 2.0)))
+    elif must_left < view_left:
+        target = int(round(must_left - margin_val))
+    else:  # must_right > view_right
+        target = int(round(must_right + margin_val - viewport_width))
     return max(int(minimum), min(int(maximum), target))
 
 
@@ -1969,8 +1990,13 @@ class ImageGalleryWidget(QGroupBox):
     def _on_frame_mouse_press(self, event, frame: QFrame) -> None:
         if event.button() == Qt.LeftButton:
             self.setFocus(Qt.MouseFocusReason)
+            # Record the press point in GLOBAL coordinates. Using event.position()
+            # (frame-local) breaks whenever the click triggers an auto-scroll —
+            # the frame slides under the stationary cursor, its local coord
+            # jumps by the scroll delta, and the drag threshold trips even
+            # though the physical mouse never moved.
             try:
-                self._drag_start_pos = event.position().toPoint()
+                self._drag_start_pos = event.globalPosition().toPoint()
             except Exception:
                 self._drag_start_pos = QPoint()
             self._drag_start_key = getattr(frame, "image_key", None)
@@ -2038,8 +2064,10 @@ class ImageGalleryWidget(QGroupBox):
             return
         if getattr(frame, "image_key", None) != self._drag_start_key:
             return
+        # Compare in GLOBAL coordinates — see _on_frame_mouse_press for why
+        # frame-local positions can't be trusted across auto-scroll.
         try:
-            current_pos = event.position().toPoint()
+            current_pos = event.globalPosition().toPoint()
         except Exception:
             return
         if (current_pos - self._drag_start_pos).manhattanLength() < QApplication.startDragDistance():
@@ -2055,7 +2083,10 @@ class ImageGalleryWidget(QGroupBox):
         pixmap = getattr(getattr(frame, "thumb_label", None), "pixmap", lambda: None)()
         if isinstance(pixmap, QPixmap) and not pixmap.isNull():
             drag.setPixmap(pixmap)
-            drag.setHotSpot(current_pos)
+            try:
+                drag.setHotSpot(event.position().toPoint())
+            except Exception:
+                pass
         drag.exec(Qt.MoveAction)
 
     def _on_click(self, event, img_id, path):
