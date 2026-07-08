@@ -10057,6 +10057,21 @@ class ObservationsTab(QWidget):
             except Exception:
                 pass
 
+        # Ask the Observations panel gallery to re-highlight the edited
+        # image once its (async, debounced) observation reload lands.
+        # Without this, refresh_observations() -> on_selection_changed() ->
+        # gallery_widget.clear() wipes _selected_keys mid-flight, so the
+        # subsequent reload has nothing to re-highlight.
+        gallery_widget = getattr(self, "gallery_widget", None)
+        target_path = (selected_image_path or "").strip() or None
+        if gallery_widget is not None and target_path and hasattr(
+            gallery_widget, "set_selection_after_next_load"
+        ):
+            try:
+                gallery_widget.set_selection_after_next_load([target_path])
+            except Exception:
+                pass
+
         self.set_status_message(self.tr("Images updated."), level="success")
 
     def refresh_open_image_import_dialogs(self) -> None:

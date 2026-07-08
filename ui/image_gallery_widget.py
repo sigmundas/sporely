@@ -35,6 +35,14 @@ from .adaptive_choice_selector import objective_color, objective_short_label
 from .styles import pt
 
 
+# Padding around every thumbnail's outer selection-backdrop container.
+# The colored backdrop rectangle that appears when a thumbnail is selected
+# spans this padding on every side. Tuned to roughly half of the grid
+# spacing (10 px) so a selected thumb's backdrop occupies about half of
+# the visible gap between it and its neighbours without touching them.
+_THUMB_SELECTION_BACKDROP_PADDING = 6
+
+
 def _microscope_tag_from_image(image: dict, translate=None) -> tuple[str | None, str | None]:
     """Return (label, color) for the colored microscope tag rendered in
     the thumbnail's bottom-left. Mirrors
@@ -265,46 +273,12 @@ def paint_thumbnail_selection_overlay(
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
 
+    # Selection itself is drawn as a square backdrop behind the frame by
+    # ImageGalleryWidget._update_thumbnail_selection_backdrop. This overlay
+    # only handles the hover glow + RAW halo now — leaving `selected` here
+    # would paint a redundant rounded frame on top of the backdrop.
     if selected:
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(colors.fill)
-        painter.drawRoundedRect(base_rect, radius, radius)
-
-        outer_rect = base_rect.adjusted(
-            outer_width / 2.0,
-            outer_width / 2.0,
-            -outer_width / 2.0,
-            -outer_width / 2.0,
-        )
-        if outer_rect.width() > 0.0 and outer_rect.height() > 0.0:
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(colors.outer, outer_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawRoundedRect(
-                outer_rect,
-                max(1.0, radius - outer_width * 0.45),
-                max(1.0, radius - outer_width * 0.45),
-            )
-
-        inner_gap = max(1.0, size_hint * 0.01)
-        inner_rect = base_rect.adjusted(
-            outer_width + inner_gap + inner_width / 2.0,
-            outer_width + inner_gap + inner_width / 2.0,
-            -(outer_width + inner_gap + inner_width / 2.0),
-            -(outer_width + inner_gap + inner_width / 2.0),
-        )
-        if inner_rect.width() > 0.0 and inner_rect.height() > 0.0:
-            painter.setPen(QPen(colors.inner, inner_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawRoundedRect(
-                inner_rect,
-                max(1.0, radius - outer_width - inner_gap),
-                max(1.0, radius - outer_width - inner_gap),
-            )
-            corner_len = max(5.0, min(10.0, size_hint * 0.11))
-            corner_rect = base_rect.adjusted(outer_width * 0.75, outer_width * 0.75, -outer_width * 0.75, -outer_width * 0.75)
-            _draw_thumbnail_corner_brackets(painter, corner_rect, colors.corner, max(1.0, inner_width * 0.9), corner_len)
-
-        if badge_text:
-            _draw_thumbnail_selection_badge(painter, base_rect, badge_text, colors, size_hint)
+        pass
     elif hovered:
         hover_fill = QColor(colors.fill)
         hover_fill.setAlpha(max(18, hover_fill.alpha() // 2))
@@ -575,6 +549,11 @@ class ImageGalleryWidget(QGroupBox):
         self._frames: list[QFrame] = []
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
+        # Filepaths to re-select on the next set_items / observation reload
+        # (see set_selection_after_next_load). Survives the transient
+        # clear() that fires when the observations table loses selection
+        # mid-refresh.
+        self._pending_selection_paths: list[str] = []
         self._last_clicked_index: int | None = None
         self._drag_start_pos: QPoint | None = None
         self._drag_start_key = None
@@ -618,7 +597,12 @@ class ImageGalleryWidget(QGroupBox):
         self._grid = QHBoxLayout(self._container)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self._grid.setSpacing(10)
+        # No inter-container spacing — each thumbnail sits inside a
+        # selection-backdrop container that already carries the visual gap
+        # (via _THUMB_SELECTION_BACKDROP_PADDING). This lets two adjacent
+        # selected thumbnails' backdrops meet in the middle instead of
+        # leaving a dead strip between them.
+        self._grid.setSpacing(0)
         self._container.installEventFilter(self)
         self._scroll.setWidget(self._container)
         content_layout.addWidget(self._scroll)
@@ -662,6 +646,19 @@ class ImageGalleryWidget(QGroupBox):
         self._selected_keys = set()
         self._publish_checked_by_key = {}
         self._clear_widgets()
+
+    def set_selection_after_next_load(self, paths) -> None:
+        """Remember filepaths that should be re-selected as soon as the
+        next observation-load / set_items call produces items containing
+        them. Used to survive the "clear -> async reload" round-trip that
+        fires when the observations table momentarily loses selection
+        during a refresh."""
+        cleaned: list[str] = []
+        for path in paths or []:
+            text = str(path or "").strip()
+            if text:
+                cleaned.append(text)
+        self._pending_selection_paths = cleaned
 
     def invalidate_pixmap_cache(self, path: str | Path | None = None) -> None:
         if path is None:
@@ -739,18 +736,23 @@ class ImageGalleryWidget(QGroupBox):
         viewport = self._scroll.viewport()
         if scrollbar is None or viewport is None:
             return
-        # Force the container's layout to run so freshly-added frames have
-        # real geometry — otherwise frame.geometry() reports (0, 0, 0, 0)
-        # and we'd snap the strip to scroll=0.
-        container = frame.parentWidget()
-        if container is not None:
-            layout = container.layout()
-            if layout is not None:
-                try:
-                    layout.activate()
-                except Exception:
-                    pass
-        frame_geometry = frame.geometry()
+        # For scroll targeting, use the OUTER selection-backdrop container's
+        # geometry — that's what's actually laid out in self._grid. The inner
+        # frame sits offset inside its container by the backdrop padding.
+        def _layout_geometry(widget):
+            outer = getattr(widget, "_outer_container", widget)
+            return outer.geometry() if outer is not None else widget.geometry()
+
+        # Force the grid layout to run so freshly-added rows have real
+        # geometry — otherwise .geometry() reports (0, 0, 0, 0) and we'd
+        # snap the strip to scroll=0.
+        grid_container = self._grid.parentWidget() if hasattr(self, "_grid") else None
+        if grid_container is not None and grid_container.layout() is not None:
+            try:
+                grid_container.layout().activate()
+            except Exception:
+                pass
+        frame_geometry = _layout_geometry(frame)
         if frame_geometry.width() <= 0 and retries > 0:
             # Layout hasn't settled yet — try again shortly.
             QTimer.singleShot(
@@ -772,8 +774,8 @@ class ImageGalleryWidget(QGroupBox):
             QRectF(frame_geometry),
             int(scrollbar.minimum()),
             int(scrollbar.maximum()),
-            QRectF(previous_frame.geometry()) if previous_frame is not None else None,
-            QRectF(next_frame.geometry()) if next_frame is not None else None,
+            QRectF(_layout_geometry(previous_frame)) if previous_frame is not None else None,
+            QRectF(_layout_geometry(next_frame)) if next_frame is not None else None,
         )
         if target is None:
             return
@@ -784,7 +786,32 @@ class ImageGalleryWidget(QGroupBox):
         if bool(getattr(frame, "_thumbnail_selected", False)) == selected:
             return
         frame._thumbnail_selected = selected
+        self._update_thumbnail_selection_backdrop(frame)
         self._update_thumbnail_selection_overlay(frame)
+
+    def _update_thumbnail_selection_backdrop(self, frame: QFrame) -> None:
+        """Toggle the outer selection-backdrop container's background based
+        on selection state. Replaces the old rounded overlay border with a
+        square backdrop that surrounds the frame + a few px of padding."""
+        container = getattr(frame, "_outer_container", None)
+        if container is None:
+            return
+        selected = bool(getattr(frame, "_thumbnail_selected", False))
+        colors = thumbnail_selection_colors(_palette_is_dark(container.palette()))
+        if selected:
+            background = QColor(colors.outer)
+            background.setAlpha(min(255, background.alpha() + 30))
+            rgba = (
+                f"rgba({background.red()}, {background.green()}, "
+                f"{background.blue()}, {background.alpha()})"
+            )
+            container.setStyleSheet(
+                f"QWidget#thumbSelectionContainer {{ background-color: {rgba}; }}"
+            )
+        else:
+            container.setStyleSheet(
+                "QWidget#thumbSelectionContainer { background-color: transparent; }"
+            )
 
     def _set_frame_hovered_state(self, frame: QFrame, hovered: bool) -> None:
         hovered = bool(hovered)
@@ -946,6 +973,7 @@ class ImageGalleryWidget(QGroupBox):
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
                 }
             )
+        self._consume_pending_selection_paths()
         self._render()
 
     def set_observation_id(self, observation_id: int | None) -> None:
@@ -1089,7 +1117,34 @@ class ImageGalleryWidget(QGroupBox):
                 }
             )
         self._items = items
+        self._consume_pending_selection_paths()
         self._render()
+
+    def _consume_pending_selection_paths(self) -> None:
+        pending = getattr(self, "_pending_selection_paths", None)
+        if not pending:
+            return
+        pending_set = {str(path or "").strip() for path in pending if path}
+        self._pending_selection_paths = []
+        if not pending_set:
+            return
+        matched_keys: set[str | int] = set()
+        first_key: str | int | None = None
+        first_id: object | None = None
+        for item in self._items:
+            filepath = str(item.get("filepath") or "").strip()
+            if filepath and filepath in pending_set:
+                key = item.get("id") if item.get("id") is not None else filepath
+                if key is None:
+                    continue
+                matched_keys.add(key)
+                if first_key is None:
+                    first_key = key
+                    first_id = item.get("id")
+        if matched_keys:
+            self._selected_keys = matched_keys
+            self._selected_id = first_id
+            self._last_clicked_index = self._index_for_key(first_key)
 
     @staticmethod
     def _cloud_badge_visible(item: dict) -> bool:
@@ -1441,9 +1496,15 @@ class ImageGalleryWidget(QGroupBox):
         while self._render_index < end_index:
             item = self._items[self._render_index]
             self._render_index += 1
-            frame = self._create_thumbnail_widget(item)
+            # _create_thumbnail_widget returns the outer selection-backdrop
+            # container. self._frames still tracks the inner QFrame so all
+            # per-frame lookups (image_key, mouse handlers, etc.) stay
+            # unchanged; the grid gets the container so the padded backdrop
+            # has room to render behind the frame.
+            container = self._create_thumbnail_widget(item)
+            frame = getattr(container, "_thumbnail_frame", container)
             self._frames.append(frame)
-            self._grid.addWidget(frame)
+            self._grid.addWidget(container)
             key = self._item_key(item)
             if key in self._selected_keys:
                 self._set_frame_selected_state(frame, True)
@@ -1561,16 +1622,13 @@ class ImageGalleryWidget(QGroupBox):
     @staticmethod
     def _apply_frame_glow(frame: QFrame, selected: bool, hovered: bool = False) -> None:
         raw_halo_color = getattr(frame, "raw_halo_color", None)
-        if selected:
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(30)
-            effect.setOffset(0, 0)
-            effect_color = QColor(raw_halo_color) if raw_halo_color else QColor(52, 152, 219, 230)
-            if not effect_color.isValid():
-                effect_color = QColor(52, 152, 219, 230)
-            effect.setColor(effect_color)
-            frame.setGraphicsEffect(effect)
-        elif raw_halo_color:
+        # Selection is now indicated by the outer square backdrop — the old
+        # drop-shadow was too soft and combined weirdly with the backdrop.
+        # Keep the shadow only for RAW halo + hover states.
+        if selected and raw_halo_color:
+            # Retain the RAW halo when a RAW thumbnail is selected.
+            pass  # falls through into the raw_halo_color branch below
+        if raw_halo_color:
             effect = QGraphicsDropShadowEffect(frame)
             effect.setBlurRadius(22)
             effect.setOffset(0, 0)
@@ -1729,6 +1787,12 @@ class ImageGalleryWidget(QGroupBox):
             bottom_left_layout.setContentsMargins(2, 2, 2, 2)
             bottom_left_layout.setSpacing(2)
 
+            # "From raw" first so it sits ABOVE the colored objective tag in
+            # the stack, anchored to the bottom-left corner of the thumbnail.
+            if raw_badge_text:
+                raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
+                bottom_left_layout.addWidget(raw_label, 0, Qt.AlignLeft)
+
             microscope_label = QLabel(str(microscope_tag_text))
             microscope_color = QColor(microscope_tag_color) if microscope_tag_color is not None else QColor("#3498db")
             text_color = _tag_text_color(microscope_color)
@@ -1748,10 +1812,6 @@ class ImageGalleryWidget(QGroupBox):
                 microscope_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
             microscope_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             bottom_left_layout.addWidget(microscope_label, 0, Qt.AlignLeft)
-
-            if raw_badge_text:
-                raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
-                bottom_left_layout.addWidget(raw_label, 0, Qt.AlignLeft)
 
             if clean_badges:
                 first_row = QHBoxLayout()
@@ -1939,7 +1999,25 @@ class ImageGalleryWidget(QGroupBox):
         frame.mouseReleaseEvent = lambda e: setattr(self, "_drag_start_pos", None)
         frame.mouseDoubleClickEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self.imageDoubleClicked.emit(img_id, path or "")
         frame.installEventFilter(self)
-        return frame
+        # Wrap the frame in an outer container that provides the square
+        # selection backdrop. When a thumbnail is selected the container's
+        # background paints as a solid colored rectangle behind the frame,
+        # with a few pixels of padding on all sides so the color shows.
+        container = QWidget()
+        container.setObjectName("thumbSelectionContainer")
+        container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        container_layout = QVBoxLayout(container)
+        pad = _THUMB_SELECTION_BACKDROP_PADDING
+        container_layout.setContentsMargins(pad, pad, pad, pad)
+        container_layout.setSpacing(0)
+        container_layout.addWidget(frame)
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet(
+            "QWidget#thumbSelectionContainer { background-color: transparent; }"
+        )
+        container._thumbnail_frame = frame
+        frame._outer_container = container
+        return container
 
     def set_multi_select(self, enabled: bool) -> None:
         self._multi_select = bool(enabled)
@@ -2240,14 +2318,27 @@ class ImageGalleryWidget(QGroupBox):
         # disappear, and so on.
         frame = max(0, int(self._scroll.frameWidth()) * 2)
         scrollbar_h = max(0, int(self._scroll.horizontalScrollBar().sizeHint().height()))
-        available_h = max(0, int(self._scroll.height()) - frame - scrollbar_h - 8)
+        # Reserve room for the selection-backdrop padding above + below the
+        # thumbnail — otherwise the bottom edge of the frame gets clipped
+        # by the strip's fixed height.
+        backdrop_padding = _THUMB_SELECTION_BACKDROP_PADDING * 2
+        available_h = max(
+            0,
+            int(self._scroll.height()) - frame - scrollbar_h - 8 - backdrop_padding,
+        )
         target = max(self._min_thumb_size, min(self._base_thumb_size, available_h))
         return target
 
     def _sync_container_height(self) -> None:
         if not hasattr(self, "_container") or self._container is None:
             return
-        row_height = max(0, int(self._thumb_size if self._frames or self._items else 0))
+        if self._frames or self._items:
+            # The row's actual height is the thumbnail plus the backdrop
+            # padding on both sides — otherwise the padded containers get
+            # clipped from below.
+            row_height = int(self._thumb_size) + 2 * _THUMB_SELECTION_BACKDROP_PADDING
+        else:
+            row_height = 0
         self._container.setFixedHeight(row_height)
 
     def _update_thumbnail_sizes(self) -> None:
