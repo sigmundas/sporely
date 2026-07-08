@@ -2863,12 +2863,18 @@ class SpeciesPlateDialog(QDialog):
                 lab_metadata=img.get("lab_metadata"),
                 translate=self.tr,
             )
+            cloud_id = str(img.get("cloud_id") or "").strip()
             items.append({
                 "id": img.get("id"),
                 "filepath": img.get("filepath", ""),
                 "image_type": image_type,
                 "badges": badges,
                 "frame_border_color": "#c0392b" if img.get("id") in in_use else None,
+                # Show the cloud-sync icon top-center for images that have
+                # already been uploaded — matches the Observations tab so
+                # users can tell what's synced without leaving Species Plate.
+                "cloud_id": cloud_id or None,
+                "cloud_uploaded": bool(cloud_id),
             })
         self._gallery.set_items(items)
         self._sync_gallery_selection()

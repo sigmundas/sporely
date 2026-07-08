@@ -31,7 +31,46 @@ from database.schema import load_objectives, objective_display_name, resolve_obj
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
+from .adaptive_choice_selector import objective_color, objective_short_label
 from .styles import pt
+
+
+def _microscope_tag_from_image(image: dict, translate=None) -> tuple[str | None, str | None]:
+    """Return (label, color) for the colored microscope tag rendered in
+    the thumbnail's bottom-left. Mirrors
+    LiveLabTab._microscope_tag_for_metadata but reads from a plain image
+    row / import result dict, so every gallery instance can produce the
+    same tag."""
+    if not isinstance(image, dict):
+        return None, None
+    tr = translate if callable(translate) else (lambda text: text)
+    objective_name = image.get("objective_name")
+    if not objective_name:
+        lab_metadata = image.get("lab_metadata")
+        if isinstance(lab_metadata, dict):
+            objective_name = lab_metadata.get("objective_name") or (
+                lab_metadata.get("microscope") or {}
+            ).get("objective_name")
+    if not objective_name:
+        return None, None
+    objectives = load_objectives()
+    objective = objectives.get(str(objective_name))
+    tag_text = objective_short_label(objective, str(objective_name))
+    if not tag_text:
+        tag_text = (
+            objective_display_name(objective, str(objective_name))
+            if objective
+            else str(objective_name)
+        )
+    contrast = image.get("contrast")
+    if contrast is None:
+        lab_metadata = image.get("lab_metadata")
+        if isinstance(lab_metadata, dict):
+            contrast = lab_metadata.get("contrast")
+    canonical = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
+    if canonical and str(canonical).strip().lower() not in {"not_set", "not set"}:
+        tag_text = f"{tag_text} {DatabaseTerms.translate('contrast', canonical)}"
+    return tag_text, objective_color(objective, str(objective_name))
 
 _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
 
@@ -1017,6 +1056,22 @@ class ImageGalleryWidget(QGroupBox):
             cloud_id = str(img.get("cloud_id") or "").strip()
             cloud_tombstone = cloud_tombstones.get(cloud_id) if cloud_id else None
             cloud_tombstone_synced = bool(str((cloud_tombstone or {}).get("delete_synced_at") or "").strip())
+            microscope_tag_text = img.get("microscope_tag_text")
+            microscope_tag_color = img.get("microscope_tag_color")
+            if microscope_tag_text is None:
+                computed_text, computed_color = _microscope_tag_from_image(img, self.tr)
+                microscope_tag_text = computed_text
+                if microscope_tag_color is None:
+                    microscope_tag_color = computed_color
+            # When the microscope tag is shown separately in the bottom-left,
+            # the first badge (image-type + objective detail) becomes
+            # redundant — strip it, matching Live Lab's behaviour.
+            if (
+                microscope_tag_text
+                and badges
+                and image_type == "microscope"
+            ):
+                badges = badges[1:]
             items.append(
                 {
                     "id": img_id,
@@ -1024,8 +1079,8 @@ class ImageGalleryWidget(QGroupBox):
                     "has_measurements": bool(img_id and int(img_id) in measurement_image_ids),
                     "image_number": idx + 1,
                     "badges": badges,
-                    "microscope_tag_text": img.get("microscope_tag_text"),
-                    "microscope_tag_color": img.get("microscope_tag_color"),
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
                     "gps_tag_color": img.get("gps_tag_color"),
                     "cloud_id": cloud_id or None,
                     "cloud_uploaded": bool(cloud_id and not cloud_tombstone_synced),

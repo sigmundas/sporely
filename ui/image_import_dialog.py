@@ -164,7 +164,7 @@ class _RawPreviewCacheEntry:
 
 _RAW_PREVIEW_WB_CACHE_MAX = 6
 
-from .image_gallery_widget import ImageGalleryWidget
+from .image_gallery_widget import ImageGalleryWidget, _microscope_tag_from_image
 from .combo_alerts import update_combo_alert, update_combo_alerts
 from .raw_processing_controls import RawProcessingControls
 from .zoomable_image_widget import ZoomableImageLabel
@@ -5689,6 +5689,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if isinstance(result.image_id, int) and result.image_id > 0
         ]
         measured_image_ids: set[int] = set()
+        cloud_uploaded_ids: set[int] = set()
         if image_ids:
             conn = None
             try:
@@ -5700,8 +5701,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     tuple(image_ids),
                 )
                 measured_image_ids = {int(row[0]) for row in cursor.fetchall() if row and row[0] is not None}
+                # Cloud sync state so the top-center cloud badge shows for
+                # already-uploaded images, matching the Observations panel.
+                cursor.execute(
+                    f"SELECT id, cloud_id FROM images WHERE id IN ({placeholders})",
+                    tuple(image_ids),
+                )
+                cloud_uploaded_ids = {
+                    int(row[0]) for row in cursor.fetchall()
+                    if row and row[0] is not None and str(row[1] or "").strip()
+                }
             except Exception:
                 measured_image_ids = set()
+                cloud_uploaded_ids = set()
             finally:
                 if conn is not None:
                     conn.close()
@@ -5744,6 +5756,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
             raw_source_kind = ""
             if isinstance(raw_source, dict):
                 raw_source_kind = str((raw_source.get("source") or {}).get("kind") or "").strip().lower()
+            # Compute the colored microscope tag (bottom-left) from the
+            # result's objective + contrast so Import dialog matches the
+            # Observations / Measure galleries.
+            microscope_tag_text, microscope_tag_color = _microscope_tag_from_image(
+                {
+                    "objective_name": result.objective,
+                    "contrast": result.contrast,
+                    "lab_metadata": result.lab_metadata,
+                },
+                translate=self.tr,
+            )
+            if microscope_tag_text and badges and (result.image_type or "").strip().lower() == "microscope":
+                badges = badges[1:]
+            cloud_uploaded = bool(
+                isinstance(result.image_id, int)
+                and int(result.image_id) in cloud_uploaded_ids
+            )
             items.append(
                 {
                     "id": result.image_id,
@@ -5757,6 +5786,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "gps_tag_text": gps_tag,
                     "gps_tag_highlight": gps_highlight,
                     "has_measurements": has_measurements,
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
+                    "cloud_uploaded": cloud_uploaded,
                     "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
