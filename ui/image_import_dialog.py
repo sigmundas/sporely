@@ -1680,7 +1680,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.raw_paste_btn.setVisible(False)
         raw_action_layout.addWidget(self.raw_paste_btn)
 
-        raw_action_layout.addStretch(1)
+        # No leading/trailing stretch: the frame is centered as a whole via
+        # _position_raw_convert_button so the buttons sit compactly.
         self.raw_action_frame.adjustSize()
         self.raw_action_frame.hide()
         self.raw_action_frame.raise_()
@@ -5769,6 +5770,28 @@ class ImageImportDialog(GeometryMixin, QDialog):
             )
             if microscope_tag_text and badges and (result.image_type or "").strip().lower() == "microscope":
                 badges = badges[1:]
+            # Replace the "From raw" tag (added by build_raw_source_badges)
+            # with "UNSAVED RAW" whenever the user has tweaked RAW settings
+            # on this image but hasn't yet run the full render — either by
+            # clicking "Apply new raw settings" or by closing the dialog
+            # with Save changes. The widget's bottom-left rendering picks
+            # the last badge containing "raw" as the standalone raw tag,
+            # so swapping in place gives the same rendering position
+            # without duplicating the label.
+            if bool(getattr(result, "raw_unsaved_changes", False)):
+                unsaved_label = (
+                    self.tr("UNSAVED RAW")
+                    if self._result_is_raw_backed(result)
+                    else self.tr("UNSAVED")
+                )
+                replaced = False
+                for badge_idx in range(len(badges) - 1, -1, -1):
+                    if "raw" in str(badges[badge_idx] or "").lower():
+                        badges[badge_idx] = unsaved_label
+                        replaced = True
+                        break
+                if not replaced:
+                    badges = badges + [unsaved_label]
             cloud_uploaded = bool(
                 isinstance(result.image_id, int)
                 and int(result.image_id) in cloud_uploaded_ids
@@ -5947,19 +5970,48 @@ class ImageImportDialog(GeometryMixin, QDialog):
         """Render final JPEGs for any RAW image whose settings changed but
         that the user didn't explicitly click 'Apply new raw settings' on
         before hitting Close/Save. Otherwise the on-disk file (and thus the
-        Measure gallery thumbnail) stays out of sync with the edits."""
+        Measure gallery thumbnail) stays out of sync with the edits.
+
+        Shows a determinate progress bar in the hint area while working so
+        the multi-second full-quality re-render doesn't feel like a frozen
+        UI. Each image is ~1–3 s on a mirrorless RAW."""
         results = list(getattr(self, "import_results", []) or [])
-        for index, result in enumerate(results):
-            if not self._result_is_raw_backed(result):
-                continue
-            if not bool(getattr(result, "raw_unsaved_changes", False)):
-                continue
-            try:
-                self._finalize_raw_settings_for_result(result, index)
-            except Exception:
-                # Rendering failure is surfaced via result.processing_status
-                # by the helper; keep processing the rest.
-                continue
+        pending = [
+            (idx, res) for idx, res in enumerate(results)
+            if self._result_is_raw_backed(res)
+            and bool(getattr(res, "raw_unsaved_changes", False))
+        ]
+        if not pending:
+            return
+        show_progress = getattr(self, "_set_hint_progress_visible", None)
+        update_progress = getattr(self, "_set_hint_progress", None)
+        total = len(pending)
+        try:
+            if callable(show_progress):
+                show_progress(True)
+            for i, (index, result) in enumerate(pending, start=1):
+                if callable(update_progress):
+                    name = Path(result.filepath or "").name or f"image {index + 1}"
+                    percent = int(round((i - 1) / total * 100))
+                    update_progress(
+                        self.tr("Saving RAW {current} of {total}: {name}").format(
+                            current=i, total=total, name=name,
+                        ),
+                        percent,
+                    )
+                    QApplication.processEvents()
+                try:
+                    self._finalize_raw_settings_for_result(result, index)
+                except Exception:
+                    # Rendering failure is surfaced via result.processing_status
+                    # by the helper; keep processing the rest.
+                    continue
+            if callable(update_progress):
+                update_progress(self.tr("Saving RAW images complete."), 100)
+                QApplication.processEvents()
+        finally:
+            if callable(show_progress):
+                show_progress(False)
 
     def _accept_and_close(self) -> None:
         start_time = time.perf_counter()
@@ -6391,8 +6443,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         margin = 12
         frame.adjustSize()
-        x = max(margin, self.preview.width() - frame.sizeHint().width() - margin)
-        y = max(margin, self.preview.height() - frame.sizeHint().height() - margin)
+        frame_width = frame.sizeHint().width()
+        frame_height = frame.sizeHint().height()
+        # Centered horizontally, anchored to the bottom of the preview,
+        # matching Live Lab's "Save current / Save all / Copy settings"
+        # placement.
+        x = max(margin, (self.preview.width() - frame_width) // 2)
+        y = max(margin, self.preview.height() - frame_height - margin)
         frame.move(x, y)
 
     def _update_raw_panel_for_result(self, result: ImageImportResult | None) -> None:
@@ -6523,6 +6580,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         result = self.import_results[index]
         if not self._result_is_raw_backed(result):
             return
+        was_unsaved = bool(getattr(result, "raw_unsaved_changes", False))
         result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
         result.raw_unsaved_changes = True
         mark_dirty = getattr(self, "_mark_dirty", None)
@@ -6534,6 +6592,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         # synchronously on every slider tick with the full-res proxy (which
         # can be 4000×3000 and add 100+ ms of latency per event).
         self._update_raw_panel_for_result(result)
+        # First slider tweak flips the thumbnail into "UNSAVED RAW" state —
+        # refresh the gallery item to render that badge. Only refresh on
+        # the transition (not every tick) so the drag stays snappy.
+        if not was_unsaved:
+            self._refresh_gallery()
 
     def _refresh_prepare_raw_curve_preview(
         self,

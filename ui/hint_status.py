@@ -1,9 +1,22 @@
 """Reusable hint/status helpers for dialogs and windows."""
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from typing import Callable
+
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QToolTip, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QSizePolicy,
+    QStackedWidget,
+    QToolButton,
+    QToolTip,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .styles import pt
 
@@ -477,3 +490,132 @@ class HintLabel(QLabel):
         painter.setPen(pen)
         painter.drawLine(x, y, x + width, y)
         painter.end()
+
+
+class HintProgressStack(QWidget):
+    """Bottom-of-tab hint area that combines a HintBar with a progress
+    panel (bar + label + optional cancel button). Only one is visible at a
+    time via an internal QStackedWidget, so showing progress never causes
+    the surrounding layout to jump vertically.
+
+    Use `hint_bar` to wire a HintStatusController. Call `show_progress()`
+    to switch to the progress panel and `hide_progress()` to return to
+    the hint. This mirrors the pattern Live Lab was already using inline;
+    factored out here so Analysis / Prepare Images / Ingestion can share
+    the same widget."""
+
+    cancelRequested = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.hint_bar = HintBar(self)
+        self.hint_bar.set_wrap_mode(True)
+
+        self._progress_widget = QWidget(self)
+        prog_layout = QHBoxLayout(self._progress_widget)
+        prog_layout.setContentsMargins(6, 4, 6, 4)
+        prog_layout.setSpacing(6)
+
+        prog_column = QVBoxLayout()
+        prog_column.setContentsMargins(0, 0, 0, 0)
+        prog_column.setSpacing(2)
+
+        self._progress_label = QLabel("")
+        self._progress_label.setWordWrap(False)
+        self._progress_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._progress_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self._progress_bar = QProgressBar(self._progress_widget)
+        self._progress_bar.setRange(0, 0)  # indeterminate by default
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setFixedHeight(5)
+        self._progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        prog_column.addWidget(self._progress_label)
+        prog_column.addWidget(self._progress_bar)
+        prog_layout.addLayout(prog_column, 1)
+
+        self._cancel_btn = QToolButton(self._progress_widget)
+        self._cancel_btn.setText("✕")
+        self._cancel_btn.setCursor(Qt.PointingHandCursor)
+        self._cancel_btn.setFixedSize(22, 22)
+        self._cancel_btn.setVisible(False)
+        self._cancel_btn.setStyleSheet(
+            "QToolButton {"
+            " border: 1px solid #b91c1c;"
+            " border-radius: 4px;"
+            " color: #ffffff;"
+            " background-color: #dc2626;"
+            " font-weight: 700;"
+            " padding: 0px;"
+            "}"
+            "QToolButton:hover { background-color: #b91c1c; }"
+            "QToolButton:pressed { background-color: #991b1b; }"
+        )
+        self._cancel_btn.clicked.connect(self.cancelRequested.emit)
+        prog_layout.addWidget(self._cancel_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+        style_progress_widgets(self._progress_bar, self._progress_label)
+
+        self._stack = QStackedWidget(self)
+        self._stack.addWidget(self.hint_bar)
+        self._stack.addWidget(self._progress_widget)
+        stable_height = max(
+            int(self.hint_bar.sizeHint().height() or 0),
+            int(self._progress_widget.sizeHint().height() or 0),
+            32,
+        )
+        self._stack.setFixedHeight(stable_height)
+        self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self._stack)
+
+        self._cancel_callback: Callable[[], None] | None = None
+        self.cancelRequested.connect(self._on_cancel_clicked)
+
+    def _on_cancel_clicked(self) -> None:
+        if self._cancel_callback is not None:
+            try:
+                self._cancel_callback()
+            except Exception:
+                pass
+
+    def show_progress(
+        self,
+        text: str = "",
+        *,
+        value: int | None = None,
+        maximum: int | None = None,
+        cancel_callback: Callable[[], None] | None = None,
+    ) -> None:
+        """Switch to the progress panel. Pass value/maximum for a
+        determinate bar or leave both None for indeterminate spinner. Set
+        cancel_callback to enable the cancel button."""
+        self._progress_label.setText(str(text or ""))
+        if value is not None and maximum is not None and int(maximum) > 0:
+            self._progress_bar.setRange(0, int(maximum))
+            self._progress_bar.setValue(int(max(0, min(int(value), int(maximum)))))
+        else:
+            self._progress_bar.setRange(0, 0)
+        self._cancel_callback = cancel_callback
+        self._cancel_btn.setVisible(cancel_callback is not None)
+        self._cancel_btn.setEnabled(cancel_callback is not None)
+        self._stack.setCurrentWidget(self._progress_widget)
+
+    def update_progress(self, text: str | None = None, *, value: int | None = None, maximum: int | None = None) -> None:
+        if text is not None:
+            self._progress_label.setText(str(text))
+        if maximum is not None:
+            self._progress_bar.setRange(0, int(maximum))
+        if value is not None and int(self._progress_bar.maximum()) > 0:
+            self._progress_bar.setValue(int(max(0, min(int(value), int(self._progress_bar.maximum())))))
+
+    def hide_progress(self) -> None:
+        """Switch back to the hint bar."""
+        self._cancel_callback = None
+        self._cancel_btn.setVisible(False)
+        self._cancel_btn.setEnabled(False)
+        self._stack.setCurrentWidget(self.hint_bar)

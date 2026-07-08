@@ -39,6 +39,23 @@ import tempfile
 import threading
 import time
 import os
+
+# Enable with SPORELY_DEBUG_RAW_TIMING=1 to see stage-by-stage timings for
+# the post-Prepare-Images save flow (apply_import_results, refresh_
+# observations, set_selected_as_active …). Matches the [raw-timing] prefix
+# used by the RAW render pipeline so lines interleave in one console
+# stream.
+_OBS_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+
+
+def _obs_timing_log(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _OBS_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if detail:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms")
 import sys
 import html
 import json
@@ -1750,6 +1767,31 @@ class _ObservationImageBrowser(QWidget):
         self._clear_image_display(self.tr("No image selected"))
         self._update_nav_state()
 
+    def invalidate_pixmap_cache(self, path: str | None = None) -> None:
+        """Drop cached pixmaps for `path` (or all of them if None) and
+        redisplay the current image if it was affected. Called after a
+        RAW-edit round-trip where the file's bytes changed but its path
+        did not — the cache would otherwise keep serving the pre-edit
+        pixmap."""
+        target: str | None
+        if path is None:
+            target = None
+            self._pixmap_cache.clear()
+            self._pixmap_cache_order.clear()
+        else:
+            target = str(path or "").strip()
+            if not target:
+                return
+            self._pixmap_cache.pop(target, None)
+            try:
+                self._pixmap_cache_order.remove(target)
+            except ValueError:
+                pass
+        if 0 <= self._current_index < len(self._items):
+            current_path = str(self._items[self._current_index].get("path") or "").strip()
+            if target is None or current_path == target:
+                self._display_current()
+
     def show_previous(self) -> None:
         if not self._items:
             return
@@ -1923,6 +1965,16 @@ class ObservationsTab(QWidget):
         self._gallery_load_timer.setSingleShot(True)
         self._gallery_load_timer.setInterval(45)
         self._gallery_load_timer.timeout.connect(self._load_pending_gallery_observation)
+        # Row-level refresh state — used by schedule_observation_row_refresh
+        # to update the Spores / Status columns after measurement changes
+        # without incurring a full refresh_observations() (which currently
+        # costs ~7 s on real observation counts).
+        self._row_index_by_obs_id: dict[int, int] = {}
+        self._pending_row_refresh_ids: set[int] = set()
+        self._row_refresh_timer = QTimer(self)
+        self._row_refresh_timer.setSingleShot(True)
+        self._row_refresh_timer.setInterval(200)
+        self._row_refresh_timer.timeout.connect(self._flush_pending_observation_row_refreshes)
         self.setAcceptDrops(True)
         self.init_ui()
         QTimer.singleShot(0, self.refresh_observations)
@@ -5108,6 +5160,9 @@ class ObservationsTab(QWidget):
 
         restored_selection = False
         _async_thumb_paths: list = []
+        # Rebuild the obs_id → row_index map alongside the render so
+        # per-row refresh calls can locate a row in O(1) without scanning.
+        self._row_index_by_obs_id = {}
         table.setUpdatesEnabled(False)
         table.blockSignals(True)
         try:
@@ -5117,6 +5172,9 @@ class ObservationsTab(QWidget):
             self._update_observations_table_geometry()
 
             for row_index, row_data in enumerate(visible_rows):
+                obs_key = row_data.get("local_id") or row_data.get("observation_id")
+                if isinstance(obs_key, int) and obs_key > 0:
+                    self._row_index_by_obs_id[int(obs_key)] = row_index
                 is_cloud = str(row_data.get("row_kind") or "") == "cloud"
                 mark_star = bool(row_data.get("mark_star")) or is_cloud
                 local_obs_id = row_data.get("local_id") if not is_cloud else None
@@ -5451,6 +5509,89 @@ class ObservationsTab(QWidget):
             if icon is not None:
                 item.setIcon(icon)
                 item.setText("")
+
+    def schedule_observation_row_refresh(self, obs_id: int | None) -> None:
+        """Queue a lightweight refresh of a single observation row.
+
+        Coalesces multiple calls (e.g. from a burst of measurement inserts)
+        into one debounced update via a 200 ms QTimer, so the observations
+        table's "Spores" column reflects new stats without paying the ~7 s
+        cost of refresh_observations().
+        """
+        try:
+            key = int(obs_id or 0)
+        except (TypeError, ValueError):
+            return
+        if key <= 0:
+            return
+        self._pending_row_refresh_ids.add(key)
+        if not self._row_refresh_timer.isActive():
+            self._row_refresh_timer.start()
+
+    def _flush_pending_observation_row_refreshes(self) -> None:
+        pending = list(self._pending_row_refresh_ids)
+        self._pending_row_refresh_ids.clear()
+        for obs_id in pending:
+            try:
+                self.refresh_observation_row(int(obs_id))
+            except Exception:
+                # Defensive: keep flushing the rest even if one row's
+                # update raises (missing observation, closed dialog, …).
+                continue
+
+    def refresh_observation_row(self, obs_id: int) -> None:
+        """Update just the cells of one observation row that could have
+        changed as a result of a measurement mutation. Currently that's
+        the Spores column (index 4); if more columns become dynamic later,
+        extend the writes below.
+
+        Sub-15 ms in practice — one indexed SQL query plus two setText
+        calls on existing QTableWidgetItems."""
+        try:
+            key = int(obs_id or 0)
+        except (TypeError, ValueError):
+            return
+        if key <= 0:
+            return
+        row_index = self._row_index_by_obs_id.get(key)
+        if row_index is None or row_index >= self.table.rowCount():
+            return
+        # Refetch the observation so we pick up any changed spore stats
+        # (measurement mutations don't touch the observation row itself,
+        # but _spore_count_for_observation_row queries measurements when
+        # spore_statistics is missing from the row).
+        try:
+            observation = ObservationDB.get_observation(key)
+        except Exception:
+            observation = None
+        if not observation:
+            return
+        spore_short = _spore_count_for_observation_row(observation) or "-"
+        # Update the cached row dict so downstream consumers see the fresh
+        # value if they read the cache directly.
+        cache = self._observation_table_rows_cache
+        if 0 <= row_index < len(cache):
+            row_data = dict(cache[row_index])
+            row_data["spore_short"] = spore_short
+            cache[row_index] = row_data
+        # Update the visible cell in place. Block signals so the write
+        # doesn't fire on_selection_changed / cellChanged.
+        table = self.table
+        sorting_was_enabled = bool(table.isSortingEnabled())
+        table.blockSignals(True)
+        try:
+            if sorting_was_enabled:
+                table.setSortingEnabled(False)
+            spore_item = table.item(row_index, 4)
+            if spore_item is None:
+                spore_item = QTableWidgetItem(str(spore_short))
+                table.setItem(row_index, 4, spore_item)
+            else:
+                spore_item.setText(str(spore_short))
+        finally:
+            if sorting_was_enabled:
+                table.setSortingEnabled(True)
+            table.blockSignals(False)
 
     def refresh_observations(
         self,
@@ -10020,25 +10161,64 @@ class ObservationsTab(QWidget):
         if not image_dialog.exec():
             return
 
+        post_save_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+
         image_results       = image_dialog.import_results
         obs_lat, obs_lon    = image_dialog.get_observation_gps()
+        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         ObservationDB.update_observation(
             obs_id,
             gps_latitude=obs_lat,
             gps_longitude=obs_lon,
             allow_nulls=True,
         )
+        _obs_timing_log("update_observation gps", step_start)
+        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self.schedule_metadata_cloud_sync(obs_id)
+        _obs_timing_log("schedule_metadata_cloud_sync", step_start)
+        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self._apply_import_results_to_observation(obs_id, image_results, existing_images=existing_images)
-        self.refresh_observations()
-        for r, obs in enumerate(ObservationDB.get_all_observations()):
-            if obs["id"] == obs_id:
-                self.table.selectRow(r)
-                self.selected_observation_id = obs_id
-                self.on_selection_changed()
-                break
+        _obs_timing_log(
+            "apply_import_results_to_observation",
+            step_start,
+            detail=f"images={len(image_results or [])}",
+        )
+        # NB: skipping refresh_observations() here — nothing about the
+        # observation-table rows themselves changed (only one image's
+        # bytes did). A full refresh currently costs ~7 s on realistic
+        # observation counts because _render_observations_table rebuilds
+        # every row from scratch. If GPS was changed in Prepare Images,
+        # the Location column stays visually stale until the next natural
+        # refresh; the DB write itself already happened above. Falls back
+        # to the row we're already sitting on: just re-issue the selection
+        # so downstream signal handlers refresh the gallery / image
+        # browser.
+        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+        current_row = None
+        selected_rows_now = self.table.selectionModel().selectedRows()
+        if selected_rows_now:
+            current_row = selected_rows_now[0].row()
+        if current_row is not None and self._observation_id_for_row(current_row) == obs_id:
+            self.selected_observation_id = obs_id
+            self.on_selection_changed()
+        else:
+            # Row moved (unlikely for image edits, but be defensive) — do a
+            # full refresh + re-select as a fallback.
+            fallback_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+            self.refresh_observations()
+            _obs_timing_log("refresh_observations (fallback)", fallback_start)
+            for r, obs in enumerate(ObservationDB.get_all_observations()):
+                if obs["id"] == obs_id:
+                    self.table.selectRow(r)
+                    self.selected_observation_id = obs_id
+                    self.on_selection_changed()
+                    break
+        _obs_timing_log("re-select current row", step_start)
+        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         # Force Measure tab to reload updated scale/measurements without switching tabs
         self.set_selected_as_active(switch_tab=False)
+        _obs_timing_log("set_selected_as_active", step_start)
+        _obs_timing_log("TOTAL post-save flow (to set_selected_as_active)", post_save_start)
 
         # Invalidate cached thumbnails for the edited files and reselect
         # the image the user was on before the edit — the standard flow
@@ -10071,6 +10251,17 @@ class ObservationsTab(QWidget):
                 gallery_widget.set_selection_after_next_load([target_path])
             except Exception:
                 pass
+
+        # Drop the image-browser's stale pixmap cache for the edited files
+        # so Image-mode shows the new bytes. Without this, the browser keeps
+        # serving the cached pixmap from before the RAW re-render.
+        image_browser = getattr(self, "image_browser", None)
+        if image_browser is not None and hasattr(image_browser, "invalidate_pixmap_cache"):
+            for path in edited_paths:
+                try:
+                    image_browser.invalidate_pixmap_cache(path)
+                except Exception:
+                    pass
 
         self.set_status_message(self.tr("Images updated."), level="success")
 
@@ -11504,22 +11695,46 @@ class ObservationsTab(QWidget):
                             else existing_path
                         )
 
+                    step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                     stored_path = self._replace_observation_image_file(
                         final_path,
                         existing_path,
                         obs_folder or output_dir,
                     )
+                    _obs_timing_log(
+                        "replace_observation_image_file",
+                        step_start,
+                        detail=Path(stored_path or final_path or "").name,
+                    )
                     if stored_path:
                         update_kwargs["filepath"] = stored_path
+                        thumb_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                         try:
                             generate_all_sizes(stored_path, result.image_id)
                         except Exception as e:
                             print(f"Warning: Could not regenerate thumbnails for {stored_path}: {e}")
+                        _obs_timing_log(
+                            "generate_all_sizes",
+                            thumb_start,
+                            detail=Path(stored_path).name,
+                        )
                         cleanup_import_temp_file(existing_path or source_for_update, source_for_update, stored_path, output_dir)
                         if final_path and final_path != source_for_update:
                             cleanup_import_temp_file(source_for_update, final_path, stored_path, output_dir)
                         result.filepath = stored_path
                         result.preview_path = stored_path
+                    # Persist lab_metadata (RAW processing settings, source
+                    # provenance, capture datetime, …) alongside the new
+                    # derivative so slider tweaks survive across dialog re-
+                    # opens. Without this, the pending_edit branch exits
+                    # before the shared persistence block below, so
+                    # raw_processing.settings never lands in the DB.
+                    existing_lab_pe = (existing.get("lab_metadata") if existing else None) or {}
+                    incoming_lab_pe = getattr(result, "lab_metadata", None) or {}
+                    if existing_lab_pe or incoming_lab_pe:
+                        merged_lab_pe = merge_image_lab_metadata(existing_lab_pe, incoming_lab_pe)
+                        if merged_lab_pe and merged_lab_pe != existing_lab_pe:
+                            update_kwargs["lab_metadata"] = merged_lab_pe
                     ImageDB.update_image(result.image_id, **update_kwargs)
                     continue
                 if apply_resample and existing_path:

@@ -208,7 +208,7 @@ from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
-from .hint_status import HintBar, HintStatusController
+from .hint_status import HintBar, HintProgressStack, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
@@ -8051,8 +8051,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
 
-        self.gallery_hint_bar = HintBar(self)
-        bottom_row.addWidget(self.gallery_hint_bar, 1)
+        # Combined hint + progress area at the bottom of the Analysis tab.
+        # The QStackedWidget inside HintProgressStack swaps between the
+        # HintBar and a progress panel, matching the pattern the Live Lab
+        # tab uses, so long-running RAW re-renders show a visible bar
+        # instead of freezing the UI silently.
+        self.gallery_hint_progress = HintProgressStack(self)
+        self.gallery_hint_bar = self.gallery_hint_progress.hint_bar
+        bottom_row.addWidget(self.gallery_hint_progress, 1)
         self._gallery_hint_controller = HintStatusController(self.gallery_hint_bar, self)
         if self._pending_gallery_hint_widgets:
             for widget, hint, tone, allow_when_disabled in self._pending_gallery_hint_widgets:
@@ -11410,6 +11416,29 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._prefetch_adjacent_images()
 
+    def _notify_measurements_changed(self, observation_id: int | None = None) -> None:
+        """Called after adding / updating / deleting spore measurements.
+
+        Schedules a debounced, per-row refresh of the observations table's
+        Spores column for the affected observation instead of triggering
+        a full refresh_observations() (which iterates every row + reloads
+        every thumbnail and costs seconds on realistic observation
+        counts).
+        """
+        try:
+            obs_id = int(observation_id or self.active_observation_id or 0)
+        except (TypeError, ValueError):
+            obs_id = 0
+        if obs_id <= 0:
+            return
+        tab = getattr(self, "observations_tab", None)
+        scheduler = getattr(tab, "schedule_observation_row_refresh", None)
+        if callable(scheduler):
+            try:
+                scheduler(obs_id)
+            except Exception:
+                pass
+
     def refresh_observation_images(self, select_image_id=None, force_refresh: bool = False):
         """Refresh the image list for the active observation.
 
@@ -12517,7 +12546,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             notes=notes_json,
             points=self.points[:2]  # Fallback for DB schema
         )
-        
+        self._notify_measurements_changed()
+
         ImageDB.update_image(
             self.current_image_id,
             scale=self.microns_per_pixel,
@@ -12590,6 +12620,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             notes=f"Q={q_value:.1f}" if q_value is not None else None,
             points=self.points[:2] if self.measure_mode == "lines" else self.points
         )
+        self._notify_measurements_changed()
 
         ImageDB.update_image(
             self.current_image_id,
@@ -19081,6 +19112,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         current_image_id = self.current_image_id
 
         MeasurementDB.delete_measurement(measurement_id)
+        self._notify_measurements_changed()
 
         # Remove only the lines for this measurement
         if measurement_id in self.measurement_lines:
