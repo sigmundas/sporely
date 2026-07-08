@@ -7527,6 +7527,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self,
             show_delete=True,
             show_badges=True,
+            show_edit=True,
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
@@ -7535,9 +7536,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
         self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
-        self.measure_gallery.deleteRequested.connect(self._on_measure_gallery_delete_requested)
+        self.measure_gallery.deleteImagesRequested.connect(self._on_measure_gallery_delete_selection_requested)
+        self.measure_gallery.editRequested.connect(self._on_measure_gallery_edit_requested)
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
         self.measure_gallery.itemsReordered.connect(self._on_measure_gallery_items_reordered)
+        self.measure_gallery.selectionChanged.connect(self._on_measure_gallery_selection_changed)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
@@ -11407,8 +11410,14 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._prefetch_adjacent_images()
 
-    def refresh_observation_images(self, select_image_id=None):
-        """Refresh the image list for the active observation."""
+    def refresh_observation_images(self, select_image_id=None, force_refresh: bool = False):
+        """Refresh the image list for the active observation.
+
+        `force_refresh=True` bypasses the "same-signature short-circuit" so
+        edits that change an image's content without changing its id or path
+        (e.g. saving new RAW settings from Prepare Images) still cause the
+        Measure gallery to rebuild.
+        """
         if not self.active_observation_id:
             self.observation_images = []
             self.current_image_index = -1
@@ -11436,7 +11445,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             for img in new_observation_images
         )
         gallery_changed = (
-            self._measure_gallery_observation_id != self.active_observation_id
+            force_refresh
+            or self._measure_gallery_observation_id != self.active_observation_id
             or self._measure_gallery_signature != new_signature
         )
         self.observation_images = new_observation_images
@@ -11466,6 +11476,94 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
         return gallery_changed
+
+    def refresh_after_image_edit(
+        self,
+        image_paths: list[str] | None = None,
+        preserve_image_id: int | None = None,
+    ) -> None:
+        """Called after Prepare Images saves changes to existing images.
+
+        Invalidates cached thumbnails/pixmaps for the edited files (whose
+        paths+ids didn't change but whose bytes did), forces the Measure
+        gallery to rebuild, reselects the image the user was viewing before
+        the edit, and reloads that image in the viewer so the new bytes
+        actually appear. Preserved session view state (zoom / pan) is
+        re-applied by load_image_record via
+        _apply_measure_session_view_for_current_image.
+        """
+        try:
+            preserve_image_id = int(preserve_image_id) if preserve_image_id else None
+        except Exception:
+            preserve_image_id = None
+
+        normalized_paths: list[str] = []
+        for path in image_paths or []:
+            text = str(path or "").strip()
+            if text:
+                normalized_paths.append(text)
+
+        # 1. Invalidate main-window per-path pixmap cache.
+        if normalized_paths:
+            for path in normalized_paths:
+                self._pixmap_cache.pop(path, None)
+                try:
+                    self._pixmap_cache_order.remove(path)
+                except ValueError:
+                    pass
+        else:
+            self._pixmap_cache.clear()
+            self._pixmap_cache_order.clear()
+
+        # 2. Invalidate Measure gallery's per-path pixmap cache so its
+        #    thumbnails re-render from the fresh JPEG on disk.
+        gallery = getattr(self, "measure_gallery", None)
+        if gallery is not None:
+            invalidate = getattr(gallery, "invalidate_pixmap_cache", None)
+            if callable(invalidate):
+                if normalized_paths:
+                    for path in normalized_paths:
+                        try:
+                            invalidate(path)
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        invalidate(None)
+                    except Exception:
+                        pass
+
+        # 3. Nuke Analysis-strip caches — measurement thumbnails are drawn
+        #    from the source image, so they're stale for any measurement
+        #    whose image was just edited.
+        self._gallery_thumb_cache = {}
+        self._gallery_pixmap_cache = {}
+
+        # 4. Force the Measure gallery to rebuild even when the signature is
+        #    unchanged, and select the pre-edit image.
+        self.refresh_observation_images(
+            select_image_id=preserve_image_id,
+            force_refresh=True,
+        )
+
+        # 5. Reload the currently-selected image so the viewer picks up the
+        #    edited bytes. load_image_record restores the saved session
+        #    view state (zoom / pan) via
+        #    _apply_measure_session_view_for_current_image, provided the
+        #    caller stashed it before showing Prepare Images.
+        target_id = preserve_image_id or self.current_image_id
+        if target_id:
+            for image in self.observation_images:
+                if image.get("id") == target_id:
+                    try:
+                        self.load_image_record(image, refresh_table=False)
+                    except Exception:
+                        pass
+                    break
+
+        # 6. Analysis strip: schedule a rebuild if visible.
+        if hasattr(self, "is_analysis_visible") and self.is_analysis_visible():
+            self.schedule_gallery_refresh()
 
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -11746,6 +11844,43 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.refresh_observation_images(select_image_id=self.current_image_id)
         except Exception:
             pass
+
+    def _on_measure_gallery_selection_changed(self, selected_paths) -> None:
+        # Persistent hint while a multi-select is active in the Measure
+        # gallery — mirrors the Live-Lab pattern so users understand that
+        # sidebar edits / publish toggles will apply to every selected item.
+        try:
+            count = len([p for p in (selected_paths or []) if p])
+        except Exception:
+            count = 0
+        active = count > 1
+        previous = bool(getattr(self, "_measure_multi_hint_active", False))
+        if active == previous:
+            return
+        self._measure_multi_hint_active = active
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
+
+    def _on_measure_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        observations_tab = getattr(self, "observations_tab", None)
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
+
+    def _on_measure_gallery_delete_selection_requested(self, keys) -> None:
+        # Multi-select delete via the right-click menu: delegate to the
+        # existing single-delete handler which owns the confirmation +
+        # measurement-count safeguards.
+        for key in keys or []:
+            self._on_measure_gallery_delete_requested(key)
 
     def _on_measure_gallery_delete_requested(self, image_key):
         image_id = None
@@ -14819,14 +14954,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         row = (display_index - 1) // items_per_row
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
-        container.mousePressEvent = (
-            lambda event, mid=int(measurement_id), c=container:
-                self._on_analysis_gallery_thumbnail_mouse_press(event, c, mid)
-        )
-        # Match Observations-gallery behaviour: double-click opens Prepare
-        # Images for this measurement's source image.
+        container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
+        # Double-click jumps to the Measure tab with this measurement's
+        # source image loaded — same as the link icon overlay and the
+        # right-click "Edit photo" action. Prepare Images is intentionally
+        # NOT bound to double-click here so double-click semantics stay
+        # consistent with the Observations-tab convention (enlarge / view,
+        # not edit).
         container.mouseDoubleClickEvent = (
-            lambda _event, mid=int(measurement_id): self._open_prepare_images_from_analysis_gallery(mid)
+            lambda _event, mid=int(measurement_id): self.open_measurement_from_gallery(mid)
+        )
+        # Right-click → "Edit photo" context menu, mirroring the Observations
+        # gallery. Uses Qt.CustomContextMenu so the menu fires reliably
+        # regardless of what mousePressEvent does with the right button.
+        container.setContextMenuPolicy(Qt.CustomContextMenu)
+        container.customContextMenuRequested.connect(
+            lambda pos, mid=int(measurement_id), c=container:
+                self._show_analysis_gallery_thumbnail_context_menu(mid, c.mapToGlobal(pos))
         )
         self._refresh_analysis_gallery_frame_state(int(measurement_id))
         render_state["display_index"] = display_index + 1
@@ -16776,79 +16920,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._prepare_analysis_gallery_for_tab_switch()
         QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
 
-    def _on_analysis_gallery_thumbnail_mouse_press(
-        self,
-        event,
-        container,
-        measurement_id: int,
-    ) -> None:
-        button = event.button() if event is not None else Qt.NoButton
-        if button == Qt.RightButton:
-            try:
-                global_pos = event.globalPosition().toPoint()
-            except Exception:
-                global_pos = None
-            self._select_analysis_gallery_measurement(int(measurement_id))
-            if global_pos is not None:
-                self._show_analysis_gallery_thumbnail_context_menu(
-                    int(measurement_id), global_pos
-                )
-            try:
-                event.accept()
-            except Exception:
-                pass
-            return
-        if button == Qt.LeftButton:
-            self._select_analysis_gallery_measurement(int(measurement_id))
-
     def _show_analysis_gallery_thumbnail_context_menu(
         self,
         measurement_id: int,
         global_pos,
     ) -> None:
+        # Selecting first mirrors the Observations gallery: right-click
+        # both focuses the thumbnail (blue frame moves) and opens the menu.
+        self._select_analysis_gallery_measurement(int(measurement_id))
         menu = QMenu(self)
+        # Deletion isn't available here — Analysis thumbnails represent
+        # measurements, not the underlying image. "Edit photo" jumps to the
+        # source image in the Measure tab (same as the link icon overlay
+        # per thumbnail).
         edit_action = menu.addAction(self.tr("Edit photo"))
         chosen = menu.exec(global_pos)
         if chosen == edit_action:
-            self._open_prepare_images_from_analysis_gallery(int(measurement_id))
-
-    def _open_prepare_images_from_analysis_gallery(self, measurement_id: int) -> None:
-        """Open the Prepare Images dialog for the measurement's source image.
-
-        Mirrors the Observations-gallery behaviour where double-clicking a
-        thumbnail jumps into Prepare Images with that image pre-selected.
-        """
-        measurement_id = int(measurement_id or 0)
-        if not measurement_id:
-            return
-        measurement = self._get_measurement_by_id(measurement_id)
-        if not measurement:
-            return
-        image_id = measurement.get("image_id")
-        if not image_id:
-            return
-        image_data = ImageDB.get_image(image_id)
-        if not image_data:
-            return
-        observation_id = image_data.get("observation_id") or self.active_observation_id
-        if not observation_id:
-            return
-        target_path = (image_data.get("filepath") or "").strip() or None
-        observations_tab = getattr(self, "observations_tab", None)
-        if observations_tab is None:
-            return
-        # open_edit_images_direct works on the observation currently selected in
-        # the observations table. Ensure the analysis-tab's active observation
-        # is the one that ends up in Prepare Images, even if the user hasn't
-        # re-selected the row since switching tabs.
-        table = getattr(observations_tab, "table", None)
-        if table is not None:
-            for row_index in range(table.rowCount()):
-                if observations_tab._observation_id_for_row(row_index) == int(observation_id):
-                    table.selectRow(row_index)
-                    observations_tab.selected_observation_id = int(observation_id)
-                    break
-        observations_tab.open_edit_images_direct(selected_image_path=target_path)
+            self.open_measurement_from_gallery(int(measurement_id))
 
     def _open_measurement_from_gallery_impl(self, measurement_id: int):
         """Deferred gallery-to-measure navigation to avoid tab-switch crashes mid-click."""

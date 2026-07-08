@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from contextlib import ExitStack
 import hashlib
 from pathlib import Path
@@ -31,7 +31,7 @@ from PySide6.QtCore import (
     QEvent,
     QSize,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImageReader, QColor, QIcon, QFont
+from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImage, QImageReader, QColor, QIcon, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractSpinBox,
@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QStackedLayout,
     QSizePolicy,
     QSplitter,
@@ -103,14 +104,21 @@ from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordin
 from utils.heic_converter import maybe_convert_heic
 from utils.raw_render import (
     apply_auto_level_bounds_to_settings,
+    RAW_PREVIEW_MAX_DIM,
     RawRenderSettings,
     build_raw_processing_metadata,
     render_raw_image,
     render_raw_preview_proxy_rgb,
     render_raw_sampling_rgb,
     save_raw_preview_jpeg,
+    _resize_rgb_preview,
 )
-from utils.image_processing_pipeline import apply_post_decode_processing, compute_auto_level_bounds
+from utils.image_processing_pipeline import (
+    apply_post_decode_processing,
+    apply_post_decode_processing_fast,
+    compute_auto_level_bounds,
+    prepare_post_decode_fast_inputs,
+)
 from utils.raw_white_balance import estimate_white_balance_from_background
 
 try:  # pragma: no cover - optional capture-time helper
@@ -123,6 +131,38 @@ def _is_raw_path(path: str | None) -> bool:
     if not path:
         return False
     return Path(path).suffix.lower() in set(RAW_FORMATS)
+
+
+# Enable with SPORELY_DEBUG_RAW_TIMING=1 to print stage-by-stage timings
+# for every RAW preview refresh in Prepare Images. Uses the same env var
+# and [raw-timing] prefix as Live Lab / the render pipeline so the two
+# streams can be compared side-by-side.
+_RAW_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+
+
+def _raw_prepare_timing(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _RAW_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if detail:
+        print(f"[raw-timing] prepare {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] prepare {stage}: {elapsed_ms:.1f} ms")
+
+
+@dataclass
+class _RawPreviewCacheEntry:
+    """Per-source cache: resized proxy + WB-processed fast-pipeline inputs
+    keyed by WB gains + histogram (source-only, so it never invalidates).
+    Mirrors Live Lab's _RawPreviewCacheEntry so slider events reuse the
+    same numpy arrays across frames."""
+    raw_rgb: np.ndarray
+    preview_rgb: np.ndarray | None = None
+    wb_processed: dict = field(default_factory=dict)
+    combined_histogram: np.ndarray | None = None
+
+
+_RAW_PREVIEW_WB_CACHE_MAX = 6
 
 from .image_gallery_widget import ImageGalleryWidget
 from .combo_alerts import update_combo_alert, update_combo_alerts
@@ -822,12 +862,25 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._observation_lon: float | None = observation_lon
         self._observation_source_index: int | None = None
         self._converted_import_paths: set[str] = set()
-        self._raw_preview_proxy_cache: dict[tuple[str, int, int, str], np.ndarray] = {}
+        # Cache of decoded RAW proxies keyed by (path, mtime, size, decode
+        # mode). Stores either the raw np.ndarray (legacy) or a full
+        # _RawPreviewCacheEntry with resized preview + WB-processed inputs
+        # reused across slider events. See _raw_preview_cache_entry.
+        self._raw_preview_proxy_cache: dict = {}
         self._pending_raw_preview_result: ImageImportResult | None = None
         self._raw_preview_refresh_timer = QTimer(self)
         self._raw_preview_refresh_timer.setSingleShot(True)
-        self._raw_preview_refresh_timer.setInterval(250)
+        # Match Live Lab's snappy sliders: ~24ms debounce means one preview
+        # per frame (60 Hz) — the fast pipeline + in-memory pixmap keeps up.
+        self._raw_preview_refresh_timer.setInterval(24)
         self._raw_preview_refresh_timer.timeout.connect(self._flush_pending_raw_preview)
+        # Disk-save of the JPEG derivative is decoupled from the display
+        # refresh so writing bytes doesn't block interactive scrubbing.
+        self._raw_preview_disk_save_timer = QTimer(self)
+        self._raw_preview_disk_save_timer.setSingleShot(True)
+        self._raw_preview_disk_save_timer.setInterval(300)
+        self._raw_preview_disk_save_timer.timeout.connect(self._flush_raw_preview_disk_save)
+        self._raw_preview_disk_save_target: ImageImportResult | None = None
         self._accepted = False
         self._close_cleanup_done = False
         self._setting_from_image_source = False
@@ -848,6 +901,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._continue_to_observation_details = bool(continue_to_observation_details)
         self._raw_copied_settings: dict | None = None
         self._dialog_gallery_splitter_syncing = False
+        # Any user-driven change (metadata, RAW settings, resize toggle,
+        # notes …) flips this to True and re-labels the Close button as
+        # "Save changes" so it's clear the click will persist edits.
+        self._is_dirty = False
 
         self._build_ui()
         self._setup_drop_targets()
@@ -948,13 +1005,27 @@ class ImageImportDialog(GeometryMixin, QDialog):
         main_layout.setSpacing(8)
 
         self.left_panel = self._build_left_panel()
-        self.left_panel.setMinimumWidth(320)
-        self.left_panel.setMaximumWidth(460)
         self.left_panel.setStyleSheet(
             "QPushButton { padding: 4px 8px; }"
             "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
         )
-        self.left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        # Wrap the sidebar in a scroll area so long content (RAW controls +
+        # curve preview + notes) doesn't overflow when the dialog is short.
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFrameShape(QFrame.NoFrame)
+        self.left_scroll.setWidget(self.left_panel)
+        self.left_scroll.setMinimumWidth(320)
+        self.left_scroll.setMaximumWidth(460)
+        self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        # Give the inner panel a sensible minimum width matching the scroll
+        # area so children (segmented selectors, combos) size the same way
+        # as before the scroll wrapper existed.
+        self.left_panel.setMinimumWidth(320)
 
         self.gallery = ImageGalleryWidget(
             self.tr("Images"),
@@ -964,6 +1035,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             min_height=125,
             default_height=175,
             thumbnail_size=110,
+            delete_menu_label_single=self.tr("Remove from staging"),
+            delete_menu_label_multi=self.tr("Remove selected from staging"),
         )
         self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.gallery.set_reorderable(True)
@@ -971,7 +1044,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.gallery.setMaximumHeight(self._dialog_gallery_max_height())
         self.gallery.imageClicked.connect(self._on_gallery_clicked)
         self.gallery.selectionChanged.connect(self._on_gallery_selection_changed)
-        self.gallery.deleteRequested.connect(self._on_gallery_delete_requested)
+        # Unified delete signal: single X-icon fires with a one-element list
+        # (delegated to the single-item handler), menu multi fires with the
+        # full selection (delegated to the same shortcut handler).
+        self.gallery.deleteImagesRequested.connect(self._on_gallery_delete_images_requested)
         self.gallery.itemsReordered.connect(self._on_gallery_items_reordered)
         self.delete_shortcut = QShortcut(QKeySequence.Delete, self)
         self.delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
@@ -1036,7 +1112,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
-        self.main_splitter.addWidget(self.left_panel)
+        self.main_splitter.addWidget(self.left_scroll)
         self.main_splitter.addWidget(self.dialog_gallery_splitter)
         self.main_splitter.addWidget(self.details_panel)
         self.main_splitter.setStretchFactor(0, 0)
@@ -1093,6 +1169,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         bottom_row.addWidget(self.cancel_btn)
 
         next_label = self.tr("Continue") if self._continue_to_observation_details else self.tr("Close")
+        self._next_btn_default_label = next_label
+        self._next_btn_dirty_label = (
+            self.tr("Save and continue") if self._continue_to_observation_details
+            else self.tr("Save changes")
+        )
         self.next_btn = QPushButton(next_label)
         self.next_btn.setMinimumHeight(35)
         self.next_btn.clicked.connect(self._accept_and_close)
@@ -2285,16 +2366,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _update_action_buttons_state(self) -> None:
         if not hasattr(self, "next_btn") or not hasattr(self, "cancel_btn"):
             return
+        dirty = bool(getattr(self, "_is_dirty", False))
         if self._continue_to_observation_details:
             self.cancel_btn.setVisible(True)
-            self.next_btn.setText(self.tr("Continue"))
+            self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
+            self.next_btn.setText(
+                self._next_btn_dirty_label if dirty else self._next_btn_default_label
+            )
             return
+        # Edit mode: always expose a discard action so the user can bail out
+        # without saving. When there's nothing to save, the button labels
+        # collapse to "Cancel" / "Close" which are effectively equivalent.
+        self.cancel_btn.setVisible(True)
         if self._has_pending_resize_operations():
-            self.cancel_btn.setVisible(True)
+            self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
             self.next_btn.setText(self.tr("Apply"))
-        else:
-            self.cancel_btn.setVisible(False)
-            self.next_btn.setText(self.tr("Close"))
+            return
+        self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Close"))
+        self.next_btn.setText(
+            self._next_btn_dirty_label if dirty else self._next_btn_default_label
+        )
 
     def _update_micro_settings_state(self, enable: bool | None = None) -> None:
         if not hasattr(self, "contrast_combo"):
@@ -4094,6 +4185,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._update_ai_controls_state()
             self._update_ai_table()
             self._update_ai_overlay()
+        self._update_import_gallery_multi_hint(len(self.selected_indices))
+
+    def _update_import_gallery_multi_hint(self, selected_count: int) -> None:
+        active = int(selected_count or 0) > 1
+        previous = bool(getattr(self, "_import_multi_hint_active", False))
+        if active == previous:
+            return
+        self._import_multi_hint_active = active
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
 
     @staticmethod
     def _image_result_key(result: ImageImportResult):
@@ -4572,6 +4678,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         if getattr(self, "_loading_form", False):
             return
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         sender = self.sender()
         action = None
         if sender is self.objective_combo:
@@ -4607,6 +4716,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if getattr(self, "_setting_from_image_source", False):
             return
         self._setting_from_image_source = False
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         indices = self.selected_indices or [self.selected_index]
         self._apply_metadata_to_indices(indices)
 
@@ -5337,6 +5449,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if not indices:
             return
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         self._last_settings_action = "resize"
         self._apply_settings_to_indices(indices, action="resize")
 
@@ -5728,6 +5843,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.preview.set_measurement_lines([])
             self.preview.set_scale_bar_draggable(False)
 
+    def _on_gallery_delete_images_requested(self, keys) -> None:
+        keys_list = list(keys or [])
+        if not keys_list:
+            return
+        if len(keys_list) == 1:
+            self._on_gallery_delete_requested(keys_list[0])
+        else:
+            # Multi-select delete from the right-click menu — same handler as
+            # Delete / Alt+D / Ctrl+D, which operates on the current gallery
+            # selection.
+            self._on_remove_selected()
+
     def _on_gallery_delete_requested(self, image_key) -> None:
         if image_key is None:
             return
@@ -5771,10 +5898,49 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._image_crop_undo_by_index = remap_dict(self._image_crop_undo_by_index)
         self._ai_selected_taxon = None
 
+    def _mark_dirty(self) -> None:
+        """Flip the dirty flag and re-label the action buttons so it's
+        obvious that Close will save and Cancel will discard. No-op while
+        the form is being populated."""
+        if getattr(self, "_loading_form", False):
+            return
+        if getattr(self, "_raw_loading", False):
+            return
+        if self._is_dirty:
+            return
+        self._is_dirty = True
+        self._update_action_buttons_state()
+
+    def _finalize_pending_raw_edits(self) -> None:
+        """Render final JPEGs for any RAW image whose settings changed but
+        that the user didn't explicitly click 'Apply new raw settings' on
+        before hitting Close/Save. Otherwise the on-disk file (and thus the
+        Measure gallery thumbnail) stays out of sync with the edits."""
+        results = list(getattr(self, "import_results", []) or [])
+        for index, result in enumerate(results):
+            if not self._result_is_raw_backed(result):
+                continue
+            if not bool(getattr(result, "raw_unsaved_changes", False)):
+                continue
+            try:
+                self._finalize_raw_settings_for_result(result, index)
+            except Exception:
+                # Rendering failure is surfaced via result.processing_status
+                # by the helper; keep processing the rest.
+                continue
+
     def _accept_and_close(self) -> None:
         start_time = time.perf_counter()
         self._apply_to_selected()
         self._save_last_used_tag_settings()
+        # Auto-commit any RAW edits still marked "unsaved" so the derivative
+        # JPEG on disk reflects the current slider positions.
+        finalize_pending = getattr(self, "_finalize_pending_raw_edits", None)
+        if callable(finalize_pending):
+            try:
+                finalize_pending()
+            except Exception:
+                pass
         accepted_results = self._accepted_import_results()
         if len(accepted_results) != len(self.import_results):
             self.import_results = accepted_results
@@ -6038,15 +6204,83 @@ class ImageImportDialog(GeometryMixin, QDialog):
         source: str,
         settings: dict | RawRenderSettings | None,
     ) -> np.ndarray:
+        # Kept for backwards compatibility (curve widget etc.). The hot
+        # path goes through _raw_preview_cache_entry.
+        entry = self._raw_preview_cache_entry(source, settings)
+        return entry.raw_rgb
+
+    def _raw_preview_cache_entry(
+        self,
+        source: str,
+        settings: dict | RawRenderSettings | None,
+    ) -> _RawPreviewCacheEntry:
+        cache = self._raw_preview_proxy_cache
         cache_key = self._raw_preview_proxy_cache_key(source, settings)
-        if cache_key is None:
-            return render_raw_preview_proxy_rgb(source, settings=settings)
-        cached = self._raw_preview_proxy_cache.get(cache_key)
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if isinstance(cached, _RawPreviewCacheEntry):
+                return cached
+            if isinstance(cached, np.ndarray):
+                entry = _RawPreviewCacheEntry(
+                    raw_rgb=np.asarray(cached, dtype=np.float32)
+                )
+                cache[cache_key] = entry
+                return entry
+        decode_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        raw_rgb = render_raw_preview_proxy_rgb(source, settings=settings)
+        _raw_prepare_timing(
+            "proxy decode",
+            decode_start,
+            detail=f"{Path(source).name} -> {raw_rgb.shape[1]}x{raw_rgb.shape[0]}",
+        )
+        entry = _RawPreviewCacheEntry(raw_rgb=np.asarray(raw_rgb, dtype=np.float32))
+        if cache_key is not None:
+            cache[cache_key] = entry
+        return entry
+
+    @staticmethod
+    def _raw_preview_resized_for_entry(entry: _RawPreviewCacheEntry) -> np.ndarray:
+        if entry.preview_rgb is None:
+            resize_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            resized = _resize_rgb_preview(entry.raw_rgb, RAW_PREVIEW_MAX_DIM)
+            entry.preview_rgb = np.ascontiguousarray(resized.astype(np.float32, copy=False))
+            _raw_prepare_timing(
+                "proxy resize",
+                resize_start,
+                detail=f"-> {entry.preview_rgb.shape[1]}x{entry.preview_rgb.shape[0]}",
+            )
+        return entry.preview_rgb
+
+    @staticmethod
+    def _raw_preview_wb_inputs_for_entry(
+        entry: _RawPreviewCacheEntry,
+        settings: RawRenderSettings,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        preview = ImageImportDialog._raw_preview_resized_for_entry(entry)
+        wb_multipliers = settings.wb_multipliers
+        wb_space = (settings.wb_multiplier_space or "").strip().lower() or None
+        wb_key: tuple[float, float, float] | None = None
+        if wb_multipliers is not None and wb_space in {None, "post_decode_rgb"}:
+            try:
+                wb_key = (
+                    float(wb_multipliers[0]),
+                    float(wb_multipliers[1]),
+                    float(wb_multipliers[2]),
+                )
+            except Exception:
+                wb_key = None
+        cached = entry.wb_processed.get(wb_key)
         if cached is not None:
             return cached
-        proxy = render_raw_preview_proxy_rgb(source, settings=settings)
-        self._raw_preview_proxy_cache[cache_key] = proxy
-        return proxy
+        prep_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        prepared = prepare_post_decode_fast_inputs(preview, settings)
+        _raw_prepare_timing("wb inputs prepare", prep_start)
+        if len(entry.wb_processed) >= _RAW_PREVIEW_WB_CACHE_MAX:
+            oldest = next(iter(entry.wb_processed), None)
+            if oldest is not None:
+                entry.wb_processed.pop(oldest, None)
+        entry.wb_processed[wb_key] = prepared
+        return prepared
 
     @staticmethod
     def _raw_preview_output_path(source: str) -> Path:
@@ -6095,6 +6329,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.raw_controls.settingsChanged.connect(self._on_raw_settings_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._on_raw_wb_pick_toggled)
         raw_layout.addWidget(self.raw_controls)
+
+        # Curve + histogram preview — same widget as Live Lab, so users
+        # editing RAW here get the same visual feedback about what their
+        # slider positions actually do to the transfer curve.
+        try:
+            from .live_lab_tab import RawCurvePreviewWidget
+        except Exception:
+            RawCurvePreviewWidget = None
+        if RawCurvePreviewWidget is not None:
+            self.raw_curve_preview_widget = RawCurvePreviewWidget(self.raw_group)
+            raw_layout.addWidget(self.raw_curve_preview_widget, 0, Qt.AlignHCenter)
+        else:
+            self.raw_curve_preview_widget = None
 
         self.raw_group.setVisible(False)
         layout.addWidget(self.raw_group)
@@ -6246,8 +6493,70 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
         result.raw_unsaved_changes = True
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         self._schedule_raw_preview_refresh(result)
+        # NOTE: curve widget refresh is intentionally NOT called here — it's
+        # driven off the debounced preview flush so it doesn't run
+        # synchronously on every slider tick with the full-res proxy (which
+        # can be 4000×3000 and add 100+ ms of latency per event).
         self._update_raw_panel_for_result(result)
+
+    def _refresh_prepare_raw_curve_preview(
+        self,
+        result: ImageImportResult | None,
+        *,
+        curve=None,
+    ) -> None:
+        widget = getattr(self, "raw_curve_preview_widget", None)
+        if widget is None:
+            return
+        if result is None:
+            widget.set_curve(None, None)
+            return
+        if not self._result_is_raw_backed(result):
+            widget.set_curve(None, None)
+            return
+        source = self._raw_source_path_for_result(result)
+        if not source:
+            widget.set_curve(None, None)
+            return
+        settings = RawRenderSettings.from_dict(
+            result.raw_settings or self._ensure_raw_settings(result)
+        )
+        try:
+            entry = self._raw_preview_cache_entry(source, settings)
+            # Use the resized preview (≤1600 px) for the histogram.
+            rgb = self._raw_preview_resized_for_entry(entry)
+        except Exception:
+            widget.set_curve(None, None)
+            return
+        if curve is None:
+            # Fallback path (called without a pre-computed curve, e.g. on
+            # initial panel load): compute it once. The slider hot-path
+            # always reuses fast_result.curve so this cost only shows on
+            # the first refresh per image.
+            try:
+                from utils.image_processing_pipeline import compute_post_decode_transfer_curve
+                curve_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                curve = compute_post_decode_transfer_curve(rgb, settings)
+                _raw_prepare_timing("curve compute (fallback)", curve_start)
+            except Exception:
+                curve = None
+        # Histogram is a source-only property (depends on pixels, not on
+        # settings), so cache it on the entry after the first computation.
+        histogram = getattr(entry, "combined_histogram", None)
+        if histogram is None:
+            try:
+                hist_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                hist = np.histogram(np.clip(rgb, 0.0, 1.0).ravel(), bins=96, range=(0.0, 1.0))[0]
+                histogram = hist.astype(np.float32)
+                entry.combined_histogram = histogram
+                _raw_prepare_timing("histogram compute", hist_start)
+            except Exception:
+                histogram = None
+        widget.set_curve(curve, histogram)
 
     def _on_raw_wb_pick_toggled(self, checked: bool) -> None:
         self._raw_wb_pick_mode = bool(checked)
@@ -6270,11 +6579,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         source = self._raw_source_path_for_result(result)
         if not source:
             return
+        total_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         try:
-            import_dir = get_images_dir() / "imports"
-            import_dir.mkdir(parents=True, exist_ok=True)
-            settings = RawRenderSettings.from_dict(result.raw_settings or self._ensure_raw_settings(result))
-            preview_rgb = self._raw_preview_proxy_for_result(source, settings)
+            settings = RawRenderSettings.from_dict(
+                result.raw_settings or self._ensure_raw_settings(result)
+            )
+            entry = self._raw_preview_cache_entry(source, settings)
+            preview_rgb = self._raw_preview_resized_for_entry(entry)
             processing_settings = settings
             if (
                 processing_settings.white_balance_mode in {"background", "custom"}
@@ -6296,26 +6607,126 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     wb_multiplier_space="post_decode_rgb",
                     wb_sample_base_mode=self._raw_preview_decode_mode(settings),
                 )
-            preview_float = apply_post_decode_processing(preview_rgb, processing_settings)
-            preview_path = self._raw_preview_output_path(source)
-            save_raw_preview_jpeg(preview_float, preview_path, source)
+            # Fast in-memory path (matches Live Lab):
+            #   1. Reuse the resized proxy (decoded once per source).
+            #   2. Reuse the WB-processed inputs (cached per WB gains).
+            #   3. Run only the LUT-based fast pipeline per slider event.
+            #   4. Convert to QPixmap in memory; disk-save on a 300ms
+            #      debounce (via _schedule_raw_preview_disk_save).
+            prepared = self._raw_preview_wb_inputs_for_entry(entry, processing_settings)
+            fast_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            fast_result = apply_post_decode_processing_fast(
+                preview_rgb,
+                processing_settings,
+                prepared_inputs=prepared,
+            )
+            _raw_prepare_timing(
+                "post-decode fast",
+                fast_start,
+                detail=f"{preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+            )
+            preview_float = fast_result.rgb
         except Exception as exc:
             result.processing_status = "failed"
             result.failure_reason = str(exc)
             self._set_settings_hint(self.tr("RAW preview failed: {err}").format(err=exc), "#e74c3c")
             return
+        # Push the freshly-processed pixels to the viewer immediately.
+        if self._current_single_index() == index:
+            pixmap_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            try:
+                pixmap = self._rgb_to_pixmap(preview_float)
+            except Exception:
+                pixmap = None
+            _raw_prepare_timing("rgb -> pixmap", pixmap_start)
+            if pixmap is not None and not pixmap.isNull():
+                preview_source_path = result.raw_preview_path or result.filepath or source
+                view_state = None
+                if hasattr(self, "preview"):
+                    view_state = self.preview.get_view_state()
+                set_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                self.preview.set_image_sources(pixmap, preview_source_path, True)
+                _raw_prepare_timing("viewer set_image_sources", set_start)
+                if view_state and view_state.get("size"):
+                    old_w, old_h = view_state["size"]
+                    new_w, new_h = pixmap.width(), pixmap.height()
+                    if old_w == new_w and old_h == new_h:
+                        try:
+                            self.preview.set_view_state(view_state["center"], view_state["zoom"])
+                        except Exception:
+                            pass
+                self.preview_stack.setCurrentWidget(self.preview)
+        result.processing_status = "preview"
+        # Cache the last-rendered RGB so the debounced disk-save doesn't
+        # have to redo the whole pipeline just to write bytes.
+        result._pending_raw_preview_rgb = preview_float
+        result._pending_raw_preview_source = source
+        self._schedule_raw_preview_disk_save(result)
+        # Curve widget refresh piggybacks on the debounced preview flush.
+        # `fast_result.curve` is the same curve compute_post_decode_transfer_curve
+        # would compute — so reuse it instead of re-running that ~100 ms
+        # analysis per tick.
+        refresh_curve = getattr(self, "_refresh_prepare_raw_curve_preview", None)
+        if callable(refresh_curve):
+            try:
+                refresh_curve(result, curve=getattr(fast_result, "curve", None))
+            except Exception:
+                pass
+        _raw_prepare_timing(
+            "TOTAL preview refresh",
+            total_start,
+            detail=f"{Path(source).name}",
+        )
+
+    @staticmethod
+    def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
+        arr = np.asarray(rgb)
+        if arr.dtype == np.uint8:
+            image8 = np.ascontiguousarray(arr[..., :3])
+        else:
+            image = np.asarray(arr[..., :3], dtype=np.float32)
+            image = np.clip(image, 0.0, 1.0)
+            image8 = np.ascontiguousarray(np.rint(image * 255.0).astype(np.uint8))
+        image8 = np.ascontiguousarray(image8)
+        height, width = image8.shape[:2]
+        qimage = QImage(
+            image8.data,
+            width,
+            height,
+            int(image8.strides[0]),
+            QImage.Format.Format_RGB888,
+        ).copy()
+        return QPixmap.fromImage(qimage)
+
+    def _schedule_raw_preview_disk_save(self, result: ImageImportResult) -> None:
+        self._raw_preview_disk_save_target = result
+        timer = getattr(self, "_raw_preview_disk_save_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _flush_raw_preview_disk_save(self) -> None:
+        result = self._raw_preview_disk_save_target
+        self._raw_preview_disk_save_target = None
+        if result is None or result not in self.import_results:
+            return
+        source = getattr(result, "_pending_raw_preview_source", None)
+        preview_float = getattr(result, "_pending_raw_preview_rgb", None)
+        if source is None or preview_float is None:
+            return
+        try:
+            preview_path = self._raw_preview_output_path(source)
+            save_raw_preview_jpeg(preview_float, preview_path, source)
+        except Exception:
+            return
         preview_str = str(preview_path)
         old_preview = result.raw_preview_path
-        if old_preview and old_preview != source:
+        if old_preview and old_preview != source and old_preview != preview_str:
             self._invalidate_cached_pixmap(old_preview)
             self._temp_preview_paths.discard(old_preview)
         result.raw_preview_path = preview_str
         result.preview_path = preview_str
         self._temp_preview_paths.add(preview_str)
         self._invalidate_cached_pixmap(preview_str)
-        result.processing_status = "preview"
-        if self._current_single_index() == index:
-            self._set_preview_for_result(result, preserve_view=True)
 
     def _handle_raw_wb_pick(self, pos) -> bool:
         if not getattr(self, "_raw_wb_pick_mode", False):
@@ -6367,10 +6778,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if index is None or index < 0 or index >= len(self.import_results):
             return
         result = self.import_results[index]
+        if self._finalize_raw_settings_for_result(result, index):
+            self._refresh_gallery()
+            self._select_image(index)
+            self._set_settings_hint(
+                self.tr("RAW settings applied to JPEG derivative"), "#27ae60"
+            )
+
+    def _finalize_raw_settings_for_result(
+        self,
+        result: ImageImportResult,
+        index: int | None = None,
+    ) -> bool:
+        """Render a final JPEG derivative for `result` using its current
+        raw_settings, and update the result to point at that derivative.
+        Returns True on success, False on failure or if the result isn't
+        RAW-backed. Shared by the explicit "Apply new raw settings" button
+        and the auto-finalize-on-close path."""
+        if not self._result_is_raw_backed(result):
+            return False
         source = self._raw_source_path_for_result(result)
         if not source:
             self._set_settings_hint(self.tr("RAW source not found"), "#e74c3c")
-            return
+            return False
         settings = result.raw_settings or self._ensure_raw_settings(result)
         try:
             import_dir = get_images_dir() / "imports"
@@ -6380,7 +6810,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.processing_status = "failed"
             result.failure_reason = str(exc)
             self._set_settings_hint(self.tr("RAW conversion failed: {err}").format(err=exc), "#e74c3c")
-            return
+            return False
         derivative_str = str(derivative)
         size = self._get_image_size(derivative_str) or (0, 0)
         capture_dt = None
@@ -6416,12 +6846,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         result.lab_metadata = lab
         if capture_dt is not None and not result.captured_at:
             result.captured_at = QDateTime(capture_dt)
-        self.image_paths[index] = derivative_str
+        if index is not None and 0 <= index < len(self.image_paths):
+            self.image_paths[index] = derivative_str
         self._converted_import_paths.add(derivative_str)
         self._invalidate_cached_pixmap(derivative_str)
-        self._refresh_gallery()
-        self._select_image(index)
-        self._set_settings_hint(self.tr("RAW settings applied to JPEG derivative"), "#27ae60")
+        return True
 
     def _stage_raw_candidates(self, new_results: list[ImageImportResult]) -> None:
         for result in new_results:

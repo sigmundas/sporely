@@ -2448,9 +2448,11 @@ class SpeciesPlateDialog(QDialog):
             self,
             show_delete=False,
             show_badges=True,
+            show_edit=True,
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
+        self._gallery.editRequested.connect(self._on_species_plate_gallery_edit_requested)
         right_layout.addWidget(self._gallery)
 
         main_row.addLayout(right_layout, 1)
@@ -2766,6 +2768,22 @@ class SpeciesPlateDialog(QDialog):
         self._sync_gallery_selection()
         # Refresh preview to update yellow/blue label rectangle highlight
         self._refresh_preview()
+
+    def _on_species_plate_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # "Edit photo" bounces out to the parent window's Observations tab
+        # → Prepare Images, mirroring the other galleries.
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "observations_tab"):
+                break
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        observations_tab = getattr(parent, "observations_tab", None) if parent is not None else None
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
 
     def _on_gallery_image_clicked(self, item_dict, filepath: str) -> None:
         """Assign the gallery image to the active slot/background."""

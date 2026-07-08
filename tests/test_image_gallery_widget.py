@@ -371,14 +371,14 @@ def test_delete_menu_emits_all_selected_keys_for_multiselect(monkeypatch, qapp, 
     qapp.processEvents()
 
     deleted_keys: list[list[object]] = []
-    widget.deleteSelectionRequested.connect(lambda keys: deleted_keys.append(list(keys)))
+    widget.deleteImagesRequested.connect(lambda keys: deleted_keys.append(list(keys)))
 
     monkeypatch.setattr(
         widget,
         "_show_thumbnail_context_menu",
         lambda frame, global_pos: (
             widget._set_context_menu_selection(frame),
-            widget.deleteSelectionRequested.emit(widget.selected_image_keys()),
+            widget.deleteImagesRequested.emit(widget.selected_image_keys()),
         ),
     )
 
@@ -436,7 +436,9 @@ def test_raw_source_badge_uses_raw_label():
     assert badges == ["From raw"]
 
 
-def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path):
+def test_existing_thumbnail_delete_button_emits_single_key_list(qapp, tmp_path):
+    # X-icon click now emits the unified deleteImagesRequested signal with a
+    # one-element list, matching the right-click menu's payload shape.
     widget = ImageGalleryWidget("Images")
     items = _build_gallery_items(tmp_path, 1)
     widget.set_items(items)
@@ -444,8 +446,8 @@ def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path)
     widget.show()
     qapp.processEvents()
 
-    deleted_keys: list[object] = []
-    widget.deleteRequested.connect(deleted_keys.append)
+    deleted_keys: list[list[object]] = []
+    widget.deleteImagesRequested.connect(lambda keys: deleted_keys.append(list(keys)))
 
     delete_btn = None
     for candidate in widget._frames[0].findChildren(QToolButton):
@@ -457,7 +459,7 @@ def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path)
     QTest.mouseClick(delete_btn, Qt.LeftButton)
     qapp.processEvents()
 
-    assert deleted_keys == [1]
+    assert deleted_keys == [[1]]
 
 
 def test_thumbnail_selection_overlay_tracks_resized_frame(monkeypatch, qapp):

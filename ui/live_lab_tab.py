@@ -1117,6 +1117,7 @@ class LiveLabTab(QWidget):
             parent=self,
             show_delete=True,
             show_badges=True,
+            show_edit=True,
             thumbnail_size=132,
             default_height=GALLERY_DEFAULT_HEIGHT,
             min_height=GALLERY_MIN_HEIGHT,
@@ -1126,8 +1127,8 @@ class LiveLabTab(QWidget):
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
         self.session_gallery.selectionChanged.connect(self._on_session_gallery_selection_changed)
         self.session_gallery.itemsReordered.connect(self._on_session_gallery_items_reordered)
-        self.session_gallery.deleteRequested.connect(self._on_session_gallery_delete_requested)
-        self.session_gallery.deleteSelectionRequested.connect(self._on_session_gallery_delete_requested)
+        self.session_gallery.deleteImagesRequested.connect(self._on_session_gallery_delete_images_requested)
+        self.session_gallery.editRequested.connect(self._on_session_gallery_edit_requested)
 
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
@@ -7893,6 +7894,19 @@ class LiveLabTab(QWidget):
                     select_image(resolved_image_id)
         self._show_session_image(resolved_image_id)
 
+    def _on_session_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # Route to the Observations tab's Prepare Images dialog, same as the
+        # Observations-panel "Edit photo" menu.
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        observations_tab = getattr(self._main_window, "observations_tab", None) if getattr(self, "_main_window", None) else None
+        if observations_tab is None:
+            return
+        opener = getattr(observations_tab, "open_edit_images_direct", None)
+        if callable(opener):
+            opener(selected_image_path=path)
+
     def _on_session_gallery_selection_changed(self, selected_paths: list[str]) -> None:
         try:
             selected_count = len([path for path in selected_paths or [] if path])
@@ -8003,6 +8017,15 @@ class LiveLabTab(QWidget):
                     self._selected_pending_raw_index = reordered_captures.index(current)
 
         self._refresh_session_gallery()
+
+    def _on_session_gallery_delete_images_requested(self, keys) -> None:
+        keys_list = list(keys or [])
+        if not keys_list:
+            return
+        if len(keys_list) > 1:
+            self._delete_session_gallery_items(keys_list)
+            return
+        self._on_session_gallery_delete_requested(keys_list[0])
 
     def _on_session_gallery_delete_requested(self, key) -> None:
         if isinstance(key, (list, tuple, set)):

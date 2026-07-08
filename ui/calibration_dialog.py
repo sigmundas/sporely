@@ -1421,6 +1421,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self,
             show_delete=True,
             show_badges=True,
+            show_edit=True,
             min_height=100,
             default_height=100,
             thumbnail_size=80,
@@ -1429,7 +1430,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.image_gallery.setFixedHeight(120)  # Thumbnail (80) + title bar + margins
         self.image_gallery.set_reorderable(True)
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
-        self.image_gallery.deleteRequested.connect(self._on_gallery_image_deleted)
+        self.image_gallery.deleteImagesRequested.connect(self._on_calibration_gallery_delete_selection_requested)
+        self.image_gallery.editRequested.connect(self._on_calibration_gallery_edit_requested)
         self.image_gallery.itemsReordered.connect(self._on_calibration_gallery_items_reordered)
         left_layout.addWidget(self.image_gallery)
 
@@ -4365,6 +4367,30 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 "crop_source_size": img_data.get("crop_source_size"),
             })
         self.image_gallery.set_items(items)
+
+    def _on_calibration_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # "Edit photo" opens Prepare Images via the parent window's
+        # Observations tab, matching the behaviour in the other galleries.
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        main_window = self._resolve_main_window()
+        observations_tab = getattr(main_window, "observations_tab", None) if main_window is not None else None
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
+
+    def _on_calibration_gallery_delete_selection_requested(self, keys) -> None:
+        for key in keys or []:
+            self._on_gallery_image_deleted(key)
+
+    def _resolve_main_window(self):
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "observations_tab"):
+                return parent
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        return None
 
     def _on_calibration_gallery_items_reordered(self, ordered_keys) -> None:
         # Keys are "cal_<original-index>" strings assigned at set_items time.

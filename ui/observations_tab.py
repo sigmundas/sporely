@@ -2230,12 +2230,12 @@ class ObservationsTab(QWidget):
         self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.editRequested.connect(self._on_gallery_edit_requested)
-        self.gallery_widget.deleteRequested.connect(self._confirm_delete_image)
-        self.gallery_widget.deleteSelectionRequested.connect(self._confirm_delete_selected_images)
+        self.gallery_widget.deleteImagesRequested.connect(self._on_panel_gallery_delete_images_requested)
         self.gallery_widget.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
         self.gallery_widget.itemsReordered.connect(self._on_gallery_widget_items_reordered)
+        self.gallery_widget.selectionChanged.connect(self._on_observations_gallery_selection_changed)
 
         splitter.addWidget(self.gallery_widget)
 
@@ -6514,6 +6514,36 @@ class ObservationsTab(QWidget):
         """Show a dialog to choose a map service."""
         self.map_helper.show_map_service_dialog(lat, lon, species_name)
 
+    def _on_observations_gallery_selection_changed(self, selected_paths) -> None:
+        # Persistent hint while a multi-select is active on the panel
+        # gallery. Cleared as soon as the selection drops back to 0 / 1.
+        try:
+            count = len([p for p in (selected_paths or []) if p])
+        except Exception:
+            count = 0
+        active = count > 1
+        previous = bool(getattr(self, "_gallery_multi_hint_active", False))
+        if active == previous:
+            return
+        self._gallery_multi_hint_active = active
+        controller = getattr(self, "_status_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            # Restore whatever hint the tab was showing before (e.g. "Ready.").
+            controller.set_hint(self.tr("Ready."))
+
+    def _on_panel_gallery_delete_images_requested(self, keys) -> None:
+        keys_list = list(keys or [])
+        if not keys_list:
+            return
+        if len(keys_list) == 1:
+            self._confirm_delete_image(keys_list[0])
+        else:
+            self._confirm_delete_selected_images(keys_list)
+
     def _confirm_delete_image(self, image_id):
         """Confirm and delete an image (and measurements if present)."""
         try:
@@ -9835,6 +9865,23 @@ class ObservationsTab(QWidget):
                 )
                 if dialog.request_edit_images_path:
                     image_dialog.select_image_by_path(dialog.request_edit_images_path)
+                skip_return = bool(getattr(dialog, "request_edit_images_skip_return", False))
+                # Capture host + prior view state BEFORE dialog runs so that
+                # a right-click Edit round-trip preserves the user's zoom /
+                # selection on return to Measure/Analysis.
+                host = self.window()
+                prior_image_id = None
+                if host is not None:
+                    try:
+                        prior_image_id = int(getattr(host, "current_image_id", 0) or 0) or None
+                    except Exception:
+                        prior_image_id = None
+                    save_view = getattr(host, "_save_current_image_measure_session_view", None)
+                    if callable(save_view):
+                        try:
+                            save_view()
+                        except Exception:
+                            pass
                 if image_dialog.exec():
                     _debug_import_flow(
                         f"edit observation {obs_id}: Prepare Images accepted with {len(image_dialog.import_results)} images"
@@ -9859,9 +9906,49 @@ class ObservationsTab(QWidget):
                     if draft_observation is not None:
                         draft_observation["gps_latitude"] = obs_lat
                         draft_observation["gps_longitude"] = obs_lon
+                    # Direct-edit branch: persist image results + refresh
+                    # Measure/Analysis without re-opening the details dialog.
+                    if skip_return:
+                        _debug_import_flow(
+                            f"edit observation {obs_id}: skip-return branch — applying image results and closing"
+                        )
+                        self._apply_import_results_to_observation(
+                            obs_id, image_results, existing_images=existing_images
+                        )
+                        self.refresh_observations()
+                        for r, obs in enumerate(ObservationDB.get_all_observations()):
+                            if obs["id"] == obs_id:
+                                self.table.selectRow(r)
+                                self.selected_observation_id = obs_id
+                                self.on_selection_changed()
+                                break
+                        self.set_selected_as_active(switch_tab=False)
+                        edited_paths = [
+                            str(getattr(r, "filepath", "") or "").strip()
+                            for r in image_results or []
+                            if getattr(r, "filepath", None)
+                        ]
+                        edited_paths = [p for p in edited_paths if p]
+                        if host is not None and hasattr(host, "refresh_after_image_edit"):
+                            try:
+                                host.refresh_after_image_edit(
+                                    image_paths=edited_paths,
+                                    preserve_image_id=prior_image_id,
+                                )
+                            except Exception:
+                                pass
+                        self._observation_edit_draft_cache.pop(obs_id, None)
+                        self.set_status_message(self.tr("Images updated."), level="success")
+                        return
                     _debug_import_flow(
                         f"edit observation {obs_id}: reopening observation dialog with {len(image_results)} images"
                     )
+                elif skip_return:
+                    # User cancelled Prepare Images in a direct-edit round-
+                    # trip — just exit cleanly, don't reopen the details
+                    # dialog.
+                    self._observation_edit_draft_cache.pop(obs_id, None)
+                    return
                 continue
             ai_state = dialog.get_ai_state()
             self._ai_suggestions_cache[obs_id] = ai_state
@@ -9894,6 +9981,25 @@ class ObservationsTab(QWidget):
 
         existing_images = ImageDB.get_images_for_observation(obs_id)
         image_results   = self._build_import_results_from_images(existing_images)
+
+        # Capture the currently-viewed image + zoom BEFORE showing the
+        # dialog. On return we want to restore both — an edit triggered
+        # from a Measure/Analysis thumbnail should feel like tab-switching
+        # away and back, not like a fresh observation load that resets
+        # everything to image 1 with default zoom.
+        host = self.window()
+        prior_image_id = None
+        if host is not None:
+            try:
+                prior_image_id = int(getattr(host, "current_image_id", 0) or 0) or None
+            except Exception:
+                prior_image_id = None
+            save_view = getattr(host, "_save_current_image_measure_session_view", None)
+            if callable(save_view):
+                try:
+                    save_view()
+                except Exception:
+                    pass
 
         image_dialog = ImageImportDialog(
             self,
@@ -9933,6 +10039,24 @@ class ObservationsTab(QWidget):
                 break
         # Force Measure tab to reload updated scale/measurements without switching tabs
         self.set_selected_as_active(switch_tab=False)
+
+        # Invalidate cached thumbnails for the edited files and reselect
+        # the image the user was on before the edit — the standard flow
+        # above resets to image index 0 and keeps stale JPEGs in cache.
+        edited_paths: list[str] = []
+        for result in image_results or []:
+            path = str(getattr(result, "filepath", "") or "").strip()
+            if path:
+                edited_paths.append(path)
+        if host is not None and hasattr(host, "refresh_after_image_edit"):
+            try:
+                host.refresh_after_image_edit(
+                    image_paths=edited_paths,
+                    preserve_image_id=prior_image_id,
+                )
+            except Exception:
+                pass
+
         self.set_status_message(self.tr("Images updated."), level="success")
 
     def refresh_open_image_import_dialogs(self) -> None:
@@ -11473,6 +11597,17 @@ class ObservationsTab(QWidget):
                         scale,
                     )
 
+                # Persist lab_metadata (which carries raw_processing.settings
+                # among other things) so RAW slider edits survive across
+                # dialog re-opens. Merge with existing metadata to preserve
+                # fields we don't touch here.
+                existing_lab = (existing.get("lab_metadata") if existing else None) or {}
+                incoming_lab = getattr(result, "lab_metadata", None) or {}
+                if existing_lab or incoming_lab:
+                    merged_lab = merge_image_lab_metadata(existing_lab, incoming_lab)
+                    if merged_lab and merged_lab != existing_lab:
+                        update_kwargs["lab_metadata"] = merged_lab
+
                 ImageDB.update_image(result.image_id, **update_kwargs)
                 continue
 
@@ -11839,6 +11974,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.allow_edit_images = allow_edit_images
         self.request_edit_images = False
         self.request_edit_images_path: str | None = None
+        # When True, the caller should skip re-opening this details dialog
+        # after Prepare Images closes — set by the thumbnail right-click
+        # "Edit photo" action so it behaves like a direct edit command.
+        self.request_edit_images_skip_return = False
         self.suggested_taxon = suggested_taxon
         self.map_helper = MapServiceHelper(self)
         self._hint_controller: HintStatusController | None = None
@@ -12669,10 +12808,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self,
             show_delete=True,
             show_badges=True,
+            show_edit=True,
             thumbnail_size=140,
             min_height=90,
             default_height=120,
-            thumbnail_tooltip=self.tr("Double-click to edit"),
+            thumbnail_tooltip=self.tr("Double-click to open"),
         )
         self.image_gallery.set_plain_container(True)
         self.image_gallery.set_compact_overlay(True)
@@ -12682,10 +12822,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._gps_source_index = self._resolve_gps_source_index()
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
-        self.image_gallery.deleteRequested.connect(self._on_gallery_delete_requested)
-        self.image_gallery.deleteSelectionRequested.connect(self._on_gallery_delete_selection_requested)
+        self.image_gallery.deleteImagesRequested.connect(self._on_details_dialog_gallery_delete_images_requested)
+        self.image_gallery.editRequested.connect(self._on_gallery_edit_requested)
         self.image_gallery.imageDoubleClicked.connect(self._on_image_double_clicked)
         self.image_gallery.itemsReordered.connect(self._on_gallery_items_reordered)
+        self.image_gallery.selectionChanged.connect(self._on_details_dialog_gallery_selection_changed)
 
         self.dialog_gallery_splitter = QSplitter(Qt.Vertical)
         self.dialog_gallery_splitter.setChildrenCollapsible(False)
@@ -14145,6 +14286,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_image_double_clicked(self, _img_id, path: str) -> None:
         self.request_edit_images = True
         self.request_edit_images_path = path or None
+        self.reject()
+
+    def _on_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # Right-click "Edit photo" routes through the same reject+
+        # request_edit_images flag as the "Edit images" button and the
+        # double-click handler — the parent tab picks it up and opens
+        # Prepare Images for the requested path. The extra
+        # request_edit_images_skip_return flag tells the caller not to
+        # re-open the details dialog after Prepare Images closes; a
+        # thumbnail right-click is a direct "just edit this photo" action.
+        self.request_edit_images = True
+        self.request_edit_images_path = (filepath or "").strip() or None
+        self.request_edit_images_skip_return = True
         self.reject()
 
     def _apply_primary_metadata(self):
@@ -15854,6 +16008,33 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._ai_predictions_by_index = remap_dict(self._ai_predictions_by_index)
         self._ai_selected_by_index = remap_dict(self._ai_selected_by_index)
         self._ai_selected_taxon = None
+
+    def _on_details_dialog_gallery_selection_changed(self, selected_paths) -> None:
+        try:
+            count = len([p for p in (selected_paths or []) if p])
+        except Exception:
+            count = 0
+        active = count > 1
+        previous = bool(getattr(self, "_gallery_multi_hint_active", False))
+        if active == previous:
+            return
+        self._gallery_multi_hint_active = active
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
+
+    def _on_details_dialog_gallery_delete_images_requested(self, keys) -> None:
+        keys_list = list(keys or [])
+        if not keys_list:
+            return
+        if len(keys_list) == 1:
+            self._on_gallery_delete_requested(keys_list[0])
+        else:
+            self._on_gallery_delete_selection_requested(keys_list)
 
     def _on_gallery_delete_requested(self, image_key) -> None:
         if isinstance(image_key, (list, tuple, set)):

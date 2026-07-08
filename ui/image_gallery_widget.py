@@ -475,8 +475,11 @@ class ImageGalleryWidget(QGroupBox):
     imageDoubleClicked = Signal(object, str)
     measureBadgeClicked = Signal(object, str)
     editRequested = Signal(object, str)
-    deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
-    deleteSelectionRequested = Signal(list)
+    # Unified delete signal — always fires with a list of keys (can be int
+    # DB IDs or str custom IDs like "cal_0"). Single-item deletes (X icon
+    # click) fire with a one-element list; multi-item deletes (right-click
+    # "Delete selected photos") fire with the full selection.
+    deleteImagesRequested = Signal(list)
     moveToObservationRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
@@ -497,6 +500,8 @@ class ImageGalleryWidget(QGroupBox):
         show_move_to_observation: bool = False,
         show_edit: bool = False,
         publish_checkbox_hint: str = "",
+        delete_menu_label_single: str = "",
+        delete_menu_label_multi: str = "",
     ) -> None:
         super().__init__(title, parent)
         self._gallery_title = str(title or "")
@@ -515,6 +520,11 @@ class ImageGalleryWidget(QGroupBox):
         self._show_move_to_observation = bool(show_move_to_observation)
         self._show_edit = bool(show_edit)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
+        # Per-instance delete labels — lets callers say "Remove from batch"
+        # / "Remove from staging" instead of the generic "Delete photo" when
+        # the action is non-destructive to the underlying file.
+        self._delete_menu_label_single = str(delete_menu_label_single or "").strip()
+        self._delete_menu_label_multi = str(delete_menu_label_multi or "").strip()
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
         self._thumb_size = self._base_thumb_size
@@ -1118,11 +1128,19 @@ class ImageGalleryWidget(QGroupBox):
         edit_action = None
         if self._show_edit:
             edit_action = menu.addAction(self.tr("Edit photo"))
-        delete_text = self.tr("Delete selected photos") if len(selected_keys) > 1 else self.tr("Delete photo")
-        delete_action = menu.addAction(delete_text)
+        delete_action = None
+        if self._show_delete:
+            if len(selected_keys) > 1:
+                delete_text = self._delete_menu_label_multi or self.tr("Delete selected photos")
+            else:
+                delete_text = self._delete_menu_label_single or self.tr("Delete photo")
+            delete_action = menu.addAction(delete_text)
         move_action = None
         if self._show_move_to_observation:
             move_action = menu.addAction(self.tr("Move to observation"))
+        # An empty menu (no visible actions for this context) shouldn't pop up.
+        if not menu.actions():
+            return
 
         chosen = menu.exec(global_pos)
         if edit_action is not None and chosen == edit_action:
@@ -1130,8 +1148,8 @@ class ImageGalleryWidget(QGroupBox):
             image_path = getattr(frame, "image_path", "") or ""
             self.editRequested.emit(image_id, image_path)
             return
-        if chosen == delete_action:
-            self.deleteSelectionRequested.emit(list(selected_keys))
+        if delete_action is not None and chosen == delete_action:
+            self.deleteImagesRequested.emit(list(selected_keys))
         elif move_action is not None and chosen == move_action:
             self.moveToObservationRequested.emit(list(selected_keys))
 
@@ -1802,7 +1820,7 @@ class ImageGalleryWidget(QGroupBox):
                 f" border-radius: {overlay_btn_radius}px; font-size: {overlay_font_px}{'px' if self._compact_overlay else 'pt'}; padding: 0px; }}"
                 "QToolButton:hover { background-color: #d6453a; }"
             )
-            delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteRequested.emit(key))
+            delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteImagesRequested.emit([key]))
             overlay_layout.addWidget(delete_btn)
 
         image_layout.addWidget(overlay, 0, 0, alignment=Qt.AlignTop | Qt.AlignRight)

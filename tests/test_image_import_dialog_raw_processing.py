@@ -85,6 +85,15 @@ def _build_raw_dialog_dummy(result: ImageImportResult) -> SimpleNamespace:
     )
     dummy._ensure_raw_convert_button = lambda: None
     dummy._refresh_raw_preview_calls = []
+    dummy._finalize_raw_settings_for_result = lambda candidate, index=None: (
+        ImageImportDialog._finalize_raw_settings_for_result(dummy, candidate, index)
+    )
+    dummy._get_image_size = lambda *_args, **_kwargs: (0, 0)
+    dummy._refresh_gallery = lambda: None
+    dummy._select_image = lambda *_args, **_kwargs: None
+    dummy._raw_preview_cache_entry = lambda source, settings: (
+        ImageImportDialog._raw_preview_cache_entry(dummy, source, settings)
+    )
     return dummy
 
 
