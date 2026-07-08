@@ -65,10 +65,53 @@ def _build_scroll_scene(frame_specs):
     return scroll, container, frames
 
 
-def test_analysis_gallery_selection_recenters_near_edge_thumbnail(monkeypatch, qapp):
+def test_analysis_gallery_selection_nudges_offscreen_thumbnail_into_view(monkeypatch, qapp):
     window = _build_minimal_window(monkeypatch)
 
+    # Frame 42 is placed off the right edge of the viewport (viewport is
+    # 500px wide at scroll=100 → visible x range 100..600, but frame 42
+    # spans 620..740). Selecting it should nudge the strip just enough to
+    # reveal it, not recenter it or leave it hidden.
     scroll, container, frames = _build_scroll_scene(
+        [
+            (41, 500, 120),
+            (42, 620, 120),
+            (43, 750, 120),
+        ]
+    )
+    qapp.processEvents()
+
+    window.gallery_scroll = scroll
+    window._gallery_thumbnail_frames = frames
+    scroll.horizontalScrollBar().setValue(100)
+    qapp.processEvents()
+
+    expected = center_horizontal_scroll_target(
+        QRectF(scroll.horizontalScrollBar().value(), 0, scroll.viewport().width(), scroll.viewport().height()),
+        QRectF(frames[42].geometry()),
+        scroll.horizontalScrollBar().minimum(),
+        scroll.horizontalScrollBar().maximum(),
+        QRectF(frames[41].geometry()),
+        QRectF(frames[43].geometry()),
+    )
+    assert expected is not None  # sanity: item is off-screen so a scroll IS required
+
+    window._select_analysis_gallery_measurement(42, update_plot=False)
+    qapp.processEvents()
+    qapp.processEvents()
+
+    assert scroll.horizontalScrollBar().value() == expected
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_selection_leaves_visible_thumbnail_alone(monkeypatch, qapp):
+    # Regression: clicking a thumbnail that's already fully visible must
+    # not shift the strip. Old algorithm recentered whenever a neighbour
+    # was less than 25% visible, causing jumpy behaviour on right-edge
+    # clicks.
+    window = _build_minimal_window(monkeypatch)
+    scroll, _, frames = _build_scroll_scene(
         [
             (41, 530, 120),
             (42, 650, 120),
@@ -82,21 +125,11 @@ def test_analysis_gallery_selection_recenters_near_edge_thumbnail(monkeypatch, q
     scroll.horizontalScrollBar().setValue(300)
     qapp.processEvents()
 
-    expected = center_horizontal_scroll_target(
-        QRectF(scroll.horizontalScrollBar().value(), 0, scroll.viewport().width(), scroll.viewport().height()),
-        QRectF(frames[42].geometry()),
-        scroll.horizontalScrollBar().minimum(),
-        scroll.horizontalScrollBar().maximum(),
-        QRectF(frames[41].geometry()),
-        QRectF(frames[43].geometry()),
-    )
-
     window._select_analysis_gallery_measurement(42, update_plot=False)
     qapp.processEvents()
     qapp.processEvents()
 
-    value = scroll.horizontalScrollBar().value()
-    assert value == expected
+    assert scroll.horizontalScrollBar().value() == 300  # unchanged
 
     window.deleteLater()
 

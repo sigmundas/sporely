@@ -209,7 +209,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     def _gallery_item_key(item):
         return item.get("id") if item.get("id") is not None else item.get("filepath")
 
-    def _gallery_select_paths(paths):
+    def _gallery_select_paths(paths, center=True):
         normalized_paths = {str(path) for path in (paths or []) if path}
         selected_keys = set()
         first_selected = None
@@ -222,7 +222,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
                     first_selected = key
         state.session_gallery._selected_keys = selected_keys
         state.session_gallery.selected = first_selected
-        state.session_gallery._centered_on = first_selected
+        if center:
+            state.session_gallery._centered_on = first_selected
 
     def _gallery_selected_paths():
         selected = []
@@ -246,15 +247,17 @@ def _build_raw_controls_state() -> SimpleNamespace:
             setattr(state.session_gallery, "selected", None),
             setattr(state.session_gallery, "_selected_keys", set()),
         ),
-        set_items=lambda items: setattr(state.session_gallery, "items", list(items)) or setattr(
+        set_items=lambda items, preserve_scroll=False: setattr(
+            state.session_gallery, "items", list(items)
+        ) or setattr(
             state.session_gallery,
             "visible",
             bool(items),
         ),
-        select_image=lambda image_id: (
+        select_image=lambda image_id, center=True: (
             setattr(state.session_gallery, "selected", image_id),
             setattr(state.session_gallery, "_selected_keys", {image_id} if image_id is not None else set()),
-            setattr(state.session_gallery, "_centered_on", image_id),
+            setattr(state.session_gallery, "_centered_on", image_id if center else state.session_gallery._centered_on),
         ),
         selected_keys=lambda: set(state.session_gallery._selected_keys),
         selected_paths=_gallery_selected_paths,

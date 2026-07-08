@@ -1,6 +1,7 @@
 """Adaptive choice selector that switches between pills and a dropdown."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 import re
@@ -50,6 +51,8 @@ class AdaptiveChoiceSelector(QWidget):
         self._current_index = -1
         self._mode = "dropdown"
         self._lab_state_alert = False
+        self._mixed_values: list[Any] = []
+        self._has_measured_width = False
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.timeout.connect(self._refresh_mode_for_width)
@@ -253,6 +256,38 @@ class AdaptiveChoiceSelector(QWidget):
             self._apply_button_style(button, self._items[index])
 
     # ------------------------------------------------------------------
+    # Mixed-state API (used when a multi-selection has different values
+    # for the same field). In this mode no pill is "selected"; every
+    # value that's present anywhere in the selection is rendered dimmed
+    # so the user can see the spread. Any user click exits mixed mode.
+    def set_mixed_values(self, values: Iterable[Any]) -> None:
+        self._mixed_values = list(values or [])
+        self._current_index = -1
+        self._combo.blockSignals(True)
+        self._combo.setCurrentIndex(-1)
+        self._combo.blockSignals(False)
+        self._sync_visible_selection()
+        self._refresh_theme_styles()
+
+    def clear_mixed(self) -> None:
+        if not self._mixed_values:
+            return
+        self._mixed_values = []
+        self._refresh_theme_styles()
+
+    def is_mixed(self) -> bool:
+        return bool(self._mixed_values)
+
+    def _index_is_mixed_present(self, index: int) -> bool:
+        if not self._mixed_values or index < 0 or index >= len(self._items):
+            return False
+        item = self._items[index]
+        for value in self._mixed_values:
+            if item.value == value:
+                return True
+        return False
+
+    # ------------------------------------------------------------------
     # QWidget overrides
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
@@ -269,6 +304,15 @@ class AdaptiveChoiceSelector(QWidget):
         if event.type() in {QEvent.FontChange, QEvent.StyleChange, QEvent.PaletteChange}:
             self._refresh_theme_styles()
             self._schedule_fit_update(0)
+
+    def event(self, event) -> bool:  # type: ignore[override]
+        if event.type() == QEvent.LayoutRequest:
+            # Fires when the parent layout has finished computing geometry.
+            # This is our most reliable signal that self.width() is real —
+            # showEvent / QTimer(0) can both fire before the splitter and
+            # form layout have settled on final widths.
+            self._schedule_fit_update(0)
+        return super().event(event)
 
     def sizeHint(self):  # type: ignore[override]
         combo_hint = self._combo.sizeHint()
@@ -393,17 +437,33 @@ class AdaptiveChoiceSelector(QWidget):
         selected_text = "#ffffff" if is_unset else self._contrast_text_color(accent)
         selected_border = alert_colors["border"] if is_unset else border.name()
         selected_hover = self._rgba(QColor(alert_colors["border"]), 48) if is_unset else hover_fill
+        # Look up whether this button belongs to a value present in the
+        # current mixed selection — if so, render dimmed to signal "some of
+        # the selected items have this value, but not all".
+        button_index = button.property("choiceIndex")
+        try:
+            button_index = int(button_index) if button_index is not None else -1
+        except Exception:
+            button_index = -1
+        is_mixed_present = self._index_is_mixed_present(button_index)
+        base_background = "transparent"
+        base_color = base_text
+        base_border = border_fill
+        if is_mixed_present:
+            base_accent = QColor(alert_colors["border"]) if is_unset else accent
+            base_background = self._rgba(base_accent, 70)
+            base_border = self._rgba(base_accent, 160)
         button.setStyleSheet(
             "QPushButton#adaptiveChoicePill {"
-            f" color: {base_text};"
-            f" border: 1px solid {border_fill};"
+            f" color: {base_color};"
+            f" border: 1px solid {base_border};"
             " border-radius: 10px;"
             f" padding: {'4px 8px' if self._compact else '6px 10px'};"
             " min-height: 0px;"
             " font-family: 'Manrope', sans-serif;"
             " font-size: 10pt;"
             " font-weight: 700;"
-            " background-color: transparent;"
+            f" background-color: {base_background};"
             " }"
             "QPushButton#adaptiveChoicePill:disabled {"
             f" color: {base_text};"
@@ -454,8 +514,15 @@ class AdaptiveChoiceSelector(QWidget):
         available = self.contentsRect().width()
         if available <= 0:
             available = self.width()
-        if available <= 0:
-            return "combo"
+        # Refuse to commit to a mode based on a clearly unusable width — the
+        # widget is likely inside a splitter / QScrollArea whose final
+        # geometry hasn't been applied yet. Reschedule and keep the current
+        # mode; LayoutRequest / resizeEvent will trigger a real check once
+        # the width is known.
+        if available < 40:
+            self._schedule_fit_update(50)
+            return self._mode if self._mode in {"pill", "combo"} else "combo"
+        self._has_measured_width = True
         required = self._pill_required_width()
         return "pill" if required <= available else "combo"
 
@@ -522,11 +589,18 @@ class AdaptiveChoiceSelector(QWidget):
     def _apply_index(self, index: int, *, emit: bool) -> None:
         if index < -1 or index >= len(self._items):
             return
+        was_mixed = bool(self._mixed_values)
+        if was_mixed:
+            self._mixed_values = []
         if index == self._current_index:
             self._sync_visible_selection()
+            if was_mixed:
+                self._refresh_theme_styles()
             return
         self._current_index = index
         self._sync_visible_selection()
+        if was_mixed:
+            self._refresh_theme_styles()
         if not emit:
             return
         self.currentIndexChanged.emit(self._current_index)

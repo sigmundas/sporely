@@ -1748,10 +1748,21 @@ class LiveLabTab(QWidget):
             tag_text = f"{tag_text} {DatabaseTerms.translate('contrast', contrast)}"
         return tag_text, objective_color(objective, str(objective_name))
 
+    _MICROSCOPE_SIDEBAR_FIELDS = (
+        ("objective_combo", "objective_name"),
+        ("contrast_combo", "contrast"),
+        ("mount_combo", "mount_medium"),
+        ("stain_combo", "stain"),
+        ("sample_combo", "sample_type"),
+    )
+
     def _apply_microscope_state_to_controls(self, metadata: dict | None) -> None:
         state = self._microscope_state_from_metadata(metadata)
         objective_combo = getattr(self, "objective_combo", None)
         if objective_combo is not None:
+            clear_mixed = getattr(objective_combo, "clear_mixed", None)
+            if callable(clear_mixed):
+                clear_mixed()
             objective_value = state.get("objective_name")
             if objective_value is not None and str(objective_value).strip():
                 with QSignalBlocker(objective_combo):
@@ -1771,6 +1782,9 @@ class LiveLabTab(QWidget):
             combo = getattr(self, combo_name, None)
             if combo is None:
                 continue
+            clear_mixed = getattr(combo, "clear_mixed", None)
+            if callable(clear_mixed):
+                clear_mixed()
             with QSignalBlocker(combo):
                 try:
                     index = combo.findData(value)
@@ -1786,6 +1800,135 @@ class LiveLabTab(QWidget):
         refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
         if callable(refresh_viewer_objective_tag):
             refresh_viewer_objective_tag()
+
+    def _apply_microscope_multi_state_to_controls(
+        self, metadatas: list[dict | None]
+    ) -> None:
+        """Reflect a multi-selection in the sidebar.
+
+        Fields where every selected image agrees are set to that shared
+        value as usual. Fields where the images disagree are put into a
+        "mixed" visual state — no pill is checked, but each value present
+        across the selection is rendered dimmed. See
+        AdaptiveChoiceSelector.set_mixed_values.
+        """
+        if not metadatas:
+            return
+        states = [self._microscope_state_from_metadata(m) for m in metadatas]
+        # Collect per-field value sets, preserving insertion order so the
+        # dimmed pills mirror the order the user encounters them. For the
+        # term categories a missing / None value maps to the "Not_set"
+        # option so its "—" pill lights up alongside the others.
+        field_values: dict[str, list] = {
+            "objective_name": [],
+            "contrast": [],
+            "mount_medium": [],
+            "stain": [],
+            "sample_type": [],
+        }
+        term_fields = {"contrast", "mount_medium", "stain", "sample_type"}
+        for state in states:
+            for field, seen in field_values.items():
+                value = state.get(field)
+                if value in (None, "") and field in term_fields:
+                    value = "Not_set"
+                if value not in seen:
+                    seen.append(value)
+
+        for combo_name, field_key in self._MICROSCOPE_SIDEBAR_FIELDS:
+            combo = getattr(self, combo_name, None)
+            if combo is None:
+                continue
+            values = field_values.get(field_key, [])
+            with QSignalBlocker(combo):
+                if len(values) <= 1:
+                    clear_mixed = getattr(combo, "clear_mixed", None)
+                    if callable(clear_mixed):
+                        clear_mixed()
+                    value = values[0] if values else None
+                    if value is not None and str(value).strip():
+                        try:
+                            index = combo.findData(value)
+                        except Exception:
+                            index = -1
+                        if index < 0:
+                            index = 0 if getattr(combo, "count", lambda: 0)() else -1
+                        if index >= 0:
+                            combo.setCurrentIndex(index)
+                else:
+                    set_mixed = getattr(combo, "set_mixed_values", None)
+                    if callable(set_mixed):
+                        set_mixed(values)
+        update_alerts = getattr(self, "_update_lab_state_combo_alerts", None)
+        if callable(update_alerts):
+            update_alerts()
+        refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+        if callable(refresh_viewer_objective_tag):
+            refresh_viewer_objective_tag()
+
+    def _is_sidebar_field_mixed(self, combo_name: str) -> bool:
+        combo = getattr(self, combo_name, None)
+        if combo is None:
+            return False
+        is_mixed = getattr(combo, "is_mixed", None)
+        try:
+            return bool(is_mixed()) if callable(is_mixed) else False
+        except Exception:
+            return False
+
+    def _mixed_sidebar_field_keys(self) -> set[str]:
+        """Return the metadata field keys whose sidebar selector is currently
+        showing a mixed multi-select state — those must not be written back
+        to any image, only the fields the user actually picked (which auto-
+        exit mixed) should propagate."""
+        keys: set[str] = set()
+        # objective_name has both a canonical key and a label variant that
+        # gets rebuilt from the combo. Treat any objective-linked metadata
+        # as mixed when the objective row is mixed.
+        objective_mixed = self._is_sidebar_field_mixed("objective_combo")
+        if objective_mixed:
+            keys.update({"objective_name", "objective_label"})
+        for combo_name, field_key in self._MICROSCOPE_SIDEBAR_FIELDS:
+            if combo_name == "objective_combo":
+                continue
+            if self._is_sidebar_field_mixed(combo_name):
+                keys.add(field_key)
+                keys.add(f"{field_key.split('_')[0]}_label")
+        return keys
+
+    def _collect_multi_select_metadatas(self) -> list[dict]:
+        """Metadata dicts for all currently multi-selected gallery items
+        (pending RAW captures + committed session images).
+        """
+        metadatas: list[dict] = []
+        seen_pending: set[int] = set()
+        seen_images: set[int] = set()
+        captures = getattr(self, "_pending_raw_captures", []) or []
+        for key in self._session_gallery_selected_keys():
+            pending_index = self._pending_raw_capture_index_for_key(key)
+            if pending_index is not None:
+                if pending_index in seen_pending:
+                    continue
+                seen_pending.add(pending_index)
+                if 0 <= pending_index < len(captures):
+                    capture = captures[pending_index]
+                    if isinstance(capture, PendingRawCapture):
+                        metadatas.append(dict(capture.lab_metadata or {}))
+                continue
+            try:
+                image_id = int(key)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen_images:
+                continue
+            seen_images.add(image_id)
+            try:
+                image = ImageDB.get_image(image_id)
+            except Exception:
+                image = None
+            if image:
+                metadatas.append(dict(image))
+        return metadatas
 
     def _refresh_viewer_objective_tag_from_current_state(self, *_args) -> None:
         update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
@@ -4526,6 +4669,13 @@ class LiveLabTab(QWidget):
             metadata = dict(current_lab_metadata() or {})
         except Exception:
             return False
+        # Skip fields the user hasn't disambiguated yet — a mixed selector
+        # is showing "these images disagree on this field", and applying the
+        # sidebar's placeholder value would silently collapse that spread.
+        mixed_keys_fn = getattr(self, "_mixed_sidebar_field_keys", None)
+        mixed_keys = mixed_keys_fn() if callable(mixed_keys_fn) else set()
+        for key in mixed_keys:
+            metadata.pop(key, None)
 
         changed = False
         for capture in selected_captures:
@@ -4598,6 +4748,13 @@ class LiveLabTab(QWidget):
             metadata_updates = dict(current_lab_metadata() or {})
         except Exception:
             return False
+        # Skip fields the user hasn't disambiguated yet — a mixed selector
+        # is showing "these images disagree on this field", and applying the
+        # sidebar's placeholder value would silently collapse that spread.
+        mixed_keys_fn = getattr(self, "_mixed_sidebar_field_keys", None)
+        mixed_keys = mixed_keys_fn() if callable(mixed_keys_fn) else set()
+        for key in mixed_keys:
+            metadata_updates.pop(key, None)
 
         changed_any = False
         for image_id in image_ids:
@@ -4611,6 +4768,8 @@ class LiveLabTab(QWidget):
             merged = merge_image_lab_metadata(existing_metadata, metadata_updates)
             top_level_updates: dict[str, object] = {}
             for metadata_key, column_key in self._SESSION_IMAGE_TOP_LEVEL_METADATA_KEYS:
+                if metadata_key in mixed_keys:
+                    continue
                 new_value = metadata_updates.get(metadata_key)
                 if new_value is None:
                     continue
@@ -5399,6 +5558,18 @@ class LiveLabTab(QWidget):
         captures.append(pending)
         self._pending_raw_captures = captures
         self._selected_pending_raw_index = len(captures) - 1
+        # A fresh pending RAW arriving ends any "select to edit" multi-
+        # selection so the user's next click targets the new capture, not
+        # the batch they were reviewing.
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            exit_edit = getattr(gallery, "exit_edit_selection", None)
+            if callable(exit_edit):
+                exit_edit()
+        # Ask the next gallery refresh (triggered from _show_pending_raw_capture
+        # via _update_pending_raw_controls) to scroll so the fresh capture
+        # lands on the right edge of the strip.
+        self._pending_reveal_new_at_end = True
         self._show_pending_raw_capture(self._selected_pending_raw_index)
         queue_helper = getattr(self, "_queue_background_pending_raw_renders", None)
         if callable(queue_helper):
@@ -7442,6 +7613,18 @@ class LiveLabTab(QWidget):
             self._session_microscope_state = dict(ingest_lab_metadata or {})
         except Exception:
             pass
+        # A fresh capture ends any "select to edit" multi-selection — the
+        # user's next action almost certainly targets the new thumbnail, not
+        # the batch they were editing. Dropping the multi here also clears
+        # the persistent hint via the selectionChanged emission.
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            exit_edit = getattr(gallery, "exit_edit_selection", None)
+            if callable(exit_edit):
+                exit_edit()
+        # Ask the next gallery refresh to scroll so the fresh capture is
+        # visible at the right edge of the strip.
+        self._pending_reveal_new_at_end = True
         if not defer_ui_refresh:
             observation_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             self._update_observation_thumbnail()
@@ -7564,7 +7747,14 @@ class LiveLabTab(QWidget):
             observation_id=observation_id,
         )
 
-    def _refresh_session_gallery(self) -> None:
+    def _refresh_session_gallery(self, *, reveal: str = "preserve") -> None:
+        # A pending "new capture arrived" flag overrides the caller's mode.
+        # It's set once by the ingest paths and consumed on the next refresh
+        # — subsequent refreshes fall back to the caller's reveal (or the
+        # default "preserve").
+        if getattr(self, "_pending_reveal_new_at_end", False):
+            reveal = "new_at_end"
+            self._pending_reveal_new_at_end = False
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         gallery = getattr(self, "session_gallery", None)
         if gallery is None:
@@ -7580,7 +7770,17 @@ class LiveLabTab(QWidget):
         items, selected_key = self._session_gallery_items()
         _raw_timing_log("refresh session gallery build items", items_start, detail=f"items={len(items)}")
         set_items_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-        gallery.set_items(items)
+        # Metadata-only refreshes preserve the horizontal scroll offset so
+        # the view doesn't jitter every time a badge updates. Ingest paths
+        # override this with reveal="new_at_end" to scroll the strip so the
+        # fresh capture is visible on the right edge.
+        set_items_fn = getattr(gallery, "set_items", None)
+        if callable(set_items_fn):
+            try:
+                set_items_fn(items, reveal=reveal)
+            except TypeError:
+                # Legacy signature without the reveal kwarg (test mocks).
+                set_items_fn(items, preserve_scroll=(reveal == "preserve"))
         _raw_timing_log("refresh session gallery set_items", set_items_start, detail=f"items={len(items)}")
         is_multi_select = False
         is_multi_select_fn = getattr(gallery, "is_multi_select", None)
@@ -7593,7 +7793,7 @@ class LiveLabTab(QWidget):
             select_paths = getattr(gallery, "select_paths", None)
             if callable(select_paths):
                 select_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-                select_paths(selected_paths)
+                select_paths(selected_paths, center=False)
                 _raw_timing_log("refresh session gallery restore selected paths", select_start, detail=f"paths={len(selected_paths)}")
                 selected_paths_fn = getattr(gallery, "selected_paths", None)
                 restored_paths = []
@@ -7610,11 +7810,14 @@ class LiveLabTab(QWidget):
                             fallback_paths = [str(item.get("filepath"))]
                             break
                     if fallback_paths:
-                        select_paths(fallback_paths)
+                        select_paths(fallback_paths, center=False)
         elif selected_key is not None:
             select_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-            gallery.select_image(selected_key)
+            gallery.select_image(selected_key, center=False)
             _raw_timing_log("refresh session gallery select image", select_start, detail=str(selected_key))
+        update_hint = getattr(self, "_update_edit_selection_hint", None)
+        if callable(update_hint):
+            update_hint()
         _raw_timing_log("refresh session gallery", start, detail=f"items={len(items)}")
 
     def _on_session_gallery_clicked(self, image_id, _path: str) -> None:
@@ -7648,9 +7851,15 @@ class LiveLabTab(QWidget):
                 if isinstance(maybe_capture, PendingRawCapture):
                     capture = maybe_capture
             if capture is not None:
-                apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
-                if callable(apply_microscope_state):
-                    apply_microscope_state(capture.lab_metadata)
+                multi_metadatas = (
+                    self._collect_multi_select_metadatas() if is_multi_select else []
+                )
+                if len(multi_metadatas) > 1:
+                    self._apply_microscope_multi_state_to_controls(multi_metadatas)
+                else:
+                    apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+                    if callable(apply_microscope_state):
+                        apply_microscope_state(capture.lab_metadata)
             if is_multi_select and gallery is not None:
                 center_on_key = getattr(gallery, "center_on_key", None)
                 if callable(center_on_key):
@@ -7664,11 +7873,15 @@ class LiveLabTab(QWidget):
         self._selected_session_image_id = resolved_image_id
         self._update_pending_raw_controls()
         if is_multi_select:
-            image = ImageDB.get_image(resolved_image_id)
-            if image is not None:
-                apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
-                if callable(apply_microscope_state):
-                    apply_microscope_state(image)
+            multi_metadatas = self._collect_multi_select_metadatas()
+            if len(multi_metadatas) > 1:
+                self._apply_microscope_multi_state_to_controls(multi_metadatas)
+            else:
+                image = ImageDB.get_image(resolved_image_id)
+                if image is not None:
+                    apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
+                    if callable(apply_microscope_state):
+                        apply_microscope_state(image)
             if gallery is not None:
                 center_on_key = getattr(gallery, "center_on_key", None)
                 if callable(center_on_key):
@@ -7690,13 +7903,44 @@ class LiveLabTab(QWidget):
         # empty selection releases it so future edits queue for the next
         # capture instead of mutating whatever was previously highlighted.
         self._sidebar_binds_to_selection = selected_count > 0
+        self._update_edit_selection_hint(selected_count)
         if selected_count > 1:
-            self._show_status(
-                self.tr("Settings will be applied to selected images."),
-                tone="info",
-                timeout_ms=3500,
-            )
+            metadatas = self._collect_multi_select_metadatas()
+            if len(metadatas) > 1:
+                self._apply_microscope_multi_state_to_controls(metadatas)
+        else:
+            # Any lingering "mixed" state from a prior multi-select must be
+            # cleared once we're down to zero or one item.
+            for combo_name, _field in self._MICROSCOPE_SIDEBAR_FIELDS:
+                combo = getattr(self, combo_name, None)
+                if combo is None:
+                    continue
+                clear_mixed = getattr(combo, "clear_mixed", None)
+                if callable(clear_mixed):
+                    clear_mixed()
         self._update_raw_processing_visibility()
+
+    def _update_edit_selection_hint(self, selected_count: int | None = None) -> None:
+        """Show a persistent hint whenever the gallery has 2+ thumbnails
+        selected for editing. Clear the hint as soon as the selection
+        collapses back to 0 or 1."""
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if selected_count is None:
+            try:
+                selected_count = len(self._session_gallery_selected_keys())
+            except Exception:
+                selected_count = 0
+        active = int(selected_count or 0) > 1
+        previous = bool(getattr(self, "_edit_selection_hint_active", False))
+        if active == previous:
+            return
+        self._edit_selection_hint_active = active
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
 
     def _on_session_gallery_items_reordered(self, ordered_keys) -> None:
         # Session gallery mixes committed session images (int DB ids) with

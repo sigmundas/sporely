@@ -253,6 +253,184 @@ Rollout order:
 4. Verify diagnostic + landing display of the 26-tile mosaic before
    sweeping older observations.
 
+### Stage K — Sync-time mosaic signature (skip unnecessary rebuilds)
+
+Status: proposed.
+
+Goal:
+Normal sync should push a spore mosaic only when something that
+actually affects the mosaic has changed. The full-observation backfill
+is ~1.5 s per observation on a mid-range machine, most of which is
+Pillow rotation + WebP encode; running it on every sync makes idle
+syncs unacceptably slow.
+
+Idea:
+Compute a compact per-observation "mosaic signature" locally and
+persist it (e.g. `observations.mosaic_signature` TEXT, or a
+`spore_mosaic_state` side table). The signature is a stable SHA-1 over
+the tuple that determines the mosaic bytes:
+
+- ordered list of eligible measurement ids
+- per-measurement (p1/p2/p3/p4, length_um, width_um,
+  measurement_type, gallery_rotation, image cloud_id)
+- source image mtime + size fingerprint per referenced local file
+- `spore_data_visibility`
+- desktop mosaic pipeline version constant (bumped when render code
+  changes so old signatures re-run once)
+
+Normal sync path
+(`_push_spore_mosaic_for_observation` in `utils/cloud_sync.py`):
+
+1. Compute `new_signature` from the local rows.
+2. If `new_signature == observations.mosaic_signature` locally AND the
+   remote `spore_measurement_mosaics` row is present, skip build +
+   upload. Log `Mosaic skip obs N: signature unchanged`.
+3. Otherwise, run the existing pipeline and persist `new_signature`
+   after successful upload.
+
+The metadata-only microscope image helper (Stage J) is also gated by
+this signature: no unlinked microscope images with public-eligible
+measurements → nothing to do. The helper itself is cheap so calling
+it on every sync is fine; the expensive part is the mosaic rebuild.
+
+Tests:
+- signature stable across identical runs
+- signature changes when a measurement is added, deleted, its
+  geometry changes, or a source file mtime changes
+- pipeline version bump forces one rebuild for every observation
+- `--force` CLI flag on the backfill bypasses the signature guard for
+  manual re-runs
+
+Also:
+- Move the ensure-metadata helper into the normal sync path once this
+  signature guard is landed, so new measurements on unshared
+  microscope images reach the public site without a manual backfill.
+- Keep the backfill CLI for pipeline-version bumps and forced
+  regeneration; day-to-day, it should be unused.
+
+### Stage L — Anonymized public spore data from private observations
+
+Status: proposed.
+
+Goal:
+Let users contribute spore measurements to the community dataset
+without exposing the observation itself. Motivating cases: matsutake
+sites, rare taxa, and psychoactive species where the finder does not
+want the location tied to their name.
+
+The schema already separates `spore_data_visibility` from
+`visibility`, so "hidden observation, public measurements" is a
+valid combination on the desktop side today — what is missing is a
+public RPC that reads it and a landing surface that consumes it.
+
+Model (desktop):
+
+- Keep the existing `observations.visibility` (`private` /
+  `friends` / `public`) and `spore_data_visibility`
+  (`private` / `public`) as-is.
+- The desktop Preferences dialog gets an explicit control: "Share
+  spore measurements from private observations anonymously". When
+  on, private observations still push measurements + mosaic tiles to
+  the cloud through Stage J's metadata-only image path.
+- The desktop helper that already creates metadata-only microscope
+  image rows is unchanged — it fires when the observation is public
+  OR when `spore_data_visibility='public'`, which is already the
+  gate we use.
+
+Model (cloud, sporely-web):
+
+- New (or extended) public RPC — e.g.
+  `search_public_anonymous_spore_points(taxon_slug, country, ...)` —
+  that reads observations where `spore_data_visibility='public'`
+  regardless of `visibility`. Projection intentionally strips:
+  observation id, observer, GPS, exact date, unshared image URLs.
+- Kept: `genus`, `species`, `length_um`, `width_um`, `q`,
+  `country_code`, optionally `year_month` (`YYYY-MM`) but only when
+  the (species, country, month) cohort has at least N points to
+  avoid re-identification of rare taxa; otherwise coarsen to year
+  only.
+- Mosaic tile access: allow the tile URL + tile rect via a companion
+  RPC, but drop `observationId` from the returned row so the tile
+  cannot be linked back to the observation. Keep the polygon
+  overlay.
+
+Constraints:
+
+- No new columns on `observations` — reuse existing visibility
+  fields.
+- RLS on `observations`, `observation_images`,
+  `spore_measurements`, `spore_measurement_mosaics`, and
+  `spore_measurement_mosaic_tiles` must continue to reject direct
+  reads of hidden observations by anonymous / stranger roles. The
+  new visibility comes only through the RPC, not through the
+  underlying tables.
+- Landing must not expose observation-level detail pages for
+  anonymized points; those clicks land on the species aggregate
+  chart instead.
+
+Follow-up questions before implementing:
+
+- Minimum cohort size for month-year vs year-only. Rough starting
+  point: month-year only when `count(species, country, month) >= 5`,
+  else year, else omit.
+- Whether anonymized points should also feed `search_public_species`
+  observation counts (probably no — count "publicly shared
+  observations" separately from "anonymously shared spore points"
+  in the UI).
+- UX copy for the opt-in checkbox: "Share only my spore data. Your
+  observation stays private; the community sees the measurements
+  without any location or identity."
+
+### Stage M — Draft expiry policy
+
+Status: proposed.
+
+Goal:
+Give users a soft push toward either publishing an observation or
+letting go of it, so long-abandoned drafts stop consuming R2 media
+and DB rows. The paid-tier promise is "unlimited slots"; the
+free-tier promise is "20 private slots + drafts that get cleaned up
+if you never come back to them".
+
+Policy sketch:
+
+- Draft observations that have had no edits and no measurements
+  added for D months are candidates for cleanup. Starting point:
+  D = 6 months on free tier, D = 12 months on paid.
+- Grace period: candidate observations are marked
+  `expires_at = now() + 30 days` and the user is emailed once with
+  a "keep", "publish now", or "let it go" link. A gentle in-app
+  banner appears while `expires_at` is in the future.
+- On `expires_at`:
+  - Soft-delete the observation via the existing tombstone path
+    (`deleted_at`), so a short recovery window applies.
+  - R2 media garbage collection (see Stage E3) removes the image
+    bytes when the tombstone crosses the media retention window.
+- Drafts that flip `spore_data_visibility='public'` (Stage L) are
+  exempt: they are contributing to the community dataset and should
+  survive the expiry sweep as long as spore data is opted in.
+
+Non-goals:
+
+- Do not hard-delete anything at expiry — always go through the
+  existing tombstone + recycle bin flow.
+- Do not touch measurements on published observations; expiry is
+  scoped to `is_draft = true` rows.
+- Do not silently expire drafts without the email/banner grace
+  window; the whole point is fair warning.
+
+Rollout order:
+
+1. sporely-web: add `observations.expires_at timestamptz NULL`,
+   RPC + Edge Function to identify candidates and set expiry, RLS
+   updates so users still see their own expiring drafts.
+2. sporely-web: email hook + landing banner (or reuse existing
+   notification surface).
+3. sporely-py: banner + preferences copy explaining the free-tier
+   draft policy; add "keep this draft" one-click action.
+4. Enable the sweep in dry-run first (log candidates, no
+   expiry set) and audit before flipping the switch.
+
 ### Stage I — Optional full-resolution original sync
 
 Status: Done (default-off opt-in upload, recovery cache path, and conservative settings/status surface shipped; explicit restore/promotion remains deferred).

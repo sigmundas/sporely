@@ -60,9 +60,11 @@ def _build_gallery_items(tmp_path, count: int = 3) -> list[dict]:
     return items
 
 
-def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden():
+def test_center_horizontal_scroll_target_returns_none_when_item_fully_visible():
+    # Fully-visible target with partially-hidden neighbours must not move
+    # the strip — the old "recenter when a neighbour < 25% visible" rule
+    # caused rightmost-visible clicks to jump the viewport around.
     viewport_rect = QRectF(300, 0, 500, 120)
-
     target_rect = QRectF(650, 0, 120, 120)
     previous_rect = QRectF(530, 0, 120, 120)
     next_rect = QRectF(780, 0, 120, 120)
@@ -73,23 +75,43 @@ def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden(
         2000,
         previous_rect,
         next_rect,
-    ) == 460
+    ) is None
 
 
-def test_center_horizontal_scroll_target_centers_when_previous_neighbor_is_mostly_hidden():
+def test_center_horizontal_scroll_target_nudges_right_when_item_off_right():
+    # Item is clipped on the right — scroll just enough to reveal it with
+    # the default margin (24px), not all the way to a centered position.
     viewport_rect = QRectF(300, 0, 500, 120)
-
-    target_rect = QRectF(330, 0, 120, 120)
-    previous_rect = QRectF(200, 0, 120, 120)
-    next_rect = QRectF(450, 0, 120, 120)
+    target_rect = QRectF(720, 0, 120, 120)  # extends to x=840, past view right 800
     assert center_horizontal_scroll_target(
         viewport_rect,
         target_rect,
         0,
         2000,
-        previous_rect,
-        next_rect,
-    ) == 140
+    ) == 720 + 120 + 24 - 500  # item_right + margin - viewport_width = 364
+
+
+def test_center_horizontal_scroll_target_nudges_left_when_item_off_left():
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(220, 0, 120, 120)  # left edge is left of viewport
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+    ) == 220 - 24  # item_left - margin = 196
+
+
+def test_center_horizontal_scroll_target_clamps_to_scrollbar_range():
+    viewport_rect = QRectF(0, 0, 500, 120)
+    target_rect = QRectF(1900, 0, 120, 120)  # far off to the right
+    # Would want 1900+120+24-500=1544, but max is 500 → clamped.
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        500,
+    ) == 500
 
 
 def test_center_on_key_ignores_stale_queued_requests(monkeypatch, qapp):

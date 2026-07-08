@@ -328,7 +328,21 @@ def center_horizontal_scroll_target(
     next_rect: QRectF | None = None,
     *,
     visible_neighbor_threshold: float = 0.25,
+    margin: float = 24.0,
 ) -> int | None:
+    """Return the scroll offset needed to bring `item_rect` into view, or
+    None when no scrolling is required.
+
+    Rules:
+    - If the item is already fully visible → return None (don't move).
+    - Otherwise, scroll the minimum distance needed to bring the item into
+      view with a small margin. Items off the right edge nudge right; items
+      off the left edge nudge left. This avoids the "click the rightmost
+      visible thumbnail → strip jumps to center it" surprise.
+    - The `previous_rect` / `next_rect` / `visible_neighbor_threshold`
+      parameters are accepted for backward compatibility and ignored.
+    """
+    del previous_rect, next_rect, visible_neighbor_threshold  # unused
     if item_rect is None:
         return None
     item_width = float(item_rect.width())
@@ -336,18 +350,23 @@ def center_horizontal_scroll_target(
     if item_width <= 0.0 or viewport_width <= 0.0:
         return None
 
-    item_visible = _visible_fraction(viewport_rect, item_rect)
-    previous_visible = _visible_fraction(viewport_rect, previous_rect)
-    next_visible = _visible_fraction(viewport_rect, next_rect)
-    should_center = (
-        item_visible < 0.999
-        or previous_visible < float(visible_neighbor_threshold)
-        or next_visible < float(visible_neighbor_threshold)
-    )
-    if not should_center:
+    if _visible_fraction(viewport_rect, item_rect) >= 0.999:
         return None
 
-    target = int(round(float(item_rect.x()) + (item_width / 2.0) - (viewport_width / 2.0)))
+    item_left = float(item_rect.x())
+    item_right = item_left + item_width
+    view_left = float(viewport_rect.x())
+    view_right = view_left + viewport_width
+    margin_val = max(0.0, float(margin))
+
+    if item_left < view_left:
+        target = int(round(item_left - margin_val))
+    elif item_right > view_right:
+        target = int(round(item_right + margin_val - viewport_width))
+    else:
+        # Item is wider than the viewport and only partially visible on both
+        # sides — center it.
+        target = int(round(item_left + (item_width / 2.0) - (viewport_width / 2.0)))
     return max(int(minimum), min(int(maximum), target))
 
 
@@ -500,6 +519,13 @@ class ImageGalleryWidget(QGroupBox):
         self._render_index = 0
         self._center_request_generation = 0
         self._center_request_key = None
+        # Scroll behaviour to apply after the next batched render finishes.
+        # "preserve" restores the previous horizontal scroll offset (used
+        # for metadata refreshes so the view doesn't jitter). "new_at_end"
+        # scrolls to the far right so a freshly-appended thumbnail becomes
+        # visible. None means "no scroll manipulation from this refresh".
+        self._pending_scroll_mode: str | None = None
+        self._pending_scroll_restore: int | None = None
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_next_batch)
@@ -633,7 +659,7 @@ class ImageGalleryWidget(QGroupBox):
         self._center_request_key = key
         QTimer.singleShot(0, lambda gen=generation, requested_key=key: self._center_on_key_if_current(gen, requested_key))
 
-    def _center_on_key_if_current(self, generation: int, key) -> None:
+    def _center_on_key_if_current(self, generation: int, key, retries: int = 3) -> None:
         if generation != self._center_request_generation or key != self._center_request_key:
             return
         frame = self._frame_for_key(key)
@@ -642,6 +668,25 @@ class ImageGalleryWidget(QGroupBox):
         scrollbar = self._scroll.horizontalScrollBar()
         viewport = self._scroll.viewport()
         if scrollbar is None or viewport is None:
+            return
+        # Force the container's layout to run so freshly-added frames have
+        # real geometry — otherwise frame.geometry() reports (0, 0, 0, 0)
+        # and we'd snap the strip to scroll=0.
+        container = frame.parentWidget()
+        if container is not None:
+            layout = container.layout()
+            if layout is not None:
+                try:
+                    layout.activate()
+                except Exception:
+                    pass
+        frame_geometry = frame.geometry()
+        if frame_geometry.width() <= 0 and retries > 0:
+            # Layout hasn't settled yet — try again shortly.
+            QTimer.singleShot(
+                16,
+                lambda gen=generation, k=key, r=retries - 1: self._center_on_key_if_current(gen, k, r),
+            )
             return
         index = self._index_for_key(key)
         previous_frame = self._frames[index - 1] if index is not None and index > 0 and index - 1 < len(self._frames) else None
@@ -654,7 +699,7 @@ class ImageGalleryWidget(QGroupBox):
         )
         target = center_horizontal_scroll_target(
             viewport_rect,
-            QRectF(frame.geometry()),
+            QRectF(frame_geometry),
             int(scrollbar.minimum()),
             int(scrollbar.maximum()),
             QRectF(previous_frame.geometry()) if previous_frame is not None else None,
@@ -767,7 +812,34 @@ class ImageGalleryWidget(QGroupBox):
                 )
         self.set_items(items)
 
-    def set_items(self, items: Iterable[dict]) -> None:
+    def set_items(
+        self,
+        items: Iterable[dict],
+        preserve_scroll: bool = False,
+        *,
+        reveal: str | None = None,
+    ) -> None:
+        # `reveal` (preferred): "preserve" | "new_at_end" | "off" (or None).
+        # `preserve_scroll=True` remains for callers that haven't switched
+        # to the reveal API; when both are unset the refresh doesn't touch
+        # the scroll position.
+        mode = reveal
+        if mode is None:
+            mode = "preserve" if preserve_scroll else "off"
+        mode = str(mode or "off").strip().lower()
+        if mode not in {"preserve", "new_at_end", "off"}:
+            mode = "off"
+        self._pending_scroll_mode = mode if mode != "off" else None
+        if mode == "preserve" and self._scroll is not None:
+            scrollbar = self._scroll.horizontalScrollBar()
+            self._pending_scroll_restore = int(scrollbar.value()) if scrollbar is not None else None
+        else:
+            self._pending_scroll_restore = None
+        if self._pending_scroll_mode is not None:
+            # Cancel any pending center-request so it doesn't fight our
+            # scroll intent once layout settles.
+            self._center_request_generation += 1
+            self._center_request_key = None
         self._observation_load_generation += 1
         self._items = []
         for idx, item in enumerate(items):
@@ -1191,11 +1263,11 @@ class ImageGalleryWidget(QGroupBox):
             return [tr("From raw")]
         return []
 
-    def select_image(self, image_id: int | None) -> None:
+    def select_image(self, image_id: int | None, center: bool = True) -> None:
         current_keys = {image_id} if image_id is not None else set()
         if image_id == self._selected_id and self._selected_keys == current_keys:
             self._last_clicked_index = self._index_for_key(image_id)
-            if image_id is not None:
+            if image_id is not None and center:
                 self._queue_center_on_key(image_id)
             return
         previous_id = self._selected_id
@@ -1208,7 +1280,7 @@ class ImageGalleryWidget(QGroupBox):
             self._set_frame_selected_state(previous_frame, False)
         if new_frame is not None:
             self._set_frame_selected_state(new_frame, True)
-        if image_id is not None:
+        if image_id is not None and center:
             self._queue_center_on_key(image_id)
 
     def publish_selected_ids(self) -> set[int]:
@@ -1281,6 +1353,10 @@ class ImageGalleryWidget(QGroupBox):
             key = self._item_key(item)
             if key in self._selected_keys:
                 self._set_frame_selected_state(frame, True)
+        # If the caller told us to manage scroll for this refresh
+        # ("preserve" or "new_at_end"), skip the "recenter on selected"
+        # behaviour so we don't fight our own scroll intent.
+        managed_scroll = self._pending_scroll_mode is not None
         if self._selected_id is not None:
             if self._multi_select and self._selected_keys:
                 if self._selected_id not in self._selected_keys:
@@ -1292,14 +1368,49 @@ class ImageGalleryWidget(QGroupBox):
                             break
                 self._last_clicked_index = self._index_for_key(self._selected_id)
                 self._apply_selection_styles()
-                if self._selected_id is not None:
+                if self._selected_id is not None and not managed_scroll:
                     self._queue_center_on_key(self._selected_id)
             else:
-                self._queue_center_on_key(self._selected_id)
+                if not managed_scroll:
+                    self._queue_center_on_key(self._selected_id)
         elif self._selected_keys:
             self._apply_selection_styles()
-        if generation == self._render_generation and self._render_index < len(self._items):
+        render_done = self._render_index >= len(self._items)
+        if generation == self._render_generation and not render_done:
             self._render_timer.start(0)
+            return
+        if managed_scroll and self._scroll is not None:
+            mode = self._pending_scroll_mode
+            snapshot = self._pending_scroll_restore
+            self._pending_scroll_mode = None
+            self._pending_scroll_restore = None
+            self._apply_pending_scroll(mode, snapshot)
+
+    def _apply_pending_scroll(self, mode: str | None, snapshot: int | None) -> None:
+        if mode is None or self._scroll is None:
+            return
+        scrollbar = self._scroll.horizontalScrollBar()
+        if scrollbar is None:
+            return
+
+        def _apply():
+            try:
+                if mode == "new_at_end":
+                    target = int(scrollbar.maximum())
+                elif mode == "preserve":
+                    target = int(snapshot if snapshot is not None else scrollbar.value())
+                else:
+                    return
+                clamped = max(int(scrollbar.minimum()), min(int(scrollbar.maximum()), target))
+                scrollbar.setValue(clamped)
+            except RuntimeError:
+                pass
+
+        # Immediate best-effort; then re-apply on the next event-loop tick
+        # so the scrollbar range has had a chance to grow as Qt lays out
+        # the freshly-added frames.
+        _apply()
+        QTimer.singleShot(0, _apply)
 
     def eventFilter(self, obj, event):
         if self._reorderable and event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
@@ -1771,7 +1882,7 @@ class ImageGalleryWidget(QGroupBox):
     def center_on_key(self, key) -> None:
         self._queue_center_on_key(key)
 
-    def select_paths(self, paths: list[str]) -> None:
+    def select_paths(self, paths: list[str], center: bool = True) -> None:
         keys: set[str | int] = set()
         for item in self._items:
             filepath = item.get("filepath")
@@ -1791,8 +1902,26 @@ class ImageGalleryWidget(QGroupBox):
                     first_selected_key = key
                     break
         self._apply_selection_styles()
-        if first_selected_key is not None:
+        if first_selected_key is not None and center:
             self._queue_center_on_key(first_selected_key)
+
+    def exit_edit_selection(self) -> None:
+        """Clear the gallery selection entirely — no highlighted thumbnail(s)
+        remain. Used when a fresh capture arrives; any lingering selection
+        from a prior multi-select-for-edit is no longer relevant. Emits
+        selectionChanged so listeners can update their hints, and bumps the
+        center-request generation so any queued auto-scroll is cancelled."""
+        if not self._selected_keys and self._selected_id is None:
+            return
+        self._selected_keys = set()
+        self._selected_id = None
+        self._last_clicked_index = None
+        # Cancel any pending recenter — we don't want a stale center-request
+        # to snap the viewport once selection changes.
+        self._center_request_generation += 1
+        self._center_request_key = None
+        self._apply_selection_styles()
+        self.selectionChanged.emit(self.selected_paths())
 
     def _index_for_key(self, key) -> int | None:
         if key is None:
