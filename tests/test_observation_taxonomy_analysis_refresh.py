@@ -296,3 +296,35 @@ def test_load_reference_values_reloads_new_reference_data_for_changed_taxon(
     assert window.reference_values["species"] == "sericeum"
     assert window.reference_series and window.reference_series[0]["data"]["genus"] == "Entoloma"
     assert window.ref_table.item(0, 0).text() == "3.1"
+
+
+def test_load_reference_values_preserves_manual_taxon_for_same_observation(
+    monkeypatch,
+    qapp,
+) -> None:
+    window = _build_minimal_window(monkeypatch)
+    window.ref_genus_input.setText("Entoloma")
+    window.ref_species_input.setText("other")
+    window._reference_panel_loaded_observation_id = 1
+    window._reference_panel_loaded_taxon = ("Entoloma", "sericeum")
+
+    monkeypatch.setattr(
+        main_window.ObservationDB,
+        "get_observation",
+        lambda observation_id: {
+            "id": observation_id,
+            "genus": "Entoloma",
+            "species": "sericeum",
+        },
+    )
+    monkeypatch.setattr(main_window.ReferenceDB, "get_reference", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window.ObservationDB, "get_personal_observations_for_species", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main_window.ReferenceDB, "list_sources", lambda *args, **kwargs: [])
+
+    window.load_reference_values()
+
+    assert window.ref_genus_input.text() == "Entoloma"
+    assert window.ref_species_input.text() == "other"
+    assert window.reference_values == {}
+    assert window._reference_panel_loaded_observation_id == 1
+    assert window._reference_panel_loaded_taxon == ("Entoloma", "sericeum")

@@ -5811,6 +5811,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
+        self._reference_panel_loaded_observation_id: int | None = None
+        self._reference_panel_loaded_taxon: tuple[str, str] | None = None
         self.species_availability = SpeciesDataAvailability()
         self._ref_completer_suppress = False
         self._ref_taxon_fill_from_vernacular = False
@@ -8763,6 +8765,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._populate_reference_panel_sources(auto_select_single=False)
         self._maybe_load_reference_panel_reference()
         self._update_reference_add_state()
+        self._save_gallery_settings()
 
     def _ref_vernacular_choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
         if not isinstance(index, QModelIndex) or not index.isValid():
@@ -10280,6 +10283,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 else:
                     self.ref_source_input.setCurrentText(data.get("source"))
         self.reference_values = data
+        self._apply_reference_panel_values(data)
         self._add_reference_series_entry(data)
 
     def _on_reference_panel_edit_clicked(self):
@@ -10397,6 +10401,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_species_input.setText("")
         self.ref_source_input.setCurrentText("")
         self.reference_values = {}
+        self._set_reference_panel_loaded_taxon(None, None, None)
         self._set_reference_series([])
         self._apply_reference_panel_values({})
         self._update_reference_add_state()
@@ -18497,6 +18502,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.ref_source_input.setCurrentIndex(idx)
                 else:
                     self.ref_source_input.setCurrentText(source)
+            if self.active_observation_id:
+                obs = ObservationDB.get_observation(self.active_observation_id)
+                obs_genus = self._clean_ref_genus_text(obs.get("genus")) if obs else ""
+                obs_species = self._clean_ref_species_text(obs.get("species")) if obs else ""
+                self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
 
         restored_series = []
         saved_series = settings.get("reference_series")
@@ -19369,42 +19379,88 @@ class MainWindow(GeometryMixin, QMainWindow):
             if genus:
                 self._update_ref_species_suggestions(genus, species_text)
 
+    def _reference_panel_current_taxon(self) -> tuple[str, str]:
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
+        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
+        return genus, species
+
+    def _set_reference_panel_loaded_taxon(
+        self,
+        observation_id: int | None,
+        genus: str | None,
+        species: str | None,
+    ) -> None:
+        self._reference_panel_loaded_observation_id = observation_id
+        if genus and species:
+            self._reference_panel_loaded_taxon = (genus, species)
+        else:
+            self._reference_panel_loaded_taxon = None
+
     def load_reference_values(self):
         """Load reference values for the active observation."""
         self.reference_values = {}
         if not self.active_observation_id:
+            self._set_reference_panel_loaded_taxon(None, None, None)
             return
         obs = ObservationDB.get_observation(self.active_observation_id)
         if not obs:
+            self._set_reference_panel_loaded_taxon(None, None, None)
             return
-        genus = obs.get("genus")
-        species = obs.get("species")
+        obs_genus = self._clean_ref_genus_text(obs.get("genus"))
+        obs_species = self._clean_ref_species_text(obs.get("species"))
+        current_genus, current_species = self._reference_panel_current_taxon()
+        same_observation = self._reference_panel_loaded_observation_id == self.active_observation_id
+        loaded_taxon = self._reference_panel_loaded_taxon or ()
+        preserve_current_taxon = bool(
+            same_observation
+            and current_genus
+            and current_species
+            and (not loaded_taxon or (current_genus, current_species) != tuple(loaded_taxon))
+        )
+        if preserve_current_taxon:
+            genus, species = current_genus, current_species
+        else:
+            genus, species = obs_genus, obs_species
+            self._set_reference_panel_loaded_taxon(self.active_observation_id, genus, species)
         if not (genus and species):
             if hasattr(self, "ref_genus_input"):
+                self.ref_genus_input.blockSignals(True)
                 self.ref_genus_input.setText("")
+                self.ref_genus_input.blockSignals(False)
             if hasattr(self, "ref_species_input"):
+                self.ref_species_input.blockSignals(True)
                 self.ref_species_input.setText("")
+                self.ref_species_input.blockSignals(False)
             if hasattr(self, "ref_source_input"):
+                self.ref_source_input.blockSignals(True)
                 self.ref_source_input.setCurrentText("")
+                self.ref_source_input.blockSignals(False)
             if hasattr(self, "ref_vernacular_input"):
+                self.ref_vernacular_input.blockSignals(True)
                 self.ref_vernacular_input.setText("")
+                self.ref_vernacular_input.blockSignals(False)
             self._apply_reference_panel_values({})
             return
+        if not preserve_current_taxon:
+            if hasattr(self, "ref_source_input"):
+                self.ref_source_input.blockSignals(True)
+                self.ref_source_input.setCurrentText("")
+                self.ref_source_input.blockSignals(False)
+            if hasattr(self, "ref_vernacular_input"):
+                self.ref_vernacular_input.blockSignals(True)
+                self.ref_vernacular_input.setText("")
+                self.ref_vernacular_input.blockSignals(False)
         ref = ReferenceDB.get_reference(genus, species)
         if ref:
             self.reference_values = ref
         if hasattr(self, "ref_genus_input"):
+            self.ref_genus_input.blockSignals(True)
             self.ref_genus_input.setText(genus or "")
+            self.ref_genus_input.blockSignals(False)
         if hasattr(self, "ref_species_input"):
+            self.ref_species_input.blockSignals(True)
             self.ref_species_input.setText(species or "")
-        if hasattr(self, "ref_source_input"):
-            self.ref_source_input.blockSignals(True)
-            self.ref_source_input.setCurrentText("")
-            self.ref_source_input.blockSignals(False)
-        if hasattr(self, "ref_vernacular_input"):
-            self.ref_vernacular_input.blockSignals(True)
-            self.ref_vernacular_input.setText("")
-            self.ref_vernacular_input.blockSignals(False)
+            self.ref_species_input.blockSignals(False)
         if hasattr(self, "ref_source_input"):
             self._populate_reference_panel_sources()
             source = self.reference_values.get("source") if self.reference_values else None
@@ -19462,6 +19518,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.active_observation_id = None
         self.active_observation_name = None
+        self._set_reference_panel_loaded_taxon(None, None, None)
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.set_target_observation(None)
@@ -19506,6 +19563,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         observation = ObservationDB.get_observation(observation_id)
         self.auto_threshold = observation.get("auto_threshold") if observation else None
         self._update_spore_sharing_ui(observation_id)
+        self._set_reference_panel_loaded_taxon(None, None, None)
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()
