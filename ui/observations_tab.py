@@ -1735,7 +1735,7 @@ class _ObservationImageBrowser(QWidget):
             cleaned.append({"id": image_id, "path": path})
         return cleaned
 
-    def set_items(self, items) -> None:
+    def set_items(self, items, force_first: bool = False) -> None:
         current_path = None
         if 0 <= self._current_index < len(self._items):
             current_path = self._items[self._current_index]["path"]
@@ -1751,10 +1751,13 @@ class _ObservationImageBrowser(QWidget):
             self._current_index = -1
             self._clear_image_display(self.tr("No image available"))
         else:
-            match_index = next(
-                (i for i, item in enumerate(cleaned) if item["path"] == current_path),
-                0,
-            )
+            if force_first:
+                match_index = 0
+            else:
+                match_index = next(
+                    (i for i, item in enumerate(cleaned) if item["path"] == current_path),
+                    0,
+                )
             self._current_index = match_index
             self._display_current()
         self._update_nav_state()
@@ -1958,6 +1961,7 @@ class ObservationsTab(QWidget):
         self._search_refresh_timer.setInterval(180)
         self._search_refresh_timer.timeout.connect(self._apply_search_refresh)
         self._pending_gallery_observation_id: int | None = None
+        self._image_browser_observation_id: int | None = None
         self._pending_gallery_move_image_ids: list[int] = []
         self._pending_gallery_move_source_observation_id: int | None = None
         self._pending_gallery_move_previous_table_stylesheet: str = ""
@@ -2257,6 +2261,7 @@ class ObservationsTab(QWidget):
         self.image_browser.imageDoubleClicked.connect(self._on_image_browser_double_clicked)
         self.image_browser.publishToggled.connect(self._on_image_browser_publish_toggled)
         self.image_browser.currentImageChanged.connect(self._sync_image_browser_publish_state)
+        self.image_browser.currentImageChanged.connect(self._sync_gallery_selection_to_current_browser_image)
         self.view_splitter.addWidget(self.image_browser)
         self.view_splitter.setStretchFactor(0, 1)
         self.view_splitter.setStretchFactor(1, 3)
@@ -6347,6 +6352,7 @@ class ObservationsTab(QWidget):
         obs_id = self.selected_observation_id
         if not obs_id:
             browser.clear()
+            self._image_browser_observation_id = None
             return
         try:
             images = ImageDB.get_images_for_observation(int(obs_id))
@@ -6364,8 +6370,38 @@ class ObservationsTab(QWidget):
                 continue
             image_id = img.get("id") if isinstance(img, dict) else None
             items.append({"id": image_id, "path": path})
-        browser.set_items(items)
+        force_first = self._image_browser_observation_id != int(obs_id)
+        browser.set_items(items, force_first=force_first)
+        self._image_browser_observation_id = int(obs_id)
         self._sync_image_browser_publish_state()
+
+    def _sync_gallery_selection_to_current_browser_image(self) -> None:
+        browser = getattr(self, "image_browser", None)
+        gallery = getattr(self, "gallery_widget", None)
+        if browser is None or gallery is None:
+            return
+        try:
+            selected_count = len(gallery.selected_image_keys())
+        except Exception:
+            selected_count = 0
+        if selected_count > 1:
+            return
+
+        image_id = browser.current_image_id()
+        if image_id is not None:
+            try:
+                gallery.select_image(int(image_id), center=True)
+            except Exception:
+                pass
+            return
+
+        path = browser.current_image_path()
+        if not path:
+            return
+        try:
+            gallery.select_paths([str(path)], center=True)
+        except Exception:
+            pass
 
     def _on_image_prev_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
@@ -7112,6 +7148,7 @@ class ObservationsTab(QWidget):
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
+            self._image_browser_observation_id = None
             if hasattr(self, "image_browser"):
                 self.image_browser.clear()
             self._update_publish_controls()
@@ -7125,6 +7162,7 @@ class ObservationsTab(QWidget):
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
+            self._image_browser_observation_id = None
             if hasattr(self, "image_browser"):
                 self.image_browser.clear()
             self._update_publish_controls()
@@ -7137,6 +7175,7 @@ class ObservationsTab(QWidget):
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
+            self._image_browser_observation_id = None
             self._update_publish_controls()
             return
         obs_id = self._observation_id_from_item(id_item)
@@ -7150,6 +7189,7 @@ class ObservationsTab(QWidget):
                 self._cancel_pending_gallery_load()
                 self.gallery_widget.clear()
             self.selected_observation_id = None
+            self._image_browser_observation_id = None
             self._update_publish_controls()
             return
         self.selected_observation_id = obs_id

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QImage, QColor
 from PySide6.QtWidgets import QApplication
 
 import ui.observations_tab as observations_tab_module
@@ -231,6 +231,101 @@ def test_gallery_double_click_switches_to_image_mode_and_shows_path(qapp):
     ObservationsTab._on_gallery_image_double_clicked(state, 11, "/tmp/example.jpg")
 
     assert shown_paths == ["mode:images", "/tmp/example.jpg"]
+
+
+def test_observation_image_browser_force_first_item_ignores_previous_selection(tmp_path, qapp):
+    image1 = tmp_path / "image-1.png"
+    image2 = tmp_path / "image-2.png"
+    pixmap = QImage(24, 24, QImage.Format_ARGB32)
+    pixmap.fill(QColor("#ffffff"))
+    assert pixmap.save(str(image1))
+    assert pixmap.save(str(image2))
+
+    browser = observations_tab_module._ObservationImageBrowser()
+    browser.set_items(
+        [
+            {"id": 1, "path": str(image1)},
+            {"id": 2, "path": str(image2)},
+        ]
+    )
+    assert browser.current_image_path() == str(image1)
+
+    browser.show_image_for_path(str(image2))
+    assert browser.current_image_path() == str(image2)
+
+    browser.set_items(
+        [
+            {"id": 1, "path": str(image1)},
+            {"id": 2, "path": str(image2)},
+        ],
+        force_first=True,
+    )
+
+    assert browser.current_image_path() == str(image1)
+
+
+def test_refresh_image_browser_for_current_selection_forces_first_image_on_observation_change(monkeypatch, tmp_path, qapp):
+    image1 = tmp_path / "image-1.png"
+    image2 = tmp_path / "image-2.png"
+    pixmap = QImage(24, 24, QImage.Format_ARGB32)
+    pixmap.fill(QColor("#ffffff"))
+    assert pixmap.save(str(image1))
+    assert pixmap.save(str(image2))
+
+    calls: list[tuple[str, object]] = []
+    state = SimpleNamespace()
+    state.selected_observation_id = 9
+    state._image_browser_observation_id = 3
+    state._sync_image_browser_publish_state = lambda: calls.append(("publish", None))
+    state.image_browser = SimpleNamespace(
+        set_items=lambda items, force_first=False: calls.append(("set_items", force_first, [dict(item) for item in items])),
+        clear=lambda: calls.append(("clear", None)),
+    )
+
+    monkeypatch.setattr(
+        observations_tab_module.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {"id": 1, "filepath": str(image1)},
+            {"id": 2, "filepath": str(image2)},
+        ],
+    )
+
+    ObservationsTab._refresh_image_browser_for_current_selection(state)
+
+    assert calls[0][0] == "set_items"
+    assert calls[0][1] is True
+    assert calls[0][2] == [
+        {"id": 1, "path": str(image1)},
+        {"id": 2, "path": str(image2)},
+    ]
+    assert calls[1] == ("publish", None)
+    assert state._image_browser_observation_id == 9
+
+
+def test_sync_gallery_selection_tracks_browser_image_and_skips_multiselect(qapp):
+    selected_calls: list[tuple[str, bool]] = []
+    state = SimpleNamespace()
+    state.image_browser = SimpleNamespace(
+        current_image_id=lambda: 7,
+        current_image_path=lambda: "/tmp/example.jpg",
+    )
+    state.gallery_widget = SimpleNamespace(
+        selected_image_keys=lambda: set(),
+        select_image=lambda image_id, center=True: selected_calls.append((f"id:{image_id}", bool(center))),
+        select_paths=lambda paths, center=True: selected_calls.append((f"path:{paths[0]}", bool(center))),
+    )
+
+    ObservationsTab._sync_gallery_selection_to_current_browser_image(state)
+
+    assert selected_calls == [("id:7", True)]
+
+    selected_calls.clear()
+    state.gallery_widget.selected_image_keys = lambda: {1, 2}
+
+    ObservationsTab._sync_gallery_selection_to_current_browser_image(state)
+
+    assert selected_calls == []
 
 
 def test_image_mode_uses_wider_table_splitter_default(qapp):
