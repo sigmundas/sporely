@@ -15450,6 +15450,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
         normalized = self.normalize_measurement_category(category) if category else None
         show_q = normalized in (None, "spores")
+        show_reference_overlays = normalized in (None, "spores")
         Q = L / W
         specimen_parmasto = self._parmasto_specimen_metrics(L, W)
         category_label = self._format_observation_legend_label()
@@ -15828,7 +15829,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             ax_scatter.set_aspect("auto")
 
-        reference_series = self._resolved_reference_series_entries(dark)
+        # Reference values in this view are spore-specific, so hide them for other measurement types.
+        reference_series = self._resolved_reference_series_entries(dark) if show_reference_overlays else []
 
         def _fallback(low, mid_low, mid_high, high):
             left = low if low is not None else mid_low

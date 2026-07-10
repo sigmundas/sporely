@@ -328,3 +328,59 @@ def test_load_reference_values_preserves_manual_taxon_for_same_observation(
     assert window.reference_values == {}
     assert window._reference_panel_loaded_observation_id == 1
     assert window._reference_panel_loaded_taxon == ("Entoloma", "sericeum")
+
+
+def test_update_graph_plots_hides_spore_reference_overlay_for_pleurocystidia(
+    monkeypatch,
+    qapp,
+) -> None:
+    window = _build_minimal_window(monkeypatch)
+    window.gallery_filter_combo = QComboBox()
+    window.gallery_filter_combo.addItem("Pleurocystidia", "pleurocystidia")
+    window.gallery_filter_combo.setCurrentIndex(0)
+    window.gallery_plot_figure = main_window.Figure(figsize=(4.0, 4.0))
+    window.gallery_plot_canvas = main_window.FigureCanvas(window.gallery_plot_figure)
+    window.gallery_plot_settings = {
+        "histogram": False,
+        "legend": False,
+        "reference_minmax": True,
+    }
+    window.gallery_image_labels = {}
+    window.reference_values = {
+        "genus": "Entoloma",
+        "species": "sericeum",
+        "source": "Paper A",
+        "length_min": 3.1,
+        "length_p05": 3.3,
+        "length_p50": 3.7,
+        "length_p95": 4.2,
+        "length_max": 4.5,
+        "width_min": 1.1,
+        "width_p05": 1.2,
+        "width_p50": 1.4,
+        "width_p95": 1.6,
+        "width_max": 1.8,
+        "q_p05": 2.1,
+        "q_p50": 2.6,
+        "q_p95": 3.0,
+    }
+    window.reference_series = []
+    window._gallery_highlighted_measurement_ids = lambda measurements: set()
+    window._format_observation_legend_label = lambda: "Pleurocystidia"
+    window._gallery_plot_style = lambda settings=None: "ellipse"
+    window._apply_plot_light_theme = lambda *args, **kwargs: None
+    window._apply_plot_dark_theme = lambda *args, **kwargs: None
+    window._is_dark_theme = lambda: False
+    window._update_gallery_stats_preview = lambda: None
+
+    measurements = [
+        {"id": 1, "length_um": 11.8, "width_um": 4.1, "measurement_type": "pleurocystidia"},
+        {"id": 2, "length_um": 12.3, "width_um": 4.4, "measurement_type": "pleurocystidia"},
+        {"id": 3, "length_um": 13.1, "width_um": 4.8, "measurement_type": "pleurocystidia"},
+    ]
+
+    window.update_graph_plots(measurements)
+
+    ax_scatter = window.gallery_plot_figure.axes[0]
+    assert len(ax_scatter.lines) == 1
+    assert len(ax_scatter.patches) == 0
