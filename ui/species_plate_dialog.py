@@ -49,6 +49,8 @@ _CIRCLE_ZOOM_MAX = 12.0
 _PREVIEW_SCALE = 0.40
 _TEXT_SCALE_DEFAULT = 1.0
 _BG_SLOTS_MAX = 3
+_EMPTY_SLOT_ID = "__empty__"
+_PUBLISH_EXCLUDED_SETTING_PREFIX = "artsobs_publish_excluded_image_ids_"
 
 _SLOT_KEYS = ["TL", "TC", "TR", "BL", "BR"]
 _OVERLAY_SLOT_KEYS = ["TL", "TC", "BR"]   # slots used by the 3_overlay layout
@@ -2036,14 +2038,30 @@ class SpeciesPlateDialog(QDialog):
         s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         s.beginGroup(f"obs_{self._obs_id}")
         id_map = {img["id"]: img for img in self._all_images if img.get("id") is not None}
+
+        def _saved_image(raw) -> Optional[dict]:
+            text = str(raw or "").strip()
+            if not text or text == _EMPTY_SLOT_ID:
+                return None
+            try:
+                return id_map.get(int(text))
+            except (TypeError, ValueError):
+                return None
+
+        has_slot_state = any(s.contains(f"slot_{slot}_id") for slot in _SLOT_KEYS)
+        has_bg_state = any(s.contains(f"bg_{i}_id") for i in range(_BG_SLOTS_MAX))
         for slot in _SLOT_KEYS:
-            raw = s.value(f"slot_{slot}_id")
-            if raw is not None:
-                self._slot_images[slot] = id_map.get(int(raw))
+            key = f"slot_{slot}_id"
+            if s.contains(key):
+                self._slot_images[slot] = _saved_image(s.value(key))
+            elif has_slot_state:
+                self._slot_images[slot] = None
         for i in range(_BG_SLOTS_MAX):
-            raw = s.value(f"bg_{i}_id")
-            if raw is not None:
-                self._bg_slots[i] = id_map.get(int(raw))
+            key = f"bg_{i}_id"
+            if s.contains(key):
+                self._bg_slots[i] = _saved_image(s.value(key))
+            elif has_bg_state:
+                self._bg_slots[i] = None
         raw_layout = s.value("bg_layout")
         if raw_layout and raw_layout in _BG_LAYOUTS:
             self._bg_layout = raw_layout
@@ -2091,10 +2109,10 @@ class SpeciesPlateDialog(QDialog):
         s.beginGroup(f"obs_{self._obs_id}")
         for slot in _SLOT_KEYS:
             img = self._slot_images.get(slot)
-            s.setValue(f"slot_{slot}_id", img["id"] if img else None)
+            s.setValue(f"slot_{slot}_id", img["id"] if img else _EMPTY_SLOT_ID)
         for i in range(_BG_SLOTS_MAX):
             img = self._bg_slots[i]
-            s.setValue(f"bg_{i}_id", img["id"] if img else None)
+            s.setValue(f"bg_{i}_id", img["id"] if img else _EMPTY_SLOT_ID)
         bg_layout = self._bg_layout
         if hasattr(self, "_layout_btn_group"):
             checked = self._layout_btn_group.checkedButton()
@@ -2449,10 +2467,13 @@ class SpeciesPlateDialog(QDialog):
             show_delete=False,
             show_badges=True,
             show_edit=True,
+            show_publish_checkbox=True,
+            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self._gallery.editRequested.connect(self._on_species_plate_gallery_edit_requested)
+        self._gallery.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         right_layout.addWidget(self._gallery)
 
         main_row.addLayout(right_layout, 1)
@@ -2836,11 +2857,13 @@ class SpeciesPlateDialog(QDialog):
         """Rebuild gallery with reuse enabled and used/selected highlights."""
         from ui.image_gallery_widget import ImageGalleryWidget as _IGW
         in_use = self._in_use_image_ids()
+        publish_selected = self._publish_selected_image_ids()
         items = []
         for img in self._all_images:
             if not img.get("filepath"):
                 continue
             image_type = (img.get("image_type") or "field").strip().lower()
+            img_id = img.get("id")
             obj_short = _short_objective_label(
                 img.get("objective_name") or img.get("magnification"))
             scale_val = _image_scale_mpp(img)
@@ -2865,19 +2888,105 @@ class SpeciesPlateDialog(QDialog):
             )
             cloud_id = str(img.get("cloud_id") or "").strip()
             items.append({
-                "id": img.get("id"),
+                "id": img_id,
                 "filepath": img.get("filepath", ""),
                 "image_type": image_type,
                 "badges": badges,
-                "frame_border_color": "#c0392b" if img.get("id") in in_use else None,
+                "frame_border_color": "#c0392b" if img_id in in_use else None,
                 # Show the cloud-sync icon top-center for images that have
                 # already been uploaded — matches the Observations tab so
                 # users can tell what's synced without leaving Species Plate.
                 "cloud_id": cloud_id or None,
                 "cloud_uploaded": bool(cloud_id),
+                "publish_selected": bool(img_id is not None and int(img_id) in publish_selected),
+                "publish_selected_default": image_type != "microscope",
             })
         self._gallery.set_items(items)
         self._sync_gallery_selection()
+
+    def _publish_excluded_image_ids(self) -> set[int]:
+        if not self._obs_id:
+            return set()
+        raw = SettingsDB.get_setting(f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}", "[]")
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                return {int(value) for value in loaded}
+        except Exception:
+            pass
+        return set()
+
+    def _set_publish_excluded_image_ids(self, excluded_ids: set[int]) -> None:
+        if not self._obs_id:
+            return
+        normalized = sorted({int(value) for value in (excluded_ids or set())})
+        SettingsDB.set_setting(
+            f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}",
+            json.dumps(normalized),
+        )
+
+    def _publish_selected_image_ids(self) -> set[int]:
+        all_ids = {
+            int(img.get("id"))
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        return all_ids - self._publish_excluded_image_ids()
+
+    def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
+        image_by_id = {
+            int(img.get("id")): dict(img)
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        all_ids = {
+            int(img.get("id"))
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        previous_selected = all_ids - self._publish_excluded_image_ids()
+        try:
+            selected = {int(value) for value in (selected_ids or set())}
+        except Exception:
+            selected = set()
+        unchecked_ids = previous_selected - selected
+        rechecked_ids = selected - previous_selected
+        for image_id in unchecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                ImageDB.queue_image_tombstone_for_local_image(image_id)
+            except Exception:
+                pass
+        for image_id in rechecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                tombstone = None
+            if not tombstone:
+                continue
+            try:
+                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                pass
+            if str(tombstone.get("delete_synced_at") or "").strip():
+                try:
+                    ImageDB.clear_image_cloud_sync_state(image_id)
+                except Exception:
+                    pass
+        self._set_publish_excluded_image_ids(all_ids - selected)
+        try:
+            from utils.cloud_sync import mark_observation_dirty
+
+            mark_observation_dirty(int(self._obs_id))
+        except Exception:
+            pass
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 

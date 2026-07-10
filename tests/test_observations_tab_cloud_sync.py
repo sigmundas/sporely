@@ -1736,7 +1736,7 @@ def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
         SimpleNamespace(
             _build_common_name_map=lambda observations: {},
             _lookup_common_name=lambda obs, name_map: None,
-            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
             _recent_cloud_import_ids=lambda: set(),
             _observation_publish_target=lambda obs: obs.get("publish_target"),
             _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1774,7 +1774,7 @@ def test_observation_table_row_cache_includes_local_publication_and_coordinate_f
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: obs.get("publish_target"),
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1842,7 +1842,7 @@ def test_observation_table_row_cache_falls_back_to_ai_selected_scientific_name()
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: obs.get("publish_target"),
     )
@@ -1918,7 +1918,7 @@ def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
         SimpleNamespace(
             _build_common_name_map=lambda observations: {},
             _lookup_common_name=lambda obs, name_map: None,
-            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
             _recent_cloud_import_ids=lambda: set(),
             _observation_publish_target=lambda obs: obs.get("publish_target"),
             _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1949,7 +1949,7 @@ def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
     builder_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: obs.get("publish_target"),
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1983,7 +1983,7 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: None,
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip() or None,

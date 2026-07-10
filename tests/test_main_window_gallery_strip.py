@@ -248,6 +248,44 @@ def test_refresh_observation_images_skips_measure_gallery_rebuild_when_unchanged
     window.deleteLater()
 
 
+def test_measure_tab_prefers_selected_observation_thumbnail(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    calls: list[tuple[str, object]] = []
+
+    window.active_observation_id = 7
+    window.active_observation_name = "Observation 7"
+    window.current_image_id = 2
+    window.observation_images = [
+        {"id": 2, "filepath": "/tmp/image-2.jpg"},
+        {"id": 5, "filepath": "/tmp/image-5.jpg"},
+    ]
+    window.refresh_observation_images = lambda select_image_id=None, force_refresh=False: calls.append(
+        ("refresh", select_image_id)
+    )
+    window.update_measurements_table = lambda: calls.append(("table", None))
+    window.goto_image_index = lambda index: calls.append(("goto", index))
+    window.measure_button = SimpleNamespace(
+        setEnabled=lambda enabled: calls.append(("measure", bool(enabled)))
+    )
+    window.observations_tab = SimpleNamespace(
+        get_selected_observation=lambda: (7, "Observation 7"),
+        selected_observation_id=7,
+        _image_browser_observation_id=7,
+        image_browser=SimpleNamespace(current_image_id=lambda: 5),
+    )
+
+    main_window.MainWindow.on_tab_changed(window, 1)
+
+    assert calls == [
+        ("refresh", 5),
+        ("table", None),
+        ("goto", 1),
+        ("measure", True),
+    ]
+
+    window.deleteLater()
+
+
 def test_analysis_gallery_selection_does_not_restyle_frame(monkeypatch, qapp):
     window = _build_minimal_window(monkeypatch)
     window.gallery_selected_measurement_id = 42

@@ -353,3 +353,92 @@ def test_image_mode_uses_wider_table_splitter_default(qapp):
     assert state.view_splitter.set_sizes_calls
     assert state.view_splitter.set_sizes_calls[-1][0] >= 320
     assert state.view_splitter.set_sizes_calls[-1][0] > 280
+
+
+def test_thumbnail_row_navigation_shortcuts_stay_enabled_in_table_mode_and_move_selection(qapp):
+    class _ShortcutSpy:
+        def __init__(self) -> None:
+            self.enabled = None
+
+        def setEnabled(self, enabled) -> None:  # noqa: N802 - Qt-style name
+            self.enabled = bool(enabled)
+
+    moves: list[int] = []
+    state = SimpleNamespace()
+    state.VIEW_MODE_TABLE = "table"
+    state.VIEW_MODE_IMAGES = "images"
+    state.table = SimpleNamespace(
+        columnCount=lambda: 10,
+        setColumnHidden=lambda *args, **kwargs: None,
+        viewport=lambda: SimpleNamespace(update=lambda: None),
+    )
+    state._IMAGE_MODE_VISIBLE_COLUMNS = (0, 1)
+    state.image_browser = SimpleNamespace(setVisible=lambda *_args, **_kwargs: None)
+    state.view_splitter = _FakeSplitter(width=1200, sizes=[0, 0])
+    state._view_splitter_table_width = 0
+    state._shortcut_image_prev = _ShortcutSpy()
+    state._shortcut_image_next = _ShortcutSpy()
+    state._shortcut_image_row_up = _ShortcutSpy()
+    state._shortcut_image_row_down = _ShortcutSpy()
+    state._redistribute_taxonomy_columns = lambda: None
+    state._refresh_image_browser_for_current_selection = lambda: None
+    state._shortcut_blocked_by_text_input = lambda: False
+    state._move_table_selection = lambda delta: moves.append(int(delta))
+
+    ObservationsTab._apply_view_mode(state, state.VIEW_MODE_TABLE, persist=False)
+    assert state._shortcut_image_prev.enabled is False
+    assert state._shortcut_image_next.enabled is False
+    assert state._shortcut_image_row_up.enabled is True
+    assert state._shortcut_image_row_down.enabled is True
+
+    ObservationsTab._apply_view_mode(state, state.VIEW_MODE_IMAGES, persist=False)
+    assert state._shortcut_image_prev.enabled is True
+    assert state._shortcut_image_next.enabled is True
+    assert state._shortcut_image_row_up.enabled is True
+    assert state._shortcut_image_row_down.enabled is True
+
+    ObservationsTab._on_image_row_up_shortcut(state)
+    ObservationsTab._on_image_row_down_shortcut(state)
+
+    assert moves == [-1, 1]
+
+
+def test_table_thumbnail_double_click_switches_to_image_mode_and_shows_full_image(monkeypatch, qapp):
+    calls: list[tuple[str, object]] = []
+
+    class _FakeSelectionModel:
+        def selectedRows(self):
+            return [SimpleNamespace(row=lambda: 0)]
+
+    class _FakeTable:
+        def selectionModel(self):
+            return _FakeSelectionModel()
+
+    class _FakeItem:
+        def column(self):
+            return 0
+
+    state = SimpleNamespace()
+    state.table = _FakeTable()
+    state._show_observation_table_thumbnails = lambda: True
+    state._observation_row_data_from_item = lambda item: {"thumbnail_image_id": 321}
+    state.VIEW_MODE_IMAGES = "images"
+    state._apply_view_mode = lambda mode, persist=True: calls.append(("mode", mode, bool(persist)))
+    state._refresh_image_browser_for_current_selection = lambda: calls.append(("refresh", None))
+    state.image_browser = SimpleNamespace(
+        show_image_for_path=lambda path: calls.append(("show", path)) or True,
+    )
+    state.edit_observation = lambda: calls.append(("edit", None))
+
+    monkeypatch.setattr(
+        observations_tab_module.ImageDB,
+        "get_image",
+        lambda image_id: {"filepath": "/tmp/full-size-image.jpg"} if int(image_id) == 321 else None,
+    )
+
+    ObservationsTab.on_row_double_clicked(state, _FakeItem())
+
+    assert calls == [
+        ("mode", "images", True),
+        ("show", "/tmp/full-size-image.jpg"),
+    ]

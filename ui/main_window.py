@@ -11976,6 +11976,50 @@ class MainWindow(GeometryMixin, QMainWindow):
         image_data = self.observation_images[index]
         self.load_image_record(image_data, display_name=self.active_observation_name, refresh_table=True)
 
+    def _selected_observation_tab_image_id(self) -> int | None:
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is None:
+            return None
+        browser = getattr(observations_tab, "image_browser", None)
+        if browser is None:
+            return None
+        try:
+            selected_observation_id = int(getattr(observations_tab, "selected_observation_id", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        if selected_observation_id <= 0:
+            return None
+        try:
+            browser_observation_id = int(getattr(observations_tab, "_image_browser_observation_id", 0) or 0)
+        except (TypeError, ValueError):
+            browser_observation_id = 0
+        if browser_observation_id != selected_observation_id:
+            return None
+        try:
+            image_id = int(browser.current_image_id() or 0)
+        except Exception:
+            return None
+        return image_id or None
+
+    def _show_measure_image_for_selected_observation(self, target_image_id: int | None) -> None:
+        if target_image_id:
+            try:
+                target_image_id = int(target_image_id)
+            except (TypeError, ValueError):
+                target_image_id = None
+        if target_image_id:
+            for idx, image in enumerate(self.observation_images):
+                try:
+                    if int(image.get("id") or 0) != target_image_id:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if int(self.current_image_id or 0) != target_image_id:
+                    self.goto_image_index(idx)
+                return
+        if not self.current_image_id and self.observation_images:
+            self.goto_image_index(0)
+
     def get_objective_name_for_storage(self):
         """Return the objective name to store with an image."""
         if self.current_objective_name:
@@ -14475,13 +14519,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                 else:
                     self.active_observation_name = display_name
-                    self.refresh_observation_images(select_image_id=self.current_image_id)
+                    selected_image_id = self._selected_observation_tab_image_id()
+                    self.refresh_observation_images(
+                        select_image_id=selected_image_id or self.current_image_id
+                    )
                     self.update_measurements_table()
-                    if (
-                        not self.current_image_id
-                        and getattr(self, "observation_images", None)
-                    ):
-                        self.goto_image_index(0)
+                    self._show_measure_image_for_selected_observation(selected_image_id)
         if index == 3 and hasattr(self, "live_lab_tab"):
             self.live_lab_tab.sync_from_active_observation()
         if index == 4 and hasattr(self, "ingestion_hub_tab"):
@@ -19574,11 +19617,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         if schedule_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
         self.update_measurements_table()
-        self.refresh_observation_images()
+        selected_image_id = self._selected_observation_tab_image_id()
+        self.refresh_observation_images(select_image_id=selected_image_id)
         if hasattr(self, "measure_button"):
             self.measure_button.setEnabled(True)
-        if self.observation_images:
-            self.goto_image_index(0)
+        self._show_measure_image_for_selected_observation(selected_image_id)
 
         # Switch to the Measure tab
         if switch_tab:

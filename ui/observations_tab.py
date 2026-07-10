@@ -2200,7 +2200,9 @@ class ObservationsTab(QWidget):
         # Observations table
         self.table = QTableWidget()
         self.table.setObjectName("observationsTable")
-        self.table.setFocusPolicy(Qt.NoFocus)
+        # Keep the table keyboard-navigable so Up/Down can move between
+        # observations after a click.
+        self.table.setFocusPolicy(Qt.ClickFocus)
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
             self._observation_first_column_title(),
@@ -4804,9 +4806,8 @@ class ObservationsTab(QWidget):
             if vernacular:
                 obs = dict(obs)
                 obs["common_name"] = vernacular
-        excluded = self._publish_excluded_image_ids(obs_id)
         from ui.species_plate_dialog import SpeciesPlateDialog
-        dlg = SpeciesPlateDialog(obs, excluded_image_ids=excluded, parent=self)
+        dlg = SpeciesPlateDialog(obs, parent=self)
         dlg.exec()
 
     def _publish_selected_observations(self, uploader_key: str) -> None:
@@ -4947,7 +4948,7 @@ class ObservationsTab(QWidget):
                 observation_ids.append(int(obs.get("id")))
             except (TypeError, ValueError):
                 continue
-        thumbnail_map = self._build_observation_thumbnail_map(observation_ids)
+        thumbnail_map = self._build_observation_thumbnail_map(observation_ids, include_image_id=True)
         rows: list[dict] = []
         for obs in observations:
             try:
@@ -5004,6 +5005,15 @@ class ObservationsTab(QWidget):
                 search_parts.append(status_text)
             search_text = " ".join(search_parts).lower()
 
+            thumbnail_info = thumbnail_map.get(obs_id)
+            thumbnail_path = None
+            thumbnail_image_id = None
+            if isinstance(thumbnail_info, dict):
+                thumbnail_path = str(thumbnail_info.get("path") or "").strip() or None
+                thumbnail_image_id = thumbnail_info.get("image_id")
+            elif thumbnail_info:
+                thumbnail_path = str(thumbnail_info).strip() or None
+
             rows.append(
                 {
                     "row_kind": "local",
@@ -5011,7 +5021,8 @@ class ObservationsTab(QWidget):
                     "observation_id": obs_id,
                     "local_id": obs_id,
                     "id_display": str(obs_id),
-                    "thumbnail_path": thumbnail_map.get(obs_id),
+                    "thumbnail_path": thumbnail_path,
+                    "thumbnail_image_id": thumbnail_image_id,
                     "genus": genus_display,
                     "species": species_display,
                     "common_name": common_name_display,
@@ -5043,7 +5054,7 @@ class ObservationsTab(QWidget):
             )
         return rows
 
-    def _build_observation_thumbnail_map(self, observation_ids: list[int]) -> dict[int, str]:
+    def _build_observation_thumbnail_map(self, observation_ids: list[int], include_image_id: bool = False):
         ids: list[int] = []
         for observation_id in observation_ids or []:
             try:
@@ -5079,7 +5090,7 @@ class ObservationsTab(QWidget):
                 """,
                 tuple(ids),
             )
-            thumbnail_map: dict[int, str] = {}
+            thumbnail_map: dict[int, object] = {}
             for row in cursor.fetchall():
                 try:
                     observation_id = int(row["observation_id"])
@@ -5092,7 +5103,13 @@ class ObservationsTab(QWidget):
                     continue
                 thumb_path = get_thumbnail_path(image_id, "small")
                 if thumb_path and Path(thumb_path).exists():
-                    thumbnail_map[observation_id] = str(thumb_path)
+                    if include_image_id:
+                        thumbnail_map[observation_id] = {
+                            "path": str(thumb_path),
+                            "image_id": image_id,
+                        }
+                    else:
+                        thumbnail_map[observation_id] = str(thumb_path)
             return thumbnail_map
         except Exception:
             return {}
@@ -6341,16 +6358,16 @@ class ObservationsTab(QWidget):
                     table_width = max(320, total // 3)
                 table_width = min(table_width, max(220, total - 200))
                 splitter.setSizes([table_width, max(200, total - table_width)])
-        # Arrow shortcuts (prev/next/up/down) are only meaningful in image mode.
-        for attr in (
-            "_shortcut_image_prev",
-            "_shortcut_image_next",
-            "_shortcut_image_row_up",
-            "_shortcut_image_row_down",
-        ):
+        # Left/right cycle images in image mode; up/down always move between
+        # observations.
+        for attr in ("_shortcut_image_prev", "_shortcut_image_next"):
             shortcut = getattr(self, attr, None)
             if shortcut is not None:
                 shortcut.setEnabled(mode == self.VIEW_MODE_IMAGES)
+        for attr in ("_shortcut_image_row_up", "_shortcut_image_row_down"):
+            shortcut = getattr(self, attr, None)
+            if shortcut is not None:
+                shortcut.setEnabled(True)
         if persist:
             SettingsDB.set_setting(self.SETTING_VIEW_MODE, mode)
         if table is not None:
@@ -6489,14 +6506,10 @@ class ObservationsTab(QWidget):
     def _on_image_row_up_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
             return
-        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
-            return
         self._move_table_selection(-1)
 
     def _on_image_row_down_shortcut(self) -> None:
         if self._shortcut_blocked_by_text_input():
-            return
-        if self._current_view_mode() != self.VIEW_MODE_IMAGES:
             return
         self._move_table_selection(+1)
 
@@ -7237,9 +7250,36 @@ class ObservationsTab(QWidget):
             self.set_status_message(msg, level=level, auto_clear_ms=8000)
 
     def on_row_double_clicked(self, item):
-        """Double-click to open edit dialog for the observation."""
+        """Double-click a thumbnail to open image mode; otherwise edit the observation."""
         if len(self.table.selectionModel().selectedRows()) != 1:
             return
+        if item is not None and item.column() == 0 and self._show_observation_table_thumbnails():
+            row_data = self._observation_row_data_from_item(item)
+            thumbnail_image_id = None
+            if isinstance(row_data, dict):
+                try:
+                    thumbnail_image_id = int(row_data.get("thumbnail_image_id") or 0) or None
+                except (TypeError, ValueError):
+                    thumbnail_image_id = None
+            if thumbnail_image_id:
+                image_data = ImageDB.get_image(thumbnail_image_id)
+                if image_data:
+                    target_path = ""
+                    for key in ("filepath", "original_filepath"):
+                        candidate = str(image_data.get(key) or "").strip()
+                        if candidate:
+                            target_path = candidate
+                            break
+                    if target_path:
+                        self._apply_view_mode(self.VIEW_MODE_IMAGES, persist=True)
+                        browser = getattr(self, "image_browser", None)
+                        if browser is not None:
+                            shown = browser.show_image_for_path(target_path)
+                            if not shown:
+                                self._refresh_image_browser_for_current_selection()
+                                shown = browser.show_image_for_path(target_path)
+                            if shown:
+                                return
         self.edit_observation()
 
     def set_selected_as_active(self, switch_tab=True):
@@ -8953,14 +8993,13 @@ class ObservationsTab(QWidget):
         except Exception:
             return None
         out_path = temp_dir / "species_plate.png"
-        excluded = self._publish_excluded_image_ids(observation_id)
         if progress_cb:
             progress_cb(self.tr("Rendering plate image..."), 2, 2)
         self._yield_background_sync_ui()
         if cancel_cb:
             cancel_cb()
         try:
-            if export_observation_plate_image(obs, out_path, excluded_image_ids=excluded):
+            if export_observation_plate_image(obs, out_path):
                 return str(out_path)
         except Exception:
             return None
