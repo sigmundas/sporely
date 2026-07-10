@@ -4700,6 +4700,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "sample"
         elif sender is self.image_note_input:
             action = "notes"
+            self._notes_mixed = False
         elif sender in (self.field_radio, self.micro_radio, self.image_type_group):
             action = "image_type"
             self._sync_scale_bar_length_unit_for_image_type()
@@ -4779,15 +4780,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.custom_scale = self._resolve_selected_field_scale_value(field_scale_key)
         else:
             result.custom_scale = None
+        objective_mixed = getattr(self.objective_combo, "is_mixed", lambda: False)()
         if result.image_type == "microscope":
-            result.objective = selected_objective or None
+            if not objective_mixed:
+                result.objective = selected_objective or None
         else:
             result.objective = None
-        result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
-        result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
-        result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
-        result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
-        result.notes = self._current_image_note_text()
+        if not getattr(self.contrast_combo, "is_mixed", lambda: False)():
+            result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
+        if not getattr(self.mount_combo, "is_mixed", lambda: False)():
+            result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
+        if not getattr(self.stain_combo, "is_mixed", lambda: False)():
+            result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
+        if not getattr(self.sample_combo, "is_mixed", lambda: False)():
+            result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
+        if not getattr(self, "_notes_mixed", False):
+            result.notes = self._current_image_note_text()
         if result.image_type != "microscope":
             result.contrast = self._field_tag_value("contrast")
             result.mount_medium = self._field_tag_value("mount")
@@ -5635,6 +5643,85 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
         self._update_ai_table()
         self._update_ai_overlay()
+        self._apply_multi_selection_to_form(self.selected_indices or [])
+
+    def _apply_multi_selection_to_form(self, indices: list[int]) -> None:
+        """Populate the sidebar form controls with mixed-state UI so the
+        user can bulk-edit metadata / notes / RAW settings across multiple
+        selected thumbnails.
+        """
+        valid = [i for i in indices if isinstance(i, int) and 0 <= i < len(self.import_results)]
+        if len(valid) <= 1:
+            return
+        results = [self.import_results[i] for i in valid]
+        self._loading_form = True
+        try:
+            image_types = {("microscope" if r.image_type == "microscope" else "field") for r in results}
+            if len(image_types) == 1:
+                target = next(iter(image_types))
+                (self.micro_radio if target == "microscope" else self.field_radio).setChecked(True)
+            self._sync_scale_bar_length_unit_for_image_type()
+
+            def _distinct(getter):
+                seen = []
+                for r in results:
+                    val = getter(r)
+                    if val not in seen:
+                        seen.append(val)
+                return seen
+
+            objectives = _distinct(lambda r: r.objective or None)
+            if len(objectives) <= 1:
+                target = objectives[0] if objectives else None
+                if target:
+                    idx = self.objective_combo.findData(target)
+                    self.objective_combo.setCurrentIndex(idx if idx >= 0 else 0)
+                else:
+                    self.objective_combo.setCurrentIndex(0)
+                self.objective_combo.clear_mixed()
+            else:
+                self.objective_combo.set_mixed_values(objectives)
+
+            for combo, category, getter in (
+                (self.contrast_combo, "contrast", lambda r: r.contrast),
+                (self.mount_combo, "mount", lambda r: r.mount_medium),
+                (self.stain_combo, "stain", lambda r: r.stain),
+                (self.sample_combo, "sample", lambda r: r.sample_type),
+            ):
+                values = _distinct(getter)
+                if len(values) <= 1:
+                    self._set_combo_tag_value(combo, category, values[0] if values else None)
+                    combo.clear_mixed()
+                else:
+                    combo.set_mixed_values(values)
+
+            if hasattr(self, "image_note_input"):
+                notes_values = _distinct(lambda r: (str(r.notes or "")))
+                self.image_note_input.blockSignals(True)
+                try:
+                    if len(notes_values) <= 1:
+                        self.image_note_input.setPlainText(notes_values[0] if notes_values else "")
+                        self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
+                        self._notes_mixed = False
+                    else:
+                        self.image_note_input.setPlainText("")
+                        self.image_note_input.setPlaceholderText(self.tr("(Multiple notes)"))
+                        self._notes_mixed = True
+                finally:
+                    self.image_note_input.blockSignals(False)
+                    if hasattr(self.image_note_input, "_schedule_height_update"):
+                        self.image_note_input._schedule_height_update()
+
+            raw_results = [r for r in results if self._result_is_raw_backed(r)]
+            if raw_results and hasattr(self, "raw_group"):
+                self.raw_group.setVisible(True)
+                settings_list = [self._ensure_raw_settings(r) for r in raw_results]
+                self.raw_controls.set_mixed_settings(settings_list)
+            elif hasattr(self, "raw_group"):
+                self.raw_group.setVisible(False)
+        finally:
+            self._loading_form = False
+        self._update_lab_state_combo_alerts()
 
     def _format_exposure(self, value) -> str | None:
         if value is None:
@@ -6574,27 +6661,72 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _on_raw_settings_changed(self, *_args) -> None:
         if getattr(self, "_raw_loading", False):
             return
-        index = self._current_single_index()
-        if index is None or index < 0 or index >= len(self.import_results):
+        selector = getattr(self, "_current_selection_indices", None)
+        if callable(selector):
+            indices = list(selector())
+        else:
+            selected_indices = list(getattr(self, "selected_indices", None) or [])
+            if selected_indices:
+                indices = [i for i in selected_indices if i is not None]
+            else:
+                single = getattr(self, "selected_index", None)
+                indices = [single] if single is not None else []
+        if not indices:
             return
-        result = self.import_results[index]
-        if not self._result_is_raw_backed(result):
+        raw_indices = [
+            i for i in indices
+            if 0 <= i < len(self.import_results) and self._result_is_raw_backed(self.import_results[i])
+        ]
+        if not raw_indices:
             return
-        was_unsaved = bool(getattr(result, "raw_unsaved_changes", False))
-        result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
-        result.raw_unsaved_changes = True
+        raw_controls = getattr(self, "raw_controls", None)
+        mixed_fields = set()
+        form_dict: dict = {}
+        form_settings = None
+        if raw_controls is not None:
+            mixed_fn = getattr(raw_controls, "mixed_fields", None)
+            if callable(mixed_fn):
+                mixed_fields = set(mixed_fn())
+            settings_fn = getattr(raw_controls, "settings", None)
+            if callable(settings_fn):
+                form_settings = settings_fn()
+                form_dict = form_settings.to_dict()
+        if not form_dict:
+            form_dict = dict(self._collect_raw_settings_from_form(None))
+        was_unsaved_any = False
+        for idx in raw_indices:
+            result = self.import_results[idx]
+            was_unsaved_any = was_unsaved_any or bool(getattr(result, "raw_unsaved_changes", False))
+            base = dict(result.raw_settings or {})
+            merged = dict(form_dict)
+            for field_name in mixed_fields:
+                if field_name in base:
+                    merged[field_name] = base[field_name]
+                elif field_name in form_dict:
+                    merged.pop(field_name, None)
+            if "white_balance_mode" in mixed_fields:
+                for key in ("wb_multipliers", "wb_selection", "wb_multiplier_space",
+                            "wb_sample_point", "wb_selection_space"):
+                    if key in base:
+                        merged[key] = base[key]
+                    else:
+                        merged.pop(key, None)
+            result.raw_settings = merged
+            result.raw_unsaved_changes = True
+            self._schedule_raw_preview_refresh(result)
+        result = self.import_results[raw_indices[0]]
         mark_dirty = getattr(self, "_mark_dirty", None)
         if callable(mark_dirty):
             mark_dirty()
-        self._schedule_raw_preview_refresh(result)
+        was_unsaved = was_unsaved_any
         # NOTE: curve widget refresh is intentionally NOT called here — it's
         # driven off the debounced preview flush so it doesn't run
         # synchronously on every slider tick with the full-res proxy (which
         # can be 4000×3000 and add 100+ ms of latency per event).
-        self._update_raw_panel_for_result(result)
-        # First slider tweak flips the thumbnail into "UNSAVED RAW" state —
-        # refresh the gallery item to render that badge. Only refresh on
-        # the transition (not every tick) so the drag stays snappy.
+        # In multi-select we skip the panel reload because it would
+        # clobber the remaining mixed-state slider visuals.
+        if len(raw_indices) == 1:
+            self._update_raw_panel_for_result(result)
         if not was_unsaved:
             self._refresh_gallery()
 
