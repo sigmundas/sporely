@@ -71,6 +71,7 @@ from utils.original_sync_policy import (
     should_download_full_original,
 )
 from utils.publish_targets import normalize_publish_target
+from utils.taxon_text import resolve_observation_taxon_fields
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -5427,17 +5428,18 @@ def _safe_int(value, default: int = 0) -> int:
 
 def _observation_sync_species_label(obs: dict | None) -> str:
     record = dict(obs or {})
-    parts = [
-        str(record.get('genus') or '').strip(),
-        str(record.get('species') or '').strip(),
-    ]
-    label = " ".join(part for part in parts if part).strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        record.get('genus'),
+        record.get('species'),
+        record.get('species_guess'),
+        record.get('ai_selected_scientific_name'),
+    )
+    label = " ".join(part for part in (genus, species) if part).strip()
     if label:
         return label
     common_name = str(record.get('common_name') or '').strip()
     if common_name:
         return common_name
-    species_guess = str(record.get('species_guess') or '').strip()
     if species_guess:
         return species_guess
     return ''
@@ -6808,12 +6810,18 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
     raw_location_public = remote.get('location_public')
     location_public = _normalize_observation_bool_value(raw_location_public, default=None)
     raw_publish_target = str(remote.get('publish_target') or '').strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        remote.get('genus'),
+        remote.get('species'),
+        remote.get('species_guess'),
+        remote.get('ai_selected_scientific_name'),
+    )
     return {
         'date': remote.get('date'),
-        'genus': remote.get('genus'),
-        'species': remote.get('species'),
+        'genus': genus,
+        'species': species,
         'common_name': remote.get('common_name'),
-        'species_guess': remote.get('species_guess'),
+        'species_guess': species_guess,
         'location': remote.get('location'),
         'habitat': remote.get('habitat'),
         'notes': remote.get('notes'),
@@ -14178,12 +14186,18 @@ def _create_local_from_remote(
 
     # Map cloud columns to create_observation kwargs
     remote_captured_at = str(remote.get('captured_at') or '').strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        remote.get('genus'),
+        remote.get('species'),
+        remote.get('species_guess'),
+        remote.get('ai_selected_scientific_name'),
+    )
     kwargs = dict(
         date=remote_captured_at or remote.get('date') or datetime.now().strftime('%Y-%m-%d'),
-        genus=remote.get('genus'),
-        species=remote.get('species'),
+        genus=genus,
+        species=species,
         common_name=remote.get('common_name'),
-        species_guess=remote.get('species_guess'),
+        species_guess=species_guess,
         location=remote.get('location'),
         habitat=remote.get('habitat'),
         notes=remote.get('notes'),

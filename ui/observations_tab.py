@@ -127,6 +127,11 @@ from utils.publish_targets import (
     publish_target_label,
     uploader_key_for_publish_target,
 )
+from utils.taxon_text import (
+    format_probability_percent,
+    resolve_observation_taxon_fields,
+    split_scientific_name_text,
+)
 from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
@@ -2644,15 +2649,20 @@ class ObservationsTab(QWidget):
     def _build_cloud_observation_table_rows_cache(self, remote_rows: list[dict]) -> list[dict]:
         rows: list[dict] = []
         for obs in remote_rows or []:
-            genus_raw = (obs.get("genus") or "").strip()
-            species_raw = (obs.get("species") or "").strip()
-            species_guess = (obs.get("species_guess") or "").strip()
+            genus_raw, species_raw, species_guess = resolve_observation_taxon_fields(
+                obs.get("genus"),
+                obs.get("species"),
+                obs.get("species_guess"),
+                obs.get("ai_selected_scientific_name"),
+            )
+            genus_raw = genus_raw or ""
+            species_raw = species_raw or ""
+            species_guess = species_guess or ""
             common_name = (obs.get("common_name") or "").strip()
             if not common_name:
-                if genus_raw and species_raw:
-                    common_name = f"- ({genus_raw} {species_raw})"
-                elif species_guess:
-                    common_name = species_guess
+                species_name = f"{genus_raw} {species_raw}".strip() or species_guess
+                if species_name:
+                    common_name = f"- ({species_name})"
                 else:
                     common_name = "-"
 
@@ -2738,7 +2748,7 @@ class ObservationsTab(QWidget):
                 search_parts.extend(str(v) for v in local_obs.values() if v is not None)
             if status_text:
                 search_parts.append(status_text)
-            search_parts.extend([common_name, row["genus"], species_display, row["location"]])
+            search_parts.extend([common_name, row["genus"], species_display, row["location"], row["species_name"] or ""])
             row["search_text"] = " ".join(search_parts).lower()
             rows.append(row)
         return rows
@@ -4945,18 +4955,26 @@ class ObservationsTab(QWidget):
             except (TypeError, ValueError):
                 continue
 
-            genus_raw = (obs.get("genus") or "").strip()
-            species_raw = (obs.get("species") or "").strip()
+            genus_raw, species_raw, species_guess = resolve_observation_taxon_fields(
+                obs.get("genus"),
+                obs.get("species"),
+                obs.get("species_guess"),
+                obs.get("ai_selected_scientific_name"),
+            )
+            genus_raw = genus_raw or ""
+            species_raw = species_raw or ""
+            species_guess = species_guess or ""
             genus_display = genus_raw or "-"
             if obs.get("uncertain", 0):
                 genus_display = f"? {genus_display}"
-            species_display = (obs.get("species") or obs.get("species_guess") or "sp.")
+            species_display = species_raw or species_guess or "sp."
 
             common_name = self._lookup_common_name(obs, common_name_map)
             common_name_display = common_name
             if not common_name_display:
-                if genus_raw and species_raw:
-                    common_name_display = f"- ({genus_raw} {species_raw})"
+                species_name = self._build_species_name(obs)
+                if species_name:
+                    common_name_display = f"- ({species_name})"
                 else:
                     common_name_display = "-"
 
@@ -4978,6 +4996,8 @@ class ObservationsTab(QWidget):
             search_parts = [str(v) for v in obs.values() if v is not None]
             if common_name_display and common_name_display != "-":
                 search_parts.append(common_name_display)
+            if species_name:
+                search_parts.append(species_name)
             if spore_short and spore_short != "-":
                 search_parts.append(spore_short)
             if status_text:
@@ -5654,13 +5674,12 @@ class ObservationsTab(QWidget):
         # Collect all unique genus+species combinations from observations
         taxa = set()
         for obs in observations:
-            genus = self._normalize_taxon_text(obs.get("genus"))
-            species = self._normalize_taxon_text(obs.get("species"))
-            if not genus or not species:
-                guess = self._normalize_taxon_text(obs.get("species_guess"))
-                parts = guess.split() if guess else []
-                if len(parts) >= 2:
-                    genus, species = parts[0], parts[1]
+            genus, species, _ = resolve_observation_taxon_fields(
+                obs.get("genus"),
+                obs.get("species"),
+                obs.get("species_guess"),
+                obs.get("ai_selected_scientific_name"),
+            )
             if genus and species:
                 taxa.add((genus, species))
         
@@ -5912,15 +5931,12 @@ class ObservationsTab(QWidget):
         stored_name = self._normalize_taxon_text(obs.get("common_name"))
         if stored_name:
             return stored_name
-        genus = self._normalize_taxon_text(obs.get("genus"))
-        species = self._normalize_taxon_text(obs.get("species"))
-        
-        if not genus or not species:
-            guess = self._normalize_taxon_text(obs.get("species_guess"))
-            parts = guess.split() if guess else []
-            if len(parts) >= 2:
-                genus, species = parts[0], parts[1]
-        
+        genus, species, _ = resolve_observation_taxon_fields(
+            obs.get("genus"),
+            obs.get("species"),
+            obs.get("species_guess"),
+            obs.get("ai_selected_scientific_name"),
+        )
         if not genus or not species:
             return None
         return name_map.get((genus, species))
@@ -6674,18 +6690,27 @@ class ObservationsTab(QWidget):
         """Get measurements for a specific image."""
         return MeasurementDB.get_measurements_for_image(image_id)
 
+    def _observation_taxon_fields(self, obs: dict | None) -> tuple[str | None, str | None, str | None]:
+        if not isinstance(obs, dict):
+            return None, None, None
+        return resolve_observation_taxon_fields(
+            obs.get("genus"),
+            obs.get("species"),
+            obs.get("species_guess"),
+            obs.get("ai_selected_scientific_name"),
+        )
+
     def _build_species_name(self, obs):
         """Return a scientific name when genus/species are known."""
-        genus = (obs.get('genus') or '').strip()
-        species = (obs.get('species') or '').strip()
+        genus, species, species_guess = resolve_observation_taxon_fields(
+            obs.get("genus"),
+            obs.get("species"),
+            obs.get("species_guess"),
+            obs.get("ai_selected_scientific_name"),
+        )
         if genus and species:
             return f"{genus} {species}".strip()
-        guess = (obs.get('species_guess') or '').strip()
-        if guess:
-            parts = guess.split()
-            if len(parts) >= 2:
-                return f"{parts[0]} {parts[1]}".strip()
-        return None
+        return species_guess or None
 
     def show_map_service_dialog(self, lat, lon, species_name):
         """Show a dialog to choose a map service."""
@@ -9093,7 +9118,59 @@ class ObservationsTab(QWidget):
 
         return upload_paths, temp_dir, warnings
 
-    def _resolve_artsobs_taxon_id(self, obs: dict) -> int | None:
+    def _lookup_artsobservasjoner_taxon_id(self, scientific_name: str | None) -> int | None:
+        scientific_name = self._normalize_taxon_text(scientific_name)
+        if not scientific_name:
+            return None
+
+        try:
+            from database.fetch_artportalen_taxon_ids import parse_picker_results
+        except Exception:
+            parse_picker_results = None
+
+        params = {
+            "search": scientific_name,
+            "returnformat": "html",
+            "onlyReportable": "true",
+            "dontIncludeSubSpecies": "true",
+            "speciesGroup": "-1",
+            "language": "4",
+            "cache": str(int(time.time() * 1000)),
+        }
+        headers = {
+            "Accept": "text/html, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+            "User-Agent": f"{APP_NAME}/ArtsobservasjonerTaxonLookup",
+        }
+        cookies = getattr(self, "_artsobs_lookup_cookies", None)
+
+        response = requests.get(
+            "https://www.artsobservasjoner.no/Taxon/PickerSearch",
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            timeout=20,
+        )
+        response.raise_for_status()
+
+        if parse_picker_results is None:
+            return None
+        results = parse_picker_results(response.text)
+        if not results:
+            return None
+
+        def _normalize_picker_name(text: str | None) -> str:
+            normalized = html.unescape(str(text or "")).strip()
+            normalized = re.sub(r"<[^>]+>", " ", normalized)
+            return self._normalize_taxon_text(normalized).casefold()
+
+        target = scientific_name.casefold()
+        for result in results:
+            if _normalize_picker_name(result.scientific_name) == target:
+                return result.taxon_id
+        return results[0].taxon_id if len(results) == 1 else None
+
+    def _resolve_artsobs_taxon_id(self, obs: dict) -> tuple[int, str] | None:
         taxon_pair = self._extract_artsobs_taxon_pair(obs)
         if not taxon_pair:
             return None
@@ -9103,13 +9180,24 @@ class ObservationsTab(QWidget):
             accepted_pair = self._resolve_accepted_taxon_pair(genus, species)
             if accepted_pair:
                 adb_taxon_id = ObservationDB.resolve_adb_taxon_id(*accepted_pair)
-        return adb_taxon_id
+                if adb_taxon_id:
+                    return adb_taxon_id, "taxonomy_db.artsdatabanken:accepted_pair"
+        if adb_taxon_id:
+            return adb_taxon_id, "taxonomy_db.artsdatabanken"
+
+        lookup_taxon_id = self._lookup_artsobservasjoner_taxon_id(f"{genus} {species}".strip())
+        if lookup_taxon_id:
+            return lookup_taxon_id, "artsobservasjoner.picker_search"
+        return None
 
     def _resolve_artsobs_taxon_resolution(self, obs: dict):
+        resolved_taxon = self._resolve_artsobs_taxon_id(obs)
+        resolved_taxon_id = resolved_taxon[0] if resolved_taxon else None
+        resolved_taxon_source = resolved_taxon[1] if resolved_taxon else "taxonomy_db.artsdatabanken"
         return select_artsobservasjoner_taxon_id(
             obs,
-            resolved_taxonomy_taxon_id=self._resolve_artsobs_taxon_id(obs),
-            resolved_taxonomy_source="taxonomy_db.artsdatabanken",
+            resolved_taxonomy_taxon_id=resolved_taxon_id,
+            resolved_taxonomy_source=resolved_taxon_source,
         )
 
     def _resolve_artportalen_taxon_id(self, obs: dict) -> int | None:
@@ -9156,19 +9244,7 @@ class ObservationsTab(QWidget):
 
     def _extract_artsobs_taxon_pair(self, obs: dict) -> tuple[str, str] | None:
         def _split_name(text: str | None) -> tuple[str, str] | None:
-            normalized = self._normalize_taxon_text(text)
-            if not normalized:
-                return None
-            parts = normalized.split()
-            if len(parts) < 2:
-                return None
-            genus_part = parts[0]
-            species_part = parts[1]
-            if species_part.lower() in {"cf", "cf.", "aff", "aff.", "sp", "sp.", "spp", "spp."}:
-                if len(parts) < 3:
-                    return None
-                species_part = parts[2]
-            return genus_part, species_part
+            return split_scientific_name_text(text)
 
         genus = self._normalize_taxon_text(obs.get("genus"))
         species = self._normalize_taxon_text(obs.get("species"))
@@ -9189,7 +9265,15 @@ class ObservationsTab(QWidget):
             if split:
                 return split
 
-        return _split_name(obs.get("species_guess"))
+        fallback_genus, fallback_species, _ = resolve_observation_taxon_fields(
+            obs.get("genus"),
+            obs.get("species"),
+            obs.get("species_guess"),
+            obs.get("ai_selected_scientific_name"),
+        )
+        if fallback_genus and fallback_species:
+            return fallback_genus, fallback_species
+        return _split_name(obs.get("species_guess")) or _split_name(obs.get("ai_selected_scientific_name"))
 
     def _resolve_accepted_taxon_pair(self, genus: str, species: str) -> tuple[str, str] | None:
         if not genus or not species:
@@ -9392,16 +9476,6 @@ class ObservationsTab(QWidget):
         cookies: dict = {}
         if uploader.key in {"mobile", "web"}:
             try:
-                taxon_resolution = self._resolve_artsobs_taxon_resolution(obs)
-            except ArtsobservasjonerTaxonIdError as exc:
-                return _fail(
-                    self.tr(str(exc)),
-                    level="warning",
-                    auto_clear_ms=12000,
-                )
-            taxon_id = taxon_resolution.taxon_id
-            log_artsobservasjoner_taxon_diagnostic(obs, taxon_resolution)
-            try:
                 from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
             except Exception as exc:
                 return _fail(
@@ -9417,6 +9491,22 @@ class ObservationsTab(QWidget):
                     level="warning",
                     auto_clear_ms=12000,
                 )
+            self._artsobs_lookup_cookies = dict(cookies)
+            try:
+                taxon_resolution = self._resolve_artsobs_taxon_resolution(obs)
+            except ArtsobservasjonerTaxonIdError as exc:
+                return _fail(
+                    self.tr(str(exc)),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+            finally:
+                try:
+                    delattr(self, "_artsobs_lookup_cookies")
+                except Exception:
+                    pass
+            taxon_id = taxon_resolution.taxon_id
+            log_artsobservasjoner_taxon_diagnostic(obs, taxon_resolution)
         elif uploader.key == "artportalen":
             taxon_id = self._resolve_artportalen_taxon_id(obs)
             if not taxon_id:
@@ -12201,11 +12291,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if taxon_id:
             parts.append(self.tr("taxon {taxon_id}").format(taxon_id=taxon_id))
         if probability is not None and str(probability).strip():
-            try:
-                probability_text = f"{float(probability):.3f}".rstrip("0").rstrip(".")
-            except Exception:
-                probability_text = str(probability).strip()
-            parts.append(f"p={probability_text}")
+            probability_text = format_probability_percent(probability)
+            if probability_text:
+                parts.append(f"p={probability_text}")
         if selected_at:
             parts.append(selected_at)
         if not parts:
@@ -13758,9 +13846,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _format_ai_prediction_score(self, pred: dict, source: str = "arts") -> str:
         score = self._ai_prediction_score(pred)
-        if source == "inat":
-            return f"{score:.1f}%"
-        return f"{score:.1%}"
+        return format_probability_percent(score)
 
     def _format_ai_taxon_name(self, taxon: dict, source: str = "arts") -> str:
         scientific = self._scientific_name_from_taxon(taxon)
@@ -14090,21 +14176,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     @staticmethod
     def _split_scientific_name_text(text: str | None) -> tuple[str | None, str | None]:
-        value = str(text or "").strip()
-        if not value:
-            return None, None
-        parts = [part for part in value.split() if part]
-        if len(parts) < 2:
-            return None, None
-        genus = parts[0].strip()
-        species = parts[1].strip()
-        if species.lower() in {"cf", "cf.", "aff", "aff.", "sp", "sp.", "spp", "spp."}:
-            if len(parts) < 3:
-                return None, None
-            species = parts[2].strip()
-        if not genus or not species:
-            return None, None
-        return genus, species
+        return split_scientific_name_text(text)
 
     def _scientific_name_from_taxon(self, taxon: dict) -> str:
         for key in ("scientificName", "scientific_name"):

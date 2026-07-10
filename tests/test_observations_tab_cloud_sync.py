@@ -1838,6 +1838,78 @@ def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields()
     assert row["has_coords"] is True
 
 
+def test_observation_table_row_cache_falls_back_to_ai_selected_scientific_name():
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields,
+        fake_tab,
+    )
+    fake_tab._build_species_name = MethodType(
+        observations_tab.ObservationsTab._build_species_name,
+        fake_tab,
+    )
+
+    obs = {
+        "id": 901,
+        "genus": "",
+        "species": "",
+        "species_guess": "",
+        "ai_selected_scientific_name": "Panaeolus acuminatus",
+        "common_name": "",
+        "location": "Forest",
+    }
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(fake_tab, [obs])
+    row = rows[0]
+
+    assert row["genus"] == "Panaeolus"
+    assert row["species"] == "acuminatus"
+    assert row["species_name"] == "Panaeolus acuminatus"
+    assert row["common_name"] == "- (Panaeolus acuminatus)"
+
+
+def test_cloud_row_cache_falls_back_to_ai_selected_scientific_name():
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields,
+        fake_tab,
+    )
+
+    remote_rows = [
+        {
+            "id": 748,
+            "genus": "",
+            "species": "",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Panaeolus acuminatus",
+            "common_name": "",
+            "date": "2026-06-25 07:41:23",
+            "created_at": "2026-06-25T13:58:52",
+            "location": "Bakke kirke",
+            "sharing_scope": "public",
+            "visibility": "public",
+            "is_draft": 0,
+            "publish_target": None,
+        }
+    ]
+
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(fake_tab, remote_rows)
+    row = rows[0]
+
+    assert row["genus"] == "Panaeolus"
+    assert row["species"] == "acuminatus"
+    assert row["species_name"] == "Panaeolus acuminatus"
+    assert row["common_name"] == "- (Panaeolus acuminatus)"
+
+
 def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
     obs = observations_tab.ObservationDB.get_observation(451)
     fake_tab, table = _make_observation_table_render_tab()
