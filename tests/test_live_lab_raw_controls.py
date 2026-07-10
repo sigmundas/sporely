@@ -948,6 +948,49 @@ def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_pa
     assert float(histogram.min()) >= 0.0
 
 
+def test_live_lab_raw_curve_preview_uses_visible_pending_preview_when_memory_rgb_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    _qapp()
+    state = _build_raw_controls_state()
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        state,
+        "_raw_curve_preview_fallback_rgb",
+        lambda: pytest.fail("curve preview should use the visible pending preview instead of the fallback ramp"),
+    )
+
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "current_preview.jpg"
+    image = QImage(24, 24, QImage.Format.Format_RGB32)
+    image.fill(Qt.red)
+    assert image.save(str(preview_path))
+
+    capture = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=preview_path,
+        preview_rgb=None,
+        status="pending",
+        rendered_settings=RawRenderSettings.default(),
+    )
+    state._pending_raw_captures = [capture]
+    state._selected_pending_raw_index = 0
+    state.live_image_label.original_pixmap = QPixmap.fromImage(image)
+    state.live_image_label._full_image_path = str(preview_path)
+
+    live_lab_tab.LiveLabTab._refresh_raw_curve_preview(state)
+
+    histogram = state.raw_curve_preview_widget.current_histogram()
+    assert histogram is not None
+    assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
+    assert state.raw_curve_preview_widget.current_curve is not None
+
+
 def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode(
     tmp_path,
     monkeypatch,

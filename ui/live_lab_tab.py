@@ -3151,21 +3151,34 @@ class LiveLabTab(QWidget):
             except Exception:
                 return str(left) == str(right)
 
+        live_image_label = getattr(self, "live_image_label", None)
+        current_view_path = getattr(live_image_label, "_full_image_path", None)
+
         session = getattr(self, "_raw_edit_session", None)
         if session is not None and _same_path(getattr(session, "source_raw_path", None), source_path):
             preview_rgb = getattr(session, "preview_rgb", None)
             if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
                 return np.asarray(preview_rgb, dtype=np.float32)
+            # If the viewer is already showing the temporary edit preview JPEG,
+            # reuse that pixmap instead of falling back to the synthetic ramp.
+            if _same_path(current_view_path, getattr(session, "preview_path", None)):
+                rgb = self._pixmap_rgb_array(getattr(live_image_label, "original_pixmap", None))
+                if isinstance(rgb, np.ndarray) and rgb.size:
+                    return np.asarray(rgb, dtype=np.float32)
 
         capture = self._current_pending_raw_capture()
         if capture is not None and _same_path(getattr(capture, "source_path", None), source_path):
             preview_rgb = getattr(capture, "preview_rgb", None)
             if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
                 return np.asarray(preview_rgb, dtype=np.float32)
+            # Same for the pending-import preview: the active viewer often
+            # shows the rendered JPEG before the in-memory RGB buffer exists.
+            if _same_path(current_view_path, getattr(capture, "preview_path", None)):
+                rgb = self._pixmap_rgb_array(getattr(live_image_label, "original_pixmap", None))
+                if isinstance(rgb, np.ndarray) and rgb.size:
+                    return np.asarray(rgb, dtype=np.float32)
 
-        live_image_label = getattr(self, "live_image_label", None)
-        preview_path = getattr(live_image_label, "_full_image_path", None)
-        if _same_path(preview_path, source_path):
+        if _same_path(current_view_path, source_path):
             rgb = self._pixmap_rgb_array(getattr(live_image_label, "original_pixmap", None))
             if isinstance(rgb, np.ndarray) and rgb.size:
                 return np.asarray(rgb, dtype=np.float32)
