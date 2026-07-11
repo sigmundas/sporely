@@ -1,8 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
-from functools import lru_cache
-
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
@@ -18,11 +16,6 @@ from .measurement_overlay_style import (
     rectangle_thin_stroke_width,
     rectangle_corner_segments,
 )
-
-
-@lru_cache(maxsize=None)
-def _cursor(shape: Qt.CursorShape) -> QCursor:
-    return QCursor(shape)
 
 
 class ZoomableImageLabel(QLabel):
@@ -874,7 +867,7 @@ class ZoomableImageLabel(QLabel):
         if self._cursor_shape == shape:
             return
         self._cursor_shape = shape
-        self.setCursor(_cursor(shape))
+        self.setCursor(shape)
 
     def set_crop_box(self, box):
         """Set current crop box (x1, y1, x2, y2) in image coords."""

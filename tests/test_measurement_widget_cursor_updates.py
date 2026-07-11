@@ -26,7 +26,7 @@ def test_cursor_helper_skips_redundant_updates(qapp, monkeypatch, widget_type):
     calls: list = []
 
     def fake_set_cursor(self, cursor):
-        calls.append(cursor.shape())
+        calls.append(cursor)
 
     monkeypatch.setattr(widget_type, "setCursor", fake_set_cursor, raising=False)
 
