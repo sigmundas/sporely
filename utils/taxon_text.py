@@ -8,6 +8,47 @@ from typing import Any
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _INFRASPECIFIC_MARKERS = {"cf", "cf.", "aff", "aff.", "sp", "sp.", "spp", "spp."}
+_GROUP_QUALIFIER_TOKENS = {
+    "coll.",
+    "agg.",
+    "gr.",
+    "group",
+    "s.l.",
+    "s.lat.",
+    "s.str.",
+    "s.s.",
+}
+_GROUP_QUALIFIER_PHRASES = (
+    ("sensu", "lato"),
+    ("sensu", "stricto"),
+    ("s.", "lat."),
+    ("s.", "lato"),
+    ("s.", "str."),
+    ("s.", "stricto"),
+    ("s.", "l."),
+    ("s.", "s."),
+)
+
+
+def _consume_group_qualifier(tokens: list[str]) -> str:
+    """Return a trailing group qualifier joined by spaces, or ``''``."""
+    if not tokens:
+        return ""
+    lowered = [tok.lower() for tok in tokens]
+    for phrase in _GROUP_QUALIFIER_PHRASES:
+        if len(lowered) >= len(phrase) and tuple(lowered[: len(phrase)]) == phrase:
+            qualifier = " ".join(tokens[: len(phrase)])
+            remainder = tokens[len(phrase):]
+            if remainder and remainder[0].isdigit():
+                qualifier = f"{qualifier} {remainder[0]}"
+            return qualifier
+    first = lowered[0]
+    if first in _GROUP_QUALIFIER_TOKENS:
+        qualifier = tokens[0]
+        if len(tokens) > 1 and tokens[1].isdigit():
+            qualifier = f"{qualifier} {tokens[1]}"
+        return qualifier
+    return ""
 
 
 def _clean_text(value: Any) -> str:
@@ -35,10 +76,16 @@ def split_scientific_name_text(text: str | None) -> tuple[str | None, str | None
 
     genus = parts[0].strip()
     species = parts[1].strip()
+    consumed = 2
     if species.lower() in _INFRASPECIFIC_MARKERS:
         if len(parts) < 3:
             return None, None
         species = parts[2].strip()
+        consumed = 3
+
+    qualifier = _consume_group_qualifier(parts[consumed:])
+    if qualifier:
+        species = f"{species} {qualifier}"
 
     if not genus or not species:
         return None, None
