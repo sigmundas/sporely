@@ -54,10 +54,10 @@ class _FakeGallery:
     def selected_paths(self) -> list[str]:
         return list(self._selected_paths)
 
-    def set_items(self, items: list[dict]) -> None:
+    def set_items(self, items: list[dict], *, reveal: str | None = None, **_ignored) -> None:
         self.items = list(items)
 
-    def select_paths(self, paths: list[str]) -> None:
+    def select_paths(self, paths: list[str], *, center: bool = True, **_ignored) -> None:
         self._selected_paths = list(paths)
 
 

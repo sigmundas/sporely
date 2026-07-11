@@ -729,8 +729,20 @@ class ImageGalleryWidget(QGroupBox):
     def _center_on_key_if_current(self, generation: int, key, retries: int = 3) -> None:
         if generation != self._center_request_generation or key != self._center_request_key:
             return
+        if not self._scroll:
+            return
         frame = self._frame_for_key(key)
-        if frame is None or not self._scroll:
+        if frame is None:
+            # Frame hasn't been rendered yet (batched render still in
+            # progress). Try again shortly instead of silently giving up —
+            # otherwise a caller that queues a center right after set_items
+            # will land on scroll=0 whenever the target isn't in the first
+            # batch.
+            if retries > 0:
+                QTimer.singleShot(
+                    16,
+                    lambda gen=generation, k=key, r=retries - 1: self._center_on_key_if_current(gen, k, r),
+                )
             return
         scrollbar = self._scroll.horizontalScrollBar()
         viewport = self._scroll.viewport()
@@ -780,6 +792,18 @@ class ImageGalleryWidget(QGroupBox):
         if target is None:
             return
         scrollbar.setValue(target)
+        # Re-apply on the next event-loop tick. scrollbar.maximum() may still
+        # be growing as Qt lays out newly-added frames; a target beyond the
+        # current maximum gets silently clamped on the first setValue, so we
+        # need one more pass once the range has settled. Mirrors the
+        # follow-up tick in _apply_pending_scroll.
+        QTimer.singleShot(
+            0,
+            lambda sb=scrollbar, t=target: (
+                sb.setValue(max(int(sb.minimum()), min(int(sb.maximum()), int(t))))
+                if sb is not None else None
+            ),
+        )
 
     def _set_frame_selected_state(self, frame: QFrame, selected: bool) -> None:
         selected = bool(selected)
@@ -976,16 +1000,16 @@ class ImageGalleryWidget(QGroupBox):
         self._consume_pending_selection_paths()
         self._render()
 
-    def set_observation_id(self, observation_id: int | None) -> None:
+    def set_observation_id(self, observation_id: int | None, *, reveal: str | None = None) -> None:
         self._observation_load_generation += 1
         if not observation_id:
             self.clear()
             return
         images = ImageDB.get_images_for_observation(observation_id)
         measurement_image_ids = self._spore_measurement_image_ids_for_observation(observation_id)
-        self._set_observation_rows(observation_id, images, measurement_image_ids)
+        self._set_observation_rows(observation_id, images, measurement_image_ids, reveal=reveal)
 
-    def set_observation_id_async(self, observation_id: int | None) -> None:
+    def set_observation_id_async(self, observation_id: int | None, *, reveal: str | None = None) -> None:
         self._observation_load_generation += 1
         generation = self._observation_load_generation
         if not observation_id:
@@ -994,8 +1018,8 @@ class ImageGalleryWidget(QGroupBox):
         loader = _ObservationGalleryLoader(int(observation_id))
         self._observation_loaders.add(loader)
         loader.loaded.connect(
-            lambda loaded_obs_id, images, measurement_ids, gen=generation:
-                self._on_observation_rows_loaded(gen, loaded_obs_id, images, measurement_ids)
+            lambda loaded_obs_id, images, measurement_ids, gen=generation, r=reveal:
+                self._on_observation_rows_loaded(gen, loaded_obs_id, images, measurement_ids, reveal=r)
         )
         loader.finished.connect(lambda worker=loader: self._observation_loaders.discard(worker))
         loader.finished.connect(loader.deleteLater)
@@ -1007,6 +1031,8 @@ class ImageGalleryWidget(QGroupBox):
         observation_id: int,
         images: object,
         measurement_image_ids: object,
+        *,
+        reveal: str | None = None,
     ) -> None:
         if generation != self._observation_load_generation:
             return
@@ -1014,7 +1040,7 @@ class ImageGalleryWidget(QGroupBox):
             measurement_ids = {int(v) for v in (measurement_image_ids or set())}
         except Exception:
             measurement_ids = set()
-        self._set_observation_rows(observation_id, list(images or []), measurement_ids)
+        self._set_observation_rows(observation_id, list(images or []), measurement_ids, reveal=reveal)
         self.observationLoaded.emit(int(observation_id))
 
     def _set_observation_rows(
@@ -1022,6 +1048,8 @@ class ImageGalleryWidget(QGroupBox):
         observation_id: int | None,
         images: Iterable[dict],
         measurement_image_ids: set[int],
+        *,
+        reveal: str | None = None,
     ) -> None:
         if not observation_id:
             self.clear()
@@ -1116,9 +1144,7 @@ class ImageGalleryWidget(QGroupBox):
                     "publish_selected_default": image_type != "microscope",
                 }
             )
-        self._items = items
-        self._consume_pending_selection_paths()
-        self._render()
+        self.set_items(items, reveal=reveal)
 
     def _consume_pending_selection_paths(self) -> None:
         pending = getattr(self, "_pending_selection_paths", None)

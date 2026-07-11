@@ -5902,9 +5902,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
-        self.gallery.set_items(items)
+        self.gallery.set_items(items, reveal="preserve")
         if selected:
-            self.gallery.select_paths(selected)
+            self.gallery.select_paths(selected, center=False)
         self._update_action_buttons_state()
 
     def _on_remove_selected(self) -> None:

@@ -11485,7 +11485,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         self.observation_images = new_observation_images
         if hasattr(self, "measure_gallery") and gallery_changed:
-            self.measure_gallery.set_observation_id(self.active_observation_id)
+            # Same-observation refresh (post-edit, signature change) should
+            # keep the user's scroll position on the strip; switching to a
+            # different observation resets scroll as before.
+            same_observation = (
+                self._measure_gallery_observation_id == self.active_observation_id
+            )
+            self.measure_gallery.set_observation_id(
+                self.active_observation_id,
+                reveal="preserve" if same_observation else None,
+            )
             self._apply_measure_gallery_publish_selection()
         self._measure_gallery_observation_id = self.active_observation_id
         self._measure_gallery_signature = new_signature
