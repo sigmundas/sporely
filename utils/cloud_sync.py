@@ -4047,7 +4047,77 @@ def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
 
 def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
     row = dict(image_row or {})
-    return not _is_generated_cloud_image(row)
+    if _is_generated_cloud_image(row):
+        return False
+    if str(row.get('deleted_at') or '').strip():
+        return False
+    if str(row.get('purged_at') or '').strip():
+        return False
+    return True
+
+
+def _is_metadata_only_microscope_cloud_image(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    return not _normalize_cloud_media_key(row.get('storage_path'))
+
+
+def _is_spore_measurement_source_image(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() == 'microscope':
+        return True
+    if _normalize_cloud_media_key(row.get('storage_path')):
+        return True
+    return _resolve_existing_local_image_asset_path(str(row.get('filepath') or '')) is not None
+
+
+def _is_local_metadata_only_microscope_anchor(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    return bool(str(row.get('cloud_id') or '').strip())
+
+
+def _update_image_columns_without_touching_observation(
+    image_id: int,
+    updates: dict[str, object | None],
+) -> None:
+    if image_id <= 0 or not updates:
+        return
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(images)")
+        image_columns = {
+            str(row[1] or '').strip()
+            for row in cursor.fetchall()
+            if str(row[1] or '').strip()
+        }
+        assignments: list[str] = []
+        values: list[object | None] = []
+        for column_name, column_value in updates.items():
+            if column_name not in image_columns:
+                continue
+            assignments.append(f"{column_name} = ?")
+            values.append(column_value)
+        if not assignments:
+            return
+        values.append(int(image_id))
+        cursor.execute(
+            f"UPDATE images SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _cloud_observation_snapshot(
@@ -4356,6 +4426,11 @@ def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | No
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image is None:
             missing_remote_images.append(remote_image)
+            continue
+        if (
+            _is_metadata_only_microscope_cloud_image(remote_image)
+            and _is_local_metadata_only_microscope_anchor(local_image)
+        ):
             continue
         if _resolve_existing_local_image_asset_path(local_image.get('filepath')) is None:
             missing_remote_images.append(remote_image)
@@ -7723,6 +7798,143 @@ def _apply_remote_image_metadata_only_to_local(
         conn.close()
 
 
+def _ensure_local_metadata_only_microscope_anchor(
+    client: "SporelyCloudClient" | None,
+    local_observation_id: int,
+    remote_image: dict,
+    local_image: dict | None = None,
+) -> int | None:
+    """Create or update a file-less microscope anchor for a remote row.
+
+    These rows are valid measurement anchors even though the raw microscope
+    bytes were never uploaded. The local row must keep its cloud id mapping and
+    metadata, but it must not trigger the download/materialization branch.
+    """
+    remote_row = dict(remote_image or {})
+    if not _is_metadata_only_microscope_cloud_image(remote_row):
+        return None
+
+    cloud_image_id = str(remote_row.get('id') or '').strip()
+    if not cloud_image_id:
+        return None
+
+    existing_local = dict(local_image or {})
+    local_image_id = _safe_int(existing_local.get('id'))
+    existing_path = str(existing_local.get('filepath') or '').strip()
+    has_local_file = bool(existing_path)
+    if has_local_file:
+        try:
+            has_local_file = Path(existing_path).exists()
+        except Exception:
+            has_local_file = False
+
+    calibration_id = _local_calibration_id_for_image(remote_row)
+    ai_crop_box = _remote_ai_crop_box(remote_row)
+    ai_crop_source_size = _remote_ai_crop_source_size(remote_row)
+    metadata_columns = {
+        'image_type': 'microscope',
+        'scale_microns_per_pixel': remote_row.get('scale_microns_per_pixel'),
+        'notes': remote_row.get('notes'),
+        'micro_category': remote_row.get('micro_category'),
+        'objective_name': remote_row.get('objective_name'),
+        'measure_color': remote_row.get('measure_color'),
+        'mount_medium': remote_row.get('mount_medium'),
+        'stain': remote_row.get('stain'),
+        'sample_type': remote_row.get('sample_type'),
+        'contrast': remote_row.get('contrast'),
+        'sort_order': remote_row.get('sort_order'),
+        'crop_mode': remote_row.get('crop_mode'),
+        'gps_source': remote_row.get('gps_source'),
+        'resample_scale_factor': remote_row.get('resample_scale_factor'),
+        'ai_crop_x1': ai_crop_box[0] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_y1': ai_crop_box[1] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_x2': ai_crop_box[2] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_y2': ai_crop_box[3] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_source_w': ai_crop_source_size[0] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
+        'ai_crop_source_h': ai_crop_source_size[1] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
+        'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_row),
+        'captured_at': remote_row.get('captured_at'),
+    }
+    if calibration_id is not None:
+        metadata_columns['calibration_id'] = calibration_id
+
+    if local_image_id > 0:
+        update_columns = dict(metadata_columns)
+        if not has_local_file:
+            update_columns['filepath'] = ''
+        _update_image_columns_without_touching_observation(local_image_id, update_columns)
+    else:
+        created_local_image_id = ImageDB.add_image(
+            observation_id=int(local_observation_id),
+            filepath='',
+            image_type='microscope',
+            scale=remote_row.get('scale_microns_per_pixel'),
+            notes=remote_row.get('notes'),
+            micro_category=remote_row.get('micro_category'),
+            objective_name=remote_row.get('objective_name'),
+            measure_color=remote_row.get('measure_color'),
+            mount_medium=remote_row.get('mount_medium'),
+            stain=remote_row.get('stain'),
+            sample_type=remote_row.get('sample_type'),
+            contrast=remote_row.get('contrast'),
+            sort_order=remote_row.get('sort_order'),
+            crop_mode=remote_row.get('crop_mode'),
+            gps_source=remote_row.get('gps_source'),
+            resample_scale_factor=remote_row.get('resample_scale_factor'),
+            calibration_id=calibration_id,
+            ai_crop_box=ai_crop_box,
+            ai_crop_source_size=ai_crop_source_size,
+            ai_crop_is_custom=_remote_ai_crop_is_custom(remote_row),
+            captured_at=remote_row.get('captured_at'),
+            copy_to_folder=False,
+            mark_observation_dirty=False,
+            source_role='cloud_recovery_cache',
+            file_purpose='cache',
+            original_mime_type=None,
+            working_mime_type=None,
+        )
+        local_image_id = _safe_int(created_local_image_id)
+        if local_image_id <= 0:
+            return None
+        has_local_file = False
+
+    _update_image_columns_without_touching_observation(
+        local_image_id,
+        {
+            'cloud_id': cloud_image_id,
+            'synced_at': datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    if not has_local_file:
+        _update_image_columns_without_touching_observation(
+            local_image_id,
+            {
+                'filepath': '',
+                'source_role': 'cloud_recovery_cache',
+                'file_purpose': 'cache',
+                'original_mime_type': None,
+                'working_mime_type': None,
+            },
+        )
+
+    if client is not None:
+        set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
+        if callable(set_image_desktop_id):
+            try:
+                set_image_desktop_id(cloud_image_id, int(local_image_id))
+                remote_row['desktop_id'] = int(local_image_id)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+
+    if local_image is not None:
+        local_image['id'] = local_image_id
+        local_image['cloud_id'] = cloud_image_id
+        if not has_local_file:
+            local_image['filepath'] = ''
+    return local_image_id
+
+
 def _remote_image_bytes_match_local(local_image: dict, remote_image: dict) -> bool:
     """True when the remote row points at bytes the local copy already has.
 
@@ -7897,6 +8109,14 @@ def _apply_remote_images_to_local(
             continue
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image:
+            if _is_metadata_only_microscope_cloud_image(remote_image):
+                _ensure_local_metadata_only_microscope_anchor(
+                    client,
+                    int(local_id),
+                    remote_image,
+                    local_image=local_image,
+                )
+                continue
             try:
                 _sync_existing_remote_image_to_local(
                     client,
@@ -7916,8 +8136,22 @@ def _apply_remote_images_to_local(
                 pass
             continue
 
+        if _is_metadata_only_microscope_cloud_image(remote_image):
+            _ensure_local_metadata_only_microscope_anchor(
+                client,
+                int(local_id),
+                remote_image,
+            )
+            continue
+
         storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
         if not storage_path:
+            warning = (
+                f"obs {local_id}: skipped cloud image {cloud_image_id} "
+                f"because it is missing storage path"
+            )
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
             continue
         temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
         try:
@@ -14342,7 +14576,20 @@ def _import_remote_images(
                     )
                 
                 storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
-                if not storage_path: continue
+                if _is_metadata_only_microscope_cloud_image(image_row):
+                    _ensure_local_metadata_only_microscope_anchor(
+                        client,
+                        int(local_id),
+                        image_row,
+                    )
+                    continue
+                if not storage_path:
+                    warning = (
+                        f"obs {int(local_id)}: skipped cloud image {cloud_image_id or '?'} "
+                        f"because it is missing storage path"
+                    )
+                    print(f'[cloud_sync] Warning: {warning}')
+                    continue
 
                 image_temp_dir = temp_dir / (str(image_row.get('id') or idx).strip() or str(idx))
                 image_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -14493,6 +14740,13 @@ def _import_remote_measurements_for_observation(
     set_measurement_desktop_id = getattr(client, 'set_measurement_desktop_id', None)
     imported = 0
     conflict = False
+    skip_groups: dict[str, dict[str, object]] = {}
+
+    def _record_skip(key: str, remote_image_id: str | None) -> None:
+        bucket = skip_groups.setdefault(key, {'count': 0, 'image_ids': set()})
+        bucket['count'] = int(bucket['count'] or 0) + 1
+        if remote_image_id:
+            bucket['image_ids'].add(remote_image_id)
 
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
@@ -14506,29 +14760,18 @@ def _import_remote_measurements_for_observation(
             remote_image_id = str(remote_row.get('image_id') or '').strip()
             remote_image = remote_image_lookup.get(remote_image_id)
             if not remote_image:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because cloud image {remote_image_id or '?'} is unavailable"
-                )
+                _record_skip('missing_remote_image', remote_image_id or None)
                 continue
-            if not should_pull_cloud_image_to_desktop(remote_image):
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"on excluded image {remote_image_id or '?'}"
-                )
+            if not _is_spore_measurement_source_image(remote_image):
+                _record_skip('excluded_image', remote_image_id or None)
                 continue
             if remote_image_id in tombstoned_remote_image_ids:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because cloud image {remote_image_id} has a local tombstone"
-                )
+                _record_skip('tombstoned_image', remote_image_id or None)
                 continue
 
             local_image = local_images_by_cloud_id.get(remote_image_id)
             if local_image is None:
                 if not materialize_remote_images:
-                    # Measurement import for cloud images without local media is deferred
-                    # until those images are materialized on this device.
                     continue
                 warnings.extend(
                     _apply_remote_images_to_local(
@@ -14542,27 +14785,16 @@ def _import_remote_measurements_for_observation(
                 local_images_by_cloud_id, local_images_by_id = _load_local_images()
                 local_image = local_images_by_cloud_id.get(remote_image_id)
             if local_image is None:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because image {remote_image_id or '?'} could not be materialized"
-                )
+                _record_skip('missing_local_anchor', remote_image_id or None)
                 continue
 
-            remote_image_type = str(remote_image.get('image_type') or '').strip().lower()
-            local_image_type = str(local_image.get('image_type') or '').strip().lower()
-            if remote_image_type == 'microscope' or local_image_type == 'microscope':
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"on excluded image {remote_image_id or '?'}"
-                )
+            if not _is_spore_measurement_source_image(local_image):
+                _record_skip('excluded_image', remote_image_id or None)
                 continue
 
             local_image_id = _safe_int(local_image.get('id'))
             if local_image_id <= 0:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because the local image anchor is missing"
-                )
+                _record_skip('missing_local_anchor', remote_image_id or None)
                 continue
 
             local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
@@ -14689,6 +14921,45 @@ def _import_remote_measurements_for_observation(
     finally:
         conn.commit()
         conn.close()
+
+    for key, template in (
+        (
+            'missing_remote_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) because cloud images {image_ids} are unavailable',
+        ),
+        (
+            'excluded_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) on {image_count} excluded image(s): {image_ids}',
+        ),
+        (
+            'tombstoned_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) because cloud images {image_ids} have a local tombstone',
+        ),
+        (
+            'missing_local_anchor',
+            'obs {local_id}: skipped {count} cloud measurement(s) because {image_count} image anchor(s) could not be materialized: {image_ids}',
+        ),
+    ):
+        bucket = skip_groups.get(key)
+        if not bucket:
+            continue
+        count = int(bucket.get('count') or 0)
+        if count <= 0:
+            continue
+        image_ids = sorted(
+            {str(value) for value in bucket.get('image_ids') or set()},
+            key=lambda value: (len(value), value),
+        )
+        image_ids_text = ', '.join(image_ids) if image_ids else '?'
+        image_count = len(image_ids) if image_ids else 1
+        warnings.append(
+            template.format(
+                local_id=int(local_id),
+                count=count,
+                image_ids=image_ids_text,
+                image_count=image_count,
+            )
+        )
 
     return {
         'warnings': warnings,
@@ -14947,6 +15218,18 @@ def materialize_cloud_media_for_observation(
                 local_image = local_images_by_id.get(remote_desktop_id)
 
         if local_image is not None:
+            if _is_metadata_only_microscope_cloud_image(remote_image):
+                _ensure_local_metadata_only_microscope_anchor(
+                    client,
+                    local_id,
+                    remote_image,
+                    local_image=local_image,
+                )
+                summary['skipped_already_materialized'] += 1
+                _ensure_local_cloud_link(local_image, remote_image)
+                _advance_progress(progress_state, 1)
+                continue
+
             existing_asset_path = _local_image_asset_path(local_image)
             if existing_asset_path is not None:
                 summary['skipped_already_materialized'] += 1
@@ -14986,6 +15269,22 @@ def materialize_cloud_media_for_observation(
             summary['downloaded'] += 1
             _ensure_local_cloud_link(repair_local_image, remote_image)
             local_images_by_cloud_id, local_images_by_id = _load_local_image_lookup(local_id)
+            _advance_progress(progress_state, 1)
+            continue
+
+        if _is_metadata_only_microscope_cloud_image(remote_image):
+            local_image_id = _ensure_local_metadata_only_microscope_anchor(
+                client,
+                local_id,
+                remote_image,
+            )
+            if local_image_id is None:
+                summary['failed'] += 1
+                summary['errors'].append(
+                    f'obs {local_id}: failed to materialize cloud image {cloud_image_id}'
+                )
+            else:
+                summary['skipped_already_materialized'] += 1
             _advance_progress(progress_state, 1)
             continue
 
@@ -15190,7 +15489,13 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
             existing_asset_path = _resolve_existing_local_image_asset_path(
                 str((local_image or {}).get('filepath') or '')
             )
-            if existing_asset_path is None:
+            if (
+                existing_asset_path is None
+                and _is_metadata_only_microscope_cloud_image(remote_image)
+                and _is_local_metadata_only_microscope_anchor(local_image)
+            ):
+                summary['local_images_ready'] += 1
+            elif existing_asset_path is None:
                 summary['local_images_missing_files'] += 1
             else:
                 summary['local_images_ready'] += 1

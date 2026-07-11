@@ -2916,6 +2916,155 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     )
 
 
+def test_import_remote_images_creates_metadata_only_microscope_anchor_without_downloading(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    download_calls: list[str] = []
+    desktop_id_calls: list[tuple[str, int]] = []
+
+    class DummyClient:
+        def download_image_file(self, storage_path, dest_path):
+            download_calls.append(storage_path)
+            raise AssertionError("metadata-only microscope anchors must not be downloaded")
+
+        def set_image_desktop_id(self, cloud_image_id, desktop_id):
+            desktop_id_calls.append((cloud_image_id, desktop_id))
+
+    def fake_add_image(**kwargs):
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO images (
+                    observation_id, filepath, image_type, sort_order,
+                    mount_medium, stain, sample_type, contrast
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    kwargs["observation_id"],
+                    kwargs["filepath"],
+                    kwargs["image_type"],
+                    kwargs.get("sort_order"),
+                    kwargs.get("mount_medium"),
+                    kwargs.get("stain"),
+                    kwargs.get("sample_type"),
+                    kwargs.get("contrast"),
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync._import_remote_images(
+        {"id": "cloud-obs-1", "genus": "Flammulina", "species": "velutipes"},
+        1,
+        "cloud-obs-1",
+        remote_images=[
+            {
+                "id": "cloud-image-1",
+                "storage_path": None,
+                "original_filename": "microscope-anchor.jpg",
+                "image_type": "microscope",
+                "mount_medium": "KOH",
+                "stain": "Melzer",
+                "sample_type": "Fresh",
+                "contrast": "DIC",
+                "sort_order": 0,
+            }
+        ],
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        image_row = conn.execute(
+            """
+            SELECT cloud_id, filepath, image_type, mount_medium, stain, sample_type, contrast, synced_at
+            FROM images
+            ORDER BY id
+            """,
+        ).fetchone()
+    finally:
+        conn.close()
+
+    output = capsys.readouterr().out
+    assert image_row is not None
+    assert image_row[:7] == (
+        "cloud-image-1",
+        "",
+        "microscope",
+        "KOH",
+        "Melzer",
+        "Fresh",
+        "DIC",
+    )
+    assert image_row[7] is not None
+    assert download_calls == []
+    assert desktop_id_calls == [("cloud-image-1", 1)]
+    assert "Missing storage path" not in output
+
+
+def test_import_remote_images_warns_for_broken_non_microscope_image_without_downloading(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    download_calls: list[str] = []
+
+    class DummyClient:
+        def download_image_file(self, storage_path, dest_path):
+            download_calls.append(storage_path)
+            raise AssertionError("broken non-microscope rows must not be downloaded")
+
+        def set_image_desktop_id(self, *args, **kwargs):
+            raise AssertionError("broken non-microscope rows must not be mapped")
+
+    def fake_add_image(**kwargs):
+        raise AssertionError("broken non-microscope rows must not create local images")
+
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync._import_remote_images(
+        {"id": "cloud-obs-1", "genus": "Flammulina", "species": "velutipes"},
+        1,
+        "cloud-obs-1",
+        remote_images=[
+            {
+                "id": "cloud-image-broken",
+                "storage_path": None,
+                "original_filename": "broken.jpg",
+                "image_type": "field",
+                "sort_order": 0,
+            }
+        ],
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+    finally:
+        conn.close()
+
+    output = capsys.readouterr().out
+    assert image_count == 0
+    assert download_calls == []
+    assert "because it is missing storage path" in output
+    assert "Missing storage path" not in output
+
+
 def test_import_remote_images_leaves_working_mime_type_null_for_unknown_extension(monkeypatch, tmp_path):
     temp_root = tmp_path / "sync-unknown-mime"
     temp_root.mkdir()
