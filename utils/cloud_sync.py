@@ -8608,6 +8608,9 @@ class SporelyCloudClient:
     def _observation_images_support_upload_metadata(self) -> bool:
         return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
 
+    def _observation_images_support_storage_exif_safe(self) -> bool:
+        return self._has_column('observation_images', 'storage_exif_safe')
+
     def _observation_images_support_original_storage_path(self) -> bool:
         return self._has_column('observation_images', 'original_storage_path')
 
@@ -9270,6 +9273,8 @@ class SporelyCloudClient:
         if self._observation_images_support_upload_metadata():
             for key in _IMG_UPLOAD_META_COLS:
                 payload[key] = img.get(key)
+        if self._observation_images_support_storage_exif_safe():
+            payload['storage_exif_safe'] = True
 
         existing_id = self._find_cloud_image(img['id'])
         if existing_id:

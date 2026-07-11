@@ -826,6 +826,44 @@ def test_pull_all_reports_deleted_remote_observations_in_sync_summary(monkeypatc
     assert result["sync_summary"]["observations_deleted_remote"] == 1
 
 
+def test_push_image_metadata_marks_reencoded_uploads_as_exif_safe(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    posted_payloads: list[dict] = []
+
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: None)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: True)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: True)
+    monkeypatch.setattr(client, "_set_observation_media_keys", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda path, payload: posted_payloads.append({"path": path, "payload": dict(payload)}) or [{"id": "cloud-image-11"}],
+    )
+
+    cloud_id = client.push_image_metadata(
+        {
+            "id": 11,
+            "filepath": "/tmp/source.jpg",
+            "sort_order": 0,
+            "upload_mode": "full",
+            "source_width": 4000,
+            "source_height": 3000,
+            "stored_width": 4000,
+            "stored_height": 3000,
+            "stored_bytes": 123456,
+        },
+        "cloud-obs-1",
+        "user-123/cloud-obs-1/11.webp",
+    )
+
+    assert cloud_id == "cloud-image-11"
+    assert len(posted_payloads) == 1
+    assert posted_payloads[0]["path"] == "observation_images"
+    assert posted_payloads[0]["payload"]["storage_exif_safe"] is True
+
+
 class _RecordingMeasurementClient(cloud_sync.SporelyCloudClient):
     """Real client with `_get` stubbed to record the batched fetch requests."""
 

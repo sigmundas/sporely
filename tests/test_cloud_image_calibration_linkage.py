@@ -120,6 +120,7 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
 
     cloud_id = client.push_image_metadata(
         {
