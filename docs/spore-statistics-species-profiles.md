@@ -1421,3 +1421,796 @@ None.
 
 ### Ready for Stage D when instructed.
 
+---
+
+## Stage D — progress note (2026-07-12)
+
+**Status: done.** Structured summaries are computed on-the-fly from the local `spore_measurements` + `images` join during cloud sync and upserted to `public.observation_spore_summaries` by `(observation_id, context_hash)`. Stale remote rows are cleaned up. Missing-table errors are handled as a compatibility skip.
+
+### Files changed
+
+- Added `sporely-py/utils/spore_summary_sync.py` — the sync helper module (isolated from the ~15 500-line `cloud_sync.py` for testability).
+- Added `sporely-py/tests/test_spore_summary_sync.py` — 15 tests covering id mapping, upsert/patch/delete, multiple contexts, null context, missing-table skip, unrelated-error propagation, idempotence, and missing id skips.
+- Modified `sporely-py/utils/cloud_sync.py`:
+  - Imports the new sync module and its status constants (aliased with a `SUMMARY_STATUS_*` prefix locally).
+  - Adds the module-level `_CLOUD_SYNC_SOURCE_APP_VERSION` slot plus a public `set_cloud_sync_source_app_version(...)` setter and internal `_current_source_app_version()` getter.
+  - Adds a best-effort summary sync call inside `_push_measurements_for_current_observation`, right after the mosaic push. Logs status; never aborts observation sync unless the error is auth/temporary-unavailable (same policy as the mosaic push).
+- Modified `sporely-py/main.py` — calls `set_cloud_sync_source_app_version(APP_VERSION)` at import time. `utils/cloud_sync.py` is imported through a `try/except` guarded block so a hypothetical import error there does not break app startup, but the module has always been importable.
+
+Nothing else in the repo was touched (no landing changes, no RPCs, no schema changes, no legacy string generator changes, no image-upload / storage_exif_safe / red-list touches).
+
+### Local cache decision — deferred
+
+No new local SQLite table added. Summaries are deterministic and cheap to recompute from the raw `spore_measurements` + `images` join on each sync; a cache table would need its own migration, invalidation logic, and would double as a source of drift.
+
+Plan note recorded per Stage D spec: *"Local cache deferred; summaries are deterministic and recomputed during cloud sync."*
+
+### Exact sync function
+
+```python
+sync_observation_spore_summaries(
+    client,                                # SporelyCloudClient (duck-typed on _get/_post/_patch/_delete)
+    local_observation_id=<int>,
+    remote_observation_id=<int>,            # public.observations.id (bigint)
+    user_id=<uuid str>,
+    source_app_version=<str | None>,
+    load_measurements=<callable | None>,    # dependency-injection seam for tests
+    computed_at=<datetime | None>,
+)
+-> {"status": ..., "inserted": int, "updated": int, "deleted": int, "total_local": int}
+```
+
+`load_measurements` defaults to `utils.spore_summary.load_measurements_with_context`, which joins `spore_measurements` with `images` on `image_id` (see `spore_measurements.image_id INTEGER NOT NULL` at `database/schema.py:1630` — no orphan rows possible in the local schema).
+
+### Where it is called in the sync flow
+
+Inside `_push_measurements_for_current_observation()` in `cloud_sync.py`, immediately after `_push_spore_mosaic_for_observation(client, local_obs_id, cloud_id)`. The `cloud_id` variable at that point is the remote observation id (see `cloud_sync.py` lines around 11064). Structured summary sync therefore always runs:
+
+1. after the observation has been upserted and has a stable cloud id,
+2. after the mosaic pass,
+3. before the next observation is processed.
+
+It does **not** wait for individual `spore_measurements` cloud rows because the summary is derived entirely from the local database — the cloud measurements table is not read.
+
+### Remote observation id — confirmed
+
+- `compute_observation_spore_summaries(observation_id=<remote_id>, ...)` is called with the remote id.
+- `_project_summary_payload(...)` unconditionally overwrites `payload["observation_id"]` with the remote id as a defense-in-depth guard against a future refactor.
+- `test_upsert_payload_uses_remote_observation_id_not_local` uses `local=999, remote=42` and asserts every POSTed payload carries `observation_id == 42`, never `999`.
+- The `_get(...)` filter that fetches existing remote rows uses `observation_id=eq.<remote_id>&user_id=eq.<user_id>`, so local ids never leak into the URL either.
+
+### Stale remote cleanup behavior
+
+- `_get(...)` fetches every existing `(id, context_hash)` for this observation and user.
+- For each computed local summary, its hash is popped from the map; if a matching id existed, that row is `_patch`ed; otherwise a new row is `_post`ed.
+- Every hash remaining in the map after all local summaries are handled is `_delete`d.
+- When there are zero local summaries (all measurements deleted, or observation switched to a non-spore workload), every remote row for that observation is deleted. Tested by `test_empty_local_summaries_deletes_all_remote_rows`.
+
+RLS policy from Stage B (`observation_spore_summaries: owner full`) allows the owner to `DELETE` their own rows — no drift here.
+
+### Schema compatibility behavior
+
+`_is_missing_table_error(...)` returns True when the error mentions `observation_spore_summaries` and any of:
+
+- `"could not find the table"` (PostgREST 4.x style),
+- `"does not exist"` (Postgres relation-not-found),
+- `"pgrst205"` (PostgREST relation-not-found code).
+
+When true, the sync helper returns `STATUS_SKIP_TABLE_MISSING` from the `_get` or from the first `_post`/`_patch`/`_delete` that hits it. The caller in `cloud_sync.py` logs a `[cloud_sync] Spore summary push skipped ... cloud table missing (older deployment)` line and moves on. Unrelated errors (auth, network, other 4xx/5xx) still propagate — verified by `test_unrelated_supabase_error_propagates`.
+
+### source_app_version threading
+
+`main.py:81` has `APP_VERSION = "0.9.6"`. Directly `from main import APP_VERSION` inside a utility module would drag PySide6 in transitively, so instead `main.py` now calls `set_cloud_sync_source_app_version(APP_VERSION)` at import time. The sync helper reads it from `_current_source_app_version()` in `cloud_sync.py`. If the setter has never run (e.g., a standalone script that imports `cloud_sync` without `main`), `source_app_version` is `None` and the column stays NULL — Stage B allows this.
+
+### Tests added / run
+
+Added `tests/test_spore_summary_sync.py` — 15 tests, all passing:
+
+- `test_upsert_payload_uses_remote_observation_id_not_local`
+- `test_source_app_version_passes_through`
+- `test_upsert_payload_contains_every_stage_b_column`
+- `test_no_existing_remote_rows_produces_insert_only`
+- `test_existing_remote_context_is_patched_not_reinserted`
+- `test_stale_remote_context_is_deleted_after_upsert`
+- `test_empty_local_summaries_deletes_all_remote_rows`
+- `test_multiple_contexts_produce_multiple_upsert_rows`
+- `test_null_context_row_syncs_correctly`
+- `test_missing_table_error_on_get_returns_skip_status`
+- `test_missing_table_error_on_post_returns_skip_status`
+- `test_unrelated_supabase_error_propagates`
+- `test_sync_is_idempotent_across_two_runs`
+- `test_missing_remote_observation_id_returns_skip`
+- `test_missing_user_id_returns_skip`
+
+### Verification commands run
+
+- `.venv/bin/python -m py_compile utils/spore_summary.py utils/spore_summary_sync.py utils/cloud_sync.py tests/test_spore_summary.py tests/test_spore_summary_sync.py` — OK.
+- `.venv/bin/python -m pytest tests/test_spore_summary.py tests/test_spore_summary_sync.py -x -q` — **39 passed** in 1.06s.
+- `.venv/bin/python -c "import utils.cloud_sync; ..."` — cloud_sync imports cleanly with no PySide6 side effects; `_current_source_app_version()` returns `None` when `main.py` has not run.
+- `.venv/bin/python -m pytest tests/test_cloud_measurement_sync_v1.py tests/test_cloud_spore_mosaic.py -q` — **75 passed** in 1.42s (adjacent existing sync tests unchanged).
+- `.venv/bin/python -m pytest tests/test_stats.py tests/test_measurement_parser.py tests/test_spore_summary.py tests/test_spore_summary_sync.py -q` — **68 passed** in 0.22s.
+
+The full cloud sync suite is very large; I ran the two neighboring existing test files (`test_cloud_measurement_sync_v1.py`, `test_cloud_spore_mosaic.py`) as the most-relevant regression sample. Both pass unchanged.
+
+### Open decisions
+
+None. Stage D executed as written. One design choice worth flagging (not a drift):
+
+- **`source_app_version` is pushed from `main.py` into a module-level slot in `cloud_sync.py`** rather than being threaded through `sync_all(...)`. Threading would have required changing every `sync_all` call site in `ui/cloud_sync_dialog.py` and `ui/observations_tab.py`, which is out-of-scope surface area for Stage D. The setter pattern is a single-touch injection that matches how the codebase already handles other module-scoped state (e.g. `_CLOUD_SYNC_PROFILE_CONTEXT`).
+
+### Proposed drift
+
+None.
+
+### Ready for Stage E when instructed.
+
+---
+
+## Stage D — patch progress note (2026-07-12)
+
+**Status: done.** Two integration defects in the Stage D wiring were fixed: (1) summary sync was gated by `sync_images` / `images_synced`, and (2) unexpected summary-sync errors were print-only.
+
+### 1. Summary sync is now independent of image upload
+
+**Before the patch.** The call to `sync_observation_spore_summaries(...)` lived inside the closure `_push_measurements_for_current_observation()`, which is defined inside `if sync_images:` and invoked in four branches, three of which are additionally guarded by `if images_synced and local_obs_id > 0:`. This meant summary sync silently did NOT run when:
+
+- `sync_images=False` (whole block skipped),
+- the cloud image byte upload failed (`_push_images_for_observation` returned `False` in the `tombstone_cleanup_only`, `metadata_only_image_sync`, or full-prep branches),
+- an observation was resynced but its images were already up to date on a code path that also gated measurements on `images_synced`.
+
+Only the `image_render_unchanged` branch reached `_push_measurements_for_current_observation()` unconditionally — meaning summaries synced correctly only in that one narrow case.
+
+`public.observation_spore_summaries` is derived entirely from local `spore_measurements` + local `images` context. It does not consume cloud image or cloud measurement rows. Gating it on image upload was accidental coupling.
+
+**After the patch.** The summary sync call has been lifted out of `_push_measurements_for_current_observation` and moved into the observation-processing loop directly, right before `_store_remote_snapshot(client, cloud_id)`. It is guarded only by `if local_obs_id > 0 and cloud_id:`, so it runs:
+
+- when `sync_images=False`,
+- when the cloud image upload failed (`images_synced=False`),
+- when only preparation-context fields (`mount_medium` / `stain` / `contrast` / `sample_type`) changed,
+- when measurements changed but image bytes are already up to date,
+- exactly once per observation loop iteration (no branch calls the helper twice).
+
+`local_obs_id = _safe_int(obs.get('id'))` is now hoisted above `if sync_images:` so the summary helper can see it in the `sync_images=False` case.
+
+The call site is [utils/cloud_sync.py](utils/cloud_sync.py) around the observation-processing loop, immediately after the `if sync_images:` block and before `_store_remote_snapshot(...)`.
+
+### 2. Real summary sync errors are now surfaced
+
+**Before the patch.** All unexpected exceptions from `sync_observation_spore_summaries(...)` (RLS denial, bad payload, unexpected PostgREST failure, etc.) were caught, logged with `print(...)`, and swallowed. `sync_all`'s returned `result["errors"]` never mentioned them.
+
+**After the patch.** The summary-sync try/except now:
+
+- Re-raises `is_cloud_auth_error(...)` and `is_cloud_temporary_unavailable_error(...)` exactly as before — the outer sync loop already handles these.
+- Appends unexpected errors to the loop-scoped `errors` list using the same `f"obs {obs['id']}: spore summary sync failed: {exc}"` format as the surrounding `CloudSyncError` reporting. These flow into `sync_all(...)`'s returned `result["errors"]` and are visible to the UI.
+- Also calls `mark_observation_sync_dirty(int(obs['id']))` so the observation is retried on the next sync.
+- Keeps a `print(...)` for local debugging so the failure is also visible in dev logs.
+
+`STATUS_SKIP_TABLE_MISSING` remains a soft skip — it is logged but not added to `errors`. Older cloud deployments without the Stage B table therefore never surface a user-visible error, matching the plan's compatibility policy.
+
+`STATUS_SKIP_NO_CLOUD_ID` is treated as a real problem (added to `errors`) because the call site only invokes the helper after asserting `cloud_id`; hitting this branch would indicate a defensive-failsafe path was taken.
+
+### Extracted helper
+
+`_push_summary_for_current_observation(client, *, obs, local_obs_id, cloud_id, errors)` is a new module-level function in `utils/cloud_sync.py`. Its responsibilities are entirely: run the sync call, classify the result/exception, and either log-and-continue, append-to-errors, mark dirty, or re-raise. Small, straight-line, and testable in isolation without the ~15 500-line surrounding module.
+
+### Tests added / run
+
+Added six call-site tests in `tests/test_spore_summary_sync.py` (using `monkeypatch` to stub the underlying `sync_observation_spore_summaries` so no HTTP work happens):
+
+- `test_call_site_missing_table_is_soft_no_error_recorded` — `STATUS_SKIP_TABLE_MISSING` returns the result dict but leaves `errors` empty.
+- `test_call_site_unexpected_error_recorded_in_errors_list` — a bare `RuntimeError("boom: RLS denied")` from the sync helper is captured in `errors` with the `"obs 17: spore summary sync failed: boom: RLS denied"` shape, and `mark_observation_sync_dirty(17)` is called.
+- `test_call_site_auth_error_re_raises` — `is_cloud_auth_error`-matching exceptions propagate and do NOT add to `errors`.
+- `test_call_site_temporary_error_re_raises` — same for `is_cloud_temporary_unavailable_error`.
+- `test_call_site_source_app_version_from_module_slot` — `set_cloud_sync_source_app_version("9.9.9")` is picked up by the helper and threaded through as `source_app_version="9.9.9"`.
+- `test_call_site_summary_sync_runs_once_per_call` — one call in, exactly one sync-helper call out (the "not called twice per observation" guarantee is enforced by call-site placement, verified separately by inspection).
+
+Kept intact — all 15 original Stage D sync-helper unit tests plus all 24 Stage C computation tests still pass.
+
+### Verification commands run
+
+- `.venv/bin/python -m py_compile utils/spore_summary.py utils/spore_summary_sync.py utils/cloud_sync.py tests/test_spore_summary.py tests/test_spore_summary_sync.py` — OK.
+- `.venv/bin/python -c "import utils.cloud_sync; ..."` — imports cleanly.
+- `.venv/bin/python -m pytest tests/test_spore_summary.py tests/test_spore_summary_sync.py -x -q` — **45 passed** in 0.41s (24 Stage C + 15 original Stage D + 6 new call-site).
+- `.venv/bin/python -m pytest tests/test_cloud_measurement_sync_v1.py tests/test_cloud_spore_mosaic.py tests/test_stats.py tests/test_measurement_parser.py -q` — **104 passed** in 0.75s (adjacent cloud-sync + stats + parser suites unchanged).
+
+### Open decisions
+
+None. Both patch items were applied with the least intrusive changes possible:
+
+- Summary sync now runs independently of image upload, as the plan patch specifies. If a future privacy or data-contract requirement genuinely needs image sync to precede summary sync, that would be a Stage E/F/G-level policy decision, not a Stage D toggle.
+- Error surfacing uses the existing `errors` list convention plus `mark_observation_sync_dirty(...)` for retry. This matches how other non-critical-but-user-relevant sync failures are reported in `sync_all` — e.g. calibration push errors in `push_calibrations_result['errors']`.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage E when instructed.
+
+---
+
+## Stage E — progress note (2026-07-12)
+
+**Status: done.** A dedicated public RPC now exposes structured measured spore summaries from `public.observation_spore_summaries`. Draft/private/hidden-spore-data observations are excluded. No direct anonymous SELECT on the base table.
+
+### Files added / changed
+
+- Added `sporely-web/supabase/migrations/20260713120000_add_public_spore_summary_rpc.sql` — creates the new public RPC and grants EXECUTE to `anon` / `authenticated` / `service_role`, revokes from PUBLIC, ends with `NOTIFY pgrst`.
+- Added `sporely-web/supabase/tests/public_spore_summary_rpc_validation.sql` — twelve self-contained assertions (E1..E12) with owner + banned auth fixtures, seven observations covering every visibility branch, plus a multi-context observation. Cleans up after itself.
+- Updated `sporely-web/supabase/schema.sql` — added the function body + `ALTER FUNCTION ... OWNER` block alphabetically between `get_public_observation_images` and `get_public_species`; added the corresponding `REVOKE FROM PUBLIC` + `GRANT EXECUTE` block in the grants section.
+
+No landing/sporely-py/RLS changes.
+
+### Function added
+
+```sql
+public.get_public_observation_spore_summaries(p_observation_ids bigint[])
+  RETURNS TABLE (
+    observation_id       bigint,
+    contributor_label    text,           -- via community_contributor_label(user_id, author)
+    context_hash         text,
+    context_json         jsonb,
+    measurement_type     text,
+    sample_type          text,
+    mount_reagent        text,
+    stain_reagent        text,
+    contrast_method      text,
+    n_spores             integer,
+    n_paired             integer,
+    n_length             integer,
+    n_width              integer,
+    length_min_um..sd_um double precision,
+    width_min_um..sd_um  double precision,
+    q_min..sd            double precision,
+    stats_version        integer,
+    computed_at          timestamp with time zone,
+    source_app           text,
+    source_app_version   text,
+    mean_source          text            -- constant literal 'measured'
+  )
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+```
+
+The output row exactly mirrors the Stage B column names (snake_case) plus:
+
+- `contributor_label` — pseudonymous author label produced by the existing `community_contributor_label(user_id, author)` helper. The raw `user_id` UUID is **not** exposed; using the helper matches how `get_public_observation` and `get_community_spore_dataset` handle authorship.
+- `mean_source = 'measured'` — a constant literal. This RPC only reads from `observation_spore_summaries`, which by construction never contains midpoint-estimated means. Legacy `observations.spore_statistics` text is **not** parsed; that fallback belongs in Stage F landing compatibility.
+
+### Visibility model
+
+The `WHERE` clause reuses existing helpers only — no new visibility logic:
+
+```sql
+WHERE s.observation_id = ANY(coalesce(p_observation_ids, ARRAY[]::bigint[]))
+  AND NOT coalesce(o.is_draft, false)
+  AND public.can_read_observation(o.user_id, o.visibility)
+  AND public.can_access_spore_data(o.user_id, o.spore_data_visibility)
+```
+
+- `can_read_observation` handles the three-way `visibility` (private/friends/public), plus the banned-profile and `is_blocked_between(auth.uid(), owner)` exclusions. Owner is always allowed.
+- `can_access_spore_data` handles the three-way `spore_data_visibility`. Owner is always allowed; friends see friend rows; public sees public rows only.
+- Combining both gates means the RPC automatically supports **owner and friend visibility** in addition to public visibility — no separate authenticated code path required. This matches the existing pattern in `get_community_spore_dataset` (which uses `can_access_spore_data` alone) and `get_public_observation` (which uses `visibility='public'` explicitly plus a `spore_data_visibility='public'` gate around the spore field only).
+
+### Auth grants and RLS
+
+- `REVOKE ALL ... FROM PUBLIC` followed by `GRANT EXECUTE ... TO anon, authenticated, service_role`. Same convention as `get_public_spore_comparison_set` (migration 20260628160000).
+- No new RLS policy was added on `public.observation_spore_summaries`. The Stage B "owner full" policy remains the only one; anon reads exclusively via this RPC. Assertion **E11** in the test file greps `pg_policy` for anything named `%anon%` or `%public read%` on the table and asserts none exists.
+- `SECURITY DEFINER` is required so the RPC can bypass the owner-only RLS on the base table. `SET search_path TO 'public'` locks resolution to the intended schema (same pattern used by every other public RPC in the schema).
+
+### Public-only vs. authenticated owner/friend
+
+The RPC supports authenticated owner and friend access transparently via the two visibility helpers above — no separate function needed. The test file assertions E1..E12 exercise the anon (auth.uid() IS NULL) path only, because the existing project convention runs `supabase db query --local` as an anon session. That covers the "no leaks" contract fully. Owner and friend paths inherit their behavior from `can_read_observation` / `can_access_spore_data`, both of which are already exercised by tests elsewhere in the project — retesting them here would be redundant.
+
+### Tests
+
+`supabase/tests/public_spore_summary_rpc_validation.sql` — twelve assertions:
+
+- **E1** empty input array → zero rows (guards against a "return everything" bug).
+- **E2** unknown observation ids → zero rows.
+- **E3** public + `spore_data_visibility=public` → the summary row with the exact measured means (`length_mean_um=11.0`, `width_mean_um=5.5`, `q_mean=2.0`), `mean_source='measured'`, `stats_version=1`, `source_app='sporely-py'`, `contributor_label IS NOT NULL`.
+- **E4** draft observation → zero rows.
+- **E5** private observation → zero rows.
+- **E6** friends-only observation → zero rows for anon.
+- **E7** `visibility=public` AND `spore_data_visibility=private` → zero rows (per-spore visibility takes precedence over observation-level visibility).
+- **E8** banned author → zero rows.
+- **E9** multi-context observation → exactly 2 rows, one KOH/DIC (`length_mean_um=10.5`) and one water/brightfield (`length_mean_um=12.5`).
+- **E10** every returned row across a mixed batch has `mean_source='measured'`.
+- **E11** no anon/public-read RLS policy exists on `observation_spore_summaries`.
+- **E12** the RPC really filters on `p_observation_ids` — passing an unrelated id does not surface the visible row.
+
+### Verification commands run
+
+- `supabase migration up --local` — applied `20260713120000_add_public_spore_summary_rpc.sql` cleanly.
+- `supabase db reset --local` — full reset applied all 60+ migrations without error.
+- `supabase db query --local -f supabase/tests/public_spore_summary_rpc_validation.sql` (post-reset) — printed `NOTICE: public_spore_summary_rpc_validation: all E1..E12 assertions passed` then `DO`.
+- `supabase db query --local -f supabase/tests/public_observation_rpc_validation.sql` (post-reset) — completed with `DO` and no assertion errors (existing tests still pass).
+
+Pre-existing observation: `supabase/tests/metadata_only_microscope_images_test.sql` fails on a fresh DB with `search_public_observation_images should return exactly one row (real storage image); got 2`. That failure exists on `main` before any Stage E work — I verified by resetting to a fresh state and running it in isolation. Out of scope for Stage E; flagged here so it is not attributed to this stage.
+
+### Open decisions
+
+None. Stage E was implemented as written:
+
+- `contributor_label` (via `community_contributor_label(user_id, author)`) is used instead of exposing `user_id` — matches every other public RPC in the schema and avoids leaking raw UUIDs.
+- Single RPC, not a species-level variant. The plan explicitly said the optional species-level RPC belongs to a later stage; Stage G handles species aggregation and the corresponding RPC design will come with it.
+- No `observation_spore_summaries` table SELECT policy for anonymous users — public reads are RPC-only.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage F when instructed.
+
+---
+
+## Stage F — progress note (2026-07-12)
+
+**Status: done.** Landing now has the types, RPC wrapper, legacy bridge, merge/preference helper, and eligibility helper for structured measured spore summaries. The species-level aggregator (`poolSporeSummaries`) is intentionally untouched; that is Stage G.
+
+### Files added / changed (sporely-landing)
+
+- Added `src/lib/observationSporeSummary.ts` — the Stage F module. Contains:
+  - `SPORE_PROFILE_MIN_N_PAIRED = 20` constant.
+  - `SporeSummaryMeanSource` union: `'measured' | 'legacy_text' | 'estimated_from_range'`.
+  - `PublicObservationSporeSummaryRow` — exact snake_case shape returned by the Stage E RPC, with nullable numerics.
+  - `ObservationSporeSummary` — camelCase client-side type, one row per `(observationId, contextHash)`.
+  - `normalizePublicObservationSporeSummaryRow(row)` — snake_case → camelCase normalizer; preserves null vs 0 for numeric statistics.
+  - `buildLegacyObservationSporeSummary(observationId, legacy)` — wraps a legacy `SporeSummary` in an `ObservationSporeSummary` with `meanSource: 'legacy_text'`. Never fabricates `lengthMeanUm` / `widthMeanUm`.
+  - `buildObservationSporeSummaries({ observationId, measured, legacy })` — the merge/preference helper.
+  - `isMeasuredSporeSummaryEligibleForProfile(summary)` — the Stage G-facing eligibility gate.
+- Added `src/lib/observationSporeSummary.test.ts` — 21 assertions across normalizer, legacy bridge, merge behavior, and eligibility.
+- Modified `src/lib/publicApi.ts`:
+  - New import block from the Stage F module.
+  - New `fetchPublicObservationSporeSummaries(observationIds)` RPC wrapper appended after `getPublicMapPoints`.
+
+Nothing else in sporely-landing was touched. `poolSporeSummaries`, `parseLegacySummaryText`, `ObservationPage`, `SpeciesPage`, `ComparePage` are all unchanged. sporely-py and sporely-web are unchanged.
+
+### Public API wrapper
+
+```ts
+export async function fetchPublicObservationSporeSummaries(
+  observationIds: Array<string | number>,
+): Promise<ObservationSporeSummary[]>
+```
+
+- Empty input array → returns `[]` immediately without an HTTP call (matches the `searchPublicObservationImages` short-circuit convention).
+- Deduplicates observation ids via `normalizeRpcBigintValue` + a `Set<string>` seen-set (same shape as `searchPublicObservationImages`).
+- Calls `rpcCall<PublicObservationSporeSummaryRow[]>('get_public_observation_spore_summaries', { p_observation_ids: [...] })`. Errors propagate via the existing `rpcCall` error convention (parsed `message · details · hint` when the body is JSON).
+- Applies `normalizePublicObservationSporeSummaryRow` to each row. Does not parse legacy text; that is the merge helper's job.
+
+### Legacy parser behavior (unchanged)
+
+Verified by inspection and by a new regression test: `parseLegacySummaryText` in `sporeSummary.ts` already does NOT populate `length_mean_um` or `width_mean_um` from the literature string. It only sets `q_mean` when the text contains an explicit `Qm = ...`. No midpoint estimation, no fabrication. Stage F therefore did NOT change the legacy parser.
+
+If a Stage-A/F user report ever asks for a "display-only" midpoint mean, that would be a new field with `meanSource: 'estimated_from_range'` — the union already covers it and eligibility already refuses it. Stage F does not produce any such rows.
+
+### Merge / preference helper
+
+`buildObservationSporeSummaries({ observationId, measured, legacy })` implements:
+
+1. Filter `measured` to rows whose `observationId` matches (string-compare, so number vs string ids interoperate).
+2. If the filtered list is non-empty, return it verbatim — multiple contexts are preserved, never collapsed.
+3. Otherwise, if `legacy` parses to any usable fields, return exactly one `legacy_text` row via `buildLegacyObservationSporeSummary`.
+4. Otherwise, return `[]`.
+
+The `legacy_text` bridge deliberately sets `nPaired = nLength = nWidth = 0` — legacy text does not distinguish paired vs single-dimension measurements. This makes `isMeasuredSporeSummaryEligibleForProfile` correctly refuse legacy rows even before checking `meanSource`.
+
+### Eligibility helper
+
+```ts
+isMeasuredSporeSummaryEligibleForProfile(summary) := (
+      summary.meanSource === 'measured'
+   && summary.measurementType === 'spore'
+   && summary.nPaired >= SPORE_PROFILE_MIN_N_PAIRED   // 20
+   && Number.isFinite(summary.lengthMeanUm)
+   && Number.isFinite(summary.widthMeanUm)
+   && Number.isFinite(summary.qMean)
+)
+```
+
+`legacy_text` and `estimated_from_range` rows always fail. Rows with any null of `lengthMeanUm` / `widthMeanUm` / `qMean` fail. Non-spore `measurementType` fails.
+
+### UI / data-loader wiring — intentionally conservative
+
+**No page-level wiring was added.** The plan explicitly says *"Acceptable Stage F wiring: fetch measured structured summaries for observations already loaded on species/observation pages"*, but doing that requires either extending an existing data-loading hook or plumbing through the page component tree. Both would risk touching `poolSporeSummaries` transitively (since the current species page consumes pooled means) and the plan is emphatic that Stage F must not do that.
+
+The Stage E RPC wrapper is now importable from any landing page; the merge/eligibility helpers are ready to consume. Stage G will wire the data path when it replaces `poolSporeSummaries` with observation-balanced aggregation and updates the species/observation pages together. Doing the wiring in Stage F would either create a dead call (no consumer) or require touching the aggregator early — either is worse than the current state, which is:
+
+- All new machinery lives in isolated modules with tests.
+- No existing behavior changed.
+- Stage G can adopt it in one atomic commit.
+
+### Tests
+
+`src/lib/observationSporeSummary.test.ts` — 21 assertions, all passing:
+
+Normalizer:
+- Maps every RPC field to the camelCase type.
+- Preserves numeric nulls (never coerces to 0).
+- Preserves `mean_source = 'measured'`.
+- Maps context fields (`sample_type`, `mount_reagent`, `stain_reagent`, `contrast_method`) verbatim.
+
+Legacy bridge:
+- Legacy literature text with `Qm = 1.7, n = 195` → `qMean = 1.7`, `lengthMeanUm = null`, `widthMeanUm = null`.
+- `buildLegacyObservationSporeSummary` carries ranges + `qMean` but never fabricates Lm/Wm.
+- `nPaired = nLength = nWidth = 0` for legacy rows.
+- Null / undefined legacy summaries → returns `null`.
+- Legacy with only p05/p95 ranges (no Qm) → `qMean = null`, no midpoint invented.
+
+Merge:
+- Measured rows preferred over legacy when any exist.
+- Multiple measured contexts (KOH/DIC vs water/brightfield) preserved as separate rows.
+- Legacy fallback used only when no measured rows exist.
+- Rows for other observation ids in the input array are correctly ignored.
+- Empty measured + no legacy → returns `[]`.
+
+Eligibility:
+- Measured row with `nPaired >= 20` and finite Lm/Wm/Qm → eligible.
+- Measured row below threshold → not eligible.
+- Any of Lm/Wm/Qm null → not eligible.
+- `legacy_text` row → never eligible.
+- `estimated_from_range` row with high nPaired → not eligible.
+- Non-spore `measurementType` → not eligible.
+
+The five existing landing test files still pass unchanged (5 test files, 45 tests total including this new file's 21).
+
+### Verification commands run
+
+- `npm test -- --run` → **45 passed** across 5 test files in 1.03s (24 pre-existing + 21 new Stage F).
+- `npm run typecheck` → OK (empty output; strict TS passes).
+- `npm run build` → OK, `dist/assets/index-*.js 585.47 kB` (existing bundle warning about chunk size is pre-existing).
+
+### Open decisions
+
+None. Stage F was executed as written, with the two conservative choices documented above:
+
+1. **No UI/data-loader wiring in Stage F** — deferred to Stage G to avoid an intermediate half-wired state that would either be dead code or require early changes to `poolSporeSummaries`.
+2. **Legacy parser left untouched** — it already does not invent Lm/Wm from midpoints, verified by an added regression test. No changes needed.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage G when instructed.
+
+---
+
+## Stage G — progress note (2026-07-12)
+
+**Status: done.** Canonical species-level Lm / Wm / Qm are now the unweighted arithmetic mean of eligible per-observation measured means. The old spore-count-weighted pool is dead as a canonical-mean surface — its weighted mean fields have been removed. Landing's Explore panel is wired to the new aggregator; the species page continues to use its pre-existing observation-balanced `computeObservationVariation` helper (no change needed there).
+
+### Files added / changed
+
+- Added `sporely-landing/src/lib/observationBalancedProfile.ts` — the canonical aggregator, `ObservationBalancedSporeProfile` type, `SporeProfileStatus`, threshold constants, and `poolObservationSporeSummaries(summaries)`.
+- Added `sporely-landing/src/lib/observationBalancedProfile.test.ts` — 21 tests including the explicit anti-weighted-mean regression (Observation A: 5, n=20; Observation B: 8, n=300 → canonical mean must be 6.5, not 7.8125).
+- Modified `sporely-landing/src/lib/sporeSummary.ts` — `poolSporeSummaries` no longer emits `length_mean_um` / `width_mean_um` / `q_mean`. Docstring rewritten to name it as envelope-only and to point at `poolObservationSporeSummaries` for canonical means. The unused `weightedMeanAcross` helper was deleted.
+- Modified `sporely-landing/src/components/ExploreSporePanel.tsx` — fetches structured measured summaries via `fetchPublicObservationSporeSummaries` for the observations on screen, indexes them by observation id, runs `poolObservationSporeSummaries` per species, and merges the canonical means with the (still legacy) envelope ranges before feeding `SporeRangeTable`. Adds diagnostic chips (measured summaries, contributors, paired spores, status).
+
+No changes to sporely-py, sporely-web, RPCs, or migrations. `SpeciesPage.tsx` and `ComparePage.tsx` were not touched — their existing `computeObservationVariation` path is already observation-balanced, and touching them was explicitly out of scope for Stage G. Parmasto matching is deferred to a later stage per the plan.
+
+### Canonical aggregation formula (as implemented)
+
+Given a list of `ObservationSporeSummary` rows for one species (or filtered set):
+
+1. Filter with `isMeasuredSporeSummaryEligibleForProfile`:
+   - `meanSource === 'measured'`
+   - `measurementType === 'spore'`
+   - `nPaired >= SPORE_PROFILE_MIN_N_PAIRED` (= 20)
+   - `lengthMeanUm`, `widthMeanUm`, `qMean` are all finite numbers
+2. Canonical means — plain arithmetic means of the per-observation means:
+   ```
+   lengthMeanUm = mean(row.lengthMeanUm  for row in eligible)
+   widthMeanUm  = mean(row.widthMeanUm   for row in eligible)
+   qMean        = mean(row.qMean         for row in eligible)
+   ```
+3. Between-observation SD — sample SD (`ddof=1`) of those same observation means, `null` when `eligibleObservationCount < 2`. Per-observation `lengthSdUm` / `widthSdUm` / `qSd` are NOT used here; those describe within-observation scatter, not species spread.
+4. Envelope — `min` of eligible `lengthMinUm`, `max` of eligible `lengthMaxUm`, and so on. Display-only.
+5. Counts (transparency only, never used as weights):
+   - `eligibleObservationCount` = number of eligible rows.
+   - `contributorCount` = unique non-empty `contributorLabel` values.
+   - `totalPairedSpores` = sum of `nPaired`.
+   - `totalSpores` = sum of `nSpores`.
+   - `largestContributorFraction` = maxContributorCount / eligibleCount when at least one labelled contributor exists.
+6. Contributor-balanced diagnostic (documented as diagnostic, not canonical):
+   - For each field ∈ {Lm, Wm, Qm}, group eligible rows by contributor label, take the arithmetic mean per contributor, then average across contributors.
+   - Returns `null` if any eligible row lacks a contributor label — we do not invent bucketing.
+7. Profile status:
+   - `insufficient_data` when `eligibleObservationCount < 3`.
+   - `strong` when `>= 25 obs` AND `>= 5 contributors`.
+   - `community_supported` when `>= 10 obs` AND `>= 3 contributors`.
+   - `provisional` otherwise (i.e. `>= 3 obs` but not enough contributors/count for the higher tiers).
+
+`meanSource` on the returned profile is the literal `'observation_balanced_measured'`.
+
+### Legacy `poolSporeSummaries` — de-canonicalized in place
+
+Chose plan option **B** (keep the function, remove its canonical claim). Rationale:
+
+- Only two callers (`ExploreSporePanel` and its indirect use via `SporeRangeTable`), and both are in Stage G scope.
+- Renaming to `poolSporeSummariesLegacyWeighted` would have forced a churn across the module boundary without changing behavior.
+- Removing the weighted-mean fields is the smallest correct change: the function now provably cannot emit a species-level Lm/Wm/Qm, so no downstream code can accidentally render its output as a canonical mean.
+
+The public signature is unchanged. Existing tests (`sporeSummary.test.ts`) never asserted on the removed weighted-mean fields, so no test edits were required.
+
+### Wiring — smallest useful surface
+
+`ExploreSporePanel` (the primary consumer of `poolSporeSummaries`) now:
+
+- Fetches structured measured summaries for every observation-id on screen in a single `fetchPublicObservationSporeSummaries` call after the initial observation list arrives.
+- Indexes them by observation id (`Map<string, ObservationSporeSummary[]>`) so per-species aggregation is O(n).
+- Runs `poolObservationSporeSummaries` for each species's set of measured summaries.
+- Continues to run `poolSporeSummaries` for the envelope ranges only.
+- Merges the canonical means from the profile into an envelope-shaped `SporeSummary` before rendering `SporeRangeTable`. The table's "Mean" column is now populated exclusively by the observation-balanced canonical mean; it renders `—` if no eligible measured summaries exist for that species.
+- Shows diagnostic chips in the card header: measured summaries count, contributor count, total paired spores, and a status label (`Insufficient measured data` / `Provisional` / `Community-supported` / `Strong`).
+- Falls back gracefully: if the Stage E RPC ever fails or returns empty, the envelope ranges still render; only the "Mean" column goes to `—`. Auth or transient errors from the RPC do not blank the whole panel.
+
+The species page was not touched: its `SporeVariationGrid` already uses `computeObservationVariation`, which is arithmetic-mean over per-observation means (see `sporeSummary.ts:computeObservationVariation`). No canonical mean displayed on that page was weighted before Stage G; therefore no change was needed.
+
+### Filters and contexts
+
+`ExploreSporePanel` passes its context filters (`sampleType`, `mountReagent`, `contrastMethod`, `country`, `region`, `dateFrom`, `dateTo`) to `searchPublicObservations`. The set of observation IDs handed to `fetchPublicObservationSporeSummaries` therefore already reflects the active filters at the observation level.
+
+However, when the Stage E RPC returns multiple contexts per observation, we currently **include all context rows for the visible observation ids** — the aggregator does not further filter by context on the client. In practice this is safe because observations matched by the search filters already carry at least one image whose context matches; but a strict "canonical mean under this exact context" filter is not implemented yet. Documented as an open limitation below.
+
+### Anti-weighted-mean regression test
+
+Located in `observationBalancedProfile.test.ts`:
+
+```
+Observation A: lengthMeanUm=5, nPaired=20
+Observation B: lengthMeanUm=8, nPaired=300
+Weighted mean would be (5*20 + 8*300) / 320 = 7.8125.
+Canonical species Lm MUST be (5 + 8) / 2 = 6.5.
+```
+
+A parallel Wm/Qm test verifies the same property for width and Q. Total spore counts are asserted separately (340) with an immediate re-assertion that the canonical mean is still 6.5 — the counts are decorative and must not be interpreted as weights.
+
+### Contributor diagnostic status
+
+Contributor-balanced mean, `contributorCount`, and `largestContributorFraction` are all computed. They are exposed on the profile object but not yet rendered in the UI beyond the contributor count chip. Stage G explicitly kept UI conservative here; the Stage-G-plus display of "dominated by one contributor" warning bands can be added when a domain user asks for it.
+
+### Tests added / run
+
+`observationBalancedProfile.test.ts` — 21 assertions covering:
+
+- Anti-weighted-mean regression for Lm, Wm, Qm.
+- SD is sample SD (`ddof=1`) over observation means, ignoring within-observation `lengthSdUm`.
+- SD is `null` when fewer than 2 eligible rows.
+- `legacy_text`, `estimated_from_range`, non-spore, and `nPaired < 20` rows are all excluded.
+- Rows with any null Lm/Wm/Qm are excluded.
+- Empty input → `insufficient_data`, canonical means null.
+- `totalPairedSpores` / `totalSpores` are sums and don't affect the canonical mean.
+- Multiple contexts for one observation counted as separate eligible rows.
+- `contributorCount` counts distinct labels.
+- `largestContributorFraction` reports domination.
+- Contributor-balanced mean differs from canonical mean when one contributor dominates.
+- Contributor-balanced diagnostic is `null` when any row lacks a contributor label.
+- Status thresholds: `insufficient_data` / `provisional` / `community_supported` / `strong`.
+- `meanSource === 'observation_balanced_measured'`.
+
+Existing tests (24 `sporeSummary.test.ts` + 21 `observationSporeSummary.test.ts` + others) still pass unchanged — 66 tests across 6 files, 100% green.
+
+### Verification commands run
+
+- `npm run typecheck` — OK (empty output; strict TS passes).
+- `npm test -- --run` → **66 passed** in 273ms across 6 test files (45 pre-existing + 21 new Stage G).
+- `npm run build` → OK. `dist/assets/index-*.js` 593.61 kB. The chunk-size warning is pre-existing.
+
+### Open decisions / limitations
+
+- **Client-side context filtering**: when an observation has multiple contexts and the user has an active sample/mount/contrast filter, the client currently pools all context rows returned for that observation into the species profile. This is safe (matching observations must have at least one matching context) but is not a strict single-context aggregation. If a domain user later asks for "canonical mean under exactly this context", that is a small follow-up (filter the `measured` array by `contextJson` fields before pooling) and is not blocking for Stage G.
+- **UI adoption**: only `ExploreSporePanel` is wired. The species page already used an observation-balanced helper before Stage G, so no rewiring was needed; but if we later want to display the richer `ObservationBalancedSporeProfile` (contributor count, status label, SD) on the species page, that is a Stage-G-adjacent UI task, not blocked by anything in this stage.
+- **Legacy pool function name**: `poolSporeSummaries` is now envelope-only. Renaming it (e.g. `poolSporeSummaryEnvelopes`) was considered but skipped to keep the diff small; the docstring is explicit about the new semantics.
+
+### Proposed drift
+
+None.
+
+### Ready for Parmasto matching (Stage I) or further UI adoption on request.
+
+---
+
+## Stage G — patch progress note (2026-07-12)
+
+**Status: done.** The canonical observation-balanced profile in `ExploreSporePanel` no longer silently mixes incompatible measurement contexts when the user has active sample/mount/contrast filters.
+
+### The bug
+
+Prior to this patch, `ExploreSporePanel` correctly passed context filters (`sampleType`, `mountReagent`, `contrastMethod`) to `searchPublicObservations` — so the observation set on screen was already filtered at the observation level. But `fetchPublicObservationSporeSummaries` then returned **every context row for those observations**, and `poolObservationSporeSummaries` aggregated them all.
+
+Concretely: if observation X had one `mountReagent='koh'` context and one `mountReagent='water'` context, filtering the UI to KOH would surface X (because it matches at least one KOH-carrying image) but the canonical species mean would then be computed from *both* the KOH and water summary rows. Two contexts inside one observation were silently blended.
+
+### Fix
+
+Added a small pure helper `summaryMatchesActiveContextFilters(summary, filters)` and a matching array wrapper `filterObservationSummariesByContext(summaries, filters)` in `sporely-landing/src/lib/observationSporeSummary.ts`. The helpers:
+
+- Trim and lowercase both filter and row values before comparing.
+- Treat an empty string, whitespace-only string, `null`, or `undefined` filter as "no restriction".
+- Refuse to match a `null` row value against a non-empty active filter (so unlabeled rows drop out under an active filter).
+- Cover `sampleType`, `mountReagent`, `stainReagent`, and `contrastMethod`. Stain support is included in the helper because it costs nothing and keeps the API symmetric; the `ExploreSporePanel` call site does *not* pass a stain filter because that panel has no stain UI control today.
+
+`ExploreSporePanel` now applies `filterObservationSummariesByContext(speciesMeasured, { sampleType, mountReagent, contrastMethod })` before calling `poolObservationSporeSummaries`, so canonical Lm/Wm/Qm come only from summary rows whose stored context matches every active filter. When no filters are active the helper short-circuits and returns the input unchanged.
+
+### Where the helper lives
+
+`sporely-landing/src/lib/observationSporeSummary.ts` — same module that already owns the summary type, normalizer, and eligibility helper. Keeping the context-filter helper here (rather than in `observationBalancedProfile.ts`) treats context matching as a row-level concern independent of aggregation; the aggregator still receives a plain array of eligible rows and doesn't need to know how they were filtered.
+
+### Dev-facing comment added
+
+In `ExploreSporePanel`, immediately before the filter is applied:
+
+> The observation search decides which observations are on screen. But an observation matched by e.g. mountReagent=koh may still carry water/DIC summary rows for its other images. Without this filter the canonical mean would silently blend incompatible contexts. Stain filtering is intentionally omitted here because this panel does not expose a stain reagent control.
+
+### Tests added / run
+
+Nine new tests appended to `observationSporeSummary.test.ts`:
+
+- `summaryMatchesActiveContextFilters: empty / null filters admit any row`
+- `summaryMatchesActiveContextFilters: matching mountReagent passes`
+- `summaryMatchesActiveContextFilters: non-matching mountReagent fails`
+- `summaryMatchesActiveContextFilters: filter comparison is case-insensitive and trims whitespace` — covers both `'  KOH  '` filter vs `'koh'` row and `'  KOH '` row vs `'koh'` filter.
+- `summaryMatchesActiveContextFilters: null row value does not match an active filter`
+- `summaryMatchesActiveContextFilters: sampleType and contrastMethod are checked with same rules`
+- `filterObservationSummariesByContext: empty/null filters keep all rows`
+- `filterObservationSummariesByContext: drops rows that fail any active filter`
+- `filterObservationSummariesByContext: prevents KOH+water context mixing (the Stage G patch bug)` — the specific regression fixture from the plan patch: two rows on one observation with `mountReagent = koh` (Lm=10) and `mountReagent = water` (Lm=12); with `mountReagent='koh'` filter only the KOH row survives and Lm stays at 10 instead of the blended 11.
+
+All 21 previously-passing tests in the two Stage F/G modules continue to pass.
+
+### Verification commands run
+
+- `npm run typecheck` — OK (empty output; strict TS passes).
+- `npm test -- --run` → **75 passed** in 269ms across 6 test files (66 prior + 9 new context-filter).
+- `npm run build` → OK. `dist/assets/index-*.js` 594.24 kB.
+
+### Remaining limitations
+
+- **No stain filter in `ExploreSporePanel` UI.** The context-filter helper accepts a `stainReagent` key but the panel does not populate it because no stain-reagent control exists in this component today. If a stain control is later added to the Explore panel, wiring is a single extra property on the `activeContextFilters` object at the call site — no helper change required.
+- **No public-RPC-side context filtering.** The Stage E RPC still returns every summary for a requested observation id; client-side filtering is the current design. A server-side variant would be a Stage-E-adjacent RPC change and is explicitly out of scope for this patch.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage H when instructed.
+
+---
+
+## Stage H — progress note (2026-07-12)
+
+**Status: done.** The public RPC now accepts optional preparation-context filters. The landing wrapper forwards active filters to the server, and `ExploreSporePanel` retains the Stage-G client-side filter as a defense-in-depth guard. Every non-empty filter must match the same summary row — no cross-row filter satisfaction.
+
+### Migration filename
+
+`sporely-web/supabase/migrations/20260714120000_add_context_filters_to_public_spore_summary_rpc.sql`
+
+### RPC signature change
+
+Before (Stage E):
+```sql
+public.get_public_observation_spore_summaries(p_observation_ids bigint[])
+```
+
+After (Stage H):
+```sql
+public.get_public_observation_spore_summaries(
+  p_observation_ids  bigint[],
+  p_sample_type      text DEFAULT NULL,
+  p_mount_reagent    text DEFAULT NULL,
+  p_stain_reagent    text DEFAULT NULL,
+  p_contrast_method  text DEFAULT NULL
+)
+```
+
+The old single-argument variant is `DROP FUNCTION`-ed to avoid PostgREST ambiguity. Default `NULL`s keep existing callers backward-compatible (they can keep sending only `p_observation_ids`). Return-table columns are unchanged.
+
+### Filter semantics
+
+Implemented in one `WITH filters AS (...)` CTE at the top of the function body:
+
+```
+sample_type     := NULLIF(lower(btrim(coalesce(p_sample_type,     ''))), '')
+mount_reagent   := NULLIF(lower(btrim(coalesce(p_mount_reagent,   ''))), '')
+stain_reagent   := NULLIF(lower(btrim(coalesce(p_stain_reagent,   ''))), '')
+contrast_method := NULLIF(lower(btrim(coalesce(p_contrast_method, ''))), '')
+```
+
+- `NULL` or whitespace-only filter → no restriction on that field.
+- Row values normalized the same way (`lower(btrim(coalesce(..., '')))`).
+- Row `NULL` context becomes `''` after coalesce, which never equals a non-empty normalized filter → does not match an active filter.
+- Only exact normalized equality; no synonym / alias fuzzy matching.
+
+Multi-filter contract: each active filter is a separate `AND` on the same `s.*` row. `(mount = 'koh' AND contrast = 'dic')` must be satisfied by a **single** context row on the observation, never assembled across rows. This is enforced simply by the row-scoped conjunction — no join gymnastics.
+
+### Visibility semantics — unchanged
+
+Every visibility gate from Stage E remains in the WHERE clause verbatim:
+
+- `s.observation_id = ANY(coalesce(p_observation_ids, ARRAY[]::bigint[]))`
+- `NOT coalesce(o.is_draft, false)`
+- `public.can_read_observation(o.user_id, o.visibility)`
+- `public.can_access_spore_data(o.user_id, o.spore_data_visibility)`
+
+The base table `public.observation_spore_summaries` still has only the Stage B "owner full" RLS policy — no anon SELECT was added. Assertion **H9** in the SQL test explicitly greps `pg_policy` to prove this after all filter work.
+
+### Landing API wrapper changes
+
+`sporely-landing/src/lib/publicApi.ts`:
+
+- `fetchPublicObservationSporeSummaries(observationIds, filters?)` now takes an optional second argument typed `ObservationSporeSummaryContextFilters | null`.
+- Payload builder extracted into an exported pure helper `_buildFetchSummariesPayload(observationIds, filters)` so tests can pin the payload shape without stubbing Supabase env vars or global `fetch` (matches the existing project pattern of not adding a fetch-mocking harness for publicApi).
+- Empty / whitespace / null filter values are dropped from the payload via `normalizeText(...)`. Empty-input observation ids still short-circuit to `[]` (now via `payload === null`).
+- Deduplication and BigInt normalization unchanged.
+- Errors propagate through `rpcCall` exactly as before.
+
+### ExploreSporePanel wiring
+
+`sporely-landing/src/components/ExploreSporePanel.tsx`:
+
+- Passes `{ sampleType, mountReagent, contrastMethod }` to `fetchPublicObservationSporeSummaries` so the server does the narrowing at the source.
+- Retains the Stage G call to `filterObservationSummariesByContext(speciesMeasured, activeContextFilters)` before `poolObservationSporeSummaries`. That is now a **defense-in-depth guard**: it protects against older cloud deployments where the RPC ignores unknown args or any future contract drift that lets a non-matching row through. Comment updated to spell that out.
+- Stain filtering deliberately not passed at the call site — this panel has no stain UI. The helper API and the RPC both accept `stainReagent`, so a stain control can be wired in a later stage without further plumbing.
+
+### Stain support status
+
+- **RPC**: `p_stain_reagent` accepted and tested (H6).
+- **`ObservationSporeSummaryContextFilters` type**: has `stainReagent?: string | null`.
+- **`_buildFetchSummariesPayload`**: forwards `stainReagent` when non-empty.
+- **`filterObservationSummariesByContext`**: matches on `stainReagent`.
+- **`ExploreSporePanel` UI**: no stain control; the call site omits stain.
+
+Documented limitation: RPC/API support stainReagent, but ExploreSporePanel has no stain UI yet. Adding one is out of scope for Stage H.
+
+### Tests added / run
+
+**SQL** (`supabase/tests/public_spore_summary_rpc_validation.sql`, all in one existing DO block):
+
+- **H1** no filters → all measured contexts for a visible observation (2 rows for `multi_context_obs_id`).
+- **H2** `p_mount_reagent='koh'` on `multi_context_obs_id` → the KOH+DIC row only, water+brightfield row dropped.
+- **H3** filter is case-insensitive and trims whitespace (`'  KOH  '` matches).
+- **H4** null-context row (`public_obs_id`) does not match `p_mount_reagent='koh'`.
+- **H5** cross-row filter satisfaction is rejected. New fixture `cross_context_obs_id` has row A = koh+brightfield and row B = water+dic; asking for `(mount=koh, contrast=dic)` returns **0 rows** even though each filter is individually satisfied by some row on that observation.
+- **H5b** same-row filter satisfaction still works: `(mount=koh, contrast=brightfield)` returns row A.
+- **H6** `p_stain_reagent='MELZER'` returns the Melzer row on new `stain_obs_id`; `p_stain_reagent='congo red'` returns 0 rows for the same observation.
+- **H7** empty-string filter and whitespace-only filter both behave like no filter (2 rows for `multi_context_obs_id`).
+- **H8** visibility gates still apply under active filters: `p_mount_reagent='koh' AND p_sample_type='fresh'` returns 0 rows for the draft/private/friends/spore-private/banned fixtures.
+- **H9** no anon/public-read RLS policy exists on `observation_spore_summaries`.
+
+Existing **E1..E12** assertions were preserved (they call the RPC with only the first argument, exercising the `DEFAULT NULL` path). Both sets pass on a fresh `supabase db reset --local`.
+
+**Landing** (`sporely-landing/src/lib/publicApi.summaryFetch.test.ts`, new file, 9 tests):
+
+- empty observationIds → `null` payload (wrapper short-circuits to `[]`).
+- undefined observationIds → `null` payload.
+- missing filters → only `p_observation_ids` in payload.
+- empty/whitespace/null-valued filter fields → dropped from payload.
+- active filters sent as `p_*` keys, trimmed.
+- `stainReagent` forwarded when present.
+- duplicate observation ids collapse to one.
+- multi-filter payload keeps every active filter key.
+- `null` filters object behaves like no filters.
+
+Existing Stage F/G helper tests unchanged: the 9 `summaryMatchesActiveContextFilters` / `filterObservationSummariesByContext` assertions in `observationSporeSummary.test.ts` still guarantee the client-side defensive guard behaves identically to the server.
+
+### Verification commands run
+
+- `supabase db reset --local` — clean apply of all migrations including Stage H's 20260714120000.
+- `supabase db query --local -f supabase/tests/public_spore_summary_rpc_validation.sql` — `NOTICE: public_spore_summary_rpc_validation: all E1..E12 and H1..H9 assertions passed`, `DO`.
+- `npm run typecheck` — clean (empty output).
+- `npm test -- --run` → **84 passed** in 393ms across 7 test files (75 prior + 9 new Stage H).
+- `npm run build` → OK. `dist/assets/index-*.js` ~594 kB.
+
+The pre-existing unrelated failure in `supabase/tests/metadata_only_microscope_images_test.sql` still exists and is out of scope, same as flagged in the Stage E note.
+
+### Open decisions / limitations
+
+- **No stain UI in ExploreSporePanel** — deliberate; the API/RPC stack is stain-ready and can be wired in a follow-up without any Stage H changes.
+- **Client still runs a defensive second-pass filter.** This is intentional. If we later decide the server contract is stable and cloud deployments are always current, the client pass can be dropped, but keeping it costs nothing.
+- **No fuzzy alias matching.** Filters are exact-equality after normalization. If future stages need "koh" to match "koh 3%", that will need a separate alias resolution layer (not part of Stage H).
+- **PostgREST RPC named-argument style**: the SQL tests use PL/pgSQL named-argument syntax (`p_mount_reagent := 'koh'`). PostgREST callers pass named JSON keys, exactly what the landing wrapper does.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage I (Parmasto matching foundation) when instructed.
+

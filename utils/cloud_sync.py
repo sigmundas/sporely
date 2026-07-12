@@ -82,8 +82,36 @@ from utils.r2_storage import (
     normalize_media_key,
 )
 from utils.thumbnail_generator import generate_all_sizes
+from utils.spore_summary_sync import (
+    STATUS_SKIP_NO_CLOUD_ID as SUMMARY_STATUS_SKIP_NO_CLOUD_ID,
+    STATUS_SKIP_TABLE_MISSING as SUMMARY_STATUS_SKIP_TABLE_MISSING,
+    STATUS_SYNCED as SUMMARY_STATUS_SYNCED,
+    sync_observation_spore_summaries,
+)
 
 logger = logging.getLogger(__name__)
+
+# Sporely-py's source_app_version for public.observation_spore_summaries
+# rows (Stage D). Set once at app startup via
+# ``set_cloud_sync_source_app_version(main.APP_VERSION)`` — kept as a
+# module-level slot rather than a direct ``from main import APP_VERSION``
+# because ``main`` drags in PySide6 at import time. Consumers should not
+# read this directly; call ``_current_source_app_version()``.
+_CLOUD_SYNC_SOURCE_APP_VERSION: str | None = None
+
+
+def set_cloud_sync_source_app_version(version: str | None) -> None:
+    """Record the running app version for the summary sync layer.
+
+    Safe to call multiple times; only the last non-empty value sticks.
+    """
+    global _CLOUD_SYNC_SOURCE_APP_VERSION
+    text = str(version or "").strip()
+    _CLOUD_SYNC_SOURCE_APP_VERSION = text or None
+
+
+def _current_source_app_version() -> str | None:
+    return _CLOUD_SYNC_SOURCE_APP_VERSION
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
@@ -11019,9 +11047,14 @@ def push_all(
                 progress_state,
             )
 
+            # Local observation id is used both inside the image-sync
+            # branch and by the (independent) spore-summary sync below.
+            # Hoist it so the summary path runs even when `sync_images`
+            # is False.
+            local_obs_id = _safe_int(obs.get('id'))
+
             images_synced = True
             if sync_images:
-                local_obs_id = _safe_int(obs.get('id'))
 
                 def _push_measurements_for_current_observation() -> None:
                     if local_obs_id <= 0:
@@ -11072,6 +11105,7 @@ def push_all(
                             f'{mosaic_exc}',
                             flush=True,
                         )
+
 
                 stored_local_media_signature = (
                     _load_local_cloud_media_signature(local_obs_id)
@@ -11249,6 +11283,28 @@ def push_all(
                         _refresh_local_cloud_media_signature(local_obs_id)
                     else:
                         mark_observation_dirty(local_obs_id)
+
+            # Structured observation-level spore summaries (Stage D).
+            # Runs once per observation, outside the `sync_images` block,
+            # because the summary is derived entirely from local
+            # spore_measurements + local image context — it does not
+            # require cloud image or cloud measurement rows to exist. In
+            # particular this means summaries still sync when
+            # `sync_images=False`, when image byte upload failed
+            # (`images_synced=False`), or when only preparation-context
+            # fields (mount_medium / stain / contrast / sample_type)
+            # changed. Missing-table errors are treated as a
+            # compatibility skip; unexpected errors surface via `errors`
+            # so the user sees them in the sync result.
+            if local_obs_id > 0 and cloud_id:
+                _push_summary_for_current_observation(
+                    client,
+                    obs=obs,
+                    local_obs_id=local_obs_id,
+                    cloud_id=cloud_id,
+                    errors=errors,
+                )
+
             _store_remote_snapshot(client, cloud_id)
 
             pushed += 1
@@ -12595,6 +12651,91 @@ def _push_measurements_for_observation(
         ),
         flush=True,
     )
+
+
+def _push_summary_for_current_observation(
+    client: SporelyCloudClient,
+    *,
+    obs: dict,
+    local_obs_id: int,
+    cloud_id: str,
+    errors: list[str],
+) -> dict | None:
+    """Sync structured spore summaries for one observation (Stage D).
+
+    Returns the sync helper's result dict, or ``None`` if the summary
+    call raised. Missing-table errors (older cloud deployments without
+    ``public.observation_spore_summaries``) are logged and treated as a
+    soft skip — they do not add to ``errors``. Auth / temporary-
+    unavailable errors re-raise so the outer sync loop can abort. Any
+    other unexpected error is appended to ``errors`` using the same
+    ``"obs <local_id>: ..."`` format as the surrounding
+    ``CloudSyncError`` reporting, so the caller and the returned
+    ``sync_all`` result surface the failure instead of hiding it in a
+    print statement.
+    """
+    try:
+        summary_result = sync_observation_spore_summaries(
+            client,
+            local_observation_id=local_obs_id,
+            remote_observation_id=cloud_id,
+            user_id=client.user_id,
+            source_app_version=_current_source_app_version(),
+        )
+    except Exception as summary_exc:
+        if is_cloud_auth_error(summary_exc) or is_cloud_temporary_unavailable_error(summary_exc):
+            raise
+        errors.append(
+            f"obs {obs.get('id')}: spore summary sync failed: {summary_exc}"
+        )
+        try:
+            mark_observation_sync_dirty(int(obs.get('id') or 0))
+        except Exception:
+            pass
+        print(
+            f'[cloud_sync] Spore summary push errored obs '
+            f'{local_obs_id}: {summary_exc}',
+            flush=True,
+        )
+        return None
+
+    status = summary_result.get('status')
+    if status == SUMMARY_STATUS_SKIP_TABLE_MISSING:
+        # Compatibility skip: older cloud deployment; recorded but not
+        # a user-visible error.
+        print(
+            f'[cloud_sync] Spore summary push skipped obs '
+            f'{local_obs_id}: cloud table missing '
+            f'(older deployment); continuing sync.',
+            flush=True,
+        )
+    elif status == SUMMARY_STATUS_SKIP_NO_CLOUD_ID:
+        # Defensive; the caller only invokes this helper when cloud_id
+        # is set, so this branch is unusual — flag it to `errors` so it
+        # is visible if it ever happens.
+        errors.append(
+            f"obs {obs.get('id')}: spore summary sync skipped (no cloud id available)"
+        )
+        print(
+            f'[cloud_sync] Spore summary push skipped obs '
+            f'{local_obs_id}: no cloud id available yet.',
+            flush=True,
+        )
+    elif status == SUMMARY_STATUS_SYNCED and (
+        summary_result.get('inserted')
+        or summary_result.get('updated')
+        or summary_result.get('deleted')
+    ):
+        print(
+            f'[cloud_sync] Spore summaries synced obs '
+            f'{local_obs_id}: '
+            f'inserted={summary_result.get("inserted", 0)} '
+            f'updated={summary_result.get("updated", 0)} '
+            f'deleted={summary_result.get("deleted", 0)} '
+            f'total_local={summary_result.get("total_local", 0)}',
+            flush=True,
+        )
+    return summary_result
 
 
 # Public status codes returned by `_push_spore_mosaic_for_observation`. Kept
