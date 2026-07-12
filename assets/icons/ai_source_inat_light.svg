@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 16">
+  <rect x="0.5" y="0.5" width="31" height="15" rx="3.5" ry="3.5" fill="#F1F6EF" stroke="#7DA96A" stroke-width="1"/>
+  <text x="11" y="12" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="800" text-anchor="middle" fill="#3E8E41">i</text>
+  <text x="21" y="12" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="800" text-anchor="middle" fill="#111111">N</text>
+</svg>
