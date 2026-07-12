@@ -1,5 +1,49 @@
 # Sporely Desktop — History & Debugging Notes
 
+### macOS cursor crash — avoid bitmap-fallback `Qt.CursorShape`
+
+Repeated hard crashes were observed during Measure and in the species plate dialog on
+macOS 26 (Tahoe) with PySide6 / Qt 6.11. The crash always looked the same:
+
+```
+QWidget.setCursor(...)
+  → QWindowPrivate::setCursor
+  → QCocoaCursor::convertCursor
+  → QImage::toCGImage
+  → CGImageCreate → verify_image_parameters → valid_image_colorspace
+  → CGColorSpaceGetType → __CF_IS_OBJC → EXC_BREAKPOINT
+```
+
+Cause: only a subset of `Qt.CursorShape` values map to a native `NSCursor` on macOS.
+Everything else (`SizeAllCursor`, `SizeFDiagCursor`, `SizeBDiagCursor`, `SizeVerCursor`,
+`SizeHorCursor`, `SplitVCursor`, `SplitHCursor`, `DragCopy/Move/LinkCursor`,
+`WhatsThisCursor`, `BusyCursor`) falls back to a Qt-embedded bitmap that is pushed
+through `QImage::toCGImage`. In Qt 6.11 / macOS 26 that path hands CoreGraphics a
+garbage colorspace pointer and traps.
+
+Rule of thumb: on macOS, only use these cursor shapes in `setCursor(...)`:
+
+- `Qt.ArrowCursor`
+- `Qt.CrossCursor`
+- `Qt.IBeamCursor`
+- `Qt.PointingHandCursor`
+- `Qt.OpenHandCursor` / `Qt.ClosedHandCursor`
+- `Qt.WaitCursor`
+- `Qt.ForbiddenCursor`
+
+Anything else risks the same crash. If a resize/move affordance is wanted, prefer
+setting a status/hint via `HintController` rather than a specialty cursor.
+
+Fix locations (2026-07): [ui/zoomable_image_widget.py](ui/zoomable_image_widget.py)
+(`_crop_corner_cursor` returns `None`), [ui/spore_preview_widget.py](ui/spore_preview_widget.py)
+(hover-inside-rectangle uses `Qt.ArrowCursor`), [ui/species_plate_dialog.py](ui/species_plate_dialog.py)
+(resize/border hover uses `Qt.ArrowCursor`), [ui/hint_status.py](ui/hint_status.py)
+(`_apply_hint_affordance` always calls `unsetCursor()`).
+
+Also worth noting: passing `Qt.CursorShape` directly to `setCursor(...)` is fine and
+avoids constructing a PySide-owned `QCursor` wrapper, but it does **not** dodge the
+crash on its own — the shape has to be a native one.
+
 ### Calibration history cloud indicator
 
 The Calibration History table now shows a leading cloud-status column so cloud-synced calibrations
