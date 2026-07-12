@@ -1725,13 +1725,13 @@ class PlatePreviewCanvas(QWidget):
             if key and (key.startswith("clear:") or key.startswith("label:")):
                 self.setCursor(Qt.ArrowCursor)
             elif key and key.startswith("resize:"):
-                corner = key.split(":", 2)[2]
-                cur = (Qt.SizeFDiagCursor if corner in ("TL", "BR") else Qt.SizeBDiagCursor)
-                self.setCursor(cur)
+                # Size*DiagCursor / SizeAllCursor fall back to Qt-embedded
+                # bitmaps on macOS, which crashes in Qt 6.11 / macOS 26.
+                self.setCursor(Qt.ArrowCursor)
                 self._dlg._hint_ctrl.set_hint(
                     self._dlg.tr("Drag to resize inset"), "info")
             elif key and key.startswith("border:"):
-                self.setCursor(Qt.SizeAllCursor)
+                self.setCursor(Qt.ArrowCursor)
                 self._dlg._hint_ctrl.set_hint(
                     self._dlg.tr("Drag border to reposition shape — {del_hint} to delete").format(
                         del_hint=_del_hint()),

@@ -442,10 +442,9 @@ class HintLabel(QLabel):
         self.setText(text)
 
     def _apply_hint_affordance(self) -> None:
-        if self._hint_text:
-            self.setCursor(Qt.WhatsThisCursor)
-        else:
-            self.unsetCursor()
+        # WhatsThisCursor falls back to a Qt-embedded bitmap on macOS, which
+        # crashes in Qt 6.11 / macOS 26 CoreGraphics via QImage::toCGImage.
+        self.unsetCursor()
 
     def set_hint_text(self, hint_text: str | None) -> None:
         self._hint_text = (hint_text or "").strip()

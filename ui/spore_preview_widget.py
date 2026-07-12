@@ -942,7 +942,9 @@ class PreviewImageLabel(QLabel):
 
             # Check if hovering inside rectangle
             if len(self.screen_corners) == 4 and self.is_point_inside_polygon(mouse_pos, self.screen_corners):
-                self._set_cursor_shape(Qt.SizeAllCursor)
+                # SizeAllCursor falls back to a Qt-embedded bitmap on macOS,
+                # which crashes in Qt 6.11 / macOS 26 CoreGraphics.
+                self._set_cursor_shape(Qt.ArrowCursor)
                 self.update()
                 return
 

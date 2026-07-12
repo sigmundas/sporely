@@ -1,7 +1,9 @@
 """Reusable item delegates for UI widgets."""
+from pathlib import Path
+
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle, QApplication, QStyleOptionViewItem, QWidget
 from PySide6.QtCore import Qt, QRect, QSize
-from PySide6.QtGui import QColor, QPainter, QBrush, QPen
+from PySide6.QtGui import QColor, QPainter, QBrush, QPen, QPixmap, QPalette
 
 
 class SpeciesItemDelegate(QStyledItemDelegate):
@@ -232,3 +234,117 @@ class StatusTagDelegate(QStyledItemDelegate):
             return QSize(base.width(), max(base.height(), 24))
         width = opt.fontMetrics.horizontalAdvance(text) + 36
         return QSize(max(base.width(), width), max(base.height(), 24))
+
+
+class AISuggestionItemDelegate(QStyledItemDelegate):
+    """Paints an AI-suggestion combo row: text, then a source badge (Ao / iN).
+
+    The badge is drawn from an SVG asset with a light/dark variant. The item's
+    source key is stored in ``Qt.UserRole + 5`` as one of ``"arts"`` or
+    ``"inat"``.
+    """
+
+    SOURCE_ROLE = Qt.UserRole + 5
+
+    _ICON_DIR = Path(__file__).parent.parent / "assets" / "icons"
+    _ICON_FILES = {
+        ("arts", False): "ai_source_arts_light.svg",
+        ("arts", True): "ai_source_arts_dark.svg",
+        ("inat", False): "ai_source_inat_light.svg",
+        ("inat", True): "ai_source_inat_dark.svg",
+    }
+
+    BADGE_W = 30
+    BADGE_H = 15
+    BADGE_MARGIN = 8
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pixmap_cache: dict[tuple[str, bool, int], QPixmap] = {}
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.text = ""
+
+    def _is_dark(self, option: QStyleOptionViewItem) -> bool:
+        pal = option.palette if option is not None else None
+        if pal is not None:
+            return pal.color(QPalette.Window).lightness() < 128
+        app = QApplication.instance()
+        return app.palette().color(QPalette.Window).lightness() < 128 if app else False
+
+    def _badge_pixmap(self, source: str, dark: bool, height_px: int) -> QPixmap | None:
+        source = str(source or "").strip().lower()
+        if source not in {"arts", "inat"}:
+            return None
+        key = (source, dark, int(height_px))
+        cached = self._pixmap_cache.get(key)
+        if cached is not None:
+            return cached
+        filename = self._ICON_FILES.get((source, dark))
+        if not filename:
+            return None
+        svg_path = self._ICON_DIR / filename
+        if not svg_path.exists():
+            return None
+        try:
+            from PySide6.QtSvg import QSvgRenderer
+        except Exception:
+            return None
+        try:
+            renderer = QSvgRenderer(str(svg_path))
+        except Exception:
+            return None
+        if not renderer.isValid():
+            return None
+        aspect = self.BADGE_W / self.BADGE_H
+        h = max(12, int(height_px))
+        w = max(12, int(round(h * aspect)))
+        pixmap = QPixmap(w, h)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(painter)
+        painter.end()
+        self._pixmap_cache[key] = pixmap
+        return pixmap
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        source = str(index.data(self.SOURCE_ROLE) or "").strip().lower()
+        text = str(index.data(Qt.DisplayRole) or "")
+        super().paint(painter, opt, index)
+        if not text:
+            return
+
+        badge_h = int(opt.rect.height() * 0.62)
+        pixmap = self._badge_pixmap(source, self._is_dark(opt), badge_h)
+        badge_w = pixmap.width() if pixmap is not None else 0
+
+        text_rect = QRect(opt.rect).adjusted(6, 0, -(self.BADGE_MARGIN + badge_w + 6), 0)
+        if opt.state & QStyle.State_Selected:
+            pen_color = opt.palette.color(QPalette.HighlightedText)
+        else:
+            pen_color = opt.palette.color(QPalette.Text)
+
+        painter.save()
+        painter.setPen(pen_color)
+        elided = opt.fontMetrics.elidedText(text, Qt.ElideRight, max(0, text_rect.width()))
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided)
+        painter.restore()
+
+        if pixmap is not None:
+            bx = opt.rect.right() - self.BADGE_MARGIN - pixmap.width()
+            by = opt.rect.top() + (opt.rect.height() - pixmap.height()) // 2
+            painter.drawPixmap(bx, by, pixmap)
+
+    def sizeHint(self, option: QStyleOptionViewItem, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        base = super().sizeHint(option, index)
+        text = str(index.data(Qt.DisplayRole) or "").strip()
+        text_w = opt.fontMetrics.horizontalAdvance(text) if text else 0
+        extra = self.BADGE_W + self.BADGE_MARGIN + 18
+        return QSize(max(base.width(), text_w + extra), max(base.height(), 22))

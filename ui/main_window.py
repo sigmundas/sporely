@@ -163,7 +163,7 @@ from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
-from .delegates import SpeciesItemDelegate
+from .delegates import SpeciesItemDelegate, AISuggestionItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
     normalize_vernacular_language,
@@ -8536,6 +8536,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
         self.ref_genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.ref_species_input.setPlaceholderText(self.tr("e.g., velutipes"))
+
+        self.ref_ai_suggestions_combo = QComboBox()
+        self.ref_ai_suggestions_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.ref_ai_suggestions_combo.setPlaceholderText(self.tr("No AI suggestions"))
+        self._ref_ai_suggestions_delegate = AISuggestionItemDelegate(self.ref_ai_suggestions_combo)
+        self.ref_ai_suggestions_combo.setItemDelegate(self._ref_ai_suggestions_delegate)
+        popup_view = self.ref_ai_suggestions_combo.view()
+        if popup_view is not None:
+            popup_view.setItemDelegate(self._ref_ai_suggestions_delegate)
+        self._style_dropdown_popup_readability(
+            self.ref_ai_suggestions_combo.view(),
+            self.ref_ai_suggestions_combo,
+        )
+        self.ref_ai_suggestions_combo.activated.connect(self._on_ref_ai_suggestion_activated)
+
         self.ref_source_input = QComboBox()
         self.ref_source_input.setEditable(True)
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
@@ -8553,6 +8568,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         source_layout.addWidget(self.ref_source_input, 1)
         source_layout.addWidget(self.ref_cloud_btn, 0)
 
+        form.addRow(self.tr("AI suggestions:"), self.ref_ai_suggestions_combo)
         form.addRow(self.ref_vernacular_label, self.ref_vernacular_input)
         form.addRow(self.tr("Genus:"), self.ref_genus_input)
         form.addRow(self.tr("Species:"), self.ref_species_input)
@@ -8648,6 +8664,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._refresh_reference_series_table()
         self._update_reference_add_state()
         self._sync_reference_overlay_controls_state()
+        self._refresh_reference_ai_suggestions()
         return panel
 
     def _style_dropdown_popup_readability(self, popup, font_source=None):
@@ -10243,6 +10260,259 @@ class MainWindow(GeometryMixin, QMainWindow):
         _set_cell(2, 0, ref_values.get("q_min"))
         _set_cell(2, 2, ref_values.get("q_p50"))
         _set_cell(2, 4, ref_values.get("q_max"))
+
+    def _collect_reference_ai_suggestions(self) -> list[dict]:
+        """Return AI suggestion entries for the active observation.
+
+        Merges Artsorkael + iNaturalist predictions across all images,
+        deduplicates by (source, scientific name), keeps the highest score,
+        and sorts descending by score.
+        """
+        obs_id = getattr(self, "active_observation_id", None)
+        obs_tab = getattr(self, "observations_tab", None)
+        if not obs_id or obs_tab is None:
+            return []
+        state = None
+        getter = getattr(obs_tab, "get_ai_suggestions_for_observation", None)
+        if callable(getter):
+            try:
+                state = getter(int(obs_id))
+            except Exception:
+                state = None
+        if not isinstance(state, dict):
+            observation = None
+            try:
+                observation = ObservationDB.get_observation(int(obs_id))
+            except Exception:
+                observation = None
+            loader = getattr(obs_tab, "_load_observation_ai_state", None)
+            if callable(loader) and observation is not None:
+                try:
+                    state = loader(observation)
+                except Exception:
+                    state = None
+        if not isinstance(state, dict):
+            return []
+
+        best_by_key: dict[tuple[str, str], dict] = {}
+        for source_key, preds_key in (("arts", "predictions"), ("inat", "inat_predictions")):
+            preds_by_image = state.get(preds_key)
+            if not isinstance(preds_by_image, dict):
+                continue
+            for _image_idx, preds in preds_by_image.items():
+                if not isinstance(preds, (list, tuple)):
+                    continue
+                for pred in preds:
+                    if not isinstance(pred, dict):
+                        continue
+                    entry = self._build_reference_ai_entry(pred, source_key)
+                    if entry is None:
+                        continue
+                    dedupe_key = (source_key, entry["scientific_name"].casefold())
+                    existing = best_by_key.get(dedupe_key)
+                    if existing is None or entry["score"] > existing["score"]:
+                        best_by_key[dedupe_key] = entry
+        entries = list(best_by_key.values())
+        entries.sort(key=lambda e: e.get("score", 0.0), reverse=True)
+        return entries
+
+    @staticmethod
+    def _ref_ai_prediction_score(pred: dict) -> float:
+        for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
+            value = pred.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return 0.0
+
+    @staticmethod
+    def _ref_ai_scientific_from_taxon(taxon: dict) -> str:
+        for key in ("scientificName", "scientific_name"):
+            value = str(taxon.get(key) or "").strip()
+            if value:
+                return value
+        value = str(taxon.get("name") or "").strip()
+        parts = value.split()
+        if len(parts) >= 2 and parts[0][:1].isupper() and parts[1][:1].islower():
+            return value
+        return ""
+
+    @staticmethod
+    def _ref_ai_genus_species_from_taxon(taxon: dict) -> tuple[str, str]:
+        genus = (
+            taxon.get("genus")
+            or taxon.get("genusName")
+            or taxon.get("genus_name")
+            or ""
+        )
+        species = (
+            taxon.get("species")
+            or taxon.get("specificEpithet")
+            or taxon.get("specific_epithet")
+            or ""
+        )
+        genus = str(genus or "").strip()
+        species = str(species or "").strip()
+        if genus and species:
+            return genus, species
+        sci = MainWindow._ref_ai_scientific_from_taxon(taxon)
+        parts = sci.split()
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+        return "", ""
+
+    @staticmethod
+    def _ref_ai_first_common_name(value) -> str:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                text = MainWindow._ref_ai_first_common_name(item)
+                if text:
+                    return text
+            return ""
+        if isinstance(value, dict):
+            for item in value.values():
+                text = MainWindow._ref_ai_first_common_name(item)
+                if text:
+                    return text
+            return ""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        parts = re.split(
+            r"\s*(?:\r?\n|[,;/|•·・]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )
+        return (parts[0] if parts else text).strip()
+
+    def _ref_ai_vernacular_from_taxon(self, taxon: dict, source: str) -> str:
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
+        vernacular_names = taxon.get("vernacularNames") or taxon.get("vernacular_names") or {}
+        if isinstance(vernacular_names, dict) and lang:
+            direct = vernacular_names.get(lang)
+            text = self._ref_ai_first_common_name(direct)
+            if text:
+                return text
+            for code, value in vernacular_names.items():
+                if normalize_vernacular_language(str(code)) != lang:
+                    continue
+                text = self._ref_ai_first_common_name(value)
+                if text:
+                    return text
+        for key in ("preferred_common_name", "preferred_common_names", "common_name", "common_names"):
+            text = self._ref_ai_first_common_name(taxon.get(key))
+            if text:
+                return text
+        for key in ("vernacularName", "vernacular_name"):
+            text = self._ref_ai_first_common_name(taxon.get(key))
+            if text:
+                return text
+        if isinstance(vernacular_names, dict):
+            for value in vernacular_names.values():
+                text = self._ref_ai_first_common_name(value)
+                if text:
+                    return text
+        return ""
+
+    def _build_reference_ai_entry(self, pred: dict, source: str) -> dict | None:
+        try:
+            from .observations_tab import _normalize_ai_prediction_taxon
+        except Exception:
+            return None
+        try:
+            taxon = _normalize_ai_prediction_taxon(pred, source=source) or {}
+        except Exception:
+            taxon = dict(pred or {})
+        scientific = self._ref_ai_scientific_from_taxon(taxon)
+        genus, species = self._ref_ai_genus_species_from_taxon(taxon)
+        if not scientific and genus and species:
+            scientific = f"{genus} {species}"
+        if not scientific:
+            return None
+        vernacular = self._ref_ai_vernacular_from_taxon(taxon, source)
+        score = self._ref_ai_prediction_score(pred)
+        return {
+            "source": source,
+            "scientific_name": scientific,
+            "vernacular": vernacular,
+            "genus": genus,
+            "species": species,
+            "score": score,
+        }
+
+    @staticmethod
+    def _format_ref_ai_display(entry: dict) -> str:
+        scientific = str(entry.get("scientific_name") or "").strip()
+        vernacular = str(entry.get("vernacular") or "").strip()
+        score = float(entry.get("score") or 0.0)
+        percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
+        base = scientific
+        if vernacular and vernacular.casefold() != scientific.casefold():
+            base = f"{scientific} ({vernacular})"
+        return f"{base}  {percent}%"
+
+    def _refresh_reference_ai_suggestions(self) -> None:
+        combo = getattr(self, "ref_ai_suggestions_combo", None)
+        if combo is None:
+            return
+        entries = self._collect_reference_ai_suggestions()
+        header = (
+            self.tr("Select an AI suggestion...")
+            if entries
+            else self.tr("No AI suggestions")
+        )
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem(header, None)
+            first_item = combo.model().item(0) if hasattr(combo.model(), "item") else None
+            if first_item is not None:
+                first_item.setData("", AISuggestionItemDelegate.SOURCE_ROLE)
+            for entry in entries:
+                combo.addItem(self._format_ref_ai_display(entry), entry)
+                idx = combo.count() - 1
+                item = combo.model().item(idx) if hasattr(combo.model(), "item") else None
+                if item is not None:
+                    item.setData(entry.get("source", ""), AISuggestionItemDelegate.SOURCE_ROLE)
+            combo.setCurrentIndex(0)
+        finally:
+            combo.blockSignals(False)
+        combo.setEnabled(True)
+
+    def _on_ref_ai_suggestion_activated(self, index: int) -> None:
+        combo = getattr(self, "ref_ai_suggestions_combo", None)
+        if combo is None or index <= 0:
+            return
+        entry = combo.itemData(index)
+        if not isinstance(entry, dict):
+            return
+        genus = str(entry.get("genus") or "").strip()
+        species = str(entry.get("species") or "").strip()
+        vernacular = str(entry.get("vernacular") or "").strip()
+        if hasattr(self, "ref_genus_input") and genus:
+            self.ref_genus_input.blockSignals(True)
+            self.ref_genus_input.setText(genus)
+            self.ref_genus_input.blockSignals(False)
+        if hasattr(self, "ref_species_input") and species:
+            self.ref_species_input.blockSignals(True)
+            self.ref_species_input.setText(species)
+            self.ref_species_input.blockSignals(False)
+        if hasattr(self, "ref_vernacular_input"):
+            self.ref_vernacular_input.blockSignals(True)
+            self.ref_vernacular_input.setText(vernacular)
+            self.ref_vernacular_input.blockSignals(False)
+        if genus and species:
+            self._set_reference_panel_loaded_taxon(
+                getattr(self, "active_observation_id", None), genus, species
+            )
+            self._populate_reference_panel_sources(auto_select_single=False)
+            self._maybe_load_reference_panel_reference()
+        self._update_reference_add_state()
 
     def _on_reference_panel_plot_clicked(self):
         source_data = self.ref_source_input.currentData()
@@ -19453,6 +19723,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     def load_reference_values(self):
         """Load reference values for the active observation."""
         self.reference_values = {}
+        self._refresh_reference_ai_suggestions()
         if not self.active_observation_id:
             self._set_reference_panel_loaded_taxon(None, None, None)
             return

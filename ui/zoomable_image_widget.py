@@ -1267,10 +1267,8 @@ class ZoomableImageLabel(QLabel):
 
     @staticmethod
     def _crop_corner_cursor(index: int):
-        if index in (0, 2):
-            return Qt.SizeFDiagCursor
-        if index in (1, 3):
-            return Qt.SizeBDiagCursor
+        # Diagonal-resize shapes fall back to Qt-embedded bitmap cursors on
+        # macOS, which crashes in Qt 6.11 / macOS 26 CoreGraphics. Skip.
         return None
 
     def _update_crop_corner_hover(self, screen_pos) -> int:
