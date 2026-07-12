@@ -1095,3 +1095,329 @@ None. Everything below is inside the plan as written:
 
 If either open decision above is answered with something other than the plan's wording, that would be drift and I'll stop before applying it.
 
+---
+
+## Stage B — progress note (2026-07-12)
+
+**Status: done.** Migration applies cleanly against the local Supabase database.
+
+### Files added / changed
+
+- `sporely-web/supabase/migrations/20260712120000_add_observation_spore_summaries.sql` — new migration file, creates the table, indexes, RLS policy, grants, `NOTIFY pgrst` reload.
+- `sporely-web/supabase/schema.sql` — added the table across the standard pg_dump sections: CREATE TABLE + OWNER + COMMENT + identity setup (between `observation_shares` and `observations_community_view`); primary key and `(observation_id, context_hash)` UNIQUE constraint (in the PK section); three indexes (in the index section); two FK constraints (in the FK section); RLS + owner-full policy (in the RLS section); GRANT statements for table and sequence (in the grants section).
+
+### What the migration creates
+
+- `public.observation_spore_summaries` with the exact Stage A column set. `id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`, `observation_id → observations(id) ON DELETE CASCADE`, `user_id uuid → auth.users(id) ON DELETE CASCADE`.
+- Named constraints: `observation_spore_summaries_obs_context_uk` (unique on `(observation_id, context_hash)`); four `_n_*_chk` checks (`n_spores`, `n_paired`, `n_length`, `n_width` >= 0).
+- Three btree indexes: `_observation_idx`, `_user_idx`, `_context_idx`.
+- Table comment + column comments spell out the anti-weighted-mean rule, the semantic split between this table's `measurement_type` and `spore_measurements.measurement_type`, and the "q_mean is mean of individual q_i, not Lm/Wm" rule.
+- RLS enabled; single "owner full" policy that requires `user_id = auth.uid()` AND that the referenced observation is owned by the same auth user (mirrors the defensive pattern from `20260702100000_add_spore_measurement_mosaics.sql`). No SELECT policy for other users — Stage E RPCs will re-gate on `can_access_spore_data`.
+- Grants: `authenticated` and `service_role` get `SELECT/INSERT/UPDATE/DELETE`. `anon` gets nothing on the table.
+- `NOTIFY pgrst, 'reload schema';` at the end so PostgREST picks up the new table without waiting for the periodic reload.
+
+### Verification
+
+- `supabase migration up --local` completed with "Local database is up to date." — no errors, only a benign NOTICE about `DROP POLICY IF EXISTS` finding nothing.
+- Post-apply verification queries (via `supabase db query --local`):
+  - Columns: 40 columns in the expected order, all with correct types and defaults (`context_json` default `'{}'::jsonb`, `measurement_type` default `'spore'`, `n_*` defaults `0`, `stats_version` default `1`, `computed_at/created_at/updated_at` default `now()`).
+  - Constraints present: `observation_spore_summaries_n_length_chk`, `_n_paired_chk`, `_n_spores_chk`, `_n_width_chk`, `_obs_context_uk`, `_observation_id_fkey`, `_pkey`, `_user_id_fkey`.
+  - Indexes present: `_pkey`, `_obs_context_uk`, `_observation_idx`, `_user_idx`, `_context_idx`.
+  - RLS policy present: `observation_spore_summaries: owner full`.
+
+### Deviations from the Stage B plan snippet
+
+None functional; a few small refinements documented for future reviewers:
+
+1. Used `GENERATED ALWAYS AS IDENTITY` for `id` (matches `observations`, `observation_images`, `spore_measurements`) rather than `BY DEFAULT` — kept from Stage A.
+2. Added the observation-ownership `EXISTS` guard inside the RLS policy so an authenticated user cannot insert a summary row (with their own `user_id`) that attaches to a stranger's observation. Same defense-in-depth as the mosaic migration; the plan says "owners/service sync may write rows" which this enforces strictly.
+3. Added column-level `COMMENT ON` for the parts of the contract that are non-obvious from the schema alone (the anti-weighted-mean rule, the `q_mean` definition, the collision on `measurement_type`, and the meaning of `stats_version`). Plan Stage B point 2 explicitly asked for these comments.
+
+### Pre-existing schema.sql drift (not fixed here)
+
+`supabase/schema.sql` is not perfectly in sync with the migrations directory. Two examples I saw while inserting the new table:
+
+- `spore_measurement_mosaics` and `spore_measurement_mosaic_tiles` (added by `20260702100000_add_spore_measurement_mosaics.sql`) are absent from `schema.sql` — table body, PK, FKs, policies, grants, all missing.
+- The `observations_red_list_categories_json_object_chk` check constraint (added by `20260711120000_add_observation_red_list_columns.sql`) is absent from `schema.sql`, though the two columns themselves are present.
+
+I did **not** fix either of those in this stage. They are outside Stage B scope; conflating them into the spore-summary migration would violate the workflow rule "Do not mix this work with unrelated ... changes." Flagging so a future maintainer knows the file is a snapshot rather than a canonical dump.
+
+### Not done in Stage B (intentionally)
+
+- No writer / computation code. That is Stage C.
+- No local SQLite mirror / sync code. Stage D.
+- No public RPCs, no `sporeSummary`-style output row. Stage E.
+- No landing-page changes, no touch to `poolSporeSummaries`. Stages F–G.
+- No SQL tests. Stage J. (The plan places Supabase tests there, not here.)
+
+### Proposed drift from the plan
+
+None. Stage B was executed as written.
+
+### Ready for Stage C when instructed.
+
+---
+
+## Stage B — patch progress note (2026-07-12)
+
+**Status: done.** The previously-unpublished Stage B migration was patched in place (not superseded by a new migration) and the full local migration set was reset and reapplied cleanly.
+
+### Constraints added to `public.observation_spore_summaries`
+
+Inline in the CREATE TABLE, alongside the four existing `n_*_chk` checks:
+
+- `observation_spore_summaries_stats_version_chk`  →  `CHECK (stats_version >= 1)`
+- `observation_spore_summaries_context_hash_nonempty_chk`  →  `CHECK (btrim(context_hash) <> '')` — rejects empty and whitespace-only hashes.
+- `observation_spore_summaries_context_json_object_chk`  →  `CHECK (jsonb_typeof(context_json) = 'object')` — same pattern used for `observations_red_list_categories_json_object_chk` in migration `20260711120000`, so writers cannot smuggle an array/number/string/boolean into the context slot.
+
+### Index added
+
+- `observation_spore_summaries_measurement_context_idx` on `(measurement_type, sample_type, mount_reagent, stain_reagent, contrast_method)`.
+- Column order matches the canonical context-serialization order from the Stage A normalization design, so prefix filters like `WHERE measurement_type = 'spore' AND sample_type = 'fresh'` still hit this index.
+
+### Column comments added
+
+- `length_mean_um`: "Arithmetic mean of length_um values for this observation/context. Species profiles should average this value unweighted across observation summaries."
+- `width_mean_um`: "Arithmetic mean of width_um values for this observation/context. Species profiles should average this value unweighted across observation summaries."
+- `q_mean` comment retained unchanged — still correctly reads "Mean of individual length_i/width_i ratios across paired measurements. Do NOT derive from length_mean_um / width_mean_um."
+
+### `updated_at` trigger — convention found and used
+
+The project has an established convention: `public.set_updated_at()` (defined in the baseline migration) plus per-table triggers named `trg_<tablename>_updated_at` (see `trg_observations_updated_at`, `trg_friendships_updated_at`, `trg_profiles_updated_at` in `supabase/schema.sql`).
+
+Added `trg_observation_spore_summaries_updated_at` matching that pattern. No new helper function invented. Writers no longer need to touch `updated_at` manually — the default `now()` covers inserts, the trigger covers updates.
+
+### schema.sql updates (mirrors migration exactly)
+
+- Extended the inline `CREATE TABLE` block with the three new `CHECK` constraints.
+- Added `COMMENT ON COLUMN` entries for `length_mean_um` and `width_mean_um` directly under the existing table-level `COMMENT ON TABLE`.
+- Inserted `observation_spore_summaries_measurement_context_idx` between the existing `_context_idx` and `_observation_idx` (alphabetical).
+- Added `trg_observation_spore_summaries_updated_at` in the trigger section, right after `trg_observations_updated_at`.
+
+### Validation
+
+Commands run from `/Users/sigmundas/Documents/Code/sporely/sporely-web`:
+
+- `supabase db reset --local` — completed with "Finished supabase db reset on branch main." All 60+ migrations applied cleanly on a fresh database, including the patched `20260712120000`.
+- `supabase db query --local` verification queries:
+  - `pg_constraint`: 11 rows on `observation_spore_summaries` — 4 `n_*_chk`, `stats_version_chk`, `context_hash_nonempty_chk`, `context_json_object_chk`, `obs_context_uk`, `pkey`, `observation_id_fkey`, `user_id_fkey`.
+  - `pg_indexes`: 6 rows — `pkey`, `obs_context_uk`, `context_idx`, `observation_idx`, `user_idx`, plus the new `measurement_context_idx`.
+  - `pg_trigger` (non-internal): `trg_observation_spore_summaries_updated_at` present.
+  - `col_description(...)`: comments for `length_mean_um`, `width_mean_um`, and the existing `q_mean` / `n_paired` / `measurement_type` / `context_*` / `stats_version` all present.
+
+### Open decisions
+
+None. Every fix requested by the Stage B patch was applied verbatim; the two Stage A naming decisions from the earlier note remain accepted as-is.
+
+### Proposed drift
+
+None. Stage B is now complete as originally scoped by the plan plus the patch instructions.
+
+### Not done in this patch (intentional)
+
+- No Python computation / statistics work — Stage C.
+- No local SQLite mirror or sync path — Stage D.
+- No public RPC or view changes — Stage E.
+- No landing-side aggregation changes — Stage F/G.
+- No SQL/RPC tests — Stage J.
+- No fix to the pre-existing `schema.sql` drift for `spore_measurement_mosaics` or `observations_red_list_categories_json_object_chk` — out of scope.
+
+---
+
+## Stage C — progress note (2026-07-12)
+
+**Status: done.** Structured observation-level spore summaries can now be computed locally from raw `spore_measurements` rows. Nothing is synced yet (Stage D), no RPCs added (Stage E), no landing changes (Stage F/G). Legacy literature-string generation is untouched and still passes its existing tests.
+
+### Files changed
+
+- Added `sporely-py/utils/spore_summary.py` — the Stage C computation module.
+- Added `sporely-py/tests/test_spore_summary.py` — 20 unit tests covering context normalization/hashing, grouping, statistics, eligibility, and payload contract.
+
+Nothing else in the repo was modified. The legacy `_format_measurement_stats_string()` / `format_literature_string()` code path in `ui/main_window.py` and `MeasurementDB.get_statistics_for_observation()` in `database/models.py` are unchanged.
+
+### Where the computation lives
+
+`utils/spore_summary.py` exposes:
+
+- `SPORE_SUMMARY_STATS_VERSION = 1`
+- `SPORE_SUMMARY_SOURCE_APP = "sporely-py"`
+- `CONTEXT_KEYS` — fixed key order `(measurement_type, sample_type, mount_reagent, stain_reagent, contrast_method)`.
+- `normalize_context_value(v)` — strip → casefold → collapse whitespace → empty→None. No alias table (deferred per Stage A note).
+- `build_context(...)` — canonical, normalized 5-key dict; `measurement_type` defaults to `'spore'`.
+- `serialize_context(ctx)` — `json.dumps(..., sort_keys=True, separators=(',', ':'), ensure_ascii=False)`.
+- `compute_context_hash(ctx)` — SHA-256 hex digest of `serialize_context`.
+- `compute_observation_spore_summaries(observation_id=..., measurements=..., computed_at=None, source_app_version=None)` — pure function; takes an iterable of measurement dicts, returns a list of summary payload dicts sorted by `context_hash`.
+- `load_measurements_with_context(observation_id)` — thin DB loader that joins `spore_measurements` with the parent `images` row and returns the raw dicts the compute function expects. Kept separate so the compute path is trivially testable without a database.
+
+### How context is linked from measurement to image
+
+Per Stage A: `spore_measurements` has no context columns; context lives on the parent `images` row (`mount_medium`, `stain`, `sample_type`, `contrast`). The Stage C loader joins on `m.image_id = i.id` and injects those columns into each measurement row. The compute function reads them via `_row_context()`, which:
+
+- Prefers the summary-facing names (`mount_reagent`, `stain_reagent`, `contrast_method`, `sample_type`) if present on the row (so Stage D and tests can pass pre-mapped rows), then falls back to the image-column names (`mount_medium`, `stain`, `contrast`). Verified by `test_summary_field_names_win_over_image_column_names`.
+- Sets summary `measurement_type` to `'spore'` for every group (this is the *summary* type, not the raw-row provenance). The raw row's `measurement_type` field is only used to *filter* which rows count — matching the legacy filter set `{None, '', 'manual', 'spore', 'spores'}`. Non-spore rows (`basidium`, `cystidium`, ...) are dropped entirely; they will be handled by future non-spore summary types, not by this stage.
+
+Every row's context is always defined (images always have the four fields, even if all four are NULL). Rows whose image context is fully NULL land in the single "null-context" summary row for that observation, per the Stage A least-risky policy.
+
+### Percentile convention
+
+`numpy.percentile(x, [5, 50, 95])` — numpy default linear interpolation. This exactly matches the legacy literature-string generator (`np.percentile(x, 5)` / `np.percentile(x, 95)` in `MeasurementDB.get_statistics_for_observation`), so the new structured Lm/Wm/Qm and the legacy display string cannot disagree on min/p05/median/p95/max.
+
+Documented in the module docstring and pinned by `test_percentile_convention_is_numpy_linear_interpolation` (uses the known values for `[1..10]`: p05=1.45, p50=5.5, p95=9.55).
+
+### Standard deviation convention
+
+**Deliberate departure from legacy.** Legacy `np.std(x)` is *population* SD (ddof=0). The new structured summary uses *sample* SD (ddof=1) per the Stage C plan, with `sd = None` when `n < 2`.
+
+The legacy literature string still uses population SD internally, but the legacy string does not surface an `sd` value directly (it prints min/p05/p95/max), so there is no visible behavior change from this departure. Documented in the module docstring and covered by `test_sample_sd_is_none_for_single_value_and_ddof1_for_more`.
+
+### Legacy string generation — left parallel
+
+Stage C created the structured computation path in parallel. The legacy `_format_measurement_stats_string()` still calls `MeasurementDB.get_statistics_for_observation()` (population SD, `count` = length count, etc.). Rewiring the legacy string to call `compute_observation_spore_summaries` would change:
+
+- SD convention (population → sample) — irrelevant to the printed string but observable via other callers of `get_statistics_for_observation`.
+- The `count` field semantics (legacy `count = len(lengths)`, new `n_spores = raw row count`).
+
+Both are subtle behavior changes for a display-only compatibility surface. Stage C spec says: *"If this risks changing behavior, keep the legacy path untouched for now and document that Stage C created the structured computation path in parallel."* → done.
+
+### Tests added
+
+`tests/test_spore_summary.py` (20 tests, all passing):
+
+Context normalization / hashing:
+- `test_normalize_context_value_lowercases_and_trims`
+- `test_normalize_context_value_collapses_internal_whitespace`
+- `test_normalize_context_value_empty_becomes_none`
+- `test_build_context_defaults_measurement_type_to_spore`
+- `test_build_context_preserves_fixed_key_order`
+- `test_serialize_context_is_deterministic_and_sorted`
+- `test_context_hash_is_stable_across_whitespace_and_case`
+- `test_context_hash_changes_when_a_real_field_changes`
+
+Grouping:
+- `test_two_contexts_produce_two_summary_rows`
+- `test_missing_context_produces_null_context_row`
+- `test_summary_field_names_win_over_image_column_names`
+
+Statistics:
+- `test_real_lm_wm_qm_from_paired_measurements`
+- `test_q_mean_is_mean_of_ratios_not_ratio_of_means` — pins the anti-`Lm/Wm` rule with hand-picked pairs where the two values diverge.
+- `test_sample_sd_is_none_for_single_value_and_ddof1_for_more`
+- `test_percentile_convention_is_numpy_linear_interpolation`
+
+Eligibility / counts:
+- `test_zero_negative_null_length_width_are_excluded_from_paired`
+- `test_non_spore_measurement_type_rows_are_excluded`
+
+Payload contract:
+- `test_payload_contract_fields_source_app_and_version` — verifies `source_app = 'sporely-py'`, `stats_version = 1`, `computed_at` is the passed ISO string, `context_json` round-trips through `compute_context_hash`, and every Stage-B contract column (minus db-generated fields) is present.
+- `test_empty_measurements_returns_empty_list`
+- `test_all_non_spore_measurements_returns_empty_list`
+
+### Verification commands run
+
+- `.venv/bin/python -m py_compile utils/spore_summary.py tests/test_spore_summary.py` — OK.
+- `.venv/bin/python -m pytest tests/test_spore_summary.py -x -q` — **20 passed** in 0.14s.
+- `.venv/bin/python -m pytest tests/test_stats.py tests/test_measurement_parser.py -q` — **29 passed** in 0.17s (confirms the legacy stats/measurement code was not touched).
+
+### Parmasto anti-weighted-mean regression test — deferred to Stage G
+
+Stage C spec: *"Add an anti-regression test for Parmasto semantics ... only if such an aggregation helper already exists in sporely-py. Otherwise record it for Stage G."* There is no species-aggregation helper in sporely-py — species aggregation is the landing/RPC layer's job (`sporely-landing/src/lib/sporeSummary.ts:392-432`, `poolSporeSummaries`). The anti-weighted-mean test therefore lives in Stage G (landing) and Stage J (Supabase RPC) per the plan.
+
+### Open decisions
+
+None. Stage C was executed as written, with two documented conventions that follow the plan:
+
+1. **SD convention is sample SD (ddof=1) with `None` for n<2**, departing from legacy `np.std` (ddof=0). Plan explicitly asked for this; the legacy display string is unaffected because it never prints `sd`.
+2. **`source_app_version` is a parameter** with default `None` — `main.APP_VERSION` is not imported from a utility module because `main.py` pulls in PySide6 and the whole app at import time. Stage D callers should pass `APP_VERSION` explicitly.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage D when instructed.
+
+---
+
+## Stage C — patch progress note (2026-07-12)
+
+**Status: done.** Two Stage C defects fixed in place: the context-hash serialization order and the Lm/Wm/Qm denominator.
+
+### 1. Context serialization order — fixed
+
+Previous Stage C code called `json.dumps(payload, sort_keys=True, ...)` and claimed in a comment that "the five CONTEXT_KEYS happen to sort into the same fixed order." That claim was wrong. Alphabetical order of the five keys is:
+
+```
+contrast_method, measurement_type, mount_reagent, sample_type, stain_reagent
+```
+
+vs. the plan's fixed CONTEXT_KEYS order:
+
+```
+measurement_type, sample_type, mount_reagent, stain_reagent, contrast_method
+```
+
+`utils/spore_summary.py::serialize_context` now uses `sort_keys=False` and builds the payload by iterating `CONTEXT_KEYS`. Passing any Mapping is safe: caller-side dict ordering does not affect the hash because we rebuild the payload in CONTEXT_KEYS order ourselves. The docstring explicitly warns not to switch back to `sort_keys=True` since the resulting string is deliberately non-alphabetical.
+
+The wire contract is therefore now:
+
+```
+{"measurement_type":"spore","sample_type":null,"mount_reagent":"water","stain_reagent":null,"contrast_method":"dic"}
+```
+
+### 2. Paired-denominator canonical means — fixed
+
+Previous Stage C code computed `length_min_um / p05 / mean / median / p95 / max / sd` from **all** valid positive length values and `width_*` from **all** valid positive width values, while `q_*` used only paired rows. That let Lm, Wm, and Qm come from different denominators whenever length-only or width-only rows existed.
+
+`utils/spore_summary.py::_summary_row_from_group` now feeds `_percentile_bundle` from `paired_lengths` and `paired_widths` (and `ratios` unchanged). All three canonical bundles share one paired-row denominator, matching the Parmasto-style intent.
+
+Transparency counters are unchanged:
+
+- `n_spores` — raw eligible spore-row count in the context group.
+- `n_paired` — count of rows with both length and width valid.
+- `n_length` — count of rows with valid positive length (paired + length-only).
+- `n_width` — count of rows with valid positive width (paired + width-only).
+
+Length-only and width-only descriptive stats are *not* added as new columns here. If we later want them, that is a schema extension for a future stage, not something to smuggle into the canonical fields.
+
+### Tests updated / added (tests/test_spore_summary.py)
+
+Replaced / added:
+
+- `test_serialize_context_uses_fixed_key_order_not_alphabetical` — asserts the exact serialized string starts with `"measurement_type"` and that positions of the five keys inside the encoded string appear in CONTEXT_KEYS order. Replaces the old test that pinned the (wrong) alphabetical string.
+- `test_serialize_context_ignores_caller_dict_order` — new; passing a scrambled dict must produce the same canonical string as `build_context(...)`.
+- `test_length_only_row_increases_n_length_but_not_length_mean` — new; adds a length-only row to a two-paired baseline and asserts `n_length += 1`, `n_paired` and `n_width` unchanged, `length_mean_um` / `min` / `max` unchanged.
+- `test_width_only_row_increases_n_width_but_not_width_mean` — new; symmetric case using a zero-length row so length is invalid but width is valid.
+- `test_lm_wm_qm_share_the_same_paired_denominator` — new; two paired rows plus one length-only plus one width-only; asserts `n_paired = 2`, `n_length = n_width = 3`, and that all three of `length_mean_um` / `width_mean_um` / `q_mean` come from the two paired rows only.
+
+Kept as-is (still pass under the patch):
+
+- `test_zero_negative_null_length_width_are_excluded_from_paired` — all count assertions (`n_spores`, `n_length`, `n_width`, `n_paired`) and `q_mean` are semantics we did not change.
+- `test_real_lm_wm_qm_from_paired_measurements`, `test_q_mean_is_mean_of_ratios_not_ratio_of_means`, `test_sample_sd_is_none_for_single_value_and_ddof1_for_more`, `test_percentile_convention_is_numpy_linear_interpolation` — all fixtures already used fully-paired rows, so paired-denominator matches all-values-denominator, and the assertions still hold.
+- `test_payload_contract_fields_source_app_and_version` — no field added or removed; contract unchanged.
+- Context normalization / grouping / non-spore-filter tests — untouched.
+
+### Invariants kept intact by the patch
+
+- `q_mean = mean(length_i / width_i)`, never `length_mean_um / width_mean_um`.
+- Sample SD, `ddof=1`, `None` when `n < 2`.
+- `numpy.percentile` linear interpolation.
+- `source_app = "sporely-py"`.
+- `source_app_version` is a caller-supplied parameter (main.APP_VERSION still not imported to avoid PySide6 side effects).
+- Legacy `_format_measurement_stats_string()` / `MeasurementDB.get_statistics_for_observation()` unchanged.
+
+### Validation run
+
+- `.venv/bin/python -m py_compile utils/spore_summary.py tests/test_spore_summary.py` — OK.
+- `.venv/bin/python -m pytest tests/test_spore_summary.py -x -q` — **24 passed** in 0.71s.
+- `.venv/bin/python -m pytest tests/test_stats.py tests/test_measurement_parser.py -q` — **29 passed** in 0.11s (confirms the legacy stats/measurement code is still untouched).
+
+### Open decisions
+
+None. Both patch items were applied verbatim per the plan patch instructions. No new schema columns for length-only / width-only descriptive stats were added; if that is wanted later, it should be a documented schema extension (Stage B-style migration + Stage C addition), not a silent Lm/Wm rewrite.
+
+### Proposed drift
+
+None.
+
+### Ready for Stage D when instructed.
+
