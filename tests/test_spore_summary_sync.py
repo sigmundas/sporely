@@ -639,3 +639,258 @@ def test_call_site_summary_sync_runs_once_per_call(monkeypatch):
         errors=[],
     )
     assert call_count["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation pass — the fix for the "0 measured summaries" regression.
+#
+# push_all only iterates dirty observations, so observations that were
+# synced pre-Stage-D and are clean/no-op never see the summary writer.
+# `_reconcile_missing_spore_summaries` runs once at the end of push_all
+# and backfills any observation that has local measurements but no
+# remote summary row yet.
+# ---------------------------------------------------------------------------
+
+
+class _ReconcileFakeClient:
+    """A fake `SporelyCloudClient` for reconciliation tests. Tracks the
+    bulk GET call and any per-observation writes."""
+
+    def __init__(self, user_id: str = "user-recon"):
+        self.user_id = user_id
+        self.calls: list[tuple[str, str, Any]] = []
+        # Rows returned by the bulk `?user_id=eq.<uid>&select=observation_id`
+        # GET. Tests overwrite this to simulate different remote coverage.
+        self.remote_summary_observation_ids: list[Any] = []
+
+    def _get(self, path: str) -> list:
+        self.calls.append(("GET", path, None))
+        if path.startswith("observation_spore_summaries?user_id=eq."):
+            return [
+                {"observation_id": oid}
+                for oid in self.remote_summary_observation_ids
+            ]
+        return []
+
+
+def _install_reconcile_cloud_sync_stubs(monkeypatch, local_measurements_by_obs):
+    """Patch cloud_sync so `_reconcile_missing_spore_summaries` can run
+    against an in-memory local dataset and a no-op push helper.
+
+    `local_measurements_by_obs` maps local observation id -> list of
+    already-camelCase-mapped measurement dicts (as returned by
+    `load_measurements_with_context`).
+    """
+    from utils import cloud_sync as cs
+
+    monkeypatch.setattr(
+        cs, "is_cloud_auth_error", lambda exc: False,
+    )
+    monkeypatch.setattr(
+        cs, "is_cloud_temporary_unavailable_error", lambda exc: False,
+    )
+
+    # Stub the local SQLite query. `get_connection()` is used inside the
+    # reconcile helper to fetch (local_id, cloud_id) pairs; we replace it
+    # with a tiny sqlite in-memory DB seeded with the test fixture.
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.executescript(
+        """
+        CREATE TABLE observations (id INTEGER, cloud_id TEXT);
+        CREATE TABLE images (id INTEGER, observation_id INTEGER);
+        CREATE TABLE spore_measurements (id INTEGER, image_id INTEGER);
+        """
+    )
+    image_seq = 1
+    meas_seq = 1
+    for obs_id, (cloud_id, has_measurements) in local_measurements_by_obs.items():
+        cur.execute("INSERT INTO observations VALUES (?, ?)", (obs_id, cloud_id))
+        if has_measurements:
+            cur.execute("INSERT INTO images VALUES (?, ?)", (image_seq, obs_id))
+            cur.execute(
+                "INSERT INTO spore_measurements VALUES (?, ?)",
+                (meas_seq, image_seq),
+            )
+            image_seq += 1
+            meas_seq += 1
+    conn.commit()
+    monkeypatch.setattr(cs, "get_connection", lambda: conn)
+    return conn
+
+
+def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
+    """The scenario from the field: an observation was synced pre-Stage-D
+    (cloud_id set, sync_status='synced', not dirty) and has local paired
+    spore measurements. The main push loop skips it. Reconciliation must
+    still populate its remote summary row."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("cloud-obs-631", True),   # missing remotely → should backfill
+        },
+    )
+    writer_calls: list[dict] = []
+    def _capture(client, *, obs, local_obs_id, cloud_id, errors):
+        writer_calls.append({
+            "obs": obs, "local_obs_id": local_obs_id, "cloud_id": cloud_id,
+        })
+        return None
+    monkeypatch.setattr(cs, "_push_summary_for_current_observation", _capture)
+
+    client = _ReconcileFakeClient()
+    client.remote_summary_observation_ids = []  # nothing covered remotely yet.
+    errors: list[str] = []
+    counters = cs._reconcile_missing_spore_summaries(client, errors)
+
+    assert errors == []
+    assert counters == {"candidates": 1, "attempted": 1}
+    assert len(writer_calls) == 1
+    assert writer_calls[0]["local_obs_id"] == 42
+    assert writer_calls[0]["cloud_id"] == "cloud-obs-631"
+
+
+def test_reconcile_skips_observations_already_covered_remotely(monkeypatch):
+    """Idempotence: once summary rows exist for an observation, the
+    reconciliation pass must not re-invoke the writer for it."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("cloud-obs-631", True),   # already covered
+            43: ("cloud-obs-732", True),   # missing → should backfill
+        },
+    )
+    writer_calls: list[dict] = []
+    monkeypatch.setattr(
+        cs, "_push_summary_for_current_observation",
+        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+            {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
+        ),
+    )
+
+    client = _ReconcileFakeClient()
+    client.remote_summary_observation_ids = ["cloud-obs-631"]  # 631 covered.
+
+    counters = cs._reconcile_missing_spore_summaries(client, [])
+    assert counters == {"candidates": 2, "attempted": 1}
+    assert len(writer_calls) == 1
+    assert writer_calls[0]["cloud_id"] == "cloud-obs-732"
+
+
+def test_reconcile_ignores_observations_without_local_measurements(monkeypatch):
+    """An observation with a cloud_id but no local spore_measurements
+    must not appear as a reconciliation candidate — nothing to compute."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("cloud-obs-631", False),   # no measurements → skip.
+        },
+    )
+    writer_calls: list[dict] = []
+    monkeypatch.setattr(
+        cs, "_push_summary_for_current_observation",
+        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+            {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
+        ),
+    )
+    counters = cs._reconcile_missing_spore_summaries(_ReconcileFakeClient(), [])
+    assert counters == {"candidates": 0, "attempted": 0}
+    assert writer_calls == []
+
+
+def test_reconcile_ignores_observations_without_cloud_id(monkeypatch):
+    """A never-synced observation (cloud_id NULL / empty) is not this
+    pass's responsibility — the main push loop will visit it because
+    `cloud_id IS NULL` matches the dirty-loop WHERE clause."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("", True),         # empty cloud_id — never synced.
+            43: (None, True),       # NULL cloud_id — never synced.
+        },
+    )
+    writer_calls: list[dict] = []
+    monkeypatch.setattr(
+        cs, "_push_summary_for_current_observation",
+        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+            {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
+        ),
+    )
+    counters = cs._reconcile_missing_spore_summaries(_ReconcileFakeClient(), [])
+    assert counters["attempted"] == 0
+    assert writer_calls == []
+
+
+def test_reconcile_soft_skips_when_summary_table_missing(monkeypatch):
+    """Older cloud deployments predating Stage B lack the table. Bulk
+    GET fails with the missing-table shape; reconciliation must log
+    and return without touching `errors`."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("cloud-obs-631", True),
+        },
+    )
+    class _MissingTableClient(_ReconcileFakeClient):
+        def _get(self, path):
+            raise Exception(
+                "GET observation_spore_summaries?...: "
+                "PGRST205 Could not find the table 'public.observation_spore_summaries'"
+            )
+    writer_calls: list[dict] = []
+    monkeypatch.setattr(
+        cs, "_push_summary_for_current_observation",
+        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+            {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
+        ),
+    )
+
+    errors: list[str] = []
+    counters = cs._reconcile_missing_spore_summaries(_MissingTableClient(), errors)
+    assert counters == {"candidates": 0, "attempted": 0}
+    assert errors == []
+    assert writer_calls == []
+
+
+def test_reconcile_records_unrelated_bulk_error_and_does_not_abort(monkeypatch):
+    """A non-auth, non-temporary, non-missing-table error from the bulk
+    GET must be recorded in `errors` for the outer sync to surface, but
+    must not raise and must not attempt any per-observation writes."""
+    from utils import cloud_sync as cs
+
+    _install_reconcile_cloud_sync_stubs(
+        monkeypatch,
+        local_measurements_by_obs={
+            42: ("cloud-obs-631", True),
+        },
+    )
+    class _BadRequestClient(_ReconcileFakeClient):
+        def _get(self, path):
+            raise Exception("400 Bad Request: something else")
+    writer_calls: list[dict] = []
+    monkeypatch.setattr(
+        cs, "_push_summary_for_current_observation",
+        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+            {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
+        ),
+    )
+
+    errors: list[str] = []
+    counters = cs._reconcile_missing_spore_summaries(_BadRequestClient(), errors)
+    assert counters == {"candidates": 0, "attempted": 0}
+    assert len(errors) == 1
+    assert "spore summary reconciliation" in errors[0]
+    assert writer_calls == []
+

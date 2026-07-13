@@ -240,6 +240,25 @@ class _StubClient:
     def _using_default_r2_loader(self):
         return False
 
+    # ── Stage D spore-summary sync stubs ────────────────────────────────
+    #
+    # `_push_summary_for_current_observation` (utils/cloud_sync.py) uses
+    # the REST primitives below. These tests do not exercise the summary
+    # pipeline, so treat every request as a no-op that yields "no existing
+    # remote rows" — the helper then decides there is nothing to reconcile
+    # and the observation-level `result["errors"]` stays clean.
+    def _get(self, path):
+        return []
+
+    def _post(self, path, payload):
+        return [{"id": 1}]
+
+    def _patch(self, path, payload):
+        return None
+
+    def _delete(self, path):
+        return None
+
 
 def _remote_image_row(*, ai_crop=None, calibration_uuid=None, notes="baseline note"):
     row = {

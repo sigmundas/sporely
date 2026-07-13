@@ -407,6 +407,47 @@ Cloud derivative rule:
 - `image_key`
 - `thumb_key`
 
+#### Structured observation-level spore summaries
+
+**`cloud-only, computed`** — table `public.observation_spore_summaries`.
+
+- One row per `(observation_id, context_hash)` where `context_hash` is a
+  deterministic SHA-256 over the normalized preparation-context object
+  `{measurement_type, sample_type, mount_reagent, stain_reagent,
+  contrast_method}`.
+- Written by sporely-py during cloud sync in
+  `utils/spore_summary_sync.py::sync_observation_spore_summaries(...)`,
+  invoked from `utils/cloud_sync.py::_push_summary_for_current_observation(...)`
+  after the observation has an established cloud id — independent of
+  image-byte upload success.
+- Numeric contract: min / p05 / mean / median / p95 / max / sample SD
+  (ddof=1) for length, width, Q; plus `n_spores`, `n_paired`, `n_length`,
+  `n_width`. Percentile convention is numpy default (linear
+  interpolation) — matched between the desktop writer and any server
+  aggregate to guarantee client/server consistency.
+- Canonical `q_mean` is the mean of individual `length_i / width_i`
+  ratios, NEVER `length_mean_um / width_mean_um`. Canonical `length_mean_um`
+  and `width_mean_um` use the paired denominator only.
+- Provenance: `stats_version` (bumped on writer-semantic changes),
+  `computed_at`, `source_app = 'sporely-py'`, `source_app_version = APP_VERSION`.
+- **Local persistence deferred.** Summaries are deterministic and cheap
+  to recompute from `spore_measurements` + `images` on each sync. No
+  local SQLite mirror.
+- **Idempotence.** Sync GETs existing `(id, context_hash)` for the
+  observation, PATCHes matching hashes, POSTs new ones, DELETEs any
+  hash that used to exist remotely but is no longer in the local
+  computed set. Zero local summaries wipes every remote row for the
+  observation.
+- **Compatibility.** If the cloud deployment predates the table,
+  `STATUS_SKIP_TABLE_MISSING` is returned and the observation sync
+  continues. Any non-auth / non-temporary error is surfaced via
+  `sync_all(...)`'s returned `result["errors"]` list and marks the
+  observation dirty for retry.
+- **RLS.** Base table is owner-full; public reads exclusively via the
+  `get_public_observation_spore_summaries` RPC (Stage E/H).
+- Design and stage-by-stage progress notes:
+  [docs/spore-statistics-species-profiles.md](spore-statistics-species-profiles.md).
+
 `sync-required, staged calibration fields`:
 
 - `objective_key`

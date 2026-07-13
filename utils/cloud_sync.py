@@ -86,6 +86,7 @@ from utils.spore_summary_sync import (
     STATUS_SKIP_NO_CLOUD_ID as SUMMARY_STATUS_SKIP_NO_CLOUD_ID,
     STATUS_SKIP_TABLE_MISSING as SUMMARY_STATUS_SKIP_TABLE_MISSING,
     STATUS_SYNCED as SUMMARY_STATUS_SYNCED,
+    _is_missing_table_error as _is_summary_table_missing_error,
     sync_observation_spore_summaries,
 )
 
@@ -3227,6 +3228,9 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
         'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
         'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
+        'ai_crop_is_custom': _normalize_snapshot_value(
+            None if row.get('ai_crop_is_custom') is None else bool(row.get('ai_crop_is_custom'))
+        ),
     }
     return payload
 
@@ -3289,6 +3293,107 @@ def _image_label(image_row: dict | None) -> str:
     return 'image'
 
 
+def _image_kind_noun(image_row: dict | None, *, plural: bool = False) -> str:
+    """Human-readable name for what kind of image a row is.
+
+    We group by (image_type, micro_category) so summaries can say
+    "2 microscope photos" instead of listing filenames the user cannot
+    map back to what they saw in the app.
+    """
+    row = dict(image_row or {})
+    image_type = str(row.get('image_type') or '').strip().lower()
+    micro_category = str(row.get('micro_category') or '').strip().lower()
+    if image_type == 'microscope':
+        if micro_category == 'spore':
+            singular = 'spore photo'
+        elif micro_category:
+            singular = f'{micro_category} microscope photo'
+        else:
+            singular = 'microscope photo'
+    elif image_type == 'field':
+        singular = 'field photo'
+    elif image_type:
+        singular = f'{image_type} photo'
+    else:
+        singular = 'photo'
+    return singular + ('s' if plural and not singular.endswith('s') else '')
+
+
+def _pluralize_image_count(rows: list[dict]) -> str:
+    """Turn a list of image rows into 'N x' where x collapses by kind.
+
+    Examples: '2 microscope photos'; '1 field photo and 1 spore photo';
+    '3 photos' when kinds are mixed and there are many.
+    """
+    if not rows:
+        return ''
+    buckets: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for row in rows:
+        key = _image_kind_noun(row, plural=False)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(row)
+    parts: list[str] = []
+    for key in order:
+        count = len(buckets[key])
+        noun = key if count == 1 else (key + 's' if not key.endswith('s') else key)
+        parts.append(f'{count} {noun}')
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f'{parts[0]} and {parts[1]}'
+    return ', '.join(parts[:-1]) + f', and {parts[-1]}'
+
+
+_IMAGE_METADATA_FIELD_GROUPS = (
+    (
+        'the AI crop',
+        {
+            'ai_crop_x1',
+            'ai_crop_y1',
+            'ai_crop_x2',
+            'ai_crop_y2',
+            'ai_crop_source_w',
+            'ai_crop_source_h',
+            'ai_crop_is_custom',
+            'crop_mode',
+        },
+    ),
+    (
+        'the microscope calibration',
+        {
+            'calibration_uuid',
+            'objective_name',
+            'scale_microns_per_pixel',
+            'resample_scale_factor',
+        },
+    ),
+    (
+        'the microscope settings',
+        {
+            'mount_medium',
+            'stain',
+            'sample_type',
+            'contrast',
+            'measure_color',
+        },
+    ),
+    ('the notes', {'notes'}),
+    ('the photo type', {'image_type', 'micro_category'}),
+    ('the GPS source', {'gps_source'}),
+)
+
+
+def _image_metadata_group_for_field(field: str) -> str:
+    normalized = str(field or '').strip()
+    for label, members in _IMAGE_METADATA_FIELD_GROUPS:
+        if normalized in members:
+            return label
+    return _format_image_metadata_field_label(normalized)
+
+
 def _image_metadata_payload(image_row: dict | None) -> dict:
     row = dict(image_row or {})
     hidden_fields = {
@@ -3328,6 +3433,13 @@ def _summarize_image_changes(
     *,
     ignored_keys: set[str] | None = None,
 ) -> list[str]:
+    """Return short, user-facing lines describing what changed to images.
+
+    We group by "kind of change" (crop, notes, calibration) and by
+    "kind of image" (microscope photo, field photo) rather than listing
+    raw filenames — the user sees results in the app UI, they don't
+    remember `img_1.webp`.
+    """
     current = [dict(row or {}) for row in (current_images or [])]
     baseline = [dict(row or {}) for row in (baseline_images or [])]
     ignored = {str(key or '').strip() for key in (ignored_keys or set()) if str(key or '').strip()}
@@ -3342,33 +3454,37 @@ def _summarize_image_changes(
 
     lines: list[str] = []
 
-    metadata_changes = []
+    # {group_label: [image_row, ...]} — each image row is only recorded
+    # once per group even when several fields inside the group changed.
+    change_buckets: dict[str, list[dict]] = {}
+    change_order: list[str] = []
     for key in shared_keys:
         c_meta = _image_metadata_payload(current_map[key])
         b_meta = _image_metadata_payload(baseline_map[key])
-        if c_meta != b_meta:
-            changed_fields = [k for k, v in c_meta.items() if v != b_meta.get(k)]
-            label = _image_label(current_map[key])
-            friendly_fields = ', '.join(_format_image_metadata_field_label(field) for field in changed_fields)
-            metadata_changes.append(f"{label} changed: {friendly_fields}")
+        if c_meta == b_meta:
+            continue
+        seen_groups: set[str] = set()
+        for field, value in c_meta.items():
+            if value == b_meta.get(field):
+                continue
+            group = _image_metadata_group_for_field(field)
+            if group in seen_groups:
+                continue
+            seen_groups.add(group)
+            if group not in change_buckets:
+                change_buckets[group] = []
+                change_order.append(group)
+            change_buckets[group].append(current_map[key])
 
     if added:
-        labels = ", ".join(_image_label(row) for row in added[:3])
-        if len(added) > 3:
-            labels += ", …"
-        lines.append(f'Images added since last sync: {labels}')
+        lines.append(f'Added {_pluralize_image_count(added)}.')
     if removed:
-        labels = ", ".join(_image_label(row) for row in removed[:3])
-        if len(removed) > 3:
-            labels += ", …"
-        lines.append(f'Images removed since last sync: {labels}')
-    if metadata_changes:
-        for mc in metadata_changes[:5]:
-            lines.append(mc)
-        if len(metadata_changes) > 5:
-            lines.append(f"...and {len(metadata_changes) - 5} more metadata changes")
+        lines.append(f'Removed {_pluralize_image_count(removed)}.')
+    for group in change_order:
+        rows = change_buckets[group]
+        lines.append(f'Changed {group} on {_pluralize_image_count(rows)}.')
     if not lines and len(current) != len(baseline) and not ignored:
-        lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
+        lines.append(f'Photo count went from {len(baseline)} to {len(current)}.')
     return lines
 
 
@@ -10847,6 +10963,8 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         'local_id': int(local_id),
         'cloud_id': resolved_cloud_id,
         'title': _observation_display_name(local_obs),
+        'local_observation': dict(local_obs or {}),
+        'remote_observation': dict(remote_obs or {}),
         'field_rows': field_rows,
         'image_mismatches': image_mismatches,
         'local_image_changes': _summarize_image_changes(
@@ -11362,6 +11480,19 @@ def push_all(
             errors.append(raw_error)
             _advance_progress(progress_state, 1)
 
+    # Backfill pass: the main loop above only visits dirty observations, so
+    # observations synced before the Stage D writer landed never see the
+    # summary writer. Run reconciliation once per sync to cover them.
+    # Idempotent: on repeat syncs the covered_cloud_ids set makes this a
+    # single bulk GET with no per-observation work when nothing is missing.
+    try:
+        summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(f'spore summary reconciliation: unexpected error: {reconcile_exc}')
+        summary_reconcile = None
+
     result = {
         'pushed': pushed,
         'total': total,
@@ -11369,6 +11500,8 @@ def push_all(
         'calibrations_total': calibration_result.get('total', 0),
         'errors': errors,
     }
+    if summary_reconcile is not None:
+        result['spore_summary_reconcile'] = summary_reconcile
     if format_original_upload_summary(original_upload_summary):
         result['original_sync'] = original_upload_summary
     sync_summary = _cloud_sync_current_summary()
@@ -12651,6 +12784,121 @@ def _push_measurements_for_observation(
         ),
         flush=True,
     )
+
+
+def _reconcile_missing_spore_summaries(
+    client: SporelyCloudClient,
+    errors: list[str],
+) -> dict[str, int]:
+    """Backfill `public.observation_spore_summaries` for observations
+    that were synced before the Stage D writer landed (or otherwise did
+    not traverse the dirty-observations loop this session).
+
+    The main ``push_all`` loop scans
+    ``WHERE cloud_id IS NULL OR sync_status = 'dirty'`` and only that
+    subset runs `_push_summary_for_current_observation`. Observations
+    that were synced pre-Stage-D and have not been touched since are
+    `synced/clean` and get skipped — even though they have local spore
+    measurements that should produce structured summary rows. This
+    reconciliation pass fills that gap:
+
+    1. Bulk-GET the remote `observation_spore_summaries.observation_id`
+       set for this user in one round-trip.
+    2. Query local SQLite for observations that have a `cloud_id` AND
+       at least one `spore_measurements` row (via `images.observation_id`).
+    3. Anything that has local measurements but no remote summary row
+       yet gets routed through `_push_summary_for_current_observation`,
+       which handles errors + dirty-marking + `errors` list the same
+       way the main loop does.
+
+    Metadata-only microscope anchors (`observation_images.storage_path`
+    NULL) are covered because the join key is `image_id`, not
+    `storage_path`. Summaries are computed from local measurements plus
+    local image context; raw microscope image bytes are irrelevant.
+
+    Returns a small counter dict for the caller's summary/log stanza.
+    """
+    counters = {'candidates': 0, 'attempted': 0}
+    try:
+        remote_rows = client._get(
+            f'observation_spore_summaries'
+            f'?user_id=eq.{client.user_id}'
+            f'&select=observation_id'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        if _is_summary_table_missing_error(exc):
+            print(
+                '[cloud_sync] Spore summary reconciliation: cloud table missing '
+                '(older deployment); skipping backfill pass.',
+                flush=True,
+            )
+            return counters
+        # Unknown non-auth error — log via `errors` so the caller sees it,
+        # but do not abort the whole sync. A per-observation retry via
+        # the main dirty loop still works for the individual case.
+        errors.append(f'spore summary reconciliation: bulk lookup failed: {exc}')
+        return counters
+
+    covered_cloud_ids: set[str] = set()
+    for row in remote_rows or []:
+        oid = str((row or {}).get('observation_id') or '').strip()
+        if oid:
+            covered_cloud_ids.add(oid)
+
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT DISTINCT o.id AS local_id, o.cloud_id AS cloud_id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            JOIN spore_measurements m ON m.image_id = i.id
+            WHERE o.cloud_id IS NOT NULL AND trim(o.cloud_id) != ''
+            ORDER BY o.id
+            '''
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    counters['candidates'] = len(candidates)
+    missing: list[tuple[int, str]] = []
+    for row in candidates:
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if not cloud_id or cloud_id in covered_cloud_ids:
+            continue
+        try:
+            local_id = int(row.get('local_id') or 0)
+        except (TypeError, ValueError):
+            local_id = 0
+        if local_id <= 0:
+            continue
+        missing.append((local_id, cloud_id))
+
+    if not missing:
+        return counters
+
+    print(
+        f'[cloud_sync] Spore summary reconciliation: {len(missing)} of '
+        f'{len(candidates)} synced observations missing remote summary rows; '
+        f'backfilling.',
+        flush=True,
+    )
+
+    for local_id, cloud_id in missing:
+        counters['attempted'] += 1
+        _push_summary_for_current_observation(
+            client,
+            obs={'id': local_id},
+            local_obs_id=local_id,
+            cloud_id=cloud_id,
+            errors=errors,
+        )
+    return counters
 
 
 def _push_summary_for_current_observation(
@@ -14944,7 +15192,6 @@ def _import_remote_measurements_for_observation(
                 if remote_desktop_measurement_id > 0:
                     local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
 
-            remote_payload = _measurement_compare_payload(remote_row, local=False)
             if local_measurement is None:
                 write_values = _measurement_write_values(remote_row, local_image_id)
                 cursor.execute(
@@ -14996,11 +15243,18 @@ def _import_remote_measurements_for_observation(
                     local_measurements_by_id[new_local_measurement_id] = dict(local_measurements_by_cloud_id[remote_measurement_id])
                 continue
 
-            local_payload = _measurement_compare_payload(local_measurement, local=True)
-            for identity_key in ('id', 'desktop_id'):
-                local_payload.pop(identity_key, None)
-                remote_payload.pop(identity_key, None)
-            if local_payload != remote_payload:
+            # The local image the measurement should live under has already
+            # been resolved (via local_images_by_cloud_id above), so pin both
+            # sides to the same cloud image id — image_id is identity, not
+            # content, and this stops a stale/missing local images.cloud_id
+            # from making every measurement on that image look "locally
+            # modified". Routing through the shared comparator also picks up
+            # float tolerance and sqlite/pgrest type normalisation.
+            if not _measurement_payloads_match(
+                local_measurement,
+                remote_row,
+                cloud_image_id=remote_image_id,
+            ):
                 conflict = True
                 warnings.append(
                     f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "

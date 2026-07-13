@@ -2214,3 +2214,113 @@ None.
 
 ### Ready for Stage I (Parmasto matching foundation) when instructed.
 
+---
+
+## Stage K — rollout progress note (2026-07-12)
+
+**Status: done.** No code changes — Stage K is a documentation and sequencing stage. This note pins the ship order, confirms each plan step is already satisfied on the branch, and records the last-verified test state for the release cut.
+
+### What ships
+
+Four new Supabase migrations (chronological order, all forward-only, all backward-compatible with older clients):
+
+1. `sporely-web/supabase/migrations/20260712120000_add_observation_spore_summaries.sql` — Stage B table + owner-full RLS + indexes + `set_updated_at` trigger.
+2. `sporely-web/supabase/migrations/20260713120000_add_public_spore_summary_rpc.sql` — Stage E public RPC `get_public_observation_spore_summaries(bigint[])`, RE_VOKE FROM PUBLIC + `GRANT EXECUTE`.
+3. `sporely-web/supabase/migrations/20260714120000_add_context_filters_to_public_spore_summary_rpc.sql` — Stage H filter overload (`p_sample_type`, `p_mount_reagent`, `p_stain_reagent`, `p_contrast_method`). DROP + CREATE required because argument list changes.
+4. `sporely-web/supabase/migrations/20260714130000_fix_search_public_observation_images_hide_metadata_only.sql` — metadata-only microscope anchor leak fix (unrelated feature, must ship before landing). `CREATE OR REPLACE FUNCTION` only.
+
+Desktop client:
+
+- `sporely-py` `main.APP_VERSION = "0.9.6"` writes structured summaries via [utils/spore_summary_sync.py](utils/spore_summary_sync.py) hooked into [utils/cloud_sync.py](utils/cloud_sync.py) inside the observation loop. Legacy `observations.spore_statistics` string generation is untouched (documented Stage C parallel path).
+
+Landing:
+
+- `sporely-landing` [src/lib/observationSporeSummary.ts](../../sporely-landing/src/lib/observationSporeSummary.ts), [src/lib/observationBalancedProfile.ts](../../sporely-landing/src/lib/observationBalancedProfile.ts), the new [src/lib/publicApi.ts:fetchPublicObservationSporeSummaries](../../sporely-landing/src/lib/publicApi.ts) wrapper, and the wired [src/components/ExploreSporePanel.tsx](../../sporely-landing/src/components/ExploreSporePanel.tsx). Legacy `poolSporeSummaries` remains but no longer emits weighted means.
+
+### Sequenced rollout — 1:1 with the plan's five steps
+
+**Step 1 — schema first.** Ship the four migrations in the timestamp order above.
+
+- Migration order is enforced by timestamps; `20260714120000` depends on `20260713120000` (DROP of the single-argument variant).
+- Grants: `20260713120000` and `20260714120000` explicitly `REVOKE FROM PUBLIC` and `GRANT EXECUTE` to `anon`/`authenticated`/`service_role`. Anon reads via the RPC only; the base table's RLS stays owner-full.
+- Landing traffic can hit the RPC as soon as `20260713120000` lands; the Stage H filter args are backward-compatible via `DEFAULT NULL`.
+- `NOTIFY pgrst, 'reload schema'` is included in each migration so PostgREST picks up the new function/table without a manual restart.
+
+**Step 2 — desktop writer.** Release `sporely-py` 0.9.6 with the Stage C computation + Stage D sync. Behavior:
+
+- On next cloud sync, every observation with local spore measurements computes deterministic summaries and upserts them keyed by `(observation_id, context_hash)`. Existing observations therefore backfill automatically — no data migration needed.
+- If the target Supabase deployment predates migration 1 (older cloud that lacks `observation_spore_summaries`), sync returns `STATUS_SKIP_TABLE_MISSING` and logs a compatibility-skip line. The rest of the observation sync succeeds unchanged.
+- Sync errors that are not auth/temporary/table-missing propagate into `sync_all`'s returned `result["errors"]` and mark the observation dirty for retry. See Stage D patch note for the full contract.
+
+**Step 3 — landing reader.** Deploy the landing bundle after migration 1 (Stage E RPC) is live.
+
+- Migration 2 (context filters) is not a hard prerequisite for landing to work — the wrapper omits the `p_*` filter keys when they are empty, so the RPC's default-single-argument variant works. But migration 2 SHOULD land in the same window so `ExploreSporePanel`'s server-side narrowing works. Otherwise the client-side defensive filter in `filterObservationSummariesByContext` catches the same case — measured summaries are always safe, just less efficient without the server filter.
+- Migration 4 (metadata-only fix) should ship before the landing bundle so the public gallery does not surface metadata-only anchors during the release window.
+
+**Step 4 — remove weighted canonical means.** Already done as part of Stage G:
+
+- `poolSporeSummaries` in `sporely-landing/src/lib/sporeSummary.ts` (line 409) no longer emits `length_mean_um` / `width_mean_um` / `q_mean`. Docstring explicitly names it envelope-only legacy and points callers at `poolObservationSporeSummaries`. The unused `weightedMeanAcross` helper was deleted.
+- `ExploreSporePanel` populates the `SporeRangeTable` "Mean" column exclusively from the observation-balanced profile; it renders `—` when no eligible measured summaries exist, never a weighted value.
+- `computeObservationVariation` (used by the species page) has been observation-balanced since before Stage G; Stage J review added a pin test to guard against silent reintroduction of weights.
+- Plan wording asks for optional rename to `pooled_individual_spore_mean`; we kept the function name to minimize churn and instead made the semantic change (weighted-mean fields removed) enforceable by the type system. If a rename is desired later it is a search-and-replace, no behavior implications.
+
+**Step 5 — matching later.** Confirmed. `grep -rn 'parmasto\|mahalanobis'` over the summary/profile modules yields zero matcher implementations:
+
+- `parmasto_length_um` / `parmasto_width_um` in `SporeSummary` are literature reference fields sourced from `reference_values`, not a matcher.
+- The label "Parmasto-style" appears only in docstrings and test names to describe the anti-weighted-mean *rule*, never as a scoring implementation.
+- Stage I remains unimplemented per the plan's explicit non-goals.
+
+### Backwards compatibility guarantees
+
+- **Older desktop clients that predate `sporely-py` 0.9.6** continue to sync without writing to `observation_spore_summaries`. The table simply stays empty for those users; landing renders `—` for canonical Mean cells until they upgrade.
+- **Older landing builds** that call `get_public_observation_spore_summaries(bigint[])` still work after Stage H migrates the signature — the new args are all `DEFAULT NULL`.
+- **Older cloud deployments** that lack the Stage B table are handled by `STATUS_SKIP_TABLE_MISSING` in the sync helper and by a graceful fallback in the landing wrapper (any RPC error returns `[]` in `ExploreSporePanel`, envelope ranges still render).
+- **Legacy `observations.spore_statistics` text** is never parsed by the new RPC, never used for canonical means, and is left untouched by the writer. Legacy display of the literature string in existing UI is unaffected.
+
+### Rollback notes
+
+- All four migrations are safe to skip on older deployments — nothing depends on them being present. Rolling back a specific migration is possible but requires ordering:
+  - Roll back `20260714130000` (metadata-only fix) by restoring the older `search_public_observation_images` body via `CREATE OR REPLACE FUNCTION`. This will re-introduce the metadata-only leak — not recommended.
+  - Roll back `20260714120000` (context filters) via a DROP + re-create of the single-argument variant. Landing continues to work because empty filter payloads are safe.
+  - Roll back `20260713120000` (Stage E RPC) via DROP; the landing bundle's `fetchPublicObservationSporeSummaries` will surface RPC-not-found errors, and `ExploreSporePanel` will fall back to envelope-only ranges. Desktop writes are unaffected because writes go to the table, not the RPC.
+  - Roll back `20260712120000` (table) only after removing dependent RPCs above and deleting all rows — cascading drops of RLS/indexes/triggers are handled by the standard `DROP TABLE ... CASCADE`.
+- Desktop client rollback: sporely-py 0.9.6 can be rolled back to a prior version at any time; the new table's rows will simply stop updating. No data corruption path.
+
+### Last-verified test state
+
+- **sporely-py**: 155 tests passed across `test_spore_summary.py`, `test_spore_summary_sync.py`, `test_cloud_measurement_sync_v1.py`, `test_cloud_sync_metadata_only.py`, `test_cloud_spore_mosaic.py`, `test_stats.py`, `test_measurement_parser.py`.
+- **sporely-web SQL**:
+  - `supabase db reset --local` applies all migrations 20260712120000–20260714130000 cleanly.
+  - `metadata_only_microscope_images_test.sql` — `DO` (passing).
+  - `public_spore_summary_rpc_validation.sql` — `NOTICE: all E1..E12 and H1..H9 assertions passed`.
+  - `public_observation_rpc_validation.sql` — `DO` (passing).
+- **sporely-landing**: 88 tests passed across 7 test files (`typecheck` clean, `build` clean).
+
+### Non-goals for this release
+
+Explicitly NOT shipping in this rollout:
+
+- Parmasto-style matcher (Stage I).
+- Mahalanobis / covariance-based distance scoring (plan non-goals).
+- Removal of the legacy `observations.spore_statistics` string (plan non-goals — writers still emit it, landing still parses it for legacy fallback rows).
+- Historical migration/backfill scripts. Backfill happens automatically as users open sporely-py 0.9.6 and sync.
+- Species page rewiring beyond the existing `computeObservationVariation` path (`ExploreSporePanel` is the wired canonical surface; species page rewiring is a documented Stage-G-adjacent follow-up if desired).
+
+### Post-rollout monitoring
+
+- Watch `observation_spore_summaries` row count on the shared Supabase project. Should climb steadily as desktop clients upgrade to 0.9.6 and sync. A flat count would indicate `STATUS_SKIP_TABLE_MISSING` firing everywhere — investigate cloud schema state.
+- Watch landing `ExploreSporePanel` for `—` in Mean cells. Frequent `—` means `fetchPublicObservationSporeSummaries` is returning empty for on-screen observations — either the RPC is missing, the client-side filter is over-narrowing, or the observations legitimately have no eligible summaries yet.
+- Watch `sync_all(...)`'s returned `result["errors"]` for entries matching `obs %: spore summary sync failed:` — these are non-auth/non-temporary summary errors, which Stage D marks as dirty for retry. Repeated entries for the same observation indicate a real payload or schema mismatch and should be investigated.
+
+### Open decisions
+
+None. The plan's Stage K is a documentation checklist and every substep is satisfied on the branch.
+
+### Proposed drift
+
+None.
+
+### End of the spore-statistics-species-profiles plan for this release cycle.
+
+The four migrations, sporely-py 0.9.6 writer, and landing observation-balanced reader are the shippable unit. Parmasto-style matching (Stage I) remains a separate future stage per the plan's explicit non-goals.
+
