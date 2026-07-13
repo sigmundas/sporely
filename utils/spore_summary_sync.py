@@ -42,6 +42,7 @@ Design notes:
 from __future__ import annotations
 
 import json
+import math
 import os
 from datetime import datetime
 from typing import Any, Callable, Mapping, Protocol
@@ -174,13 +175,55 @@ def _coerce_json_value(value: Any) -> Any:
     return value
 
 
+# Tolerance for float material fields. Both `rel_tol` and `abs_tol` are
+# set to 1e-12 so:
+#   * PostgREST / jsonb / numeric round-trip noise (typically 1e-15 to
+#     1e-13 for the µm and Q values we store) is absorbed → no false
+#     PATCH on unchanged data.
+#   * A meaningful biological drift stays well above the tolerance
+#     (µm precision is 0.1 in the display convention, Q precision is
+#     0.01 — both larger than 1e-12 by 10 orders of magnitude).
+# Absolute tolerance protects near-zero values where relative tolerance
+# alone would collapse to zero.
+_SUMMARY_FLOAT_REL_TOL = 1e-12
+_SUMMARY_FLOAT_ABS_TOL = 1e-12
+
+
+def _float_equal(a: Any, b: Any) -> bool:
+    """Tolerance-aware comparison for float material columns.
+
+    Return True when `a` and `b` are both None, both NaN, or numerically
+    equal within `_SUMMARY_FLOAT_REL_TOL` / `_SUMMARY_FLOAT_ABS_TOL`.
+    Any non-numeric input returns False (better to PATCH than silently
+    accept a coerced junk value)."""
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        af = float(a)
+        bf = float(b)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(af) or math.isnan(bf):
+        # NaN != NaN in IEEE-754, but a stored NaN column should not
+        # trigger a PATCH on every sync just because the writer also
+        # produced NaN. Treat both-NaN as equal for material-diff
+        # purposes; a mixed NaN/finite is a real material change.
+        return math.isnan(af) and math.isnan(bf)
+    return math.isclose(af, bf, rel_tol=_SUMMARY_FLOAT_REL_TOL, abs_tol=_SUMMARY_FLOAT_ABS_TOL)
+
+
 def _material_field_equal(field: str, remote_value: Any, payload_value: Any) -> bool:
     """Compare one material column between the remote row and the
     locally-computed payload. Null-safe; type-tolerant for the
     int/float/text distinctions PostgREST may round-trip differently
     than the Python writer produced; STRUCTURAL for JSON columns so
     reordered keys / whitespace variation cannot produce a false
-    PATCH."""
+    PATCH.
+
+    Float material columns use `math.isclose(rel_tol=1e-12,
+    abs_tol=1e-12)` to absorb PG double-precision / jsonb numeric
+    round-trip noise (~1e-15 to 1e-13 in real sync logs) while still
+    catching every biologically meaningful drift."""
     if remote_value is None and payload_value is None:
         return True
     if remote_value is None or payload_value is None:
@@ -191,10 +234,7 @@ def _material_field_equal(field: str, remote_value: Any, payload_value: Any) -> 
         except (TypeError, ValueError):
             return False
     if field in _SUMMARY_FLOAT_FIELDS:
-        try:
-            return float(remote_value) == float(payload_value)
-        except (TypeError, ValueError):
-            return False
+        return _float_equal(remote_value, payload_value)
     if field in _SUMMARY_JSON_FIELDS:
         # Coerce serialized-JSON strings to their structural form on
         # both sides, then compare. Python dict/list `==` is

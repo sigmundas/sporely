@@ -3,6 +3,7 @@ observation spore summaries)."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -440,6 +441,141 @@ def test_sync_patches_when_material_column_differs():
     assert result_b["inserted"] == 0
     patch_paths = [path for m, path, _ in client_b.calls if m == "PATCH"]
     assert patch_paths == ["observation_spore_summaries?id=eq.999"]
+
+
+def test_float_material_field_equal_absorbs_postgrest_roundtrip_noise():
+    """Real values captured from `SPORE_SUMMARY_DIFF_DEBUG=1` in the
+    field. PG double-precision <-> JSON round-trip drops or gains a
+    trailing bit at ~1e-15 magnitude. Material comparison MUST return
+    True for these — they are not measurement changes, just IEEE-754
+    formatting noise."""
+    from utils.spore_summary_sync import _material_field_equal
+
+    # length_min_um regression case.
+    assert _material_field_equal(
+        "length_min_um",
+        4.63386615453041,       # remote (PostgREST-returned)
+        4.633866154530411,      # payload (locally-computed)
+    ) is True
+
+    # length_p05_um regression case.
+    assert _material_field_equal(
+        "length_p05_um",
+        6.0911206428518,        # remote
+        6.091120642851802,      # payload
+    ) is True
+
+    # q_min regression case.
+    assert _material_field_equal(
+        "q_min",
+        1.62274339104208,       # remote
+        1.622743391042079,      # payload
+    ) is True
+
+    # Symmetric — the reverse order still matches.
+    assert _material_field_equal(
+        "length_p05_um", 6.091120642851802, 6.0911206428518,
+    ) is True
+
+
+def test_float_material_field_equal_still_patches_meaningful_drift():
+    """The tolerance is 1e-12 — well below biological/display
+    precision. Any real change (µm to the 4th decimal, Q to the 3rd)
+    is still a mismatch that MUST trigger a PATCH."""
+    from utils.spore_summary_sync import _material_field_equal
+
+    # 1e-5 drift on a length mean — well above tolerance.
+    assert _material_field_equal(
+        "length_mean_um", 10.0, 10.00001,
+    ) is False
+
+    # 1e-3 drift on Q — well above tolerance.
+    assert _material_field_equal(
+        "q_mean", 2.0, 2.001,
+    ) is False
+
+    # Zero versus tolerance boundary: 1e-11 IS above the 1e-12
+    # absolute tolerance, so it must patch.
+    assert _material_field_equal(
+        "width_mean_um", 0.0, 1e-11,
+    ) is False
+
+
+def test_float_material_field_equal_edge_cases():
+    """None handling and NaN handling. NaN in both sides is treated as
+    equal for material-diff purposes — a stored NaN column should not
+    trigger a PATCH on every sync just because IEEE-754 says NaN != NaN."""
+    from utils.spore_summary_sync import _material_field_equal
+    import math
+
+    assert _material_field_equal("length_mean_um", None, None) is True
+    assert _material_field_equal("length_mean_um", None, 1.0) is False
+    assert _material_field_equal("length_mean_um", 1.0, None) is False
+    assert _material_field_equal("length_mean_um", float("nan"), float("nan")) is True
+    assert _material_field_equal("length_mean_um", float("nan"), 1.0) is False
+    assert _material_field_equal("length_mean_um", 1.0, float("nan")) is False
+
+
+def test_sync_skips_patch_when_remote_differs_only_by_float_roundtrip_noise():
+    """End-to-end: build the exact scenario that produced the field
+    regression. Local writer computes `length_min_um = 4.633866154530411`
+    but the remote row (from a prior sync) carries `4.63386615453041`
+    (missing trailing digit — a PG double-precision serialization
+    artifact). Second sync must NOT PATCH — every material float
+    comparison is now tolerance-aware.
+    """
+    load = lambda _: [_pair(10.0, 5.0), _pair(11.0, 5.5), _pair(12.0, 6.0)]
+
+    # Seed a payload once so we know its exact material shape.
+    client_seed = FakeSummaryClient()
+    sync_observation_spore_summaries(
+        client_seed,
+        local_observation_id=1,
+        remote_observation_id=7,
+        user_id="user-abc",
+        load_measurements=load,
+        computed_at=FIXED_COMPUTED_AT,
+    )
+    seed_payload = next(p for m, _, p in client_seed.calls if m == "POST")
+
+    # Simulate PG round-trip noise: mutate a handful of float columns
+    # on the remote row by ~1e-15. These are within the tolerance
+    # threshold and must be treated as unchanged.
+    def _bit_noisy(value: float) -> float:
+        # Add or subtract a bit at the LSB of the mantissa. abs(delta)
+        # ends up around 1e-15 for typical spore µm magnitudes — the
+        # exact class of drift the field log captured.
+        return math.nextafter(value, math.inf)
+
+    remote_row = {
+        "id": 999,
+        **seed_payload,
+        "length_min_um": _bit_noisy(seed_payload["length_min_um"]),
+        "length_p05_um": _bit_noisy(seed_payload["length_p05_um"]),
+        "length_mean_um": _bit_noisy(seed_payload["length_mean_um"]),
+        "q_min": _bit_noisy(seed_payload["q_min"]),
+        "q_mean": _bit_noisy(seed_payload["q_mean"]),
+        "computed_at": "2026-07-01T00:00:00+00:00",
+    }
+    # Sanity: the noisy floats really differ at the bit level.
+    assert remote_row["length_min_um"] != seed_payload["length_min_um"]
+    assert remote_row["q_mean"] != seed_payload["q_mean"]
+
+    client = FakeSummaryClient()
+    client.get_responses = [[remote_row]]
+    result = sync_observation_spore_summaries(
+        client,
+        local_observation_id=1,
+        remote_observation_id=7,
+        user_id="user-abc",
+        load_measurements=load,
+        computed_at=FIXED_COMPUTED_AT,
+    )
+    assert result["unchanged"] == 1
+    assert result["updated"] == 0
+    assert result["inserted"] == 0
+    assert result["deleted"] == 0
+    assert not any(m in ("POST", "PATCH", "DELETE") for m, _, _ in client.calls)
 
 
 def test_context_json_comparison_is_structural_not_string():
