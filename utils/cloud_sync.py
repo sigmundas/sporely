@@ -11480,11 +11480,24 @@ def push_all(
             errors.append(raw_error)
             _advance_progress(progress_state, 1)
 
-    # Backfill pass: the main loop above only visits dirty observations, so
-    # observations synced before the Stage D writer landed never see the
-    # summary writer. Run reconciliation once per sync to cover them.
-    # Idempotent: on repeat syncs the covered_cloud_ids set makes this a
-    # single bulk GET with no per-observation work when nothing is missing.
+    # Backfill passes for observations skipped by the main dirty loop.
+    #
+    # Measurement reconciliation MUST run before summary reconciliation:
+    # summaries count local measurements, and if the writer publishes
+    # `n_paired = 29` for a species whose cloud raw table only has 20
+    # measurements, the public spore RPC and the public summary RPC
+    # disagree until the raw table catches up. Filling raw measurements
+    # first keeps the two invariants consistent for the same species.
+    try:
+        measurement_reconcile = _reconcile_missing_spore_measurements(client, errors)
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(
+            f'spore measurement reconciliation: unexpected error: {reconcile_exc}'
+        )
+        measurement_reconcile = None
+
     try:
         summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
     except Exception as reconcile_exc:
@@ -11502,6 +11515,8 @@ def push_all(
     }
     if summary_reconcile is not None:
         result['spore_summary_reconcile'] = summary_reconcile
+    if measurement_reconcile is not None:
+        result['spore_measurement_reconcile'] = measurement_reconcile
     if format_original_upload_summary(original_upload_summary):
         result['original_sync'] = original_upload_summary
     sync_summary = _cloud_sync_current_summary()
@@ -12749,6 +12764,7 @@ def _push_measurements_for_observation(
     )
 
     pushed_cloud_ids: set[str] = set()
+    local_id_stamp_failures: list[int] = []
     for meas in measurements:
         cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
         if not cloud_image_id:
@@ -12759,71 +12775,207 @@ def _push_measurements_for_observation(
                 cloud_image_id,
                 remote_measurement_cache=remote_measurement_cache,
             )
-            pushed_cloud_ids.add(cloud_meas_id)
-            if str(meas.get('cloud_id') or '').strip() != cloud_meas_id:
-                conn = get_connection()
-                try:
-                    conn.execute(
-                        'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
-                        (cloud_meas_id, int(meas['id'])),
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
         except Exception as e:
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
+            continue
+
+        pushed_cloud_ids.add(cloud_meas_id)
+
+        # Split the local cloud_id stamp into its own try/except so a
+        # local UPDATE failure becomes VISIBLE instead of getting
+        # swallowed by the broad "push failed" handler above. Without
+        # this, a database lock / stale connection could silently
+        # prevent cloud_id from ever being persisted locally, which is
+        # exactly the "reconcile keeps pushing the same measurements"
+        # failure mode.
+        normalized_cloud_meas_id = str(cloud_meas_id or '').strip()
+        normalized_local_cloud_id = str(meas.get('cloud_id') or '').strip()
+        if normalized_cloud_meas_id and normalized_local_cloud_id != normalized_cloud_meas_id:
+            try:
+                conn = get_connection()
+                try:
+                    conn.execute(
+                        'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
+                        (normalized_cloud_meas_id, int(meas['id'])),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as stamp_exc:
+                local_id_stamp_failures.append(int(meas.get('id') or 0))
+                print(
+                    f'[cloud_sync] Measurement {meas["id"]} cloud_id stamp '
+                    f'failed (cloud id={cloud_meas_id!r}): {stamp_exc}',
+                    flush=True,
+                )
 
     push_elapsed = _cloud_sync_perf_counter() - push_start
+    stamp_failure_suffix = (
+        f' local_stamp_failures={len(local_id_stamp_failures)}'
+        if local_id_stamp_failures else ''
+    )
     print(
         (
             f'[cloud_sync] Observation {obs_local_id}: measurement push finalized '
-            f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)} '
+            f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)}'
+            f'{stamp_failure_suffix} '
             f'duration={push_elapsed * 1000:.0f}ms'
         ),
         flush=True,
     )
 
 
+def _reconcile_missing_spore_measurements(
+    client: SporelyCloudClient,
+    errors: list[str],
+) -> dict[str, int]:
+    """Backfill raw `public.spore_measurements` rows for observations
+    that were synced pre-Stage-D or otherwise skipped the measurement
+    push loop.
+
+    The main ``push_all`` loop only visits observations where
+    `cloud_id IS NULL OR sync_status = 'dirty'`. `_push_measurements_
+    for_observation` runs inside that loop; an observation that was
+    once synced but never re-dirtied can end up with LOCAL measurements
+    that never made it to cloud `spore_measurements`. The summary
+    writer counts local measurements — so a summary row can advertise
+    n_paired = 29 while the cloud raw table only exposes 20 through
+    the public spore RPCs, and the two disagree until this pass runs.
+
+    We target only observations that actually have unsynced local
+    measurements (any `spore_measurements.cloud_id IS NULL` on a
+    cloud-known image); already-fully-synced observations skip the
+    call entirely.
+
+    `_push_measurements_for_observation` is per-measurement idempotent:
+    each row is either PATCHed (only if its payload differs from the
+    remote) or POSTed if missing. Fully-covered observations therefore
+    also survive an accidental extra call cheaply, but we still filter
+    them out here so the reconciliation pass stays fast in steady
+    state.
+
+    Returns a small counter dict for the sync result. Errors from
+    individual observations are appended to `errors` per the surrounding
+    convention; auth/temporary errors propagate.
+    """
+    counters = {'candidates': 0, 'attempted': 0}
+
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        cursor = conn.cursor()
+        # The reconciliation candidate query MUST mirror the filter
+        # used by `_push_measurements_for_observation` exactly. If we
+        # flag observations whose only "missing" measurements are
+        # attached to non-microscope images or to tombstoned images,
+        # the push helper refuses to push them, `spore_measurements
+        # .cloud_id` stays NULL, and we re-select the same observation
+        # every sync — the "measurements=22 pushed=22 but reconcile
+        # picks it up again next sync" bug from the field log.
+        cursor.execute(
+            '''
+            SELECT DISTINCT o.id AS local_id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            JOIN spore_measurements m ON m.image_id = i.id
+            LEFT JOIN image_tombstones t ON t.deleted_cloud_id = i.cloud_id
+            WHERE o.cloud_id IS NOT NULL
+              AND trim(o.cloud_id) != ''
+              AND i.cloud_id IS NOT NULL
+              AND trim(i.cloud_id) != ''
+              AND i.image_type = 'microscope'
+              AND t.id IS NULL
+              AND (m.cloud_id IS NULL OR trim(m.cloud_id) = '')
+            ORDER BY o.id
+            '''
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    counters['candidates'] = len(candidates)
+    if not candidates:
+        return counters
+
+    print(
+        f'[cloud_sync] Spore measurement reconciliation: '
+        f'{len(candidates)} synced observations have local measurements '
+        f'without cloud_id; backfilling to public.spore_measurements.',
+        flush=True,
+    )
+
+    for row in candidates:
+        try:
+            local_id = int(row.get('local_id') or 0)
+        except (TypeError, ValueError):
+            local_id = 0
+        if local_id <= 0:
+            continue
+        counters['attempted'] += 1
+        try:
+            _push_measurements_for_observation(client, local_id)
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            errors.append(
+                f'obs {local_id}: measurement reconciliation failed: {exc}'
+            )
+            try:
+                mark_observation_sync_dirty(local_id)
+            except Exception:
+                pass
+    return counters
+
+
 def _reconcile_missing_spore_summaries(
     client: SporelyCloudClient,
     errors: list[str],
 ) -> dict[str, int]:
-    """Backfill `public.observation_spore_summaries` for observations
-    that were synced before the Stage D writer landed (or otherwise did
-    not traverse the dirty-observations loop this session).
+    """Backfill / reconcile `public.observation_spore_summaries` for
+    every observation that has been synced at least once and has local
+    spore measurements.
+
+    Why not just skip observations that already have SOME remote
+    coverage: an observation can carry multiple contexts (e.g. one
+    image in KOH + DIC, another in water + brightfield). If a previous
+    partial sync only wrote the KOH row and the water/DIC row is still
+    missing, an "any-row-means-covered" heuristic would silently leave
+    the second context out forever. So this pass delegates every
+    candidate to `_push_summary_for_current_observation` — the writer
+    fetches existing `(observation_id, context_hash)` per observation,
+    PATCHes matching hashes, POSTs any missing ones, and DELETEs stale
+    hashes. It is idempotent per Stage D (see
+    ``test_sync_is_idempotent_across_two_runs``): a full-coverage
+    observation costs one GET + N PATCHes and no INSERTs/DELETEs.
+
+    Metadata-only microscope anchors (`observation_images.storage_path`
+    NULL) are covered because the local join key is `image_id`, not
+    `storage_path`. Summaries are computed from local measurements plus
+    local image context; raw microscope image bytes are irrelevant.
 
     The main ``push_all`` loop scans
     ``WHERE cloud_id IS NULL OR sync_status = 'dirty'`` and only that
-    subset runs `_push_summary_for_current_observation`. Observations
-    that were synced pre-Stage-D and have not been touched since are
-    `synced/clean` and get skipped — even though they have local spore
-    measurements that should produce structured summary rows. This
-    reconciliation pass fills that gap:
-
-    1. Bulk-GET the remote `observation_spore_summaries.observation_id`
-       set for this user in one round-trip.
-    2. Query local SQLite for observations that have a `cloud_id` AND
-       at least one `spore_measurements` row (via `images.observation_id`).
-    3. Anything that has local measurements but no remote summary row
-       yet gets routed through `_push_summary_for_current_observation`,
-       which handles errors + dirty-marking + `errors` list the same
-       way the main loop does.
-
-    Metadata-only microscope anchors (`observation_images.storage_path`
-    NULL) are covered because the join key is `image_id`, not
-    `storage_path`. Summaries are computed from local measurements plus
-    local image context; raw microscope image bytes are irrelevant.
+    subset runs the writer inline. This pass exists specifically to
+    catch observations that were synced before Stage D landed (or
+    otherwise did not go dirty this session) — steady-state cost is
+    one GET per synced observation with measurements.
 
     Returns a small counter dict for the caller's summary/log stanza.
     """
     counters = {'candidates': 0, 'attempted': 0}
+
+    # Probe the summary surface once. A missing-table response means
+    # this deployment predates Stage B — skip the whole pass. Every
+    # other error class is either fatal (auth/temporary → raise) or
+    # gets recorded in `errors` and continues.
     try:
-        remote_rows = client._get(
+        client._get(
             f'observation_spore_summaries'
             f'?user_id=eq.{client.user_id}'
             f'&select=observation_id'
+            f'&limit=1'
         )
     except Exception as exc:
         if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
@@ -12835,17 +12987,11 @@ def _reconcile_missing_spore_summaries(
                 flush=True,
             )
             return counters
-        # Unknown non-auth error — log via `errors` so the caller sees it,
-        # but do not abort the whole sync. A per-observation retry via
-        # the main dirty loop still works for the individual case.
-        errors.append(f'spore summary reconciliation: bulk lookup failed: {exc}')
+        # Unknown non-auth error — record it and stop. A per-observation
+        # retry via the main dirty loop still works for the individual
+        # case.
+        errors.append(f'spore summary reconciliation: probe failed: {exc}')
         return counters
-
-    covered_cloud_ids: set[str] = set()
-    for row in remote_rows or []:
-        oid = str((row or {}).get('observation_id') or '').strip()
-        if oid:
-            covered_cloud_ids.add(oid)
 
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
@@ -12866,10 +13012,13 @@ def _reconcile_missing_spore_summaries(
         conn.close()
 
     counters['candidates'] = len(candidates)
-    missing: list[tuple[int, str]] = []
+    if not candidates:
+        return counters
+
+    valid_candidates: list[tuple[int, str]] = []
     for row in candidates:
         cloud_id = str(row.get('cloud_id') or '').strip()
-        if not cloud_id or cloud_id in covered_cloud_ids:
+        if not cloud_id:
             continue
         try:
             local_id = int(row.get('local_id') or 0)
@@ -12877,19 +13026,19 @@ def _reconcile_missing_spore_summaries(
             local_id = 0
         if local_id <= 0:
             continue
-        missing.append((local_id, cloud_id))
+        valid_candidates.append((local_id, cloud_id))
 
-    if not missing:
+    if not valid_candidates:
         return counters
 
     print(
-        f'[cloud_sync] Spore summary reconciliation: {len(missing)} of '
-        f'{len(candidates)} synced observations missing remote summary rows; '
-        f'backfilling.',
+        f'[cloud_sync] Spore summary reconciliation: attempting '
+        f'{len(valid_candidates)} synced observations '
+        f'(writer is idempotent — no-op for fully-covered ones).',
         flush=True,
     )
 
-    for local_id, cloud_id in missing:
+    for local_id, cloud_id in valid_candidates:
         counters['attempted'] += 1
         _push_summary_for_current_observation(
             client,
@@ -12974,11 +13123,15 @@ def _push_summary_for_current_observation(
         or summary_result.get('updated')
         or summary_result.get('deleted')
     ):
+        # Only log when something actually changed. Fully-idempotent
+        # syncs (unchanged > 0 with zero writes) stay quiet so the log
+        # is a signal of real cloud mutation, not sync heartbeat.
         print(
             f'[cloud_sync] Spore summaries synced obs '
             f'{local_obs_id}: '
             f'inserted={summary_result.get("inserted", 0)} '
             f'updated={summary_result.get("updated", 0)} '
+            f'unchanged={summary_result.get("unchanged", 0)} '
             f'deleted={summary_result.get("deleted", 0)} '
             f'total_local={summary_result.get("total_local", 0)}',
             flush=True,

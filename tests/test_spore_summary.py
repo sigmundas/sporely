@@ -397,3 +397,78 @@ def test_all_non_spore_measurements_returns_empty_list():
     assert compute_observation_spore_summaries(
         observation_id=100, measurements=rows, computed_at=FIXED_COMPUTED_AT,
     ) == []
+
+
+def test_load_measurements_with_context_filters_to_microscope_image_type():
+    """The summary writer's loader must exclude spore_measurements
+    attached to non-microscope images so the summary's `n_paired`
+    count matches what `_push_measurements_for_observation` will
+    actually push. Without this filter, summary rows can permanently
+    advertise counts higher than the public raw measurement RPC will
+    ever expose (obs-733 field regression)."""
+    import os
+    import sqlite3
+    import tempfile
+    from utils import spore_summary as ss
+
+    fd, db_path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(fd)
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            """
+            CREATE TABLE observations (id INTEGER, cloud_id TEXT);
+            CREATE TABLE images (
+                id INTEGER,
+                observation_id INTEGER,
+                image_type TEXT,
+                mount_medium TEXT,
+                stain TEXT,
+                sample_type TEXT,
+                contrast TEXT,
+                micro_category TEXT
+            );
+            CREATE TABLE spore_measurements (
+                id INTEGER,
+                image_id INTEGER,
+                length_um REAL,
+                width_um REAL,
+                measurement_type TEXT,
+                measured_at TEXT
+            );
+            INSERT INTO observations VALUES (42, 'cloud-obs-42');
+            -- Microscope image (should be included).
+            INSERT INTO images VALUES (1, 42, 'microscope', 'KOH', NULL, 'fresh', 'DIC', 'Spores');
+            -- Field image with an accidentally-attached spore_measurement
+            -- (data-cleanliness edge case). Must be excluded.
+            INSERT INTO images VALUES (2, 42, 'field', NULL, NULL, NULL, NULL, NULL);
+            -- Image with NULL image_type — also must be excluded.
+            INSERT INTO images VALUES (3, 42, NULL, NULL, NULL, NULL, NULL, NULL);
+            INSERT INTO spore_measurements VALUES (100, 1, 10.0, 5.0, 'manual', '2026-07-01');
+            INSERT INTO spore_measurements VALUES (101, 1, 11.0, 5.5, 'manual', '2026-07-02');
+            INSERT INTO spore_measurements VALUES (102, 2, 99.0, 44.0, 'manual', '2026-07-03');
+            INSERT INTO spore_measurements VALUES (103, 3, 88.0, 33.0, 'manual', '2026-07-04');
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        import database.models as db_models
+        original = db_models.get_connection
+
+        def _fake_get_connection():
+            c = sqlite3.connect(db_path)
+            return c
+
+        db_models.get_connection = _fake_get_connection
+        try:
+            rows = ss.load_measurements_with_context(42)
+        finally:
+            db_models.get_connection = original
+
+        # Only the two microscope-image measurements come through.
+        assert len(rows) == 2
+        returned_ids = sorted(r["id"] for r in rows)
+        assert returned_ids == [100, 101]
+    finally:
+        os.unlink(db_path)

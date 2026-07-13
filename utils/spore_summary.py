@@ -327,6 +327,16 @@ def load_measurements_with_context(observation_id: int) -> list[dict[str, Any]]:
       id, image_id, length_um, width_um, measurement_type, measured_at,
       mount_medium, stain, sample_type, contrast, micro_category
 
+    Filters to `image_type = 'microscope'` — matches the filter used by
+    `_push_measurements_for_observation` when pushing raw spore
+    measurements to the cloud. Without this filter, a spore_measurement
+    attached to a non-microscope image (a data-cleanliness edge case)
+    would count toward the summary's `n_paired` but would NOT push to
+    `public.spore_measurements`, permanently splitting the summary
+    count from the public raw measurement count for that observation.
+    Metadata-only microscope anchors (`storage_path IS NULL` but
+    `image_type = 'microscope'`) are still included.
+
     Stage C keeps this as a thin loader so the pure computation above
     stays trivially testable. Callers may substitute their own row list.
     """
@@ -356,6 +366,7 @@ def load_measurements_with_context(observation_id: int) -> list[dict[str, Any]]:
             FROM spore_measurements m
             JOIN images i ON i.id = m.image_id
             WHERE i.observation_id = ?
+              AND i.image_type = 'microscope'
             ORDER BY m.measured_at
             """,
             (observation_id,),

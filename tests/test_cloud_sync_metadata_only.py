@@ -126,6 +126,19 @@ def _init_db(tmp_path):
             key TEXT PRIMARY KEY,
             value TEXT
         );
+        CREATE TABLE image_tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deleted_cloud_id TEXT NOT NULL,
+            deleted_at TEXT NOT NULL DEFAULT '',
+            delete_synced_at TEXT,
+            deleted_storage_path TEXT,
+            deleted_observation_cloud_id TEXT,
+            local_observation_id INTEGER,
+            local_image_id INTEGER,
+            image_type TEXT,
+            filepath TEXT,
+            original_filepath TEXT
+        );
         """
     )
     conn.commit()

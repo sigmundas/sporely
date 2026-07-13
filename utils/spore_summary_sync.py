@@ -41,6 +41,8 @@ Design notes:
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import datetime
 from typing import Any, Callable, Mapping, Protocol
 
@@ -89,6 +91,219 @@ _SUMMARY_UPSERT_FIELDS: tuple[str, ...] = (
     "q_min", "q_p05", "q_mean", "q_median", "q_p95", "q_max", "q_sd",
     "stats_version", "computed_at", "source_app", "source_app_version",
 )
+
+# Fields used to decide whether a locally-computed payload MATERIALLY
+# differs from an existing remote row. Excludes:
+#   * observation_id / user_id — identity, same by construction.
+#   * computed_at — a fresh timestamp on every compute. Including it
+#     would make every reconciliation PATCH the row (moving computed_at
+#     and, via trg_observation_spore_summaries_updated_at, updated_at).
+#   * source_app / source_app_version — provenance stamps recording
+#     "who wrote this row and with what writer version". They document
+#     history rather than reflect measurement content, so a desktop
+#     client version bump alone must NOT rewrite otherwise-identical
+#     rows. When a real data change PATCHes the row, the current
+#     version stamp goes along atomically; but the version alone never
+#     triggers a rewrite.
+# Only genuine data / summary-semantic columns remain (context fields,
+# counts, statistics, `stats_version`) — the stats_version bump IS a
+# legitimate rewrite signal because it means the writer's percentile
+# or SD convention changed.
+_SUMMARY_MATERIAL_FIELDS: tuple[str, ...] = tuple(
+    key for key in _SUMMARY_UPSERT_FIELDS
+    if key not in {
+        "observation_id",
+        "user_id",
+        "computed_at",
+        "source_app",
+        "source_app_version",
+    }
+)
+
+# PostgREST select= for the existing-row fetch. `id` is needed to build
+# the PATCH URL; everything else is compared against the computed
+# payload to decide PATCH-vs-skip.
+_SUMMARY_SELECT_COLUMNS = ",".join(("id",) + _SUMMARY_MATERIAL_FIELDS)
+
+# Numeric material columns whose values may cross a Python-int/float
+# vs. PostgREST-int/float boundary. Coerce both sides before compare so
+# a bigint round-tripping as string does not spuriously trigger a PATCH.
+_SUMMARY_INT_FIELDS: frozenset[str] = frozenset({
+    "n_spores", "n_paired", "n_length", "n_width", "stats_version",
+})
+_SUMMARY_FLOAT_FIELDS: frozenset[str] = frozenset({
+    "length_min_um", "length_p05_um", "length_mean_um", "length_median_um",
+    "length_p95_um", "length_max_um", "length_sd_um",
+    "width_min_um", "width_p05_um", "width_mean_um", "width_median_um",
+    "width_p95_um", "width_max_um", "width_sd_um",
+    "q_min", "q_p05", "q_mean", "q_median", "q_p95", "q_max", "q_sd",
+})
+# Columns whose semantic type is JSON (jsonb on the server side).
+# Compared STRUCTURALLY, never as raw strings, so a difference in
+# serialization key order between local payload and remote row cannot
+# produce a false PATCH. Applies to `context_json` today; kept as a
+# set so a future jsonb column (e.g. Stage-later `quality_flags`) can
+# be added without touching the equality function.
+_SUMMARY_JSON_FIELDS: frozenset[str] = frozenset({
+    "context_json",
+})
+
+
+def _coerce_json_value(value: Any) -> Any:
+    """Best-effort coerce PostgREST / writer output to a structural
+    JSON value. PostgREST normally returns jsonb columns as already-
+    parsed Python dicts/lists, but a proxy layer, alternate client
+    config, or hand-written payload could pass a serialized string.
+    Coercing on both sides lets `_material_field_equal` compare
+    structurally (order-insensitive for dicts) instead of textually
+    (order-sensitive)."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def _material_field_equal(field: str, remote_value: Any, payload_value: Any) -> bool:
+    """Compare one material column between the remote row and the
+    locally-computed payload. Null-safe; type-tolerant for the
+    int/float/text distinctions PostgREST may round-trip differently
+    than the Python writer produced; STRUCTURAL for JSON columns so
+    reordered keys / whitespace variation cannot produce a false
+    PATCH."""
+    if remote_value is None and payload_value is None:
+        return True
+    if remote_value is None or payload_value is None:
+        return False
+    if field in _SUMMARY_INT_FIELDS:
+        try:
+            return int(remote_value) == int(payload_value)
+        except (TypeError, ValueError):
+            return False
+    if field in _SUMMARY_FLOAT_FIELDS:
+        try:
+            return float(remote_value) == float(payload_value)
+        except (TypeError, ValueError):
+            return False
+    if field in _SUMMARY_JSON_FIELDS:
+        # Coerce serialized-JSON strings to their structural form on
+        # both sides, then compare. Python dict/list `==` is
+        # order-insensitive for dicts and recursive for lists.
+        return _coerce_json_value(remote_value) == _coerce_json_value(payload_value)
+    return remote_value == payload_value
+
+
+def _remote_row_matches_payload(
+    remote_row: Mapping[str, Any], payload: Mapping[str, Any],
+) -> bool:
+    """True iff every material column on `remote_row` equals its
+    counterpart on `payload`. `computed_at` and identity fields are not
+    compared — see `_SUMMARY_MATERIAL_FIELDS`."""
+    for field in _SUMMARY_MATERIAL_FIELDS:
+        if not _material_field_equal(
+            field, remote_row.get(field), payload.get(field),
+        ):
+            return False
+    return True
+
+
+def _diff_debug_enabled() -> bool:
+    """True when the `SPORE_SUMMARY_DIFF_DEBUG` env var is set to a
+    truthy value. When enabled, the writer prints a one-line diagnostic
+    for the first material-field mismatch on every row that would
+    trigger a PATCH — used to hunt "second sync still writes even
+    though local data is unchanged" cases in production."""
+    return bool(str(os.environ.get("SPORE_SUMMARY_DIFF_DEBUG") or "").strip())
+
+
+def _summarize_value_for_debug(value: Any) -> str:
+    """Compact repr for the diff log. Keeps output single-line and
+    bounded even for large dicts."""
+    text = repr(value)
+    if len(text) > 160:
+        text = text[:157] + "..."
+    return text
+
+
+def _first_material_field_diff(
+    remote_row: Mapping[str, Any], payload: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return diagnostic info for the FIRST material field that would
+    trigger a PATCH, or None if all material fields match.
+
+    The returned dict contains raw and coerced values for both sides
+    so a maintainer can see exactly why the writer chose to PATCH."""
+    for field in _SUMMARY_MATERIAL_FIELDS:
+        remote_value = remote_row.get(field)
+        payload_value = payload.get(field)
+        if _material_field_equal(field, remote_value, payload_value):
+            continue
+
+        coerced_remote: Any = remote_value
+        coerced_payload: Any = payload_value
+        if field in _SUMMARY_JSON_FIELDS:
+            coerced_remote = _coerce_json_value(remote_value)
+            coerced_payload = _coerce_json_value(payload_value)
+        elif field in _SUMMARY_INT_FIELDS:
+            try:
+                coerced_remote = (
+                    None if remote_value is None else int(remote_value)
+                )
+                coerced_payload = (
+                    None if payload_value is None else int(payload_value)
+                )
+            except (TypeError, ValueError):
+                pass
+        elif field in _SUMMARY_FLOAT_FIELDS:
+            try:
+                coerced_remote = (
+                    None if remote_value is None else float(remote_value)
+                )
+                coerced_payload = (
+                    None if payload_value is None else float(payload_value)
+                )
+            except (TypeError, ValueError):
+                pass
+        return {
+            "field": field,
+            "remote": remote_value,
+            "remote_type": type(remote_value).__name__,
+            "payload": payload_value,
+            "payload_type": type(payload_value).__name__,
+            "coerced_remote": coerced_remote,
+            "coerced_payload": coerced_payload,
+        }
+    return None
+
+
+def _log_patch_diagnostic(
+    payload: Mapping[str, Any], diff: Mapping[str, Any],
+) -> None:
+    """Emit the one-line PATCH diagnostic. Only called when
+    `_diff_debug_enabled()` is True and a real diff was found."""
+    print(
+        "[spore_summary_sync] PATCH-diff "
+        f"obs={payload.get('observation_id')!r} "
+        f"context_hash={payload.get('context_hash')!r} "
+        f"first_diff_field={diff['field']} "
+        f"remote={_summarize_value_for_debug(diff['remote'])} "
+        f"(remote_type={diff['remote_type']}) "
+        f"payload={_summarize_value_for_debug(diff['payload'])} "
+        f"(payload_type={diff['payload_type']}) "
+        f"coerced_remote={_summarize_value_for_debug(diff['coerced_remote'])} "
+        f"coerced_payload={_summarize_value_for_debug(diff['coerced_payload'])}",
+        flush=True,
+    )
 
 
 def _is_missing_table_error(exc: BaseException) -> bool:
@@ -157,6 +372,7 @@ def sync_observation_spore_summaries(
         "status": STATUS_SYNCED,
         "inserted": 0,
         "updated": 0,
+        "unchanged": 0,
         "deleted": 0,
         "total_local": 0,
     }
@@ -197,7 +413,7 @@ def sync_observation_spore_summaries(
     filter_query = (
         f"?observation_id=eq.{remote_id_norm}"
         f"&user_id=eq.{normalized_user_id}"
-        f"&select=id,context_hash"
+        f"&select={_SUMMARY_SELECT_COLUMNS}"
     )
     try:
         existing_rows = client._get(f"{_SUMMARY_TABLE}{filter_query}")
@@ -207,18 +423,23 @@ def sync_observation_spore_summaries(
             return result
         raise
 
-    existing_by_hash: dict[str, Any] = {}
+    # Full remote rows keyed by context_hash so we can compare every
+    # material column (not just id) before deciding to PATCH. The prior
+    # revision keyed by hash -> id and PATCHed unconditionally on hash
+    # match, which meant `computed_at` (a fresh timestamp on every
+    # compute) always moved and the Stage B updated_at trigger fired —
+    # neither is truly idempotent even when nothing about the data
+    # changed. Compare full material fields here to skip identical rows.
+    existing_by_hash: dict[str, dict[str, Any]] = {}
     for row in existing_rows or []:
         row_hash = str((row or {}).get("context_hash") or "").strip()
         row_id = (row or {}).get("id")
         if row_hash and row_id is not None:
-            existing_by_hash[row_hash] = row_id
+            existing_by_hash[row_hash] = dict(row)
 
-    # Upsert each computed summary. Patch-if-exists, insert-otherwise.
-    # This mirrors the pattern used by _push_spore_mosaic_for_observation
-    # rather than PostgREST's on_conflict header — check-then-patch reads
-    # the same, works with the client's existing HTTP primitives, and is
-    # safe under single-user desktop concurrency.
+    # Upsert each computed summary. Patch-if-materially-different,
+    # insert-if-missing. Fully-matching rows are left untouched so
+    # `computed_at` and `updated_at` remain stable across no-op syncs.
     for summary in summaries:
         payload = _project_summary_payload(
             summary,
@@ -226,13 +447,21 @@ def sync_observation_spore_summaries(
             remote_observation_id=remote_id_norm,
         )
         context_hash = payload["context_hash"]
-        existing_id = existing_by_hash.pop(context_hash, None)
+        existing_row = existing_by_hash.pop(context_hash, None)
         try:
-            if existing_id is not None:
-                client._patch(
-                    f"{_SUMMARY_TABLE}?id=eq.{existing_id}", payload,
-                )
-                result["updated"] += 1
+            if existing_row is not None:
+                if _remote_row_matches_payload(existing_row, payload):
+                    result["unchanged"] += 1
+                else:
+                    if _diff_debug_enabled():
+                        diff = _first_material_field_diff(existing_row, payload)
+                        if diff is not None:
+                            _log_patch_diagnostic(payload, diff)
+                    client._patch(
+                        f"{_SUMMARY_TABLE}?id=eq.{existing_row['id']}",
+                        payload,
+                    )
+                    result["updated"] += 1
             else:
                 client._post(_SUMMARY_TABLE, payload)
                 result["inserted"] += 1
@@ -248,7 +477,10 @@ def sync_observation_spore_summaries(
     # groups merged, or because all measurements in that context were
     # deleted). When ``summaries`` is empty this also correctly wipes
     # every remote row for the observation.
-    for stale_id in existing_by_hash.values():
+    for stale_row in existing_by_hash.values():
+        stale_id = stale_row.get("id")
+        if stale_id is None:
+            continue
         try:
             client._delete(f"{_SUMMARY_TABLE}?id=eq.{stale_id}")
             result["deleted"] += 1
