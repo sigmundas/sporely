@@ -3024,6 +3024,7 @@ class ObservationsTab(QWidget):
                     mount_medium=image_row.get("mount_medium"),
                     stain=image_row.get("stain"),
                     sample_type=image_row.get("sample_type"),
+                    sample_source=image_row.get("sample_source"),
                     notes=image_row.get("notes"),
                     captured_at=captured_at,
                     gps_latitude=gps_lat,
@@ -11186,6 +11187,7 @@ class ObservationsTab(QWidget):
                     mount_medium=img.get("mount_medium"),
                     stain=img.get("stain"),
                     sample_type=img.get("sample_type"),
+                    sample_source=img.get("sample_source"),
                     notes=img.get("notes"),
                     captured_at=captured_at,
                     exif_has_gps=exif_has_gps,
@@ -11689,6 +11691,7 @@ class ObservationsTab(QWidget):
             mount_medium = result.mount_medium
             stain = result.stain
             sample_type = result.sample_type
+            sample_source = getattr(result, "sample_source", None)
 
             scale = None
             objective_name = None
@@ -11751,6 +11754,7 @@ class ObservationsTab(QWidget):
                     mount_medium=mount_medium,
                     stain=stain,
                     sample_type=sample_type,
+                    sample_source=sample_source,
                     notes=result.notes,
                     ai_crop_box=result.ai_crop_box,
                     ai_crop_source_size=result.ai_crop_source_size,
@@ -12077,6 +12081,7 @@ class ObservationsTab(QWidget):
                 mount_medium=mount_medium,
                 stain=stain,
                 sample_type=sample_type,
+                sample_source=sample_source,
                 notes=result.notes,
                 sort_order=index - 1,
                 captured_at=getattr(result, "captured_at", None),
@@ -16029,6 +16034,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     mount_medium=img.get("mount_medium"),
                     stain=img.get("stain"),
                     sample_type=img.get("sample_type"),
+                    sample_source=img.get("sample_source"),
                     notes=img.get("notes"),
                     captured_at=captured_at,
                     exif_has_gps=exif_has_gps,
@@ -17438,6 +17444,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "mount_medium": item.mount_medium,
                 "stain": item.stain,
                 "sample_type": item.sample_type,
+                "sample_source": getattr(item, "sample_source", None),
                 "notes": item.notes,
             })
         return settings
@@ -17455,6 +17462,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "mount_medium": item.mount_medium,
                 "stain": item.stain,
                 "sample_type": item.sample_type,
+                "sample_source": getattr(item, "sample_source", None),
                 "notes": item.notes,
             })
         return entries

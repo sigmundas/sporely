@@ -771,6 +771,19 @@ def _is_not_set(canonical: str | None) -> bool:
     return canonical is None or canonical == "Not_set"
 
 
+def _slot_label_for(img: dict) -> str:
+    """Label for a plate slot; prefers sample source (Spore print, Hymenium, ...)
+    over specimen condition (Fresh/Dried), which describes the specimen, not the slot."""
+    source_raw = img.get("sample_source")
+    source_canonical = DatabaseTerms.canonicalize_sample_source(source_raw)
+    if source_canonical and not _is_not_set(source_canonical):
+        return _nice_label(source_raw)
+    sample_raw = img.get("sample_type")
+    if not _is_not_set(DatabaseTerms.canonicalize_sample(sample_raw)):
+        return _nice_label(sample_raw)
+    return ""
+
+
 def _microscope_badge_text(img_rec: dict) -> str:
     objective = (
         _short_objective_label(img_rec.get("objective_name"))
@@ -1884,10 +1897,15 @@ class SpeciesPlateDialog(QDialog):
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
         micro = [i for i in all_imgs if i.get("image_type") == "microscope"]
 
-        # Assign micro images to circle slots by sample_type keyword
+        # Assign micro images to circle slots by sample/source keyword.
+        # Sample source (Spore_print, Hymenium, ...) is what actually names the material;
+        # legacy rows may still carry a source token in sample_type until migrated.
         by_sample: dict[str, list[dict]] = {}
         for img in micro:
-            key = (img.get("sample_type") or "").strip().lower()
+            key = " ".join(
+                str(img.get(col) or "").strip().lower()
+                for col in ("sample_source", "sample_type", "micro_category")
+            ).strip()
             by_sample.setdefault(key, []).append(img)
 
         self._slot_images: dict[str, Optional[dict]] = {}
@@ -1910,9 +1928,7 @@ class SpeciesPlateDialog(QDialog):
             self._slot_images[slot] = found
             if found:
                 used.add(found["id"])
-                st = (found.get("sample_type") or "").strip()
-                filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-                self._slot_labels[slot] = filtered or _SLOT_FALLBACK_LABEL[slot]
+                self._slot_labels[slot] = _slot_label_for(found) or _SLOT_FALLBACK_LABEL[slot]
             else:
                 self._slot_labels[slot] = _SLOT_FALLBACK_LABEL[slot]
 
@@ -1922,9 +1938,7 @@ class SpeciesPlateDialog(QDialog):
                 img = remaining_micro.pop(0)
                 self._slot_images[slot] = img
                 used.add(img["id"])
-                st = (img.get("sample_type") or "").strip()
-                filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-                self._slot_labels[slot] = filtered or _SLOT_FALLBACK_LABEL[slot]
+                self._slot_labels[slot] = _slot_label_for(img) or _SLOT_FALLBACK_LABEL[slot]
 
         # ── Background slots (max 3, any image type) ───────────────────────
         self._bg_slots: list[Optional[dict]] = [None] * _BG_SLOTS_MAX
@@ -2837,9 +2851,7 @@ class SpeciesPlateDialog(QDialog):
                 self._bg_slots[idx] = new_img
         else:
             self._slot_images[active] = new_img
-            st = (new_img.get("sample_type") or "").strip()
-            filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-            self._slot_labels[active] = filtered or _SLOT_FALLBACK_LABEL.get(active, active)
+            self._slot_labels[active] = _slot_label_for(new_img) or _SLOT_FALLBACK_LABEL.get(active, active)
             # Keep circles equalized when a new image is assigned
             if hasattr(self, "_equal_scale_chk") and self._equal_scale_chk.isChecked():
                 self._fit_new_slot_to_current_scale(active)
@@ -3285,14 +3297,17 @@ class SpeciesPlateDialog(QDialog):
                     parts.append(tech)
             if image_type != "field" and show_sample:
                 st_raw = img_rec.get("sample_type")
+                src_raw = img_rec.get("sample_source")
                 mt_raw = img_rec.get("mount_medium")
                 stain_raw = img_rec.get("stain")
                 stype = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st_raw)) else _nice_label(st_raw)
+                source = "" if _is_not_set(DatabaseTerms.canonicalize_sample_source(src_raw)) \
+                    else _nice_label(src_raw)
                 mount = "" if _is_not_set(DatabaseTerms.canonicalize_mount(mt_raw)) \
                     else _nice_label(mt_raw)
                 stain = "" if _is_not_set(DatabaseTerms.canonicalize("stain", stain_raw)) \
                     else _nice_label(stain_raw)
-                for p in [stype, mount, stain]:
+                for p in [source, stype, mount, stain]:
                     if p and p not in parts:
                         parts.append(p)
             if parts:
@@ -3460,7 +3475,10 @@ class SpeciesPlateDialog(QDialog):
             int(img.get("id"))
             for img in self._all_images
             if img.get("id") is not None
-            and DatabaseTerms.canonicalize_sample(img.get("sample_type")) in {"spore", "spores"}
+            and (
+                DatabaseTerms.canonicalize_sample_source(img.get("sample_source")) == "Spore_print"
+                or DatabaseTerms.canonicalize_measure(img.get("micro_category")) == "Spores"
+            )
         }
         if not spore_image_ids:
             return ""

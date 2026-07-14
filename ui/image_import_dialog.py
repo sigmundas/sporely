@@ -306,6 +306,7 @@ class ImageImportResult:
     mount_medium: Optional[str] = None
     stain: Optional[str] = None
     sample_type: Optional[str] = None
+    sample_source: Optional[str] = None
     notes: Optional[str] = None
     captured_at: Optional[QDateTime] = None
     gps_latitude: Optional[float] = None
@@ -369,6 +370,7 @@ def image_import_result_from_candidate(
     mount_medium: str | None,
     stain: str | None,
     sample_type: str | None,
+    sample_source: str | None,
     resize_to_optimal: bool,
     store_original: bool,
 ) -> ImageImportResult:
@@ -404,6 +406,7 @@ def image_import_result_from_candidate(
         mount_medium=mount_medium,
         stain=stain,
         sample_type=sample_type,
+        sample_source=sample_source,
         captured_at=captured_at,
         gps_latitude=gps_latitude,
         gps_longitude=gps_longitude,
@@ -775,6 +778,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         "mount": DatabaseTerms.MOUNT_MEDIA[0],
         "stain": DatabaseTerms.STAIN_TYPES[0],
         "sample": DatabaseTerms.SAMPLE_TYPES[0],
+        "sample_source": DatabaseTerms.SAMPLE_SOURCES[0],
     }
 
     def __init__(
@@ -799,6 +803,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.mount_options = self._load_tag_options("mount")
         self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
+        self.sample_source_options = self._load_tag_options("sample_source")
         self.contrast_default = self._preferred_tag_value(
             "contrast",
             self.contrast_options,
@@ -818,6 +823,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "sample",
             self.sample_options,
             DatabaseTerms.SAMPLE_TYPES[0],
+        )
+        self.sample_source_default = self._preferred_tag_value(
+            "sample_source",
+            self.sample_source_options,
+            DatabaseTerms.SAMPLE_SOURCES[0],
         )
         self.resize_to_optimal_default = bool(
             SettingsDB.get_setting("resize_to_optimal_sampling", False)
@@ -1346,6 +1356,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_tag_combo_neutral_display(self.mount_combo, "mount", blank)
         self._set_tag_combo_neutral_display(self.stain_combo, "stain", blank)
         self._set_tag_combo_neutral_display(self.sample_combo, "sample", blank)
+        self._set_tag_combo_neutral_display(
+            self.sample_source_combo, "sample_source", blank
+        )
 
     def _set_combo_tag_value(self, combo, category: str, value: str | None) -> None:
         canonical = self._canonicalize_tag(category, value)
@@ -1420,6 +1433,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 getattr(self, "mount_combo", None),
                 getattr(self, "stain_combo", None),
                 getattr(self, "sample_combo", None),
+                getattr(self, "sample_source_combo", None),
             ):
                 update_combo_alert(combo, alert=False)
             return
@@ -1430,6 +1444,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 getattr(self, "mount_combo", None),
                 getattr(self, "stain_combo", None),
                 getattr(self, "sample_combo", None),
+                getattr(self, "sample_source_combo", None),
             )
         )
 
@@ -1439,6 +1454,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             (self.mount_combo, "mount"),
             (self.stain_combo, "stain"),
             (self.sample_combo, "sample"),
+            (self.sample_source_combo, "sample_source"),
         )
         for combo, _category in combos:
             combo.blockSignals(True)
@@ -1447,6 +1463,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._set_combo_tag_value(self.mount_combo, "mount", self._field_tag_value("mount"))
             self._set_combo_tag_value(self.stain_combo, "stain", self._field_tag_value("stain"))
             self._set_combo_tag_value(self.sample_combo, "sample", self._field_tag_value("sample"))
+            self._set_combo_tag_value(
+                self.sample_source_combo,
+                "sample_source",
+                self._field_tag_value("sample_source"),
+            )
         finally:
             for combo, _category in combos:
                 combo.blockSignals(False)
@@ -1579,7 +1600,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Sample type:"), self.sample_combo)
+        micro_form.addRow(self.tr("Sample:"), self.sample_combo)
+
+        self.sample_source_combo = AdaptiveChoiceSelector(self, compact=True)
+        self._populate_tag_combo(
+            self.sample_source_combo, "sample_source", self.sample_source_options
+        )
+        self._set_combo_tag_value(
+            self.sample_source_combo, "sample_source", self.sample_source_default
+        )
+        self.sample_source_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.sample_source_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        micro_form.addRow(self.tr("Sample source:"), self.sample_source_combo)
 
         layout.addWidget(self.micro_settings_group)
 
@@ -1970,20 +2002,30 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "mount": self._get_combo_tag_value(self.mount_combo, "mount"),
             "stain": self._get_combo_tag_value(self.stain_combo, "stain"),
             "sample": self._get_combo_tag_value(self.sample_combo, "sample"),
+            "sample_source": self._get_combo_tag_value(
+                self.sample_source_combo, "sample_source"
+            ),
         }
         self.contrast_options = self._load_tag_options("contrast")
         self.mount_options = self._load_tag_options("mount")
         self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
+        self.sample_source_options = self._load_tag_options("sample_source")
         self.contrast_default = self.contrast_options[0] if self.contrast_options else DatabaseTerms.CONTRAST_METHODS[0]
         self.mount_default = self.mount_options[0] if self.mount_options else DatabaseTerms.MOUNT_MEDIA[0]
         self.stain_default = self.stain_options[0] if self.stain_options else DatabaseTerms.STAIN_TYPES[0]
         self.sample_default = self.sample_options[0] if self.sample_options else DatabaseTerms.SAMPLE_TYPES[0]
+        self.sample_source_default = (
+            self.sample_source_options[0]
+            if self.sample_source_options
+            else DatabaseTerms.SAMPLE_SOURCES[0]
+        )
         for category, combo in (
             ("contrast", self.contrast_combo),
             ("mount", self.mount_combo),
             ("stain", self.stain_combo),
             ("sample", self.sample_combo),
+            ("sample_source", self.sample_source_combo),
         ):
             options = getattr(self, f"{category}_options")
             self._populate_tag_combo(combo, category, options)
@@ -3983,8 +4025,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             field_mount = self._field_tag_value("mount")
             field_stain = self._field_tag_value("stain")
             field_sample = self._field_tag_value("sample")
+            field_sample_source = self._field_tag_value("sample_source")
         else:
             field_contrast = field_mount = field_stain = field_sample = None
+            field_sample_source = None
         for candidate in candidates:
             prepared_batch = prepare_image_import_candidates(
                 [candidate],
@@ -3999,6 +4043,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 mount_medium=field_mount,
                 stain=field_stain,
                 sample_type=field_sample,
+                sample_source=field_sample_source,
                 resize_to_optimal=self.resize_to_optimal_default,
                 store_original=self.store_original_default,
             )
@@ -4652,6 +4697,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "sample",
             result.sample_type or (self.sample_default if is_micro else self._field_tag_value("sample")),
         )
+        self._set_combo_tag_value(
+            self.sample_source_combo,
+            "sample_source",
+            result.sample_source
+            or (self.sample_source_default if is_micro else self._field_tag_value("sample_source")),
+        )
         if hasattr(self, "image_note_input"):
             self.image_note_input.blockSignals(True)
             self.image_note_input.setPlainText(str(result.notes or ""))
@@ -4698,6 +4749,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "stain"
         elif sender is self.sample_combo:
             action = "sample"
+        elif sender is self.sample_source_combo:
+            action = "sample_source"
         elif sender is self.image_note_input:
             action = "notes"
             self._notes_mixed = False
@@ -4794,6 +4847,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
         if not getattr(self.sample_combo, "is_mixed", lambda: False)():
             result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
+        if not getattr(self.sample_source_combo, "is_mixed", lambda: False)():
+            result.sample_source = self._get_combo_tag_value(
+                self.sample_source_combo, "sample_source"
+            )
         if not getattr(self, "_notes_mixed", False):
             result.notes = self._current_image_note_text()
         if result.image_type != "microscope":
@@ -4801,6 +4858,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.mount_medium = self._field_tag_value("mount")
             result.stain = self._field_tag_value("stain")
             result.sample_type = self._field_tag_value("sample")
+            result.sample_source = self._field_tag_value("sample_source")
         result.needs_scale = (
             result.image_type == "microscope"
             and not result.objective
@@ -5687,6 +5745,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 (self.mount_combo, "mount", lambda r: r.mount_medium),
                 (self.stain_combo, "stain", lambda r: r.stain),
                 (self.sample_combo, "sample", lambda r: r.sample_type),
+                (self.sample_source_combo, "sample_source", lambda r: r.sample_source),
             ):
                 values = _distinct(getter)
                 if len(values) <= 1:
@@ -6155,6 +6214,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         SettingsDB.set_setting(
             DatabaseTerms.last_used_key("sample"),
             self._get_combo_tag_value(self.sample_combo, "sample"),
+        )
+        SettingsDB.set_setting(
+            DatabaseTerms.last_used_key("sample_source"),
+            self._get_combo_tag_value(self.sample_source_combo, "sample_source"),
         )
 
     def get_observation_gps(self) -> tuple[float | None, float | None]:

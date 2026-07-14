@@ -41,6 +41,7 @@ class DatabaseSettingsDialog(QDialog):
         ("mount", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Mount media")),
         ("stain", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Stains")),
         ("sample", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Sample types")),
+        ("sample_source", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Sample sources")),
         ("measure", QT_TRANSLATE_NOOP("DatabaseSettingsDialog", "Measure categories")),
     )
     CONTRAST_HINTS = {

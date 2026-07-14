@@ -1392,6 +1392,7 @@ def init_database():
             mount_medium TEXT,
             stain TEXT,
             sample_type TEXT,
+            sample_source TEXT,
             contrast TEXT,
             measure_color TEXT,
             notes TEXT,
@@ -1462,6 +1463,29 @@ def init_database():
     # Add sample_type column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN sample_type TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    # Add sample_source column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN sample_source TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    # Migrate legacy sample_type='Spore_print' rows: move to sample_source, clear sample_type.
+    # Sample_type historically conflated specimen condition and material source; Spore_print
+    # is a source, not a condition. Only touch rows where sample_source is still empty so we
+    # never overwrite an explicit user value.
+    try:
+        cursor.execute(
+            """
+            UPDATE images
+               SET sample_source = 'Spore_print',
+                   sample_type = NULL
+             WHERE lower(coalesce(sample_type, '')) IN ('spore_print', 'sporeprint', 'spore print')
+               AND (sample_source IS NULL OR sample_source = '')
+            """
+        )
     except sqlite3.OperationalError:
         pass
 

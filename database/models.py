@@ -1722,7 +1722,8 @@ class ImageDB:
                   micro_category: str = None, objective_name: str = None,
                   measure_color: str = None, mount_medium: str = None,
                   stain: str = None,
-                  sample_type: str = None, contrast: str = None,
+                  sample_type: str = None, sample_source: str = None,
+                  contrast: str = None,
                   sort_order: int | None = None,
                   captured_at: object = None,
                   calibration_id: int = None,
@@ -1938,6 +1939,7 @@ class ImageDB:
             ("file_purpose", file_purpose),
             ("original_mime_type", original_mime_type),
             ("working_mime_type", working_mime_type),
+            ("sample_source", sample_source),
         ):
             if column_name not in image_columns:
                 continue
@@ -2269,6 +2271,7 @@ class ImageDB:
                      measure_color: str = None, image_type: str = None,
                      sort_order: int | None = None,
                      mount_medium: str = None, stain: str = None, sample_type: str = None,
+                     sample_source: str | None | object = _UNSET,
                      contrast: str = None, calibration_id: int | None | object = _UNSET,
                      ai_crop_box: tuple[float, float, float, float] | None | object = _UNSET,
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
@@ -2318,6 +2321,9 @@ class ImageDB:
         if sample_type is not None:
             updates.append('sample_type = ?')
             values.append(sample_type)
+        if sample_source is not _UNSET and 'sample_source' in image_columns:
+            updates.append('sample_source = ?')
+            values.append(sample_source)
         if contrast is not None:
             updates.append('contrast = ?')
             values.append(contrast)

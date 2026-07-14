@@ -802,6 +802,7 @@ class LiveLabTab(QWidget):
         self._restore_term_selection(self.mount_combo, "mount")
         self._restore_term_selection(self.stain_combo, "stain")
         self._restore_term_selection(self.sample_combo, "sample")
+        self._restore_term_selection(self.sample_source_combo, "sample_source")
         self._restore_raw_capture_mode()
         self._restore_raw_companion_source_preference()
         self._load_raw_processing_settings_for_current_context()
@@ -932,11 +933,13 @@ class LiveLabTab(QWidget):
         self.mount_combo = self._build_term_combo("mount")
         self.stain_combo = self._build_term_combo("stain")
         self.sample_combo = self._build_term_combo("sample")
+        self.sample_source_combo = self._build_term_combo("sample_source")
         tag_form.addRow(self.tr("Objective:"), self.objective_combo)
         tag_form.addRow(self.tr("Contrast:"), self.contrast_combo)
         tag_form.addRow(self.tr("Mount:"), self.mount_combo)
         tag_form.addRow(self.tr("Stain:"), self.stain_combo)
         tag_form.addRow(self.tr("Sample:"), self.sample_combo)
+        tag_form.addRow(self.tr("Sample source:"), self.sample_source_combo)
         note_row = QWidget()
         note_row_layout = QHBoxLayout(note_row)
         note_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -1265,7 +1268,11 @@ class LiveLabTab(QWidget):
         )
         self._register_hint_widget(
             self.sample_combo,
-            self.tr("Sample type stored on newly imported microscope images."),
+            self.tr("Specimen condition (Fresh/Dried) stored on newly imported microscope images."),
+        )
+        self._register_hint_widget(
+            self.sample_source_combo,
+            self.tr("Where the observed material came from (spore print, stipe, hymenium, ...)."),
         )
         self._register_hint_widget(
             self.session_note_input,
@@ -1743,6 +1750,7 @@ class LiveLabTab(QWidget):
             "mount_medium": DatabaseTerms.canonicalize("mount", data.get("mount_medium")),
             "stain": DatabaseTerms.canonicalize("stain", data.get("stain")),
             "sample_type": DatabaseTerms.canonicalize("sample", data.get("sample_type")),
+            "sample_source": DatabaseTerms.canonicalize("sample_source", data.get("sample_source")),
         }
 
     def _microscope_tag_for_metadata(self, metadata: dict | None) -> tuple[str | None, str | None]:
@@ -1767,6 +1775,7 @@ class LiveLabTab(QWidget):
         ("mount_combo", "mount_medium"),
         ("stain_combo", "stain"),
         ("sample_combo", "sample_type"),
+        ("sample_source_combo", "sample_source"),
     )
 
     def _load_image_note_from_metadata(self, metadata: dict | None) -> None:
@@ -1866,6 +1875,7 @@ class LiveLabTab(QWidget):
             ("mount_combo", state.get("mount_medium")),
             ("stain_combo", state.get("stain")),
             ("sample_combo", state.get("sample_type")),
+            ("sample_source_combo", state.get("sample_source")),
         ):
             combo = getattr(self, combo_name, None)
             if combo is None:
@@ -1916,8 +1926,9 @@ class LiveLabTab(QWidget):
             "mount_medium": [],
             "stain": [],
             "sample_type": [],
+            "sample_source": [],
         }
-        term_fields = {"contrast", "mount_medium", "stain", "sample_type"}
+        term_fields = {"contrast", "mount_medium", "stain", "sample_type", "sample_source"}
         for state in states:
             for field, seen in field_values.items():
                 value = state.get(field)
@@ -4868,6 +4879,7 @@ class LiveLabTab(QWidget):
         ("mount_medium", "mount_medium"),
         ("stain", "stain"),
         ("sample_type", "sample_type"),
+        ("sample_source", "sample_source"),
     )
 
     def _selected_session_image_ids_for_metadata_sync(self) -> list[int]:
@@ -6939,6 +6951,7 @@ class LiveLabTab(QWidget):
             ("mount", getattr(self, "mount_combo", None)),
             ("stain", getattr(self, "stain_combo", None)),
             ("sample", getattr(self, "sample_combo", None)),
+            ("sample_source", getattr(self, "sample_source_combo", None)),
         ):
             self._refresh_term_combo(combo, category)
         self._update_lab_state_combo_alerts()
@@ -7107,6 +7120,17 @@ class LiveLabTab(QWidget):
         self.sample_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
         self.sample_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
         self.sample_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
+        self.sample_source_combo.currentIndexChanged.connect(
+            lambda _idx: self._log_dropdown_change(
+                "sample_source",
+                self._selected_combo_value(self.sample_source_combo),
+                self.sample_source_combo.currentText(),
+            )
+        )
+        self.sample_source_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        self.sample_source_combo.currentIndexChanged.connect(self._refresh_viewer_objective_tag_from_current_state)
+        self.sample_source_combo.currentIndexChanged.connect(self._sync_selected_pending_raw_metadata_from_controls)
+        self.sample_source_combo.currentIndexChanged.connect(self._sync_selected_session_image_metadata_from_controls)
 
     def _restore_watch_dir(self) -> None:
         saved = str(SettingsDB.get_setting(self.SETTING_WATCH_DIR, "") or "").strip()
@@ -7321,6 +7345,15 @@ class LiveLabTab(QWidget):
             "stain_label": str(self.stain_combo.currentText() or "").strip() or None,
             "sample_type": DatabaseTerms.canonicalize("sample", self._selected_combo_value(self.sample_combo)),
             "sample_label": str(self.sample_combo.currentText() or "").strip() or None,
+            "sample_source": DatabaseTerms.canonicalize(
+                "sample_source",
+                self._selected_combo_value(getattr(self, "sample_source_combo", None)),
+            ),
+            "sample_source_label": (
+                str(self.sample_source_combo.currentText() or "").strip() or None
+                if getattr(self, "sample_source_combo", None) is not None
+                else None
+            ),
         }
 
     def _refresh_session_microscope_state_from_sidebar(self) -> None:
@@ -7718,6 +7751,7 @@ class LiveLabTab(QWidget):
         mount_value = ingest_lab_metadata.get("mount_medium")
         stain_value = ingest_lab_metadata.get("stain")
         sample_value = ingest_lab_metadata.get("sample_type")
+        sample_source_value = ingest_lab_metadata.get("sample_source")
         if not str(contrast_value or "").strip():
             contrast_value = capture_time_state.get("contrast") or self._selected_combo_value(self.contrast_combo)
         if not str(mount_value or "").strip():
@@ -7726,6 +7760,10 @@ class LiveLabTab(QWidget):
             stain_value = capture_time_state.get("stain") or self._selected_combo_value(self.stain_combo)
         if not str(sample_value or "").strip():
             sample_value = capture_time_state.get("sample_type") or self._selected_combo_value(self.sample_combo)
+        if not str(sample_source_value or "").strip():
+            sample_source_value = capture_time_state.get("sample_source") or self._selected_combo_value(
+                getattr(self, "sample_source_combo", None)
+            )
         objective_key = str(objective_key or "").strip() or None
         objective = load_objectives().get(objective_key) if objective_key else None
         scale = objective.get("microns_per_pixel") if isinstance(objective, dict) else None
@@ -7743,6 +7781,7 @@ class LiveLabTab(QWidget):
             mount_medium=DatabaseTerms.canonicalize("mount", mount_value),
             stain=DatabaseTerms.canonicalize("stain", stain_value),
             sample_type=DatabaseTerms.canonicalize("sample", sample_value),
+            sample_source=DatabaseTerms.canonicalize("sample_source", sample_source_value),
             calibration_id=calibration_id,
             resample_scale_factor=1.0,
             original_filepath=original_filepath,

@@ -180,6 +180,7 @@ def test_image_import_result_from_candidate_preserves_prepared_metadata_and_fail
         mount_medium="water",
         stain="none",
         sample_type="spore",
+        sample_source="Spore_print",
         resize_to_optimal=True,
         store_original=False,
     )
@@ -236,6 +237,7 @@ def test_image_import_result_from_candidate_seeds_default_ai_crop(tmp_path):
         mount_medium=None,
         stain=None,
         sample_type=None,
+        sample_source=None,
         resize_to_optimal=False,
         store_original=False,
     )
@@ -409,6 +411,9 @@ def test_prepare_images_combo_alerts_track_unset_and_custom_objective_state(qapp
     dummy.sample_combo = QComboBox()
     dummy.sample_combo.addItem("Not set", "Not_set")
     dummy.sample_combo.addItem("Spore", "spore")
+    dummy.sample_source_combo = QComboBox()
+    dummy.sample_source_combo.addItem("Not set", "Not_set")
+    dummy.sample_source_combo.addItem("Spore print", "Spore_print")
 
     dummy._populate_objectives(selected_key=None)
     assert dummy.objective_combo.count() == 1
@@ -461,6 +466,8 @@ def test_prepare_images_combo_alerts_are_suppressed_for_field_images(qapp):
     dummy.stain_combo.addItem("Not set", "Not_set")
     dummy.sample_combo = QComboBox()
     dummy.sample_combo.addItem("Not set", "Not_set")
+    dummy.sample_source_combo = QComboBox()
+    dummy.sample_source_combo.addItem("Not set", "Not_set")
 
     dummy._update_lab_state_combo_alerts()
 
