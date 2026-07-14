@@ -33,11 +33,12 @@ def _build_tag_combo_dialog_dummy(reduced_lists: dict[str, list[str]]) -> Simple
     dummy = SimpleNamespace()
     dummy.tr = lambda text: text
     dummy._add_choice_item = lambda combo, text, value, **kwargs: combo.addItem(text, value)
-    dummy._populate_tag_combo = lambda combo, category, options: ImageImportDialog._populate_tag_combo(
+    dummy._populate_tag_combo = lambda combo, category, options, **kwargs: ImageImportDialog._populate_tag_combo(
         dummy,
         combo,
         category,
         options,
+        **kwargs,
     )
     dummy._get_combo_tag_value = lambda combo, category: combo.currentData()
     dummy._update_lab_state_combo_alerts = lambda *_args: None

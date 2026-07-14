@@ -1326,21 +1326,37 @@ class ImageImportDialog(GeometryMixin, QDialog):
         else:
             combo.addItem(text, value)
 
-    def _populate_tag_combo(self, combo, category: str, options: list[str]) -> None:
+    def _populate_tag_combo(
+        self,
+        combo,
+        category: str,
+        options: list[str],
+        *,
+        pill_labels: dict[str, str] | None = None,
+        tooltips: dict[str, str] | None = None,
+    ) -> None:
         combo.clear()
         adder = getattr(self, "_add_choice_item", None)
         for canonical in options:
             if category == "contrast" and canonical == "Not_set":
                 continue
             display = DatabaseTerms.translate(category, canonical)
+            pill_override = (pill_labels or {}).get(canonical)
+            if canonical == "Not_set":
+                pill_text = "—"
+            elif pill_override:
+                pill_text = pill_override
+            else:
+                pill_text = display
+            tooltip = (tooltips or {}).get(canonical) or display
             if callable(adder):
                 adder(
                     combo,
                     display,
                     canonical,
-                    pill_text="—" if canonical == "Not_set" else display,
+                    pill_text=pill_text,
                     color=stain_color(canonical) if category == "stain" else None,
-                    tooltip=display,
+                    tooltip=tooltip,
                 )
             else:
                 combo.addItem(display, canonical)
@@ -1555,7 +1571,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         scale_layout.addWidget(self.scale_warning_label)
         layout.addWidget(self.scale_group)
 
-        # ── Microscope details group (collapsed for field images) ───────────
+        # ── Microscope details (optical path: objective, contrast) ────────────
+        # `micro_settings_group` remains the enable/disable target when the
+        # user marks the row as a field image — see `_update_micro_settings_state`.
         self.micro_settings_group, micro_form = create_section_card(
             self.tr("Microscope"),
             QFormLayout,
@@ -1580,12 +1598,27 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
+        layout.addWidget(self.micro_settings_group)
+
+        # ── Slide / prep (mounted-specimen metadata) ──────────────────────────
+        # Mount medium, stain, specimen condition, and where the material was
+        # sampled from. These live on the slide, not the microscope path.
+        self.slide_prep_group, prep_form = create_section_card(
+            self.tr("Slide / prep"),
+            QFormLayout,
+            body_margins=(8, 8, 8, 8),
+        )
+        self.slide_prep_body = prep_form.parentWidget()
+        prep_form.setSpacing(6)
+        prep_form.setLabelAlignment(Qt.AlignLeft)
+        prep_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
         self.mount_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.mount_combo, "mount", self.mount_options)
         self._set_combo_tag_value(self.mount_combo, "mount", self.mount_default)
         self.mount_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Mount:"), self.mount_combo)
+        prep_form.addRow(self.tr("Mount:"), self.mount_combo)
 
         self.stain_combo = AdaptiveChoiceSelector(self, compact=True)
         self.stain_combo.set_unselected_border_visible(False)
@@ -1593,27 +1626,31 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_combo_tag_value(self.stain_combo, "stain", self.stain_default)
         self.stain_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Stain:"), self.stain_combo)
+        prep_form.addRow(self.tr("Stain:"), self.stain_combo)
 
         self.sample_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.sample_combo, "sample", self.sample_options)
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Sample:"), self.sample_combo)
+        prep_form.addRow(self.tr("Condition:"), self.sample_combo)
 
         self.sample_source_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(
-            self.sample_source_combo, "sample_source", self.sample_source_options
+            self.sample_source_combo,
+            "sample_source",
+            self.sample_source_options,
+            pill_labels=DatabaseTerms.sample_source_compact_pills(),
+            tooltips=DatabaseTerms.sample_source_compact_tooltips(),
         )
         self._set_combo_tag_value(
             self.sample_source_combo, "sample_source", self.sample_source_default
         )
         self.sample_source_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.sample_source_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Sample source:"), self.sample_source_combo)
+        prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
 
-        layout.addWidget(self.micro_settings_group)
+        layout.addWidget(self.slide_prep_group)
 
         notes_group, notes_layout = create_section_card(
             self.tr("Image note"),
@@ -2028,7 +2065,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             ("sample_source", self.sample_source_combo),
         ):
             options = getattr(self, f"{category}_options")
-            self._populate_tag_combo(combo, category, options)
+            populate_kwargs: dict = {}
+            if category == "sample_source":
+                populate_kwargs["pill_labels"] = DatabaseTerms.sample_source_compact_pills()
+                populate_kwargs["tooltips"] = DatabaseTerms.sample_source_compact_tooltips()
+            self._populate_tag_combo(combo, category, options, **populate_kwargs)
             value = current_values.get(category)
             index = combo.findData(value) if value is not None else -1
             if index < 0:
@@ -2448,8 +2489,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.micro_settings_body.setVisible(bool(enable))
             except Exception:
                 pass
+        if hasattr(self, "slide_prep_body"):
+            try:
+                self.slide_prep_body.setVisible(bool(enable))
+            except Exception:
+                pass
         if hasattr(self, "micro_settings_group"):
             self.micro_settings_group.setEnabled(enable)
+        if hasattr(self, "slide_prep_group"):
+            self.slide_prep_group.setEnabled(enable)
         self._sync_field_tag_display(not enable and bool(getattr(self, "field_radio", None) and self.field_radio.isChecked()))
 
     def _sync_scale_bar_length_unit_for_image_type(self) -> None:

@@ -920,26 +920,52 @@ class LiveLabTab(QWidget):
 
         left_layout.addWidget(session_group)
 
-        tag_group, tag_form = create_section_card(
+        # MICROSCOPE = optical path only (Objective, Contrast).
+        # SLIDE / PREP = everything about the mounted specimen: mount medium,
+        # stain, specimen condition, and where the material was sampled from.
+        # Mount and Stain are properties of the slide, not the microscope path.
+        self.microscope_group, micro_form = create_section_card(
             self.tr("Microscope"),
             QFormLayout,
             body_margins=(10, 12, 10, 10),
         )
-        tag_form.setSpacing(8)
+        micro_form.setSpacing(8)
         self.objective_combo = self._make_combo()
         self.objective_combo.set_unselected_border_visible(False)
         self.objective_combo.currentIndexChanged.connect(self._save_objective_selection)
         self.contrast_combo = self._build_term_combo("contrast")
+        micro_form.addRow(self.tr("Objective:"), self.objective_combo)
+        micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
+        left_layout.addWidget(self.microscope_group)
+
+        self.slide_prep_group, prep_form = create_section_card(
+            self.tr("Slide / prep"),
+            QFormLayout,
+            body_margins=(10, 12, 10, 10),
+        )
+        prep_form.setSpacing(8)
         self.mount_combo = self._build_term_combo("mount")
         self.stain_combo = self._build_term_combo("stain")
         self.sample_combo = self._build_term_combo("sample")
-        self.sample_source_combo = self._build_term_combo("sample_source")
-        tag_form.addRow(self.tr("Objective:"), self.objective_combo)
-        tag_form.addRow(self.tr("Contrast:"), self.contrast_combo)
-        tag_form.addRow(self.tr("Mount:"), self.mount_combo)
-        tag_form.addRow(self.tr("Stain:"), self.stain_combo)
-        tag_form.addRow(self.tr("Sample:"), self.sample_combo)
-        tag_form.addRow(self.tr("Sample source:"), self.sample_source_combo)
+        self.sample_source_combo = self._build_term_combo(
+            "sample_source",
+            pill_labels=DatabaseTerms.sample_source_compact_pills(),
+            tooltips=DatabaseTerms.sample_source_compact_tooltips(),
+        )
+        self.sample_combo.setToolTip(self.tr("Specimen condition"))
+        self.sample_source_combo.setToolTip(self.tr("Sample source"))
+        prep_form.addRow(self.tr("Mount:"), self.mount_combo)
+        prep_form.addRow(self.tr("Stain:"), self.stain_combo)
+        prep_form.addRow(self.tr("Condition:"), self.sample_combo)
+        prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
+        left_layout.addWidget(self.slide_prep_group)
+
+        self.notes_group, notes_form = create_section_card(
+            self.tr("Notes"),
+            QFormLayout,
+            body_margins=(10, 12, 10, 10),
+        )
+        notes_form.setSpacing(8)
         note_row = QWidget()
         note_row_layout = QHBoxLayout(note_row)
         note_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -951,7 +977,7 @@ class LiveLabTab(QWidget):
         self.add_note_btn = QPushButton(self.tr("Add"))
         self.add_note_btn.clicked.connect(self._add_session_note)
         note_row_layout.addWidget(self.add_note_btn, 0)
-        tag_form.addRow(self.tr("Note:"), note_row)
+        notes_form.addRow(self.tr("Note:"), note_row)
         try:
             from .image_import_dialog import AutoSizingPlainTextEdit
         except Exception:
@@ -961,10 +987,10 @@ class LiveLabTab(QWidget):
             self.image_note_input.setObjectName("labImageNoteInput")
             self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
             self.image_note_input.textChanged.connect(self._on_image_note_text_changed)
-            tag_form.addRow(self.tr("Image note:"), self.image_note_input)
+            notes_form.addRow(self.tr("Image note:"), self.image_note_input)
             self._image_note_mixed = False
             self._image_note_loading = False
-        left_layout.addWidget(tag_group)
+        left_layout.addWidget(self.notes_group)
 
         self.raw_processing_card = QFrame()
         self.raw_processing_card.setObjectName("sectionCard")
@@ -6887,7 +6913,13 @@ class LiveLabTab(QWidget):
         else:
             combo.addItem(text, value)
 
-    def _build_term_combo(self, category: str):
+    def _build_term_combo(
+        self,
+        category: str,
+        *,
+        pill_labels: dict[str, str] | None = None,
+        tooltips: dict[str, str] | None = None,
+    ):
         combo = self._make_combo()
         if category == "stain" and hasattr(combo, "set_unselected_border_visible"):
             combo.set_unselected_border_visible(False)
@@ -6898,14 +6930,23 @@ class LiveLabTab(QWidget):
         )
         for value in values:
             display = DatabaseTerms.translate(category, value)
+            pill_override = (pill_labels or {}).get(value)
+            if value == "Not_set":
+                pill_text = "—"
+            elif pill_override:
+                pill_text = pill_override
+            else:
+                pill_text = display
+            tooltip_override = (tooltips or {}).get(value)
+            tooltip = tooltip_override or display
             if callable(adder):
                 adder(
                     combo,
                     display,
                     value,
-                    pill_text="—" if value == "Not_set" else display,
+                    pill_text=pill_text,
                     color=stain_color(value) if category == "stain" else None,
-                    tooltip=display,
+                    tooltip=tooltip,
                 )
             else:
                 combo.addItem(display, value)

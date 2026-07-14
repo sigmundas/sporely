@@ -101,6 +101,33 @@ class DatabaseTerms:
 
     SAMPLE_PUBLIC_LABEL = QT_TRANSLATE_NOOP("DatabaseTerms", "Unknown")
     SAMPLE_COMPACT_LABEL = "–"
+
+    # Compact pill labels used inside side-panel selectors where vertical space
+    # is scarce. Storage keys are the canonical values (unchanged) and the
+    # dropdown text in wider views keeps SAMPLE_SOURCE_DISPLAY. Only pill mode
+    # in the compact panels shows these shortened labels.
+    SAMPLE_SOURCE_COMPACT_PILL = {
+        "Spore_print": QT_TRANSLATE_NOOP("DatabaseTerms", "Print"),
+        "Hymenium": QT_TRANSLATE_NOOP("DatabaseTerms", "Hymenium"),
+        "Stipe": QT_TRANSLATE_NOOP("DatabaseTerms", "Stipe"),
+        "Pileus": QT_TRANSLATE_NOOP("DatabaseTerms", "Pileus"),
+        "Context": QT_TRANSLATE_NOOP("DatabaseTerms", "Context"),
+        "Other": QT_TRANSLATE_NOOP("DatabaseTerms", "Other"),
+    }
+
+    SAMPLE_SOURCE_COMPACT_TOOLTIPS = {
+        "Spore_print": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Spores from a spore print/deposit"
+        ),
+        "Hymenium": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Fertile surface, e.g. gills, pores, teeth or folds"
+        ),
+        "Stipe": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Spores/material taken from the stem"
+        ),
+        "Pileus": QT_TRANSLATE_NOOP("DatabaseTerms", "Cap tissue or cap surface"),
+        "Context": QT_TRANSLATE_NOOP("DatabaseTerms", "Inner flesh/trama"),
+    }
     
     MEASURE_DISPLAY = {
         "Spores": QT_TRANSLATE_NOOP("DatabaseTerms", "Spores"),
@@ -295,6 +322,16 @@ class DatabaseTerms:
         if not canonical or canonical == "Not_set":
             return cls.tr(cls.SAMPLE_PUBLIC_LABEL)
         return cls.translate_sample_source(canonical)
+
+    @classmethod
+    def sample_source_compact_pills(cls) -> dict[str, str]:
+        """Translated compact pill labels for sample_source (e.g. Spore_print → 'Print')."""
+        return {key: cls.tr(text) for key, text in cls.SAMPLE_SOURCE_COMPACT_PILL.items()}
+
+    @classmethod
+    def sample_source_compact_tooltips(cls) -> dict[str, str]:
+        """Translated tooltips describing each sample source in the compact panels."""
+        return {key: cls.tr(text) for key, text in cls.SAMPLE_SOURCE_COMPACT_TOOLTIPS.items()}
     
     @classmethod
     def translate_measure(cls, canonical_name: str | None) -> str:
