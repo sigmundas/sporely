@@ -421,7 +421,7 @@ def test_push_all_metadata_only_for_local_ai_crop_edit(monkeypatch, tmp_path):
     stored_snapshot = _snapshot(remote_obs, [remote_image])
 
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
     monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda observation_id: baseline_signature)
@@ -501,7 +501,7 @@ def test_metadata_only_sync_does_not_upload_bytes(monkeypatch, tmp_path):
     stored_snapshot = _snapshot(remote_obs, [remote_image])
 
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
     monkeypatch.setattr(cloud_sync, "_load_local_cloud_media_signature", lambda observation_id: baseline_signature)

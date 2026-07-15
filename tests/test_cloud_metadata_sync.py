@@ -364,7 +364,7 @@ def test_sync_all_ends_progress_on_neutral_finalizing_message(monkeypatch, tmp_p
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(
         cloud_sync,
         "push_calibrations",
@@ -480,7 +480,7 @@ def test_sync_all_emits_preflight_message_between_calibration_push_and_observati
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(
         cloud_sync,
         "push_calibrations",
@@ -582,7 +582,7 @@ def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_load_linked_cloud_user_id", lambda: "user-123")
     monkeypatch.setattr(cloud_sync, "_save_linked_cloud_user_id", lambda user_id: None)

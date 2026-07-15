@@ -164,7 +164,7 @@ from utils.cloud_sync import (
     unlink_local_observation_from_cloud,
 )
 from .cloud_conflict_dialog import CloudConflictDialog
-from .image_gallery_widget import ImageGalleryWidget
+from .image_gallery_widget import ImageGalleryWidget, _microscope_tag_from_image
 from .splitter_state import (
     install_persistent_splitter,
     GALLERY_DEFAULT_HEIGHT,
@@ -408,6 +408,7 @@ class _CloudAutoSyncWorker(QThread):
         prepare_images_cb=None,
         materialize_remote_images: bool = False,
         sync_images: bool = True,
+        full_pull: bool = True,
         parent=None,
     ):
         super().__init__(parent)
@@ -415,6 +416,11 @@ class _CloudAutoSyncWorker(QThread):
         self._sync_images = bool(sync_images)
         self._prepare_images_cb = prepare_images_cb if self._sync_images else None
         self._materialize_remote_images = bool(materialize_remote_images)
+        # full_pull=False enables the no-op fast path in cloud_sync.sync_all:
+        # candidates are pruned by updated_at, spore-summary reconciliation
+        # scans are skipped, and bulk image/measurement fetches only run for
+        # observations that actually changed remotely.
+        self._full_pull = bool(full_pull)
         self.prepare_requested.connect(self._handle_prepare_request)
 
     def _prepare_images(self, observation: dict, progress_cb=None):
@@ -480,6 +486,7 @@ class _CloudAutoSyncWorker(QThread):
                 sync_images=self._sync_images,
                 materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images if self._sync_images else None,
+                full_pull=self._full_pull,
             )
             if self.isInterruptionRequested():
                 raise KeyboardInterrupt
@@ -3318,9 +3325,19 @@ class ObservationsTab(QWidget):
         self,
         show_status: bool,
         run_refresh_flow: bool,
-        sync_images: bool = True,
+        sync_images: bool = False,
         materialize_remote_images: bool = False,
+        full_pull: bool = False,
     ) -> bool:
+        # Defaults are the "no-op fast path" for background / Refresh:
+        #  * sync_images=False    → no local image byte uploads, no WebP prep
+        #  * materialize_remote_images=False → no bulk download of cloud media
+        #  * full_pull=False      → candidates pruned by updated_at, spore
+        #                            reconciliation scans skipped, bulk
+        #                            image/measurement fetches only run for
+        #                            observations that actually changed
+        # Explicit user actions ("Upload media", "Full cloud refresh") pass
+        # True on the corresponding flags.
         if self._cloud_sync_worker is not None:
             if show_status and not self._cloud_sync_show_status:
                 self._set_status_progress_visible(True)
@@ -3341,6 +3358,7 @@ class ObservationsTab(QWidget):
             prepare_images_cb=self.prepare_cloud_sync_image_uploads if sync_images else None,
             materialize_remote_images=materialize_remote_images,
             sync_images=sync_images,
+            full_pull=full_pull,
             parent=self,
         )
         self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
@@ -7418,38 +7436,59 @@ class ObservationsTab(QWidget):
             ordered.append(image)
         return ordered
 
-    def _collect_cloud_sync_image_rows(self, observation_id: int) -> list[dict]:
-        """Return canonical local images that should be mirrored to Sporely Cloud.
+    def _collect_cloud_sync_image_rows(
+        self,
+        observation_id: int,
+        *,
+        explicit_media_upload_selection: set[int] | None = None,
+    ) -> list[dict]:
+        """Return canonical local images eligible for cloud sync (bytes OR metadata).
 
-        Cloud sync follows the same thumbnail checkmark selection as the other
-        upload paths and only mirrors selected field/microscope images.
+        Includes rows that already have ``cloud_id`` so the downstream code can
+        still emit metadata-only patches for them. Rows the shared predicate
+        would reject entirely (excluded, duplicate, missing file, wrong type,
+        generated cloud stub, cache row) are omitted; rows in that "ineligible
+        for byte upload but still already-synced" grey zone remain because they
+        still need metadata patches.
+
+        The microscope-no-measurements filter applies only to rows that lack a
+        cloud_id — the intent is to stop first-time byte upload of the backlog,
+        not to strand microscope images that were already uploaded.
         """
+        from utils.cloud_sync import (
+            PENDING_REASON_ALREADY_SYNCED,
+            PENDING_REASON_PENDING_UPLOAD,
+            _measurement_counts_for_observation_images,
+            explain_pending_cloud_image_decision,
+        )
 
         images = ImageDB.get_images_for_observation(observation_id)
         excluded_ids = self._publish_excluded_image_ids(observation_id)
+        measurement_counts = _measurement_counts_for_observation_images(int(observation_id))
         ordered: list[dict] = []
         seen_paths: set[str] = set()
         for image in images:
-            image_id = image.get("id")
-            if image_id is not None:
-                try:
-                    if int(image_id) in excluded_ids:
-                        continue
-                except Exception:
-                    pass
-            image_type = (image.get("image_type") or "").strip().lower()
-            if image_type not in {"field", "microscope"}:
-                continue
-            if not should_push_local_image_to_cloud(image):
-                continue
-            filepath = image.get("filepath") or image.get("original_filepath")
-            if not filepath or not Path(filepath).exists():
-                continue
-            path_key = self._publish_path_key(filepath)
-            if path_key in seen_paths:
-                continue
-            seen_paths.add(path_key)
-            ordered.append(image)
+            decision = explain_pending_cloud_image_decision(
+                dict(image),
+                seen_paths=seen_paths,
+                excluded_ids=excluded_ids,
+                image_measurement_counts=measurement_counts,
+                explicit_media_upload_selection=explicit_media_upload_selection,
+            )
+            reason = decision.get("reason") or ""
+            # Rows already on cloud need metadata patches; rows scheduled to
+            # upload their bytes need both. Everything else is filtered out.
+            if reason in {PENDING_REASON_ALREADY_SYNCED, PENDING_REASON_PENDING_UPLOAD}:
+                # Record the path in seen_paths so a later duplicate path is
+                # rejected as expected — the helper only mutates seen_paths on
+                # the "pending" branch, so track it explicitly here for the
+                # already-synced branch too.
+                if reason == PENDING_REASON_ALREADY_SYNCED:
+                    filepath = str(image.get("filepath") or image.get("original_filepath") or "").strip()
+                    if filepath:
+                        from utils.cloud_sync import _cloud_publish_path_key
+                        seen_paths.add(_cloud_publish_path_key(filepath))
+                ordered.append(image)
         return ordered
 
     @staticmethod
@@ -13950,12 +13989,37 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             taxon_id = None
         self._inaturalist_taxon_id = taxon_id if taxon_id and taxon_id > 0 else None
 
+    # Artsorakel's raw API returns camelCase `redListCategory` (capital L).
+    # sporely-web reformats predictions to `redlistCategory` (lowercase l) and
+    # also emits a snake_case `redlist_category`. Cloud-synced observations
+    # therefore reach us with the lowercase variant, so accept all three.
+    _RED_LIST_CATEGORY_KEYS = ("redListCategory", "redlistCategory", "redlist_category")
+    _RED_LIST_CATEGORIES_KEYS = ("redListCategories", "redlistCategories", "redlist_categories")
+
+    @classmethod
+    def _read_red_list_code(cls, source: dict | None) -> str:
+        if not isinstance(source, dict):
+            return ""
+        for key in cls._RED_LIST_CATEGORY_KEYS:
+            value = source.get(key)
+            if value:
+                text = str(value).strip()
+                if text:
+                    return text
+        return ""
+
+    @classmethod
+    def _read_red_list_categories(cls, source: dict | None) -> dict | None:
+        if not isinstance(source, dict):
+            return None
+        for key in cls._RED_LIST_CATEGORIES_KEYS:
+            value = source.get(key)
+            if isinstance(value, dict) and value:
+                return value
+        return None
+
     def _red_list_display_from_prediction(self, pred: dict, taxon: dict, *, short: bool) -> str:
-        code = ""
-        if isinstance(taxon, dict):
-            code = str(taxon.get("redListCategory") or "").strip()
-        if not code and isinstance(pred, dict):
-            code = str(pred.get("redListCategory") or "").strip()
+        code = self._read_red_list_code(taxon) or self._read_red_list_code(pred)
         return code.upper() if short and code else self._red_list_label(code)
 
     def _build_red_list_table_item(self, code: str | None, tooltip: str | None = None) -> QTableWidgetItem | None:
@@ -13970,10 +14034,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return item
 
     def _red_list_categories_from_prediction(self, pred: dict, taxon: dict) -> dict | None:
-        value = taxon.get("redListCategories") if isinstance(taxon, dict) else None
-        if value is None and isinstance(pred, dict):
-            value = pred.get("redListCategories")
-        return value if isinstance(value, dict) else None
+        return self._read_red_list_categories(taxon) or self._read_red_list_categories(pred)
 
     def _ai_prediction_link(self, pred: dict, taxon: dict, source: str = "arts") -> str | None:
         source = str(source or "").strip().lower()
@@ -14328,7 +14389,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             else:
                 self._set_inaturalist_taxon_id(None)
                 self._set_red_list_category(
-                    taxon.get("redListCategory") or (selected_pred or {}).get("redListCategory"),
+                    self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
                     self._red_list_categories_from_prediction(selected_pred or {}, taxon),
                 )
             self._suppress_taxon_autofill = False
@@ -16273,6 +16334,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 lab_metadata=item.lab_metadata,
                 translate=self.tr,
             )
+            # Colored bottom-left microscope tag so this gallery matches the
+            # Observations and Prepare Images galleries. Also drop the first
+            # (objective/contrast) badge to avoid duplicating the info shown
+            # in the colored tag itself.
+            microscope_tag_text, microscope_tag_color = _microscope_tag_from_image(
+                {
+                    "objective_name": item.objective,
+                    "contrast": item.contrast,
+                    "lab_metadata": item.lab_metadata,
+                },
+                translate=self.tr,
+            )
+            if microscope_tag_text and badges and (item.image_type or "").strip().lower() == "microscope":
+                badges = badges[1:]
             has_measurements = False
             if item.image_id:
                 has_measurements = bool(MeasurementDB.get_measurements_for_image(item.image_id))
@@ -16293,6 +16368,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     "gps_tag_text": self.tr("GPS") if gps_match else None,
                     "gps_tag_highlight": gps_match,
                     "badges": badges,
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
                     "publish_selected": publish_selected,
                     "publish_selected_default": (item.image_type or "field").strip().lower() != "microscope",
                     "has_measurements": has_measurements,
@@ -18030,7 +18107,27 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     red_categories = parsed_red_categories
             except Exception:
                 red_categories = None
-        self._set_red_list_category(obs.get("red_list_category"), red_categories)
+        red_code = obs.get("red_list_category")
+
+        # Fallback: cloud-synced observations whose `observations.red_list_category`
+        # column was never populated by sporely-web (the web write path is
+        # conditional) still carry the red-list code inside each AI prediction.
+        # If the observation has a persisted Artsorakel selection but no
+        # column-level red-list, derive it from the selected prediction so the
+        # left-side Taxonomy badge matches what the AI table already shows.
+        if not red_code:
+            for selected_pred in (self._ai_selected_by_index or {}).values():
+                if not isinstance(selected_pred, dict):
+                    continue
+                taxon = selected_pred.get("taxon") if isinstance(selected_pred.get("taxon"), dict) else {}
+                fallback_code = self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred)
+                if fallback_code:
+                    red_code = fallback_code
+                    if red_categories is None:
+                        red_categories = self._read_red_list_categories(taxon) or self._read_red_list_categories(selected_pred)
+                    break
+
+        self._set_red_list_category(red_code, red_categories)
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
         self._set_sharing_scope(

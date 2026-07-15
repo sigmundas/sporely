@@ -383,7 +383,7 @@ def _setup_push_all_existing_media_case(tmp_path, monkeypatch):
             return [dict(row) for row in remote_measurements]
 
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
@@ -624,7 +624,7 @@ def _setup_push_all_tombstone_cleanup_case(
     refresh_calls: list[int] = []
 
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: stored_snapshot)
@@ -3770,7 +3770,9 @@ def test_mark_cloud_observations_dirty_for_pending_local_images_counts_re_dirtie
 
     summary = cloud_sync._new_sync_summary()
     with cloud_sync._cloud_sync_summary_scope(summary):
-        cloud_sync._mark_cloud_observations_dirty_for_pending_local_images()
+        cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+            include_pending_local_media_uploads=True,
+        )
 
     output = capsys.readouterr().out
     conn = sqlite3.connect(db_path)
