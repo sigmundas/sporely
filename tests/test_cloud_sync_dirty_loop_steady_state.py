@@ -334,6 +334,12 @@ def test_push_all_metadata_only_refreshes_signature_after_stamp(tmp_path, monkey
         def pull_image_metadata(self, cloud_id, **kwargs):
             return []
 
+        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+            # This test only exercises the observation-level signature-refresh
+            # contract; accept image metadata PATCH calls as a no-op so the
+            # new metadata-only branch doesn't error out here.
+            return str(img.get("cloud_id") or "cloud-image-noop")
+
     # Before push: signatures drift.
     stored_before = _load_local_cloud_media_signature(777)
     current_before = _local_cloud_media_signature(777)
@@ -472,4 +478,221 @@ def test_push_all_metadata_only_logs_dirty_to_synced_transition(tmp_path, monkey
     out = capsys.readouterr().out
     assert "sync_status transition obs 777: dirty→synced caller=push_all" in out, (
         f"Expected transition log, got: {out}"
+    )
+
+
+def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp_path, monkeypatch, capsys):
+    """The obs 631 regression: on a normal Refresh (sync_images=False), an
+    observation whose LOCAL images gained new tag values (sample_source,
+    sample_type, mount_medium, ...) must trigger a metadata PATCH on the
+    already-linked cloud image rows. Previously the whole image-sync
+    branch lived inside `if sync_images:`, so a fast Refresh happily
+    stamped the observation 'synced' without ever calling
+    `push_image_metadata` — cloud rows kept stale NULL / Not_set values
+    forever. The new branch below runs the metadata PATCH without any
+    byte upload, without `prepare_images_cb`, and only for images that
+    already carry `cloud_id`."""
+    db_path = tmp_path / "meta_only_refresh.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE observations (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            cloud_id TEXT,
+            sync_status TEXT,
+            synced_at TEXT,
+            sync_error_code TEXT,
+            sync_error_message TEXT,
+            sync_blocked_reason TEXT,
+            sync_blocked_at TEXT
+        );
+        CREATE TABLE images (
+            id INTEGER PRIMARY KEY,
+            observation_id INTEGER,
+            image_type TEXT,
+            cloud_id TEXT,
+            sort_order INTEGER,
+            filepath TEXT,
+            original_filepath TEXT,
+            micro_category TEXT,
+            objective_name TEXT,
+            scale_microns_per_pixel REAL,
+            resample_scale_factor REAL,
+            mount_medium TEXT,
+            stain TEXT,
+            sample_type TEXT,
+            sample_source TEXT,
+            contrast TEXT,
+            measure_color TEXT,
+            crop_mode TEXT,
+            notes TEXT,
+            gps_source INTEGER,
+            ai_crop_x1 REAL, ai_crop_y1 REAL, ai_crop_x2 REAL, ai_crop_y2 REAL,
+            ai_crop_source_w INTEGER, ai_crop_source_h INTEGER, ai_crop_is_custom INTEGER,
+            calibration_id INTEGER,
+            created_at TEXT,
+            synced_at TEXT
+        );
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE spore_measurements (
+            id INTEGER PRIMARY KEY,
+            image_id INTEGER,
+            length_um REAL, width_um REAL,
+            measurement_type TEXT,
+            notes TEXT,
+            p1_x REAL, p1_y REAL, p2_x REAL, p2_y REAL,
+            p3_x REAL, p3_y REAL, p4_x REAL, p4_y REAL,
+            gallery_rotation REAL,
+            measured_at TEXT
+        );
+        -- Observation 389 shape: dirty (from the user's tag edit).
+        INSERT INTO observations (id, date, cloud_id, sync_status) VALUES (389, '2026-06-02', 'cloud-631', 'dirty');
+        -- Seed a microscope metadata-only anchor with PRE-edit tag values.
+        -- After we capture the signature below, we update the row to the
+        -- POST-edit values so the diagnostic sees only-metadata-fields-changed.
+        INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order, filepath,
+                            sample_type, sample_source, mount_medium, stain, contrast, created_at)
+            VALUES (871, 389, 'microscope', '3124', 3, '/tmp/micro.jpg',
+                    'Not_set', NULL, 'Not_set', 'Not_set', 'DIC', '2026-06-03');
+        INSERT INTO spore_measurements (id, image_id, length_um, width_um, measured_at)
+            VALUES (1, 871, 10.0, 5.0, '2026-06-03');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
+    from database import models
+    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
+
+    # Capture the local signature in the PRE-edit state (matches current DB
+    # in shape but with the "old" tag values), then mutate the DB to the
+    # POST-edit state and store the captured signature as the "last synced"
+    # baseline. This is how the diagnostic sees a legitimate metadata-only
+    # diff — only sample_type / sample_source / mount_medium changed.
+    pre_edit_signature = cloud_sync._local_cloud_media_signature(389)
+    conn = _connect(db_path)
+    conn.execute(
+        """
+        UPDATE images
+           SET sample_type = 'Fresh',
+               sample_source = 'Hymenium',
+               mount_medium = 'KOH'
+         WHERE id = 871
+        """
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('sporely_cloud_local_media_sig_obs_389', ?)",
+        (pre_edit_signature,),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images",
+                        lambda **_kwargs: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations",
+                        lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_measurements", lambda *a, **kw: 0)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_summaries", lambda *a, **kw: 0)
+    monkeypatch.setattr(cloud_sync, "_push_summary_for_current_observation", lambda *a, **kw: None)
+
+    patch_calls: list[dict] = []
+    post_calls: list[dict] = []
+
+    class _RecordingClient:
+        user_id = "user-obs-631"
+
+        def push_observation(self, obs, remote_obs=None):
+            return str(obs.get("cloud_id") or "cloud-631")
+
+        def get_observation(self, cloud_id):
+            return {"id": str(cloud_id), "desktop_id": 389}
+
+        def pull_image_metadata(self, cloud_id, **kwargs):
+            return [{
+                "id": "3124", "desktop_id": 871, "observation_id": "cloud-631",
+                "image_type": "microscope", "sort_order": 3,
+                "storage_path": None,           # metadata-only anchor
+                "sample_type": "Not_set", "sample_source": None,
+                "mount_medium": "Not_set", "stain": "Not_set", "contrast": "DIC",
+            }]
+
+        # Capability probes — everything except sample_source is off in the
+        # minimal test schema; sample_source is on because Stage 2A is live.
+        def _observation_images_support_ai_crop(self): return False
+        def _observation_images_support_ai_crop_custom(self): return False
+        def _observation_images_support_upload_metadata(self): return False
+        def _observation_images_support_storage_exif_safe(self): return False
+        def _observation_images_support_sample_source(self): return True
+        def _set_observation_media_keys(self, *a, **kw): return None
+
+        def _find_cloud_image(self, desktop_id):
+            return "3124" if int(desktop_id or 0) == 871 else None
+
+        def _patch(self, path, payload):
+            patch_calls.append({"path": path, "payload": dict(payload)})
+            return []
+
+        def _post(self, path, payload):
+            post_calls.append({"path": path, "payload": dict(payload)})
+            return [{"id": "unexpected-new"}]
+
+        # Reuse the real client's push_image_metadata so the metadata-only
+        # branch exercises the same code path production runs — PATCH via
+        # `_patch`, no `upload_image_file` call.
+        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+            return cloud_sync.SporelyCloudClient.push_image_metadata(
+                self, img, obs_cloud_id, storage_path
+            )
+
+        # `_set_observation_media_keys` is invoked inside push_image_metadata;
+        # keep the test fake compatible.
+        _observation_supports_media_keys = lambda self: False
+        _cloud_image_storage_key_cache: dict = {}
+
+    client = _RecordingClient()
+    cloud_sync.push_all(
+        client,
+        sync_images=False,
+        sync_calibrations=False,
+        remote_obs=[{"id": "cloud-631", "desktop_id": 389}],
+    )
+
+    # Observation was flipped to synced.
+    row = _connect(db_path).execute(
+        "SELECT sync_status FROM observations WHERE id = 389"
+    ).fetchone()
+    assert row["sync_status"] == "synced"
+
+    # The critical assertion: image row was PATCHed with the new tag values.
+    assert len(patch_calls) >= 1, (
+        f"Fast Refresh must PATCH image metadata on already-linked cloud "
+        f"rows when local tags changed; got patch_calls={patch_calls}"
+    )
+    assert len(post_calls) == 0, (
+        f"Metadata-only PATCH must not POST a new cloud row; got {post_calls}"
+    )
+
+    # Find the image-metadata PATCH (path targets observation_images by cloud id).
+    image_patches = [c for c in patch_calls if "observation_images?id=eq.3124" in c["path"]]
+    assert len(image_patches) == 1, (
+        f"Exactly one PATCH to the metadata-only anchor cloud row; "
+        f"got {image_patches}"
+    )
+    body = image_patches[0]["payload"]
+    assert body["sample_type"] == "Fresh"
+    assert body["sample_source"] == "hymenium", (
+        f"Push must send the lowercase cloud canonical; got "
+        f"{body.get('sample_source')!r}"
+    )
+    assert body["mount_medium"] == "KOH"
+    assert body["contrast"] == "DIC"
+    # storage_path field is present but preserves the anchor state
+    # (empty / normalized-empty) — no bytes were uploaded.
+    assert not body.get("storage_path")
+
+    out = capsys.readouterr().out
+    assert "metadata-only image PATCH under Refresh" in out, (
+        f"Expected the new diagnostic log line; got: {out}"
     )

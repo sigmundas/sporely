@@ -10059,7 +10059,15 @@ class SporelyCloudClient:
             or Path(img.get('filepath') or '').name
             or None
         )
-        payload['storage_path']      = _normalize_cloud_media_key(storage_path)
+        # `_normalize_cloud_media_key('')` returns `''`, not `None`. For
+        # metadata-only microscope anchors the local storage_path is empty
+        # (no bytes uploaded), and PATCHing the cloud row with an empty
+        # string trips the RLS WITH CHECK:
+        #   (storage_path LIKE '<uid>/%') OR (storage_path IS NULL AND image_type = 'microscope')
+        # An empty string is neither NULL nor prefixed by the uid, so the
+        # policy rejects the update with 42501. Send SQL NULL instead so
+        # the row keeps its existing NULL storage_path.
+        payload['storage_path']      = _normalize_cloud_media_key(storage_path) or None
         if payload.get('gps_source') is not None:
             payload['gps_source'] = bool(payload['gps_source'])
         # Sample condition + source normalization for the push payload.
@@ -11615,23 +11623,13 @@ def push_all(
             # is False.
             local_obs_id = _safe_int(obs.get('id'))
 
-            # Metadata-only mode: refresh the stored local media signature so
-            # future pulls do not re-flip the observation dirty over byte-level
-            # drift (e.g. sample_type re-canonicalization, float re-rendering)
-            # that this mode cannot upload anyway. Without this, the same
-            # observation stays dirty forever — every metadata-only sync marks
-            # it synced, then the pull step sees signatures differ and marks
-            # it dirty again. The explicit media-upload path already refreshes
-            # inside the `if sync_images:` block below.
-            if not sync_images and local_obs_id > 0:
-                try:
-                    _refresh_local_cloud_media_signature(local_obs_id)
-                except Exception as sig_exc:
-                    print(
-                        f"[cloud_sync] Could not refresh local media signature for obs "
-                        f"{local_obs_id}: {sig_exc}",
-                        flush=True,
-                    )
+            # (The metadata-only stored-signature refresh used to happen HERE,
+            # right after stamping the observation synced. That was too eager:
+            # it wiped the image-signature drift BEFORE the metadata-only
+            # image PATCH branch below could detect it, so image tag edits
+            # never reached cloud on a Refresh. Moved to run AFTER the
+            # metadata-only PATCH branch — see the trailing refresh block
+            # below the `if not sync_images ...` guard.)
 
             images_synced = True
             if sync_images:
@@ -11863,6 +11861,94 @@ def push_all(
                         _refresh_local_cloud_media_signature(local_obs_id)
                     else:
                         mark_observation_dirty(local_obs_id)
+
+            # Metadata-only image PATCH pass under the fast Refresh mode
+            # (`sync_images=False`). The `if sync_images:` block above gates
+            # the byte-upload path AND the metadata PATCH path together —
+            # but pure metadata edits on already-linked cloud images (e.g.
+            # setting sample_source / mount_medium on a metadata-only
+            # microscope anchor) should still reach cloud on a normal
+            # Refresh, because they only require a PATCH, not a byte upload.
+            #
+            # Trigger policy: any observation that survived the dirty scan
+            # AND has a cloud_id is a candidate. We PATCH each of its images
+            # that already has a cloud_id. The push is idempotent — cloud
+            # rows whose values already match get a no-op PATCH — so we
+            # don't try to be clever about pre-filtering by signature. The
+            # earlier signature-only gate silently skipped legitimate edits
+            # whenever the stored signature was missing (e.g. after a manual
+            # recovery step that cleared it).
+            if not sync_images and had_existing_cloud and local_obs_id > 0:
+                try:
+                    local_images_for_patch = ImageDB.get_images_for_observation(local_obs_id)
+                except Exception as fetch_exc:
+                    print(
+                        f"[cloud_sync] Metadata-only patch: could not read local "
+                        f"images for obs {local_obs_id}: {fetch_exc}",
+                        flush=True,
+                    )
+                    local_images_for_patch = []
+                images_to_patch = [
+                    dict(img)
+                    for img in local_images_for_patch
+                    if str(img.get('cloud_id') or '').strip()
+                    and str(img.get('image_type') or '').strip().lower() in {'field', 'microscope'}
+                ]
+                if images_to_patch:
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: metadata-only '
+                        f'image PATCH under Refresh (sync_images=False) '
+                        f'image_ids={[img.get("id") for img in images_to_patch]}',
+                        flush=True,
+                    )
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            (
+                                f"Patching image metadata for observation "
+                                f"{i + 1}/{max(1, total)} "
+                                f"(no bytes uploaded)"
+                            ),
+                        ),
+                        progress_state,
+                    )
+                    images_metadata_synced = True
+                    for local_img in images_to_patch:
+                        try:
+                            client.push_image_metadata(
+                                local_img,
+                                cloud_id,
+                                str(local_img.get('storage_path') or ''),
+                            )
+                        except Exception as patch_exc:
+                            if is_cloud_auth_error(patch_exc) or is_cloud_temporary_unavailable_error(patch_exc):
+                                raise
+                            images_metadata_synced = False
+                            print(
+                                f"[cloud_sync] Metadata-only PATCH failed for image "
+                                f"{local_img.get('id')} (cloud "
+                                f"{local_img.get('cloud_id')}): {patch_exc}",
+                                flush=True,
+                            )
+                    if images_metadata_synced:
+                        _refresh_local_cloud_media_signature(local_obs_id)
+                    else:
+                        mark_observation_dirty(local_obs_id)
+
+            # Metadata-only stored-signature refresh: runs AFTER the PATCH
+            # branch above (which needs to detect drift). Prevents the
+            # dirty-loop from obs 368 by acknowledging any drift the fast
+            # sync couldn't reconcile (e.g. sample_type canonicalization).
+            if not sync_images and local_obs_id > 0:
+                try:
+                    _refresh_local_cloud_media_signature(local_obs_id)
+                except Exception as sig_exc:
+                    print(
+                        f"[cloud_sync] Could not refresh local media signature for obs "
+                        f"{local_obs_id}: {sig_exc}",
+                        flush=True,
+                    )
 
             # Structured observation-level spore summaries (Stage D).
             # Runs once per observation, outside the `sync_images` block,
