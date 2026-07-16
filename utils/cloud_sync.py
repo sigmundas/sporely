@@ -15116,7 +15116,7 @@ def pull_all(
     _set_progress_phase(progress_state, 'pull_preflight', phase_total=3)
     _emit_progress(progress_cb, "Preparing cloud observations…", progress_state)
 
-    _emit_progress(progress_cb, "Checking image EXIF metadata…", progress_state)
+    _emit_progress(progress_cb, "Checking local metadata cache…", progress_state)
     exif_start = _cloud_sync_perf_counter()
     exif_counts = _backfill_missing_exif_on_cloud_images() or {}
     exif_elapsed = _cloud_sync_perf_counter() - exif_start

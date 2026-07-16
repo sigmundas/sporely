@@ -1931,6 +1931,7 @@ class ObservationsTab(QWidget):
         "contrast",
         "mount",
         "stain",
+        "condition",
         "source",
     )
     _COLUMN_INDEX: dict[str, int] = {key: idx for idx, key in enumerate(COLUMN_KEYS)}
@@ -1939,6 +1940,7 @@ class ObservationsTab(QWidget):
         "contrast",
         "mount",
         "stain",
+        "condition",
         "source",
     )
     DEFAULT_VISIBLE_COLUMNS: tuple[str, ...] = (
@@ -2284,6 +2286,7 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(self._COLUMN_INDEX["contrast"], 80)
         self.table.setColumnWidth(self._COLUMN_INDEX["mount"], 90)
         self.table.setColumnWidth(self._COLUMN_INDEX["stain"], 110)
+        self.table.setColumnWidth(self._COLUMN_INDEX["condition"], 90)
         self.table.setColumnWidth(self._COLUMN_INDEX["source"], 110)
         self._table_col_resize_guard = False
         self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
@@ -5115,6 +5118,7 @@ class ObservationsTab(QWidget):
                     "contrast": (microscope_map.get(obs_id) or {}).get("contrast", ""),
                     "mount": (microscope_map.get(obs_id) or {}).get("mount", ""),
                     "stain": (microscope_map.get(obs_id) or {}).get("stain", ""),
+                    "condition": (microscope_map.get(obs_id) or {}).get("condition", ""),
                     "source": (microscope_map.get(obs_id) or {}).get("source", ""),
                 }
             )
@@ -5123,7 +5127,7 @@ class ObservationsTab(QWidget):
     def _build_observation_microscope_map(self, observation_ids: list[int]) -> dict[int, dict[str, str]]:
         """Aggregate distinct microscope-slide values per observation.
 
-        Returns { observation_id: {objective, contrast, mount, stain, source} }
+        Returns { observation_id: {objective, contrast, mount, stain, condition, source} }
         where each field is a comma-separated string of distinct values found
         across the observation's microscope images. Empty when there are no
         matches. Callers should skip this work when no microscope column is
@@ -5153,7 +5157,7 @@ class ObservationsTab(QWidget):
             cursor.execute(
                 f"""
                 SELECT observation_id, objective_name, contrast, mount_medium,
-                       stain, sample_source
+                       stain, sample_type, sample_source
                 FROM images
                 WHERE image_type = 'microscope'
                   AND observation_id IN ({placeholders})
@@ -5173,6 +5177,7 @@ class ObservationsTab(QWidget):
                         "contrast": [],
                         "mount": [],
                         "stain": [],
+                        "condition": [],
                         "source": [],
                     },
                 )
@@ -5193,6 +5198,7 @@ class ObservationsTab(QWidget):
                     ("contrast", "contrast", "contrast"),
                     ("mount_medium", "mount", "mount"),
                     ("stain", "stain", "stain"),
+                    ("sample_type", "condition", "sample"),
                     ("sample_source", "source", "sample_source"),
                 ):
                     raw_value = str(row[src_key] or "").strip()
@@ -6453,6 +6459,7 @@ class ObservationsTab(QWidget):
             self.tr("Contrast"),
             self.tr("Mount"),
             self.tr("Stain"),
+            self.tr("Condition"),
             self.tr("Source"),
         ]
 
@@ -6483,6 +6490,7 @@ class ObservationsTab(QWidget):
             ("contrast", _t("Contrast"), _t("Contrast method used at the microscope: brightfield (BF), darkfield (DF), differential interference contrast (DIC), oblique, phase or Hoffman modulation contrast (HMC).")),
             ("mount", _t("Mount"), _t("Mount medium used to prepare the microscope slide (water, KOH, NH₃, glycerine, L4 …).")),
             ("stain", _t("Stain"), _t("Stain applied to the specimen on the microscope slide (Melzer, Congo Red, Cotton Blue, Lactofuchsin …).")),
+            ("condition", _t("Condition"), _t("Specimen condition when the microscope prep was made (fresh or dried).")),
             ("source", _t("Source"), _t("Sample source that the microscope prep was taken from (spore print, hymenium, stipe, pileus, context …).")),
         ]
 

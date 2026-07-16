@@ -459,11 +459,11 @@ def test_pull_all_emits_phase_progress_messages(monkeypatch, tmp_path):
         materialize_remote_images=False,
     )
 
-    assert "Checking image EXIF metadata…" in messages
+    assert "Checking local metadata cache…" in messages
     assert "Loading cloud image metadata…" in messages
     assert "Loading cloud measurements…" in messages
     # EXIF check announced before the image-metadata fetch.
-    assert messages.index("Checking image EXIF metadata…") < messages.index("Loading cloud image metadata…")
+    assert messages.index("Checking local metadata cache…") < messages.index("Loading cloud image metadata…")
     assert messages.index("Loading cloud image metadata…") < messages.index("Loading cloud measurements…")
 
 
