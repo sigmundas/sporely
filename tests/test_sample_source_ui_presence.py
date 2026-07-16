@@ -367,3 +367,106 @@ def test_database_settings_sample_sources_still_uses_full_label(qapp, scratch_db
 
     assert "Spore print" in entries
     assert "Print" not in entries
+
+
+# ---------------------------------------------------------------------------
+# Prepare Images: prefill policy for existing vs new microscope images
+# ---------------------------------------------------------------------------
+# Pins the fix that stopped Prepare Images from showing "Spore print" (from
+# the `last_used_sample_source` setting) for existing microscope rows whose
+# DB `sample_source` is NULL. That UX made observation 631 look as if its
+# microscope images already had a source set, while the DB and cloud both
+# had NULL — the user closed without touching the combos and the value was
+# never persisted.
+
+
+def _make_prepare_images_dialog(qapp, sample_source_default: str = "Spore_print"):
+    from database.models import SettingsDB
+    from database.database_tags import DatabaseTerms
+
+    # Simulate a prior session that saved "Spore_print" as the last-used
+    # source; that's what triggered the misleading prefill.
+    SettingsDB.set_setting(DatabaseTerms.last_used_key("sample_source"), sample_source_default)
+
+    dlg = ImageImportDialog()
+    qapp.processEvents()
+    return dlg
+
+
+def _current_source_value(dlg) -> str | None:
+    from utils.cloud_sync import _cloud_to_desktop_sample_source  # noqa: F401
+    return dlg._get_combo_tag_value(dlg.sample_source_combo, "sample_source")
+
+
+def test_prepare_images_prefills_source_for_new_microscope_import(qapp, scratch_db):
+    """New import (image_id is None): the `last_used_sample_source` prefill
+    IS applied so the user doesn't retype it across a batch."""
+    from ui.image_import_dialog import ImageImportResult
+
+    dlg = _make_prepare_images_dialog(qapp, sample_source_default="Hymenium")
+    result = ImageImportResult(
+        filepath="/tmp/new_micro.jpg",
+        preview_path="/tmp/new_micro.jpg",
+        image_type="microscope",
+        image_id=None,          # new import
+        sample_source=None,
+    )
+    dlg.import_results = [result]
+    dlg.image_paths = [result.filepath]
+    dlg.selected_index = 0
+    dlg.selected_indices = [0]
+    dlg._load_result_into_form(result)
+
+    assert _current_source_value(dlg) == "Hymenium", (
+        "New-import prefill should apply last_used_sample_source so a batch "
+        "of new microscope images inherits the user's chosen source"
+    )
+
+
+def test_prepare_images_shows_neutral_for_existing_microscope_with_null_source(qapp, scratch_db):
+    """Edit-Observation reload of an existing microscope image whose DB
+    sample_source is NULL: the combo must show the neutral 'Not_set'
+    entry (rendered as '—'), NOT the last-used prefill. Otherwise the UI
+    misleads users into thinking the value is already saved."""
+    from ui.image_import_dialog import ImageImportResult
+
+    dlg = _make_prepare_images_dialog(qapp, sample_source_default="Spore_print")
+    result = ImageImportResult(
+        filepath="/tmp/existing_micro.jpg",
+        preview_path="/tmp/existing_micro.jpg",
+        image_type="microscope",
+        image_id=871,           # existing DB row (obs 631, cloud image 3124)
+        sample_source=None,     # DB column really is NULL
+    )
+    dlg.import_results = [result]
+    dlg.image_paths = [result.filepath]
+    dlg.selected_index = 0
+    dlg.selected_indices = [0]
+    dlg._load_result_into_form(result)
+
+    value = _current_source_value(dlg)
+    assert value in {"Not_set", None}, (
+        f"Existing image with sample_source=NULL must NOT prefill with the "
+        f"last-used setting; got {value!r} — that was the obs 631 bug"
+    )
+
+
+def test_prepare_images_shows_stored_source_for_existing_microscope(qapp, scratch_db):
+    """Existing image whose DB has an actual source: display it."""
+    from ui.image_import_dialog import ImageImportResult
+
+    dlg = _make_prepare_images_dialog(qapp, sample_source_default="Hymenium")
+    result = ImageImportResult(
+        filepath="/tmp/existing_micro.jpg",
+        preview_path="/tmp/existing_micro.jpg",
+        image_type="microscope",
+        image_id=555,
+        sample_source="Stipe",  # explicit stored value
+    )
+    dlg.import_results = [result]
+    dlg.image_paths = [result.filepath]
+    dlg.selected_index = 0
+    dlg.selected_indices = [0]
+    dlg._load_result_into_form(result)
+
+    assert _current_source_value(dlg) == "Stipe"

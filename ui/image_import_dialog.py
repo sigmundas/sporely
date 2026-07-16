@@ -4725,31 +4725,57 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.objective_combo.setCurrentIndex(idx)
         else:
             self.objective_combo.setCurrentIndex(0)
+        # Prefill policy for the tag combos when loading the currently-
+        # selected image into the form:
+        #
+        #   * If the row has a stored value, show it. Faithful to DB.
+        #   * If the row has no stored value AND this is a freshly-imported
+        #     new microscope image (no image_id yet), fall back to the
+        #     "last used" default from settings — that convenience is why
+        #     `_preferred_tag_value` exists.
+        #   * If the row has no stored value AND the image already exists
+        #     in the DB (image_id set → this is an Edit-Observation reload),
+        #     show the neutral "Not_set" placeholder so the UI reflects what
+        #     the DB and cloud actually hold. Prefilling with `last_used_*`
+        #     here was the misleading UX that made obs 631 appear to have
+        #     sample_source = "Spore print" in Prepare Images while the DB
+        #     column (and the cloud row) were still NULL.
+        is_new_image = not result.image_id
+
+        def _load_value(result_value, default, category):
+            if result_value:
+                return result_value
+            if not is_micro:
+                return self._field_tag_value(category)
+            if is_new_image:
+                return default
+            neutrals = DatabaseTerms.default_values(category)
+            return neutrals[0] if neutrals else None
+
         self._set_combo_tag_value(
             self.contrast_combo,
             "contrast",
-            result.contrast or (self.contrast_default if is_micro else self._field_tag_value("contrast")),
+            _load_value(result.contrast, self.contrast_default, "contrast"),
         )
         self._set_combo_tag_value(
             self.mount_combo,
             "mount",
-            result.mount_medium or (self.mount_default if is_micro else self._field_tag_value("mount")),
+            _load_value(result.mount_medium, self.mount_default, "mount"),
         )
         self._set_combo_tag_value(
             self.stain_combo,
             "stain",
-            result.stain or (self.stain_default if is_micro else self._field_tag_value("stain")),
+            _load_value(result.stain, self.stain_default, "stain"),
         )
         self._set_combo_tag_value(
             self.sample_combo,
             "sample",
-            result.sample_type or (self.sample_default if is_micro else self._field_tag_value("sample")),
+            _load_value(result.sample_type, self.sample_default, "sample"),
         )
         self._set_combo_tag_value(
             self.sample_source_combo,
             "sample_source",
-            result.sample_source
-            or (self.sample_source_default if is_micro else self._field_tag_value("sample_source")),
+            _load_value(result.sample_source, self.sample_source_default, "sample_source"),
         )
         if hasattr(self, "image_note_input"):
             self.image_note_input.blockSignals(True)

@@ -1166,6 +1166,8 @@ class SettingsHubDialog(QDialog):
             help_button = getattr(self._artsobs_dialog, "_help_button", None)
         elif page_index == self.PAGE_DATABASE:
             hint_bar = getattr(self._db_dialog, "hint_bar", None)
+        elif page_index == self.PAGE_APPEARANCE:
+            hint_bar = getattr(self, "_appearance_hint_bar", None)
 
         if hint_bar is not None:
             self._hub_hint_layout.addWidget(hint_bar, 1)
@@ -1354,9 +1356,123 @@ class SettingsHubDialog(QDialog):
             layout.addWidget(btn)
             btn.clicked.connect(self._save_appearance)
 
-        layout.addStretch()
+        columns_label = QLabel(self.tr("Observations table columns:"))
+        columns_label.setStyleSheet("font-weight: bold; margin-top: 12px;")
+        layout.addWidget(columns_label)
+
+        catalog = ObservationsTab.column_catalog()
+        default_visible = set(ObservationsTab.DEFAULT_VISIBLE_COLUMNS)
+        stored_visible = self._read_observations_visible_columns(default_visible)
+
+        self._observations_columns_default_hint = self.tr(
+            "Toggle columns shown in the Observations table. Hover an item to see what it contains."
+        )
+        self._observations_columns_loading = True
+        self._observations_columns_list = QListWidget(page)
+        self._observations_columns_list.setAlternatingRowColors(True)
+        self._observations_columns_list.setSpacing(2)
+        self._observations_columns_list.setMouseTracking(True)
+        self._observations_columns_list.viewport().setMouseTracking(True)
+        self._observations_columns_list.setStyleSheet(
+            "QListWidget::item { padding: 4px 6px; min-height: 22px; }"
+        )
+        for key, label, hint in catalog:
+            item = QListWidgetItem(label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if key in stored_visible else Qt.Unchecked)
+            item.setData(Qt.UserRole, key)
+            item.setData(Qt.UserRole + 1, hint)
+            self._observations_columns_list.addItem(item)
+        self._observations_columns_list.itemEntered.connect(
+            self._on_observations_columns_item_hovered
+        )
+        self._observations_columns_list.itemChanged.connect(
+            self._on_observations_columns_item_changed
+        )
+        self._observations_columns_list.viewport().installEventFilter(self)
+        layout.addWidget(self._observations_columns_list, 1)
+
+        self._appearance_hint_bar = HintBar(page)
+        self._appearance_hint_controller = HintStatusController(
+            self._appearance_hint_bar, self
+        )
+        self._appearance_hint_controller.set_hint(self._observations_columns_default_hint)
+        # The hint bar itself is docked into the shared hub bottom row by
+        # _update_embedded_bottom_row when this page is active.
+
+        self._appearance_columns_changed = False
+        self._observations_columns_loading = False
         self._load_appearance_settings()
         return page
+
+    @staticmethod
+    def _read_observations_visible_columns(default_visible: set[str]) -> set[str]:
+        raw = SettingsDB.get_setting(ObservationsTab.SETTING_VISIBLE_COLUMNS, "")
+        text = str(raw or "").strip()
+        if not text:
+            return set(default_visible)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return set(default_visible)
+        if not isinstance(parsed, list):
+            return set(default_visible)
+        allowed = set(ObservationsTab.COLUMN_KEYS)
+        keys = {str(item) for item in parsed if isinstance(item, str) and item in allowed}
+        if not keys:
+            return set(default_visible)
+        return keys
+
+    def _on_observations_columns_item_hovered(self, item: QListWidgetItem) -> None:
+        hint = item.data(Qt.UserRole + 1) if item is not None else None
+        controller = getattr(self, "_appearance_hint_controller", None)
+        if controller is None:
+            return
+        if isinstance(hint, str) and hint.strip():
+            controller.set_hint(hint)
+        else:
+            controller.set_hint(self._observations_columns_default_hint)
+
+    def _on_observations_columns_item_changed(self, _item: QListWidgetItem) -> None:
+        if getattr(self, "_observations_columns_loading", False):
+            return
+        keys: list[str] = []
+        list_widget = getattr(self, "_observations_columns_list", None)
+        if list_widget is None:
+            return
+        for row in range(list_widget.count()):
+            entry = list_widget.item(row)
+            if entry is None:
+                continue
+            if entry.checkState() != Qt.Checked:
+                continue
+            key = entry.data(Qt.UserRole)
+            if isinstance(key, str) and key:
+                keys.append(key)
+        SettingsDB.set_setting(
+            ObservationsTab.SETTING_VISIBLE_COLUMNS,
+            json.dumps(keys),
+        )
+        self._appearance_columns_changed = True
+        parent = self.parent()
+        observations_tab = getattr(parent, "observations_tab", None) if parent else None
+        if observations_tab is not None:
+            refresher = getattr(
+                observations_tab, "refresh_observations_column_visibility", None
+            )
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Leave:
+            list_widget = getattr(self, "_observations_columns_list", None)
+            controller = getattr(self, "_appearance_hint_controller", None)
+            if list_widget is not None and watched is list_widget.viewport() and controller is not None:
+                controller.set_hint(self._observations_columns_default_hint)
+        return super().eventFilter(watched, event)
 
     def _build_raw_processing_page(self) -> QWidget:
         page = QWidget()
@@ -2537,6 +2653,10 @@ class SettingsHubDialog(QDialog):
     @property
     def database_changed(self) -> bool:
         return self._database_changed
+
+    @property
+    def appearance_columns_changed(self) -> bool:
+        return bool(getattr(self, "_appearance_columns_changed", False))
 
 
 class ArtsobservasjonerSettingsDialog(QDialog):
@@ -18348,6 +18468,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Propagate side-effects from embedded sub-dialogs
         if dialog.database_changed:
             self._populate_measure_categories()
+        publishing_reload_requested = False
         if dialog.publishing_changed:
             if hasattr(self, "observations_tab"):
                 try:
@@ -18355,8 +18476,23 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.observations_tab._invalidate_publish_login_status_cache()
                     self.observations_tab._update_publish_controls()
                     self.observations_tab.refresh_observations(show_status=False)
+                    publishing_reload_requested = True
                 except Exception:
                     pass
+        # Column preference changes only apply visibility on-the-fly; the
+        # actual data reload (needed when a microscope column was newly
+        # enabled) is done once here to keep checkbox clicks instant.
+        if dialog.appearance_columns_changed and not publishing_reload_requested:
+            observations_tab = getattr(self, "observations_tab", None)
+            if observations_tab is not None:
+                reloader = getattr(
+                    observations_tab, "reload_observations_after_column_change", None
+                )
+                if callable(reloader):
+                    try:
+                        reloader()
+                    except Exception:
+                        pass
         self._update_corner_ui()
 
     def open_profile_dialog(self):

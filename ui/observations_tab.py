@@ -1912,6 +1912,47 @@ class ObservationsTab(QWidget):
     SETTING_SHOW_TABLE_THUMBNAILS = "observations_table_show_thumbnails"
     SETTING_SHOW_NEW_IMPORTS_ONLY = "observations_table_show_new_imports_only"
     SETTING_VIEW_MODE = "observations_view_mode"
+    SETTING_VISIBLE_COLUMNS = "observations_table_visible_columns"
+
+    # (key, index, default_visible, is_microscope). Header labels and hints
+    # are produced by _column_catalog() so translations work at instance time.
+    COLUMN_KEYS: tuple[str, ...] = (
+        "id",
+        "common_name",
+        "genus",
+        "species",
+        "spores",
+        "date",
+        "location",
+        "status",
+        "map",
+        "external",
+        "objective",
+        "contrast",
+        "mount",
+        "stain",
+        "source",
+    )
+    _COLUMN_INDEX: dict[str, int] = {key: idx for idx, key in enumerate(COLUMN_KEYS)}
+    _MICROSCOPE_COLUMN_KEYS: tuple[str, ...] = (
+        "objective",
+        "contrast",
+        "mount",
+        "stain",
+        "source",
+    )
+    DEFAULT_VISIBLE_COLUMNS: tuple[str, ...] = (
+        "id",
+        "common_name",
+        "genus",
+        "species",
+        "spores",
+        "date",
+        "location",
+        "status",
+        "map",
+        "external",
+    )
     VIEW_MODE_TABLE = "table"
     VIEW_MODE_IMAGES = "images"
     SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
@@ -2210,19 +2251,8 @@ class ObservationsTab(QWidget):
         # Keep the table keyboard-navigable so Up/Down can move between
         # observations after a click.
         self.table.setFocusPolicy(Qt.ClickFocus)
-        self.table.setColumnCount(10)
-        self.table.setHorizontalHeaderLabels([
-            self._observation_first_column_title(),
-            self._common_name_column_title(),
-            self.tr("Genus"),
-            self.tr("Species"),
-            self._spore_stats_column_title(),
-            self.tr("Date"),
-            self.tr("Location"),
-            self.tr("Status"),
-            self.tr("Map"),
-            self.tr("External"),
-        ])
+        self.table.setColumnCount(len(self.COLUMN_KEYS))
+        self.table.setHorizontalHeaderLabels(self._column_header_labels())
 
         # Set column properties
         header = self.table.horizontalHeader()
@@ -2237,6 +2267,8 @@ class ObservationsTab(QWidget):
         header.setSectionResizeMode(7, QHeaderView.Fixed)
         header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        for micro_key in self._MICROSCOPE_COLUMN_KEYS:
+            header.setSectionResizeMode(self._COLUMN_INDEX[micro_key], QHeaderView.Interactive)
         header.setStretchLastSection(False)
         self.table.setColumnWidth(0, 56)   # ID
         self.table.setColumnWidth(1, 190)  # Vernacular name (initial; redistributed on resize)
@@ -2248,8 +2280,14 @@ class ObservationsTab(QWidget):
         self.table.setColumnWidth(7, 138)  # Status
         self.table.setColumnWidth(8, 56)   # Map
         self.table.setColumnWidth(9, 140)  # External
+        self.table.setColumnWidth(self._COLUMN_INDEX["objective"], 110)
+        self.table.setColumnWidth(self._COLUMN_INDEX["contrast"], 80)
+        self.table.setColumnWidth(self._COLUMN_INDEX["mount"], 90)
+        self.table.setColumnWidth(self._COLUMN_INDEX["stain"], 110)
+        self.table.setColumnWidth(self._COLUMN_INDEX["source"], 110)
         self._table_col_resize_guard = False
         self.table.setItemDelegateForColumn(7, StatusTagDelegate(self.table))
+        self._apply_observations_column_visibility()
 
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -4968,6 +5006,10 @@ class ObservationsTab(QWidget):
             except (TypeError, ValueError):
                 continue
         thumbnail_map = self._build_observation_thumbnail_map(observation_ids, include_image_id=True)
+        if self._any_microscope_column_visible():
+            microscope_map = self._build_observation_microscope_map(observation_ids)
+        else:
+            microscope_map = {}
         rows: list[dict] = []
         for obs in observations:
             try:
@@ -5069,9 +5111,115 @@ class ObservationsTab(QWidget):
                     "publish_target": publish_target,
                     "mark_star": obs_id in recent_cloud_ids,
                     "search_text": search_text,
+                    "objective": (microscope_map.get(obs_id) or {}).get("objective", ""),
+                    "contrast": (microscope_map.get(obs_id) or {}).get("contrast", ""),
+                    "mount": (microscope_map.get(obs_id) or {}).get("mount", ""),
+                    "stain": (microscope_map.get(obs_id) or {}).get("stain", ""),
+                    "source": (microscope_map.get(obs_id) or {}).get("source", ""),
                 }
             )
         return rows
+
+    def _build_observation_microscope_map(self, observation_ids: list[int]) -> dict[int, dict[str, str]]:
+        """Aggregate distinct microscope-slide values per observation.
+
+        Returns { observation_id: {objective, contrast, mount, stain, source} }
+        where each field is a comma-separated string of distinct values found
+        across the observation's microscope images. Empty when there are no
+        matches. Callers should skip this work when no microscope column is
+        visible in the table — the query still runs quickly, but rendering
+        cost per row scales with the observation count.
+        """
+        ids: list[int] = []
+        for observation_id in observation_ids or []:
+            try:
+                ids.append(int(observation_id))
+            except (TypeError, ValueError):
+                continue
+        if not ids:
+            return {}
+        try:
+            objectives = load_objectives() or {}
+        except Exception:
+            objectives = {}
+
+        result: dict[int, dict[str, list[str]]] = {}
+        conn = None
+        try:
+            conn = get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in ids)
+            cursor.execute(
+                f"""
+                SELECT observation_id, objective_name, contrast, mount_medium,
+                       stain, sample_source
+                FROM images
+                WHERE image_type = 'microscope'
+                  AND observation_id IN ({placeholders})
+                """,
+                tuple(ids),
+            )
+            for row in cursor.fetchall():
+                try:
+                    obs_id = int(row["observation_id"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+
+                bucket = result.setdefault(
+                    obs_id,
+                    {
+                        "objective": [],
+                        "contrast": [],
+                        "mount": [],
+                        "stain": [],
+                        "source": [],
+                    },
+                )
+
+                objective_raw = str(row["objective_name"] or "").strip()
+                if objective_raw:
+                    obj_entry = objectives.get(objective_raw)
+                    label = (
+                        objective_display_name(obj_entry, objective_raw)
+                        if isinstance(obj_entry, dict)
+                        else objective_raw
+                    )
+                    label = label or objective_raw
+                    if label not in bucket["objective"]:
+                        bucket["objective"].append(label)
+
+                for src_key, dst_key, category in (
+                    ("contrast", "contrast", "contrast"),
+                    ("mount_medium", "mount", "mount"),
+                    ("stain", "stain", "stain"),
+                    ("sample_source", "source", "sample_source"),
+                ):
+                    raw_value = str(row[src_key] or "").strip()
+                    if not raw_value:
+                        continue
+                    if raw_value.lower() == "not_set":
+                        continue
+                    try:
+                        canonical = DatabaseTerms.canonicalize(category, raw_value) or raw_value
+                    except Exception:
+                        canonical = raw_value
+                    try:
+                        display = DatabaseTerms.translate(category, canonical) or canonical
+                    except Exception:
+                        display = canonical
+                    if display not in bucket[dst_key]:
+                        bucket[dst_key].append(display)
+        except Exception:
+            return {obs_id: {} for obs_id in ids}
+        finally:
+            if conn is not None:
+                conn.close()
+
+        joined: dict[int, dict[str, str]] = {}
+        for obs_id, bucket in result.items():
+            joined[obs_id] = {key: ", ".join(values) for key, values in bucket.items() if values}
+        return joined
 
     def _build_observation_thumbnail_map(self, observation_ids: list[int], include_image_id: bool = False):
         ids: list[int] = []
@@ -5323,6 +5471,18 @@ class ObservationsTab(QWidget):
                     row_index,
                     row_data,
                 )
+
+                for micro_key in self._MICROSCOPE_COLUMN_KEYS:
+                    col_index = self._COLUMN_INDEX[micro_key]
+                    value = row_data.get(micro_key)
+                    text = str(value).strip() if value else ""
+                    if not text:
+                        text = "-"
+                    item = QTableWidgetItem(text)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    if value:
+                        item.setToolTip(str(value))
+                    table.setItem(row_index, col_index, item)
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
@@ -6277,6 +6437,102 @@ class ObservationsTab(QWidget):
         if spore_item:
             spore_item.setText(self._spore_stats_column_title())
 
+    def _column_header_labels(self) -> list[str]:
+        return [
+            self._observation_first_column_title(),
+            self._common_name_column_title(),
+            self.tr("Genus"),
+            self.tr("Species"),
+            self._spore_stats_column_title(),
+            self.tr("Date"),
+            self.tr("Location"),
+            self.tr("Status"),
+            self.tr("Map"),
+            self.tr("External"),
+            self.tr("Objective"),
+            self.tr("Contrast"),
+            self.tr("Mount"),
+            self.tr("Stain"),
+            self.tr("Source"),
+        ]
+
+    @classmethod
+    def column_catalog(cls) -> list[tuple[str, str, str]]:
+        """Return (key, label, hint) tuples for the Preferences UI.
+
+        Labels/hints are looked up via QCoreApplication.translate so they
+        follow the current UI language without needing a live tab instance.
+        """
+        from PySide6.QtCore import QCoreApplication as _QCA
+
+        def _t(text: str) -> str:
+            return _QCA.translate("ObservationsTab", text)
+
+        return [
+            ("id", _t("ID"), _t("Observation number (or thumbnail when the Show thumbnail toggle is on).")),
+            ("common_name", _t("Name"), _t("Vernacular (common) name in your chosen language, with the scientific name shown when no common name is known.")),
+            ("genus", _t("Genus"), _t("Genus of the observed species.")),
+            ("species", _t("Species"), _t("Species epithet (or 'sp.' when only the genus is known).")),
+            ("spores", _t("Spores"), _t("Short spore measurement summary (mean length × width or similar) when spore data has been recorded.")),
+            ("date", _t("Date"), _t("Date and time the observation was made.")),
+            ("location", _t("Location"), _t("Human-readable place name for where the observation was recorded.")),
+            ("status", _t("Status"), _t("Publishing / draft / sync status of the observation.")),
+            ("map", _t("Map"), _t("Link that opens the observation's GPS position in an external map service.")),
+            ("external", _t("External"), _t("Links to the observation on Artsobservasjoner, Artportalen, iNaturalist and MushroomObserver.")),
+            ("objective", _t("Objective"), _t("Microscope objective used for the observation's microscope images (e.g. 40× Plan achro).")),
+            ("contrast", _t("Contrast"), _t("Contrast method used at the microscope: brightfield (BF), darkfield (DF), differential interference contrast (DIC), oblique, phase or Hoffman modulation contrast (HMC).")),
+            ("mount", _t("Mount"), _t("Mount medium used to prepare the microscope slide (water, KOH, NH₃, glycerine, L4 …).")),
+            ("stain", _t("Stain"), _t("Stain applied to the specimen on the microscope slide (Melzer, Congo Red, Cotton Blue, Lactofuchsin …).")),
+            ("source", _t("Source"), _t("Sample source that the microscope prep was taken from (spore print, hymenium, stipe, pileus, context …).")),
+        ]
+
+    def _read_visible_column_keys(self) -> list[str]:
+        raw = SettingsDB.get_setting(self.SETTING_VISIBLE_COLUMNS, "")
+        text = str(raw or "").strip()
+        if not text:
+            return list(self.DEFAULT_VISIBLE_COLUMNS)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return list(self.DEFAULT_VISIBLE_COLUMNS)
+        if not isinstance(parsed, list):
+            return list(self.DEFAULT_VISIBLE_COLUMNS)
+        allowed = set(self.COLUMN_KEYS)
+        keys = [str(item) for item in parsed if isinstance(item, str) and item in allowed]
+        if not keys:
+            return list(self.DEFAULT_VISIBLE_COLUMNS)
+        return keys
+
+    def _apply_observations_column_visibility(self) -> None:
+        table = getattr(self, "table", None)
+        if table is None:
+            return
+        visible = set(self._read_visible_column_keys())
+        for key, idx in self._COLUMN_INDEX.items():
+            table.setColumnHidden(idx, key not in visible)
+
+    def _any_microscope_column_visible(self) -> bool:
+        visible = set(self._read_visible_column_keys())
+        return any(key in visible for key in self._MICROSCOPE_COLUMN_KEYS)
+
+    def refresh_observations_column_visibility(self) -> None:
+        """Reapply column visibility only. Fast — safe to call on every toggle.
+
+        Populating microscope column data is deferred to
+        reload_observations_after_column_change() so preference clicks stay
+        responsive.
+        """
+        self._apply_observations_column_visibility()
+
+    def reload_observations_after_column_change(self) -> None:
+        """Full rebuild of the row cache. Needed after a microscope column is
+        newly enabled so its data appears; called once from the Preferences
+        dialog on close instead of on every checkbox click."""
+        try:
+            self.refresh_observations(show_status=False)
+        except Exception:
+            pass
+
     def _show_observation_table_thumbnails(self) -> bool:
         checkbox = getattr(self, "show_table_thumbnails_checkbox", None)
         if checkbox is not None:
@@ -6357,8 +6613,7 @@ class ObservationsTab(QWidget):
                 for col in range(column_count):
                     table.setColumnHidden(col, col not in keep)
             else:
-                for col in range(column_count):
-                    table.setColumnHidden(col, False)
+                self._apply_observations_column_visibility()
         browser = getattr(self, "image_browser", None)
         if browser is not None:
             browser.setVisible(mode == self.VIEW_MODE_IMAGES)
