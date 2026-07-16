@@ -10059,15 +10059,28 @@ class SporelyCloudClient:
             or Path(img.get('filepath') or '').name
             or None
         )
-        # `_normalize_cloud_media_key('')` returns `''`, not `None`. For
-        # metadata-only microscope anchors the local storage_path is empty
-        # (no bytes uploaded), and PATCHing the cloud row with an empty
-        # string trips the RLS WITH CHECK:
+        # storage_path handling.
+        #
+        # `_normalize_cloud_media_key('')` returns `''`, not `None`. The
+        # cloud RLS WITH CHECK is:
         #   (storage_path LIKE '<uid>/%') OR (storage_path IS NULL AND image_type = 'microscope')
-        # An empty string is neither NULL nor prefixed by the uid, so the
-        # policy rejects the update with 42501. Send SQL NULL instead so
-        # the row keeps its existing NULL storage_path.
-        payload['storage_path']      = _normalize_cloud_media_key(storage_path) or None
+        #
+        # Two failure modes to avoid:
+        #   1. Sending storage_path='' — neither NULL nor uid-prefixed, so
+        #      the policy rejects every PATCH with 42501.
+        #   2. Sending storage_path=NULL for a non-microscope row —
+        #      violates the NULL-only-if-microscope leg, also 42501.
+        #
+        # When the caller has no key (metadata-only PATCH), omit the field
+        # entirely so PostgREST leaves the existing cloud value untouched:
+        # NULL for a metadata-only microscope anchor, or the real R2 key
+        # for an uploaded row. Only include storage_path when the caller
+        # explicitly needs to write one.
+        normalized_storage_path = _normalize_cloud_media_key(storage_path)
+        if normalized_storage_path:
+            payload['storage_path'] = normalized_storage_path
+        else:
+            payload.pop('storage_path', None)
         if payload.get('gps_source') is not None:
             payload['gps_source'] = bool(payload['gps_source'])
         # Sample condition + source normalization for the push payload.
@@ -11888,11 +11901,18 @@ def push_all(
                         flush=True,
                     )
                     local_images_for_patch = []
+                # Only metadata-only microscope anchors are safe to PATCH
+                # under Refresh (`sync_images=False`). Field images require
+                # byte-upload gating: PATCHing their metadata with an empty
+                # local `storage_path` would either wipe the cloud key or,
+                # for non-microscope rows, trip the RLS WITH CHECK
+                # (`storage_path IS NULL AND image_type = 'microscope'`)
+                # with a 42501 rejection. Media/storage edits on field
+                # images remain gated behind `sync_images=True`.
                 images_to_patch = [
                     dict(img)
                     for img in local_images_for_patch
-                    if str(img.get('cloud_id') or '').strip()
-                    and str(img.get('image_type') or '').strip().lower() in {'field', 'microscope'}
+                    if _is_local_metadata_only_microscope_anchor(img)
                 ]
                 if images_to_patch:
                     print(

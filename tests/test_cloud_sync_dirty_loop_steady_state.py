@@ -696,3 +696,272 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
     assert "metadata-only image PATCH under Refresh" in out, (
         f"Expected the new diagnostic log line; got: {out}"
     )
+
+
+def test_metadata_only_refresh_excludes_field_images_from_patch(
+    tmp_path, monkeypatch, capsys,
+):
+    """Obs 389 regression: on a Refresh (`sync_images=False`), the
+    metadata-only PATCH branch must not touch field-image cloud rows.
+
+    Live symptom: RLS 42501 rejections for cloud ids 2317/2318 (local
+    field images 838/839). PATCHing a field image with `storage_path`
+    forced to NULL violates the RLS WITH CHECK
+    (`storage_path IS NULL AND image_type = 'microscope'`), so PostgREST
+    rejects every attempt and the observation keeps flipping back to
+    dirty forever.
+
+    Contract enforced here:
+      * Only microscope metadata-only anchors are PATCHed.
+      * Field images (even with cloud_id + valid `storage_path`) are
+        not sent through `push_image_metadata`.
+      * No POST, no `upload_image_file` invocation.
+    """
+    db_path = tmp_path / "meta_only_field_exclusion.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE observations (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            cloud_id TEXT,
+            sync_status TEXT,
+            synced_at TEXT,
+            sync_error_code TEXT,
+            sync_error_message TEXT,
+            sync_blocked_reason TEXT,
+            sync_blocked_at TEXT
+        );
+        CREATE TABLE images (
+            id INTEGER PRIMARY KEY,
+            observation_id INTEGER,
+            image_type TEXT,
+            cloud_id TEXT,
+            sort_order INTEGER,
+            filepath TEXT,
+            original_filepath TEXT,
+            micro_category TEXT,
+            objective_name TEXT,
+            scale_microns_per_pixel REAL,
+            resample_scale_factor REAL,
+            mount_medium TEXT,
+            stain TEXT,
+            sample_type TEXT,
+            sample_source TEXT,
+            contrast TEXT,
+            measure_color TEXT,
+            crop_mode TEXT,
+            notes TEXT,
+            gps_source INTEGER,
+            ai_crop_x1 REAL, ai_crop_y1 REAL, ai_crop_x2 REAL, ai_crop_y2 REAL,
+            ai_crop_source_w INTEGER, ai_crop_source_h INTEGER, ai_crop_is_custom INTEGER,
+            calibration_id INTEGER,
+            created_at TEXT,
+            synced_at TEXT
+        );
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE spore_measurements (
+            id INTEGER PRIMARY KEY,
+            image_id INTEGER,
+            length_um REAL, width_um REAL,
+            measurement_type TEXT,
+            notes TEXT,
+            p1_x REAL, p1_y REAL, p2_x REAL, p2_y REAL,
+            p3_x REAL, p3_y REAL, p4_x REAL, p4_y REAL,
+            gallery_rotation REAL,
+            measured_at TEXT
+        );
+        -- Obs 389 shape: dirty from a tag edit on the microscope anchors.
+        INSERT INTO observations (id, date, cloud_id, sync_status)
+            VALUES (389, '2026-07-01', 'cloud-obs-389', 'dirty');
+        -- Two field images already uploaded (valid cloud storage_path).
+        -- These must NOT be PATCHed on a metadata-only Refresh.
+        INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order,
+                            filepath, sample_type, sample_source, mount_medium,
+                            stain, contrast, notes, created_at)
+            VALUES
+                (838, 389, 'field', '2317', 0, '/tmp/field1.jpg',
+                 NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-01'),
+                (839, 389, 'field', '2318', 1, '/tmp/field2.jpg',
+                 NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-01');
+        -- Microscope metadata-only anchors — these are eligible for PATCH.
+        INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order,
+                            filepath, sample_type, sample_source, mount_medium,
+                            stain, contrast, notes, created_at)
+            VALUES
+                (871, 389, 'microscope', '3124', 2, '/tmp/m1.jpg',
+                 'Not_set', NULL, 'Not_set', 'Not_set', 'DIC', NULL, '2026-07-01'),
+                (872, 389, 'microscope', '3125', 3, '/tmp/m2.jpg',
+                 'Not_set', NULL, 'Not_set', 'Not_set', 'DIC', NULL, '2026-07-01');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
+    from database import models
+    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
+
+    # Prime dirty prep metadata only on the microscope anchors: capture the
+    # pre-edit signature, then apply the edit and store the pre-edit sig as
+    # the "last synced" baseline. The field-image rows are unchanged.
+    pre_edit_signature = cloud_sync._local_cloud_media_signature(389)
+    conn = _connect(db_path)
+    conn.execute(
+        """
+        UPDATE images
+           SET sample_type = 'Fresh',
+               sample_source = 'Hymenium',
+               mount_medium = 'KOH'
+         WHERE image_type = 'microscope'
+        """
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value) "
+        "VALUES ('sporely_cloud_local_media_sig_obs_389', ?)",
+        (pre_edit_signature,),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images",
+                        lambda **_kwargs: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations",
+                        lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_measurements", lambda *a, **kw: 0)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_summaries", lambda *a, **kw: 0)
+    monkeypatch.setattr(cloud_sync, "_push_summary_for_current_observation", lambda *a, **kw: None)
+
+    push_metadata_calls: list[dict] = []
+    upload_calls: list[str] = []
+    patch_calls: list[dict] = []
+    post_calls: list[dict] = []
+
+    class _RecordingClient:
+        user_id = "user-obs-389"
+
+        def push_observation(self, obs, remote_obs=None):
+            return str(obs.get("cloud_id") or "cloud-obs-389")
+
+        def get_observation(self, cloud_id):
+            return {"id": str(cloud_id), "desktop_id": 389}
+
+        def pull_image_metadata(self, cloud_id, **kwargs):
+            return [
+                {
+                    "id": "2317", "desktop_id": 838, "observation_id": "cloud-obs-389",
+                    "image_type": "field", "sort_order": 0,
+                    "storage_path": "user-obs-389/cloud-obs-389/838.webp",
+                },
+                {
+                    "id": "2318", "desktop_id": 839, "observation_id": "cloud-obs-389",
+                    "image_type": "field", "sort_order": 1,
+                    "storage_path": "user-obs-389/cloud-obs-389/839.webp",
+                },
+                {
+                    "id": "3124", "desktop_id": 871, "observation_id": "cloud-obs-389",
+                    "image_type": "microscope", "sort_order": 2,
+                    "storage_path": None,
+                    "sample_type": "Not_set", "sample_source": None,
+                    "mount_medium": "Not_set", "stain": "Not_set", "contrast": "DIC",
+                },
+                {
+                    "id": "3125", "desktop_id": 872, "observation_id": "cloud-obs-389",
+                    "image_type": "microscope", "sort_order": 3,
+                    "storage_path": None,
+                    "sample_type": "Not_set", "sample_source": None,
+                    "mount_medium": "Not_set", "stain": "Not_set", "contrast": "DIC",
+                },
+            ]
+
+        # Capability probes.
+        def _observation_images_support_ai_crop(self): return False
+        def _observation_images_support_ai_crop_custom(self): return False
+        def _observation_images_support_upload_metadata(self): return False
+        def _observation_images_support_storage_exif_safe(self): return False
+        def _observation_images_support_sample_source(self): return True
+        def _set_observation_media_keys(self, *a, **kw): return None
+
+        def _find_cloud_image(self, desktop_id):
+            return {838: "2317", 839: "2318", 871: "3124", 872: "3125"}.get(
+                int(desktop_id or 0), None
+            )
+
+        def _patch(self, path, payload):
+            patch_calls.append({"path": path, "payload": dict(payload)})
+            return []
+
+        def _post(self, path, payload):
+            post_calls.append({"path": path, "payload": dict(payload)})
+            return [{"id": "unexpected-new"}]
+
+        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+            push_metadata_calls.append({
+                "cloud_id": str(img.get("cloud_id") or ""),
+                "image_type": str(img.get("image_type") or ""),
+                "storage_path_arg": storage_path,
+            })
+            return cloud_sync.SporelyCloudClient.push_image_metadata(
+                self, img, obs_cloud_id, storage_path
+            )
+
+        def upload_image_file(self, local_path, *args, **kwargs):
+            upload_calls.append(str(local_path))
+            return kwargs.get("storage_path") or "user/upload.webp"
+
+        _observation_supports_media_keys = lambda self: False
+        _cloud_image_storage_key_cache: dict = {}
+
+    client = _RecordingClient()
+    cloud_sync.push_all(
+        client,
+        sync_images=False,
+        sync_calibrations=False,
+        remote_obs=[{"id": "cloud-obs-389", "desktop_id": 389}],
+    )
+
+    # Field-image cloud ids must never see a PATCH / metadata push.
+    patched_cloud_ids = {call["cloud_id"] for call in push_metadata_calls}
+    assert "2317" not in patched_cloud_ids, (
+        f"Field image cloud id 2317 must NOT be PATCHed under Refresh; "
+        f"push_metadata_calls={push_metadata_calls}"
+    )
+    assert "2318" not in patched_cloud_ids, (
+        f"Field image cloud id 2318 must NOT be PATCHed under Refresh; "
+        f"push_metadata_calls={push_metadata_calls}"
+    )
+    field_patches = [c for c in patch_calls if "observation_images?id=eq.2317" in c["path"]
+                     or "observation_images?id=eq.2318" in c["path"]]
+    assert field_patches == [], (
+        f"No cloud-image PATCH must target the field-image rows; "
+        f"got {field_patches}"
+    )
+
+    # Microscope anchors still PATCH.
+    microscope_patches = [
+        c for c in patch_calls
+        if "observation_images?id=eq.3124" in c["path"]
+        or "observation_images?id=eq.3125" in c["path"]
+    ]
+    assert len(microscope_patches) == 2, (
+        f"Both microscope metadata-only anchors must PATCH; "
+        f"got {microscope_patches}"
+    )
+    for call in microscope_patches:
+        body = call["payload"]
+        assert body.get("sample_type") == "Fresh"
+        assert body.get("sample_source") == "hymenium"
+        assert body.get("mount_medium") == "KOH"
+        # Metadata-only PATCH must not force storage_path — the cloud
+        # anchor keeps its existing NULL value.
+        assert "storage_path" not in body, (
+            f"Metadata-only PATCH payload must omit storage_path; "
+            f"got {body}"
+        )
+
+    # No POST (would create a duplicate cloud row) and no byte upload.
+    assert post_calls == [], f"Metadata-only PATCH must not POST; got {post_calls}"
+    assert upload_calls == [], (
+        f"Metadata-only PATCH must not upload bytes; got {upload_calls}"
+    )
