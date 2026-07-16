@@ -379,3 +379,182 @@ def test_pull_then_push_round_trip_from_titlecase_cloud():
         payload, image_row, client=client, obs_cloud_id="cloud-obs"
     )
     assert payload["sample_source"] == "spore_print"
+
+
+# ---------------------------------------------------------------------------
+# Metadata-only microscope anchor: obs 631 / images 3124-3132 shape
+# ---------------------------------------------------------------------------
+# Investigation of "sample_source not reaching cloud" for observation 631
+# found the desktop rows had `sample_source = NULL` locally too — the UI
+# never wrote a value. Still, the sync plumbing must be able to PATCH
+# `sample_source` on a metadata-only microscope anchor (cloud row exists
+# with storage_path NULL) without touching image bytes. These tests pin
+# that plumbing so a future regression is caught even before the user
+# reports "cloud value never appears".
+
+
+def test_metadata_only_microscope_anchor_push_payload_includes_sample_source():
+    """Reproduces the obs 631 row shape: microscope image with cloud_id set
+    but storage_path NULL on cloud (a metadata-only anchor). When the local
+    row gains a sample_source value, the push payload for that row must
+    carry `sample_source` as the lowercase cloud canonical."""
+    payload = {
+        "sample_type": None,
+        "sample_source": None,
+    }
+    image_row = {
+        "id": 871,
+        "cloud_id": "3124",
+        "image_type": "microscope",
+        "source_role": "local_canonical",
+        "file_purpose": "microscope",
+        "storage_path": None,          # metadata-only anchor on cloud
+        "sample_type": "Fresh",
+        "sample_source": "Spore_print",  # user finally set it locally
+    }
+    client = _FakeCloudClient(supports_sample_source=True)
+    _apply_image_sample_fields_to_push_payload(
+        payload, image_row, client=client, obs_cloud_id="cloud-obs-631"
+    )
+    assert payload["sample_type"] == "Fresh"
+    assert payload["sample_source"] == "spore_print", (
+        "Metadata-only anchor push must include sample_source in the PATCH "
+        f"payload; got {payload.get('sample_source')!r}"
+    )
+    # No remote lookup — the null-safe branch is only for empty local values.
+    assert client.get_calls == []
+
+
+def test_metadata_only_microscope_anchor_null_local_omits_sample_source():
+    """Same anchor shape, but local still has NULL sample_source. Push must
+    omit the field so PATCH doesn't wipe a value the cloud might already
+    hold (obs 631's actual state: 146 spore_print rows plus these NULL ones
+    means an unrelated metadata patch here must not clobber cloud)."""
+    payload = {"sample_type": None, "sample_source": None}
+    image_row = {
+        "id": 871,
+        "cloud_id": "3124",
+        "image_type": "microscope",
+        "source_role": "local_canonical",
+        "file_purpose": "microscope",
+        "storage_path": None,
+        "sample_type": "Not_set",
+        "sample_source": None,
+    }
+    client = _FakeCloudClient(supports_sample_source=True)
+    _apply_image_sample_fields_to_push_payload(
+        payload, image_row, client=client, obs_cloud_id="cloud-obs-631"
+    )
+    assert "sample_source" not in payload
+    assert payload["sample_type"] is None
+
+
+def test_metadata_only_field_list_carries_sample_source():
+    """The classifier that decides "metadata-only image sync" (no byte upload,
+    just a PATCH) must include sample_source. Otherwise a lone sample_source
+    change on a microscope anchor would force a byte re-upload attempt on
+    a row whose local file isn't slated for cloud storage."""
+    from utils.cloud_sync import _IMAGE_METADATA_ONLY_FIELDS
+    assert "sample_source" in _IMAGE_METADATA_ONLY_FIELDS
+    assert "sample_type" in _IMAGE_METADATA_ONLY_FIELDS
+
+
+def test_local_media_signature_includes_sample_source_for_signature_drift_detection():
+    """The local media signature must include sample_source so a local edit
+    to that column triggers the dirty-detection path. Verified via SQL by
+    checking the SELECT list of `_local_cloud_media_signature`."""
+    import inspect
+    from utils import cloud_sync
+    src = inspect.getsource(cloud_sync._local_cloud_media_signature)
+    assert "sample_source" in src, (
+        "Local media signature must SELECT sample_source so a local edit is "
+        "seen as a real change by the dirty scan"
+    )
+
+
+def test_push_image_metadata_patches_sample_source_without_uploading_bytes(monkeypatch):
+    """End-to-end shape for the obs 631 case: `push_image_metadata` on an
+    already-linked cloud row (existing cloud_id) with a new sample_source
+    must emit exactly one PATCH containing sample_source, and no bytes
+    uploaded. Guarantees the cloud row's sample_source is reachable via
+    the metadata-only sync path."""
+    client = cloud_sync.SporelyCloudClient("token", "user-631")
+
+    patched: list[dict] = []
+    posted: list[dict] = []
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-3124")
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_sample_source", lambda: True)
+    monkeypatch.setattr(client, "_set_observation_media_keys", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        client,
+        "_patch",
+        lambda path, payload: patched.append({"path": path, "payload": dict(payload)}) or [],
+    )
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda path, payload: posted.append({"path": path, "payload": dict(payload)}) or [{"id": "cloud-new"}],
+    )
+
+    cloud_id = client.push_image_metadata(
+        {
+            "id": 871,
+            "filepath": "/tmp/microscope.jpg",
+            "sort_order": 3,
+            "image_type": "microscope",
+            "source_role": "local_canonical",
+            "file_purpose": "microscope",
+            "sample_type": "Fresh",
+            "sample_source": "Hymenium",
+            "contrast": "DIC",
+        },
+        "cloud-obs-631",
+        # No storage_path — metadata-only anchor. push_image_metadata still
+        # emits the PATCH; the caller is responsible for gating byte upload.
+        "",
+    )
+
+    assert cloud_id == "cloud-3124"
+    # Existing row → PATCH, not POST. No byte upload was ever attempted here.
+    assert len(patched) == 1
+    assert len(posted) == 0
+
+    body = patched[0]["payload"]
+    assert body["sample_type"] == "Fresh"
+    assert body["sample_source"] == "hymenium", (
+        f"PATCH must carry lowercase cloud canonical; got {body.get('sample_source')!r}"
+    )
+    assert body.get("contrast") == "DIC"
+
+
+def test_push_image_metadata_drops_sample_source_when_cloud_lacks_column(monkeypatch):
+    """Deployment-safety guard: if the cloud schema is older than Stage 2A
+    (no sample_source column), the PATCH must not include the field or
+    PostgREST will reject the whole update."""
+    client = cloud_sync.SporelyCloudClient("token", "user-631")
+
+    patched: list[dict] = []
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-3124")
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_sample_source", lambda: False)
+    monkeypatch.setattr(client, "_set_observation_media_keys", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        client,
+        "_patch",
+        lambda path, payload: patched.append({"path": path, "payload": dict(payload)}) or [],
+    )
+
+    client.push_image_metadata(
+        {"id": 871, "filepath": "/tmp/x.jpg", "sort_order": 0, "sample_source": "Hymenium"},
+        "cloud-obs-631",
+        "",
+    )
+    assert len(patched) == 1
+    assert "sample_source" not in patched[0]["payload"]
