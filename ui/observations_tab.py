@@ -2793,13 +2793,23 @@ class ObservationsTab(QWidget):
                 "publish_target": publish_target,
                 "raw": obs,
             }
-            search_parts = [str(v) for v in obs.values() if v is not None]
-            if local_obs:
-                search_parts.extend(str(v) for v in local_obs.values() if v is not None)
-            if status_text:
-                search_parts.append(status_text)
-            search_parts.extend([common_name, row["genus"], species_display, row["location"], row["species_name"] or ""])
-            row["search_text"] = " ".join(search_parts).lower()
+            row["search_text"] = ObservationsTab._search_text_from_values(
+                row["id_display"],
+                row["local_id"],
+                row["cloud_id"],
+                common_name if common_name != "-" else None,
+                row["genus"],
+                species_display,
+                row["species_name"],
+                row["spore_short"] if row["spore_short"] != "-" else None,
+                row["date"],
+                row["location"],
+                status_text,
+                arts_id,
+                artportalen_id,
+                inaturalist_id,
+                mushroomobserver_id,
+            )
             rows.append(row)
         return rows
 
@@ -5009,7 +5019,7 @@ class ObservationsTab(QWidget):
             except (TypeError, ValueError):
                 continue
         thumbnail_map = self._build_observation_thumbnail_map(observation_ids, include_image_id=True)
-        if self._any_microscope_column_visible():
+        if getattr(self, "_any_microscope_column_visible", lambda: False)():
             microscope_map = self._build_observation_microscope_map(observation_ids)
         else:
             microscope_map = {}
@@ -5058,17 +5068,6 @@ class ObservationsTab(QWidget):
             publish_target = self._observation_publish_target(obs)
             species_name = self._build_species_name(obs)
 
-            search_parts = [str(v) for v in obs.values() if v is not None]
-            if common_name_display and common_name_display != "-":
-                search_parts.append(common_name_display)
-            if species_name:
-                search_parts.append(species_name)
-            if spore_short and spore_short != "-":
-                search_parts.append(spore_short)
-            if status_text:
-                search_parts.append(status_text)
-            search_text = " ".join(search_parts).lower()
-
             thumbnail_info = thumbnail_map.get(obs_id)
             thumbnail_path = None
             thumbnail_image_id = None
@@ -5113,7 +5112,6 @@ class ObservationsTab(QWidget):
                     "cloud_id": cloud_id,
                     "publish_target": publish_target,
                     "mark_star": obs_id in recent_cloud_ids,
-                    "search_text": search_text,
                     "objective": (microscope_map.get(obs_id) or {}).get("objective", ""),
                     "contrast": (microscope_map.get(obs_id) or {}).get("contrast", ""),
                     "mount": (microscope_map.get(obs_id) or {}).get("mount", ""),
@@ -5121,6 +5119,22 @@ class ObservationsTab(QWidget):
                     "condition": (microscope_map.get(obs_id) or {}).get("condition", ""),
                     "source": (microscope_map.get(obs_id) or {}).get("source", ""),
                 }
+            )
+            rows[-1]["search_text"] = ObservationsTab._search_text_from_values(
+                obs_id,
+                common_name_display if common_name_display != "-" else None,
+                genus_display,
+                species_display,
+                species_name,
+                spore_short if spore_short != "-" else None,
+                date_text,
+                location_text,
+                status_text,
+                arts_id,
+                artportalen_id,
+                inaturalist_id,
+                mushroomobserver_id,
+                cloud_id,
             )
         return rows
 
@@ -5478,7 +5492,7 @@ class ObservationsTab(QWidget):
                     row_data,
                 )
 
-                for micro_key in self._MICROSCOPE_COLUMN_KEYS:
+                for micro_key in getattr(self, "_MICROSCOPE_COLUMN_KEYS", ()):
                     col_index = self._COLUMN_INDEX[micro_key]
                     value = row_data.get(micro_key)
                     text = str(value).strip() if value else ""
@@ -7006,6 +7020,17 @@ class ObservationsTab(QWidget):
         if genus and species:
             return f"{genus} {species}".strip()
         return species_guess or None
+
+    @staticmethod
+    def _search_text_from_values(*values: object) -> str:
+        parts: list[str] = []
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                parts.append(text)
+        return " ".join(parts).lower()
 
     def show_map_service_dialog(self, lat, lon, species_name):
         """Show a dialog to choose a map service."""

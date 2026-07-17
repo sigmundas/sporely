@@ -1056,17 +1056,13 @@ class _ReconcileFakeClient:
     def __init__(self, user_id: str = "user-recon"):
         self.user_id = user_id
         self.calls: list[tuple[str, str, Any]] = []
-        # Rows returned by the bulk `?user_id=eq.<uid>&select=observation_id`
-        # GET. Tests overwrite this to simulate different remote coverage.
-        self.remote_summary_observation_ids: list[Any] = []
+        # Rows returned by the bulk summary-coverage GET.
+        self.remote_summary_rows: list[dict[str, Any]] = []
 
     def _get(self, path: str) -> list:
         self.calls.append(("GET", path, None))
         if path.startswith("observation_spore_summaries?user_id=eq."):
-            return [
-                {"observation_id": oid}
-                for oid in self.remote_summary_observation_ids
-            ]
+            return list(self.remote_summary_rows)
         return []
 
 
@@ -1148,6 +1144,16 @@ def _install_reconcile_cloud_sync_stubs(monkeypatch, local_measurements_by_obs):
 
     proxy = _KeepAliveConnection(conn)
     monkeypatch.setattr(cs, "get_connection", lambda: proxy)
+    from utils import spore_summary_sync as sss
+    monkeypatch.setattr(
+        sss,
+        "load_measurements_with_context",
+        lambda local_id: (
+            [{"length_um": 10.0, "width_um": 5.0, "measurement_type": "spores"}]
+            if local_measurements_by_obs.get(local_id, (None, False))[1]
+            else []
+        ),
+    )
     return conn
 
 
@@ -1173,7 +1179,7 @@ def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
     monkeypatch.setattr(cs, "_push_summary_for_current_observation", _capture)
 
     client = _ReconcileFakeClient()
-    client.remote_summary_observation_ids = []  # nothing covered remotely yet.
+    client.remote_summary_rows = []  # nothing covered remotely yet.
     errors: list[str] = []
     counters = cs._reconcile_missing_spore_summaries(client, errors)
 
@@ -1184,14 +1190,8 @@ def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
     assert writer_calls[0]["cloud_id"] == "cloud-obs-631"
 
 
-def test_reconcile_attempts_every_candidate_and_trusts_writer_idempotence(monkeypatch):
-    """Every observation with cloud_id + local measurements is routed
-    through the writer, whose Stage D contract (see
-    ``test_sync_is_idempotent_across_two_runs``) handles the no-op /
-    PATCH-vs-INSERT decision internally. A fully-covered observation
-    still gets one write pass — costing one GET + N PATCHes — but no
-    partial-coverage row can slip through.
-    """
+def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch):
+    """A bulk context-hash comparison skips fully-covered observations."""
     from utils import cloud_sync as cs
 
     _install_reconcile_cloud_sync_stubs(
@@ -1209,13 +1209,15 @@ def test_reconcile_attempts_every_candidate_and_trusts_writer_idempotence(monkey
         ),
     )
 
+    from utils.spore_summary import build_context, compute_context_hash
+    null_context_hash = compute_context_hash(build_context())
     client = _ReconcileFakeClient()
+    client.remote_summary_rows = [
+        {"observation_id": "cloud-obs-631", "context_hash": null_context_hash},
+    ]
     counters = cs._reconcile_missing_spore_summaries(client, [])
-    # Both candidates attempted. The writer's own tests prove that a
-    # fully-covered call is a no-op (INSERTs / DELETEs both zero).
-    assert counters == {"candidates": 2, "attempted": 2}
-    attempted_cloud_ids = sorted(c["cloud_id"] for c in writer_calls)
-    assert attempted_cloud_ids == ["cloud-obs-631", "cloud-obs-732"]
+    assert counters == {"candidates": 2, "attempted": 1}
+    assert writer_calls == [{"local_obs_id": 43, "cloud_id": "cloud-obs-732"}]
 
 
 def test_reconcile_ignores_observations_without_local_measurements(monkeypatch):
@@ -1422,11 +1424,10 @@ def test_reconcile_inserts_missing_context_on_partial_coverage(monkeypatch):
     assert hash_koh != hash_water
 
     client = _PartialCoverageClient()
-    # 1) Reconciliation's probe GET (limit=1) — return an empty list;
-    #    the table exists but the observation may not be covered yet.
+    # 1) Reconciliation's bulk coverage GET — KOH exists, water is missing.
     # 2) Writer's per-observation GET — return the pre-existing KOH row.
     client.summary_get_responses = [
-        [],                                            # probe
+        [{"observation_id": "cloud-obs-42", "context_hash": hash_koh}],
         [{"id": 111, "context_hash": hash_koh}],       # writer's GET
     ]
 
@@ -1463,30 +1464,28 @@ def test_reconcile_inserts_missing_context_on_partial_coverage(monkeypatch):
 
     # ── Round two: repeat run is a total no-op. ───────────────────────
     #
-    # After round one the KOH row's material fields match what the
-    # writer just PATCHed onto id=111, and the water row's material
-    # fields match what was POSTed. In round two we pre-seed remote
-    # with FULL rows carrying those material columns (plus a stable
-    # computed_at that must NOT move) — the material comparison
-    # should return match on both rows, yielding zero POSTs, zero
-    # PATCHes, zero DELETEs.
+    # After round one both context hashes are covered. The bulk comparison
+    # skips the per-observation writer entirely.
     stable_computed_at = "2026-07-01T00:00:00+00:00"
     remote_koh_full = {"id": 111, **patched_payload, "computed_at": stable_computed_at}
     remote_water_full = {"id": 5001, **posted, "computed_at": stable_computed_at}
 
     client_round_two = _PartialCoverageClient()
     client_round_two.summary_get_responses = [
-        [],                                          # probe
-        [remote_koh_full, remote_water_full],        # writer's per-obs GET
+        [
+            {"observation_id": "cloud-obs-42", "context_hash": hash_koh},
+            {"observation_id": "cloud-obs-42", "context_hash": hash_water},
+        ],
     ]
     counters_2 = cs._reconcile_missing_spore_summaries(client_round_two, [])
-    assert counters_2 == {"candidates": 1, "attempted": 1}
+    assert counters_2 == {"candidates": 1, "attempted": 0}
     method_counts_2 = {"GET": 0, "POST": 0, "PATCH": 0, "DELETE": 0}
     for method, _path, _payload in client_round_two.calls:
         method_counts_2[method] = method_counts_2.get(method, 0) + 1
     assert method_counts_2["POST"] == 0
     assert method_counts_2["PATCH"] == 0
     assert method_counts_2["DELETE"] == 0
+    assert method_counts_2["GET"] == 1
     # Remote rows are untouched, so computed_at stays at the seeded
     # value — no in-memory mutation happens here, but this pin
     # documents the semantic (Stage B updated_at trigger fires only on
@@ -1656,6 +1655,35 @@ def test_measurement_reconcile_is_noop_when_all_measurements_have_cloud_ids(monk
     assert push_calls == []
 
 
+def test_measurement_reconcile_repairs_stale_local_cloud_ids(monkeypatch):
+    """A local cloud_id is not proof that the remote row still exists."""
+    from utils import cloud_sync as cs
+
+    _install_measurement_reconcile_stubs(
+        monkeypatch,
+        fixture_rows=[
+            (42, "cloud-obs-1", "cloud-image-a", "cloud-meas-missing"),
+            (43, "cloud-obs-2", "cloud-image-b", "cloud-meas-present"),
+        ],
+    )
+    push_calls: list[int] = []
+    monkeypatch.setattr(
+        cs, "_push_measurements_for_observation",
+        lambda client, local_id: push_calls.append(int(local_id)),
+    )
+
+    class _FakeClient:
+        user_id = "user-x"
+
+        def _get(self, path):
+            assert "select=id" in path
+            return [{"id": "cloud-meas-present"}]
+
+    counters = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
+    assert counters == {"candidates": 1, "attempted": 1}
+    assert push_calls == [42]
+
+
 def test_measurement_reconcile_skips_when_image_has_no_cloud_id(monkeypatch):
     """A local image whose parent hasn't itself been synced (no
     `images.cloud_id`) cannot have its measurements pushed yet — the
@@ -1811,5 +1839,3 @@ def test_measurement_reconcile_is_idempotent_after_successful_push(monkeypatch):
     assert counters_1 == {"candidates": 1, "attempted": 1}
     counters_2 = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
     assert counters_2 == {"candidates": 0, "attempted": 0}
-
-

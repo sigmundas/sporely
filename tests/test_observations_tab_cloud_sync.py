@@ -1979,6 +1979,90 @@ def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
     assert table.cellWidget(0, 9).text() == first_external.text()
 
 
+def test_observation_table_search_ignores_hidden_raw_fields(qapp):
+    builder_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+        _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+        or None,
+    )
+    obs = {
+        "id": 901,
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "",
+        "ai_selected_scientific_name": "Agaricus campestris",
+        "common_name": "",
+        "location": "Meadow",
+        "date": "2026-06-15",
+        "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        "publish_target": None,
+    }
+
+    row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(builder_tab, [obs])
+    assert "parasola" not in row_cache[0]["search_text"]
+
+    fake_tab, table = _make_observation_table_render_tab(search_text="parasola")
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="parasola",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+
+    assert table.rowCount() == 0
+
+
+def test_cloud_observation_table_search_ignores_hidden_raw_fields(monkeypatch):
+    monkeypatch.setattr(
+        observations_tab.ObservationDB,
+        "get_observation",
+        lambda observation_id: {
+            "id": observation_id,
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Agaricus campestris",
+            "common_name": "",
+            "location": "Meadow",
+            "date": "2026-06-15",
+            "publish_target": None,
+            "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        },
+    )
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+
+    remote_rows = [
+        {
+            "id": 900,
+            "desktop_id": 901,
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Agaricus campestris",
+            "common_name": "",
+            "location": "Meadow",
+            "date": "2026-06-15",
+            "created_at": "2026-06-15T12:00:00",
+            "sharing_scope": "public",
+            "visibility": "public",
+            "is_draft": 0,
+            "publish_target": None,
+            "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        }
+    ]
+
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(fake_tab, remote_rows)
+    assert "parasola" not in rows[0]["search_text"]
+
+
 def test_observation_table_row_cache_formats_date_and_spore_count():
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},

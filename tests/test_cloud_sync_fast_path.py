@@ -2,8 +2,8 @@
 
 Locks in the invariants that keep a no-change Refresh cheap:
 
-  * ``push_all(full_pull=False)`` skips the spore-summary /
-    measurement-reconciliation scans that walked every synced observation.
+  * ``push_all(full_pull=False)`` runs the lightweight reconciliation passes
+    so historical cloud gaps are repaired during an ordinary Refresh.
   * ``pull_all(full_pull=False)`` prunes candidates by ``updated_at`` and, if
     nothing changed, returns early WITHOUT running the bulk image-metadata or
     bulk-measurement fetches (the two calls that dominate no-op sync time).
@@ -188,7 +188,7 @@ def _default_monkeypatches(monkeypatch, db_path):
 # ---------------------------------------------------------------------------
 
 
-def test_push_all_fast_path_skips_spore_reconciliation(tmp_path, monkeypatch, capsys):
+def test_push_all_fast_path_runs_lightweight_spore_reconciliation(tmp_path, monkeypatch):
     db_path = _init_db(tmp_path)
     _default_monkeypatches(monkeypatch, db_path)
 
@@ -208,12 +208,7 @@ def test_push_all_fast_path_skips_spore_reconciliation(tmp_path, monkeypatch, ca
     cloud_sync.push_all(
         client, sync_images=False, sync_calibrations=False, full_pull=False
     )
-    assert reconcile_calls == [], (
-        "Fast-path push must NOT run the two spore reconciliation scans — "
-        f"they dominated no-op sync time; got: {reconcile_calls}"
-    )
-    out = capsys.readouterr().out
-    assert "fast path: skipping spore measurement + summary reconciliation" in out
+    assert reconcile_calls == ["measurements", "summaries"]
 
 
 def test_push_all_full_pull_still_runs_reconciliation(tmp_path, monkeypatch):

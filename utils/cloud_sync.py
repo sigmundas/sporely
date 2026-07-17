@@ -12057,37 +12057,30 @@ def push_all(
     # disagree until the raw table catches up. Filling raw measurements
     # first keeps the two invariants consistent for the same species.
     #
-    # Fast-path (full_pull=False) skips both scans entirely: they walk every
-    # synced observation each run, which dominated no-op Refresh time (~6s
-    # for 66 observations). The per-observation summary sync inside the
-    # dirty loop still runs for each row that was actually pushed, so real
-    # local edits still propagate.
+    # Both repairs also run on the normal Refresh path. Measurement
+    # reconciliation is a local candidate scan, while summary reconciliation
+    # performs one bulk coverage read and only invokes the per-observation
+    # writer for missing/stale context hashes. This keeps no-op Refresh cheap
+    # without making historical sync gaps depend on a full pull.
     measurement_reconcile = None
     summary_reconcile = None
-    if full_pull:
-        try:
-            measurement_reconcile = _reconcile_missing_spore_measurements(client, errors)
-        except Exception as reconcile_exc:
-            if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
-                raise
-            errors.append(
-                f'spore measurement reconciliation: unexpected error: {reconcile_exc}'
-            )
-            measurement_reconcile = None
-
-        try:
-            summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
-        except Exception as reconcile_exc:
-            if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
-                raise
-            errors.append(f'spore summary reconciliation: unexpected error: {reconcile_exc}')
-            summary_reconcile = None
-    else:
-        print(
-            "[cloud_sync] fast path: skipping spore measurement + summary "
-            "reconciliation (full_pull=False)",
-            flush=True,
+    try:
+        measurement_reconcile = _reconcile_missing_spore_measurements(client, errors)
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(
+            f'spore measurement reconciliation: unexpected error: {reconcile_exc}'
         )
+        measurement_reconcile = None
+
+    try:
+        summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(f'spore summary reconciliation: unexpected error: {reconcile_exc}')
+        summary_reconcile = None
 
     result = {
         'pushed': pushed,
@@ -13427,10 +13420,10 @@ def _reconcile_missing_spore_measurements(
     n_paired = 29 while the cloud raw table only exposes 20 through
     the public spore RPCs, and the two disagree until this pass runs.
 
-    We target only observations that actually have unsynced local
-    measurements (any `spore_measurements.cloud_id IS NULL` on a
-    cloud-known image); already-fully-synced observations skip the
-    call entirely.
+    We target observations with either an unstamped local measurement or a
+    stamped cloud id that no longer exists remotely. The latter catches
+    interrupted/recreated cloud datasets where SQLite still says "synced"
+    even though the public raw-measurement rows disappeared.
 
     `_push_measurements_for_observation` is per-measurement idempotent:
     each row is either PATCHed (only if its payload differs from the
@@ -13449,7 +13442,7 @@ def _reconcile_missing_spore_measurements(
     conn.row_factory = __import__('sqlite3').Row
     try:
         cursor = conn.cursor()
-        # The reconciliation candidate query MUST mirror the filter
+        # The reconciliation source query MUST mirror the filter
         # used by `_push_measurements_for_observation` exactly. If we
         # flag observations whose only "missing" measurements are
         # attached to non-microscope images or to tombstoned images,
@@ -13459,7 +13452,9 @@ def _reconcile_missing_spore_measurements(
         # picks it up again next sync" bug from the field log.
         cursor.execute(
             '''
-            SELECT DISTINCT o.id AS local_id
+            SELECT o.id AS local_id,
+                   m.id AS measurement_local_id,
+                   m.cloud_id AS measurement_cloud_id
             FROM observations o
             JOIN images i ON i.observation_id = o.id
             JOIN spore_measurements m ON m.image_id = i.id
@@ -13470,30 +13465,60 @@ def _reconcile_missing_spore_measurements(
               AND trim(i.cloud_id) != ''
               AND i.image_type = 'microscope'
               AND t.id IS NULL
-              AND (m.cloud_id IS NULL OR trim(m.cloud_id) = '')
-            ORDER BY o.id
+            ORDER BY o.id, m.id
             '''
         )
-        candidates = [dict(row) for row in cursor.fetchall()]
+        eligible_rows = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
 
+    candidate_ids = {
+        int(row['local_id'])
+        for row in eligible_rows
+        if not str(row.get('measurement_cloud_id') or '').strip()
+    }
+
+    # Verify stamped ids with narrow ID-only requests. Pulling full remote
+    # measurement payloads here was the source of the old no-op Refresh
+    # slowdown; existence is all reconciliation needs.
+    stamped_ids = sorted({
+        str(row.get('measurement_cloud_id') or '').strip()
+        for row in eligible_rows
+        if str(row.get('measurement_cloud_id') or '').strip()
+    })
+    remote_ids: set[str] = set()
+    getter = getattr(client, '_get', None)
+    if stamped_ids and callable(getter):
+        for start in range(0, len(stamped_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+            chunk = stamped_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
+            rows = getter(
+                f'spore_measurements?id=in.({",".join(chunk)})'
+                f'&user_id=eq.{client.user_id}&select=id'
+            )
+            remote_ids.update(
+                str(row.get('id') or '').strip()
+                for row in rows or []
+                if str(row.get('id') or '').strip()
+            )
+        candidate_ids.update(
+            int(row['local_id'])
+            for row in eligible_rows
+            if str(row.get('measurement_cloud_id') or '').strip() not in remote_ids
+        )
+
+    candidates = sorted(candidate_ids)
     counters['candidates'] = len(candidates)
     if not candidates:
         return counters
 
     print(
         f'[cloud_sync] Spore measurement reconciliation: '
-        f'{len(candidates)} synced observations have local measurements '
-        f'without cloud_id; backfilling to public.spore_measurements.',
+        f'{len(candidates)} synced observations have missing remote '
+        f'measurements; backfilling public.spore_measurements.',
         flush=True,
     )
 
-    for row in candidates:
-        try:
-            local_id = int(row.get('local_id') or 0)
-        except (TypeError, ValueError):
-            local_id = 0
+    for local_id in candidates:
         if local_id <= 0:
             continue
         counters['attempted'] += 1
@@ -13520,18 +13545,10 @@ def _reconcile_missing_spore_summaries(
     every observation that has been synced at least once and has local
     spore measurements.
 
-    Why not just skip observations that already have SOME remote
-    coverage: an observation can carry multiple contexts (e.g. one
-    image in KOH + DIC, another in water + brightfield). If a previous
-    partial sync only wrote the KOH row and the water/DIC row is still
-    missing, an "any-row-means-covered" heuristic would silently leave
-    the second context out forever. So this pass delegates every
-    candidate to `_push_summary_for_current_observation` — the writer
-    fetches existing `(observation_id, context_hash)` per observation,
-    PATCHes matching hashes, POSTs any missing ones, and DELETEs stale
-    hashes. It is idempotent per Stage D (see
-    ``test_sync_is_idempotent_across_two_runs``): a full-coverage
-    observation costs one GET + N PATCHes and no INSERTs/DELETEs.
+    The pass compares the complete set of local and remote context hashes.
+    This catches both wholly missing rows and partial coverage (for example,
+    KOH present but water missing) without routing every fully-covered
+    observation through another network request.
 
     Metadata-only microscope anchors (`observation_images.storage_path`
     NULL) are covered because the local join key is `image_id`, not
@@ -13542,23 +13559,21 @@ def _reconcile_missing_spore_summaries(
     ``WHERE cloud_id IS NULL OR sync_status = 'dirty'`` and only that
     subset runs the writer inline. This pass exists specifically to
     catch observations that were synced before Stage D landed (or
-    otherwise did not go dirty this session) — steady-state cost is
-    one GET per synced observation with measurements.
+    otherwise did not go dirty this session). Steady-state network cost is
+    one bulk GET, independent of the number of measured observations.
 
     Returns a small counter dict for the caller's summary/log stanza.
     """
     counters = {'candidates': 0, 'attempted': 0}
 
-    # Probe the summary surface once. A missing-table response means
-    # this deployment predates Stage B — skip the whole pass. Every
-    # other error class is either fatal (auth/temporary → raise) or
-    # gets recorded in `errors` and continues.
+    # Fetch all remote coverage in one request. A missing-table response
+    # means this deployment predates Stage B; other errors follow the
+    # surrounding sync error policy.
     try:
-        client._get(
+        remote_rows = client._get(
             f'observation_spore_summaries'
             f'?user_id=eq.{client.user_id}'
-            f'&select=observation_id'
-            f'&limit=1'
+            f'&select=observation_id,context_hash'
         )
     except Exception as exc:
         if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
@@ -13598,7 +13613,17 @@ def _reconcile_missing_spore_summaries(
     if not candidates:
         return counters
 
+    remote_hashes_by_observation: dict[str, set[str]] = {}
+    for remote_row in remote_rows or []:
+        remote_observation_id = str(remote_row.get('observation_id') or '').strip()
+        context_hash = str(remote_row.get('context_hash') or '').strip()
+        if remote_observation_id and context_hash:
+            remote_hashes_by_observation.setdefault(remote_observation_id, set()).add(context_hash)
+
     valid_candidates: list[tuple[int, str]] = []
+    from utils import spore_summary_sync as spore_summary_sync_module
+    from utils.spore_summary import compute_observation_spore_summaries
+
     for row in candidates:
         cloud_id = str(row.get('cloud_id') or '').strip()
         if not cloud_id:
@@ -13609,7 +13634,17 @@ def _reconcile_missing_spore_summaries(
             local_id = 0
         if local_id <= 0:
             continue
-        valid_candidates.append((local_id, cloud_id))
+        measurements = spore_summary_sync_module.load_measurements_with_context(local_id)
+        local_hashes = {
+            str(summary.get('context_hash') or '').strip()
+            for summary in compute_observation_spore_summaries(
+                observation_id=local_id,
+                measurements=measurements,
+            )
+            if str(summary.get('context_hash') or '').strip()
+        }
+        if local_hashes != remote_hashes_by_observation.get(cloud_id, set()):
+            valid_candidates.append((local_id, cloud_id))
 
     if not valid_candidates:
         return counters
@@ -13617,7 +13652,7 @@ def _reconcile_missing_spore_summaries(
     print(
         f'[cloud_sync] Spore summary reconciliation: attempting '
         f'{len(valid_candidates)} synced observations '
-        f'(writer is idempotent — no-op for fully-covered ones).',
+        f'with missing or stale summary contexts.',
         flush=True,
     )
 
