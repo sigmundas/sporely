@@ -4299,6 +4299,58 @@ def _update_image_columns_without_touching_observation(
         conn.close()
 
 
+def _cloud_pulled_image_order_key(image_row: dict) -> tuple[int, int, str, int]:
+    image_type = str(image_row.get('image_type') or '').strip().lower()
+    if image_type == 'field':
+        type_rank = 0
+    elif image_type == 'microscope':
+        type_rank = 1
+    else:
+        type_rank = 2
+    sort_order = _safe_int(image_row.get('sort_order'))
+    sort_rank = sort_order if sort_order is not None else 10**9
+    created_at = str(image_row.get('created_at') or '').strip()
+    image_id = _safe_int(image_row.get('id')) or 0
+    return (type_rank, sort_rank, created_at, image_id)
+
+
+def _normalize_cloud_pulled_image_order(local_id: int) -> None:
+    try:
+        obs_id = int(local_id)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+
+    image_rows = [dict(row or {}) for row in ImageDB.get_images_for_observation(obs_id) or []]
+    if len(image_rows) < 2:
+        return
+
+    # Only normalize the mixed cloud-pulled cases. Local manual galleries keep
+    # their existing order unless we have imported cloud recovery cache rows.
+    has_cloud_cache_row = any(
+        str(row.get('source_role') or '').strip().lower() == 'cloud_recovery_cache'
+        for row in image_rows
+    )
+    if not has_cloud_cache_row:
+        return
+
+    image_types = {str(row.get('image_type') or '').strip().lower() for row in image_rows}
+    if 'field' not in image_types or 'microscope' not in image_types:
+        return
+
+    ordered_rows = sorted(image_rows, key=_cloud_pulled_image_order_key)
+    ordered_ids = [_safe_int(row.get('id')) for row in ordered_rows]
+    ordered_ids = [image_id for image_id in ordered_ids if image_id is not None]
+    current_ids = [_safe_int(row.get('id')) for row in image_rows]
+    current_ids = [image_id for image_id in current_ids if image_id is not None]
+    if ordered_ids == current_ids:
+        return
+
+    for index, image_id in enumerate(ordered_ids):
+        _update_image_columns_without_touching_observation(int(image_id), {'sort_order': index})
+
+
 def _cloud_observation_snapshot(
     remote: dict,
     remote_images: list[dict],
@@ -8806,6 +8858,7 @@ def _apply_remote_images_to_local(
             except Exception as exc:
                 warnings.append(f"obs {local_id}: could not remove local image {image_id}: {exc}")
 
+    _normalize_cloud_pulled_image_order(int(local_id))
     return warnings
 
 
@@ -16100,6 +16153,7 @@ def _import_remote_images(
                 print(f'[cloud_sync] Failed image import: {e}')
             finally:
                 _advance_progress(progress_state, 1)
+        _normalize_cloud_pulled_image_order(int(local_id))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
