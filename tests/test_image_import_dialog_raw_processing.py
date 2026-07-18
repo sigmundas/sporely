@@ -12,6 +12,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
+import ui.live_lab_tab as live_lab_tab
 from ui import image_import_dialog
 from ui.image_import_dialog import ImageImportDialog, ImageImportResult
 from ui.raw_processing_controls import RawProcessingControls
@@ -94,6 +95,7 @@ def _build_raw_dialog_dummy(result: ImageImportResult) -> SimpleNamespace:
     dummy._raw_preview_cache_entry = lambda source, settings: (
         ImageImportDialog._raw_preview_cache_entry(dummy, source, settings)
     )
+    dummy._raw_preview_resized_for_entry = lambda entry: ImageImportDialog._raw_preview_resized_for_entry(entry)
     return dummy
 
 
@@ -241,6 +243,46 @@ def test_raw_action_tab_shows_apply_copy_and_paste_in_raw_edit_mode(qapp, tmp_pa
     ImageImportDialog._update_raw_panel_for_result(dummy, result)
 
     assert dummy.raw_paste_btn.isVisible() is True
+
+
+def test_prepare_images_raw_curve_histogram_tracks_processed_preview(qapp, tmp_path, monkeypatch):
+    result = _build_raw_result(tmp_path)
+    dummy = _build_raw_dialog_dummy(result)
+    captured: dict[str, object] = {}
+    dummy.raw_curve_preview_widget = SimpleNamespace(
+        set_curve=lambda curve, histogram: captured.update({"curve": curve, "histogram": histogram}),
+    )
+    settings = RawRenderSettings.default()
+    key = dummy._raw_preview_proxy_cache_key(result.filepath, settings)
+    dummy._raw_preview_proxy_cache = {
+        key: image_import_dialog._RawPreviewCacheEntry(
+            raw_rgb=np.zeros((2, 2, 3), dtype=np.float32),
+        )
+    }
+    entry = dummy._raw_preview_proxy_cache[key]
+    dummy._raw_preview_cache_entry = lambda source, settings: entry
+    processed_rgb = np.ones((2, 2, 3), dtype=np.float32)
+    monkeypatch.setattr(
+        image_import_dialog,
+        "prepare_post_decode_fast_inputs",
+        lambda rgb, settings: None,
+    )
+    monkeypatch.setattr(
+        image_import_dialog,
+        "apply_post_decode_processing_fast",
+        lambda rgb, settings, *, prepared_inputs=None: SimpleNamespace(rgb=processed_rgb),
+    )
+
+    curve = SimpleNamespace(
+        input_values=np.array([0.0, 1.0], dtype=np.float32),
+        final_output=np.array([0.0, 1.0], dtype=np.float32),
+    )
+    ImageImportDialog._refresh_prepare_raw_curve_preview(dummy, result, curve=curve)
+
+    histogram = captured.get("histogram")
+    assert histogram is not None
+    assert histogram.size == 96
+    assert int(histogram.argmax()) == histogram.size - 1
 
 
 def test_raw_convert_still_calls_final_render_immediately(monkeypatch, qapp, tmp_path):

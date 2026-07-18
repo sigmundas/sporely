@@ -1018,6 +1018,35 @@ def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode
     assert float(histogram.min()) >= 0.0
 
 
+def test_live_lab_raw_curve_preview_histogram_tracks_processed_preview(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    settings = RawRenderSettings.default()
+    key = state._raw_preview_proxy_cache_key(source_path, settings)
+    state._pending_raw_preview_proxy_cache = {
+        key: live_lab_tab._RawPreviewCacheEntry(
+            raw_rgb=np.zeros((2, 2, 3), dtype=np.float32),
+        )
+    }
+
+    processed_rgb = np.zeros((2, 2, 3), dtype=np.float32)
+    processed_rgb[..., :] = 1.0
+    monkeypatch.setattr(
+        live_lab_tab,
+        "apply_post_decode_processing_fast",
+        lambda rgb, settings, *, prepared_inputs=None: SimpleNamespace(rgb=processed_rgb),
+    )
+
+    analysis = live_lab_tab.LiveLabTab._raw_curve_preview_analysis_from_path(state, source_path, settings)
+    assert analysis is not None
+    _rgb, histogram = analysis
+    assert histogram is not None
+    assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
+    assert int(histogram.argmax()) == histogram.size - 1
+
+
 def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_selection(tmp_path, monkeypatch):
     _qapp()
     old_path = tmp_path / "imports" / "old.jpg"

@@ -2535,9 +2535,10 @@ class LiveLabTab(QWidget):
 
         temp_dir = self._raw_edit_preview_dir()
         temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_output = temp_dir / f"{session.source_raw_path.stem}_{session.image_id}_{uuid4().hex}.jpg"
         final_path = Path(session.current_derivative_path)
         final_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_suffix = final_path.suffix.lower() or ".jpg"
+        temp_output = temp_dir / f"{session.source_raw_path.stem}_{session.image_id}_{uuid4().hex}{temp_suffix}"
 
         try:
             rendered_path = render_raw_image(
@@ -3244,7 +3245,8 @@ class LiveLabTab(QWidget):
         )
         cached_signature = getattr(self, "_raw_curve_preview_analysis_signature", None)
         base_signature = (str(source_path), int(stat.st_mtime_ns), int(stat.st_size), decode_mode)
-        if cached_signature == base_signature:
+        cache_signature = base_signature + (settings_signature,)
+        if cached_signature == cache_signature:
             cached_rgb = getattr(self, "_raw_curve_preview_analysis_rgb", None)
             cached_histogram = getattr(self, "_raw_curve_preview_histogram", None)
             if isinstance(cached_rgb, np.ndarray) and isinstance(cached_histogram, np.ndarray):
@@ -3263,15 +3265,15 @@ class LiveLabTab(QWidget):
                         cached_proxy_rgb = cached_proxy
                 if isinstance(cached_proxy_rgb, np.ndarray) and cached_proxy_rgb.size:
                     rgb = _resize_preview_rgb(cached_proxy_rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
-                    signature = base_signature
+                    signature = cache_signature
                 else:
                     preview_rgb = self._raw_curve_preview_rgb_from_active_preview(source_path)
                     if isinstance(preview_rgb, np.ndarray) and preview_rgb.size:
                         rgb = _resize_preview_rgb(preview_rgb, _TONE_CURVE_PREVIEW_ANALYSIS_MAX_DIM)
-                        signature = ("preview",) + base_signature + (settings_signature,)
+                        signature = ("preview",) + cache_signature
                     else:
                         rgb = self._raw_curve_preview_fallback_rgb()
-                        signature = ("fallback",) + base_signature
+                        signature = ("fallback",) + cache_signature
             else:
                 with Image.open(source_path) as image:
                     image.load()
@@ -3286,11 +3288,22 @@ class LiveLabTab(QWidget):
                         resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", Image.BILINEAR)
                         image = image.resize(resized_size, resample)
                     rgb = np.asarray(image, dtype=np.float32) / np.float32(255.0)
-                signature = base_signature
+                signature = cache_signature
         except Exception:
             return None
 
-        histogram = _compute_combined_rgb_histogram(rgb, bins=_TONE_CURVE_PREVIEW_HISTOGRAM_BINS)
+        try:
+            prepared_inputs = prepare_post_decode_fast_inputs(rgb, resolved_settings)
+            processed = apply_post_decode_processing_fast(
+                rgb,
+                resolved_settings,
+                prepared_inputs=prepared_inputs,
+            )
+            histogram_rgb = processed.rgb
+        except Exception:
+            histogram_rgb = rgb
+
+        histogram = _compute_combined_rgb_histogram(histogram_rgb, bins=_TONE_CURVE_PREVIEW_HISTOGRAM_BINS)
         self._raw_curve_preview_analysis_signature = signature
         self._raw_curve_preview_analysis_rgb = rgb
         self._raw_curve_preview_histogram = histogram
@@ -3882,9 +3895,10 @@ class LiveLabTab(QWidget):
 
         temp_dir = self._raw_edit_preview_dir()
         temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_output = temp_dir / f"{session.source_raw_path.stem}_{session.image_id}_{uuid4().hex}.jpg"
         final_path = Path(session.current_derivative_path)
         final_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_suffix = final_path.suffix.lower() or ".jpg"
+        temp_output = temp_dir / f"{session.source_raw_path.stem}_{session.image_id}_{uuid4().hex}{temp_suffix}"
 
         try:
             rendered_path = render_raw_image(

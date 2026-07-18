@@ -7209,23 +7209,12 @@ class ObservationsTab(QWidget):
             )
             return
 
-        conn = None
         try:
-            conn = get_connection()
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM images WHERE observation_id = ?",
-                (int(target_observation_id),),
+            moved_count = ImageDB.move_images_to_observation(
+                image_ids,
+                int(source_observation_id),
+                int(target_observation_id),
             )
-            next_sort_order = int(cursor.fetchone()[0] or 0)
-            for image_id in image_ids:
-                cursor.execute(
-                    "UPDATE images SET observation_id = ?, sort_order = ? WHERE id = ?",
-                    (int(target_observation_id), int(next_sort_order), int(image_id)),
-                )
-                next_sort_order += 1
-            conn.commit()
         except Exception as exc:
             self._clear_pending_gallery_move()
             self.set_status_message(
@@ -7234,13 +7223,6 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=8000,
             )
             return
-        finally:
-            try:
-                if conn is not None:
-                    conn.close()
-            except Exception:
-                pass
-
         self._clear_pending_gallery_move(restore_hint=False)
         self.refresh_observations(restore_selection=False)
         target_row = self._find_table_row_for_observation(int(target_observation_id))
@@ -7249,7 +7231,7 @@ class ObservationsTab(QWidget):
         self.set_status_message(self.tr("Ready."), level="info", auto_clear_ms=0)
         self.set_status_message(
             self.tr("Moved {count} images to observation {obs_id}.").format(
-                count=len(image_ids),
+                count=moved_count,
                 obs_id=int(target_observation_id),
             ),
             level="success",

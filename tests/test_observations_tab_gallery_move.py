@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -8,6 +9,7 @@ from PySide6.QtGui import QKeyEvent, QImage, QColor
 from PySide6.QtWidgets import QApplication
 
 import ui.observations_tab as observations_tab_module
+import database.models as models_module
 from ui.observations_tab import ObservationsTab
 
 
@@ -100,57 +102,95 @@ def test_pending_gallery_move_updates_image_rows_for_target_observation(monkeypa
     state._pending_gallery_move_image_ids = [101, 102]
     state._pending_gallery_move_source_observation_id = 5
 
-    class _FakeCursor:
-        def __init__(self) -> None:
-            self.executed: list[tuple[str, tuple[object, ...]]] = []
-            self._fetchone = (4,)
-
-        def execute(self, sql, params=()):
-            self.executed.append((str(sql), tuple(params)))
-            if "COALESCE(MAX(sort_order), -1) + 1" in str(sql):
-                self._fetchone = (4,)
-            return self
-
-        def fetchone(self):
-            return self._fetchone
-
-    class _FakeConn:
-        def __init__(self) -> None:
-            self.cursor_obj = _FakeCursor()
-            self.row_factory = None
-            self.committed = False
-            self.closed = False
-
-        def cursor(self):
-            return self.cursor_obj
-
-        def commit(self):
-            self.committed = True
-
-        def close(self):
-            self.closed = True
-
-    fake_conn = _FakeConn()
-    monkeypatch.setattr(observations_tab_module, "get_connection", lambda: fake_conn)
+    move_calls = []
+    monkeypatch.setattr(
+        observations_tab_module.ImageDB,
+        "move_images_to_observation",
+        lambda image_ids, source_id, target_id: move_calls.append(
+            (list(image_ids), source_id, target_id)
+        ) or len(image_ids),
+    )
 
     ObservationsTab._complete_pending_gallery_move(state, 7)
 
-    assert fake_conn.committed is True
-    assert fake_conn.closed is True
-    assert fake_conn.cursor_obj.executed[0][0].startswith("SELECT COALESCE(MAX(sort_order), -1) + 1")
-    assert fake_conn.cursor_obj.executed[1] == (
-        "UPDATE images SET observation_id = ?, sort_order = ? WHERE id = ?",
-        (7, 4, 101),
-    )
-    assert fake_conn.cursor_obj.executed[2] == (
-        "UPDATE images SET observation_id = ?, sort_order = ? WHERE id = ?",
-        (7, 5, 102),
-    )
+    assert move_calls == [([101, 102], 5, 7)]
     assert state.refresh_calls == [False]
     assert state.table.selected_rows == [2]
     assert state._pending_gallery_move_image_ids == []
     assert state._pending_gallery_move_source_observation_id is None
     assert state.status_messages[-1][0] == "Moved 2 images to observation 7."
+
+
+def test_move_cloud_image_preserves_measurements_and_resets_remote_links(monkeypatch, tmp_path):
+    db_path = tmp_path / "move.sqlite"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE observations (
+            id INTEGER PRIMARY KEY, cloud_id TEXT, sync_status TEXT, updated_at TEXT
+        );
+        CREATE TABLE images (
+            id INTEGER PRIMARY KEY, observation_id INTEGER, cloud_id TEXT,
+            synced_at TEXT, sort_order INTEGER, image_type TEXT,
+            filepath TEXT, original_filepath TEXT
+        );
+        CREATE TABLE spore_measurements (
+            id INTEGER PRIMARY KEY, image_id INTEGER, cloud_id TEXT
+        );
+        CREATE TABLE image_tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deleted_cloud_id TEXT NOT NULL UNIQUE,
+            deleted_at TEXT NOT NULL,
+            delete_synced_at TEXT,
+            deleted_storage_path TEXT,
+            deleted_observation_cloud_id TEXT,
+            local_observation_id INTEGER,
+            local_image_id INTEGER,
+            image_type TEXT,
+            filepath TEXT,
+            original_filepath TEXT
+        );
+        INSERT INTO observations VALUES (5, 'cloud-obs-5', 'synced', NULL);
+        INSERT INTO observations VALUES (7, 'cloud-obs-7', 'synced', NULL);
+        INSERT INTO images VALUES (
+            101, 5, 'cloud-image-101', '2026-07-01', 2,
+            'microscope', '/tmp/micro.jpg', NULL
+        );
+        INSERT INTO images VALUES (201, 7, NULL, NULL, 3, 'field', '/tmp/field.jpg', NULL);
+        INSERT INTO spore_measurements VALUES (301, 101, 'cloud-measurement-301');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(
+        models_module,
+        "get_connection",
+        lambda: sqlite3.connect(db_path),
+    )
+
+    moved = models_module.ImageDB.move_images_to_observation([101], 5, 7)
+    assert moved == 1
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    image = dict(conn.execute("SELECT * FROM images WHERE id = 101").fetchone())
+    measurement = dict(conn.execute("SELECT * FROM spore_measurements WHERE id = 301").fetchone())
+    tombstone = dict(conn.execute("SELECT * FROM image_tombstones").fetchone())
+    statuses = dict(conn.execute("SELECT id, sync_status FROM observations").fetchall())
+    conn.close()
+
+    assert image["observation_id"] == 7
+    assert image["sort_order"] == 4
+    assert image["cloud_id"] is None
+    assert image["synced_at"] is None
+    assert measurement["image_id"] == 101
+    assert measurement["cloud_id"] is None
+    assert tombstone["deleted_cloud_id"] == "cloud-image-101"
+    assert tombstone["deleted_observation_cloud_id"] == "cloud-obs-5"
+    assert tombstone["local_observation_id"] == 5
+    assert tombstone["local_image_id"] is None
+    assert statuses == {5: "dirty", 7: "dirty"}
 
 
 def test_delete_selected_images_uses_light_refresh(monkeypatch, qapp):

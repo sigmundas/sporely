@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import numpy as np
 from PIL import Image
 
+from utils.heic_converter import save_image_as_webp
 from utils.image_processing_pipeline import (
     apply_auto_levels_from_bounds,
     apply_post_decode_processing,
@@ -574,15 +575,12 @@ def _save_local_derivative_jpeg(
     rgb8 = np.rint(rgb8 * 255.0).astype(np.uint8)
     image = Image.fromarray(rgb8, mode="RGB")
     existed_before = destination.exists()
+    suffix = destination.suffix.lower()
     try:
-        save_kwargs = {
-            "quality": RAW_DERIVATIVE_QUALITY,
-            "subsampling": RAW_DERIVATIVE_SUBSAMPLING,
-            "optimize": RAW_DERIVATIVE_OPTIMIZE,
-        }
         exif_timestamp = _format_capture_datetime(source_capture_datetime)
         make_text = str(source_camera_make or "").strip()
         model_text = str(source_camera_model or "").strip()
+        exif_bytes = None
         if exif_timestamp or make_text or model_text:
             exif_factory = getattr(Image, "Exif", None)
             if callable(exif_factory):
@@ -595,13 +593,23 @@ def _save_local_derivative_jpeg(
                 if model_text:
                     exif[272] = model_text  # Model
                 try:
-                    save_kwargs["exif"] = exif.tobytes()
+                    exif_bytes = exif.tobytes()
                 except Exception:
-                    pass
-        image.save(destination, "JPEG", **save_kwargs)
+                    exif_bytes = None
+        if suffix == ".webp":
+            save_image_as_webp(image, destination, exif_bytes=exif_bytes)
+        else:
+            save_kwargs = {
+                "quality": RAW_DERIVATIVE_QUALITY,
+                "subsampling": RAW_DERIVATIVE_SUBSAMPLING,
+                "optimize": RAW_DERIVATIVE_OPTIMIZE,
+            }
+            if exif_bytes:
+                save_kwargs["exif"] = exif_bytes
+            image.save(destination, "JPEG", **save_kwargs)
         source_stat = source_path.stat()
         os.utime(destination, (source_stat.st_atime, source_stat.st_mtime))
-        _raw_timing_log("JPEG save", start, detail=destination.name)
+        _raw_timing_log(f"{suffix.lstrip('.') or 'jpeg'} save", start, detail=destination.name)
     except Exception:
         if not existed_before:
             try:
@@ -647,6 +655,13 @@ def build_raw_processing_metadata(
     render_settings = RawRenderSettings.from_dict(settings).to_dict()
     captured_at = _format_capture_datetime(source_capture_datetime)
     rendered_at_text = _format_capture_datetime(rendered_at)
+    derivative_suffix = derivative.suffix.lower()
+    if derivative_suffix == ".webp":
+        derivative_format = "webp"
+        derivative_mime_type = "image/webp"
+    else:
+        derivative_format = RAW_DERIVATIVE_FORMAT
+        derivative_mime_type = RAW_DERIVATIVE_MIME_TYPE
     return {
         "engine": "rawpy",
         "source": {
@@ -657,8 +672,8 @@ def build_raw_processing_metadata(
         },
         "local_derivative": {
             "kind": "rendered_from_raw",
-            "format": RAW_DERIVATIVE_FORMAT,
-            "mime_type": RAW_DERIVATIVE_MIME_TYPE,
+            "format": derivative_format,
+            "mime_type": derivative_mime_type,
             "path": str(derivative),
             "quality": RAW_DERIVATIVE_QUALITY,
             "subsampling": RAW_DERIVATIVE_SUBSAMPLING,

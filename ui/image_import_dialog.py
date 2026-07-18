@@ -6914,7 +6914,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if histogram is None:
             try:
                 hist_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-                hist = np.histogram(np.clip(rgb, 0.0, 1.0).ravel(), bins=96, range=(0.0, 1.0))[0]
+                prepared_inputs = prepare_post_decode_fast_inputs(rgb, settings)
+                processed = apply_post_decode_processing_fast(
+                    rgb,
+                    settings,
+                    prepared_inputs=prepared_inputs,
+                )
+                hist_rgb = processed.rgb
+                hist = np.histogram(np.clip(hist_rgb, 0.0, 1.0).ravel(), bins=96, range=(0.0, 1.0))[0]
                 histogram = hist.astype(np.float32)
                 entry.combined_histogram = histogram
                 _raw_prepare_timing("histogram compute", hist_start)

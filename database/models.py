@@ -2120,6 +2120,102 @@ class ImageDB:
             conn.close()
 
     @staticmethod
+    def move_images_to_observation(
+        image_ids: list[int],
+        source_observation_id: int,
+        target_observation_id: int,
+    ) -> int:
+        """Move images locally and republish cloud-linked rows at the target.
+
+        Measurements retain their local image_id and therefore move with the
+        image. Existing cloud image/measurement ids are reset because their
+        remote rows belong to the source observation.
+        """
+        clean_ids = list(dict.fromkeys(
+            int(image_id) for image_id in image_ids if int(image_id) > 0
+        ))
+        source_id = int(source_observation_id)
+        target_id = int(target_observation_id)
+        if not clean_ids or source_id <= 0 or target_id <= 0 or source_id == target_id:
+            return 0
+
+        conn = get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            next_sort_order_row = cursor.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM images WHERE observation_id = ?",
+                (target_id,),
+            ).fetchone()
+            next_sort_order = int(next_sort_order_row[0] or 0)
+            source_cloud_row = cursor.execute(
+                "SELECT cloud_id FROM observations WHERE id = ?",
+                (source_id,),
+            ).fetchone()
+            source_cloud_id = str(source_cloud_row[0] or "").strip() if source_cloud_row else ""
+
+            moved = 0
+            for image_id in clean_ids:
+                image = cursor.execute(
+                    "SELECT * FROM images WHERE id = ? AND observation_id = ?",
+                    (image_id, source_id),
+                ).fetchone()
+                if image is None:
+                    continue
+                cloud_id = str(image["cloud_id"] or "").strip()
+                if cloud_id:
+                    _upsert_image_tombstone(
+                        cursor,
+                        deleted_cloud_id=cloud_id,
+                        deleted_storage_path=image["filepath"] or image["original_filepath"],
+                        deleted_observation_cloud_id=source_cloud_id or None,
+                        local_observation_id=source_id,
+                        local_image_id=None,
+                        image_type=image["image_type"],
+                        filepath=image["filepath"],
+                        original_filepath=image["original_filepath"],
+                    )
+                    # This tombstone tracks only the old remote row. It must
+                    # not hide the still-active local image at its destination.
+                    cursor.execute(
+                        """
+                        UPDATE image_tombstones
+                        SET local_image_id = NULL,
+                            local_observation_id = ?,
+                            deleted_observation_cloud_id = ?,
+                            delete_synced_at = NULL
+                        WHERE deleted_cloud_id = ?
+                        """,
+                        (source_id, source_cloud_id or None, cloud_id),
+                    )
+
+                cursor.execute(
+                    "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?",
+                    (image_id,),
+                )
+                cursor.execute(
+                    """
+                    UPDATE images
+                    SET observation_id = ?, sort_order = ?, cloud_id = NULL, synced_at = NULL
+                    WHERE id = ?
+                    """,
+                    (target_id, next_sort_order, image_id),
+                )
+                next_sort_order += 1
+                moved += 1
+
+            if moved:
+                _touch_observation(cursor, source_id, mark_dirty=True)
+                _touch_observation(cursor, target_id, mark_dirty=True)
+            conn.commit()
+            return moved
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
     def get_images_for_observation(observation_id: int) -> List[dict]:
         """Get all images for an observation, oldest-first by capture order."""
         conn = get_connection()

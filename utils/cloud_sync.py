@@ -10054,6 +10054,10 @@ class SporelyCloudClient:
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
         payload['desktop_id']        = img['id']
+        # A local image reaching the push path is active (local tombstones are
+        # filtered by the caller). Clear a stale remote soft-delete so its
+        # measurements become visible again through public RPCs.
+        payload['deleted_at']        = None
         payload['original_filename'] = (
             str(img.get('original_filename') or '').strip()
             or Path(img.get('filepath') or '').name
@@ -13453,6 +13457,9 @@ def _reconcile_missing_spore_measurements(
         cursor.execute(
             '''
             SELECT o.id AS local_id,
+                   o.cloud_id AS observation_cloud_id,
+                   i.id AS image_local_id,
+                   i.cloud_id AS image_cloud_id,
                    m.id AS measurement_local_id,
                    m.cloud_id AS measurement_cloud_id
             FROM observations o
@@ -13487,6 +13494,7 @@ def _reconcile_missing_spore_measurements(
         if str(row.get('measurement_cloud_id') or '').strip()
     })
     remote_ids: set[str] = set()
+    deleted_image_ids: set[str] = set()
     getter = getattr(client, '_get', None)
     if stamped_ids and callable(getter):
         for start in range(0, len(stamped_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
@@ -13506,7 +13514,36 @@ def _reconcile_missing_spore_measurements(
             if str(row.get('measurement_cloud_id') or '').strip() not in remote_ids
         )
 
+        image_cloud_ids = sorted({
+            str(row.get('image_cloud_id') or '').strip()
+            for row in eligible_rows
+            if str(row.get('image_cloud_id') or '').strip()
+        })
+        for start in range(0, len(image_cloud_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+            chunk = image_cloud_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
+            image_rows = getter(
+                f'observation_images?id=in.({",".join(chunk)})'
+                f'&user_id=eq.{client.user_id}&select=id,deleted_at,purged_at'
+            )
+            deleted_image_ids.update(
+                str(row.get('id') or '').strip()
+                for row in image_rows or []
+                if str(row.get('id') or '').strip()
+                and str(row.get('deleted_at') or '').strip()
+                and not str(row.get('purged_at') or '').strip()
+            )
+        candidate_ids.update(
+            int(row['local_id'])
+            for row in eligible_rows
+            if str(row.get('image_cloud_id') or '').strip() in deleted_image_ids
+        )
+
     candidates = sorted(candidate_ids)
+    observation_cloud_ids = {
+        int(row['local_id']): str(row.get('observation_cloud_id') or '').strip()
+        for row in eligible_rows
+        if str(row.get('observation_cloud_id') or '').strip()
+    }
     counters['candidates'] = len(candidates)
     if not candidates:
         return counters
@@ -13523,7 +13560,28 @@ def _reconcile_missing_spore_measurements(
             continue
         counters['attempted'] += 1
         try:
+            # Restore active local microscope anchors before reconciling their
+            # measurements. Existing measurement rows keep their image FKs.
+            restore_ids = sorted({
+                str(row.get('image_cloud_id') or '').strip()
+                for row in eligible_rows
+                if int(row['local_id']) == local_id
+                and str(row.get('image_cloud_id') or '').strip() in deleted_image_ids
+            })
+            for image_cloud_id in restore_ids:
+                client._patch(
+                    f'observation_images?id=eq.{image_cloud_id}'
+                    f'&user_id=eq.{client.user_id}',
+                    {'deleted_at': None},
+                )
             _push_measurements_for_observation(client, local_id)
+            cloud_observation_id = observation_cloud_ids.get(local_id, '')
+            if cloud_observation_id:
+                _push_spore_mosaic_for_observation(
+                    client,
+                    local_id,
+                    cloud_observation_id,
+                )
         except Exception as exc:
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise

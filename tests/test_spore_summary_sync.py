@@ -1525,6 +1525,7 @@ def _install_measurement_reconcile_stubs(monkeypatch, fixture_rows):
 
     monkeypatch.setattr(cs, "is_cloud_auth_error", lambda exc: False)
     monkeypatch.setattr(cs, "is_cloud_temporary_unavailable_error", lambda exc: False)
+    monkeypatch.setattr(cs, "_push_spore_mosaic_for_observation", lambda *a, **kw: None)
 
     import sqlite3
     conn = sqlite3.connect(":memory:")
@@ -1676,12 +1677,90 @@ def test_measurement_reconcile_repairs_stale_local_cloud_ids(monkeypatch):
         user_id = "user-x"
 
         def _get(self, path):
-            assert "select=id" in path
-            return [{"id": "cloud-meas-present"}]
+            if path.startswith("spore_measurements?"):
+                return [{"id": "cloud-meas-present"}]
+            if path.startswith("observation_images?"):
+                return []
+            raise AssertionError(path)
 
     counters = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
     assert counters == {"candidates": 1, "attempted": 1}
     assert push_calls == [42]
+
+
+def test_measurement_reconcile_restores_soft_deleted_parent_image(monkeypatch):
+    """Measurements under a soft-deleted image are invisible publicly."""
+    from utils import cloud_sync as cs
+
+    _install_measurement_reconcile_stubs(
+        monkeypatch,
+        fixture_rows=[
+            (42, "cloud-obs-1", "cloud-image-deleted", "cloud-meas-present"),
+        ],
+    )
+    push_calls: list[int] = []
+    patch_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        cs, "_push_measurements_for_observation",
+        lambda client, local_id: push_calls.append(int(local_id)),
+    )
+
+    class _FakeClient:
+        user_id = "user-x"
+
+        def _get(self, path):
+            if path.startswith("spore_measurements?"):
+                return [{"id": "cloud-meas-present"}]
+            if path.startswith("observation_images?"):
+                return [{
+                    "id": "cloud-image-deleted",
+                    "deleted_at": "2026-06-29T13:01:33+00:00",
+                    "purged_at": None,
+                }]
+            raise AssertionError(path)
+
+        def _patch(self, path, payload):
+            patch_calls.append((path, dict(payload)))
+
+    counters = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
+    assert counters == {"candidates": 1, "attempted": 1}
+    assert patch_calls == [(
+        "observation_images?id=eq.cloud-image-deleted&user_id=eq.user-x",
+        {"deleted_at": None},
+    )]
+    assert push_calls == [42]
+
+
+def test_measurement_reconcile_rebuilds_mosaic_after_raw_repair(monkeypatch):
+    from utils import cloud_sync as cs
+
+    _install_measurement_reconcile_stubs(
+        monkeypatch,
+        fixture_rows=[
+            (42, "cloud-obs-706", "cloud-image-a", None),
+        ],
+    )
+    order: list[tuple] = []
+    monkeypatch.setattr(
+        cs,
+        "_push_measurements_for_observation",
+        lambda client, local_id: order.append(("measurements", local_id)),
+    )
+    monkeypatch.setattr(
+        cs,
+        "_push_spore_mosaic_for_observation",
+        lambda client, local_id, cloud_id: order.append(("mosaic", local_id, cloud_id)),
+    )
+
+    class _FakeClient:
+        user_id = "user-x"
+
+    counters = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
+    assert counters == {"candidates": 1, "attempted": 1}
+    assert order == [
+        ("measurements", 42),
+        ("mosaic", 42, "cloud-obs-706"),
+    ]
 
 
 def test_measurement_reconcile_skips_when_image_has_no_cloud_id(monkeypatch):

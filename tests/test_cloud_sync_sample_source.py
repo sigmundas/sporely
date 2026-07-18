@@ -524,6 +524,7 @@ def test_push_image_metadata_patches_sample_source_without_uploading_bytes(monke
     assert len(posted) == 0
 
     body = patched[0]["payload"]
+    assert body["deleted_at"] is None
     assert body["sample_type"] == "Fresh"
     assert body["sample_source"] == "hymenium", (
         f"PATCH must carry lowercase cloud canonical; got {body.get('sample_source')!r}"
