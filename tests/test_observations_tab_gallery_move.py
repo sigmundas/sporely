@@ -24,6 +24,8 @@ class _FakeTable:
     def __init__(self) -> None:
         self._stylesheet = ""
         self.selected_rows: list[int] = []
+        self.hover_updates = 0
+        self._viewport = SimpleNamespace(update=self._on_update)
 
     def styleSheet(self) -> str:
         return self._stylesheet
@@ -33,6 +35,17 @@ class _FakeTable:
 
     def selectRow(self, row: int) -> None:
         self.selected_rows.append(int(row))
+
+    def viewport(self):
+        return self._viewport
+
+    def rowAt(self, y: int) -> int:
+        if y < 0:
+            return -1
+        return int(y // 20)
+
+    def _on_update(self) -> None:
+        self.hover_updates += 1
 
 
 class _FakeSplitter:
@@ -119,6 +132,35 @@ def test_pending_gallery_move_updates_image_rows_for_target_observation(monkeypa
     assert state._pending_gallery_move_image_ids == []
     assert state._pending_gallery_move_source_observation_id is None
     assert state.status_messages[-1][0] == "Moved 2 images to observation 7."
+
+
+def test_pending_gallery_move_tracks_hovered_table_row(qapp):
+    state = _build_move_state()
+    state._pending_gallery_move_image_ids = [101]
+    state._pending_gallery_move_source_observation_id = 5
+    state._pending_gallery_move_hover_row = -1
+
+    class _MouseEvent:
+        def __init__(self, event_type, y):
+            self._event_type = event_type
+            self._y = y
+
+        def type(self):
+            return self._event_type
+
+        def position(self):
+            return SimpleNamespace(toPoint=lambda: SimpleNamespace(y=lambda: self._y))
+
+    viewport = state.table.viewport()
+    hover_event = _MouseEvent(QEvent.MouseMove, 45)
+    assert ObservationsTab.eventFilter(state, viewport, hover_event) is False
+    assert state._pending_gallery_move_hover_row == 2
+    assert state.table.hover_updates == 1
+
+    leave_event = _MouseEvent(QEvent.Leave, -1)
+    assert ObservationsTab.eventFilter(state, viewport, leave_event) is False
+    assert state._pending_gallery_move_hover_row == -1
+    assert state.table.hover_updates == 2
 
 
 def test_move_cloud_image_preserves_measurements_and_resets_remote_links(monkeypatch, tmp_path):

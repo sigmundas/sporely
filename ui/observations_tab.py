@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, Q
                                 QSizePolicy, QAbstractItemView, QFrame, QProgressDialog,
                                 QApplication, QMenu, QProgressBar, QToolButton, QScrollArea,
                                 QPlainTextEdit,
-                                QGridLayout)
+                                QGridLayout,
+                                QStyledItemDelegate, QStyleOptionViewItem)
 from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings, QModelIndex, QItemSelectionModel
 from PySide6.QtGui import (
     QAction,
@@ -22,6 +23,7 @@ from PySide6.QtGui import (
     QImageReader,
     QDesktopServices,
     QColor,
+    QBrush,
     QPainter,
     QShortcut,
     QKeySequence,
@@ -204,6 +206,24 @@ def _should_select_all_on_focus(event) -> bool:
         except Exception:
             return True
     return True
+
+
+class _ObservationsMoveTargetHoverDelegate(QStyledItemDelegate):
+    """Paint a full-row hover highlight while selecting a move target."""
+
+    def paint(self, painter, option, index):  # type: ignore[override]
+        table = self.parent()
+        hovered_row = int(getattr(table, "_pending_gallery_move_hover_row", -1) or -1)
+        move_mode_active = bool(getattr(table, "_pending_gallery_move_image_ids", None))
+        if move_mode_active and hovered_row >= 0 and index.row() == hovered_row:
+            opt = QStyleOptionViewItem(option)
+            self.initStyleOption(opt, index)
+            opt.backgroundBrush = QBrush(QColor(214, 234, 248))
+            super().paint(painter, opt, index)
+            return
+        super().paint(painter, option, index)
+
+
 from .window_state import GeometryMixin
 from matplotlib.ticker import MaxNLocator
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG, app_data_dir
@@ -2296,10 +2316,13 @@ class ObservationsTab(QWidget):
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(False)
+        self.table.setMouseTracking(True)
+        self.table.viewport().setMouseTracking(True)
         self.table.verticalHeader().setVisible(False)
         # Selection colours are driven by QSS in styles.py (sel_bg / sel_fg).
         # Clear any inline override so the global stylesheet applies cleanly.
         self.table.setStyleSheet("")
+        self.table.setItemDelegate(_ObservationsMoveTargetHoverDelegate(self.table))
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
         self.table.setSortingEnabled(True)
@@ -2600,28 +2623,61 @@ class ObservationsTab(QWidget):
                 return True
             table_widget = getattr(self, "table", None)
             table_viewport = getattr(table_widget, "viewport", lambda: None)() if table_widget is not None else None
-            if obj in {table_widget, table_viewport} and event.type() == QEvent.MouseButtonPress:
-                try:
-                    pos = event.position().toPoint()
-                except Exception:
-                    pos = None
-                if pos is not None:
-                    row = self.table.rowAt(pos.y())
-                    if row >= 0:
-                        obs_id = self._observation_id_for_row(row)
-                        if obs_id is None:
+            hover_setter = getattr(self, "_set_pending_gallery_move_hover_row", None)
+            hover_row = getattr(self, "_pending_gallery_move_hover_row", -1)
+            viewport_updater = getattr(table_viewport, "update", None)
+            if obj == table_widget or obj == table_viewport:
+                if event.type() == QEvent.MouseButtonPress:
+                    try:
+                        pos = event.position().toPoint()
+                    except Exception:
+                        pos = None
+                    if pos is not None:
+                        row = self.table.rowAt(pos.y())
+                        if row >= 0:
+                            obs_id = self._observation_id_for_row(row)
+                            if obs_id is None:
+                                return True
+                            if self._pending_gallery_move_source_observation_id is not None and int(obs_id) == int(
+                                self._pending_gallery_move_source_observation_id
+                            ):
+                                self.set_status_message(
+                                    self.tr("Select a different observation to move the photos to."),
+                                    level="warning",
+                                    auto_clear_ms=0,
+                                )
+                                return True
+                            if callable(hover_setter):
+                                hover_setter(row)
+                            else:
+                                self._pending_gallery_move_hover_row = row
+                                if callable(viewport_updater):
+                                    viewport_updater()
+                            self._complete_pending_gallery_move(int(obs_id))
                             return True
-                        if self._pending_gallery_move_source_observation_id is not None and int(obs_id) == int(
-                            self._pending_gallery_move_source_observation_id
-                        ):
-                            self.set_status_message(
-                                self.tr("Select a different observation to move the photos to."),
-                                level="warning",
-                                auto_clear_ms=0,
-                            )
-                            return True
-                        self._complete_pending_gallery_move(int(obs_id))
-                        return True
+                if event.type() in {QEvent.MouseMove, QEvent.HoverMove}:
+                    try:
+                        pos = event.position().toPoint()
+                    except Exception:
+                        pos = None
+                    if pos is not None:
+                        row = self.table.rowAt(pos.y())
+                        if callable(hover_setter):
+                            hover_setter(row)
+                        else:
+                            hover_row = int(row) if row is not None and int(row) >= 0 else -1
+                            self._pending_gallery_move_hover_row = hover_row
+                            if callable(viewport_updater):
+                                viewport_updater()
+                    return False
+                if event.type() == QEvent.Leave:
+                    if callable(hover_setter):
+                        hover_setter(None)
+                    else:
+                        self._pending_gallery_move_hover_row = -1
+                        if callable(viewport_updater):
+                            viewport_updater()
+                    return False
         if event.type() == QEvent.DragEnter and self._accept_image_drag(event):
             return True
         if event.type() == QEvent.DragMove and self._accept_image_drag(event):
@@ -6635,7 +6691,9 @@ class ObservationsTab(QWidget):
                 for col in range(column_count):
                     table.setColumnHidden(col, col not in keep)
             else:
-                self._apply_observations_column_visibility()
+                visibility_updater = getattr(self, "_apply_observations_column_visibility", None)
+                if callable(visibility_updater):
+                    visibility_updater()
         browser = getattr(self, "image_browser", None)
         if browser is not None:
             browser.setVisible(mode == self.VIEW_MODE_IMAGES)
@@ -7158,6 +7216,7 @@ class ObservationsTab(QWidget):
     def _clear_pending_gallery_move(self, *, restore_hint: bool = True) -> None:
         self._pending_gallery_move_image_ids = []
         self._pending_gallery_move_source_observation_id = None
+        self._pending_gallery_move_hover_row = -1
         previous_stylesheet = self._pending_gallery_move_previous_table_stylesheet
         self._pending_gallery_move_previous_table_stylesheet = ""
         if hasattr(self, "table"):
@@ -7187,6 +7246,7 @@ class ObservationsTab(QWidget):
             return
         self._pending_gallery_move_image_ids = image_ids
         self._pending_gallery_move_source_observation_id = source_observation_id
+        self._pending_gallery_move_hover_row = -1
         if hasattr(self, "table"):
             self._pending_gallery_move_previous_table_stylesheet = self.table.styleSheet()
             self.table.setStyleSheet("QTableWidget { border: 2px solid #e74c3c; }")
@@ -7195,6 +7255,21 @@ class ObservationsTab(QWidget):
             level="warning",
             auto_clear_ms=0,
         )
+
+    def _set_pending_gallery_move_hover_row(self, row: int | None) -> None:
+        row_index = int(row) if row is not None and int(row) >= 0 else -1
+        if getattr(self, "_pending_gallery_move_hover_row", -1) == row_index:
+            return
+        self._pending_gallery_move_hover_row = row_index
+        table = getattr(self, "table", None)
+        if table is None:
+            return
+        viewport = getattr(table, "viewport", lambda: None)()
+        if viewport is not None:
+            try:
+                viewport.update()
+            except Exception:
+                pass
 
     def _complete_pending_gallery_move(self, target_observation_id: int) -> None:
         image_ids = list(self._pending_gallery_move_image_ids or [])
