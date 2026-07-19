@@ -664,7 +664,7 @@ def test_pull_all_defers_remote_media_without_acknowledging_child_snapshot(
     assert profiler.store_remote_snapshot_fetch_images_count == 0
     assert profiler.store_remote_snapshot_fetch_measurements_count == 0
     assert profiler.retry_missing_cloud_media_branch_runs == 0
-    assert observation == ("cloud-obs-1", "dirty")
+    assert observation == ("cloud-obs-1", "synced")
     assert image_count == 0
     assert measurement_count == 0
     assert snapshot_row is not None

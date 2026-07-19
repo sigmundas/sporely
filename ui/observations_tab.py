@@ -429,6 +429,7 @@ class _CloudAutoSyncWorker(QThread):
         materialize_remote_images: bool = False,
         sync_images: bool = True,
         full_pull: bool = True,
+        child_safety_pull: bool = True,
         parent=None,
     ):
         super().__init__(parent)
@@ -441,6 +442,7 @@ class _CloudAutoSyncWorker(QThread):
         # scans are skipped, and bulk image/measurement fetches only run for
         # observations that actually changed remotely.
         self._full_pull = bool(full_pull)
+        self._child_safety_pull = bool(child_safety_pull)
         self.prepare_requested.connect(self._handle_prepare_request)
 
     def _prepare_images(self, observation: dict, progress_cb=None):
@@ -507,6 +509,7 @@ class _CloudAutoSyncWorker(QThread):
                 materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images if self._sync_images else None,
                 full_pull=self._full_pull,
+                child_safety_pull=self._child_safety_pull,
             )
             if self.isInterruptionRequested():
                 raise KeyboardInterrupt
@@ -3925,7 +3928,7 @@ class ObservationsTab(QWidget):
 
     def _on_refresh_clicked(self) -> None:
         self._invalidate_publish_login_status_cache()
-        if self._start_cloud_sync(show_status=True, run_refresh_flow=True, materialize_remote_images=True):
+        if self._start_cloud_sync(show_status=True, run_refresh_flow=True):
             return
         self.refresh_observations(show_status=False)
         self._finish_manual_refresh_flow()

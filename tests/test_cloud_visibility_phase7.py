@@ -3709,6 +3709,56 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
     assert detail["remote_image_changes"] == []
 
 
+def test_get_conflict_detail_suppresses_equivalent_local_and_cloud_image_removal(monkeypatch):
+    local_obs = {
+        "id": 1,
+        "cloud_id": "cloud-obs-1",
+        "date": "2026-01-01",
+        "sharing_scope": "private",
+        "is_draft": True,
+        "location_precision": "exact",
+    }
+    remote_obs = dict(local_obs)
+    baseline_image = {
+        "id": "cloud-image-1",
+        "desktop_id": 11,
+        "image_type": "microscope",
+        "sort_order": 0,
+    }
+    baseline_snapshot = {
+        "observation": dict(remote_obs),
+        "images": [dict(baseline_image)],
+    }
+
+    monkeypatch.setattr(cloud_sync.ObservationDB, "get_observation", lambda _local_id: dict(local_obs))
+    monkeypatch.setattr(cloud_sync.ImageDB, "get_images_for_observation", lambda _local_id: [])
+    monkeypatch.setattr(cloud_sync.MeasurementDB, "get_measurements_for_observation", lambda _local_id: [])
+    monkeypatch.setattr(
+        cloud_sync,
+        "_load_cloud_observation_snapshot",
+        lambda _cloud_id: json.dumps(baseline_snapshot),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_local_tombstoned_cloud_image_ids",
+        lambda cloud_ids: {"cloud-image-1"},
+    )
+
+    class DummyClient:
+        def get_observation(self, _cloud_id):
+            return dict(remote_obs)
+
+        def pull_image_metadata(self, _cloud_id, include_deleted_for_sync=False):
+            return []
+
+    detail = cloud_sync.get_conflict_detail(DummyClient(), 1, "cloud-obs-1")
+
+    assert detail["field_rows"] == []
+    assert detail["image_mismatches"] == []
+    assert detail["local_image_changes"] == []
+    assert detail["remote_image_changes"] == []
+
+
 def test_pull_all_ignores_cloud_tombstone_even_when_local_media_changed(monkeypatch, tmp_path):
     db_path = _init_tombstone_sync_db(tmp_path)
     images_root = tmp_path / "images"

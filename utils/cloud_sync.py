@@ -26,7 +26,7 @@ import shutil
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.parse import quote, urlparse
@@ -141,6 +141,15 @@ _SUPABASE_TRANSIENT_ERROR_HINTS = (
 _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
     'Supabase/cloud sync is temporarily unavailable; local data was not overwritten.'
 )
+_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING = 'cloud_last_child_safety_pull_at'
+_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS = 24
+_PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS = frozenset({
+    'ai_selected_service',
+    'ai_selected_taxon_id',
+    'ai_selected_scientific_name',
+    'ai_selected_probability',
+    'ai_selected_at',
+})
 _CLOUD_KEYRING_SERVICE = 'Sporely.Cloud'
 _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
 _profile_suffix = runtime_profile_scope()
@@ -3313,6 +3322,19 @@ def _deleted_remote_image_identity_keys(remote_images: list[dict] | None) -> set
     return keys
 
 
+def _locally_tombstoned_snapshot_image_identity_keys(
+    baseline_images: list[dict] | None,
+) -> set[str]:
+    baseline_rows = [dict(row or {}) for row in (baseline_images or [])]
+    cloud_ids = [str(row.get('id') or '').strip() for row in baseline_rows]
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(cloud_ids)
+    keys: set[str] = set()
+    for row in baseline_rows:
+        if str(row.get('id') or '').strip() in tombstoned_cloud_ids:
+            keys.update(_image_identity_keys(row))
+    return keys
+
+
 def _image_label(image_row: dict | None) -> str:
     row = dict(image_row or {})
     filename = str(row.get('original_filename') or '').strip()
@@ -3655,7 +3677,12 @@ def _remaining_local_changes_after_remote_merge(
     *,
     local_media_changed: bool,
 ) -> bool:
-    return bool(field_changes.get('local_only_fields') or field_changes.get('conflict_fields') or local_media_changed)
+    blocking_local_only_fields = {
+        str(field or '').strip()
+        for field in (field_changes.get('local_only_fields') or [])
+        if str(field or '').strip() not in _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+    }
+    return bool(blocking_local_only_fields or field_changes.get('conflict_fields') or local_media_changed)
 
 
 def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str] | None = None) -> str:
@@ -4756,6 +4783,26 @@ def _group_remote_measurements_by_observation(
     return grouped
 
 
+def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str | None]:
+    """Return whether the periodic metadata-only child reconciliation is due."""
+    raw_last = get_app_settings().get(_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING)
+    last_text = str(raw_last or '').strip() or None
+    if last_text is None:
+        return True, None
+
+    last_at = _parse_sync_timestamp(last_text)
+    if last_at is None:
+        return True, last_text
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    stale_before = current.astimezone(timezone.utc) - timedelta(
+        hours=_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS
+    )
+    return last_at <= stale_before, last_text
+
+
 def sync_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
@@ -4763,6 +4810,7 @@ def sync_all(
     materialize_remote_images: bool = True,
     prepare_images_cb: PreparedImagesCallback | None = None,
     full_pull: bool = True,
+    child_safety_pull: bool = False,
 ) -> dict:
     """Run a full bidirectional sync: push local changes then pull remote ones.
 
@@ -4772,7 +4820,9 @@ def sync_all(
     image-metadata + measurement prefetches that dominate no-op sync time.
     Spore-summary reconciliation across all synced observations is also
     skipped — per-observation summaries still sync inside push for locally
-    dirty rows.
+    dirty rows. ``child_safety_pull=True`` periodically upgrades only the pull
+    phase to a metadata-only deep reconciliation so child changes cannot stay
+    hidden indefinitely when a parent timestamp was not bumped.
     """
     profiler = CloudSyncProfiler() if _cloud_sync_profile_enabled() else None
     profile_token = None
@@ -4844,7 +4894,27 @@ def sync_all(
             flush=True,
         )
 
-        # Phase 2: Pull cloud edits to the desktop
+        safety_pull_due = False
+        safety_pull_last = None
+        if child_safety_pull and not full_pull:
+            safety_pull_due, safety_pull_last = _cloud_child_safety_pull_due()
+            if safety_pull_due:
+                print(
+                    f"[cloud_sync] child-change safety pull: "
+                    f"reason=stale_child_watermark last={safety_pull_last or 'missing'} "
+                    f"interval_hours={_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[cloud_sync] child-change safety pull skipped: "
+                    f"fresh watermark last={safety_pull_last}",
+                    flush=True,
+                )
+
+        # Phase 2: Pull cloud edits to the desktop. A due safety pass changes
+        # only candidate breadth; media upload and materialization remain
+        # controlled by their existing independent flags.
         with _cloud_sync_phase_scope(profiler, 'pull_all'):
             pull_result = pull_all(
                 client,
@@ -4854,8 +4924,15 @@ def sync_all(
                 sync_calibrations=False,
                 materialize_remote_images=materialize_remote_images,
                 sync_images=sync_images,
-                full_pull=full_pull,
+                full_pull=full_pull or safety_pull_due,
             )
+        # Row-level review issues are a completed reconciliation outcome, not a
+        # failed safety pass. Exceptions from auth, transport, or bulk child
+        # fetches escape pull_all and therefore never reach this write.
+        if safety_pull_due:
+            update_app_settings({
+                _CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: datetime.now(timezone.utc).isoformat(),
+            })
 
         _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
@@ -5331,6 +5408,19 @@ def _local_calibration_id_for_image(image_row: dict | None) -> int | None:
 
 def _reconcile_local_image_calibration_links() -> int:
     """Backfill local image calibration_id values from stored cloud snapshots."""
+    phase_start = _cloud_sync_perf_counter()
+    snapshot_count = 0
+    image_count = 0
+    calibration_count = 0
+    thread_name = threading.current_thread().name
+    execution_context = (
+        'ui_thread' if threading.current_thread() is threading.main_thread() else 'worker_thread'
+    )
+    print(
+        f"[cloud_sync] calibration image linking: start "
+        f"thread={thread_name} execution_context={execution_context}",
+        flush=True,
+    )
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
@@ -5344,8 +5434,10 @@ def _reconcile_local_image_calibration_links() -> int:
             return 0
         if not snapshot_rows:
             return 0
+        snapshot_count = len(snapshot_rows)
 
         calibration_lookup = _local_calibration_lookup()
+        calibration_count = len(calibration_lookup)
         try:
             local_image_rows = cursor.execute(
                 'SELECT id, cloud_id, calibration_id FROM images WHERE cloud_id IS NOT NULL'
@@ -5358,6 +5450,7 @@ def _reconcile_local_image_calibration_links() -> int:
             for row in local_image_rows
             if str(row['cloud_id']).strip()
         }
+        image_count = len(local_images_by_cloud_id)
         updates: list[tuple[int, int]] = []
 
         for snapshot_row in snapshot_rows:
@@ -5397,6 +5490,14 @@ def _reconcile_local_image_calibration_links() -> int:
         return 0
     finally:
         conn.close()
+        print(
+            f"[cloud_sync] calibration image linking: complete "
+            f"snapshots={snapshot_count} images={image_count} "
+            f"calibrations={calibration_count} duration="
+            f"{(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms "
+            f"thread={thread_name} execution_context={execution_context}",
+            flush=True,
+        )
 
 
 def _calibration_sync_warning(direction: str, local_row: dict | None, remote_row: dict | None, fields: list[str]) -> str:
@@ -5643,6 +5744,7 @@ def pull_calibrations(
     try:
         _emit_progress(progress_cb, "Linking calibration images…", progress_state)
         reconciled_links = _reconcile_local_image_calibration_links()
+        _emit_progress(progress_cb, "Calibration image linking complete.", progress_state)
     except Exception as exc:
         errors.append(f'calibration reconciliation: {exc}')
     reconcile_elapsed = _cloud_sync_perf_counter() - reconcile_start
@@ -11535,7 +11637,10 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(resolved_cloud_id))
     baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
-    tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
+    tombstoned_remote_image_keys = (
+        _deleted_remote_image_identity_keys(remote_images_raw)
+        | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
+    )
     remote_images = [
         dict(row or {})
         for row in remote_images_raw
@@ -15689,7 +15794,12 @@ def pull_all(
                     local_observation_id=local_id,
                     cloud_observation_id=cloud_id,
                 )
-                tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
+                snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
+                baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
+                tombstoned_remote_image_keys = (
+                    _deleted_remote_image_identity_keys(remote_images_raw)
+                    | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
+                )
                 remote_images = [
                     dict(row or {})
                     for row in remote_images_raw
@@ -15736,7 +15846,8 @@ def pull_all(
                         or measurement_result.get('skipped_materialization')
                         or measurement_result.get('failed')
                     )
-                    if measurement_result.get('conflict') or remote_media_pending:
+                    materialization_failed = bool(materialize_remote_images and remote_media_pending)
+                    if measurement_result.get('conflict') or materialization_failed:
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
@@ -15745,11 +15856,9 @@ def pull_all(
                     store_full_snapshot = not remote_media_pending and not bool(measurement_result.get('conflict'))
                     pulled += 1
                 elif remote_changed:
-                    snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
                     baseline_obs = _baseline_observation_compare_payload(
                         snapshot_data.get('observation') or {}
                     )
-                    baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
                     field_changes = _analyze_observation_field_changes(local_obs, remote, baseline_obs)
                     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
                     remote_image_changes = _analyze_image_changes(
@@ -15862,7 +15971,9 @@ def pull_all(
                     remaining_local_changes = _remaining_local_changes_after_remote_merge(
                         field_changes,
                         local_media_changed=effective_media_changed,
-                    ) or bool(measurement_result.get('conflict')) or remote_media_pending
+                    ) or bool(measurement_result.get('conflict')) or bool(
+                        materialize_remote_images and remote_media_pending
+                    )
                     should_store_snapshot = should_store_snapshot and not bool(conflict_fields)
                     if remaining_local_changes:
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
@@ -15872,14 +15983,16 @@ def pull_all(
                         # Explain why the pull left this observation dirty so a
                         # repeat sync can be diagnosed without adding ad-hoc prints.
                         reasons: list[str] = []
-                        if field_changes.get('local_only_fields'):
-                            reasons.append(f"local_only_fields={sorted(field_changes['local_only_fields'])}")
+                        blocking_local_only_fields = sorted(
+                            set(field_changes.get('local_only_fields') or [])
+                            - _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+                        )
+                        if blocking_local_only_fields:
+                            reasons.append(f"local_only_fields={blocking_local_only_fields}")
                         if field_changes.get('conflict_fields'):
                             reasons.append(f"conflict_fields={sorted(field_changes['conflict_fields'])}")
                         if effective_media_changed:
                             reasons.append("local_media_changed")
-                        if remote_media_pending:
-                            reasons.append("pending_remote_media")
                         if measurement_result.get('conflict'):
                             reasons.append("measurement_conflict")
                         print(
