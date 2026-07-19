@@ -132,7 +132,7 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
         finally:
             conn.close()
 
-    def fake_import_remote_images(remote, local_id, cloud_id, **kwargs):
+    def fake_import_remote_images(client, remote, local_id, cloud_id, **kwargs):
         call_order.append("images")
         _insert_image(
             db_path,
@@ -145,6 +145,15 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
             created_at="2026-05-01T10:00:00Z",
             scale_microns_per_pixel=None,
         )
+        return {
+            "imported": 1,
+            "metadata_applied": 0,
+            "skipped_materialization": 0,
+            "failed": 0,
+            "warnings": [],
+            "errors": [],
+            "complete": True,
+        }
 
     _patch_test_db_connections(monkeypatch, db_path)
     monkeypatch.setattr(cloud_sync.ObservationDB, "create_observation", fake_create_observation)

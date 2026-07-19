@@ -186,10 +186,10 @@ def test_import_remote_images_resolves_calibration_uuid_to_local_calibration_id(
         def set_image_desktop_id(self, cloud_image_id, desktop_id):
             desktop_id_calls.append((cloud_image_id, desktop_id))
 
-    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
     monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
 
     cloud_sync._import_remote_images(
+        DummyClient(),
         {"id": "cloud-obs-1"},
         1,
         "cloud-obs-1",

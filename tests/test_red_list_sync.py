@@ -132,7 +132,11 @@ def test_create_local_from_remote_forwards_red_list_category(monkeypatch):
     monkeypatch.setattr(cloud_sync.ObservationDB, "create_observation", _fake_create)
     monkeypatch.setattr(cloud_sync, "update_observation_sync_state", _fake_update_state)
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: _StubConnection())
-    monkeypatch.setattr(cloud_sync, "_import_remote_images", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_import_remote_images",
+        lambda *args, **kwargs: {"warnings": [], "errors": [], "complete": True},
+    )
     monkeypatch.setattr(
         cloud_sync,
         "_import_remote_measurements_for_observation",
@@ -165,7 +169,11 @@ def test_create_local_from_remote_handles_missing_red_list(monkeypatch):
     )
     monkeypatch.setattr(cloud_sync, "update_observation_sync_state", lambda *a, **kw: None)
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: _StubConnection())
-    monkeypatch.setattr(cloud_sync, "_import_remote_images", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_import_remote_images",
+        lambda *a, **kw: {"warnings": [], "errors": [], "complete": True},
+    )
     monkeypatch.setattr(
         cloud_sync,
         "_import_remote_measurements_for_observation",
