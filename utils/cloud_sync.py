@@ -116,6 +116,7 @@ def _current_source_app_version() -> str | None:
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
+_UNSET = object()
 _SUPABASE_AUTH_TIMEOUT = 30
 _SUPABASE_REST_TIMEOUT = 60
 _SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
@@ -3246,6 +3247,7 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'mount_medium': _normalize_snapshot_value(row.get('mount_medium')),
         'stain': _normalize_snapshot_value(row.get('stain')),
         'sample_type': _normalize_snapshot_value(row.get('sample_type')),
+        'sample_source': _normalize_snapshot_value(row.get('sample_source')),
         'contrast': _normalize_snapshot_value(row.get('contrast')),
         'measure_color': _normalize_snapshot_value(row.get('measure_color')),
         'crop_mode': _normalize_snapshot_value(row.get('crop_mode')),
@@ -4353,46 +4355,53 @@ def _normalize_cloud_pulled_image_order(local_id: int) -> None:
 
 def _cloud_observation_snapshot(
     remote: dict,
-    remote_images: list[dict],
+    remote_images: list[dict] | None,
     remote_measurements: list[dict] | None = None,
+    *,
+    include_images: bool = True,
+    include_measurements: bool = True,
 ) -> str:
     obs_part = {
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
     }
-    images_part = []
-    filtered_images = [
-        dict(row or {})
-        for row in (remote_images or [])
-        if should_pull_cloud_image_to_desktop(row)
-    ]
-    for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
-        image_payload = {
-            field: _normalize_snapshot_value(image.get(field))
-            for field in _SNAPSHOT_IMG_FIELDS
-        }
-        for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
-            passive_value = _normalize_cloud_media_key(image.get(field))
-            if passive_value:
-                image_payload[field] = _normalize_snapshot_value(passive_value)
-        images_part.append(image_payload)
-    measurements_part = []
-    filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
-    for measurement in sorted(
-        filtered_measurements,
-        key=lambda row: (
-            str(row.get('image_id') or ''),
-            _safe_int(row.get('desktop_id')),
-            str(row.get('id') or ''),
-        ),
-    ):
-        measurements_part.append(
-            {
-                field: _normalize_snapshot_value(measurement.get(field))
-                for field in _SNAPSHOT_MEAS_FIELDS
+    payload = {'observation': obs_part}
+    if include_images:
+        images_part = []
+        filtered_images = [
+            dict(row or {})
+            for row in (remote_images or [])
+            if should_pull_cloud_image_to_desktop(row)
+        ]
+        for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
+            image_payload = {
+                field: _normalize_snapshot_value(image.get(field))
+                for field in _SNAPSHOT_IMG_FIELDS
             }
-        )
-    payload = {'observation': obs_part, 'images': images_part, 'measurements': measurements_part}
+            for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
+                passive_value = _normalize_cloud_media_key(image.get(field))
+                if passive_value:
+                    image_payload[field] = _normalize_snapshot_value(passive_value)
+            images_part.append(image_payload)
+        payload['images'] = images_part
+    if include_measurements:
+        measurements_part = []
+        filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
+        for measurement in sorted(
+            filtered_measurements,
+            key=lambda row: (
+                str(row.get('image_id') or ''),
+                _safe_int(row.get('desktop_id')),
+                str(row.get('id') or ''),
+            ),
+        ):
+            measurements_part.append(
+                {
+                    field: _normalize_snapshot_value(measurement.get(field))
+                    for field in _SNAPSHOT_MEAS_FIELDS
+                }
+            )
+        payload['measurements'] = measurements_part
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
@@ -6939,6 +6948,13 @@ def explain_pending_cloud_image_decision(
         return {"pending": False, "reason": PENDING_REASON_EXCLUDED}
 
     if str(row.get("cloud_id") or "").strip():
+        filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
+        path_key = _cloud_publish_path_key(filepath) if filepath else ""
+        if path_key:
+            # Synced canonical rows own their filepath too. Reserving it here
+            # prevents a duplicate cloud_id-null row from being re-dirtied and
+            # uploaded as a second copy of the same local file.
+            seen_paths.add(path_key)
         return {"pending": False, "reason": PENDING_REASON_ALREADY_SYNCED}
 
     source_role = str(row.get("source_role") or "").strip().lower()
@@ -7371,16 +7387,26 @@ def _stamp_observation_synced(local_id: int, cloud_id: str) -> None:
     _set_observation_sync_state(int(local_id), str(cloud_id or '').strip(), dirty=False)
 
 
-def _set_observation_sync_state(local_id: int, cloud_id: str, *, dirty: bool) -> None:
+def _set_observation_sync_state(
+    local_id: int,
+    cloud_id: str,
+    *,
+    dirty: bool,
+    synced_at: str | None | object = _UNSET,
+) -> None:
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        if synced_at is _UNSET:
+            synced_at_value: str | None = datetime.now(timezone.utc).isoformat()
+        else:
+            synced_at_value = synced_at if synced_at is None else str(synced_at)
         update_observation_sync_state(
             cursor,
             int(local_id),
             cloud_id=str(cloud_id or '').strip() or None,
             sync_status='dirty' if dirty else 'synced',
-            synced_at=datetime.now(timezone.utc).isoformat(),
+            synced_at=synced_at_value,
             clear_sync_error_state=True,
         )
         conn.commit()
@@ -8402,6 +8428,58 @@ def _apply_remote_image_metadata_only_to_local(
         conn.close()
 
 
+def _promote_temp_imported_image_if_needed(
+    local_image_id: int,
+    observation_id: int,
+    temp_dir: Path,
+) -> Path | None:
+    """Copy a temp-backed imported image into a durable images path.
+
+    Some sync tests and older rows do not have an observation folder_path yet,
+    which means ``ImageDB.add_image(..., copy_to_folder=True)`` can leave the
+    image pointing at the temp download path. That path is cleaned up at the
+    end of the import, so the row would look missing on the next reconciliation
+    pass. If the stored filepath still lives under the temp dir, copy it to a
+    stable observation-owned location and update the row.
+    """
+    if local_image_id <= 0:
+        return None
+    try:
+        temp_root = Path(temp_dir).resolve()
+        image_row = ImageDB.get_image(int(local_image_id)) or {}
+    except Exception:
+        return None
+    current_path_text = str(image_row.get('filepath') or '').strip()
+    if not current_path_text:
+        return None
+    try:
+        current_path = Path(current_path_text).resolve()
+    except Exception:
+        return None
+    try:
+        if not current_path.is_relative_to(temp_root):
+            return current_path
+    except Exception:
+        if str(current_path).startswith(str(temp_root)):
+            pass
+        else:
+            return current_path
+
+    fallback_dir = Path(get_images_dir()) / f'observation_{int(observation_id)}'
+    fallback_dir.mkdir(parents=True, exist_ok=True)
+    target_path = fallback_dir / current_path.name
+    counter = 1
+    while target_path.exists():
+        target_path = fallback_dir / f"{current_path.stem}_{counter}{current_path.suffix}"
+        counter += 1
+    shutil.copy2(current_path, target_path)
+    try:
+        ImageDB.update_image(int(local_image_id), filepath=str(target_path))
+    except Exception:
+        return None
+    return target_path
+
+
 def _ensure_local_metadata_only_microscope_anchor(
     client: "SporelyCloudClient" | None,
     local_observation_id: int,
@@ -8445,6 +8523,7 @@ def _ensure_local_metadata_only_microscope_anchor(
         'mount_medium': remote_row.get('mount_medium'),
         'stain': remote_row.get('stain'),
         'sample_type': remote_row.get('sample_type'),
+        'sample_source': _cloud_to_desktop_sample_source(remote_row.get('sample_source')),
         'contrast': remote_row.get('contrast'),
         'sort_order': remote_row.get('sort_order'),
         'crop_mode': remote_row.get('crop_mode'),
@@ -8690,8 +8769,6 @@ def _apply_remote_images_to_local(
     materialize_remote_images: bool = True,
 ) -> list[str]:
     warnings: list[str] = []
-    if not materialize_remote_images:
-        return warnings
     local_images = ImageDB.get_images_for_observation(int(local_id))
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
@@ -8723,6 +8800,14 @@ def _apply_remote_images_to_local(
                     local_image=local_image,
                 )
                 continue
+            if not materialize_remote_images:
+                _apply_remote_image_metadata_only_to_local(local_image, remote_image)
+                try:
+                    client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
+                    remote_image['desktop_id'] = int(local_image.get('id'))
+                except Exception:
+                    pass
+                continue
             try:
                 _sync_existing_remote_image_to_local(
                     client,
@@ -8748,6 +8833,8 @@ def _apply_remote_images_to_local(
                 int(local_id),
                 remote_image,
             )
+            continue
+        if not materialize_remote_images:
             continue
 
         storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
@@ -8819,6 +8906,11 @@ def _apply_remote_images_to_local(
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
             )
+            download_path = _promote_temp_imported_image_if_needed(
+                int(local_image_id),
+                int(local_id),
+                temp_dir,
+            ) or download_path
             conn = get_connection()
             try:
                 conn.execute(
@@ -8868,6 +8960,9 @@ def _store_remote_snapshot(
     remote: dict | None = None,
     remote_images: list[dict] | None = None,
     remote_measurements: list[dict] | None = None,
+    *,
+    include_images: bool = True,
+    include_measurements: bool = True,
 ) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
@@ -8878,25 +8973,39 @@ def _store_remote_snapshot(
     profiler = _cloud_sync_current_profiler()
     if profiler is not None:
         try:
-            profiler.record_store_remote_snapshot_fetch(images=remote_images is None)
-            profiler.record_store_remote_snapshot_fetch(measurements=remote_measurements is None)
+            profiler.record_store_remote_snapshot_fetch(images=include_images and remote_images is None)
+            profiler.record_store_remote_snapshot_fetch(
+                measurements=include_measurements and remote_measurements is None
+            )
         except Exception:
             pass
-    images = (
-        [dict(row or {}) for row in (remote_images or [])]
-        if remote_images is not None
-        else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
-    )
-    if remote_measurements is not None:
-        measurements = [dict(row or {}) for row in remote_measurements]
+    if include_images:
+        images = (
+            [dict(row or {}) for row in (remote_images or [])]
+            if remote_images is not None
+            else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
+        )
     else:
-        measurements = list(_pull_remote_measurements_for_images(
-            client,
-            [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
-        ))
+        images = []
+    if include_measurements:
+        if remote_measurements is not None:
+            measurements = [dict(row or {}) for row in remote_measurements]
+        else:
+            measurements = list(_pull_remote_measurements_for_images(
+                client,
+                [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
+            ))
+    else:
+        measurements = []
     _store_cloud_observation_snapshot(
         cloud_value,
-        _cloud_observation_snapshot(remote_obs, images, measurements),
+        _cloud_observation_snapshot(
+            remote_obs,
+            images if include_images else None,
+            measurements if include_measurements else None,
+            include_images=include_images,
+            include_measurements=include_measurements,
+        ),
     )
 
 
@@ -15559,16 +15668,6 @@ def pull_all(
                 )
                 if cloud_id:
                     client.set_desktop_id(cloud_id, local_id)
-                    # The prefetched remote rows are mutated in-place when
-                    # cloud desktop IDs are written back, so the snapshot can
-                    # reuse them without another fetch.
-                    _store_remote_snapshot(
-                        client,
-                        cloud_id,
-                        remote=remote,
-                        remote_images=remote_images,
-                        remote_measurements=remote_measurements,
-                    )
                 _refresh_local_cloud_media_signature(local_id)
                 pulled += 1
                 imported_local_ids.append(int(local_id))
@@ -15603,6 +15702,7 @@ def pull_all(
                     stored_snapshot,
                 )
                 should_store_snapshot = True
+                store_full_snapshot = True
                 local_media_changed = False
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
@@ -15631,11 +15731,18 @@ def pull_all(
                         materialize_remote_images=materialize_remote_images,
                     )
                     errors.extend(measurement_result.get('warnings') or [])
-                    if measurement_result.get('conflict'):
-                        _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                    remote_media_pending = bool(
+                        _remote_images_missing_locally(local_id, remote_images)
+                        or measurement_result.get('skipped_materialization')
+                        or measurement_result.get('failed')
+                    )
+                    if measurement_result.get('conflict') or remote_media_pending:
+                        _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
-                    _refresh_local_cloud_media_signature(local_id)
+                    if not remote_media_pending:
+                        _refresh_local_cloud_media_signature(local_id)
+                    store_full_snapshot = not remote_media_pending and not bool(measurement_result.get('conflict'))
                     pulled += 1
                 elif remote_changed:
                     snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
@@ -15746,19 +15853,21 @@ def pull_all(
                         materialize_remote_images=materialize_remote_images,
                     )
                     errors.extend(measurement_result.get('warnings') or [])
-                    # In metadata-only mode we cannot upload image bytes, so
-                    # byte-level media drift must not leave the observation
-                    # dirty — otherwise the same row cycles dirty→synced→dirty
-                    # every sync. Real metadata conflicts (local_only /
-                    # conflict fields on the observation record, measurement
-                    # conflicts) still force dirty state so the user notices.
+                    remote_media_pending = bool(
+                        (not materialize_remote_images and _remote_images_missing_locally(local_id, remote_images))
+                        or measurement_result.get('skipped_materialization')
+                        or measurement_result.get('failed')
+                    )
                     effective_media_changed = local_media_changed if sync_images else False
                     remaining_local_changes = _remaining_local_changes_after_remote_merge(
                         field_changes,
                         local_media_changed=effective_media_changed,
-                    ) or bool(measurement_result.get('conflict'))
+                    ) or bool(measurement_result.get('conflict')) or remote_media_pending
                     should_store_snapshot = should_store_snapshot and not bool(conflict_fields)
-                    _set_observation_sync_state(local_id, cloud_id, dirty=remaining_local_changes)
+                    if remaining_local_changes:
+                        _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
+                    else:
+                        _stamp_observation_synced(local_id, cloud_id)
                     if remaining_local_changes:
                         # Explain why the pull left this observation dirty so a
                         # repeat sync can be diagnosed without adding ad-hoc prints.
@@ -15769,6 +15878,8 @@ def pull_all(
                             reasons.append(f"conflict_fields={sorted(field_changes['conflict_fields'])}")
                         if effective_media_changed:
                             reasons.append("local_media_changed")
+                        if remote_media_pending:
+                            reasons.append("pending_remote_media")
                         if measurement_result.get('conflict'):
                             reasons.append("measurement_conflict")
                         print(
@@ -15780,8 +15891,9 @@ def pull_all(
                     # Metadata-only mode: even if bytes drifted, refresh the
                     # stored signature to acknowledge current DB state so the
                     # next sync doesn't re-flag the same drift.
-                    if not local_media_changed or not sync_images:
+                    if (not local_media_changed or not sync_images) and not remote_media_pending:
                         _refresh_local_cloud_media_signature(local_id)
+                    store_full_snapshot = not remaining_local_changes and not bool(conflict_fields)
                     pulled += 1
                 elif not local_dirty:
                     # Neither branch fired: the observation survived prune
@@ -15828,11 +15940,16 @@ def pull_all(
                             materialize_remote_images=materialize_remote_images,
                         )
                         errors.extend(measurement_result.get('warnings') or [])
-                        if measurement_result.get('conflict'):
-                            _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                        retry_remote_media_pending = bool(
+                            _remote_images_missing_locally(local_id, retry_remote_images)
+                            or measurement_result.get('skipped_materialization')
+                            or measurement_result.get('failed')
+                        )
+                        if measurement_result.get('conflict') or retry_remote_media_pending:
+                            _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                         else:
                             _stamp_observation_synced(local_id, cloud_id)
-                        if not local_media_changed:
+                        if not local_media_changed and not retry_remote_media_pending:
                             _refresh_local_cloud_media_signature(local_id)
                         if not remote_changed:
                             pulled += 1
@@ -15843,6 +15960,8 @@ def pull_all(
                         remote=remote,
                         remote_images=remote_images,
                         remote_measurements=remote_measurements,
+                        include_images=store_full_snapshot,
+                        include_measurements=store_full_snapshot,
                     )
         except Exception as e:
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
@@ -15962,23 +16081,34 @@ def _create_local_from_remote(
     )
     local_id = ObservationDB.create_observation(**kwargs)
 
-    # Stamp the cloud_id and sync_status on the newly created row
+    # Bind the cloud row immediately, but keep the observation pending until
+    # the child image / measurement import outcome is known.
     conn = get_connection()
     cursor = conn.cursor()
     update_observation_sync_state(
         cursor,
         int(local_id),
         cloud_id=remote['id'],
-        sync_status='synced',
-        synced_at=datetime.now(timezone.utc).isoformat(),
+        sync_status='dirty',
+        synced_at=None,
         clear_sync_error_state=True,
     )
     conn.commit()
     conn.close()
 
     cloud_id = str(remote.get('id') or '').strip()
+    image_result = {
+        'imported': 0,
+        'metadata_applied': 0,
+        'skipped_materialization': 0,
+        'failed': 0,
+        'warnings': [],
+        'errors': [],
+        'complete': True,
+    }
     if cloud_id:
-        _import_remote_images(
+        image_result = _import_remote_images(
+            client,
             remote,
             local_id,
             cloud_id,
@@ -15997,30 +16127,60 @@ def _create_local_from_remote(
             remote_measurements=remote_measurements,
             materialize_remote_images=materialize_remote_images,
         )
+        if image_result.get('warnings'):
+            for warning in image_result['warnings']:
+                print(f'[cloud_sync] Observation {local_id}: {warning}')
         if measurement_result.get('warnings'):
             for warning in measurement_result['warnings']:
                 print(f'[cloud_sync] Observation {local_id}: {warning}')
+        complete = bool(image_result.get('complete')) and bool(measurement_result.get('complete'))
+        if complete and not image_result.get('errors') and not measurement_result.get('errors') and not measurement_result.get('conflict'):
+            _stamp_observation_synced(local_id, cloud_id)
+        else:
+            _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
+        try:
+            _store_remote_snapshot(
+                client,
+                cloud_id,
+                remote=remote,
+                remote_images=remote_images,
+                remote_measurements=remote_measurements,
+                include_images=complete,
+                include_measurements=complete,
+            )
+        except Exception:
+            pass
 
     return local_id
 
 
 def _import_remote_images(
+    client: SporelyCloudClient | None,
     remote: dict,
     local_id: int,
-    cloud_id: str,
+    cloud_id: str | None = None,
     progress_cb: ProgressCallback | None = None,
     progress_state: dict | None = None,
     remote_index: int | None = None,
     remote_total: int | None = None,
     remote_images: list[dict] | None = None,
     materialize_remote_images: bool = True,
-) -> None:
+) -> dict:
     """Download and create local image rows for a newly pulled cloud observation."""
-    if not materialize_remote_images:
-        return
-    client = SporelyCloudClient.from_stored_credentials()
+    result = {
+        'imported': 0,
+        'metadata_applied': 0,
+        'skipped_materialization': 0,
+        'failed': 0,
+        'warnings': [],
+        'errors': [],
+        'complete': True,
+    }
     if client is None:
-        return
+        result['errors'].append('Could not load Sporely Cloud credentials.')
+        result['complete'] = False
+        return result
+    synced_at = datetime.now(timezone.utc).isoformat()
     
     remote_images_raw = (
         [dict(row or {}) for row in remote_images]
@@ -16044,11 +16204,10 @@ def _import_remote_images(
     )
     
     if not images_to_pull:
-        return
+        return result
         
     _extend_progress_total(progress_state, len(images_to_pull))
     temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
-    synced_at = datetime.now(timezone.utc).isoformat()
     try:
         for idx, image_row in enumerate(images_to_pull, start=1):
             try:
@@ -16066,14 +16225,47 @@ def _import_remote_images(
                         ),
                         progress_state,
                     )
-                
+
+                if not materialize_remote_images:
+                    if _is_metadata_only_microscope_cloud_image(image_row):
+                        local_image_id = _ensure_local_metadata_only_microscope_anchor(
+                            client,
+                            int(local_id),
+                            image_row,
+                        )
+                        if local_image_id is None:
+                            result['failed'] += 1
+                            result['complete'] = False
+                            result['errors'].append(
+                                f'obs {int(local_id)}: failed to create metadata-only microscope anchor for cloud image {cloud_image_id or "?"}'
+                            )
+                        else:
+                            result['imported'] += 1
+                            result['metadata_applied'] += 1
+                        continue
+                    result['skipped_materialization'] += 1
+                    result['complete'] = False
+                    result['warnings'].append(
+                        f"obs {int(local_id)}: deferred cloud image {cloud_image_id or '?'} because byte materialization is disabled"
+                    )
+                    continue
+
                 storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
                 if _is_metadata_only_microscope_cloud_image(image_row):
-                    _ensure_local_metadata_only_microscope_anchor(
+                    local_image_id = _ensure_local_metadata_only_microscope_anchor(
                         client,
                         int(local_id),
                         image_row,
                     )
+                    if local_image_id is None:
+                        result['failed'] += 1
+                        result['complete'] = False
+                        result['errors'].append(
+                            f'obs {int(local_id)}: failed to create metadata-only microscope anchor for cloud image {cloud_image_id or "?"}'
+                        )
+                    else:
+                        result['imported'] += 1
+                        result['metadata_applied'] += 1
                     continue
                 if not storage_path:
                     warning = (
@@ -16081,6 +16273,10 @@ def _import_remote_images(
                         f"because it is missing storage path"
                     )
                     print(f'[cloud_sync] Warning: {warning}')
+                    result['failed'] += 1
+                    result['complete'] = False
+                    result['warnings'].append(warning)
+                    result['errors'].append(warning)
                     continue
 
                 image_temp_dir = temp_dir / (str(image_row.get('id') or idx).strip() or str(idx))
@@ -16088,12 +16284,33 @@ def _import_remote_images(
                 download_path = image_temp_dir / (Path(str(image_row.get('original_filename') or '')).name or 'img.jpg')
                 client.download_image_file(storage_path, download_path)
                 download_path = _rename_to_detected_image_extension(download_path)
-                new_image_type = str(image_row.get('image_type') or 'field').strip().lower()
+                image_type = str(image_row.get('image_type') or 'field').strip().lower()
+                if image_type == 'field':
+                    lat, lon, altitude, gps_acc, datetime_str = _load_obs_exif_fallback(
+                        int(local_id),
+                        fallback_datetime=image_row.get('captured_at'),
+                    )
+                    img_lat = image_row.get('gps_latitude') if image_row.get('gps_latitude') is not None else lat
+                    img_lon = image_row.get('gps_longitude') if image_row.get('gps_longitude') is not None else lon
+                    img_alt = image_row.get('gps_altitude') if image_row.get('gps_altitude') is not None else altitude
+                    img_acc = image_row.get('gps_accuracy') if image_row.get('gps_accuracy') is not None else gps_acc
+                    _inject_obs_exif_into_field_image(
+                        download_path,
+                        img_lat,
+                        img_lon,
+                        img_alt,
+                        datetime_str,
+                        camera_model=image_row.get('camera_model'),
+                        iso=image_row.get('iso'),
+                        exposure_time=image_row.get('exposure_time'),
+                        f_number=image_row.get('f_number'),
+                        gps_accuracy=img_acc,
+                    )
 
                 local_image_id = ImageDB.add_image(
                     observation_id=int(local_id),
                     filepath=str(download_path),
-                    image_type=str(image_row.get('image_type') or 'field'),
+                    image_type=str(image_type or 'field'),
                     scale=image_row.get('scale_microns_per_pixel'),
                     notes=image_row.get('notes'),
                     micro_category=image_row.get('micro_category'),
@@ -16120,6 +16337,11 @@ def _import_remote_images(
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
                 )
+                download_path = _promote_temp_imported_image_if_needed(
+                    int(local_image_id),
+                    int(local_id),
+                    temp_dir,
+                ) or download_path
                 cloud_image_id = str(image_row.get('id') or '').strip()
 
                 # Update sync metadata
@@ -16145,17 +16367,30 @@ def _import_remote_images(
                 file_sig = _file_content_signature(download_path)
                 if file_sig:
                     _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
+                result['imported'] += 1
                 _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
 
             except Exception as e:
                 if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
+                detail = str(e or '').strip() or e.__class__.__name__
+                result['failed'] += 1
+                result['complete'] = False
+                result['errors'].append(
+                    f'obs {int(local_id)}: failed image import for cloud image {image_row.get("id") or "?"}: {detail}'
+                )
                 print(f'[cloud_sync] Failed image import: {e}')
             finally:
                 _advance_progress(progress_state, 1)
-        _normalize_cloud_pulled_image_order(int(local_id))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+    if result['failed'] or result['skipped_materialization']:
+        result['complete'] = False
+    try:
+        _normalize_cloud_pulled_image_order(int(local_id))
+    except Exception:
+        pass
+    return result
 
 
 def _import_remote_measurements_for_observation(
@@ -16168,11 +16403,27 @@ def _import_remote_measurements_for_observation(
 ) -> dict:
     warnings: list[str] = []
     if not str(cloud_id or '').strip():
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': [],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 0,
+            'complete': True,
+        }
     if client is None:
         client = SporelyCloudClient.from_stored_credentials()
     if client is None:
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': ['Could not load Sporely Cloud credentials.'],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 1,
+            'complete': False,
+        }
 
     remote_images_raw = (
         [dict(row or {}) for row in remote_images]
@@ -16193,7 +16444,15 @@ def _import_remote_measurements_for_observation(
     remote_measurements_by_obs = _group_remote_measurements_by_observation(remote_images_raw, measurement_rows_source)
     measurement_rows = [dict(row or {}) for row in remote_measurements_by_obs.get(str(cloud_id), [])]
     if not measurement_rows:
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': [],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 0,
+            'complete': True,
+        }
 
     def _load_local_images() -> tuple[dict[str, dict], dict[int, dict]]:
         local_images = ImageDB.get_images_for_observation(int(local_id))
@@ -16234,6 +16493,8 @@ def _import_remote_measurements_for_observation(
     set_measurement_desktop_id = getattr(client, 'set_measurement_desktop_id', None)
     imported = 0
     conflict = False
+    skipped_materialization = 0
+    failed = 0
     skip_groups: dict[str, dict[str, object]] = {}
 
     def _record_skip(key: str, remote_image_id: str | None) -> None:
@@ -16266,6 +16527,10 @@ def _import_remote_measurements_for_observation(
             local_image = local_images_by_cloud_id.get(remote_image_id)
             if local_image is None:
                 if not materialize_remote_images:
+                    skipped_materialization += 1
+                    warnings.append(
+                        f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} because cloud image {remote_image_id} has not been materialized locally"
+                    )
                     continue
                 warnings.extend(
                     _apply_remote_images_to_local(
@@ -16463,8 +16728,12 @@ def _import_remote_measurements_for_observation(
 
     return {
         'warnings': warnings,
+        'errors': [],
         'conflict': conflict,
         'imported': imported,
+        'skipped_materialization': skipped_materialization,
+        'failed': failed,
+        'complete': not conflict and skipped_materialization == 0 and failed == 0,
     }
 
 

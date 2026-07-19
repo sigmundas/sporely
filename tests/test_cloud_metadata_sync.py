@@ -3,8 +3,18 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from database import models
 from utils import cloud_sync
+
+
+@pytest.fixture(autouse=True)
+def _isolate_spore_summary_sync(monkeypatch):
+    """Observation metadata tests do not exercise spore-summary networking."""
+    monkeypatch.setattr(cloud_sync, "_push_summary_for_current_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_summaries", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_measurements", lambda *args, **kwargs: 0)
 
 
 def _init_metadata_sync_db(tmp_path):

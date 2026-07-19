@@ -583,6 +583,64 @@ Note that this is from a pro account, so I should not have seen this. Anyway, up
 I openend the app again, and microscope images still don't sync. I dunno if the error above blocks all syncs? I have a button for download missing cloud media, pressing that does not upload microscope images either..
 
 
+### Stage E1c — Cloud sync metadata and image reconciliation audit
+
+Status: audited; implementation pending.
+
+Scope: fix correctness and convergence defects found in the desktop cloud-sync audit. Keep the work staged and narrow; do not refactor the whole `utils/cloud_sync.py` module as part of these fixes.
+
+#### Stage 1 — Prevent acknowledged-but-unapplied remote changes
+
+- [ ] Separate image metadata reconciliation from image-byte materialization. `materialize_remote_images=False` must still apply remote image metadata such as sort order, notes, crop, calibration, image type, microscope fields, and sample source to an existing local image row.
+- [ ] Do not advance the stored remote image/measurement snapshot for changes that were skipped or failed locally.
+- [ ] Do not stamp a newly pulled observation as fully synced until required metadata imports have completed.
+- [ ] Return image-import failures and missing-storage warnings to `pull_all`; do not only print and suppress them.
+- [ ] Preserve retry state for partially imported observations so the normal fast sync can retry missing local image rows/files without requiring a full refresh.
+- [ ] Pass the already authenticated `SporelyCloudClient` into new-observation image import. Do not reload credentials inside `_import_remote_images`.
+
+Regression coverage:
+
+- background/metadata-only sync applies image metadata without downloading bytes;
+- a later materializing sync still detects any intentionally deferred bytes;
+- one failed image in a newly pulled observation leaves retryable sync state and is reported;
+- supplied sync client works even when no independently stored client can be loaded;
+- snapshots are not advanced past failed or skipped reconciliation work.
+
+#### Stage 2 — Make child-table changes visible to fast sync
+
+- [ ] Define and document how changes to `observation_images` and `spore_measurements` touch the parent observation's cloud change token/timestamp.
+- [ ] Verify production Supabase triggers before relying on `observations.updated_at` for image or measurement changes.
+- [ ] Ensure image metadata edits, image tombstones, metadata-only microscope rows, and measurement-only edits all make the observation eligible for fast pull.
+- [ ] If parent touching cannot be guaranteed, add a separate child-change watermark/signature instead of silently pruning by the observation timestamp alone.
+
+Regression coverage:
+
+- web image metadata edit is detected by fast sync;
+- web image deletion is detected by fast sync;
+- metadata-only microscope image edit is detected by fast sync;
+- measurement-only edit is detected by fast sync;
+- unchanged observations still use the no-op fast path.
+
+#### Stage 3 — Complete image metadata parity
+
+- [ ] Apply `sample_source` when updating an existing metadata-only microscope anchor, not only when creating one.
+- [ ] Include `sample_source` in `_local_image_snapshot_payload` so conflict summaries compare the complete synchronized image contract.
+- [ ] Make field-image import behavior consistent for new and existing observations, including observation GPS/date fallback EXIF where applicable; remove the currently unused `new_image_type` local after consolidating the path.
+- [ ] Audit the image SELECT/push contract for intentionally unsupported fields such as `captured_at` and camera/GPS EXIF metadata. Remove unreachable handling or add the fields to the contract; do not leave code that appears to sync values it never fetches.
+
+Regression coverage:
+
+- existing metadata-only microscope anchor round-trips `sample_source`;
+- conflict detail does not report a false remote-only `sample_source` change;
+- the same field image imported through new-observation and existing-observation paths receives equivalent metadata.
+
+#### Stage 4 — Remove obsolete and duplicate sync code
+
+- [ ] Remove or prove external use of the unreferenced internal helpers found by the audit: `_direct_r2_unavailable_warning`, `_is_direct_r2_unavailable_error`, `_client_uses_default_r2_loader`, `_baseline_measurement_compare_payload`, `_has_pending_local_push_work`, `_find_local_observation_for_remote`, `_remote_observation_changed_since_last_sync`, and `_set_observation_plan_image_blocked`.
+- [ ] Remove the unreachable `_prompt_for_deleted_cloud_observations` copy from `utils/cloud_sync.py`; the active UI implementations live in `ui/cloud_sync_dialog.py` and `ui/observations_tab.py`.
+- [ ] Re-check stale cloud-contract comments while touching these sections, without unrelated restructuring.
+
+
 ### Stage E1b — Image tombstone sync cleanup
 
 Status: in progress.

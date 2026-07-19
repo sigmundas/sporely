@@ -322,7 +322,7 @@ def _insert_local_measurement_row(
         conn.close()
 
 
-def test_pull_all_retries_missing_local_cloud_media_after_snapshot_stays_unchanged(
+def test_pull_all_reconciles_missing_local_cloud_media_from_partial_snapshot(
     tmp_path,
     monkeypatch,
 ):
@@ -487,10 +487,13 @@ def test_pull_all_retries_missing_local_cloud_media_after_snapshot_stays_unchang
         assert all(Path(row[1]).exists() for row in rows)
         assert second_snapshot == first_snapshot
 
-    assert profiler.retry_missing_cloud_media_branch_runs == 1
+    first_snapshot_payload = json.loads(first_snapshot[0])
+    assert "images" not in first_snapshot_payload
+    assert "measurements" not in first_snapshot_payload
+    assert profiler.retry_missing_cloud_media_branch_runs == 0
 
 
-def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_metadata(
+def test_pull_all_defers_remote_media_without_acknowledging_child_snapshot(
     tmp_path,
     monkeypatch,
 ):
@@ -650,7 +653,8 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
         conn.close()
 
     assert result["pulled"] == 1
-    assert result["errors"] == []
+    assert len(result["errors"]) == 1
+    assert "has not been materialized locally" in result["errors"][0]
     assert client.download_attempts == []
     assert generate_calls == []
     assert client.pull_bulk_calls == 1
@@ -660,13 +664,13 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
     assert profiler.store_remote_snapshot_fetch_images_count == 0
     assert profiler.store_remote_snapshot_fetch_measurements_count == 0
     assert profiler.retry_missing_cloud_media_branch_runs == 0
-    assert observation == ("cloud-obs-1", "synced")
+    assert observation == ("cloud-obs-1", "dirty")
     assert image_count == 0
     assert measurement_count == 0
     assert snapshot_row is not None
     snapshot = json.loads(snapshot_row[0])
-    assert len(snapshot["images"]) == len(remote_images)
-    assert len(snapshot["measurements"]) == len(remote_measurements)
+    assert "images" not in snapshot
+    assert "measurements" not in snapshot
 
 
 def test_pull_all_materializes_remote_images_without_direct_r2_secrets(

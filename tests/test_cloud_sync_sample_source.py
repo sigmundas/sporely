@@ -25,9 +25,11 @@ from utils import cloud_sync
 from utils.cloud_sync import (
     _IMG_PUSH_COLS,
     _SNAPSHOT_IMG_FIELDS,
+    _analyze_image_changes,
     _apply_image_sample_fields_to_push_payload,
     _cloud_to_desktop_sample_source,
     _desktop_to_cloud_sample_source,
+    _local_image_snapshot_payload,
     _remote_image_payload,
     _split_legacy_sample_type_into_source,
 )
@@ -47,6 +49,33 @@ def test_image_push_cols_include_sample_source():
 def test_snapshot_img_fields_include_sample_source():
     assert "sample_source" in _SNAPSHOT_IMG_FIELDS
     assert "sample_type" in _SNAPSHOT_IMG_FIELDS
+
+
+def test_local_image_snapshot_diff_detects_sample_source_change():
+    baseline = _local_image_snapshot_payload(
+        {
+            "id": 42,
+            "cloud_id": "cloud-image-42",
+            "filepath": "/tmp/microscope.jpg",
+            "image_type": "microscope",
+            "sample_source": "Hymenium",
+        }
+    )
+    current = _local_image_snapshot_payload(
+        {
+            "id": 42,
+            "cloud_id": "cloud-image-42",
+            "filepath": "/tmp/microscope.jpg",
+            "image_type": "microscope",
+            "sample_source": "Stipe",
+        }
+    )
+
+    changes = _analyze_image_changes([current], [baseline])
+
+    assert baseline["sample_source"] == "Hymenium"
+    assert current["sample_source"] == "Stipe"
+    assert changes["metadata_changed_keys"] == ["cloud:cloud-image-42"]
 
 
 def test_image_metadata_only_fields_include_sample_source():
