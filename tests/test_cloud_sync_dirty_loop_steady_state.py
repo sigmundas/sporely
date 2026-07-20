@@ -121,6 +121,22 @@ def test_metadata_only_mode_still_dirties_on_real_field_conflict():
     )
 
 
+def test_ai_selection_local_only_fields_do_not_redirty_after_push():
+    assert not _remaining_local_changes_after_remote_merge(
+        {
+            "local_only_fields": [
+                "ai_selected_at",
+                "ai_selected_probability",
+                "ai_selected_scientific_name",
+                "ai_selected_service",
+                "ai_selected_taxon_id",
+            ],
+            "conflict_fields": [],
+        },
+        local_media_changed=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Signature refresh — the actual fix for the dirty loop
 # ---------------------------------------------------------------------------

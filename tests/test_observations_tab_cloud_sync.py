@@ -179,9 +179,10 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["sync_images"] is False
     assert sync_kwargs["prepare_images_cb"] is None
     assert sync_kwargs["materialize_remote_images"] is False
+    assert sync_kwargs["child_safety_pull"] is True
 
 
-def test_refresh_clicked_materializes_remote_images(monkeypatch):
+def test_refresh_clicked_keeps_remote_media_unmaterialized(monkeypatch):
     calls: dict[str, object] = {}
 
     fake_tab = SimpleNamespace(
@@ -197,7 +198,6 @@ def test_refresh_clicked_materializes_remote_images(monkeypatch):
     assert calls["start"] == {
         "show_status": True,
         "run_refresh_flow": True,
-        "materialize_remote_images": True,
     }
     assert "refresh" not in calls
     assert "finish" not in calls

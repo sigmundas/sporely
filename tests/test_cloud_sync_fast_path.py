@@ -17,6 +17,7 @@ Design goal: with 220 observations, a no-op Refresh does 0 bulk fetches.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -416,6 +417,189 @@ def test_auto_sync_worker_accepts_full_pull_flag():
     sig = inspect.signature(_CloudAutoSyncWorker.__init__)
     assert "full_pull" in sig.parameters
     assert sig.parameters["full_pull"].default is True
+
+
+# ---------------------------------------------------------------------------
+# Periodic child-change safety pull
+# ---------------------------------------------------------------------------
+
+
+def _run_safety_sync(
+    monkeypatch,
+    *,
+    watermark,
+    pull_result=None,
+    pull_error=None,
+    settings_updates=None,
+    settings_state=None,
+):
+    pull_kwargs: dict[str, Any] = {}
+    settings_updates = settings_updates if settings_updates is not None else []
+    settings_state = settings_state if settings_state is not None else (
+        {} if watermark is None else {
+            cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: watermark,
+        }
+    )
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_state))
+    monkeypatch.setattr(
+        cloud_sync,
+        "update_app_settings",
+        lambda updates: (
+            settings_updates.append(dict(updates)),
+            settings_state.update(updates),
+            dict(settings_state),
+        )[-1],
+    )
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _client: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "push_calibrations",
+        lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "pull_calibrations",
+        lambda *args, **kwargs: {"pulled": 0, "total": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "push_all",
+        lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []},
+    )
+
+    def _pull(*args, **kwargs):
+        pull_kwargs.update(kwargs)
+        if pull_error is not None:
+            raise pull_error
+        return pull_result or {"pulled": 0, "total": 0, "errors": [], "deleted_remote": []}
+
+    monkeypatch.setattr(cloud_sync, "pull_all", _pull)
+    client = SimpleNamespace(
+        list_remote_observations=lambda: [{"id": "cloud-555"}],
+        list_remote_calibrations=lambda: [],
+    )
+    result = cloud_sync.sync_all(
+        client,
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+    return result, pull_kwargs, settings_updates
+
+
+def test_child_safety_pull_runs_when_watermark_is_missing(monkeypatch, capsys):
+    _result, pull_kwargs, updates = _run_safety_sync(monkeypatch, watermark=None)
+
+    assert pull_kwargs["full_pull"] is True
+    assert pull_kwargs["sync_images"] is False
+    assert pull_kwargs["materialize_remote_images"] is False
+    assert updates and cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING in updates[-1]
+    assert "reason=stale_child_watermark last=missing interval_hours=24" in capsys.readouterr().out
+
+
+def test_child_safety_pull_runs_when_watermark_is_stale(monkeypatch):
+    stale = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    _result, pull_kwargs, updates = _run_safety_sync(monkeypatch, watermark=stale)
+
+    assert pull_kwargs["full_pull"] is True
+    assert len(updates) == 1
+
+
+def test_child_safety_pull_skips_when_watermark_is_fresh(monkeypatch, capsys):
+    fresh = datetime.now(timezone.utc).isoformat()
+    _result, pull_kwargs, updates = _run_safety_sync(monkeypatch, watermark=fresh)
+
+    assert pull_kwargs["full_pull"] is False
+    assert updates == []
+    assert f"child-change safety pull skipped: fresh watermark last={fresh}" in capsys.readouterr().out
+
+
+def test_child_safety_pull_advances_watermark_with_row_level_review_issues(monkeypatch):
+    result = {"pulled": 0, "total": 1, "errors": ["cloud child reconciliation failed"]}
+    _result, pull_kwargs, updates = _run_safety_sync(
+        monkeypatch,
+        watermark=None,
+        pull_result=result,
+    )
+
+    assert pull_kwargs["full_pull"] is True
+    assert len(updates) == 1
+
+
+def test_measurement_review_issue_does_not_block_child_safety_watermark(monkeypatch):
+    result = {
+        "pulled": 0,
+        "total": 1,
+        "errors": ["obs 11: skipped cloud measurement 1344 because the local copy changed"],
+    }
+    _result, pull_kwargs, updates = _run_safety_sync(
+        monkeypatch,
+        watermark=None,
+        pull_result=result,
+    )
+
+    assert pull_kwargs["full_pull"] is True
+    assert len(updates) == 1
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("temporary cloud failure"),
+        cloud_sync.CloudSyncError("Authentication required"),
+        cloud_sync.CloudSyncError("bulk observation_images fetch failed"),
+    ],
+    ids=["transient", "auth", "bulk-child-fetch"],
+)
+def test_child_safety_pull_does_not_advance_watermark_on_pass_failure(monkeypatch, failure):
+    updates: list[dict] = []
+    with pytest.raises(type(failure), match=str(failure)):
+        _run_safety_sync(
+            monkeypatch,
+            watermark=None,
+            pull_error=failure,
+            settings_updates=updates,
+        )
+    assert updates == []
+
+
+def test_fresh_child_safety_watermark_keeps_normal_second_refresh_fast(monkeypatch):
+    fresh = datetime.now(timezone.utc).isoformat()
+    _first, first_kwargs, _updates = _run_safety_sync(monkeypatch, watermark=fresh)
+    _second, second_kwargs, _updates = _run_safety_sync(monkeypatch, watermark=fresh)
+
+    assert first_kwargs["full_pull"] is False
+    assert second_kwargs["full_pull"] is False
+
+
+def test_successful_child_safety_pull_makes_next_refresh_fast(monkeypatch):
+    settings_state: dict[str, str] = {}
+    _first, first_kwargs, first_updates = _run_safety_sync(
+        monkeypatch,
+        watermark=None,
+        settings_state=settings_state,
+    )
+    _second, second_kwargs, second_updates = _run_safety_sync(
+        monkeypatch,
+        watermark=None,
+        settings_state=settings_state,
+    )
+
+    assert first_kwargs["full_pull"] is True
+    assert len(first_updates) == 1
+    assert second_kwargs["full_pull"] is False
+    assert second_updates == []
+
+
+def test_child_safety_pull_selects_deep_metadata_reconciliation_without_media(monkeypatch):
+    """Deep mode covers image metadata and measurement snapshot reconciliation."""
+    _result, pull_kwargs, _updates = _run_safety_sync(monkeypatch, watermark=None)
+
+    assert pull_kwargs["full_pull"] is True
+    assert pull_kwargs["sync_images"] is False
+    assert pull_kwargs["materialize_remote_images"] is False
 
 
 # ---------------------------------------------------------------------------
