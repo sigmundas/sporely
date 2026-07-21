@@ -6823,6 +6823,12 @@ class ObservationsTab(QWidget):
     def _apply_view_mode(self, mode: str, persist: bool = True) -> None:
         if mode != self.VIEW_MODE_IMAGES:
             mode = self.VIEW_MODE_TABLE
+        selector = getattr(self, "view_mode_selector", None)
+        if selector is not None and hasattr(selector, "set_selected_value"):
+            try:
+                selector.set_selected_value(mode)
+            except Exception:
+                pass
         table = getattr(self, "table", None)
         if table is not None:
             column_count = table.columnCount()

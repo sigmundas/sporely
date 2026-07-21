@@ -414,6 +414,10 @@ def test_image_mode_uses_wider_table_splitter_default(qapp):
     state = SimpleNamespace()
     state.VIEW_MODE_TABLE = "table"
     state.VIEW_MODE_IMAGES = "images"
+    selector_calls: list[tuple[str, object]] = []
+    state.view_mode_selector = SimpleNamespace(
+        set_selected_value=lambda value: selector_calls.append(("set", value))
+    )
     state.table = SimpleNamespace(
         columnCount=lambda: 10,
         setColumnHidden=lambda *args, **kwargs: None,
@@ -432,6 +436,7 @@ def test_image_mode_uses_wider_table_splitter_default(qapp):
 
     ObservationsTab._apply_view_mode(state, state.VIEW_MODE_IMAGES, persist=False)
 
+    assert selector_calls == [("set", "images")]
     assert state.view_splitter.set_sizes_calls
     assert state.view_splitter.set_sizes_calls[-1][0] >= 320
     assert state.view_splitter.set_sizes_calls[-1][0] > 280
