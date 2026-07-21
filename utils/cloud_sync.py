@@ -15452,6 +15452,26 @@ def _push_spore_mosaic_for_observation(
         'height_px': manifest.height_px,
         'tile_size_px': manifest.tile_size_px,
         'version': version,
+        # Per-tile geometry + physical scale. The web contract added
+        # nullable columns for these in migration
+        # 20260721120000_add_mosaic_scale_and_image_scale_to_public_rpcs
+        # so landing can render an atlas-wide scale bar without baking
+        # it into pixels. Sent as `None` when the manifest reports a
+        # non-positive value so the cloud row stores NULL rather than 0.
+        'tile_width_px': (
+            int(manifest.tile_width_px) if manifest.tile_width_px > 0 else None
+        ),
+        'tile_height_px': (
+            int(manifest.tile_height_px) if manifest.tile_height_px > 0 else None
+        ),
+        'common_crop_width_um': (
+            float(manifest.common_crop_width_um)
+            if manifest.common_crop_width_um > 0 else None
+        ),
+        'common_crop_height_um': (
+            float(manifest.common_crop_height_um)
+            if manifest.common_crop_height_um > 0 else None
+        ),
     }
 
     try:

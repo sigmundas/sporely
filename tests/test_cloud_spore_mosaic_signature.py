@@ -563,6 +563,121 @@ def test_pusher_rebuilds_when_signature_missing(tmp_path, db, monkeypatch):
     assert stored and len(stored) == 40
 
 
+def test_pusher_sends_tile_geometry_and_common_crop_um_in_mosaic_upsert(
+    tmp_path, db, monkeypatch,
+):
+    """The four calibration fields (tile_width_px / tile_height_px /
+    common_crop_width_um / common_crop_height_um) must be present in
+    the mosaic upsert payload so landing can render the atlas-wide
+    scale bar. Regression guard against silent removal of any of the
+    four keys — a bare-manifest test on utils/cloud_spore_mosaic.py
+    would not catch a plumbing regression here.
+    """
+    obs_local, obs_cloud, _src = _seed_full_observation(db, tmp_path)
+    _mock_render(monkeypatch)  # fake manifest sets tile dims=320, common crop=20 µm
+
+    client = _StubClient(existing_mosaic=[], existing_tiles=[])
+    monkeypatch.setattr(
+        client, '_get_media_worker',
+        lambda: type('W', (), {'put_bytes': lambda self, *a, **k: {'key': 'k'}})(),
+        raising=False,
+    )
+
+    status = cloud_sync._push_spore_mosaic_for_observation(client, obs_local, obs_cloud)
+    assert status == cloud_sync.MOSAIC_STATUS_GENERATED
+
+    mosaic_posts = [
+        payload for op, (path, payload) in
+        ((op, args) for op, args in client.calls if op == '_post' and isinstance(args, tuple))
+        if path == 'spore_measurement_mosaics'
+    ]
+    assert len(mosaic_posts) == 1, (
+        f'expected exactly one spore_measurement_mosaics POST; got {mosaic_posts!r}'
+    )
+    payload = mosaic_posts[0]
+
+    # Legacy keys still present.
+    assert payload['tile_size_px'] == 320
+    assert payload['width_px'] == 320
+    assert payload['height_px'] == 320
+
+    # New keys added by Stage 2C must be present with correct values.
+    assert payload['tile_width_px'] == 320
+    assert payload['tile_height_px'] == 320
+    assert payload['common_crop_width_um'] == pytest.approx(20.0)
+    assert payload['common_crop_height_um'] == pytest.approx(20.0)
+
+
+def test_pusher_sends_none_for_non_positive_tile_geometry(tmp_path, db, monkeypatch):
+    """Manifests with zero / missing calibration must upsert NULL, not
+    0. The web contract treats NULL as "no scale bar"; a numeric 0
+    would poison the µm-per-pixel math on landing."""
+    obs_local, obs_cloud, _src = _seed_full_observation(db, tmp_path)
+
+    from utils import cloud_spore_mosaic
+
+    class _EmptyCalibrationTile:
+        measurement_id = 101
+        cloud_measurement_id = 'c-m-1'
+        cloud_image_id = 'c-img-1'
+        x_px = 0
+        y_px = 0
+        w_px = 320
+        h_px = 320
+        overlay_json = None
+        diagnostics: dict = {}
+
+    class _EmptyCalibrationManifest:
+        image_bytes = b'MOSAIC'
+        content_type = 'image/webp'
+        width_px = 320
+        height_px = 320
+        tile_size_px = 320
+        # Simulate a degenerate manifest — pipeline could hand back zeros
+        # for these under some edge condition; the pusher must not send
+        # 0 to Supabase.
+        tile_width_px = 0
+        tile_height_px = 0
+        common_crop_width_px = 0
+        common_crop_height_px = 0
+        common_crop_width_um = 0.0
+        common_crop_height_um = 0.0
+        tiles = [_EmptyCalibrationTile()]
+        skipped: list = []
+
+    monkeypatch.setattr(
+        cloud_spore_mosaic, 'sources_from_measurement_rows',
+        lambda rows, image_dir: (['x'], []),
+    )
+    monkeypatch.setattr(
+        cloud_spore_mosaic, 'build_spore_mosaic',
+        lambda sources, tile_size_px: _EmptyCalibrationManifest(),
+    )
+    monkeypatch.setattr(cloud_sync, 'direct_r2_runtime_available', lambda: False)
+
+    client = _StubClient(existing_mosaic=[], existing_tiles=[])
+    monkeypatch.setattr(
+        client, '_get_media_worker',
+        lambda: type('W', (), {'put_bytes': lambda self, *a, **k: {'key': 'k'}})(),
+        raising=False,
+    )
+
+    cloud_sync._push_spore_mosaic_for_observation(client, obs_local, obs_cloud)
+
+    mosaic_posts = [
+        payload for op, (path, payload) in
+        ((op, args) for op, args in client.calls if op == '_post' and isinstance(args, tuple))
+        if path == 'spore_measurement_mosaics'
+    ]
+    assert len(mosaic_posts) == 1
+    payload = mosaic_posts[0]
+
+    assert payload['tile_width_px'] is None
+    assert payload['tile_height_px'] is None
+    assert payload['common_crop_width_um'] is None
+    assert payload['common_crop_height_um'] is None
+
+
 def test_pusher_does_not_store_signature_on_upload_failure(tmp_path, db, monkeypatch):
     obs_local, obs_cloud, src = _seed_full_observation(db, tmp_path)
     _mock_render(monkeypatch)

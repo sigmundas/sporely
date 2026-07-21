@@ -675,7 +675,18 @@ These stay `desktop-only`:
 - Cloud image tombstones should be recorded locally and used to block reupload or recreation, but
   the desktop active image row stays visible for now. Files, measurements, and annotations remain
   intact, and any UI hiding or explicit delete confirmation is deferred.
-- `scale_bar_*` exists on both sides but is currently shared-but-ignored.
+- `scale_bar_*` exists on both sides but is currently shared-but-ignored. Landing renders
+  the microscope scale bar from `observation_images.scale_microns_per_pixel` (already synced;
+  now surfaced by `search_public_observation_images` / `get_public_observation_images`), not
+  from the endpoint coordinates. The `scale_bar_*` endpoints remain deferred until we need a
+  pixel-exact reproduction of the desktop overlay.
+- `spore_measurement_mosaics.tile_width_px`, `tile_height_px`, `common_crop_width_um`,
+  `common_crop_height_um` are `desktop-source` fields uploaded on every mosaic upsert
+  (`utils/cloud_sync.py::_push_spore_mosaic_for_observation`). All four are nullable on the
+  cloud side; the pusher sends `None` for non-positive manifest values so old / degenerate
+  rows land as SQL NULL, which the public RPC treats as "no scale bar" (keys dropped via
+  `jsonb_strip_nulls`). The desktop `SporeMosaicManifest` already computes these values
+  under the common-crop model; the previous contract simply did not put them on the wire.
 - Current cloud `reference_values` is too flat for shared provenance and usage tracking.
 
 ## Analysis and Reference Data Proposal
