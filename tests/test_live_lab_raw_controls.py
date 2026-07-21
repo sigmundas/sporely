@@ -587,8 +587,6 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._pending_raw_capture_index_for_key = lambda key: live_lab_tab.LiveLabTab._pending_raw_capture_index_for_key(state, key)
     state._pending_raw_gallery_items = lambda: live_lab_tab.LiveLabTab._pending_raw_gallery_items(state)
     state._session_gallery_items = lambda: live_lab_tab.LiveLabTab._session_gallery_items(state)
-    state._refresh_pending_raw_gallery = lambda: live_lab_tab.LiveLabTab._refresh_pending_raw_gallery(state)
-    state._on_pending_raw_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, image_id, path)
     state._on_session_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, image_id, path)
     state._update_pending_raw_controls = lambda: live_lab_tab.LiveLabTab._update_pending_raw_controls(state)
     state._refresh_live_image_hover_hint = lambda capture=None: live_lab_tab.LiveLabTab._refresh_live_image_hover_hint(state, capture)
@@ -3724,7 +3722,7 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     assert state.sample_combo.currentData() == "Dried"
 
     first_item = state.session_gallery.items[0]
-    live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, first_item["id"], first_item["filepath"])
+    live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, first_item["id"], first_item["filepath"])
 
     assert state._selected_pending_raw_index == 0
     assert state.session_gallery.selected == f"pending:{source_one}"

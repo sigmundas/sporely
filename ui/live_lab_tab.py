@@ -5217,14 +5217,6 @@ class LiveLabTab(QWidget):
         _raw_timing_log("session gallery items rebuild", start, detail=f"items={len(items)}")
         return items, selected_key
 
-    def _refresh_pending_raw_gallery(self) -> None:
-        start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-        self._refresh_session_gallery()
-        _raw_timing_log("refresh pending RAW gallery", start)
-
-    def _on_pending_raw_gallery_clicked(self, image_id, path) -> None:
-        self._on_session_gallery_clicked(image_id, path)
-
     def _update_pending_raw_controls(self) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         captures = getattr(self, "_pending_raw_captures", [])
@@ -5261,7 +5253,7 @@ class LiveLabTab(QWidget):
 
         if not bool(getattr(self, "_suppress_pending_raw_gallery_refresh", False)):
             gallery_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-            self._refresh_pending_raw_gallery()
+            self._refresh_session_gallery()
             _raw_timing_log("update pending RAW controls gallery refresh", gallery_start, detail=f"captures={count}")
 
         current_capture = self._current_pending_raw_capture()
@@ -8168,10 +8160,6 @@ class LiveLabTab(QWidget):
                     apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
                     if callable(apply_microscope_state):
                         apply_microscope_state(capture.lab_metadata)
-            if is_multi_select and gallery is not None:
-                center_on_key = getattr(gallery, "center_on_key", None)
-                if callable(center_on_key):
-                    center_on_key(image_id if image_id is not None else _path)
             # ImageGalleryWidget has already updated selection and queued its
             # edge nudge before emitting imageClicked. Rebuilding the gallery
             # from _update_pending_raw_controls here would cancel that nudge
