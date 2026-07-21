@@ -190,6 +190,91 @@ def test_center_on_key_ignores_stale_queued_requests(monkeypatch, qapp):
     assert scroll.horizontalScrollBar().value() == expected
 
 
+def test_center_on_key_nudge_mode_shifts_by_about_one_and_half_thumbnail_widths(qapp):
+    widget = ImageGalleryWidget("Images")
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (1, 400, 120),
+            (2, 520, 120),
+            (3, 640, 120),
+            (4, 760, 120),
+            (5, 880, 120),
+        ]
+    )
+
+    widget._scroll = scroll
+    widget._frames = frames
+    widget._items = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]
+    widget.set_center_reveal_mode("nudge")
+
+    scroll.horizontalScrollBar().setValue(300)
+    qapp.processEvents()
+
+    widget._center_request_generation = 1
+    widget._center_request_key = 3
+    widget._center_on_key_if_current(1, 3, retries=0)
+
+    assert scroll.horizontalScrollBar().value() == 480
+
+
+def test_set_items_reveal_new_at_end_scrolls_to_last_thumb(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.resize(500, 140)
+    widget.show()
+    qapp.processEvents()
+
+    items: list[dict] = []
+    for index in range(12):
+        image_path = tmp_path / f"end-{index + 1}.png"
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(QColor.fromHsv((index * 25) % 360, 180, 220))
+        assert image.save(str(image_path))
+        items.append(
+            {
+                "id": index + 1,
+                "filepath": str(image_path),
+                "image_number": index + 1,
+            }
+        )
+
+    widget.set_items(items, reveal="new_at_end")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+
+    scrollbar = widget._scroll.horizontalScrollBar()
+    assert scrollbar.value() == scrollbar.maximum()
+
+
+def test_set_items_preserve_keeps_gallery_pinned_to_right_edge(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.resize(500, 140)
+    widget.show()
+    qapp.processEvents()
+
+    items: list[dict] = []
+    for index in range(12):
+        image_path = tmp_path / f"preserve-end-{index + 1}.png"
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(QColor.fromHsv((index * 25) % 360, 180, 220))
+        assert image.save(str(image_path))
+        items.append({"id": index + 1, "filepath": str(image_path)})
+
+    widget.set_items(items, reveal="new_at_end")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+    scrollbar = widget._scroll.horizontalScrollBar()
+    assert scrollbar.value() == scrollbar.maximum()
+
+    widget.set_items(items, reveal="preserve")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+
+    assert scrollbar.value() == scrollbar.maximum()
+
+
 def test_select_image_updates_only_previous_and_new_frame_state(monkeypatch, qapp):
     widget = ImageGalleryWidget("Images")
     frames = []

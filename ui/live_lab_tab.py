@@ -1165,6 +1165,7 @@ class LiveLabTab(QWidget):
             default_height=GALLERY_DEFAULT_HEIGHT,
             min_height=GALLERY_MIN_HEIGHT,
         )
+        self.session_gallery.set_center_reveal_mode("nudge")
         self.session_gallery.set_multi_select(True)
         self.session_gallery.set_reorderable(True)
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
@@ -5373,7 +5374,7 @@ class LiveLabTab(QWidget):
             pending_key = self._pending_raw_gallery_key(capture)
             if callable(select_image) and pending_key is not None and (not is_multi_select or not selected_keys):
                 try:
-                    select_image(pending_key)
+                    select_image(pending_key, center=False)
                 except Exception:
                     pass
         apply_microscope_state = getattr(self, "_apply_microscope_state_to_controls", None)
@@ -8171,7 +8172,27 @@ class LiveLabTab(QWidget):
                 center_on_key = getattr(gallery, "center_on_key", None)
                 if callable(center_on_key):
                     center_on_key(image_id if image_id is not None else _path)
-            self._show_pending_raw_capture(pending_index)
+            # ImageGalleryWidget has already updated selection and queued its
+            # edge nudge before emitting imageClicked. Rebuilding the gallery
+            # from _update_pending_raw_controls here would cancel that nudge
+            # and restore a stale pixel offset after thumbnail geometry moves.
+            clicked_key = image_id if image_id is not None else _path
+            selected_keys_fn = getattr(gallery, "selected_keys", None) if gallery is not None else None
+            selected_keys: set[object] = set()
+            if callable(selected_keys_fn):
+                try:
+                    selected_keys = set(selected_keys_fn())
+                except Exception:
+                    selected_keys = set()
+            suppress_refresh = clicked_key in selected_keys
+            previous_suppression = bool(getattr(self, "_suppress_pending_raw_gallery_refresh", False))
+            if suppress_refresh:
+                self._suppress_pending_raw_gallery_refresh = True
+            try:
+                self._show_pending_raw_capture(pending_index)
+            finally:
+                if suppress_refresh:
+                    self._suppress_pending_raw_gallery_refresh = previous_suppression
             return
         resolved_image_id = clicked_image_id
         if resolved_image_id <= 0:

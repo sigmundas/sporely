@@ -404,6 +404,54 @@ def center_horizontal_scroll_target(
     return max(int(minimum), min(int(maximum), target))
 
 
+def nudge_horizontal_scroll_target(
+    viewport_rect: QRectF,
+    item_rect: QRectF | None,
+    minimum: int,
+    maximum: int,
+    previous_rect: QRectF | None = None,
+    next_rect: QRectF | None = None,
+    *,
+    nudge_widths: float = 1.5,
+    edge_threshold_widths: float = 0.75,
+) -> int | None:
+    """Return a small horizontal nudge when a thumbnail is near either edge.
+
+    The target shifts the strip by roughly `nudge_widths` thumbnail widths
+    toward the center instead of fully centering the clicked thumbnail.
+    """
+    if item_rect is None:
+        return None
+    item_width = float(item_rect.width())
+    viewport_width = float(viewport_rect.width())
+    if item_width <= 0.0 or viewport_width <= 0.0:
+        return None
+
+    view_left = float(viewport_rect.x())
+    view_right = view_left + viewport_width
+    item_left = float(item_rect.x())
+    item_right = item_left + item_width
+    nudge_px = max(0.0, item_width * float(nudge_widths))
+    edge_threshold = max(nudge_px, item_width * float(edge_threshold_widths))
+
+    near_left = item_left < (view_left + edge_threshold)
+    near_right = item_right > (view_right - edge_threshold)
+    if previous_rect is not None and previous_rect.width() > 0.0:
+        near_left = near_left or float(previous_rect.x()) < view_left
+    if next_rect is not None and next_rect.width() > 0.0:
+        near_right = near_right or (float(next_rect.x()) + float(next_rect.width())) > view_right
+
+    if near_left and near_right:
+        return None
+    if near_left:
+        target = int(round(view_left - nudge_px))
+    elif near_right:
+        target = int(round(view_left + nudge_px))
+    else:
+        return None
+    return max(int(minimum), min(int(maximum), target))
+
+
 class _PublishToggle(QLabel):
     """A simple icon-based toggle that mimics QCheckBox for publish selection."""
 
@@ -568,6 +616,7 @@ class ImageGalleryWidget(QGroupBox):
         self._render_index = 0
         self._center_request_generation = 0
         self._center_request_key = None
+        self._center_reveal_mode = "precise"
         # Scroll behaviour to apply after the next batched render finishes.
         # "preserve" restores the previous horizontal scroll offset (used
         # for metadata refreshes so the view doesn't jitter). "new_at_end"
@@ -575,6 +624,7 @@ class ImageGalleryWidget(QGroupBox):
         # visible. None means "no scroll manipulation from this refresh".
         self._pending_scroll_mode: str | None = None
         self._pending_scroll_restore: int | None = None
+        self._pending_scroll_stick_to_end = False
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_next_batch)
@@ -781,14 +831,27 @@ class ImageGalleryWidget(QGroupBox):
             float(viewport.width()),
             float(viewport.height()),
         )
-        target = center_horizontal_scroll_target(
-            viewport_rect,
-            QRectF(frame_geometry),
-            int(scrollbar.minimum()),
-            int(scrollbar.maximum()),
-            QRectF(_layout_geometry(previous_frame)) if previous_frame is not None else None,
-            QRectF(_layout_geometry(next_frame)) if next_frame is not None else None,
-        )
+        previous_geometry = QRectF(_layout_geometry(previous_frame)) if previous_frame is not None else None
+        next_geometry = QRectF(_layout_geometry(next_frame)) if next_frame is not None else None
+        target = None
+        if self._center_reveal_mode == "nudge":
+            target = nudge_horizontal_scroll_target(
+                viewport_rect,
+                QRectF(frame_geometry),
+                int(scrollbar.minimum()),
+                int(scrollbar.maximum()),
+                previous_geometry,
+                next_geometry,
+            )
+        if target is None:
+            target = center_horizontal_scroll_target(
+                viewport_rect,
+                QRectF(frame_geometry),
+                int(scrollbar.minimum()),
+                int(scrollbar.maximum()),
+                previous_geometry,
+                next_geometry,
+            )
         if target is None:
             return
         scrollbar.setValue(target)
@@ -848,6 +911,12 @@ class ImageGalleryWidget(QGroupBox):
         self._fixed_thumbnail_size = bool(enabled)
         self._thumb_size = self._target_thumb_size()
         self._update_thumbnail_sizes()
+
+    def set_center_reveal_mode(self, mode: str) -> None:
+        text = str(mode or "").strip().lower()
+        if text not in {"precise", "nudge"}:
+            text = "precise"
+        self._center_reveal_mode = text
 
     def set_compact_overlay(self, enabled: bool) -> None:
         self._compact_overlay = bool(enabled)
@@ -954,8 +1023,13 @@ class ImageGalleryWidget(QGroupBox):
         if mode == "preserve" and self._scroll is not None:
             scrollbar = self._scroll.horizontalScrollBar()
             self._pending_scroll_restore = int(scrollbar.value()) if scrollbar is not None else None
+            self._pending_scroll_stick_to_end = bool(
+                scrollbar is not None
+                and int(scrollbar.maximum()) - int(scrollbar.value()) <= 2
+            )
         else:
             self._pending_scroll_restore = None
+            self._pending_scroll_stick_to_end = False
         if self._pending_scroll_mode is not None:
             # Cancel any pending center-request so it doesn't fight our
             # scroll intent once layout settles.
@@ -1563,27 +1637,42 @@ class ImageGalleryWidget(QGroupBox):
         if managed_scroll and self._scroll is not None:
             mode = self._pending_scroll_mode
             snapshot = self._pending_scroll_restore
+            stick_to_end = self._pending_scroll_stick_to_end
             self._pending_scroll_mode = None
             self._pending_scroll_restore = None
-            self._apply_pending_scroll(mode, snapshot)
+            self._pending_scroll_stick_to_end = False
+            self._apply_pending_scroll(mode, snapshot, stick_to_end=stick_to_end)
 
-    def _apply_pending_scroll(self, mode: str | None, snapshot: int | None) -> None:
+    def _apply_pending_scroll(
+        self,
+        mode: str | None,
+        snapshot: int | None,
+        *,
+        stick_to_end: bool = False,
+    ) -> None:
         if mode is None or self._scroll is None:
             return
         scrollbar = self._scroll.horizontalScrollBar()
         if scrollbar is None:
             return
 
-        def _apply():
+        def _apply(retries: int = 8):
             try:
-                if mode == "new_at_end":
-                    target = int(scrollbar.maximum())
+                current_max = int(scrollbar.maximum())
+                follow_end = mode == "new_at_end" or (mode == "preserve" and stick_to_end)
+                if follow_end:
+                    target = current_max
                 elif mode == "preserve":
                     target = int(snapshot if snapshot is not None else scrollbar.value())
                 else:
                     return
                 clamped = max(int(scrollbar.minimum()), min(int(scrollbar.maximum()), target))
                 scrollbar.setValue(clamped)
+                if follow_end and retries > 0:
+                    # Thumbnail/layout updates can change the range after an
+                    # apparently stable tick. Keep following the right edge
+                    # briefly instead of stopping at the first stable value.
+                    QTimer.singleShot(16, lambda remaining=retries - 1: _apply(remaining))
             except RuntimeError:
                 pass
 

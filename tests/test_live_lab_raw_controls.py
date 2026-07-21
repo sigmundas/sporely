@@ -4027,6 +4027,94 @@ def test_live_lab_start_session_keeps_pending_raw_gallery_visible(tmp_path, monk
     assert len(state._pending_raw_captures) == 1
 
 
+def test_live_lab_refresh_session_gallery_reveals_new_item_at_end(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = [101, 102]
+    state._selected_session_image_id = 102
+    state._pending_reveal_new_at_end = True
+
+    refresh_args: list[str] = []
+    items = [
+        {"id": 101, "filepath": str(tmp_path / "a.jpg")},
+        {"id": 102, "filepath": str(tmp_path / "b.jpg")},
+    ]
+    state._session_gallery_items = lambda: (list(items), 102)
+    state.session_gallery.set_items = lambda new_items, reveal="off", preserve_scroll=False: (
+        state.session_gallery.__setattr__("items", list(new_items)),
+        refresh_args.append(str(reveal)),
+    )
+    state.session_gallery.select_image = lambda image_id, center=True: setattr(state.session_gallery, "selected", image_id)
+    state.session_gallery.selected = None
+
+    live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+
+    assert state.session_gallery.items == items
+    assert refresh_args == ["new_at_end"]
+    assert state.session_gallery.selected == 102
+
+
+def test_live_lab_show_pending_raw_capture_selects_without_recentering(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    preview_path = tmp_path / "previews" / "P070020_1_preview.jpg"
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    preview_path.write_text("preview", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    state._pending_raw_captures = [
+        live_lab_tab.PendingRawCapture(
+            source_path=source_path,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_path,
+            group_key="group-1",
+        )
+    ]
+    state._selected_pending_raw_index = 0
+
+    calls: list[tuple[object, bool]] = []
+    state.session_gallery.select_image = lambda image_id, center=True: calls.append((image_id, bool(center)))
+    state.session_gallery.is_multi_select = lambda: False
+    state._apply_microscope_state_to_controls = lambda *args, **kwargs: None
+    state._sync_raw_processing_controls_from_settings = lambda *args, **kwargs: None
+    state._update_pending_raw_controls = lambda: None
+    state._refresh_raw_processing_context_ui = lambda: None
+    state._refresh_session_gallery = lambda: None
+    state._show_pending_raw_capture = live_lab_tab.LiveLabTab._show_pending_raw_capture.__get__(state, type(state))
+
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+
+    assert calls == [(f"pending:{source_path}", False)]
+
+
+def test_live_lab_pending_thumbnail_click_does_not_rebuild_gallery(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070021_1.ORF"
+    state = _build_raw_controls_state()
+    capture = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        group_key="group-1",
+    )
+    state._pending_raw_captures = [capture]
+    pending_key = f"pending:{source_path}"
+    state.session_gallery._selected_keys = {pending_key}
+    suppression_seen: list[bool] = []
+    state._show_pending_raw_capture = lambda _index: suppression_seen.append(
+        bool(getattr(state, "_suppress_pending_raw_gallery_refresh", False))
+    )
+
+    live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, pending_key, str(source_path))
+
+    assert suppression_seen == [True]
+    assert state._suppress_pending_raw_gallery_refresh is False
+
+
 def test_live_lab_pending_raw_controls_still_rerender_after_session_stop(tmp_path, monkeypatch):
     _qapp()
     source_path = tmp_path / "P070020_1.ORF"
