@@ -1,5 +1,70 @@
 # Sporely Desktop — History & Debugging Notes
 
+### RAW Auto Levels — three-way invariant between widget, pipeline, and Preferences
+
+The shared `RawProcessingControls` widget (`ui/raw_processing_controls.py`) had three
+independent bugs that only surfaced together when the user opened the advanced RAW
+panel with a non-default bright cutoff in Preferences:
+
+1. **Preferences cutoffs never reached the pipeline.** `_settings_from_controls`
+   hard-coded `black_percentile=0.0, white_percentile=1.0`, so the auto-levels stage
+   always stretched image min → 0 and image max → 1 regardless of the user's
+   Preferences cutoff (defaults 0% dark, 0% bright — but Preferences let users set
+   e.g. 0.05% bright to clip outlier hot pixels). The two seed-analysis helpers
+   (`ImageImportDialog._raw_auto_level_settings_for_source`,
+   `LiveLabTab._raw_auto_level_settings_for_source`) also passed `0.0, 1.0` to
+   `compute_auto_level_bounds`, so the Light/Dark readout the widget cached also
+   ignored Preferences.
+2. **Curve-preview histogram was drawn on the output axis of the curve's input
+   axis.** `_refresh_prepare_raw_curve_preview` / the Live Lab equivalent computed
+   the histogram from `apply_post_decode_processing_fast(...).rgb` — post-pipeline
+   values in [0, 1] — but then plotted them against `curve.input_values` (WB-applied
+   pre-levels luminance). Bins landed in the wrong X position and the "clipped"
+   red-tint comparison (`bin_center < dark_bound`) crossed spaces silently. Fixed
+   by computing histograms on `compute_pre_levels_working_rgb(rgb, settings)`, a
+   new helper that runs only the post-decode WB stage.
+3. **Auto Levels toggle didn't preserve pixels.** The pipeline recomputes bounds
+   live from percentiles when `auto_levels=True` and zeroes `light_ev`/`dark_ev`;
+   when `auto_levels=False` it uses the slider `light_ev`/`dark_ev` through
+   `apply_light_dark_levels`. Because the slider values weren't kept in sync with
+   the pipeline's actual bounds, toggling Auto off caused a visible image jump.
+   Fixed by adding `RawProcessingControls.sync_from_live_bounds(black, white)`,
+   called by both callers after every `apply_post_decode_processing_fast` render,
+   that converts the used bounds to `light_ev = -log2(white)`,
+   `dark_ev = log2(1 - black)` (mirroring `apply_auto_level_bounds_to_settings`)
+   and pushes them into the sliders under `QSignalBlocker`. Because
+   `apply_light_dark_levels` collapses to the same `(x-black)/(white-black)`
+   formula as `hard_luminance_levels`, toggling Auto off then reproduces the same
+   pixels within LUT/quantisation tolerance (`< 4e-3` max per-pixel diff for the
+   1000-step slider grid — see `test_auto_off_freezes_image_after_slider_sync`).
+
+The pipeline zeroing block in `apply_post_decode_processing_fast` was **not**
+removed — the sliders are display-only when Auto is on, and the pipeline stays
+the source of truth for the actual applied stretch. The invariant is that after
+`sync_from_live_bounds` runs, the sliders' EV values reconstruct the exact same
+transform the pipeline just applied.
+
+**Layout change.** The Auto Levels checkable QPushButton at the trailing edge of
+the Light row was replaced by a labeled two-option pill (`AutoLevelsToggle`) on
+its own row. The adapter exposes `isChecked/setChecked/toggled/setProperty("mixed")`
+so every existing call site (`QSignalBlocker(...)`, mixed-state tri-flag,
+hint-registration) keeps working; a `setProperty("mixed", True)` temporarily
+flips the inner `QButtonGroup` to non-exclusive so both buttons can be visually
+deselected.
+
+**Cache key.** The curve-preview histogram cache on `_RawPreviewCacheEntry` now
+keys on `(white_balance_mode, wb_sample_base_mode, wb_multipliers)` rather than
+gains alone — Camera WB and Auto WB both leave `wb_multipliers=None` but rawpy
+decodes them differently, so a gains-only key served the wrong histogram back
+across WB-mode switches.
+
+**Preferences live-refresh.** `_save_raw_processing_preferences` in `main_window`
+now calls `LiveLabTab.refresh_raw_processing_preferences()` (public wrapper for
+the private cutoff push) and iterates `QApplication.topLevelWidgets()` to notify
+any open non-modal `ImageImportDialog`. Without this, changing bright/dark
+cutoffs in Preferences while a panel was open only took effect on the next
+panel rebuild.
+
 ### macOS cursor crash — avoid bitmap-fallback `Qt.CursorShape`
 
 Repeated hard crashes were observed during Measure and in the species plate dialog on

@@ -1760,6 +1760,30 @@ class SettingsHubDialog(QDialog):
                     capture_selector.selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW),
                 ),
             )
+        # Preferences live in the same window as Live Lab's advanced RAW
+        # panel — push the new cutoffs into that widget so its Auto Levels
+        # pipeline uses the updated black/white percentiles on the very
+        # next slider event, without requiring a panel rebuild. Also
+        # notify any open Prepare Images dialogs (non-modal — can coexist
+        # with Preferences).
+        live_lab = getattr(self, "live_lab_tab", None)
+        if live_lab is not None:
+            refresher = getattr(live_lab, "refresh_raw_processing_preferences", None)
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
+        try:
+            for widget in QApplication.topLevelWidgets():
+                refresher = getattr(widget, "refresh_raw_processing_preferences", None)
+                if callable(refresher) and widget is not live_lab:
+                    try:
+                        refresher()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 

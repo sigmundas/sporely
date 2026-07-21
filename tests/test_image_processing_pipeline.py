@@ -3,12 +3,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import math
+
 from utils.image_processing_pipeline import (
     apply_auto_levels_from_bounds,
     apply_custom_white_balance,
     apply_exposure_compensation,
     apply_light_dark_levels,
     apply_post_decode_processing,
+    apply_post_decode_processing_fast,
     apply_shadow_toe_lift,
     compute_auto_level_bounds,
     compute_post_decode_transfer_curve,
@@ -350,3 +353,95 @@ def test_compute_post_decode_transfer_curve_soft_tails_and_strength_blend():
     assert np.all(np.diff(curve.shadow_toe_output) >= -1e-9)
     assert np.all(np.diff(curve.shadow_highlight_output) >= -1e-9)
     assert np.all(np.diff(curve.final_output) >= -1e-9)
+
+
+def _synthetic_microscopy_rgb(seed: int) -> np.ndarray:
+    """Return a small float RGB image resembling a microscopy field."""
+    rng = np.random.default_rng(seed)
+    base = rng.normal(loc=0.45, scale=0.14, size=(48, 64))
+    # A bright specular blob (mimics an out-of-focus highlight) and a
+    # dark region (deep shadow) — this stretches the luminance tails so
+    # percentile-based bounds actually matter.
+    yy, xx = np.mgrid[:base.shape[0], :base.shape[1]]
+    hotspot = np.exp(-(((yy - 8) ** 2 + (xx - 12) ** 2) / 6.0))
+    base = base + 0.55 * hotspot
+    shadow = np.exp(-(((yy - 40) ** 2 + (xx - 55) ** 2) / 12.0))
+    base = base - 0.35 * shadow
+    luma = np.clip(base, 0.0, 1.0).astype(np.float32)
+    tint = np.stack([luma * 1.05, luma, luma * 0.92], axis=-1)
+    return np.clip(tint, 0.0, 1.0)
+
+
+def _bounds_to_ev(black_level: float, white_level: float) -> tuple[float, float]:
+    """Mirror ``RawProcessingControls.sync_from_live_bounds`` conversion."""
+    black_point = float(max(0.0, min(1.0, black_level)))
+    white_point = float(max(1e-6, min(1.0, white_level)))
+    light_ev = float(max(0.0, min(2.0, -math.log2(max(1e-6, white_point)))))
+    dark_ev = float(max(-2.0, min(0.0, math.log2(max(1e-6, 1.0 - black_point)))))
+    return light_ev, dark_ev
+
+
+@pytest.mark.parametrize(
+    "seed,black_percentile,white_percentile",
+    [
+        (0, 0.0, 1.0),                # image min/max — the default
+        (1, 0.0005, 1.0 - 0.0005),    # ~0.05% tail cutoff (Preferences default)
+        (2, 0.02, 0.98),              # heavy cutoff, still within pipeline limits
+        (3, 0.0, 0.9995),             # bright-only cutoff
+    ],
+)
+def test_auto_off_freezes_image_after_slider_sync(seed, black_percentile, white_percentile):
+    """Toggling Auto Levels off reproduces the Auto-on pixels within LUT tolerance.
+
+    Guards the central promise of the Auto Levels freeze: when the widget
+    synchronises Light/Dark from ``debug.black_level`` / ``debug.white_level``
+    and the user then flips Auto off, the render pipeline must produce
+    numerically indistinguishable pixels — otherwise the image "jumps"
+    on toggle.
+    """
+    rgb = _synthetic_microscopy_rgb(seed)
+    base_settings = RawRenderSettings.default()
+    auto_settings = replace_settings(
+        base_settings,
+        auto_levels=True,
+        black_percentile=black_percentile,
+        white_percentile=white_percentile,
+        tone_curve_enabled=False,
+        tone_contrast=0.0,
+        tone_shadows=0.0,
+        tone_highlights=0.0,
+        auto_levels_shadow_lift=0.0,
+        light_ev=0.0,
+        dark_ev=0.0,
+        exposure_ev=0.0,
+    )
+    auto_result = apply_post_decode_processing_fast(rgb, auto_settings)
+    black_level = auto_result.debug.black_level
+    white_level = auto_result.debug.white_level
+    assert black_level is not None and white_level is not None
+    light_ev, dark_ev = _bounds_to_ev(black_level, white_level)
+    # Slider quantisation: sliders store 1/1000 EV steps.
+    light_ev = round(light_ev * 1000.0) / 1000.0
+    dark_ev = round(dark_ev * 1000.0) / 1000.0
+    manual_settings = replace_settings(
+        auto_settings,
+        auto_levels=False,
+        light_ev=light_ev,
+        dark_ev=dark_ev,
+        exposure_ev=light_ev + dark_ev,
+    )
+    manual_result = apply_post_decode_processing_fast(rgb, manual_settings)
+    diff = np.abs(auto_result.rgb.astype(np.float64) - manual_result.rgb.astype(np.float64))
+    assert float(diff.max()) < 4e-3, (
+        f"Auto→Manual jump beyond tolerance: max={float(diff.max()):.4f} "
+        f"(black_level={black_level}, white_level={white_level}, "
+        f"light_ev={light_ev}, dark_ev={dark_ev})"
+    )
+    # Mean matters more perceptually than a single hot pixel: keep it tight.
+    assert float(diff.mean()) < 5e-4
+
+
+def replace_settings(settings: RawRenderSettings, **updates) -> RawRenderSettings:
+    from dataclasses import replace as _replace
+
+    return _replace(settings, **updates)

@@ -75,6 +75,8 @@ from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
     RAW_FORMATS,
     SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+    SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+    SETTING_RAW_PROCESSING_DARK_CUTOFF,
 )
 from database.schema import (
     load_objectives,
@@ -117,6 +119,7 @@ from utils.image_processing_pipeline import (
     apply_post_decode_processing,
     apply_post_decode_processing_fast,
     compute_auto_level_bounds,
+    compute_pre_levels_working_rgb,
     prepare_post_decode_fast_inputs,
 )
 from utils.raw_white_balance import estimate_white_balance_from_background
@@ -153,13 +156,15 @@ def _raw_prepare_timing(stage: str, start: float | None, *, detail: str = "") ->
 @dataclass
 class _RawPreviewCacheEntry:
     """Per-source cache: resized proxy + WB-processed fast-pipeline inputs
-    keyed by WB gains + histogram (source-only, so it never invalidates).
-    Mirrors Live Lab's _RawPreviewCacheEntry so slider events reuse the
-    same numpy arrays across frames."""
+    keyed by WB gains + histogram (keyed by WB gains — the pre-levels
+    working buffer shifts when custom multipliers change). Mirrors Live
+    Lab's _RawPreviewCacheEntry so slider events reuse the same numpy
+    arrays across frames."""
     raw_rgb: np.ndarray
     preview_rgb: np.ndarray | None = None
     wb_processed: dict = field(default_factory=dict)
     combined_histogram: np.ndarray | None = None
+    combined_histogram_key: tuple | None = None
 
 
 _RAW_PREVIEW_WB_CACHE_MAX = 6
@@ -6634,6 +6639,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             body_spacing=6,
         )
         self.raw_controls = RawProcessingControls(self.raw_group)
+        self._push_raw_processing_cutoffs_to_controls()
         self.raw_controls.settingsChanged.connect(self._on_raw_settings_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._on_raw_wb_pick_toggled)
         raw_layout.addWidget(self.raw_controls)
@@ -6766,12 +6772,62 @@ class ImageImportDialog(GeometryMixin, QDialog):
             settings = controls.settings()
         return settings.to_dict()
 
+    @staticmethod
+    def _raw_processing_setting_float(key: str, default: float, minimum: float, maximum: float) -> float:
+        raw = SettingsDB.get_setting(key, default)
+        try:
+            value = float(raw)
+        except Exception:
+            value = float(default)
+        if value != value or value in (float("inf"), float("-inf")):  # NaN / inf guard
+            value = float(default)
+        if value < float(minimum):
+            value = float(minimum)
+        if value > float(maximum):
+            value = float(maximum)
+        return float(value)
+
+    def _raw_processing_preferences(self) -> dict[str, float]:
+        return {
+            "dark_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_DARK_CUTOFF, 0.0, 0.0, 0.02
+            ),
+            "bright_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, 0.0, 0.0, 0.02
+            ),
+        }
+
+    def _push_raw_processing_cutoffs_to_controls(self) -> None:
+        controls = getattr(self, "raw_controls", None)
+        if controls is None:
+            return
+        prefs = self._raw_processing_preferences()
+        controls.set_auto_level_cutoffs(
+            float(prefs.get("dark_cutoff", 0.0)),
+            float(prefs.get("bright_cutoff", 0.0)),
+        )
+
+    def refresh_raw_processing_preferences(self) -> None:
+        """Re-read Preferences into the RAW processing widget.
+
+        The Prepare Images dialog is non-modal, so the user can open
+        Preferences and change dark/bright cutoffs while a dialog is still
+        open. The Settings hub calls this hook after a save so subsequent
+        slider events use the new percentiles.
+        """
+        self._push_raw_processing_cutoffs_to_controls()
+
     def _raw_auto_level_settings_for_source(
         self,
         source: str,
         settings: dict | RawRenderSettings | None,
     ) -> RawRenderSettings:
         resolved = RawRenderSettings.from_dict(settings)
+        prefs = self._raw_processing_preferences()
+        dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
+        bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
+        black_percentile = max(0.0, min(1.0, dark_cutoff))
+        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff))
         try:
             analysis_settings = replace(
                 resolved,
@@ -6779,8 +6835,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 light_ev=0.0,
                 dark_ev=0.0,
                 auto_levels=False,
-                black_percentile=0.0,
-                white_percentile=1.0,
+                black_percentile=black_percentile,
+                white_percentile=white_percentile,
                 auto_levels_strength=1.0,
                 auto_levels_soft_tails=False,
                 auto_levels_tail_size=0.03,
@@ -6790,7 +6846,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 tone_highlights=0.0,
             )
             preview_rgb = self._raw_preview_proxy_for_result(source, analysis_settings)
-            black_level, white_level = compute_auto_level_bounds(preview_rgb, 0.0, 1.0)
+            black_level, white_level = compute_auto_level_bounds(
+                preview_rgb, black_percentile, white_percentile
+            )
         except Exception:
             return resolved
         return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
@@ -6908,22 +6966,42 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 _raw_prepare_timing("curve compute (fallback)", curve_start)
             except Exception:
                 curve = None
-        # Histogram is a source-only property (depends on pixels, not on
-        # settings), so cache it on the entry after the first computation.
-        histogram = getattr(entry, "combined_histogram", None)
+        # Histogram lives on the WB-applied pre-levels axis so the widget's
+        # clipped bars line up with `curve.input_values`. The distribution
+        # depends on the WB choice AND on the decode mode, so key on:
+        #   - white_balance_mode (camera / auto / custom / background)
+        #     — Camera WB and Auto WB both leave wb_multipliers=None but
+        #     rawpy decodes them differently.
+        #   - wb_sample_base_mode — for Custom WB derived from a picked
+        #     sample, the same gains under a different base mode produce a
+        #     different decoded buffer.
+        #   - normalized custom multipliers (only meaningful when set).
+        wb_gains: tuple[float, float, float] | None = None
+        try:
+            multipliers = getattr(settings, "wb_multipliers", None)
+            wb_space = str(getattr(settings, "wb_multiplier_space", None) or "").strip().lower() or None
+            if multipliers is not None and wb_space in {None, "post_decode_rgb"}:
+                wb_gains = (
+                    float(multipliers[0]),
+                    float(multipliers[1]),
+                    float(multipliers[2]),
+                )
+        except Exception:
+            wb_gains = None
+        wb_mode = str(getattr(settings, "white_balance_mode", "") or "camera").strip().lower() or "camera"
+        wb_base_mode = str(getattr(settings, "wb_sample_base_mode", "") or "").strip().lower() or None
+        histogram_cache_key = ("wb", wb_mode, wb_base_mode, wb_gains)
+        cached_pair = getattr(entry, "combined_histogram", None)
+        cached_key = getattr(entry, "combined_histogram_key", None)
+        histogram = cached_pair if cached_key == histogram_cache_key else None
         if histogram is None:
             try:
                 hist_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-                prepared_inputs = prepare_post_decode_fast_inputs(rgb, settings)
-                processed = apply_post_decode_processing_fast(
-                    rgb,
-                    settings,
-                    prepared_inputs=prepared_inputs,
-                )
-                hist_rgb = processed.rgb
+                hist_rgb = compute_pre_levels_working_rgb(rgb, settings)
                 hist = np.histogram(np.clip(hist_rgb, 0.0, 1.0).ravel(), bins=96, range=(0.0, 1.0))[0]
                 histogram = hist.astype(np.float32)
                 entry.combined_histogram = histogram
+                entry.combined_histogram_key = histogram_cache_key
                 _raw_prepare_timing("histogram compute", hist_start)
             except Exception:
                 histogram = None
@@ -6997,6 +7075,12 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 detail=f"{preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
             )
             preview_float = fast_result.rgb
+            controls = getattr(self, "raw_controls", None)
+            if controls is not None:
+                controls.sync_from_live_bounds(
+                    fast_result.debug.black_level,
+                    fast_result.debug.white_level,
+                )
         except Exception as exc:
             result.processing_status = "failed"
             result.failure_reason = str(exc)

@@ -88,6 +88,7 @@ from utils.image_processing_pipeline import (
     apply_post_decode_processing_fast,
     compute_auto_level_bounds_from_luminance,
     compute_post_decode_transfer_curve,
+    compute_pre_levels_working_rgb,
     prepare_post_decode_fast_inputs,
     raw_basic_controls_from_settings,
     raw_settings_from_basic_controls,
@@ -1018,6 +1019,7 @@ class LiveLabTab(QWidget):
             self.raw_processing_body,
             show_tone_controls_when_disabled=True,
         )
+        self._push_raw_processing_cutoffs_to_controls()
         self.raw_controls.settingsChanged.connect(self._on_raw_processing_controls_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._toggle_active_raw_background_wb_pick)
         raw_body_layout.addWidget(self.raw_controls)
@@ -1533,6 +1535,27 @@ class LiveLabTab(QWidget):
             ),
         }
 
+    def _push_raw_processing_cutoffs_to_controls(self) -> None:
+        """Forward Preferences dark/bright cutoffs into the shared widget."""
+        controls = getattr(self, "raw_controls", None)
+        if controls is None:
+            return
+        prefs = self._raw_processing_preferences()
+        controls.set_auto_level_cutoffs(
+            float(prefs.get("dark_cutoff", 0.0)),
+            float(prefs.get("bright_cutoff", 0.0)),
+        )
+
+    def refresh_raw_processing_preferences(self) -> None:
+        """Public entry point for the Settings hub to invoke after a save.
+
+        Preferences can change while the Live Lab panel remains open (the
+        Settings hub lives in the same window), so we re-push the cutoffs
+        whenever the user saves Preferences. Safe to call before controls
+        exist — no-ops if the widget hasn't been built yet.
+        """
+        self._push_raw_processing_cutoffs_to_controls()
+
     def _raw_settings_from_controls(self, *, update_session_settings: bool = True) -> RawRenderSettings:
         controls = getattr(self, "raw_controls", None)
         if controls is None:
@@ -1549,11 +1572,25 @@ class LiveLabTab(QWidget):
         settings: RawRenderSettings | None,
     ) -> RawRenderSettings:
         resolved = RawRenderSettings.from_dict(settings)
+        prefs = self._raw_processing_preferences()
+        dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
+        bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
+        black_percentile = max(0.0, min(1.0, dark_cutoff))
+        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff))
         try:
             entry = LiveLabTab._raw_preview_cache_entry(self, source_path, resolved)
-            black_level, white_level = LiveLabTab._raw_preview_source_auto_bounds(entry)
+            preview = LiveLabTab._raw_preview_resized_for_entry(entry)
+            luminance = preview @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
+            black_level, white_level = compute_auto_level_bounds_from_luminance(
+                luminance, black_percentile, white_percentile
+            )
         except Exception:
-            return compute_auto_level_adjusted_settings_from_source(source_path, settings=resolved)
+            return compute_auto_level_adjusted_settings_from_source(
+                source_path,
+                settings=resolved,
+                black_percentile=black_percentile,
+                white_percentile=white_percentile,
+            )
         if black_level is None or white_level is None:
             return resolved
         return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
@@ -2828,6 +2865,12 @@ class LiveLabTab(QWidget):
         self._raw_preview_last_curve_signature = LiveLabTab._raw_curve_signature_for_source(
             source_path, processing_settings
         )
+        controls = getattr(self, "raw_controls", None)
+        if controls is not None:
+            controls.sync_from_live_bounds(
+                fast_result.debug.black_level,
+                fast_result.debug.white_level,
+            )
         _raw_timing_log("RAW preview total", start, detail=source_name)
         return fast_result.rgb, processing_settings
 
@@ -3293,13 +3336,10 @@ class LiveLabTab(QWidget):
             return None
 
         try:
-            prepared_inputs = prepare_post_decode_fast_inputs(rgb, resolved_settings)
-            processed = apply_post_decode_processing_fast(
-                rgb,
-                resolved_settings,
-                prepared_inputs=prepared_inputs,
-            )
-            histogram_rgb = processed.rgb
+            # Histogram bins live on the same axis as `curve.input_values`
+            # (WB-applied, pre-levels luminance) so the widget's clipped-bin
+            # markers line up with the curve saturation points.
+            histogram_rgb = compute_pre_levels_working_rgb(rgb, resolved_settings)
         except Exception:
             histogram_rgb = rgb
 

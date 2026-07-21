@@ -830,6 +830,21 @@ def _resolve_post_decode_wb_gains(settings: Mapping[str, Any]) -> tuple[float, f
     return gains
 
 
+def compute_pre_levels_working_rgb(rgb: Any, settings: Any) -> np.ndarray:
+    """Return the WB-applied RGB used as input to the auto-levels stage.
+
+    The curve preview histogram lives on this axis so bin positions line up
+    with :attr:`PostDecodeTransferCurve.input_values` and the widget's
+    "clipped" markers are meaningful.
+    """
+    normalized_settings = _settings_to_dict(settings)
+    working = to_float_rgb(rgb, clip=False)
+    gains = _resolve_post_decode_wb_gains(normalized_settings)
+    if gains is not None:
+        working = apply_custom_white_balance(working, gains)
+    return np.clip(np.asarray(working[..., :3], dtype=np.float32), 0.0, 1.0)
+
+
 def prepare_post_decode_fast_inputs(
     rgb: Any,
     settings: Any,
@@ -947,6 +962,7 @@ __all__ = [
     "compute_auto_level_bounds_from_luminance",
     "compute_auto_levels_transfer",
     "compute_post_decode_transfer_curve",
+    "compute_pre_levels_working_rgb",
     "compute_luminance",
     "hard_luminance_levels",
     "smoothstep",

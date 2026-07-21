@@ -1018,7 +1018,7 @@ def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode
     assert float(histogram.min()) >= 0.0
 
 
-def test_live_lab_raw_curve_preview_histogram_tracks_processed_preview(tmp_path, monkeypatch):
+def test_live_lab_raw_curve_preview_histogram_uses_pre_levels_working_buffer(tmp_path, monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
     source_path = tmp_path / "sample.nef"
@@ -1027,16 +1027,17 @@ def test_live_lab_raw_curve_preview_histogram_tracks_processed_preview(tmp_path,
     key = state._raw_preview_proxy_cache_key(source_path, settings)
     state._pending_raw_preview_proxy_cache = {
         key: live_lab_tab._RawPreviewCacheEntry(
-            raw_rgb=np.zeros((2, 2, 3), dtype=np.float32),
+            raw_rgb=np.full((2, 2, 3), 0.1, dtype=np.float32),
         )
     }
 
-    processed_rgb = np.zeros((2, 2, 3), dtype=np.float32)
-    processed_rgb[..., :] = 1.0
+    # Force the pre-levels helper to a known constant so the histogram
+    # peak lands in a predictable bin regardless of the WB stage.
+    pre_levels_rgb = np.full((2, 2, 3), 0.75, dtype=np.float32)
     monkeypatch.setattr(
         live_lab_tab,
-        "apply_post_decode_processing_fast",
-        lambda rgb, settings, *, prepared_inputs=None: SimpleNamespace(rgb=processed_rgb),
+        "compute_pre_levels_working_rgb",
+        lambda rgb, settings: pre_levels_rgb,
     )
 
     analysis = live_lab_tab.LiveLabTab._raw_curve_preview_analysis_from_path(state, source_path, settings)
@@ -1044,7 +1045,9 @@ def test_live_lab_raw_curve_preview_histogram_tracks_processed_preview(tmp_path,
     _rgb, histogram = analysis
     assert histogram is not None
     assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
-    assert int(histogram.argmax()) == histogram.size - 1
+    # 0.75 lands in bin int(0.75 * 96) == 72 (the histogram is normalized
+    # by peak so we check bin position, not amplitude).
+    assert int(histogram.argmax()) == 72
 
 
 def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_selection(tmp_path, monkeypatch):
