@@ -346,6 +346,78 @@ def test_pull_all_fast_path_returns_early_when_nothing_changed(tmp_path, monkeyp
     assert "no-op fast path" in out
 
 
+def _complete_noop_push_result():
+    summary = cloud_sync._new_sync_summary()
+    summary["calibrations_skipped_noop"] = 16
+    return {
+        "pushed": 0,
+        "total": 0,
+        "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 86, "attempted": 0},
+        "sync_summary": summary,
+    }
+
+
+def test_sync_all_reuses_initial_remote_list_after_proven_noop_push(monkeypatch, capsys):
+    client = _RecordingClient([{"id": "cloud-555"}])
+    pulled_remote_lists: list[list[dict]] = []
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING:
+            cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+    })
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _client: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "push_calibrations",
+        lambda *args, **kwargs: {"pushed": 0, "total": 16, "errors": []},
+    )
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *args, **kwargs: _complete_noop_push_result())
+
+    def _pull(*args, **kwargs):
+        pulled_remote_lists.append(kwargs["remote_obs"])
+        return {"pulled": 0, "total": 0, "errors": [], "deleted_remote": []}
+
+    monkeypatch.setattr(cloud_sync, "pull_all", _pull)
+    monkeypatch.setattr(
+        cloud_sync,
+        "pull_calibrations",
+        lambda *args, **kwargs: {"pulled": 0, "total": 16, "errors": []},
+    )
+
+    cloud_sync.sync_all(client, sync_images=True, materialize_remote_images=True, full_pull=False)
+
+    assert client.list_calls == 1
+    assert pulled_remote_lists == [[{"id": "cloud-555"}]]
+    assert "remote observations reused" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda result: result.update(total=1, pushed=1),
+        lambda result: result["spore_measurement_reconcile"].update(attempted=1),
+        lambda result: result["spore_summary_reconcile"].update(attempted=1),
+        lambda result: result["sync_summary"].update(images_deleted_remote=1),
+    ],
+)
+def test_push_mutation_or_reconciliation_requires_remote_list_refresh(mutate):
+    push_result = _complete_noop_push_result()
+    mutate(push_result)
+
+    assert cloud_sync._push_phase_requires_remote_observation_refresh(
+        {"pushed": 0, "errors": []},
+        push_result,
+    ) is True
+
+
+def test_incomplete_push_result_requires_remote_list_refresh():
+    assert cloud_sync._push_phase_requires_remote_observation_refresh(
+        {"pushed": 0, "errors": []},
+        {"pushed": 0, "total": 0, "errors": []},
+    ) is True
+
+
 def test_pull_all_fast_path_still_pulls_when_remote_updated(tmp_path, monkeypatch):
     """A newer remote updated_at must survive fast-path pruning."""
     db_path = _init_db(tmp_path)
@@ -480,14 +552,19 @@ def _run_safety_sync(
     pull_error=None,
     settings_updates=None,
     settings_state=None,
+    push_kwargs=None,
+    measurement_verification_completed=True,
 ):
     pull_kwargs: dict[str, Any] = {}
     settings_updates = settings_updates if settings_updates is not None else []
-    settings_state = settings_state if settings_state is not None else (
-        {} if watermark is None else {
-            cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: watermark,
-        }
-    )
+    settings_state = settings_state if settings_state is not None else {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING:
+            cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        **(
+            {cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: watermark}
+            if watermark is not None else {}
+        ),
+    }
 
     monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_state))
     monkeypatch.setattr(
@@ -510,11 +587,21 @@ def _run_safety_sync(
         "pull_calibrations",
         lambda *args, **kwargs: {"pulled": 0, "total": 0, "errors": []},
     )
-    monkeypatch.setattr(
-        cloud_sync,
-        "push_all",
-        lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []},
-    )
+    def _push(*args, **kwargs):
+        if push_kwargs is not None:
+            push_kwargs.update(kwargs)
+        return {
+            "pushed": 0,
+            "total": 0,
+            "errors": [],
+            "spore_measurement_reconcile": (
+                {"candidates": 0, "attempted": 0}
+                if kwargs.get("verify_stamped_measurements") and measurement_verification_completed
+                else None
+            ),
+        }
+
+    monkeypatch.setattr(cloud_sync, "push_all", _push)
 
     def _pull(*args, **kwargs):
         pull_kwargs.update(kwargs)
@@ -557,11 +644,60 @@ def test_child_safety_pull_runs_when_watermark_is_stale(monkeypatch):
 
 def test_child_safety_pull_skips_when_watermark_is_fresh(monkeypatch, capsys):
     fresh = datetime.now(timezone.utc).isoformat()
-    _result, pull_kwargs, updates = _run_safety_sync(monkeypatch, watermark=fresh)
+    push_kwargs: dict[str, Any] = {}
+    _result, pull_kwargs, updates = _run_safety_sync(
+        monkeypatch,
+        watermark=fresh,
+        push_kwargs=push_kwargs,
+    )
 
     assert pull_kwargs["full_pull"] is False
+    assert push_kwargs["verify_stamped_measurements"] is False
     assert updates == []
     assert f"child-change safety pull skipped: fresh watermark last={fresh}" in capsys.readouterr().out
+
+
+def test_measurement_remote_verification_runs_once_for_new_version(monkeypatch):
+    fresh = datetime.now(timezone.utc).isoformat()
+    settings_state = {cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: fresh}
+    push_kwargs: dict[str, Any] = {}
+
+    _result, pull_kwargs, updates = _run_safety_sync(
+        monkeypatch,
+        watermark=fresh,
+        settings_state=settings_state,
+        push_kwargs=push_kwargs,
+    )
+
+    assert pull_kwargs["full_pull"] is False
+    assert push_kwargs["verify_stamped_measurements"] is True
+    assert len(updates) == 1
+    assert updates[0][cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING] == (
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION
+    )
+    assert cloud_sync._CLOUD_MEASUREMENT_RECONCILE_AT_SETTING in updates[0]
+
+
+def test_failed_measurement_remote_verification_does_not_advance_version(monkeypatch):
+    fresh = datetime.now(timezone.utc).isoformat()
+    settings_state = {cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: fresh}
+
+    _result, _pull_kwargs, updates = _run_safety_sync(
+        monkeypatch,
+        watermark=fresh,
+        settings_state=settings_state,
+        measurement_verification_completed=False,
+    )
+
+    assert updates == []
+
+
+def test_child_safety_pull_enables_stamped_measurement_verification(monkeypatch):
+    push_kwargs: dict[str, Any] = {}
+
+    _run_safety_sync(monkeypatch, watermark=None, push_kwargs=push_kwargs)
+
+    assert push_kwargs["verify_stamped_measurements"] is True
 
 
 def test_child_safety_pull_advances_watermark_with_row_level_review_issues(monkeypatch):

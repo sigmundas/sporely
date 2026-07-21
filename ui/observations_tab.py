@@ -175,6 +175,7 @@ from utils.cloud_sync import (
     summarize_image_too_large_for_plan_error,
     summarize_sync_change_activity,
     summarize_sync_issues,
+    sync_result_requires_observation_refresh,
     sync_all,
     unlink_local_observation_from_cloud,
 )
@@ -3792,9 +3793,16 @@ class ObservationsTab(QWidget):
             else "queued_after_worker=unknown"
         )
         _cloud_sync_completion_timing("UI completion handler entered", None, detail=queue_delay)
-        refresh_start = time.perf_counter()
-        self.refresh_observations(show_status=False)
-        _cloud_sync_completion_timing("UI refresh_observations complete", refresh_start)
+        if sync_result_requires_observation_refresh(result):
+            refresh_start = time.perf_counter()
+            self.refresh_observations(show_status=False)
+            _cloud_sync_completion_timing("UI refresh_observations complete", refresh_start)
+        else:
+            _cloud_sync_completion_timing(
+                "UI refresh_observations skipped",
+                None,
+                detail="reason=proven_no_local_or_status_change",
+            )
         if result.get("cancelled"):
             if self._cloud_sync_show_status:
                 self._set_status_progress_visible(False)

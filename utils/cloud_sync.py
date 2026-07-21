@@ -156,6 +156,13 @@ _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
 )
 _CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING = 'cloud_last_child_safety_pull_at'
 _CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS = 24
+_CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING = 'cloud_measurement_reconcile_version'
+_CLOUD_MEASUREMENT_RECONCILE_AT_SETTING = 'cloud_measurement_reconcile_at'
+_CLOUD_MEASUREMENT_RECONCILE_VERSION = 1
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING = 'cloud_pending_image_repair_version'
+_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
+_CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
 _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS = frozenset({
     'ai_selected_service',
     'ai_selected_taxon_id',
@@ -4193,6 +4200,47 @@ def summarize_sync_change_activity(result: dict | None) -> dict:
     }
 
 
+_SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS = (
+    'observations_redirtied_pending_local_images',
+    'observations_patched',
+    'observations_deleted_remote',
+    'images_uploaded',
+    'images_cloud_id_repaired',
+    'images_deleted_remote',
+    'measurements_patched',
+    'calibrations_pushed',
+    'calibrations_pulled',
+    'calibrations_conflicts',
+    'calibration_reference_images_uploaded',
+    'remote_media_downloads',
+    'remote_media_materializations',
+)
+
+
+def sync_result_requires_observation_refresh(result: dict | None) -> bool:
+    """Return False only when a complete sync result proves a UI no-op."""
+    data = dict(result or {})
+    summary = data.get('sync_summary')
+    if not isinstance(summary, dict):
+        return True
+    if data.get('cancelled') or data.get('skipped'):
+        return True
+    if data.get('errors') or data.get('deleted_remote'):
+        return True
+
+    for key in ('pushed', 'pulled'):
+        try:
+            if int(data.get(key, 0) or 0) != 0:
+                return True
+        except Exception:
+            return True
+
+    return any(
+        _sync_summary_value(summary, key) > 0
+        for key in _SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS
+    )
+
+
 def _observation_display_name(obs: dict | None) -> str:
     record = obs or {}
     parts = [
@@ -4834,6 +4882,119 @@ def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str
     return last_at <= stale_before, last_text
 
 
+def _cloud_measurement_remote_verification_due(
+    *,
+    full_pull: bool,
+    child_safety_pull: bool,
+    safety_pull_due: bool,
+) -> tuple[bool, str]:
+    """Select deep stamped-ID verification without weakening local repair."""
+    if full_pull:
+        return True, 'full_pull'
+
+    settings = get_app_settings()
+    stored_version = _safe_int(settings.get(_CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING))
+    if stored_version != _CLOUD_MEASUREMENT_RECONCILE_VERSION:
+        return True, f'version_{stored_version}_to_{_CLOUD_MEASUREMENT_RECONCILE_VERSION}'
+
+    if child_safety_pull and safety_pull_due:
+        return True, 'child_safety_pull'
+    return False, 'fresh_watermark'
+
+
+def _cloud_pending_image_repair_scan_due(
+    now: datetime | None = None,
+) -> tuple[bool, str]:
+    """Schedule the legacy/interrupted-state scan outside ordinary no-op syncs."""
+    stored_version = _safe_int(
+        SettingsDB.get_setting(_CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING, '')
+    )
+    if stored_version != _CLOUD_PENDING_IMAGE_REPAIR_VERSION:
+        return True, f'version_{stored_version}_to_{_CLOUD_PENDING_IMAGE_REPAIR_VERSION}'
+
+    last_text = str(
+        SettingsDB.get_setting(_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING, '') or ''
+    ).strip()
+    last_at = _parse_sync_timestamp(last_text)
+    if last_at is None:
+        return True, 'missing_or_invalid_watermark'
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    stale_before = current.astimezone(timezone.utc) - timedelta(
+        hours=_CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS
+    )
+    if last_at <= stale_before:
+        return True, 'stale_watermark'
+    return False, 'fresh_watermark'
+
+
+def _record_cloud_pending_image_repair_scan_complete() -> bool:
+    completed_at = datetime.now(timezone.utc).isoformat()
+    try:
+        SettingsDB.set_setting(
+            _CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING,
+            str(_CLOUD_PENDING_IMAGE_REPAIR_VERSION),
+        )
+        SettingsDB.set_setting(_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING, completed_at)
+    except Exception as exc:
+        print(
+            f'[cloud_sync] pending image repair watermark persist failed: {exc}',
+            flush=True,
+        )
+        return False
+    return True
+
+
+_PUSH_SUMMARY_REMOTE_LIST_REUSE_SAFE_POSITIVE_KEYS = frozenset({
+    'calibrations_skipped_noop',
+    'calibration_remote_lookups',
+})
+
+
+def _push_phase_requires_remote_observation_refresh(
+    calibration_push_result: dict | None,
+    push_result: dict | None,
+) -> bool:
+    """Return False only when push results prove no cloud mutation occurred."""
+    calibration_data = dict(calibration_push_result or {})
+    push_data = dict(push_result or {})
+    if calibration_data.get('errors') or push_data.get('errors'):
+        return True
+
+    required_zero_values = (
+        calibration_data.get('pushed'),
+        push_data.get('pushed'),
+        push_data.get('total'),
+    )
+    try:
+        if any(int(value) != 0 for value in required_zero_values):
+            return True
+    except (TypeError, ValueError):
+        return True
+
+    for key in ('spore_measurement_reconcile', 'spore_summary_reconcile'):
+        reconciliation = push_data.get(key)
+        if not isinstance(reconciliation, dict):
+            return True
+        try:
+            if int(reconciliation.get('attempted')) != 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+
+    summary = push_data.get('sync_summary')
+    if not isinstance(summary, dict):
+        return True
+    for key, value in summary.items():
+        if key in _PUSH_SUMMARY_REMOTE_LIST_REUSE_SAFE_POSITIVE_KEYS:
+            continue
+        if _sync_summary_value(summary, key) > 0:
+            return True
+    return False
+
+
 def sync_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
@@ -4896,6 +5057,24 @@ def sync_all(
                 remote_calibrations=remote_calibrations,
             )
 
+        safety_pull_due = False
+        safety_pull_last = None
+        if child_safety_pull and not full_pull:
+            safety_pull_due, safety_pull_last = _cloud_child_safety_pull_due()
+        verify_stamped_measurements, measurement_verify_reason = (
+            _cloud_measurement_remote_verification_due(
+                full_pull=full_pull,
+                child_safety_pull=child_safety_pull,
+                safety_pull_due=safety_pull_due,
+            )
+        )
+        print(
+            f'[cloud_sync] spore measurement remote verification: '
+            f'{"enabled" if verify_stamped_measurements else "skipped"} '
+            f'reason={measurement_verify_reason}',
+            flush=True,
+        )
+
         # Phase 1: Push local edits to the cloud
         with _cloud_sync_phase_scope(profiler, 'push_all'):
             push_result = push_all(
@@ -4907,28 +5086,40 @@ def sync_all(
                 remote_obs=remote_obs,
                 sync_calibrations=False,
                 full_pull=full_pull,
+                verify_stamped_measurements=verify_stamped_measurements,
             )
 
-        # Refresh remote observations after the push phase so pull-side
-        # comparisons see the cloud state that now includes any local metadata
-        # edits we just pushed. This network round-trip runs before the first
-        # pull-side progress update, so announce it and time it.
+        # Refresh after any push-side cloud mutation so pull comparisons see
+        # the resulting parent timestamps. A fully-described zero-candidate,
+        # zero-reconciliation push can safely reuse the initial list.
         _set_progress_phase(progress_state, 'refresh_remote')
-        _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
-        refresh_start = _cloud_sync_perf_counter()
-        with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
-            remote_obs = client.list_remote_observations()
-        refresh_elapsed = _cloud_sync_perf_counter() - refresh_start
-        print(
-            f"[cloud_sync] observation preflight: remote observations refreshed "
-            f"count={len(remote_obs or [])} duration={refresh_elapsed * 1000:.0f}ms",
-            flush=True,
-        )
+        if _push_phase_requires_remote_observation_refresh(
+            calibration_push_result,
+            push_result,
+        ):
+            _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
+            refresh_start = _cloud_sync_perf_counter()
+            with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
+                remote_obs = client.list_remote_observations()
+            refresh_elapsed = _cloud_sync_perf_counter() - refresh_start
+            print(
+                f"[cloud_sync] observation preflight: remote observations refreshed "
+                f"count={len(remote_obs or [])} duration={refresh_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
+        else:
+            _emit_progress(
+                progress_cb,
+                "Cloud observations unchanged; reusing loaded list…",
+                progress_state,
+            )
+            print(
+                f"[cloud_sync] observation preflight: remote observations reused "
+                f"count={len(remote_obs or [])} reason=push_phase_proven_no_cloud_mutation",
+                flush=True,
+            )
 
-        safety_pull_due = False
-        safety_pull_last = None
         if child_safety_pull and not full_pull:
-            safety_pull_due, safety_pull_last = _cloud_child_safety_pull_due()
             if safety_pull_due:
                 print(
                     f"[cloud_sync] child-change safety pull: "
@@ -4960,10 +5151,21 @@ def sync_all(
         # Row-level review issues are a completed reconciliation outcome, not a
         # failed safety pass. Exceptions from auth, transport, or bulk child
         # fetches escape pull_all and therefore never reach this write.
+        completed_settings: dict[str, object] = {}
+        completed_at = datetime.now(timezone.utc).isoformat()
         if safety_pull_due:
-            update_app_settings({
-                _CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: datetime.now(timezone.utc).isoformat(),
+            completed_settings[_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING] = completed_at
+        measurement_verification_completed = bool(
+            verify_stamped_measurements
+            and push_result.get('spore_measurement_reconcile') is not None
+        )
+        if measurement_verification_completed:
+            completed_settings.update({
+                _CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: _CLOUD_MEASUREMENT_RECONCILE_VERSION,
+                _CLOUD_MEASUREMENT_RECONCILE_AT_SETTING: completed_at,
             })
+        if completed_settings:
+            update_app_settings(completed_settings)
 
         _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
@@ -7252,7 +7454,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
     include_pending_local_media_uploads: bool = False,
     explicit_media_upload_selection: set[int] | None = None,
     diagnostic_log: bool = False,
-) -> None:
+) -> bool:
     """Mark synced observations dirty when they still have cloud-eligible local images.
 
     Only runs when the caller explicitly requests a media-upload pass. Metadata-only
@@ -7266,8 +7468,9 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
     default False so the scan is a no-op.
     """
     if not include_pending_local_media_uploads:
-        return
+        return True
     dirty_ids: list[int] = []
+    scan_completed = True
     conn = get_connection()
     try:
         conn.row_factory = sqlite3.Row
@@ -7290,6 +7493,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
     except Exception as exc:
         print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
         candidate_ids = []
+        scan_completed = False
     finally:
         conn.close()
 
@@ -7306,6 +7510,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
             print(
                 f"[cloud_sync] Could not evaluate pending local images for observation {obs_id}: {exc}"
             )
+            scan_completed = False
             continue
         pending_count = len(pending_ids)
         if pending_count > 0:
@@ -7315,7 +7520,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
             )
             dirty_ids.append(obs_id)
     if not dirty_ids:
-        return
+        return scan_completed
 
     _increment_sync_summary(
         _cloud_sync_current_summary(),
@@ -7340,8 +7545,10 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
     except Exception as exc:
         conn.rollback()
         print(f"[cloud_sync] Could not update dirty state for pending local images: {exc}")
+        scan_completed = False
     finally:
         conn.close()
+    return scan_completed
 
 
 def _has_pending_local_push_work() -> bool:
@@ -11869,6 +12076,7 @@ def push_all(
     remote_obs: list[dict] | None = None,
     sync_calibrations: bool = True,
     full_pull: bool = True,
+    verify_stamped_measurements: bool = True,
 ) -> dict:
     """Push all unsynced / dirty observations (and optionally images) to cloud.
 
@@ -11898,18 +12106,31 @@ def push_all(
 
     if sync_images:
         pending_scan_start = _cloud_sync_perf_counter()
-        _mark_cloud_observations_dirty_for_pending_local_images(
-            include_pending_local_media_uploads=True,
-        )
+        pending_scan_due, pending_scan_reason = _cloud_pending_image_repair_scan_due()
+        pending_scan_completed = False
+        if pending_scan_due:
+            pending_scan_completed = _mark_cloud_observations_dirty_for_pending_local_images(
+                include_pending_local_media_uploads=True,
+            )
+            if pending_scan_completed:
+                pending_scan_completed = _record_cloud_pending_image_repair_scan_complete()
         pending_scan_elapsed = _cloud_sync_perf_counter() - pending_scan_start
         redirtied = _sync_summary_value(
             _cloud_sync_current_summary(), 'observations_redirtied_pending_local_images'
         )
-        print(
-            f"[cloud_sync] observation preflight: pending image dirty scan complete "
-            f"re_dirtied={redirtied} duration={pending_scan_elapsed * 1000:.0f}ms",
-            flush=True,
-        )
+        if pending_scan_due:
+            print(
+                f"[cloud_sync] observation preflight: pending image dirty scan complete "
+                f"re_dirtied={redirtied} completed={pending_scan_completed} "
+                f"reason={pending_scan_reason} duration={pending_scan_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
+        else:
+            print(
+                f"[cloud_sync] observation preflight: pending image dirty scan skipped "
+                f"reason={pending_scan_reason} duration={pending_scan_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
 
     # Image deletion is metadata work, not image-byte preparation. Flush the
     # global queue before pruning to dirty observations so an unchecked image
@@ -12494,8 +12715,14 @@ def push_all(
     # without making historical sync gaps depend on a full pull.
     measurement_reconcile = None
     summary_reconcile = None
+    profiler = _cloud_sync_current_profiler()
     try:
-        measurement_reconcile = _reconcile_missing_spore_measurements(client, errors)
+        with _cloud_sync_phase_scope(profiler, 'reconcile_missing_spore_measurements'):
+            measurement_reconcile = _reconcile_missing_spore_measurements(
+                client,
+                errors,
+                verify_stamped_remote=verify_stamped_measurements,
+            )
     except Exception as reconcile_exc:
         if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
             raise
@@ -12505,7 +12732,8 @@ def push_all(
         measurement_reconcile = None
 
     try:
-        summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
+        with _cloud_sync_phase_scope(profiler, 'reconcile_missing_spore_summaries'):
+            summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
     except Exception as reconcile_exc:
         if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
             raise
@@ -13854,6 +14082,8 @@ def _push_measurements_for_observation(
 def _reconcile_missing_spore_measurements(
     client: SporelyCloudClient,
     errors: list[str],
+    *,
+    verify_stamped_remote: bool = True,
 ) -> dict[str, int]:
     """Backfill raw `public.spore_measurements` rows for observations
     that were synced pre-Stage-D or otherwise skipped the measurement
@@ -13868,10 +14098,11 @@ def _reconcile_missing_spore_measurements(
     n_paired = 29 while the cloud raw table only exposes 20 through
     the public spore RPCs, and the two disagree until this pass runs.
 
-    We target observations with either an unstamped local measurement or a
-    stamped cloud id that no longer exists remotely. The latter catches
-    interrupted/recreated cloud datasets where SQLite still says "synced"
-    even though the public raw-measurement rows disappeared.
+    We always target observations with an unstamped local measurement. When
+    ``verify_stamped_remote`` is enabled by a version upgrade, child-safety
+    pass, or explicit recovery pull, stamped cloud ids are also checked for
+    remote deletion. This keeps ordinary sync proportional to local pending
+    work without losing periodic recovery from recreated cloud datasets.
 
     `_push_measurements_for_observation` is per-measurement idempotent:
     each row is either PATCHed (only if its payload differs from the
@@ -13884,8 +14115,11 @@ def _reconcile_missing_spore_measurements(
     individual observations are appended to `errors` per the surrounding
     convention; auth/temporary errors propagate.
     """
+    reconcile_start = _cloud_sync_perf_counter()
     counters = {'candidates': 0, 'attempted': 0}
+    print('[cloud_sync] spore measurement reconciliation: start', flush=True)
 
+    local_query_start = _cloud_sync_perf_counter()
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     try:
@@ -13922,6 +14156,12 @@ def _reconcile_missing_spore_measurements(
         eligible_rows = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
+    print(
+        f'[cloud_sync] spore measurement reconciliation: local candidate scan complete '
+        f'eligible_rows={len(eligible_rows)} '
+        f'duration={(_cloud_sync_perf_counter() - local_query_start) * 1000:.0f}ms',
+        flush=True,
+    )
 
     candidate_ids = {
         int(row['local_id'])
@@ -13940,13 +14180,20 @@ def _reconcile_missing_spore_measurements(
     remote_ids: set[str] = set()
     deleted_image_ids: set[str] = set()
     getter = getattr(client, '_get', None)
-    if stamped_ids and callable(getter):
+    measurement_requests = 0
+    measurement_rows = 0
+    image_requests = 0
+    image_rows_count = 0
+    if stamped_ids and callable(getter) and verify_stamped_remote:
+        measurement_verify_start = _cloud_sync_perf_counter()
         for start in range(0, len(stamped_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
             chunk = stamped_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
             rows = getter(
                 f'spore_measurements?id=in.({",".join(chunk)})'
                 f'&user_id=eq.{client.user_id}&select=id'
             )
+            measurement_requests += 1
+            measurement_rows += len(rows or [])
             remote_ids.update(
                 str(row.get('id') or '').strip()
                 for row in rows or []
@@ -13957,18 +14204,27 @@ def _reconcile_missing_spore_measurements(
             for row in eligible_rows
             if str(row.get('measurement_cloud_id') or '').strip() not in remote_ids
         )
+        print(
+            f'[cloud_sync] spore measurement reconciliation: stamped measurement verification complete '
+            f'ids={len(stamped_ids)} requests={measurement_requests} rows={measurement_rows} '
+            f'duration={(_cloud_sync_perf_counter() - measurement_verify_start) * 1000:.0f}ms',
+            flush=True,
+        )
 
         image_cloud_ids = sorted({
             str(row.get('image_cloud_id') or '').strip()
             for row in eligible_rows
             if str(row.get('image_cloud_id') or '').strip()
         })
+        image_verify_start = _cloud_sync_perf_counter()
         for start in range(0, len(image_cloud_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
             chunk = image_cloud_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
             image_rows = getter(
                 f'observation_images?id=in.({",".join(chunk)})'
                 f'&user_id=eq.{client.user_id}&select=id,deleted_at,purged_at'
             )
+            image_requests += 1
+            image_rows_count += len(image_rows or [])
             deleted_image_ids.update(
                 str(row.get('id') or '').strip()
                 for row in image_rows or []
@@ -13981,6 +14237,18 @@ def _reconcile_missing_spore_measurements(
             for row in eligible_rows
             if str(row.get('image_cloud_id') or '').strip() in deleted_image_ids
         )
+        print(
+            f'[cloud_sync] spore measurement reconciliation: cloud image verification complete '
+            f'ids={len(image_cloud_ids)} requests={image_requests} rows={image_rows_count} '
+            f'duration={(_cloud_sync_perf_counter() - image_verify_start) * 1000:.0f}ms',
+            flush=True,
+        )
+    elif stamped_ids and not verify_stamped_remote:
+        print(
+            f'[cloud_sync] spore measurement reconciliation: stamped remote verification skipped '
+            f'ids={len(stamped_ids)} reason=periodic_verification_not_due',
+            flush=True,
+        )
 
     candidates = sorted(candidate_ids)
     observation_cloud_ids = {
@@ -13990,6 +14258,12 @@ def _reconcile_missing_spore_measurements(
     }
     counters['candidates'] = len(candidates)
     if not candidates:
+        print(
+            f'[cloud_sync] spore measurement reconciliation: complete '
+            f'candidates=0 attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
         return counters
 
     print(
@@ -14036,6 +14310,12 @@ def _reconcile_missing_spore_measurements(
                 mark_observation_sync_dirty(local_id)
             except Exception:
                 pass
+    print(
+        f'[cloud_sync] spore measurement reconciliation: complete '
+        f'candidates={counters["candidates"]} attempted={counters["attempted"]} '
+        f'duration={(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+        flush=True,
+    )
     return counters
 
 
@@ -14066,11 +14346,14 @@ def _reconcile_missing_spore_summaries(
 
     Returns a small counter dict for the caller's summary/log stanza.
     """
+    reconcile_start = _cloud_sync_perf_counter()
     counters = {'candidates': 0, 'attempted': 0}
+    print('[cloud_sync] spore summary reconciliation: start', flush=True)
 
     # Fetch all remote coverage in one request. A missing-table response
     # means this deployment predates Stage B; other errors follow the
     # surrounding sync error policy.
+    remote_fetch_start = _cloud_sync_perf_counter()
     try:
         remote_rows = client._get(
             f'observation_spore_summaries'
@@ -14086,13 +14369,32 @@ def _reconcile_missing_spore_summaries(
                 '(older deployment); skipping backfill pass.',
                 flush=True,
             )
+            print(
+                f'[cloud_sync] spore summary reconciliation: complete '
+                f'candidates=0 attempted=0 duration='
+                f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+                flush=True,
+            )
             return counters
         # Unknown non-auth error — record it and stop. A per-observation
         # retry via the main dirty loop still works for the individual
         # case.
         errors.append(f'spore summary reconciliation: probe failed: {exc}')
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates=0 attempted=0 probe_error=True duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
         return counters
+    print(
+        f'[cloud_sync] spore summary reconciliation: remote coverage fetch complete '
+        f'rows={len(remote_rows or [])} '
+        f'duration={(_cloud_sync_perf_counter() - remote_fetch_start) * 1000:.0f}ms',
+        flush=True,
+    )
 
+    local_query_start = _cloud_sync_perf_counter()
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     try:
@@ -14110,9 +14412,21 @@ def _reconcile_missing_spore_summaries(
         candidates = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
+    print(
+        f'[cloud_sync] spore summary reconciliation: local candidate scan complete '
+        f'observations={len(candidates)} '
+        f'duration={(_cloud_sync_perf_counter() - local_query_start) * 1000:.0f}ms',
+        flush=True,
+    )
 
     counters['candidates'] = len(candidates)
     if not candidates:
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates=0 attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
         return counters
 
     remote_hashes_by_observation: dict[str, set[str]] = {}
@@ -14126,6 +14440,7 @@ def _reconcile_missing_spore_summaries(
     from utils import spore_summary_sync as spore_summary_sync_module
     from utils.spore_summary import compute_observation_spore_summaries
 
+    hash_build_start = _cloud_sync_perf_counter()
     for row in candidates:
         cloud_id = str(row.get('cloud_id') or '').strip()
         if not cloud_id:
@@ -14147,8 +14462,20 @@ def _reconcile_missing_spore_summaries(
         }
         if local_hashes != remote_hashes_by_observation.get(cloud_id, set()):
             valid_candidates.append((local_id, cloud_id))
+    print(
+        f'[cloud_sync] spore summary reconciliation: local hash comparison complete '
+        f'observations={len(candidates)} mismatched={len(valid_candidates)} '
+        f'duration={(_cloud_sync_perf_counter() - hash_build_start) * 1000:.0f}ms',
+        flush=True,
+    )
 
     if not valid_candidates:
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates={counters["candidates"]} attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
         return counters
 
     print(
@@ -14167,6 +14494,12 @@ def _reconcile_missing_spore_summaries(
             cloud_id=cloud_id,
             errors=errors,
         )
+    print(
+        f'[cloud_sync] spore summary reconciliation: complete '
+        f'candidates={counters["candidates"]} attempted={counters["attempted"]} '
+        f'duration={(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+        flush=True,
+    )
     return counters
 
 

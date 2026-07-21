@@ -1190,7 +1190,7 @@ def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
     assert writer_calls[0]["cloud_id"] == "cloud-obs-631"
 
 
-def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch):
+def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch, capsys):
     """A bulk context-hash comparison skips fully-covered observations."""
     from utils import cloud_sync as cs
 
@@ -1218,6 +1218,11 @@ def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch)
     counters = cs._reconcile_missing_spore_summaries(client, [])
     assert counters == {"candidates": 2, "attempted": 1}
     assert writer_calls == [{"local_obs_id": 43, "cloud_id": "cloud-obs-732"}]
+    output = capsys.readouterr().out
+    assert "spore summary reconciliation: remote coverage fetch complete rows=1" in output
+    assert "spore summary reconciliation: local candidate scan complete observations=2" in output
+    assert "spore summary reconciliation: local hash comparison complete observations=2 mismatched=1" in output
+    assert "spore summary reconciliation: complete candidates=2 attempted=1" in output
 
 
 def test_reconcile_ignores_observations_without_local_measurements(monkeypatch):
@@ -1630,7 +1635,7 @@ def test_measurement_reconcile_backfills_synced_observation_with_missing_cloud_i
     assert push_calls == [42]
 
 
-def test_measurement_reconcile_is_noop_when_all_measurements_have_cloud_ids(monkeypatch):
+def test_measurement_reconcile_is_noop_when_all_measurements_have_cloud_ids(monkeypatch, capsys):
     """Steady state: every local measurement carries a cloud_id. The
     reconciliation query returns zero candidates and the writer never
     runs."""
@@ -1651,9 +1656,80 @@ def test_measurement_reconcile_is_noop_when_all_measurements_have_cloud_ids(monk
     class _FakeClient:
         user_id = "user-x"
 
+        def _get(self, path):
+            if path.startswith("spore_measurements?"):
+                return [{"id": "cloud-meas-1"}, {"id": "cloud-meas-2"}]
+            if path.startswith("observation_images?"):
+                return [{"id": "cloud-image-a", "deleted_at": None, "purged_at": None}]
+            raise AssertionError(path)
+
     counters = cs._reconcile_missing_spore_measurements(_FakeClient(), [])
     assert counters == {"candidates": 0, "attempted": 0}
     assert push_calls == []
+    output = capsys.readouterr().out
+    assert "spore measurement reconciliation: local candidate scan complete eligible_rows=2" in output
+    assert "stamped measurement verification complete ids=2 requests=1 rows=2" in output
+    assert "cloud image verification complete ids=1 requests=1 rows=1" in output
+    assert "spore measurement reconciliation: complete candidates=0 attempted=0" in output
+
+
+def test_measurement_reconcile_fast_path_skips_stamped_remote_verification(monkeypatch, capsys):
+    from utils import cloud_sync as cs
+
+    _install_measurement_reconcile_stubs(
+        monkeypatch,
+        fixture_rows=[
+            (42, "cloud-obs-1", "cloud-image-a", "cloud-meas-1"),
+            (42, "cloud-obs-1", "cloud-image-a", "cloud-meas-2"),
+        ],
+    )
+
+    class _FakeClient:
+        user_id = "user-x"
+
+        def _get(self, path):
+            raise AssertionError(f"fast path must not verify stamped ids: {path}")
+
+    counters = cs._reconcile_missing_spore_measurements(
+        _FakeClient(),
+        [],
+        verify_stamped_remote=False,
+    )
+
+    assert counters == {"candidates": 0, "attempted": 0}
+    assert "stamped remote verification skipped ids=2" in capsys.readouterr().out
+
+
+def test_measurement_reconcile_fast_path_still_repairs_unstamped_measurements(monkeypatch):
+    from utils import cloud_sync as cs
+
+    _install_measurement_reconcile_stubs(
+        monkeypatch,
+        fixture_rows=[
+            (42, "cloud-obs-1", "cloud-image-a", None),
+        ],
+    )
+    push_calls: list[int] = []
+    monkeypatch.setattr(
+        cs,
+        "_push_measurements_for_observation",
+        lambda client, local_id: push_calls.append(int(local_id)),
+    )
+
+    class _FakeClient:
+        user_id = "user-x"
+
+        def _get(self, path):
+            raise AssertionError(f"fast path must not verify stamped ids: {path}")
+
+    counters = cs._reconcile_missing_spore_measurements(
+        _FakeClient(),
+        [],
+        verify_stamped_remote=False,
+    )
+
+    assert counters == {"candidates": 1, "attempted": 1}
+    assert push_calls == [42]
 
 
 def test_measurement_reconcile_repairs_stale_local_cloud_ids(monkeypatch):

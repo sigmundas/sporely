@@ -85,6 +85,10 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 - Cloud media is authoritative for cross-device and web display, but should be treated as a derivative
   or cache when a better local original exists.
 - Cloud should never silently downsample the desktop source of truth.
+- A normal bidirectional sync may reuse its initially loaded remote observation index only when the
+  complete push result proves there were no dirty observation candidates, calibration writes,
+  tombstones, reconciliation attempts, errors, or other cloud mutations. Incomplete or positive
+  mutation results require a fresh post-push index before pull comparisons.
 
 ## Domain Crosswalk
 
@@ -205,6 +209,10 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
   measurements. Unchecking either type excludes it from upload and queues a tombstone when the
   image already has a cloud identity. Microscope seeded-checkbox state distinguishes an initialized
   selection from an untouched legacy backlog, so ordinary media sync does not opt in old images.
+- Image, measurement, deletion, and publish-selection mutations mark their owning observation dirty
+  immediately. The global scan for eligible `cloud_id IS NULL` image rows is a versioned, periodic
+  repair pass for legacy or interrupted state, not a prerequisite for every normal media sync. Its
+  completion watermark advances only after a successful sweep.
 
 #### `source_role`
 
@@ -411,6 +419,19 @@ Cloud derivative rule:
 
 - `image_key`
 - `thumb_key`
+
+#### Measurement reconciliation cadence
+
+- Every normal sync scans for eligible local measurement rows that do not yet have cloud ids and
+  repairs them immediately.
+- Remote existence checks for already-stamped measurement and image ids are recovery work, not
+  ordinary fast-path work. They run when the reconciliation policy version changes, during the
+  periodic child-safety pass, or during an explicit full pull.
+- The durable `cloud_measurement_reconcile_version` and `cloud_measurement_reconcile_at` settings
+  advance only after the stamped-id verification completes. Transport or reconciliation failure
+  therefore leaves the verification due for the next sync.
+- If deep verification finds independently deleted remote rows, the existing observation and
+  mosaic repair paths remain responsible for restoring or re-dirtying the affected local state.
 
 #### Structured observation-level spore summaries
 

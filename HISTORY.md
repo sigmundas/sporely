@@ -1,5 +1,87 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Checked-image cloud sync and authoritative uncheck deletion
+
+Field and microscope gallery checkboxes are now authoritative for cloud media selection. Checked
+microscope images can upload without measurements, while unchecked images are excluded and an
+already-synced cloud image is tombstoned so it disappears from cloud views. The global image
+tombstone queue is flushed before dirty-observation pruning, which means deletion still converges
+on an otherwise no-op sync.
+
+The observation-tab `Sync now` action now uses the same normal media-sync mode as Profile & Cloud:
+`sync_images=True`, `materialize_remote_images=True`, and `full_pull=False`. Deep reconciliation
+remains a separate recovery operation rather than being coupled to ordinary media sync.
+
+### Observation index and sync-completion performance
+
+Timing instrumentation isolated an 8.6-second observation row-cache rebuild after startup and every
+sync. The bottleneck was not table rendering or cloud calibration linking; it was repeated taxonomy,
+measurement, image, and thumbnail database work.
+
+Covered changes:
+
+- Added one-pass vernacular lookup for all unique table taxa, including language filtering and
+  scientific-name synonym resolution.
+- Replaced per-observation measurement-statistics reads with one grouped spore-count query.
+- Replaced per-image image/tombstone/thumbnail reads with one ordered joined query that preserves
+  field-first thumbnail selection and excludes tombstoned images.
+- Used temporary requested-id tables so the bulk paths remain safe beyond a typical SQLite bind
+  parameter limit.
+- Added worker/UI completion timings and corrected `SPORELY_DEBUG_RAW_TIMING=0` so zero disables
+  diagnostics and `=1` enables them.
+
+Measured with 262 observations, row-cache construction fell from about 8.6 seconds to 0.42–0.43
+seconds. Total startup observation refresh fell to about 0.61 seconds, and post-sync UI completion
+fell from about 8.7 seconds to about 0.57 seconds.
+
+### Metadata-safe fast sync and child-change safety pull
+
+Metadata reconciliation is independent from remote-byte materialization. Existing local image rows
+can receive cloud metadata while byte downloads remain deferred, failed imports preserve retryable
+state, and snapshots are not advanced past unapplied work. Fast pull continues to prune unchanged
+observations, with a periodic metadata-only child-safety pass covering cloud image or measurement
+changes that cannot be trusted to touch the parent observation timestamp.
+
+Remote existence checks for already-stamped spore measurements and their cloud image rows now run
+as recovery reconciliation rather than on every ordinary sync. A reconciliation policy version
+forces one verification after this change; subsequent deep checks run with the periodic child-safety
+pass or an explicit full pull. Locally unstamped eligible measurements are still detected and
+repaired on every sync, and a failed deep verification does not advance its durable marker. This
+removes 40 remote requests from the measured steady-state no-op path (about 4.2 seconds for 3,348
+measurements and 572 images) without weakening repair of independently deleted cloud rows.
+
+Live validation reduced no-op worker time from about 5.9 seconds to 1.60 seconds. The observations
+tab also avoids its roughly 0.52-second post-sync table rebuild when the complete sync result proves
+there were no local, remote, conflict, deletion, error, repair, or status changes. Results without
+the full summary contract and all non-no-op outcomes retain the conservative refresh.
+
+Live validation showed proven no-op completion handlers falling to 30–34 ms, while a sync that
+patched an observation and four new measurements retained the 0.58-second table refresh. Proven
+zero-candidate pushes also reuse the remote observation list loaded at sync start, avoiding a second
+150–197 ms request. Any calibration write, dirty observation, tombstone, reconciliation attempt,
+error, unknown result shape, or other positive mutation counter keeps the post-push refresh.
+
+The global pending-image dirty sweep is now periodic repair work rather than a tax on every normal
+media sync. Image and measurement mutations plus publish-checkbox changes already dirty the affected
+observation immediately. A versioned 24-hour repair marker retains recovery for legacy or interrupted
+state and advances only after a complete scan. This removes about 0.26 seconds from ordinary no-op
+sync while preserving the checkbox and tombstone contract.
+
+Final profiling with 262 observations measured a steady no-op worker at about 1.40 seconds after
+remote-list reuse, down from the original 5.9 seconds, with no-op UI completion at about 30 ms. A
+subsequent real-change run confirmed that direct measurement and image-selection changes still made
+the observation eligible immediately: one selected image uploaded, measurement rows and summaries
+updated, the mosaic regenerated, the remote list refreshed, and the observation table rebuilt. The
+version-triggered pending-image repair sweep found no missed observations, confirming it is now a
+safety net rather than the primary change detector.
+
+### Public spore mosaic convergence
+
+Normal sync can create metadata-only microscope anchors for public-eligible measurements without
+uploading the underlying microscope frame. Mosaic rendering is guarded by a stable local input
+signature plus remote-row presence, so unchanged mosaics avoid repeated Pillow/WebP work while
+pipeline-version changes and missing remote mosaics still force regeneration.
+
 ### RAW Auto Levels — three-way invariant between widget, pipeline, and Preferences
 
 The shared `RawProcessingControls` widget (`ui/raw_processing_controls.py`) had three

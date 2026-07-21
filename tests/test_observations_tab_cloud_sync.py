@@ -781,6 +781,32 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
     assert status_kwargs["level"] == "success"
 
 
+def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
+    calls: dict[str, object] = {}
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda **kwargs: calls.setdefault("refresh", True),
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=False,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", True),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
+    )
+    result = {
+        "pushed": 0,
+        "pulled": 0,
+        "errors": [],
+        "deleted_remote": [],
+        "sync_summary": cloud_sync._new_sync_summary(),
+    }
+    result["sync_summary"]["calibrations_skipped_noop"] = 32
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(fake_tab, result)
+
+    assert "refresh" not in calls
+    assert calls["record"] is True
+    assert calls["idle_hint"] is True
+
+
 @pytest.mark.parametrize("image_type", ["field", "microscope"])
 def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type):
     calls: dict[str, list] = {

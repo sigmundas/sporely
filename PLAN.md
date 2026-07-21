@@ -2,9 +2,7 @@
 
 This file tracks current implementation priorities. Detailed design decisions belong in `docs/supabase-sync-contract.md`; completed work belongs in `HISTORY.md`.
 
-
-
-
+## Active project — Spore orientation
 
 Implement orientation-aware spore measurements in `sporely-py`.
 
@@ -40,7 +38,7 @@ Add a language-neutral field to spore measurement records:
 
 ```text
 spore_view = "face" | "side"
-````
+```
 
 Requirements:
 
@@ -559,44 +557,26 @@ At the end, report:
 
 
 ## Bugs
-Scale bar does not show up on microscope images, published to inaturalist
-Spore stats: language should be english for inatrualist. Replace Sporer with Spores
-The thumbnail strip: when selecting a thumbnail near the end of the strip, and there are more thumbs outside, the selected thumb should center. Right now it bounces out of view.
-in Analysis tab: Orient and Uniform scale should be on by default. 
-Sync-handling: I added a bunch of microscope photos, measured, then closed the app. The images did not sync. A dialog should perhaps pop up here to remind people to sync? I hate dialogs though, so if this can be avoided I'm all ears.
-
-Sync to cloud should allways recode to webp. I got this error:
-obs 389: Image is too large for your plan. Make it smaller or upgrade to Pro.
-
-Observation: Panaeolina foenisecii (ID 389)
-Image: 20260603-173447.jpg (microscope) (ID 869)
-Original file: /Users/sigmundas/Library/Application Support/Sporely/images/Panaeolina/foenisecii - 2026-06-02T18-12-47+00-00 (2)/20260603-173447.jpg
-Original size: 4.6 MB
-Original dimensions: 5184 × 3888 px
-Prepared upload size: 1.5 MB
-Prepared dimensions: 5184 × 3888 px
-Plan cap: 4.8 MB
-Upload mode: full / high
-
-Note that this is from a pro account, so I should not have seen this. Anyway, upload should ahve been webp.
-
-I openend the app again, and microscope images still don't sync. I dunno if the error above blocks all syncs? I have a button for download missing cloud media, pressing that does not upload microscope images either..
+Scale bar does not show up on microscope images published to iNaturalist.
+Spore statistics should be English for iNaturalist; replace "Sporer" with "Spores".
+In the Analysis tab, Orient and Uniform scale should be on by default.
+Consider a non-modal pending-cloud-media indicator on close; do not add a blocking reminder dialog.
 
 
 ### Stage E1c — Cloud sync metadata and image reconciliation audit
 
-Status: audited; implementation pending.
+Status: correctness stages 1–3 implemented; cleanup stage 4 remains.
 
 Scope: fix correctness and convergence defects found in the desktop cloud-sync audit. Keep the work staged and narrow; do not refactor the whole `utils/cloud_sync.py` module as part of these fixes.
 
-#### Stage 1 — Prevent acknowledged-but-unapplied remote changes
+#### Stage 1 — Prevent acknowledged-but-unapplied remote changes (Done)
 
-- [ ] Separate image metadata reconciliation from image-byte materialization. `materialize_remote_images=False` must still apply remote image metadata such as sort order, notes, crop, calibration, image type, microscope fields, and sample source to an existing local image row.
-- [ ] Do not advance the stored remote image/measurement snapshot for changes that were skipped or failed locally.
-- [ ] Do not stamp a newly pulled observation as fully synced until required metadata imports have completed.
-- [ ] Return image-import failures and missing-storage warnings to `pull_all`; do not only print and suppress them.
-- [ ] Preserve retry state for partially imported observations so the normal fast sync can retry missing local image rows/files without requiring a full refresh.
-- [ ] Pass the already authenticated `SporelyCloudClient` into new-observation image import. Do not reload credentials inside `_import_remote_images`.
+- [x] Separate image metadata reconciliation from image-byte materialization. `materialize_remote_images=False` still applies remote image metadata to existing local rows.
+- [x] Do not advance stored remote image/measurement snapshots past skipped or failed local work.
+- [x] Keep newly pulled observations retryable until required metadata imports complete.
+- [x] Return image-import failures and missing-storage warnings to `pull_all`.
+- [x] Preserve retry state for partially imported observations.
+- [x] Reuse the authenticated `SporelyCloudClient` during new-observation image import.
 
 Regression coverage:
 
@@ -606,12 +586,12 @@ Regression coverage:
 - supplied sync client works even when no independently stored client can be loaded;
 - snapshots are not advanced past failed or skipped reconciliation work.
 
-#### Stage 2 — Make child-table changes visible to fast sync
+#### Stage 2 — Make child-table changes visible to fast sync (Done)
 
-- [ ] Define and document how changes to `observation_images` and `spore_measurements` touch the parent observation's cloud change token/timestamp.
-- [ ] Verify production Supabase triggers before relying on `observations.updated_at` for image or measurement changes.
-- [ ] Ensure image metadata edits, image tombstones, metadata-only microscope rows, and measurement-only edits all make the observation eligible for fast pull.
-- [ ] If parent touching cannot be guaranteed, add a separate child-change watermark/signature instead of silently pruning by the observation timestamp alone.
+- [x] Document the parent-timestamp limitation for child-table changes.
+- [x] Preserve fast pull while adding a periodic child-safety reconciliation watermark.
+- [x] Cover image metadata, tombstones, metadata-only microscope rows, and measurement-only edits.
+- [x] Keep unchanged observations on the no-op fast path.
 
 Regression coverage:
 
@@ -621,12 +601,12 @@ Regression coverage:
 - measurement-only edit is detected by fast sync;
 - unchanged observations still use the no-op fast path.
 
-#### Stage 3 — Complete image metadata parity
+#### Stage 3 — Complete image metadata parity (Done)
 
-- [ ] Apply `sample_source` when updating an existing metadata-only microscope anchor, not only when creating one.
-- [ ] Include `sample_source` in `_local_image_snapshot_payload` so conflict summaries compare the complete synchronized image contract.
-- [ ] Make field-image import behavior consistent for new and existing observations, including observation GPS/date fallback EXIF where applicable; remove the currently unused `new_image_type` local after consolidating the path.
-- [ ] Audit the image SELECT/push contract for intentionally unsupported fields such as `captured_at` and camera/GPS EXIF metadata. Remove unreachable handling or add the fields to the contract; do not leave code that appears to sync values it never fetches.
+- [x] Apply `sample_source` when creating or updating metadata-only microscope anchors.
+- [x] Include `sample_source` in local image snapshots and conflict comparisons.
+- [x] Keep field-image import behavior consistent for new and existing observations.
+- [x] Align fetched image fields with the supported push/pull contract.
 
 Regression coverage:
 
@@ -643,7 +623,9 @@ Regression coverage:
 
 ### Stage E1b — Image tombstone sync cleanup
 
-Status: in progress.
+Status: Done. Unchecking a selected field or microscope image now queues a tombstone, and the
+global tombstone queue is flushed even when no observation is otherwise dirty. R2 object purging
+remains separate Stage E3 work.
 
 - Treat `public.observation_images.deleted_at` as the deletion source of truth.
 - Cloud image tombstones must sync to desktop without opening the conflict dialog when image identity is clear.
@@ -682,39 +664,10 @@ Status: deferred cleanup.
   - keep at most 2–3 stale rows per observation/service.
 - Long-term: prefer one current row per `(observation_id, service)` plus optional short-lived debug history.
 
-### Stage F — Calibration photo recovery/download cache
-
-Status: Done.
-
-- Download cloud calibration derivative to cache/recovery when local photo is missing.
-- Mark as cloud-derived.
-- Do not overwrite local originals.
-- Do not write recovery paths into canonical local provenance fields unless explicitly designed.
-- Implemented in `utils/cloud_sync.py` and `ui/calibration_dialog.py`, with coverage in `tests/test_cloud_calibration_sync.py` and `tests/test_calibration_reference_recovery_ui.py`.
-
-### Stage G — Image-calibration linkage/reconciliation
-
-Status: Done.
-
-- Use portable `calibration_uuid` in image cloud payloads and snapshots.
-- Reconcile local `images.calibration_id` from stored cloud snapshots after calibration sync.
-- Keep scale fields and objective names in sync without automatic rescaling.
-- Implemented in `utils/cloud_sync.py`, with focused coverage in `tests/test_cloud_image_calibration_linkage.py`.
-
-### Stage H — Multi-asset calibration provenance
-
-Status: Done.
-
-- Added a dedicated local `calibration_assets` model/table for multiple calibration photos, crops,
-  overlays, reference-cache rows, and derived artifacts.
-- Preserve asset roles, hashes, and provenance without overloading `public.calibrations` with many
-  path columns.
-- Keep the table desktop-only for now; the cloud contract still uses `calibration_uuid` and
-  calibration metadata, not a calibration-asset mirror.
-
 ### Stage J — Public spore mosaic: metadata-only microscope image sync
 
-Status: proposed. Depends on a small Supabase schema loosening.
+Status: Done. Metadata-only microscope anchors and normal-sync backfill are implemented. Retain the
+design below as constraints for the shipped behavior.
 
 Goal:
 Let the public spore mosaic include every public-eligible measurement in
@@ -869,7 +822,8 @@ Rollout order:
 
 ### Stage K — Sync-time mosaic signature (skip unnecessary rebuilds)
 
-Status: proposed.
+Status: Done. The local mosaic signature and remote-row presence guard are implemented. Retain the
+design below as constraints for future pipeline-version changes.
 
 Goal:
 Normal sync should push a spore mosaic only when something that
@@ -1045,29 +999,6 @@ Rollout order:
 4. Enable the sweep in dry-run first (log candidates, no
    expiry set) and audit before flipping the switch.
 
-### Stage I — Optional full-resolution original sync
-
-Status: Done (default-off opt-in upload, recovery cache path, and conservative settings/status surface shipped; explicit restore/promotion remains deferred).
-
-- Added a desktop-only policy helper for full-resolution original eligibility and safe recovery
-  decisions.
-- Added nullable cloud contract support for `public.observation_images.original_storage_path`.
-- The opt-in setting name is `sync_full_resolution_originals`; it stays off by default unless
-  explicitly enabled.
-- The sync engine now supports opt-in original uploads for eligible rows and enforces an upload
-  size guard on the desktop side.
-- The Preferences dialog exposes a conservative `Sync full-resolution originals` checkbox in the
-  `Profile & Cloud` section with a short warning about storage and local-original safety.
-- Sync status stays quiet when the opt-in is off and shows concise original upload counts only when
-  original sync is actually active.
-- Deferred future work:
-  - explicit restore/promotion action if needed
-- Never replace better local originals with cloud copies.
-- Keep any broader bulk original management UI deferred until a restore/promotion workflow is
-  designed and tested.
-
----
-
 ## UI backlog
 PASS: desktop blocks login/sync with account B when the local DB is already linked to account A.
 PASS: no cross-account sync should occur.
@@ -1138,7 +1069,7 @@ Status: audit/documentation in progress.
   - HEIC as import source
   - JPEG/PNG as local working/canonical file
   - cloud derivative generated from best available decoded pixels when practical
-- [ ] Replace generated-media heuristics with explicit provenance tags in Stage H or a dedicated artifact-model stage.
+- [ ] Replace remaining generated-media heuristics with explicit provenance tags in a dedicated artifact-model stage.
 
 ---
 
