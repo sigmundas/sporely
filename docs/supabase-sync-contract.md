@@ -200,6 +200,11 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
   original. Recovery downloads write to a separate cache path and remain secondary until an
   explicit restore action copies them into place.
 - `notes` should not be used as a hidden file-role flag.
+- The gallery publish checkbox is authoritative for field and microscope image bytes. A checked
+  field image is eligible for upload; a checked microscope image is eligible even without spore
+  measurements. Unchecking either type excludes it from upload and queues a tombstone when the
+  image already has a cloud identity. Microscope seeded-checkbox state distinguishes an initialized
+  selection from an untouched legacy backlog, so ordinary media sync does not opt in old images.
 
 #### `source_role`
 
@@ -229,8 +234,8 @@ authoritative; that comes from `source_role`.
 
 | Purpose | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
 | --- | --- | --- | --- | --- | --- |
-| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
-| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
+| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
+| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
 | `calibration` | Original calibration capture | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Usually local-only |
 | `reference` | Calibration reference derivative or other compact reference asset | No | Yes | Yes, as a derivative asset | Yes |
 | `plot` | Generated comparison or measurement plot | No | Yes | Publish-only, later if needed | Yes, if published |

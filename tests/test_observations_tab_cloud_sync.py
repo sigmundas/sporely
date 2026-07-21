@@ -182,7 +182,7 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["child_safety_pull"] is True
 
 
-def test_refresh_clicked_materializes_changed_remote_media_without_uploading_local_media(monkeypatch):
+def test_observation_tab_sync_now_matches_preferences_media_sync_mode(monkeypatch):
     calls: dict[str, object] = {}
 
     fake_tab = SimpleNamespace(
@@ -198,7 +198,7 @@ def test_refresh_clicked_materializes_changed_remote_media_without_uploading_loc
     assert calls["start"] == {
         "show_status": True,
         "run_refresh_flow": True,
-        "sync_images": False,
+        "sync_images": True,
         "materialize_remote_images": True,
         "full_pull": False,
     }
@@ -637,6 +637,40 @@ def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_pa
     cleanup()
 
 
+def test_cloud_sync_collector_includes_persisted_checked_unmeasured_microscope(tmp_path, monkeypatch):
+    microscope_path = tmp_path / "microscope.jpg"
+    microscope_path.write_bytes(b"microscope")
+    microscope_row = {
+        "id": 2,
+        "filepath": str(microscope_path),
+        "original_filepath": None,
+        "image_type": "microscope",
+        "source_role": "local_canonical",
+        "file_purpose": "microscope",
+    }
+
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [microscope_row],
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_cloud_explicit_media_upload_selection",
+        lambda observation_id: {2},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_measurement_counts_for_observation_images",
+        lambda observation_id: {},
+    )
+
+    fake_tab = SimpleNamespace(_publish_excluded_image_ids=lambda observation_id: set())
+    rows = observations_tab.ObservationsTab._collect_cloud_sync_image_rows(fake_tab, 631)
+
+    assert [row["id"] for row in rows] == [2]
+
+
 def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, monkeypatch):
     field_path = tmp_path / "field.jpg"
     field_path.write_bytes(b"field")
@@ -747,7 +781,8 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
     assert status_kwargs["level"] == "success"
 
 
-def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
+@pytest.mark.parametrize("image_type", ["field", "microscope"])
+def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
@@ -760,8 +795,8 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
         observations_tab.ImageDB,
         "get_images_for_observation",
         lambda observation_id: [
-            {"id": 1, "cloud_id": "cloud-1"},
-            {"id": 2, "cloud_id": "cloud-2"},
+            {"id": 1, "cloud_id": "cloud-1", "image_type": image_type},
+            {"id": 2, "cloud_id": "cloud-2", "image_type": image_type},
         ],
     )
     monkeypatch.setattr(
@@ -787,6 +822,8 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
         _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
             (int(obs_id), tuple(sorted(int(v) for v in excluded)))
         ),
+        _publish_seeded_microscope_ids=lambda observation_id: set(),
+        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )

@@ -7008,6 +7008,28 @@ def _cloud_publish_excluded_image_ids(observation_id: int | None) -> set[int]:
     return set()
 
 
+def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
+    """Microscope image ids whose publish checkbox has an initialized checked state.
+
+    The seeded-id setting distinguishes an intentional/defaulted checkbox state
+    from an old microscope backlog whose publish controls have never been
+    initialized. Exclusions remain authoritative for both image types.
+    """
+    if not observation_id:
+        return set()
+    key = f"artsobs_publish_micro_seeded_ids_{int(observation_id or 0)}"
+    raw = SettingsDB.get_setting(key, "[]")
+    try:
+        loaded = json.loads(raw or "[]")
+        if isinstance(loaded, list):
+            seeded_ids = {int(value) for value in loaded}
+        else:
+            seeded_ids = set()
+    except Exception:
+        seeded_ids = set()
+    return seeded_ids - _cloud_publish_excluded_image_ids(observation_id)
+
+
 def _cloud_publish_path_key(path: str | None) -> str:
     if not path:
         return ""
@@ -7195,6 +7217,8 @@ def _pending_cloud_pushable_image_ids(
         conn.close()
 
     measurement_counts = _measurement_counts_for_observation_images(observation_id)
+    if explicit_media_upload_selection is None:
+        explicit_media_upload_selection = _cloud_explicit_media_upload_selection(observation_id)
 
     pending: list[int] = []
     seen_paths: set[str] = set()
@@ -11887,6 +11911,12 @@ def push_all(
             flush=True,
         )
 
+    # Image deletion is metadata work, not image-byte preparation. Flush the
+    # global queue before pruning to dirty observations so an unchecked image
+    # is removed from cloud views even when its observation otherwise takes
+    # the no-op fast path.
+    tombstone_warnings = _push_pending_image_tombstones(client)
+
     calibration_result = {'pushed': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
         calibration_result = push_calibrations(
@@ -11915,7 +11945,7 @@ def push_all(
 
     total = len(observations)
     pushed = 0
-    errors = list(calibration_result.get('errors') or [])
+    errors = list(calibration_result.get('errors') or []) + list(tombstone_warnings or [])
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     # Mark the preflight complete before switching to the per-observation
     # phase so the bar sits at the push_observations start value.

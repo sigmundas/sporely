@@ -375,6 +375,77 @@ def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path
     assert status == "synced"
 
 
+def test_persisted_checked_microscope_without_measurements_is_dirtied(tmp_path, monkeypatch):
+    """A seeded, non-excluded checkbox is explicit upload intent."""
+    db_path = _init_db(tmp_path)
+    conn = _connect(db_path)
+    conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
+    fpath = tmp_path / "selected_micro.webp"
+    fpath.write_bytes(b"webp")
+    conn.execute(
+        "INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order, "
+        "notes, source_role, file_purpose, filepath) "
+        "VALUES (902, 500, 'microscope', NULL, 0, '', 'converted_local', 'microscope', ?)",
+        (str(fpath),),
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ("artsobs_publish_micro_seeded_ids_500", "[902]"),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
+
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
+
+    status = _connect(db_path).execute(
+        "SELECT sync_status FROM observations WHERE id = 500"
+    ).fetchone()[0]
+    assert status == "dirty"
+
+
+def test_persisted_unchecked_microscope_stays_excluded_even_with_measurements(tmp_path, monkeypatch):
+    """The exclusion checkbox wins over both seeded selection and measurements."""
+    db_path = _init_db(tmp_path)
+    conn = _connect(db_path)
+    conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
+    fpath = tmp_path / "excluded_micro.webp"
+    fpath.write_bytes(b"webp")
+    conn.execute(
+        "INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order, "
+        "notes, source_role, file_purpose, filepath) "
+        "VALUES (902, 500, 'microscope', NULL, 0, '', 'converted_local', 'microscope', ?)",
+        (str(fpath),),
+    )
+    conn.execute("INSERT INTO spore_measurements (id, image_id) VALUES (1, 902)")
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ("artsobs_publish_micro_seeded_ids_500", "[902]"),
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ("artsobs_publish_excluded_image_ids_500", "[902]"),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
+
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
+
+    status = _connect(db_path).execute(
+        "SELECT sync_status FROM observations WHERE id = 500"
+    ).fetchone()[0]
+    assert status == "synced"
+
+
 def test_explicit_media_upload_dirties_when_user_selected_the_microscope(tmp_path, monkeypatch):
     """The opt-in path: user explicitly picked a microscope image for upload."""
     db_path = _init_db(tmp_path)

@@ -47,7 +47,9 @@ import os
 # observations, set_selected_as_active …). Matches the [raw-timing] prefix
 # used by the RAW render pipeline so lines interleave in one console
 # stream.
-_OBS_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+_OBS_DEBUG_TIMING = str(os.environ.get("SPORELY_DEBUG_RAW_TIMING") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 
 def _obs_timing_log(stage: str, start: float | None, *, detail: str = "") -> None:
@@ -58,6 +60,17 @@ def _obs_timing_log(stage: str, start: float | None, *, detail: str = "") -> Non
         print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms | {detail}")
     else:
         print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms")
+
+
+def _cloud_sync_completion_timing(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _OBS_DEBUG_TIMING:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0 if start is not None else 0.0
+    suffix = f" | {detail}" if detail else ""
+    print(
+        f"[cloud_sync] completion timing: {stage} duration={elapsed_ms:.1f}ms{suffix}",
+        flush=True,
+    )
 import sys
 import html
 import json
@@ -523,6 +536,7 @@ class _CloudAutoSyncWorker(QThread):
                     pass
 
     def run(self) -> None:
+        worker_start = time.perf_counter()
         try:
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
@@ -542,6 +556,7 @@ class _CloudAutoSyncWorker(QThread):
                 if self.isInterruptionRequested():
                     raise KeyboardInterrupt
                 self.progress.emit(msg, cur, tot)
+            sync_all_start = time.perf_counter()
             result = sync_all(
                 client,
                 progress_cb=_progress_cb,
@@ -551,17 +566,28 @@ class _CloudAutoSyncWorker(QThread):
                 full_pull=self._full_pull,
                 child_safety_pull=self._child_safety_pull,
             )
+            self._sync_all_returned_at = time.perf_counter()
+            _cloud_sync_completion_timing(
+                "worker sync_all returned",
+                sync_all_start,
+                detail=f"total_worker={self._sync_all_returned_at - worker_start:.3f}s",
+            )
             if self.isInterruptionRequested():
                 raise KeyboardInterrupt
             if "skipped" not in result:
                 result["skipped"] = False
+            emit_start = time.perf_counter()
+            _cloud_sync_completion_timing("worker emitting sync_finished", emit_start)
             self.sync_finished.emit(result)
+            _cloud_sync_completion_timing("worker sync_finished emit returned", emit_start)
         except KeyboardInterrupt:
             self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True, "cancelled": True})
         except AccountMismatchError:
             self.error.emit(ACCOUNT_MISMATCH_MESSAGE)
         except Exception as exc:
             self.error.emit(format_cloud_sync_error_details(exc) or str(exc))
+        finally:
+            _cloud_sync_completion_timing("worker run exiting", worker_start)
 
 
 def _cloud_media_materialization_should_launch(state: dict | None, worker_running: bool = False) -> bool:
@@ -3624,10 +3650,20 @@ class ObservationsTab(QWidget):
             self._set_status_progress(message, current=display_current, total=display_total)
 
     def _finish_manual_refresh_flow(self) -> None:
+        flow_start = time.perf_counter()
+        upload_start = time.perf_counter()
         pending_status = self._upload_pending_artsobs_web_images()
+        _cloud_sync_completion_timing(
+            "manual follow-up pending Artsobs uploads",
+            upload_start,
+            detail=f"status={pending_status}",
+        )
         if pending_status == "none":
             self.set_status_message(self.tr("Checking links."), level="info", auto_clear_ms=8000)
+        link_start = time.perf_counter()
         self._start_artsobs_link_check()
+        _cloud_sync_completion_timing("manual follow-up started Artsobs link check", link_start)
+        _cloud_sync_completion_timing("manual follow-up complete", flow_start)
 
     def _show_cloud_conflict_dialog(self, conflicts: list[dict]) -> bool:
         entries = [dict(row or {}) for row in (conflicts or []) if row]
@@ -3747,7 +3783,18 @@ class ObservationsTab(QWidget):
         return changed
 
     def _on_cloud_sync_finished(self, result: dict) -> None:
+        completion_start = time.perf_counter()
+        worker = getattr(self, "_cloud_sync_worker", None)
+        worker_returned_at = getattr(worker, "_sync_all_returned_at", None)
+        queue_delay = (
+            f"queued_after_worker={completion_start - worker_returned_at:.3f}s"
+            if isinstance(worker_returned_at, (int, float))
+            else "queued_after_worker=unknown"
+        )
+        _cloud_sync_completion_timing("UI completion handler entered", None, detail=queue_delay)
+        refresh_start = time.perf_counter()
         self.refresh_observations(show_status=False)
+        _cloud_sync_completion_timing("UI refresh_observations complete", refresh_start)
         if result.get("cancelled"):
             if self._cloud_sync_show_status:
                 self._set_status_progress_visible(False)
@@ -3758,9 +3805,12 @@ class ObservationsTab(QWidget):
                 level="info",
                 auto_clear_ms=8000,
             )
+            _cloud_sync_completion_timing("UI completion handler cancelled return", completion_start)
             return
         if self._cloud_sync_run_refresh_flow:
+            follow_up_start = time.perf_counter()
             self._finish_manual_refresh_flow()
+            _cloud_sync_completion_timing("UI manual refresh follow-up complete", follow_up_start)
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
         change_activity = summarize_sync_change_activity(result)
@@ -3797,6 +3847,7 @@ class ObservationsTab(QWidget):
                 self._set_status_progress_visible(False)
                 self._set_status_progress_cancel_visible(False)
                 self._reset_status_progress()
+            _cloud_sync_completion_timing("UI completion handler skipped return", completion_start)
             return
         if errors:
             print(
@@ -3888,16 +3939,20 @@ class ObservationsTab(QWidget):
             message = f"{message}\n{original_summary}"
         self._record_cloud_sync_status(message, errors=errors, status="warning" if (errors or deleted_count) else "ok")
         self._refresh_cloud_sync_idle_hint()
+        _cloud_sync_completion_timing("UI summary and idle hint complete", completion_start)
         if not self._cloud_sync_show_status:
+            _cloud_sync_completion_timing("UI completion handler hidden-status return", completion_start)
             return
         self._set_status_progress_visible(False)
         self._set_status_progress_cancel_visible(False)
         self._set_status_progress("", 0, 1)
+        _cloud_sync_completion_timing("UI progress hidden", completion_start)
         self.set_status_message(message, level=level, auto_clear_ms=20000 if level != "success" else 5000)
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
         if conflicts:
             self._show_cloud_conflict_dialog(conflicts)
+        _cloud_sync_completion_timing("UI completion handler complete", completion_start)
 
     def _on_cloud_sync_error(self, message: str) -> None:
         self.refresh_observations(show_status=False)
@@ -3971,7 +4026,7 @@ class ObservationsTab(QWidget):
         if self._start_cloud_sync(
             show_status=True,
             run_refresh_flow=True,
-            sync_images=False,
+            sync_images=True,
             materialize_remote_images=True,
             full_pull=False,
         ):
@@ -6037,12 +6092,26 @@ class ObservationsTab(QWidget):
         restore_selection: bool = True,
     ):
         """Load all observations from database."""
+        refresh_start = time.perf_counter()
+        stage_start = time.perf_counter()
         observations = ObservationDB.get_all_observations()
+        _obs_timing_log(
+            "refresh get_all_observations",
+            stage_start,
+            detail=f"rows={len(observations or [])}",
+        )
+        stage_start = time.perf_counter()
         self._vernacular_cache = {}
         self._table_vernacular_db = self._get_vernacular_db_for_active_language()
         self._update_table_headers()
         local_rows = self._build_observation_table_rows_cache(observations)
+        _obs_timing_log(
+            "refresh build row cache",
+            stage_start,
+            detail=f"rows={len(local_rows or [])}",
+        )
         self._observation_table_rows_cache = local_rows
+        stage_start = time.perf_counter()
         self._render_observations_table(
             self._observation_table_rows_cache,
             query=self.search_input.text().strip().lower() if hasattr(self, "search_input") else "",
@@ -6050,6 +6119,12 @@ class ObservationsTab(QWidget):
             show_status=show_status,
             status_message=status_message,
         )
+        _obs_timing_log(
+            "refresh render table",
+            stage_start,
+            detail=f"rows={len(self._observation_table_rows_cache or [])}",
+        )
+        _obs_timing_log("TOTAL refresh_observations", refresh_start)
 
     def _get_vernacular_db_for_active_language(self):
         stored = SettingsDB.get_setting("vernacular_language", "no")
@@ -7949,12 +8024,15 @@ class ObservationsTab(QWidget):
         from utils.cloud_sync import (
             PENDING_REASON_ALREADY_SYNCED,
             PENDING_REASON_PENDING_UPLOAD,
+            _cloud_explicit_media_upload_selection,
             _measurement_counts_for_observation_images,
             explain_pending_cloud_image_decision,
         )
 
         images = ImageDB.get_images_for_observation(observation_id)
         excluded_ids = self._publish_excluded_image_ids(observation_id)
+        if explicit_media_upload_selection is None:
+            explicit_media_upload_selection = _cloud_explicit_media_upload_selection(observation_id)
         measurement_counts = _measurement_counts_for_observation_images(int(observation_id))
         ordered: list[dict] = []
         seen_paths: set[str] = set()

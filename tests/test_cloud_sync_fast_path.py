@@ -212,6 +212,54 @@ def test_push_all_fast_path_runs_lightweight_spore_reconciliation(tmp_path, monk
     assert reconcile_calls == ["measurements", "summaries"]
 
 
+def test_push_all_fast_path_flushes_image_tombstones_without_dirty_observations(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _init_db(tmp_path)
+    _default_monkeypatches(monkeypatch, db_path)
+
+    tombstone_calls: list[object] = []
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_pending_image_tombstones",
+        lambda client: tombstone_calls.append(client) or [],
+    )
+
+    client = _RecordingClient([])
+    result = cloud_sync.push_all(
+        client,
+        sync_images=False,
+        sync_calibrations=False,
+        full_pull=False,
+    )
+
+    assert tombstone_calls == [client]
+    assert result["total"] == 0
+    assert result["errors"] == []
+
+
+def test_push_all_surfaces_image_tombstone_failures(tmp_path, monkeypatch):
+    db_path = _init_db(tmp_path)
+    _default_monkeypatches(monkeypatch, db_path)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_pending_image_tombstones",
+        lambda client: ["obs 604: could not sync cloud image tombstone 3694"],
+    )
+
+    result = cloud_sync.push_all(
+        _RecordingClient([]),
+        sync_images=False,
+        sync_calibrations=False,
+        full_pull=False,
+    )
+
+    assert result["errors"] == [
+        "obs 604: could not sync cloud image tombstone 3694"
+    ]
+
+
 def test_push_all_full_pull_still_runs_reconciliation(tmp_path, monkeypatch):
     db_path = _init_db(tmp_path)
     _default_monkeypatches(monkeypatch, db_path)
