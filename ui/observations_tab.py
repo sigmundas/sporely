@@ -166,6 +166,7 @@ from utils.cloud_sync import (
     unlink_local_observation_from_cloud,
 )
 from .cloud_conflict_dialog import CloudConflictDialog
+from .adaptive_choice_selector import objective_short_label
 from .image_gallery_widget import ImageGalleryWidget, _microscope_tag_from_image
 from .splitter_state import (
     install_persistent_splitter,
@@ -305,11 +306,50 @@ def sharing_scope_location_public(value: str | None) -> bool:
     return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
 
 
-def _default_publish_selected_for_new_image(image_type: str | None, microscope_index: int) -> tuple[bool, int]:
+def _image_microscope_publish_group_key(image: dict | None, objectives: dict | None = None) -> str:
+    if not isinstance(image, dict):
+        return "__unknown__"
+    objective_name = str(image.get("objective_name") or "").strip()
+    if not objective_name:
+        lab_metadata = image.get("lab_metadata")
+        if isinstance(lab_metadata, dict):
+            objective_name = str(lab_metadata.get("objective_name") or "").strip()
+            if not objective_name:
+                microscope_metadata = lab_metadata.get("microscope")
+                if isinstance(microscope_metadata, dict):
+                    objective_name = str(microscope_metadata.get("objective_name") or "").strip()
+    if not objective_name:
+        return "__unknown__"
+    objectives = objectives or load_objectives()
+    objective_key = resolve_objective_key(objective_name, objectives) or objective_name
+    objective = objectives.get(objective_key) if objective_key in objectives else None
+    if objective:
+        label = objective_short_label(objective, objective_key)
+        if label:
+            return label.casefold()
+    match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", objective_name)
+    if match:
+        return f"{match.group(1)}x".casefold()
+    match = re.search(r"(\d+(?:\.\d+)?)", objective_name)
+    if match:
+        return f"{match.group(1)}x".casefold()
+    return objective_name.casefold() or "__unknown__"
+
+
+def _default_publish_selected_for_new_image(
+    image_type: str | None,
+    microscope_group_key: str | None,
+    selected_microscope_group_keys: set[str],
+) -> tuple[bool, set[str]]:
     normalized_type = (image_type or "field").strip().lower()
     if normalized_type == "microscope":
-        return False, microscope_index + 1
-    return True, microscope_index
+        normalized_key = str(microscope_group_key or "__unknown__").strip().casefold() or "__unknown__"
+        updated_group_keys = set(selected_microscope_group_keys or set())
+        if normalized_key in updated_group_keys:
+            return False, updated_group_keys
+        updated_group_keys.add(normalized_key)
+        return True, updated_group_keys
+    return True, set(selected_microscope_group_keys or set())
 
 
 _OBSERVATION_STATUS_LABELS = {
@@ -3928,7 +3968,13 @@ class ObservationsTab(QWidget):
 
     def _on_refresh_clicked(self) -> None:
         self._invalidate_publish_login_status_cache()
-        if self._start_cloud_sync(show_status=True, run_refresh_flow=True):
+        if self._start_cloud_sync(
+            show_status=True,
+            run_refresh_flow=True,
+            sync_images=False,
+            materialize_remote_images=True,
+            full_pull=False,
+        ):
             return
         self.refresh_observations(show_status=False)
         self._finish_manual_refresh_flow()
@@ -8249,17 +8295,37 @@ class ObservationsTab(QWidget):
         observation_id: int | None,
         images: list[dict],
     ) -> None:
-        """Auto-exclude microscope images we haven't seen before.
+        """Auto-select one microscope image per magnification group.
 
-        Microscope images default to unchecked for publish/upload; the user
-        must explicitly opt in. A per-observation "seeded" set records which
-        microscope IDs the default has already been applied to, so a user's
-        explicit inclusion is not overwritten on the next gallery load.
+        Microscope images default to checked for one image in each magnification
+        group and unchecked for the rest. A per-observation "seeded" set records
+        which microscope IDs the default has already been applied to so a user's
+        later manual changes are not overwritten on the next gallery load.
         """
         if not observation_id or not images:
             return
+        objectives = load_objectives()
         seeded = cls._publish_seeded_microscope_ids(observation_id)
         excluded = cls._publish_excluded_image_ids(observation_id)
+        selected_microscope_group_keys: set[str] = set()
+        for img in images:
+            if not isinstance(img, dict):
+                continue
+            image_id = img.get("id")
+            if image_id is None:
+                continue
+            try:
+                img_id = int(image_id)
+            except (TypeError, ValueError):
+                continue
+            image_type = str(img.get("image_type") or "").strip().lower()
+            if image_type != "microscope":
+                continue
+            if img_id in seeded and img_id not in excluded:
+                selected_microscope_group_keys.add(_image_microscope_publish_group_key(img, objectives))
+                continue
+            if img_id in excluded:
+                continue
         seeded_changed = False
         excluded_changed = False
         for img in images:
@@ -8277,7 +8343,17 @@ class ObservationsTab(QWidget):
                 continue
             seeded.add(img_id)
             seeded_changed = True
-            if img_id not in excluded:
+            group_key = _image_microscope_publish_group_key(img, objectives)
+            publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
+                image_type,
+                group_key,
+                selected_microscope_group_keys,
+            )
+            if publish_selected:
+                if img_id in excluded:
+                    excluded.discard(img_id)
+                    excluded_changed = True
+            elif img_id not in excluded:
                 excluded.add(img_id)
                 excluded_changed = True
         if excluded_changed:
@@ -11300,6 +11376,7 @@ class ObservationsTab(QWidget):
         targets = [dict(target or {}) for target in (delete_targets or []) if target]
         if not targets:
             return
+        total_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self._set_delete_busy(True)
         total_units = sum(self._delete_progress_units_for_target(target) for target in targets)
         total_units = max(1, total_units)
@@ -11335,7 +11412,13 @@ class ObservationsTab(QWidget):
                         total=total_units,
                     )
                     self._yield_background_sync_ui()
+                    cloud_delete_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                     cloud_failures = self._delete_cloud_observation_row(row_data)
+                    _obs_timing_log(
+                        "delete cloud observation row",
+                        cloud_delete_start,
+                        detail=f"cloud_id={row_data.get('cloud_id') or row_data.get('raw', {}).get('id') or 'unknown'}",
+                    )
                     failures.extend(cloud_failures)
                     if not cloud_failures:
                         deleted_cloud_count += 1
@@ -11346,7 +11429,9 @@ class ObservationsTab(QWidget):
                 if obs_id <= 0:
                     advance_progress()
                     continue
+                local_target_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 observation = ObservationDB.get_observation(obs_id)
+                _obs_timing_log("delete local observation fetch", local_target_start, detail=f"obs_id={obs_id}")
                 species = self._build_species_name(observation or {}) or self.tr("observation")
 
                 self._set_status_progress(
@@ -11360,12 +11445,20 @@ class ObservationsTab(QWidget):
                 )
                 self._yield_background_sync_ui()
 
+                cloud_copy_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 cloud_failures = self._delete_cloud_copy_for_local_observation(obs_id)
+                _obs_timing_log("delete local observation cloud copy", cloud_copy_start, detail=f"obs_id={obs_id}")
                 failures.extend(cloud_failures)
                 if observation and str(observation.get("cloud_id") or "").strip():
                     advance_progress()
 
+                image_count_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 actual_image_count = len(ImageDB.get_images_for_observation(obs_id))
+                _obs_timing_log(
+                    "delete local observation image count",
+                    image_count_start,
+                    detail=f"obs_id={obs_id} images={actual_image_count}",
+                )
 
                 def _local_progress(current: int, total: int, _image_id: int) -> None:
                     label = self.tr(
@@ -11377,9 +11470,15 @@ class ObservationsTab(QWidget):
                     )
                     advance_progress(label)
 
+                delete_db_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 delete_failures = ObservationDB.delete_observation(
                     obs_id,
                     progress_cb=_local_progress if actual_image_count > 0 else None,
+                )
+                _obs_timing_log(
+                    "delete local observation DB/files",
+                    delete_db_start,
+                    detail=f"obs_id={obs_id} images={actual_image_count}",
                 )
                 if actual_image_count <= 0:
                     advance_progress()
@@ -11399,8 +11498,11 @@ class ObservationsTab(QWidget):
             selection_model.clearSelection()
             selection_model.setCurrentIndex(QModelIndex(), QItemSelectionModel.NoUpdate)
         self.table.clearSelection()
+        refresh_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self.refresh_observations(restore_selection=False)
+        _obs_timing_log("delete refresh observations", refresh_start, detail=f"targets={len(targets)}")
         deleted_total = deleted_local_count + deleted_cloud_count
+        _obs_timing_log("TOTAL delete selected observations", total_start, detail=f"targets={len(targets)}")
         if len(targets) == 1 and failure_count:
             self.set_status_message(
                 self.tr("Observation deleted with {count} cleanup issue(s).").format(count=failure_count),
@@ -12059,7 +12161,7 @@ class ObservationsTab(QWidget):
         removed_ids = existing_ids - result_ids
         existing_publish_excluded_ids = self._publish_excluded_image_ids(obs_id)
         seed_publish_excluded_ids: set[int] = set(existing_publish_excluded_ids)
-        new_microscope_index = 0
+        selected_microscope_group_keys: set[str] = set()
         for image_id in removed_ids:
             ImageDB.delete_image(image_id)
 
@@ -12484,9 +12586,16 @@ class ObservationsTab(QWidget):
             )
             result.image_id = image_id
             if image_id and image_id not in existing_ids:
-                publish_selected, new_microscope_index = _default_publish_selected_for_new_image(
+                publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
                     image_type,
-                    new_microscope_index,
+                    _image_microscope_publish_group_key(
+                        {
+                            "objective_name": objective_name,
+                            "lab_metadata": image_lab_metadata,
+                        },
+                        objectives,
+                    ),
+                    selected_microscope_group_keys,
                 )
                 if not publish_selected:
                     seed_publish_excluded_ids.add(int(image_id))
@@ -16625,7 +16734,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         start_time = time.perf_counter()
         items = []
-        new_microscope_index = 0
+        selected_microscope_group_keys: set[str] = set()
         cloud_state_cache: dict[int, tuple[str | None, bool, bool]] = {}
 
         def _cloud_state_for_image_id(image_id: int | None) -> tuple[str | None, bool, bool]:
@@ -16669,9 +16778,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             objective_short = ImageGalleryWidget._short_objective_label(objective_label, self.tr) or objective_label
             publish_selected = None
             if item.image_id is None:
-                publish_selected, new_microscope_index = _default_publish_selected_for_new_image(
+                publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
                     item.image_type,
-                    new_microscope_index,
+                    _image_microscope_publish_group_key(
+                        {
+                            "objective_name": item.objective,
+                            "lab_metadata": item.lab_metadata,
+                        },
+                        getattr(self, "objectives", None),
+                    ),
+                    selected_microscope_group_keys,
                 )
             badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=item.image_type,

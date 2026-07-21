@@ -4,6 +4,8 @@ import shutil
 import re
 import json
 import uuid
+import os
+import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from datetime import datetime
@@ -46,6 +48,17 @@ _CLOUD_SQLITE_SETTING_PREFIXES = (
 _CLOUD_SQLITE_SETTING_KEYS = {
     "sporely_cloud_media_signature_v1",
 }
+_OBS_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+
+
+def _obs_timing_log(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _OBS_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if detail:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms")
 
 # Images directory
 def _images_dir() -> Path:
@@ -1537,6 +1550,7 @@ class ObservationDB:
 
         Returns a list of file or folder paths that could not be deleted.
         """
+        total_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -1548,6 +1562,7 @@ class ObservationDB:
         shared_folder_ref = False
         try:
             # Collect image filepaths and observation folder before deleting rows
+            fetch_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             cursor.execute('SELECT folder_path FROM observations WHERE id = ?', (observation_id,))
             obs_row = cursor.fetchone()
             if obs_row and obs_row[0]:
@@ -1573,7 +1588,13 @@ class ObservationDB:
                 for row in cursor.fetchall()
                 if str(row[0] or '').strip()
             ]
+            _obs_timing_log(
+                "delete_observation fetch related rows",
+                fetch_start,
+                detail=f"obs_id={observation_id} images={len(image_rows)} thumbs={len(thumbnail_paths)}",
+            )
 
+            shared_refs_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             for row in image_rows:
                 for candidate in (row["filepath"], row["original_filepath"]):
                     if not candidate:
@@ -1619,8 +1640,14 @@ class ObservationDB:
                         (observation_id, folder_prefix, folder_prefix),
                     ).fetchone()
                     shared_folder_ref = bool(shared_image_row)
+            _obs_timing_log(
+                "delete_observation shared reference scan",
+                shared_refs_start,
+                detail=f"obs_id={observation_id} files={len(shared_file_refs)} folder_ref={shared_folder_ref}",
+            )
 
             # Delete dependent rows first (annotations -> measurements -> thumbnails -> images -> session logs)
+            db_delete_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             cursor.execute('''
                 DELETE FROM spore_annotations
                 WHERE image_id IN (SELECT id FROM images WHERE observation_id = ?)
@@ -1651,6 +1678,7 @@ class ObservationDB:
             cursor.execute('DELETE FROM observations WHERE id = ?', (observation_id,))
 
             conn.commit()
+            _obs_timing_log("delete_observation database transaction", db_delete_start, detail=f"obs_id={observation_id}")
         except Exception:
             conn.rollback()
             raise
@@ -1658,6 +1686,7 @@ class ObservationDB:
             conn.close()
 
         # Remove thumbnails and image files from disk
+        file_cleanup_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         images_root = _images_dir()
         thumbnails_root = _thumbnails_dir()
         for thumb_path in sorted(set(thumbnail_paths)):
@@ -1698,6 +1727,12 @@ class ObservationDB:
             for candidate in (row["filepath"], row["original_filepath"]):
                 if candidate:
                     failed_paths.extend(_prune_empty_dirs(Path(candidate).parent, images_root))
+        _obs_timing_log(
+            "delete_observation filesystem cleanup",
+            file_cleanup_start,
+            detail=f"obs_id={observation_id} failed={len(failed_paths)}",
+        )
+        _obs_timing_log("TOTAL delete_observation", total_start, detail=f"obs_id={observation_id}")
         return failed_paths
 
 class ImageDB:

@@ -44,6 +44,7 @@ class _FakeMainWindow(QWidget):
         run_refresh_flow: bool,
         sync_images: bool = True,
         materialize_remote_images: bool,
+        full_pull: bool,
     ) -> bool:
         self.start_calls.append(
             {
@@ -51,6 +52,7 @@ class _FakeMainWindow(QWidget):
                 "run_refresh_flow": bool(run_refresh_flow),
                 "sync_images": bool(sync_images),
                 "materialize_remote_images": bool(materialize_remote_images),
+                "full_pull": bool(full_pull),
             }
         )
         self._running = True
@@ -408,7 +410,7 @@ def test_profile_cloud_sync_log_button_shows_summary_and_errors(monkeypatch, qap
     parent.deleteLater()
 
 
-def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
+def test_profile_cloud_sync_now_starts_media_sync_without_deep_pull(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
 
     dialog.cloud_sync_now_button.click()
@@ -420,11 +422,41 @@ def test_profile_cloud_sync_now_starts_full_sync(monkeypatch, qapp):
             "run_refresh_flow": False,
             "sync_images": True,
             "materialize_remote_images": True,
+            "full_pull": False,
         }
     ]
 
     dialog.deleteLater()
     parent.deleteLater()
+
+
+def test_main_window_forwards_full_cloud_sync_flags():
+    calls: list[dict[str, object]] = []
+    fake_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _start_cloud_sync=lambda **kwargs: calls.append(dict(kwargs)) or True,
+        ),
+    )
+
+    started = main_window.MainWindow.start_cloud_sync(
+        fake_window,
+        show_status=True,
+        run_refresh_flow=False,
+        sync_images=True,
+        materialize_remote_images=True,
+        full_pull=True,
+    )
+
+    assert started is True
+    assert calls == [
+        {
+            "show_status": True,
+            "run_refresh_flow": False,
+            "sync_images": True,
+            "materialize_remote_images": True,
+            "full_pull": True,
+        }
+    ]
 
 
 def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):

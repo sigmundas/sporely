@@ -278,6 +278,11 @@ def _conflict_overview_sentence(detail: dict) -> str:
         parts.append(f'This device changed {_join_english(local_only)}.')
     elif remote_only:
         parts.append(f'Sporely Cloud changed {_join_english(remote_only)}.')
+    measurement_conflicts = list(detail.get('measurement_conflicts') or [])
+    if measurement_conflicts:
+        parts.append(
+            f'{len(measurement_conflicts)} spore measurement(s) differ between this device and Sporely Cloud.'
+        )
     if detail.get('image_mismatches'):
         parts.append('Some photos are only on one side.')
     if not parts:
@@ -650,6 +655,15 @@ class CloudConflictDialog(QDialog):
         mismatches = list(detail.get('image_mismatches') or [])
         desktop_lines = list(detail.get('local_image_changes') or [])
         cloud_lines = list(detail.get('remote_image_changes') or [])
+        measurement_conflicts = list(detail.get('measurement_conflicts') or [])
+        if measurement_conflicts:
+            count = len(measurement_conflicts)
+            desktop_lines.append(
+                self.tr('{count} spore measurement(s) have local changes.').format(count=count)
+            )
+            cloud_lines.append(
+                self.tr('{count} corresponding cloud measurement(s) differ.').format(count=count)
+            )
 
         local_only_count = sum(
             1 for m in mismatches if str(m.get('status') or '').strip() == 'local_only'

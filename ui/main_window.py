@@ -1264,6 +1264,7 @@ class SettingsHubDialog(QDialog):
             lambda: self._request_settings_cloud_sync(
                 sync_images=True,
                 materialize_remote_images=True,
+                full_pull=False,
             )
         )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
@@ -2200,6 +2201,7 @@ class SettingsHubDialog(QDialog):
         *,
         sync_images: bool,
         materialize_remote_images: bool,
+        full_pull: bool,
     ) -> None:
         main_window = self._settings_hub_main_window()
         if main_window is None:
@@ -2225,6 +2227,7 @@ class SettingsHubDialog(QDialog):
                     run_refresh_flow=False,
                     sync_images=bool(sync_images),
                     materialize_remote_images=bool(materialize_remote_images),
+                    full_pull=bool(full_pull),
                 )
             )
         finally:
@@ -12563,6 +12566,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
 
         if last_image_data:
+            try:
+                ObservationsTab._ensure_microscope_publish_defaults(
+                    self.active_observation_id,
+                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
+                )
+            except Exception:
+                pass
             self.load_image_record(last_image_data, refresh_table=True)
             self.refresh_observation_images(select_image_id=last_image_data['id'])
 
@@ -18544,6 +18554,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         run_refresh_flow: bool = False,
         sync_images: bool = True,
         materialize_remote_images: bool = False,
+        full_pull: bool = False,
     ) -> bool:
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is None:
@@ -18556,6 +18567,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             run_refresh_flow=run_refresh_flow,
             sync_images=sync_images,
             materialize_remote_images=materialize_remote_images,
+            full_pull=full_pull,
         ))
 
     def is_cloud_sync_running(self) -> bool:
@@ -20122,6 +20134,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
 
         if last_image_data:
+            try:
+                ObservationsTab._ensure_microscope_publish_defaults(
+                    self.active_observation_id,
+                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
+                )
+            except Exception:
+                pass
             self.load_image_record(last_image_data, refresh_table=True)
             self.refresh_observation_images(select_image_id=last_image_data['id'])
 

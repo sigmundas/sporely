@@ -2030,6 +2030,10 @@ _PULL_CONFLICT_RE = re.compile(
 _REVIEW_CONFLICT_RE = re.compile(
     r"^cloud\s+(?P<cloud_id>[^:]+):\s+needs review before applying remaining cloud changes to local observation\s+(?P<local_id>\d+)(?:\s+\((?P<reason>.*)\))?$"
 )
+_MEASUREMENT_CONFLICT_RE = re.compile(
+    r"^obs\s+(?P<local_id>\d+):\s+skipped cloud measurement\s+"
+    r"(?P<measurement_id>\S+)\s+because the local copy changed$"
+)
 
 
 class CloudSyncError(Exception):
@@ -3049,6 +3053,20 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
             )
             entry['cloud_id'] = str(review_match.group('cloud_id') or '').strip() or None
             entry['pull_skipped'] = True
+            continue
+        measurement_match = _MEASUREMENT_CONFLICT_RE.match(text)
+        if measurement_match:
+            local_id = int(measurement_match.group('local_id'))
+            entry = conflict_entries.setdefault(
+                str(local_id),
+                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
+            )
+            entry['pull_skipped'] = True
+            entry['measurement_conflict'] = True
+            measurement_ids = entry.setdefault('measurement_ids', [])
+            measurement_id = str(measurement_match.group('measurement_id') or '').strip()
+            if measurement_id and measurement_id not in measurement_ids:
+                measurement_ids.append(measurement_id)
             continue
         other_errors.append(text)
 
@@ -9272,6 +9290,24 @@ def resolve_conflict_keep_local(
             mark_observation_dirty(int(local_id))
             raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
 
+    _ensure_metadata_anchors_for_public_spore_observation(
+        client,
+        local_obs,
+        int(local_id),
+        cloud_id,
+    )
+    _push_measurements_for_observation(client, int(local_id))
+    try:
+        _push_spore_mosaic_for_observation(client, int(local_id), cloud_id)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic push errored while keeping local observation '
+            f'{int(local_id)}: {exc}',
+            flush=True,
+        )
+
     _store_remote_snapshot(client, cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id}
@@ -11646,6 +11682,10 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         for row in remote_images_raw
         if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
     ]
+    remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+    )
 
     # 1. Field Comparisons
     local_payload = _observation_compare_payload(local_obs, local=True)
@@ -11685,6 +11725,36 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'status': 'local_only' if l_img else 'cloud_only',
         })
 
+    _, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
+    local_measurements_by_cloud_id = {
+        str(row.get('cloud_id') or '').strip(): dict(row)
+        for row in local_measurements_by_id.values()
+        if str(row.get('cloud_id') or '').strip()
+    }
+    local_images_by_id = {
+        _safe_int(row.get('id')): dict(row)
+        for row in local_images_raw
+        if _safe_int(row.get('id')) > 0
+    }
+    measurement_conflicts: list[dict] = []
+    for remote_measurement in remote_measurements:
+        remote_measurement_id = str(remote_measurement.get('id') or '').strip()
+        local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
+        if local_measurement is None:
+            continue
+        local_image = local_images_by_id.get(_safe_int(local_measurement.get('image_id'))) or {}
+        diff_fields = _measurement_push_diff_fields(
+            local_measurement,
+            remote_measurement,
+            cloud_image_id=str(local_image.get('cloud_id') or '').strip(),
+        )
+        if diff_fields:
+            measurement_conflicts.append({
+                'cloud_id': remote_measurement_id,
+                'local_id': _safe_int(local_measurement.get('id')),
+                'fields': diff_fields,
+            })
+
     return {
         'local_id': int(local_id),
         'cloud_id': resolved_cloud_id,
@@ -11704,6 +11774,7 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             ignored_keys=tombstoned_remote_image_keys,
         ),
         'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
+        'measurement_conflicts': measurement_conflicts,
     }
 # ── High-level sync entry points ──────────────────────────────────────────────
 
@@ -12604,10 +12675,6 @@ def _reconcile_metadata_only_linked_images(
     }
 
     stored_stats = _stored_local_media_signature_image_stats(obs_local_id)
-    if not stored_stats:
-        # Without a baseline we can't tell if bytes changed — leave the
-        # normal encode-and-check path in charge.
-        return skip_ids, kept_cloud_ids
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
@@ -12625,7 +12692,12 @@ def _reconcile_metadata_only_linked_images(
         remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
         if not remote_storage_path:
             continue
-        if not _local_image_source_bytes_unchanged(stored_stats, img):
+        source_role = str(img.get('source_role') or '').strip().lower()
+        file_purpose = str(img.get('file_purpose') or '').strip().lower()
+        is_cloud_recovery_cache = (
+            source_role == 'cloud_recovery_cache' or file_purpose == 'cache'
+        )
+        if not is_cloud_recovery_cache and not _local_image_source_bytes_unchanged(stored_stats, img):
             continue
 
         # Detect metadata drift without any WebP encoding.
@@ -12654,6 +12726,18 @@ def _reconcile_metadata_only_linked_images(
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise
+                if is_cloud_recovery_cache:
+                    # Recovery-cache bytes came from this cloud row. Never
+                    # feed them back through WebP preparation/upload merely
+                    # because a local metadata patch failed.
+                    print(
+                        f'[cloud_sync] Observation {obs_local_id}: metadata-only patch '
+                        f'for recovery-cache image {local_cloud_id} failed ({exc}); '
+                        f'skipping byte upload'
+                    )
+                    skip_ids.add(local_image_id)
+                    kept_cloud_ids.add(local_cloud_id)
+                    continue
                 # Fall back to the normal path if the direct patch failed.
                 print(
                     f'[cloud_sync] Observation {obs_local_id}: metadata-only patch '
@@ -12668,11 +12752,16 @@ def _reconcile_metadata_only_linked_images(
                 f'(source bytes unchanged since last sync)'
             )
         else:
+            reason = (
+                'cloud recovery cache is remote-owned'
+                if is_cloud_recovery_cache
+                else 'source bytes unchanged since last sync, metadata matches'
+            )
             print(
                 f'[cloud_sync] Observation {obs_local_id}: skipped already synced cloud image '
                 f'actual_upload=False image_id={local_image_id} cloud_image_id={local_cloud_id} '
                 f'storage_path={remote_storage_path} '
-                f'(source bytes unchanged since last sync, metadata matches)'
+                f'({reason})'
             )
 
         skip_ids.add(local_image_id)

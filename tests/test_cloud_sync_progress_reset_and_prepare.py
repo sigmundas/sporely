@@ -443,3 +443,77 @@ def test_reconcile_metadata_only_linked_images_leaves_changed_bytes_alone(monkey
     assert skip_ids == set()
     assert kept_ids == set()
     assert client.push_image_metadata_calls == []
+
+
+def test_reconcile_metadata_only_linked_images_never_prepares_recovery_cache_bytes(
+    monkeypatch, tmp_path
+):
+    """Downloaded cloud cache bytes are remote-owned, even without a baseline."""
+    db_path = _init_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+
+    cache_path = tmp_path / "cloud-cache.webp"
+    cache_path.write_bytes(b"downloaded-cloud-bytes")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at, date, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (92, "cloud-obs-92", "dirty", "2026-05-01T00:00:00Z", "2026-05-01", "user-1"),
+        )
+        conn.execute(
+            "INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, "
+            "sort_order, notes, synced_at, source_role, file_purpose) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                702,
+                92,
+                "cloud-image-702",
+                str(cache_path),
+                "field",
+                0,
+                "note",
+                "2026-05-01T00:00:00Z",
+                "cloud_recovery_cache",
+                "cache",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    class _StubClient:
+        user_id = "user-1"
+
+        def _observation_images_support_ai_crop(self) -> bool:
+            return True
+
+        def _observation_images_support_ai_crop_custom(self) -> bool:
+            return True
+
+        def _observation_images_support_upload_metadata(self) -> bool:
+            return False
+
+        def _observation_images_support_original_storage_path(self) -> bool:
+            return False
+
+        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+            return str(img.get("cloud_id"))
+
+    existing_rows = [
+        {
+            "id": "cloud-image-702",
+            "desktop_id": 702,
+            "sort_order": 0,
+            "image_type": "field",
+            "storage_path": "user-1/cloud-obs-92/cloud-image-702.webp",
+            "notes": "note",
+        }
+    ]
+
+    skip_ids, kept_ids = cloud_sync._reconcile_metadata_only_linked_images(
+        _StubClient(), {"id": 92}, "cloud-obs-92", existing_rows
+    )
+
+    assert skip_ids == {702}
+    assert kept_ids == {"cloud-image-702"}

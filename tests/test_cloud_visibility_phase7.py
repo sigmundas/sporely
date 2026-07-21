@@ -4184,6 +4184,18 @@ def test_summarize_sync_issues_still_flags_real_conflicts():
     assert summary["conflicts"][0]["cloud_id"] == "cloud-obs-1"
 
 
+def test_summarize_sync_issues_classifies_measurement_mismatch_as_conflict():
+    summary = cloud_sync.summarize_sync_issues(
+        ["obs 11: skipped cloud measurement 1344 because the local copy changed"]
+    )
+
+    assert summary["conflict_count"] == 1
+    assert summary["other_count"] == 0
+    assert summary["conflicts"][0]["local_id"] == 11
+    assert summary["conflicts"][0]["measurement_conflict"] is True
+    assert summary["conflicts"][0]["measurement_ids"] == ["1344"]
+
+
 def test_import_remote_images_records_deleted_rows_and_imports_only_active_rows(
     monkeypatch,
     tmp_path,
@@ -4908,6 +4920,7 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
     uploaded_paths: list[str] = []
     set_desktop_calls: list[tuple[str, int]] = []
     progress_messages: list[str] = []
+    resolution_steps: list[str] = []
 
     class DummyClient:
         def push_observation(self, local_obs, remote_obs=None, **kwargs):
@@ -4970,6 +4983,26 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
     monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(
+        cloud_sync,
+        "_ensure_metadata_anchors_for_public_spore_observation",
+        lambda *args, **kwargs: resolution_steps.append("anchors"),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_measurements_for_observation",
+        lambda *args, **kwargs: resolution_steps.append("measurements"),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_push_spore_mosaic_for_observation",
+        lambda *args, **kwargs: resolution_steps.append("mosaic"),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_store_remote_snapshot",
+        lambda *args, **kwargs: resolution_steps.append("snapshot"),
+    )
 
     result = cloud_sync.resolve_conflict_keep_local(
         DummyClient(),
@@ -5006,6 +5039,7 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
     assert set_desktop_calls == []
     assert image_path.exists()
     assert not any("Uploading cloud image" in message for message in progress_messages)
+    assert resolution_steps == ["anchors", "measurements", "mosaic", "snapshot"]
 
 
 def test_sync_existing_remote_field_image_preserves_local_file(monkeypatch, tmp_path):

@@ -182,7 +182,7 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["child_safety_pull"] is True
 
 
-def test_refresh_clicked_keeps_remote_media_unmaterialized(monkeypatch):
+def test_refresh_clicked_materializes_changed_remote_media_without_uploading_local_media(monkeypatch):
     calls: dict[str, object] = {}
 
     fake_tab = SimpleNamespace(
@@ -198,6 +198,9 @@ def test_refresh_clicked_keeps_remote_media_unmaterialized(monkeypatch):
     assert calls["start"] == {
         "show_status": True,
         "run_refresh_flow": True,
+        "sync_images": False,
+        "materialize_remote_images": True,
+        "full_pull": False,
     }
     assert "refresh" not in calls
     assert "finish" not in calls
@@ -860,16 +863,72 @@ def test_gallery_publish_recheck_clears_synced_tombstone(monkeypatch):
     assert calls["dirty"] == [7]
 
 
-def test_default_publish_selection_leaves_all_microscope_images_unchecked():
-    selected0, next0 = observations_tab._default_publish_selected_for_new_image("microscope", 0)
-    selected1, next1 = observations_tab._default_publish_selected_for_new_image("microscope", next0)
-    selected2, next2 = observations_tab._default_publish_selected_for_new_image("microscope", next1)
-    selected_field, next_field = observations_tab._default_publish_selected_for_new_image("field", next2)
+def test_default_publish_selection_selects_one_microscope_image_per_magnification():
+    selected_groups: set[str] = set()
 
-    assert selected0 is False
+    selected0, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "40x",
+        selected_groups,
+    )
+    selected1, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "40x",
+        selected_groups,
+    )
+    selected2, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "63x",
+        selected_groups,
+    )
+    selected3, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "field",
+        None,
+        selected_groups,
+    )
+
+    assert selected0 is True
     assert selected1 is False
-    assert selected2 is False
-    assert selected_field is True
+    assert selected2 is True
+    assert selected3 is True
+    assert selected_groups == {"40x", "63x"}
+
+
+def test_ensure_microscope_publish_defaults_selects_first_image_in_each_magnification_group(monkeypatch):
+    state = {
+        "excluded": set(),
+        "seeded": set(),
+    }
+
+    def _publish_excluded_image_ids(_observation_id):
+        return set(state["excluded"])
+
+    def _set_publish_excluded_image_ids(_observation_id, excluded_ids):
+        state["excluded"] = {int(v) for v in excluded_ids}
+
+    def _publish_seeded_microscope_ids(_observation_id):
+        return set(state["seeded"])
+
+    def _set_publish_seeded_microscope_ids(_observation_id, seeded_ids):
+        state["seeded"] = {int(v) for v in seeded_ids}
+
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_excluded_image_ids", _publish_excluded_image_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_excluded_image_ids", _set_publish_excluded_image_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_seeded_microscope_ids", _publish_seeded_microscope_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_seeded_microscope_ids", _set_publish_seeded_microscope_ids)
+
+    images = [
+        {"id": 1, "image_type": "microscope", "objective_name": "40x Plan"},
+        {"id": 2, "image_type": "microscope", "objective_name": "40x Plan"},
+        {"id": 3, "image_type": "microscope", "objective_name": "63x Plan"},
+        {"id": 4, "image_type": "microscope", "objective_name": "63x Plan"},
+        {"id": 5, "image_type": "microscope", "objective_name": "100x Plan"},
+    ]
+
+    observations_tab.ObservationsTab._ensure_microscope_publish_defaults(91, images)
+
+    assert state["excluded"] == {2, 4}
+    assert state["seeded"] == {1, 2, 3, 4, 5}
 
 
 def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_default(monkeypatch):
