@@ -5939,6 +5939,97 @@ class ObservationsTab(QWidget):
                 table.setSortingEnabled(True)
             table.blockSignals(False)
 
+    def _remove_deleted_observation_rows(self, delete_targets: list[dict]) -> bool:
+        """Remove deleted observations from the current table cache in place.
+
+        Returns True when the current view was updated without a full
+        refresh_observations() round-trip.
+        """
+        if not delete_targets or not hasattr(self, "table"):
+            return False
+
+        deleted_local_ids: set[int] = set()
+        deleted_cloud_ids: set[str] = set()
+        for target in delete_targets:
+            row_kind = str((target or {}).get("row_kind") or "").strip().lower()
+            if row_kind == "cloud":
+                row_data = target.get("row_data")
+                if not isinstance(row_data, dict):
+                    return False
+                cloud_id = str(row_data.get("cloud_id") or row_data.get("raw", {}).get("id") or "").strip()
+                if not cloud_id:
+                    return False
+                deleted_cloud_ids.add(cloud_id)
+                continue
+            try:
+                obs_id = int((target or {}).get("observation_id") or 0)
+            except (TypeError, ValueError):
+                return False
+            if obs_id <= 0:
+                return False
+            deleted_local_ids.add(obs_id)
+
+        if not deleted_local_ids and not deleted_cloud_ids:
+            return False
+
+        cache = list(getattr(self, "_observation_table_rows_cache", []) or [])
+        row_indices: list[int] = []
+        for row_index, row_data in enumerate(cache):
+            if not isinstance(row_data, dict):
+                continue
+            row_kind = str(row_data.get("row_kind") or "").strip().lower()
+            if row_kind == "cloud":
+                cloud_id = str(row_data.get("cloud_id") or row_data.get("id") or "").strip()
+                if cloud_id in deleted_cloud_ids:
+                    row_indices.append(row_index)
+                continue
+            try:
+                obs_key = int(row_data.get("local_id") or row_data.get("observation_id") or row_data.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if obs_key in deleted_local_ids:
+                row_indices.append(row_index)
+
+        if not row_indices:
+            return False
+
+        table = self.table
+        sorting_was_enabled = bool(table.isSortingEnabled())
+        table.blockSignals(True)
+        table.setUpdatesEnabled(False)
+        try:
+            if sorting_was_enabled:
+                table.setSortingEnabled(False)
+            for row_index in sorted(set(row_indices), reverse=True):
+                if 0 <= row_index < len(cache):
+                    cache.pop(row_index)
+                if 0 <= row_index < table.rowCount():
+                    table.removeRow(row_index)
+            self._observation_table_rows_cache = cache
+            self._row_index_by_obs_id = {}
+            for row_index, row_data in enumerate(cache):
+                obs_key = row_data.get("local_id") or row_data.get("observation_id")
+                if isinstance(obs_key, int) and obs_key > 0:
+                    self._row_index_by_obs_id[int(obs_key)] = row_index
+            self.selected_observation_id = None
+            selection_model = table.selectionModel()
+            if selection_model is not None:
+                selection_model.clearSelection()
+                selection_model.setCurrentIndex(QModelIndex(), QItemSelectionModel.NoUpdate)
+            table.clearSelection()
+            self.rename_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
+            if hasattr(self, "export_btn"):
+                self.export_btn.setEnabled(bool(cache))
+            self._update_publish_controls()
+            self._redistribute_taxonomy_columns()
+        finally:
+            if sorting_was_enabled:
+                table.setSortingEnabled(True)
+            table.setUpdatesEnabled(True)
+            table.blockSignals(False)
+        return True
+
     def refresh_observations(
         self,
         show_status: bool = False,
@@ -11498,9 +11589,18 @@ class ObservationsTab(QWidget):
             selection_model.clearSelection()
             selection_model.setCurrentIndex(QModelIndex(), QItemSelectionModel.NoUpdate)
         self.table.clearSelection()
-        refresh_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-        self.refresh_observations(restore_selection=False)
-        _obs_timing_log("delete refresh observations", refresh_start, detail=f"targets={len(targets)}")
+        lightweight_refresh_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+        used_lightweight_refresh = self._remove_deleted_observation_rows(targets)
+        if used_lightweight_refresh:
+            _obs_timing_log(
+                "delete prune deleted rows",
+                lightweight_refresh_start,
+                detail=f"targets={len(targets)}",
+            )
+        else:
+            refresh_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+            self.refresh_observations(restore_selection=False)
+            _obs_timing_log("delete refresh observations", refresh_start, detail=f"targets={len(targets)}")
         deleted_total = deleted_local_count + deleted_cloud_count
         _obs_timing_log("TOTAL delete selected observations", total_start, detail=f"targets={len(targets)}")
         if len(targets) == 1 and failure_count:
