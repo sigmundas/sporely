@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, Mapping
 from urllib.parse import quote, urlparse
@@ -774,14 +775,42 @@ class CloudflareMediaWorkerClient:
         )
 
     def delete_objects(self, keys: Iterable[str], *, timeout: int = 120) -> None:
+        cleaned = []
         for key in keys:
-            try:
-                self.delete_object(key, timeout=timeout, ignore_missing=True)
-            except Exception as exc:
-                # Missing objects are fine; only surface genuine failures.
-                if "404" in str(exc):
-                    continue
-                raise
+            normalized = normalize_media_key(key)
+            if normalized:
+                cleaned.append(normalized)
+        unique_keys = sorted(set(cleaned))
+        if not unique_keys:
+            return
+        if len(unique_keys) == 1:
+            self.delete_object(unique_keys[0], timeout=timeout, ignore_missing=True)
+            return
+
+        worker_count = min(4, len(unique_keys))
+        errors: list[Exception] = []
+
+        def _delete_one(key: str) -> None:
+            worker = CloudflareMediaWorkerClient.from_access_token(
+                self.access_token,
+                base_url=self.base_url,
+                public_base_url=self.public_base_url,
+            )
+            worker.delete_object(key, timeout=timeout, ignore_missing=True)
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(_delete_one, key) for key in unique_keys]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    # Missing objects are fine; only surface genuine failures.
+                    if "404" in str(exc):
+                        continue
+                    errors.append(exc)
+
+        if errors:
+            raise errors[0]
 
     def _request(
         self,

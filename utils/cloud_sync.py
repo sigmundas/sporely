@@ -114,6 +114,19 @@ def set_cloud_sync_source_app_version(version: str | None) -> None:
 def _current_source_app_version() -> str | None:
     return _CLOUD_SYNC_SOURCE_APP_VERSION
 
+
+_CLOUD_DEBUG_TIMING = str(os.environ.get('SPORELY_DEBUG_RAW_TIMING') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _cloud_timing_log(stage: str, start: float | None, *, detail: str = '') -> None:
+    if not _CLOUD_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = max(0.0, (_cloud_sync_perf_counter() - start) * 1000.0)
+    if detail:
+        print(f"[raw-timing] cloud delete {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] cloud delete {stage}: {elapsed_ms:.1f} ms")
+
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
 _UNSET = object()
@@ -11149,19 +11162,64 @@ class SporelyCloudClient:
         cloud_id = str(obs_cloud_id or '').strip()
         if not cloud_id:
             raise CloudSyncError('Missing cloud observation id')
+        total_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
+        meta_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         image_rows = self.pull_image_metadata(cloud_id) or []
+        _cloud_timing_log(
+            'pull image metadata',
+            meta_start,
+            detail=f'cloud_id={cloud_id} rows={len(image_rows)}',
+        )
         storage_paths = [
             _normalize_cloud_media_key(row.get('storage_path'))
             for row in image_rows
             if _normalize_cloud_media_key(row.get('storage_path'))
         ]
+        storage_error: list[Exception] = []
+        storage_thread = None
         if storage_paths:
-            try:
-                self._storage_remove(storage_paths)
-            except CloudSyncError as exc:
-                print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+            storage_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
+            def _remove_storage_worker() -> None:
+                try:
+                    client = SporelyCloudClient.from_stored_credentials() or self
+                    client._storage_remove(storage_paths)
+                except Exception as exc:
+                    storage_error.append(exc)
+
+            storage_thread = threading.Thread(
+                target=_remove_storage_worker,
+                name=f'Cloud storage delete {cloud_id}',
+                daemon=True,
+            )
+            storage_thread.start()
+        images_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observation_images?observation_id=eq.{cloud_id}')
+        _cloud_timing_log(
+            'delete observation_images rows',
+            images_delete_start,
+            detail=f'cloud_id={cloud_id}',
+        )
+        observation_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observations?id=eq.{cloud_id}')
+        _cloud_timing_log(
+            'delete observation row',
+            observation_delete_start,
+            detail=f'cloud_id={cloud_id}',
+        )
+        if storage_thread is not None:
+            storage_thread.join()
+            if storage_error:
+                exc = storage_error[0]
+                if isinstance(exc, CloudSyncError):
+                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+                else:
+                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+            _cloud_timing_log(
+                'storage remove',
+                storage_start,
+                detail=f'cloud_id={cloud_id} paths={len(storage_paths)}',
+            )
+        _cloud_timing_log('TOTAL delete_cloud_observation', total_start, detail=f'cloud_id={cloud_id}')
 
     def download_image_file(self, storage_path: str, dest_path: str | Path) -> Path:
         """Download one cloud image from Cloudflare R2 into a local path."""

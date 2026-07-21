@@ -11524,6 +11524,7 @@ class ObservationsTab(QWidget):
                 observation = ObservationDB.get_observation(obs_id)
                 _obs_timing_log("delete local observation fetch", local_target_start, detail=f"obs_id={obs_id}")
                 species = self._build_species_name(observation or {}) or self.tr("observation")
+                cloud_id = str((observation or {}).get("cloud_id") or "").strip()
 
                 self._set_status_progress(
                     self.tr("Deleting observation {current}/{total}: {name}").format(
@@ -11536,12 +11537,24 @@ class ObservationsTab(QWidget):
                 )
                 self._yield_background_sync_ui()
 
-                cloud_copy_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-                cloud_failures = self._delete_cloud_copy_for_local_observation(obs_id)
-                _obs_timing_log("delete local observation cloud copy", cloud_copy_start, detail=f"obs_id={obs_id}")
-                failures.extend(cloud_failures)
-                if observation and str(observation.get("cloud_id") or "").strip():
-                    advance_progress()
+                cloud_failures: list[str] = []
+                cloud_copy_start = time.perf_counter() if _OBS_DEBUG_TIMING and cloud_id else None
+                cloud_copy_thread = None
+                if cloud_id:
+                    def _delete_cloud_copy_worker() -> None:
+                        try:
+                            cloud_failures.extend(
+                                self._delete_cloud_copy_for_local_observation_cloud_id(cloud_id)
+                            )
+                        except Exception as exc:
+                            cloud_failures.append(self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc))
+
+                    cloud_copy_thread = threading.Thread(
+                        target=_delete_cloud_copy_worker,
+                        name=f"Delete cloud copy {cloud_id}",
+                        daemon=True,
+                    )
+                    cloud_copy_thread.start()
 
                 image_count_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 actual_image_count = len(ImageDB.get_images_for_observation(obs_id))
@@ -11574,6 +11587,15 @@ class ObservationsTab(QWidget):
                 if actual_image_count <= 0:
                     advance_progress()
                 failures.extend(delete_failures)
+                if cloud_copy_thread is not None:
+                    cloud_copy_thread.join()
+                    _obs_timing_log(
+                        "delete local observation cloud copy",
+                        cloud_copy_start,
+                        detail=f"obs_id={obs_id}",
+                    )
+                    failures.extend(cloud_failures)
+                    advance_progress()
                 self.observation_deleted.emit(obs_id)
                 deleted_local_count += 1
         finally:
@@ -11628,14 +11650,8 @@ class ObservationsTab(QWidget):
                 level="success",
             )
 
-    def _delete_cloud_copy_for_local_observation(self, observation_id: int) -> list[str]:
-        try:
-            obs = ObservationDB.get_observation(int(observation_id))
-        except Exception:
-            obs = None
-        if not obs:
-            return []
-        cloud_id = str(obs.get("cloud_id") or "").strip()
+    def _delete_cloud_copy_for_local_observation_cloud_id(self, cloud_id: str) -> list[str]:
+        cloud_id = str(cloud_id or "").strip()
         if not cloud_id:
             return []
         try:
@@ -11653,6 +11669,16 @@ class ObservationsTab(QWidget):
         except Exception:
             pass
         return []
+
+    def _delete_cloud_copy_for_local_observation(self, observation_id: int) -> list[str]:
+        try:
+            obs = ObservationDB.get_observation(int(observation_id))
+        except Exception:
+            obs = None
+        if not obs:
+            return []
+        cloud_id = str(obs.get("cloud_id") or "").strip()
+        return self._delete_cloud_copy_for_local_observation_cloud_id(cloud_id)
 
     def _delete_cloud_observation_row(self, row_data: dict) -> list[str]:
         if not isinstance(row_data, dict):
