@@ -360,5 +360,107 @@ class VernacularDB:
             row = cur.fetchone()
             return row[0] if row else None
 
+    def vernaculars_from_taxa(
+        self,
+        taxa: set[tuple[str, str]] | list[tuple[str, str]],
+    ) -> dict[tuple[str, str], str | None]:
+        """Resolve many scientific names in one database pass."""
+        requested: dict[tuple[str, str], tuple[str, str]] = {}
+        for genus, species in taxa or []:
+            genus_text = str(genus or "").strip()
+            species_text = str(species or "").strip()
+            if not genus_text or not species_text:
+                continue
+            requested.setdefault(
+                (genus_text.casefold(), species_text.casefold()),
+                (genus_text, species_text),
+            )
+        if not requested:
+            return {}
+
+        results = {taxon: None for taxon in requested.values()}
+        lang_clause, lang_params = self._language_clause(None)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TEMP TABLE requested_taxa (
+                    genus TEXT NOT NULL COLLATE NOCASE,
+                    species TEXT NOT NULL COLLATE NOCASE,
+                    scientific_name TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (genus, species)
+                ) WITHOUT ROWID
+                """
+            )
+            conn.executemany(
+                "INSERT INTO requested_taxa (genus, species, scientific_name) VALUES (?, ?, ?)",
+                (
+                    (genus, species, f"{genus} {species}")
+                    for genus, species in requested.values()
+                ),
+            )
+
+            candidate_queries = [
+                """
+                SELECT r.genus, r.species, t.taxon_id, 0 AS resolution_rank,
+                       1 AS scientific_preferred
+                FROM requested_taxa r
+                JOIN taxon_min t
+                  ON t.genus = r.genus COLLATE NOCASE
+                 AND t.specific_epithet = r.species COLLATE NOCASE
+                """,
+                """
+                SELECT r.genus, r.species, t.taxon_id, 1 AS resolution_rank,
+                       1 AS scientific_preferred
+                FROM requested_taxa r
+                JOIN taxon_min t
+                  ON t.canonical_scientific_name = r.scientific_name COLLATE NOCASE
+                """,
+            ]
+            if self._has_scientific_name_table():
+                candidate_queries.append(
+                    """
+                    SELECT r.genus, r.species, s.taxon_id, 1 AS resolution_rank,
+                           s.is_preferred_name AS scientific_preferred
+                    FROM requested_taxa r
+                    JOIN scientific_name_min s
+                      ON s.scientific_name = r.scientific_name COLLATE NOCASE
+                    """
+                )
+
+            cur = conn.execute(
+                """
+                WITH candidates AS (
+                """
+                + " UNION ALL ".join(candidate_queries)
+                + """
+                )
+                SELECT c.genus, c.species, v.vernacular_name
+                FROM candidates c
+                JOIN vernacular_min v ON v.taxon_id = c.taxon_id
+                WHERE 1 = 1
+                """
+                + lang_clause
+                + """
+                ORDER BY c.genus COLLATE NOCASE,
+                         c.species COLLATE NOCASE,
+                         c.resolution_rank,
+                         c.scientific_preferred DESC,
+                         v.is_preferred_name DESC,
+                         v.vernacular_name
+                """,
+                tuple(lang_params),
+            )
+            resolved_keys: set[tuple[str, str]] = set()
+            for genus, species, vernacular_name in cur.fetchall():
+                lookup_key = (str(genus).casefold(), str(species).casefold())
+                if lookup_key in resolved_keys:
+                    continue
+                original_taxon = requested.get(lookup_key)
+                if original_taxon is None:
+                    continue
+                results[original_taxon] = vernacular_name
+                resolved_keys.add(lookup_key)
+        return results
+
 
 __all__ = ["VernacularDB"]

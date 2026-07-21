@@ -2164,6 +2164,7 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
         _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _build_observation_spore_count_map=lambda observation_ids: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: None,
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip() or None,
@@ -2190,6 +2191,25 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
 
     assert rows[0]["spore_short"] == "18"
     assert rows[0]["date"] == expected_date
+
+
+def test_observation_table_row_cache_uses_bulk_measurement_counts():
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _build_observation_spore_count_map=lambda observation_ids: {389: 23},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: None,
+        _build_species_name=lambda obs: "Agaricus campestris",
+    )
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(
+        fake_tab,
+        [{"id": 389, "genus": "Agaricus", "species": "campestris"}],
+    )
+
+    assert rows[0]["spore_short"] == "23"
 
 
 def test_cloud_observation_table_row_cache_formats_date_and_spore_count():

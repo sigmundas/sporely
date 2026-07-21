@@ -166,3 +166,43 @@ def test_language_code_filtering_uses_language_column_when_present(tmp_path: Pat
     )
     assert helper.taxon_from_vernacular("Button mushroom") is None
     assert helper.vernacular_from_taxon("Agaricus", "bisporus") == "Sjampinjong"
+
+
+def test_bulk_vernacular_lookup_filters_language_and_preserves_requested_keys(tmp_path: Path) -> None:
+    db_path = tmp_path / "vernacular-bulk.sqlite"
+    _seed_vernacular_db(
+        db_path,
+        with_language_code=True,
+        with_scientific_name_table=True,
+    )
+    helper = VernacularDB(db_path, language_code="nb")
+
+    assert helper.vernaculars_from_taxa(
+        [("agaricus", "BISPORUS"), ("Amanita", "muscaria"), ("Missing", "taxon")]
+    ) == {
+        ("agaricus", "BISPORUS"): "Sjampinjong",
+        ("Amanita", "muscaria"): "Rød fluesopp",
+        ("Missing", "taxon"): None,
+    }
+
+
+def test_bulk_vernacular_lookup_resolves_scientific_synonym(tmp_path: Path) -> None:
+    db_path = tmp_path / "vernacular-bulk-synonym.sqlite"
+    _seed_vernacular_db(
+        db_path,
+        with_language_code=True,
+        with_scientific_name_table=True,
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO scientific_name_min (taxon_id, scientific_name, is_preferred_name)
+            VALUES (1, 'Psalliota bispora', 0)
+            """
+        )
+
+    helper = VernacularDB(db_path, language_code="en")
+
+    assert helper.vernaculars_from_taxa([("Psalliota", "bispora")]) == {
+        ("Psalliota", "bispora"): "Button mushroom",
+    }

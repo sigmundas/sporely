@@ -5179,6 +5179,8 @@ class ObservationsTab(QWidget):
             except (TypeError, ValueError):
                 continue
         thumbnail_map = self._build_observation_thumbnail_map(observation_ids, include_image_id=True)
+        spore_count_builder = getattr(self, "_build_observation_spore_count_map", None)
+        spore_count_map = spore_count_builder(observation_ids) if callable(spore_count_builder) else {}
         if getattr(self, "_any_microscope_column_visible", lambda: False)():
             microscope_map = self._build_observation_microscope_map(observation_ids)
         else:
@@ -5213,7 +5215,10 @@ class ObservationsTab(QWidget):
                 else:
                     common_name_display = "-"
 
-            spore_short = _spore_count_for_observation_row(obs) or "-"
+            spore_short = _spore_count_from_value(obs.get("spore_statistics"))
+            if spore_short is None:
+                count = spore_count_map.get(obs_id)
+                spore_short = str(count) if count else "-"
             date_text = _format_observation_datetime_for_table(obs.get("date") or obs.get("created_at"))
             location_text = obs.get("location") or "-"
             status_text, status_kind, status_sort = _observation_status_info(obs)
@@ -5297,6 +5302,46 @@ class ObservationsTab(QWidget):
                 cloud_id,
             )
         return rows
+
+    def _build_observation_spore_count_map(self, observation_ids: list[int]) -> dict[int, int]:
+        ids: set[int] = set()
+        for value in observation_ids or []:
+            try:
+                observation_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if observation_id > 0:
+                ids.add(observation_id)
+        if not ids:
+            return {}
+        conn = None
+        try:
+            conn = get_connection()
+            conn.execute(
+                "CREATE TEMP TABLE requested_observations (id INTEGER PRIMARY KEY) WITHOUT ROWID"
+            )
+            conn.executemany(
+                "INSERT INTO requested_observations (id) VALUES (?)",
+                ((observation_id,) for observation_id in sorted(ids)),
+            )
+            rows = conn.execute(
+                """
+                SELECT i.observation_id, COUNT(m.id)
+                FROM requested_observations r
+                JOIN images i ON i.observation_id = r.id
+                JOIN spore_measurements m ON m.image_id = i.id
+                WHERE m.measurement_type IS NULL
+                   OR m.measurement_type = ''
+                   OR m.measurement_type IN ('manual', 'spore', 'spores')
+                GROUP BY i.observation_id
+                """
+            ).fetchall()
+            return {int(observation_id): int(count) for observation_id, count in rows}
+        except (sqlite3.Error, TypeError, ValueError):
+            return {}
+        finally:
+            if conn is not None:
+                conn.close()
 
     def _build_observation_microscope_map(self, observation_ids: list[int]) -> dict[int, dict[str, str]]:
         """Aggregate distinct microscope-slide values per observation.
@@ -5402,12 +5447,14 @@ class ObservationsTab(QWidget):
         return joined
 
     def _build_observation_thumbnail_map(self, observation_ids: list[int], include_image_id: bool = False):
-        ids: list[int] = []
-        for observation_id in observation_ids or []:
+        ids: set[int] = set()
+        for value in observation_ids or []:
             try:
-                ids.append(int(observation_id))
+                observation_id = int(value)
             except (TypeError, ValueError):
                 continue
+            if observation_id > 0:
+                ids.add(observation_id)
         if not ids:
             return {}
 
@@ -5416,26 +5463,44 @@ class ObservationsTab(QWidget):
             conn = get_connection()
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            placeholders = ",".join("?" for _ in ids)
             cursor.execute(
-                f"""
-                SELECT observation_id, id, image_type
-                FROM images
-                WHERE image_type IN ('field', 'microscope')
-                  AND observation_id IN ({placeholders})
+                "CREATE TEMP TABLE requested_observations (id INTEGER PRIMARY KEY) WITHOUT ROWID"
+            )
+            cursor.executemany(
+                "INSERT INTO requested_observations (id) VALUES (?)",
+                ((observation_id,) for observation_id in sorted(ids)),
+            )
+            cursor.execute(
+                """
+                SELECT i.observation_id, i.id, i.image_type, t.filepath
+                FROM requested_observations r
+                JOIN images i ON i.observation_id = r.id
+                LEFT JOIN thumbnails t
+                  ON t.image_id = i.id
+                 AND t.size_preset IN ('small', '224x224', 'thumb')
+                WHERE i.image_type IN ('field', 'microscope')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM image_tombstones tombstone
+                      WHERE tombstone.local_image_id = i.id
+                  )
                 ORDER BY
-                    observation_id,
+                    i.observation_id,
                     CASE
-                        WHEN image_type = 'field' THEN 0
-                        WHEN image_type = 'microscope' THEN 1
+                        WHEN i.image_type = 'field' THEN 0
+                        WHEN i.image_type = 'microscope' THEN 1
                         ELSE 2
                     END,
-                    CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
-                    sort_order,
-                    created_at,
-                    id
-                """,
-                tuple(ids),
+                    CASE WHEN i.sort_order IS NULL THEN 1 ELSE 0 END,
+                    i.sort_order,
+                    i.created_at,
+                    i.id,
+                    CASE t.size_preset
+                        WHEN 'small' THEN 0
+                        WHEN '224x224' THEN 1
+                        WHEN 'thumb' THEN 2
+                        ELSE 3
+                    END
+                """
             )
             thumbnail_map: dict[int, object] = {}
             for row in cursor.fetchall():
@@ -5444,11 +5509,9 @@ class ObservationsTab(QWidget):
                     image_id = int(row["id"])
                 except (TypeError, ValueError, KeyError):
                     continue
-                if ImageDB.get_image(image_id) is None:
-                    continue
                 if observation_id in thumbnail_map:
                     continue
-                thumb_path = get_thumbnail_path(image_id, "small")
+                thumb_path = str(row["filepath"] or "").strip()
                 if thumb_path and Path(thumb_path).exists():
                     if include_image_id:
                         thumbnail_map[observation_id] = {
@@ -6173,15 +6236,10 @@ class ObservationsTab(QWidget):
         if not taxa:
             return {}
         
-        # Fetch all common names in one database session
-        name_map: dict[tuple[str, str], str | None] = {}
-        for genus, species in taxa:
-            try:
-                name_map[(genus, species)] = self._table_vernacular_db.vernacular_from_taxon(genus, species)
-            except Exception:
-                name_map[(genus, species)] = None
-        
-        return name_map
+        try:
+            return self._table_vernacular_db.vernaculars_from_taxa(taxa)
+        except Exception:
+            return {taxon: None for taxon in taxa}
 
     def get_ai_suggestions_for_observation(self, obs_id: int) -> dict | None:
         """Return cached AI suggestion state for the given observation id."""
