@@ -1,5 +1,27 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Spore-mosaic scale-bar payload
+
+Landing renders per-observation scale bars over the spore mosaic (and over
+microscope images) from calibration fields the pipeline already computed but
+never persisted. The mosaic upsert in
+`utils/cloud_sync.py::_push_spore_mosaic_for_observation` now sends
+`tile_width_px`, `tile_height_px`, `common_crop_width_um`, and
+`common_crop_height_um` alongside the existing `tile_size_px` payload; the
+web-side migration `20260721120000_add_mosaic_scale_and_image_scale_to_public_rpcs`
+adds the four nullable columns and pipes them into the public
+`get_public_observation` RPC via `jsonb_strip_nulls`, so legacy rows still
+emit the mosaic sub-object without the four keys.
+
+Non-positive manifest values become `None` in the upsert payload so
+degenerate rows land as SQL NULL rather than 0 (a numeric 0 would poison
+the landing µm-per-pixel math). `MOSAIC_PIPELINE_VERSION` is unchanged —
+the atlas bytes are the same; only the manifest metadata is new. Regression
+guard: `tests/test_cloud_spore_mosaic_signature.py::test_pusher_sends_tile_geometry_and_common_crop_um_in_mosaic_upsert`
+inspects the actual `_post` payload the pusher hands to the stub client, so
+a silent removal of any of the four keys would break the test rather than
+silently disable the scale bar downstream.
+
 ### Checked-image cloud sync and authoritative uncheck deletion
 
 Field and microscope gallery checkboxes are now authoritative for cloud media selection. Checked

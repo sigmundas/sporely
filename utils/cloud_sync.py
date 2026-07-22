@@ -15499,20 +15499,41 @@ def _push_spore_mosaic_for_observation(
         )
         return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
 
-    # Refresh tile manifest: DELETE all rows for this mosaic then bulk INSERT.
-    # PostgREST accepts a list payload as a bulk insert.
-    try:
-        client._delete(
-            f'spore_measurement_mosaic_tiles?mosaic_id=eq.{mosaic_id}'
-        )
-    except Exception as exc:
-        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-            raise
-        print(
-            f'[cloud_sync] Mosaic tile cleanup failed obs {obs_local_id}: {exc}',
-            flush=True,
-        )
-        return MOSAIC_STATUS_FAIL_TILE_CLEANUP
+    # Refresh tile manifest: DELETE any existing tiles for the
+    # measurement ids we're about to insert, then bulk INSERT.
+    #
+    # We filter by `measurement_id` (the tile table PK) rather than
+    # by `mosaic_id` so a version bump correctly clears the previous
+    # version's tiles: on the v1 → v2 transition the freshly-upserted
+    # v2 mosaic row has no tiles yet, so filtering by mosaic_id would
+    # be a no-op and leave the v1 tiles in place, which then collide
+    # on INSERT because the PK is (measurement_id) and unique across
+    # all mosaic versions.
+    tile_measurement_ids = [
+        str(tile.cloud_measurement_id).strip()
+        for tile in manifest.tiles
+        if str(tile.cloud_measurement_id or '').strip()
+    ]
+    if tile_measurement_ids:
+        # PostgREST `in.(a,b,c)` filter. Bigint ids don't need quoting.
+        # Batch in chunks to keep the URL under typical proxy limits
+        # even for observations with hundreds of measurements.
+        try:
+            _BATCH = 200
+            for i in range(0, len(tile_measurement_ids), _BATCH):
+                chunk = tile_measurement_ids[i : i + _BATCH]
+                ids_expr = ','.join(chunk)
+                client._delete(
+                    f'spore_measurement_mosaic_tiles?measurement_id=in.({ids_expr})'
+                )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            print(
+                f'[cloud_sync] Mosaic tile cleanup failed obs {obs_local_id}: {exc}',
+                flush=True,
+            )
+            return MOSAIC_STATUS_FAIL_TILE_CLEANUP
 
     tile_payload = [
         {

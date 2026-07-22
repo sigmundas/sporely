@@ -63,7 +63,15 @@ CONTENT_DIGEST_HEX_CHARS = 16
 # background colour, etc). The sync-time mosaic signature includes this
 # constant so a version bump forces every observation to rebuild once and
 # store its new signature — even if the local rows didn't change.
-MOSAIC_PIPELINE_VERSION = 1
+#
+# v2: manifest upsert payload gained tile_width_px / tile_height_px /
+# common_crop_width_um / common_crop_height_um (see the sporely-web
+# migration 20260721120000 and cloud_sync.py::_push_spore_mosaic_for_observation).
+# Atlas bytes are unchanged, but pre-v2 mosaic rows on Supabase have NULL
+# calibration columns and thus no scale bar on landing. The bump forces a
+# one-off re-upload of every previously-synced observation so calibrated
+# scale bars can render everywhere.
+MOSAIC_PIPELINE_VERSION = 2
 
 RECTANGLE_STYLE_A = "a"
 RECTANGLE_STYLE_B = "b"
