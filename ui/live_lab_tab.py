@@ -873,15 +873,20 @@ class LiveLabTab(QWidget):
         current_text_layout.addWidget(self.current_observation_location_label)
         current_text_layout.addStretch(1)
         current_row.addLayout(current_text_layout, 1)
+
+        self.start_stop_btn = QPushButton(self.tr("Start\nSession"))
+        self.start_stop_btn.setFixedSize(96, 96)
+        self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
+        self.start_stop_btn.clicked.connect(self._toggle_session)
+        current_row.addWidget(self.start_stop_btn, 0, Qt.AlignVCenter)
         current_layout.addLayout(current_row)
         left_layout.addWidget(current_group)
 
-        session_group, session_layout = create_section_card(
-            self.tr("Session"),
-            body_margins=(10, 12, 10, 10),
-        )
-        session_layout.setSpacing(8)
-        self.session_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        # These controls remain as the runtime binding for session settings,
+        # while their user-facing counterparts live in Preferences → Image import.
+        session_settings = QWidget(self)
+        session_settings.hide()
+        self.session_mode_selector = SegmentedSelector(session_settings, compact=True, fill_width=True)
         self.session_mode_live_radio = self.session_mode_selector.add_option(
             self.tr("Live capture (watch folder)"),
             self.SESSION_MODE_LIVE,
@@ -893,9 +898,8 @@ class LiveLabTab(QWidget):
         )
         self.session_mode_combo = self.session_mode_selector
         self.session_mode_selector.selectionChanged.connect(lambda _value: self._on_session_mode_changed())
-        session_layout.addWidget(self.session_mode_selector)
 
-        self.watch_group = QWidget()
+        self.watch_group = QWidget(session_settings)
         self.watch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         watch_layout = QHBoxLayout(self.watch_group)
         watch_layout.setContentsMargins(0, 0, 0, 0)
@@ -911,15 +915,6 @@ class LiveLabTab(QWidget):
         self.browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.browse_btn.setMinimumWidth(72)
         watch_layout.addWidget(self.browse_btn, 0, Qt.AlignVCenter)
-        session_layout.addWidget(self.watch_group)
-
-        self.start_stop_btn = QPushButton(self.tr("Start Session"))
-        self.start_stop_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
-        self.start_stop_btn.clicked.connect(self._toggle_session)
-        session_layout.addWidget(self.start_stop_btn)
-
-        left_layout.addWidget(session_group)
 
         # MICROSCOPE = optical path only (Objective, Contrast).
         # SLIDE / PREP = everything about the mounted specimen: mount medium,
@@ -937,8 +932,6 @@ class LiveLabTab(QWidget):
         self.contrast_combo = self._build_term_combo("contrast")
         micro_form.addRow(self.tr("Objective:"), self.objective_combo)
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
-        left_layout.addWidget(self.microscope_group)
-
         self.slide_prep_group, prep_form = create_section_card(
             self.tr("Slide / prep"),
             QFormLayout,
@@ -960,6 +953,7 @@ class LiveLabTab(QWidget):
         prep_form.addRow(self.tr("Condition:"), self.sample_combo)
         prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
         left_layout.addWidget(self.slide_prep_group)
+        left_layout.addWidget(self.microscope_group)
 
         self.notes_group, notes_form = create_section_card(
             self.tr("Notes"),
@@ -7568,9 +7562,9 @@ class LiveLabTab(QWidget):
             self.start_stop_btn.setText(self.tr("Stop Session"))
         else:
             self.start_stop_btn.setText(
-                self.tr("Start Log Session")
+                self.tr("Start Log\nSession")
                 if selected_mode == self.SESSION_MODE_OFFLINE
-                else self.tr("Start Session")
+                else self.tr("Start\nSession")
             )
         if not running and not stopping:
             if selected_mode == self.SESSION_MODE_OFFLINE:

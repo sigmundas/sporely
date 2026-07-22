@@ -1025,7 +1025,7 @@ class SettingsHubDialog(QDialog):
     """Single settings hub with left-nav pane and stacked content pages.
 
     Consolidates: User profile, Database, Online publishing, Language, Appearance,
-    and advanced RAW processing preferences.
+    image-import and advanced RAW processing preferences.
     Calibration is intentionally excluded (it's a workflow, not a preference).
     """
 
@@ -1034,7 +1034,8 @@ class SettingsHubDialog(QDialog):
     PAGE_PUBLISHING = 2
     PAGE_LANGUAGE   = 3
     PAGE_APPEARANCE = 4
-    PAGE_RAW_PROCESSING = 5
+    PAGE_IMAGE_IMPORT = 5
+    PAGE_RAW_PROCESSING = PAGE_IMAGE_IMPORT  # Backward-compatible page constant.
 
     def __init__(self, parent=None, start_page: int = 0):
         super().__init__(parent)
@@ -1081,7 +1082,7 @@ class SettingsHubDialog(QDialog):
             self.tr("Online publishing"),
             self.tr("Language"),
             self.tr("Appearance"),
-            self.tr("RAW processing"),
+            self.tr("Image import"),
         ):
             item = QListWidgetItem(label)
             item.setSizeHint(QSize(180, 36))
@@ -1093,7 +1094,7 @@ class SettingsHubDialog(QDialog):
         self._stack.addWidget(self._build_publishing_page())
         self._stack.addWidget(self._build_language_page())
         self._stack.addWidget(self._build_appearance_page())
-        self._stack.addWidget(self._build_raw_processing_page())
+        self._stack.addWidget(self._build_image_import_page())
 
         # Wire nav after stack exists
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
@@ -1475,17 +1476,55 @@ class SettingsHubDialog(QDialog):
                 controller.set_hint(self._observations_columns_default_hint)
         return super().eventFilter(watched, event)
 
-    def _build_raw_processing_page(self) -> QWidget:
+    def _build_image_import_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        info = QLabel(self.tr(
-            "These advanced RAW settings affect Live Lab review renders and the curve inspector defaults."
-        ))
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        live_group, live_layout = create_section_card(self.tr("Live lab"), parent=page)
+        live_layout.setSpacing(8)
+
+        self._live_lab_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        self._live_lab_mode_selector.add_option(
+            self.tr("Live capture (watch folder)"),
+            LiveLabTab.SESSION_MODE_LIVE,
+            checked=True,
+        )
+        self._live_lab_mode_selector.add_option(
+            self.tr("Offline (log only)"),
+            LiveLabTab.SESSION_MODE_OFFLINE,
+        )
+        saved_mode = LiveLabTab.SESSION_MODE_LIVE
+        live_lab = self._settings_live_lab()
+        if live_lab is not None:
+            saved_mode = live_lab._selected_session_mode()
+        else:
+            saved_mode = str(SettingsDB.get_setting(LiveLabTab.SETTING_SESSION_MODE, saved_mode) or saved_mode)
+        self._live_lab_mode_selector.set_selected_value(saved_mode)
+        self._live_lab_mode_selector.selectionChanged.connect(self._save_live_lab_import_preferences)
+        live_layout.addWidget(self._live_lab_mode_selector)
+
+        folder_row = QHBoxLayout()
+        folder_row.setContentsMargins(0, 0, 0, 0)
+        folder_row.setSpacing(8)
+        self._live_lab_watch_dir_input = QLineEdit()
+        self._live_lab_watch_dir_input.setPlaceholderText(self.tr("Choose the microscope capture folder"))
+        self._live_lab_watch_dir_input.setText(
+            str(SettingsDB.get_setting(LiveLabTab.SETTING_WATCH_DIR, "") or "").strip()
+        )
+        self._live_lab_watch_dir_input.textChanged.connect(self._save_live_lab_import_preferences)
+        folder_row.addWidget(self._live_lab_watch_dir_input, 1)
+        self._live_lab_browse_button = QPushButton(self.tr("Browse"))
+        self._live_lab_browse_button.clicked.connect(self._choose_live_lab_watch_dir)
+        folder_row.addWidget(self._live_lab_browse_button)
+        live_layout.addLayout(folder_row)
+
+        running = bool(live_lab is not None and live_lab.is_session_running())
+        self._live_lab_mode_selector.setEnabled(not running)
+        self._live_lab_watch_dir_input.setReadOnly(running)
+        self._live_lab_browse_button.setEnabled(not running)
+        layout.addWidget(live_group)
 
         group, form = create_section_card(self.tr("Advanced RAW processing"), QFormLayout, parent=page)
         form.setLabelAlignment(Qt.AlignLeft)
@@ -1579,6 +1618,37 @@ class SettingsHubDialog(QDialog):
         layout.addStretch()
         self._load_raw_processing_settings()
         return page
+
+    def _settings_live_lab(self):
+        return getattr(self.parent(), "live_lab_tab", None)
+
+    def _save_live_lab_import_preferences(self, *_args) -> None:
+        mode = str(self._live_lab_mode_selector.selected_value(LiveLabTab.SESSION_MODE_LIVE) or "")
+        if mode not in {LiveLabTab.SESSION_MODE_LIVE, LiveLabTab.SESSION_MODE_OFFLINE}:
+            mode = LiveLabTab.SESSION_MODE_LIVE
+        watch_dir = str(self._live_lab_watch_dir_input.text() or "").strip()
+        SettingsDB.set_setting(LiveLabTab.SETTING_SESSION_MODE, mode)
+        SettingsDB.set_setting(LiveLabTab.SETTING_WATCH_DIR, watch_dir)
+
+        live_lab = self._settings_live_lab()
+        if live_lab is not None and not live_lab.is_session_running():
+            with QSignalBlocker(live_lab.session_mode_selector):
+                live_lab.session_mode_selector.set_selected_value(mode)
+            with QSignalBlocker(live_lab.watch_dir_input):
+                live_lab.watch_dir_input.setText(watch_dir)
+                live_lab.watch_dir_input.setToolTip(watch_dir)
+            live_lab._update_session_controls()
+
+    def _choose_live_lab_watch_dir(self) -> None:
+        current = str(self._live_lab_watch_dir_input.text() or "").strip()
+        start_dir = current if current and Path(current).is_dir() else str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(
+            self,
+            self.tr("Choose microscope capture folder"),
+            start_dir,
+        )
+        if chosen:
+            self._live_lab_watch_dir_input.setText(chosen)
 
     @staticmethod
     def _configure_raw_percent_spinbox(
@@ -1766,7 +1836,7 @@ class SettingsHubDialog(QDialog):
         # next slider event, without requiring a panel rebuild. Also
         # notify any open Prepare Images dialogs (non-modal — can coexist
         # with Preferences).
-        live_lab = getattr(self, "live_lab_tab", None)
+        live_lab = self._settings_live_lab()
         if live_lab is not None:
             refresher = getattr(live_lab, "refresh_raw_processing_preferences", None)
             if callable(refresher):

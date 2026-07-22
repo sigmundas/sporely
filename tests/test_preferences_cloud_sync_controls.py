@@ -814,7 +814,7 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
     dialog._nav.setCurrentRow(main_window.SettingsHubDialog.PAGE_RAW_PROCESSING)
     qapp.processEvents()
 
-    assert dialog._nav.item(main_window.SettingsHubDialog.PAGE_RAW_PROCESSING).text() == "RAW processing"
+    assert dialog._nav.item(main_window.SettingsHubDialog.PAGE_IMAGE_IMPORT).text() == "Image import"
     assert dialog._raw_dark_cutoff_spin.value() == pytest.approx(0.0)
     assert dialog._raw_dark_cutoff_slider.value() == 0
     assert dialog._raw_dark_cutoff_slider.maximum() == 200
