@@ -1,0 +1,25 @@
+{
+  "format": "sporely-taxonomy-release-contract-v1",
+  "taxonomy_schema_version": 2,
+  "taxonomy_release_pattern": "^tax-[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}-[0-9]{2}$",
+  "valid_release_examples": ["tax-2026.07.23-01"],
+  "invalid_release_examples": ["latest", "tax-2026-07-23", "tax-2026.07.23"],
+  "published_release_immutable": true,
+  "candidate_corrections_receive_new_id": true,
+  "manifests": {"generated": true, "hand_edit": false},
+  "source_release": {
+    "id_format": "<source-code>:<upstream-version-or-issued-date>",
+    "id_examples": ["col_xr:2026-07-17", "nortaxa:2026-07-01"],
+    "archive_name_format": "<source-code>-<filesystem-safe-upstream-version>-<sha256-prefix>.<extension>",
+    "archive_immutable": true,
+    "latest_forbidden_in_compilation": true,
+    "required_manifest_fields": ["source", "source_release_id", "upstream_version", "issued_at", "download_url", "sha256", "bytes", "license"]
+  },
+  "version_independence": ["taxonomy_schema_version", "taxonomy_content_release", "source_release", "application_release"],
+  "consumers": [
+    {"code": "sporely-py", "required_metadata": ["supported_taxonomy_schema_min", "supported_taxonomy_schema_max", "tested_taxonomy_release", "bundled_sqlite_sha256"]},
+    {"code": "sporely-web", "required_metadata": ["supported_taxonomy_schema_min", "supported_taxonomy_schema_max", "tested_taxonomy_release", "tested_cloud_release"]},
+    {"code": "sporely-landing", "required_metadata": ["taxonomy_consumer", "supported_taxonomy_schema_min", "supported_taxonomy_schema_max", "tested_taxonomy_release"]},
+    {"code": "future-client", "required_metadata": ["client_name", "supported_taxonomy_schema_min", "supported_taxonomy_schema_max", "tested_taxonomy_release"]}
+  ]
+}

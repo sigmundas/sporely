@@ -1,0 +1,25 @@
+{
+  "format": "sporely-taxonomy-release-thresholds-v1",
+  "severities": ["hard_failure", "review_required", "warning", "informational"],
+  "thresholds": [
+    {"code": "source_id_collision", "severity": "hard_failure", "condition": {"count_greater_than": 0}},
+    {"code": "manual_mapping_changed", "severity": "review_required", "condition": {"count_greater_than": 0}},
+    {"code": "split_or_merge", "severity": "review_required", "condition": {"count_greater_than": 0}},
+    {"code": "norwegian_or_sami_name_loss", "severity": "review_required", "condition": {"percent_greater_than": 1.0}, "review_may_promote_to": "hard_failure"},
+    {"code": "enabled_enrichment_language_loss", "severity": "review_required", "condition": {"percent_greater_than": 5.0}},
+    {"code": "unresolved_mapping_increase", "severity": "review_required", "condition": {"pending_numeric_threshold": true}, "entry_gate": "stage_3_first_full_compiler_baseline"},
+    {"code": "unexpected_taxon_removal", "severity": "review_required", "condition": {"pending_numeric_threshold": true}, "entry_gate": "stage_3_first_full_compiler_baseline"},
+    {"code": "artifact_size_growth", "severity": "warning", "condition": {"pending_numeric_threshold": true}, "entry_gate": "stage_3_first_full_compiler_baseline"},
+    {"code": "cloud_size_growth", "severity": "review_required", "condition": {"pending_numeric_threshold": true}, "entry_gate": "stage_6_privileged_measurement"},
+    {"code": "regression_corpus_failure", "severity": "hard_failure", "condition": {"count_greater_than": 0}},
+    {"code": "sqlite_integrity_failure", "severity": "hard_failure", "condition": {"count_greater_than": 0}},
+    {"code": "foreign_key_failure", "severity": "hard_failure", "condition": {"count_greater_than": 0}},
+    {"code": "desktop_cloud_parity_failure", "severity": "hard_failure", "condition": {"count_greater_than": 0}},
+    {"code": "non_blocking_count_delta", "severity": "informational", "condition": {"always_report": true}}
+  ],
+  "policy": {
+    "agents_may_not_weaken_to_pass": true,
+    "pending_thresholds_require_named_baseline": true,
+    "review_outcomes_are_recorded": true
+  }
+}

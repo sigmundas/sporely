@@ -1,0 +1,157 @@
+{
+  "format": "sporely-taxonomy-stage0-baseline-v1",
+  "captured_at": "2026-07-23",
+  "stage0_status": "complete",
+  "repositories": {
+    "sporely-py": {
+      "commit": "1b2d3e4a27ad328320c7c0fe055e44433fd54181",
+      "branch": "main",
+      "expected_branch": "feat/taxonomy-v2-stage-0",
+      "working_tree_clean": false
+    },
+    "sporely-web": {
+      "commit": "c13fe3e1a81768c5b76c522985858c4eab59bf66",
+      "branch": "feat/taxonomy-v2-stage-0",
+      "working_tree_clean": false
+    },
+    "sporely-landing": {
+      "commit": "afb8e7a2e0e408f9154cac9170ea20bca4ccecd9"
+    },
+    "sporely-admin": {
+      "commit": "0ab55997ae51ba4717a86519244032a35aef11ec"
+    }
+  },
+  "sqlite": {
+    "path": "database/reference_data/generated/vernacular_multilanguage.sqlite3",
+    "sha256": "724686455d3f6539fd382e799c6cb43e2f5145942c0f84017a6e206561923c17",
+    "bytes": 101306368,
+    "page_size": 4096,
+    "page_count": 24733,
+    "freelist_count": 31,
+    "integrity_check": "ok",
+    "foreign_key_check_rows": 0,
+    "table_counts": {
+      "taxon_min": 112777,
+      "vernacular_min": 98485,
+      "scientific_name_min": 293458,
+      "taxon_external_id_min": 140378
+    },
+    "scientific_name_counts": {
+      "preferred": 225554,
+      "non_preferred": 67904
+    },
+    "vernacular_language_counts": {
+      "da": 4370,
+      "de": 6556,
+      "en": 11299,
+      "es": 1745,
+      "fi": 7103,
+      "fr": 8168,
+      "it": 1857,
+      "no": 37045,
+      "pl": 4390,
+      "pt": 1175,
+      "sv": 14777
+    },
+    "external_id_source_counts": {
+      "artportalen": 19907,
+      "artsdatabanken": 107427,
+      "inaturalist": 13044
+    },
+    "collision_checks": {
+      "case_insensitive_vernacular_duplicates_per_taxon_language": 0,
+      "preferred_scientific_name_duplicates_per_taxon_language": 0,
+      "external_ids_mapping_to_multiple_taxa": 193
+    },
+    "indexes": [
+      {"name": "idx_external_source_id", "table": "taxon_external_id_min", "bytes": 4222976},
+      {"name": "idx_external_taxon_source", "table": "taxon_external_id_min", "bytes": 3674112},
+      {"name": "idx_scientific_name_lookup", "table": "scientific_name_min", "bytes": 9519104},
+      {"name": "idx_scientific_name_unique", "table": "scientific_name_min", "bytes": 10665984},
+      {"name": "idx_taxon_canonical_name", "table": "taxon_min", "bytes": 3276800},
+      {"name": "idx_taxon_genus", "table": "taxon_min", "bytes": 2084864},
+      {"name": "idx_taxon_genus_species", "table": "taxon_min", "bytes": 3235840},
+      {"name": "idx_taxon_inat_id", "table": "taxon_min", "bytes": 163840},
+      {"name": "idx_taxon_no_id", "table": "taxon_min", "bytes": 1273856},
+      {"name": "idx_taxon_parent", "table": "taxon_min", "bytes": 1318912},
+      {"name": "idx_taxon_source_system", "table": "taxon_min", "bytes": 2719744},
+      {"name": "idx_taxon_sv_id", "table": "taxon_min", "bytes": 229376},
+      {"name": "idx_vern_lang_name", "table": "vernacular_min", "bytes": 2727936},
+      {"name": "idx_vern_taxon_lang", "table": "vernacular_min", "bytes": 1548288},
+      {"name": "idx_vern_unique", "table": "vernacular_min", "bytes": 3272704}
+    ]
+  },
+  "artsorakel_contract": {
+    "endpoint": "POST https://ai.artsdatabanken.no/",
+    "captured_response_date": "2026-07-21",
+    "identifier_json_path": "predictions[].taxa.items[].scientific_name_id",
+    "identifier_raw": "NBIC:54995",
+    "identifier_namespace": "NBIC scientific-name identifier",
+    "identifier_numeric_component": "54995",
+    "returned_accepted_scientific_name_json_path": "scientificName",
+    "returned_accepted_scientific_name": "Candolleomyces candolleanus",
+    "returned_former_scientific_name_json_path": "scientific_name",
+    "returned_former_scientific_name": "Psathyrella candolleana",
+    "returned_shared_scientific_name_json_path": "scientific_name_shared",
+    "returned_shared_scientific_name": "Psathyrella candolleana",
+    "returned_vernacular_name": "hvit sprøsopp",
+    "returned_shared_identifier": "GBIF:9201176",
+    "nortaxa_snapshot_row": {
+      "id": "54995",
+      "taxonID": "54995",
+      "acceptedNameUsageID": "54995",
+      "scientificName": "Psathyrella candolleana",
+      "taxonomicStatus": "valid"
+    },
+    "namespace_caution": "The captured NBIC numeric component equals all three NorTaxa fields for this old row; that coincidence does not make the namespaces interchangeable."
+  },
+  "regression_queries": {
+    "corpus": {
+      "path": "database/taxonomy/evidence/baseline/regression-corpus.json",
+      "case_count": 100,
+      "category_counts": {
+        "accepted_scientific": 25,
+        "scientific_synonym": 20,
+        "vernacular": 25,
+        "external_identifier": 15,
+        "missing": 15
+      },
+      "validation": "passed"
+    },
+    "sqlite": {
+      "NBIC:54995_external_id": [],
+      "54995_norwegian_taxon_id": [{"taxon_id": 54995, "canonical_scientific_name": "Psathyrella candolleana"}],
+      "Candolleomyces candolleanus": [],
+      "Psathyrella candolleana": [{"taxon_id": 54995, "preferred": true}],
+      "hvit sprøsopp": [{"taxon_id": 54995, "language_code": "no", "preferred": true}]
+    },
+    "live_search_taxa_rpc": {
+      "NBIC:54995": [],
+      "54995": [],
+      "Candolleomyces candolleanus": [],
+      "Psathyrella candolleana": {"rows": 4, "distinct_taxon_ids": [54995]},
+      "hvit sprøsopp": {"rows": 4, "distinct_taxon_ids": [54995]}
+    }
+  },
+  "cloud": {
+    "access": "public_read_only",
+    "privileged_measurement_gate": {
+      "status": "deferred_to_stage_6_entry_gate",
+      "decision_date": "2026-07-23",
+      "blocks_stage_1": false,
+      "blocks_stage_6": true
+    },
+    "taxonomy_table_row_counts": {"status": "not_measured", "reason": "RLS returns no public table rows or exact counts"},
+    "duplicate_counts": {"status": "not_measured", "reason": "catalog/table aggregation is not exposed through the public API"},
+    "orphan_counts": {"status": "not_measured", "reason": "catalog/table aggregation is not exposed through the public API"},
+    "table_and_index_sizes": {"status": "not_measured", "reason": "PostgreSQL catalog access is unavailable"},
+    "function_definition": {
+      "source": "sporely-web/supabase/migrations/20260521120000_baseline_live_public_schema.sql",
+      "security": "SECURITY DEFINER",
+      "volatility": "STABLE",
+      "searches": ["taxa.canonical_scientific_name", "genus and specific_epithet", "taxa_vernacular.vernacular_name"],
+      "does_not_search": ["scientific aliases", "external identifiers"]
+    },
+    "function_grants": ["anon", "authenticated", "service_role"]
+  }
+}

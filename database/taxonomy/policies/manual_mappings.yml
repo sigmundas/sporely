@@ -1,0 +1,26 @@
+{
+  "format": "sporely-taxonomy-manual-mappings-v1",
+  "schema": {
+    "required": [
+      "mapping_id",
+      "source_usage",
+      "target",
+      "relationship",
+      "review_status",
+      "reviewer",
+      "rationale",
+      "evidence_references",
+      "created_at",
+      "updated_at",
+      "source_release_range",
+      "supersedes"
+    ],
+    "source_usage_required": ["source", "namespace", "identifier"],
+    "target_rule": "Exactly one of target.source_usage or target.sporely_taxon_id",
+    "timestamp_format": "RFC3339",
+    "source_release_range_required": ["first", "last"],
+    "allowed_relationships_ref": "mapping_policy.relationships",
+    "allowed_review_states_ref": "mapping_policy.review_states"
+  },
+  "mappings": []
+}

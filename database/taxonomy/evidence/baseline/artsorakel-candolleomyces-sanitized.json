@@ -1,0 +1,31 @@
+{
+  "evidence_format": "sanitized_artsorakel_taxon_item_v1",
+  "captured_from": "local observation 611 stored Artsorakel response",
+  "captured_on": "2026-07-21",
+  "endpoint": "POST https://ai.artsdatabanken.no/",
+  "json_path": "predictions[].taxa.items[]",
+  "item": {
+    "probability": 0.9843,
+    "scientific_name": "Psathyrella candolleana",
+    "scientific_name_id": "NBIC:54995",
+    "scientific_name_id_shared": "GBIF:9201176",
+    "scientific_name_shared": "Psathyrella candolleana",
+    "scientificName": "Candolleomyces candolleanus",
+    "name": "Candolleomyces candolleanus",
+    "vernacularName": "hvit sprøsopp",
+    "vernacularNames": {
+      "en": "Pale Brittlestem",
+      "nb": "hvit sprøsopp",
+      "nl": "Bleke franjehoed",
+      "nn": "kvit sprøsopp",
+      "sv": "vitspröding"
+    },
+    "infoUrl": "https://artsdatabanken.no/Taxon/227837"
+  },
+  "removed_fields": [
+    "image bytes and paths",
+    "observation metadata",
+    "location",
+    "user data"
+  ]
+}
