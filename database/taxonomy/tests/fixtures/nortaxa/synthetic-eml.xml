@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<eml packageId="a6c6cead-b5ce-4a4e-8cf5-1542ba708dec">
+  <dataset>
+    <alternateIdentifier>artsnavnebase</alternateIdentifier>
+    <title>Nortaxa (Artsnavnebasen)</title>
+    <pubDate>2026-07-17</pubDate>
+    <publisher><organizationName>Artsdatabanken</organizationName></publisher>
+    <intellectualRights><para>CC-BY 4.0</para></intellectualRights>
+    <edition>1.284</edition>
+  </dataset>
+</eml>

@@ -1,0 +1,38 @@
+{
+  "archive": {
+    "bytes": 1622,
+    "member_count": 5,
+    "sha256": "9f24ff5308fe5aa4870496b6132d5b7c88e25be3d8cb8659c4c69dde45289c3e"
+  },
+  "identifier_contract": {
+    "core_row_id_role": "archive-local core row key",
+    "dwc_acceptedNameUsageID_role": "accepted usage reference",
+    "dwc_parentNameUsageID_role": "parent usage reference",
+    "dwc_taxonID_role": "source-defined taxon identifier",
+    "extension_coreid_role": "archive-local link to core row ID",
+    "namespaced_scientific_name_id_role": "NBIC scientific-name identifier; never numerically collapsed",
+    "raw_sample": {
+      "core_row_id": "row-R",
+      "dwc:acceptedNameUsageID": "",
+      "dwc:parentNameUsageID": "",
+      "dwc:scientificNameID": "NBIC:root",
+      "dwc:taxonID": "taxon:root"
+    }
+  },
+  "linkage": {
+    "distinct_core_row_ids": 4,
+    "vernacular_rows_by_core_id": {
+      "row-A": 3
+    }
+  },
+  "network_calls": 0,
+  "profile_code": "nortaxa_dwca",
+  "record_counts": {
+    "Distribution": 1,
+    "Taxon": 4,
+    "VernacularName": 3
+  },
+  "report_schema_version": 1,
+  "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "result": "passed"
+}

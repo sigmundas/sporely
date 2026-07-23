@@ -130,3 +130,11 @@ sopp.jpg
 /database/taxonomy/sources/col_xr/*/.quarantine/archive.zip
 /database/taxonomy/sources/col_xr/*/*.part
 /database/taxonomy/sources/col_xr/*/*.partial
+
+# NorTaxa source archives: retain requests/manifests/reports, ignore raw bytes
+/database/taxonomy/sources/nortaxa/*/archive.zip
+/database/taxonomy/sources/nortaxa/*/.staging/
+/database/taxonomy/sources/nortaxa/*/.quarantine/
+/database/taxonomy/sources/nortaxa/*/extracted/
+/database/taxonomy/sources/nortaxa/*/*.part
+/database/taxonomy/sources/nortaxa/*/*.partial
