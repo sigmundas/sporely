@@ -1,0 +1,47 @@
+{
+  "archive": {
+    "all_members_crc_streamed": true,
+    "declared_uncompressed_bytes": 5488571338,
+    "member_count": 21100,
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "size": 1383646570
+  },
+  "compiler_consumed_tables": {
+    "NameUsage.tsv": {
+      "applied_correction_count": 1,
+      "blank_rows": 0,
+      "crc_verified": true,
+      "duplicate_primary_ids": 0,
+      "malformed_rows": 0,
+      "member_sha256": "5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0",
+      "removed_semantic_bom_code_points": 2,
+      "row_count": 7871065,
+      "scan_report": "nameusage-scan.json",
+      "unapproved_bom_occurrences": 0,
+      "uncompressed_bytes": 2929163002
+    }
+  },
+  "correction_policy": {
+    "correction_id": "col-xr-2026-07-17-nameusage-5BK77-page-double-bom-v1",
+    "path": "source-corrections.json",
+    "raw_archive_modified": false,
+    "semantic_field_sha256": "b3fcc6029626887bb6c28a5fb074f1f42416a9541b0d67c2ddca1b82c776bcee",
+    "semantic_field_value": "58, figs 6–7"
+  },
+  "metadata": {
+    "complete_yaml_document": true,
+    "sha256": "ae02692eaf1364d2928736435caac655271d28ea50177d57c197d0fd9e137771",
+    "source_references": 21085,
+    "source_references_reconciled": true,
+    "uncompressed_bytes": 120654270
+  },
+  "result": "passed",
+  "source_metadata_sample": {
+    "population": 21085,
+    "sample_size": 20,
+    "validation": "passed"
+  },
+  "state": "validated",
+  "validated_at": "2026-07-23T19:49:09.297635Z",
+  "validation_mode": "bounded YAML events, literal TSV streaming, disk-backed duplicate detection, and complete ZIP CRC streaming without extraction"
+}

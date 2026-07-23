@@ -122,3 +122,11 @@ test_nbic.py
 sopp.jpg
 # Local raw reference source dumps
 /database/reference_data/sources/
+
+# COL source archives: retain manifests/reports, ignore only large/transient bytes
+/database/taxonomy/sources/col_xr/*/archive.zip
+/database/taxonomy/sources/col_xr/*/.staging/
+/database/taxonomy/sources/col_xr/*/extracted/
+/database/taxonomy/sources/col_xr/*/.quarantine/archive.zip
+/database/taxonomy/sources/col_xr/*/*.part
+/database/taxonomy/sources/col_xr/*/*.partial

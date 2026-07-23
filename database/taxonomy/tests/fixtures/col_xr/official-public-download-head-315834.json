@@ -1,0 +1,22 @@
+{
+  "fixture_kind": "official_head_metadata",
+  "captured_at": "2026-07-23T08:04:37Z",
+  "http_method": "HEAD",
+  "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "initial_status": 302,
+  "redirect_chain": [
+    "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip"
+  ],
+  "final_status": 200,
+  "final_official_host": "download.checklistbank.org",
+  "headers": {
+    "Accept-Ranges": "bytes",
+    "Content-Disposition": null,
+    "Content-Length": "1383646570",
+    "Content-Type": "application/zip",
+    "ETag": "\"5278c56a-65720b858a1cc\"",
+    "Last-Modified": "Tue, 21 Jul 2026 15:31:43 GMT"
+  },
+  "archive_body_retrieved": false,
+  "note": "The redirect target is execution evidence, not canonical source identity."
+}

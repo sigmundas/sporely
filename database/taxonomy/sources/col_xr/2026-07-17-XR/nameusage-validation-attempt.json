@@ -1,0 +1,56 @@
+{
+  "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "archive_state": "quarantined",
+  "descriptor_evidence": {
+    "datapackage_json_present": false,
+    "explicit_col_namespace_declaration_present": false,
+    "explicit_field_mapping_present": false,
+    "explicit_export_profile_present": false,
+    "finding": "lowercase col: is an observed convention across all primary tables in this pinned ChecklistBank export; it is not claimed as a universal ColDP namespace rule",
+    "root_metadata_version": "2026-07-17 XR"
+  },
+  "header_profile": {
+    "allowed_forms": [
+      "exact canonical unprefixed entity term",
+      "exact lowercase col: plus an allowlisted entity term"
+    ],
+    "opaque_known_extension": "clb:merged",
+    "profile": "checklistbank-col-xr-2026-07-17",
+    "resolver": "coldp_schema.resolve_entity_header"
+  },
+  "nameusage": {
+    "crc32": "f179faea",
+    "expected_uncompressed_bytes": 2929163002,
+    "final_eof_reached": true,
+    "malformed_row_count": 112,
+    "malformed_row_samples": [
+      {"line": 101007, "reason": "'\\t' expected after '\"'"},
+      {"line": 101008, "reason": "'\\t' expected after '\"'"},
+      {"line": 111918, "reason": "'\\t' expected after '\"'"},
+      {"line": 369659, "reason": "'\\t' expected after '\"'"},
+      {"line": 375272, "reason": "unexpected end of data"},
+      {"line": 377319, "reason": "'\\t' expected after '\"'"},
+      {"line": 436424, "reason": "unexpected end of data"},
+      {"line": 554305, "reason": "'\\t' expected after '\"'"},
+      {"line": 559999, "reason": "unexpected end of data"},
+      {"line": 563583, "reason": "'\\t' expected after '\"'"},
+      {"line": 621318, "reason": "unexpected end of data"},
+      {"line": 676995, "reason": "'\\t' expected after '\"'"},
+      {"line": 715077, "reason": "'\\t' expected after '\"'"},
+      {"line": 743963, "reason": "unexpected end of data"},
+      {"line": 868858, "reason": "'\\t' expected after '\"'"},
+      {"line": 898778, "reason": "'\\t' expected after '\"'"},
+      {"line": 899182, "reason": "'\\t' expected after '\"'"},
+      {"line": 1021797, "reason": "'\\t' expected after '\"'"},
+      {"line": 1083702, "reason": "'\\t' expected after '\"'"},
+      {"line": 1094555, "reason": "'\\t' expected after '\"'"}
+    ],
+    "original_header_columns": 73,
+    "sha256": null,
+    "sha256_status": "computed during the failed pass but not emitted before the terminal exception; the full scan was not retried",
+    "validated_uncompressed_bytes": 2929163002
+  },
+  "result": "rejected",
+  "terminal_failure": "NameUsage contains 112 malformed rows under strict csv.reader TSV quoting semantics",
+  "validation_timestamp": "2026-07-23T18:50:35Z"
+}

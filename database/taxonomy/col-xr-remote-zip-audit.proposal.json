@@ -1,0 +1,44 @@
+{
+  "archive_length": 1383646570,
+  "canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "execution_authorized": false,
+  "maximum_total_response_bytes": 67108864,
+  "plan_schema_version": 1,
+  "requests": [
+    {
+      "maximum_response_bytes": 65557,
+      "purpose": "locate ordinary EOCD and ZIP64 locator if present",
+      "range": "bytes=-65557"
+    },
+    {
+      "conditional": true,
+      "maximum_response_bytes": 56,
+      "purpose": "ZIP64 EOCD metadata only, conditional on locator",
+      "range": "computed exact 56-byte range"
+    },
+    {
+      "conditional": true,
+      "maximum_response_bytes": 67043251,
+      "purpose": "central directory only",
+      "range": "computed from EOCD/ZIP64 metadata"
+    }
+  ],
+  "separate_network_authorization_required": true,
+  "validators": {
+    "approved_hosts": [
+      "api.checklistbank.org",
+      "download.checklistbank.org"
+    ],
+    "https_only": true,
+    "maximum_redirects": 3,
+    "no_data_member_ranges": true,
+    "no_resume": true,
+    "no_retries": true,
+    "reject_status_200_before_body": true,
+    "require_valid_content_range": true,
+    "required_etag": "\"5278c56a-65720b858a1cc\"",
+    "required_last_modified": "Tue, 21 Jul 2026 15:31:43 GMT",
+    "required_status": 206,
+    "required_total_length": 1383646570
+  }
+}

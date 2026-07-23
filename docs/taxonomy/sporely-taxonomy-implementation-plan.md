@@ -383,13 +383,163 @@ Never discard a usable returned name merely because direct ID resolution failed.
 
 ### 2A. COL XR downloader
 
-- [ ] Implement `refresh_col_xr.py` using a pinned Catalogue of Life release, never an unrecorded “latest” during compilation.
-- [ ] Support full or taxonomically filtered download through ChecklistBank. Record the integer ChecklistBank dataset key, COL version, issued date, DOI, format, filter, requested fields, URL, and authentication requirement.
-- [ ] Prefer a filtered fungal/higher-classification archive when it is reproducible and materially smaller; preserve the exact download request definition in the manifest.
-- [ ] Validate archive checksum, expected files/metadata, required columns, encoding, declared record counts, and source license.
-- [ ] Retain the downloaded archive and extraction manifest immutably.
+- [x] Implement `refresh_col_xr.py` using a pinned Catalogue of Life release, never an unrecorded “latest” during compilation.
+- [x] Support full or taxonomically filtered download through ChecklistBank. Record the integer ChecklistBank dataset key, COL version, issued date, DOI, format, filter, requested fields, URL, and authentication requirement.
+- [x] Prefer a filtered fungal/higher-classification archive when it is reproducible and materially smaller; preserve the exact download request definition in the manifest.
+- [x] Validate archive checksum, expected files/metadata, required columns, encoding, declared record counts, and source license.
+- [x] Retain the downloaded archive and extraction manifest immutably.
 
 COL publishes monthly and annual Base and Extended releases. Monthly releases are retained in ChecklistBank for a limited period, while annual versions have stable long-term support. Therefore production manifests must record a resolvable dataset key and archive hash; never rely only on the word `latest`.
+
+#### Fixture-first acquisition contract
+
+- [x] Require and validate an explicit XR release label, integer ChecklistBank dataset key, issued date, archive format, scope/filter, fields, official endpoint, and expected license; reject `latest`, Base releases, ambiguity, secrets, and metadata mismatch.
+- [x] Produce deterministic normalized request definitions and canonical request SHA-256 values independent of execution time, dictionary order, whitespace, and local paths.
+- [x] Implement planned/downloaded/validated/failed manifest rules, injected streaming transport, incremental SHA-256, retained failure diagnostics, staging, and atomic promotion boundaries.
+- [x] Implement safe immutable release paths, traversal rejection, identical-request idempotency, and different-request overwrite refusal.
+- [x] Implement offline ColDP fixture ZIP validation for integrity, safe members, required metadata/table presence, and request metadata agreement.
+- [x] Provide offline CLI commands for request validation/normalization, planning, fixture validation, and status. No live-download command exists.
+- [x] Propose and metadata-verify an explicit real COL XR release and ChecklistBank dataset key; acquisition approval remains deliberately withheld.
+- [x] Verify the selected export's exact API request, authentication, ColDP metadata/schema, fields, counts, license, and resolved URL against a real archive.
+- [x] Perform and validate the first real archive download.
+
+### Progress update — 2026-07-23 — Stage 2A fixture-first COL XR request and manifest
+
+- Status: [~]
+- Scope completed: Built the explicit pinned-XR request model, deterministic request identity, immutable local layout, manifest lifecycle, injected transport/staging boundary, safe synthetic ColDP ZIP inspection, dry-run/status CLI, and offline fixtures. No real network or archive acquisition occurred.
+- Files changed: `database/taxonomy/scripts/{__init__.py,refresh_col_xr.py}`; `database/taxonomy/tests/test_col_xr_acquisition.py`; `database/taxonomy/tests/fixtures/col_xr/valid-request.json`; `database/taxonomy/README.md`; this plan.
+- Tests run and results: new acquisition plus policy and existing taxonomy suites — 78 passed in 1.72s; policy validator — 7 files, 16 languages, 12 namespaces; Stage 0 corpus — 100 queries passed; Python syntax and fixture JSON parsing passed; secret scan found only the validator's forbidden-key literals, no secret values; no real `sources/col_xr` files exist.
+- Official documentation consulted: COL release distinctions and retention (`https://www.catalogueoflife.org/building/releases`); archive formats, past releases, and custom filters (`https://www.catalogueoflife.org/data/download`); ChecklistBank integer dataset keys and custom-download authentication (`https://www.catalogueoflife.org/tools/api`); ColDP 1.2 ZIP, `metadata.yaml`, and tabular entity contract (`https://catalogueoflife.github.io/coldp/`).
+- Decisions made: Requests may name official `ColDP`, `DwCA`, or `TextTree` formats, but this fixture boundary structurally validates only ColDP. Persisted endpoints must use an official HTTPS host and contain no secret query fields. No observed dataset key is a default.
+- Deviations from plan: No metadata-discovery command was added because it is optional and would add a live API surface before the pinned acquisition contract is finalized.
+- Unresolved format questions: Exact ChecklistBank export endpoint/method and authentication flow; selected ColDP schema/version; production metadata shape; fungal filter encoding and ancestor behavior; exact included fields; archive license expression; declared count locations; and whether a filtered export is reproducibly preferable to full XR.
+- Explicit selection required: A maintainer must choose one published XR release, its integer ChecklistBank key, issued date/DOI, ColDP export definition, fungal-plus-ancestor filter, included fields, and expected license. The tool will not choose on the user's behalf.
+- Next safe task: With that explicit selection approved, add an official metadata-discovery/verification adapter and captured sanitized response fixture, then lock the request schema to the selected ChecklistBank export API before enabling a real download command.
+
+### Progress update — 2026-07-23 — Stage 2A metadata-only candidate verification
+
+- Status: [~]
+- Scope completed: Verified public release metadata for proposed `2026-07-17 XR` / dataset `315834` / DOI `10.48580/dgykv`; captured sanitized official fixtures and raw-response provenance; established exact accepted Fungi root usage `F` (kingdom, parent `CS5HF`) with ambiguity guards; implemented bounded injected-transport verification and acquisition rejection of unapproved proposals.
+- Files changed: `database/taxonomy/scripts/col_xr_metadata.py`; `database/taxonomy/scripts/refresh_col_xr.py`; official and synthetic fixtures plus provenance under `database/taxonomy/tests/fixtures/col_xr/`; `database/taxonomy/tests/test_col_xr_metadata.py`; `database/taxonomy/col-xr-source-selection.proposal.json`; taxonomy README; this plan.
+- Tests run and results: full Python suite — 959 passed, 1 skipped in 19.72s; focused acquisition/metadata/policy suite — 70 passed in 0.62s; Stage 0 corpus — 100 queries passed; policy validator — 7 files, 16 languages, 12 namespaces; touched Python syntax, seven JSON artifacts, and diff whitespace validated; persisted-artifact secret scan returned no findings.
+- Export contract evidence: Official OpenAPI exposes JSON-object `ExportRequest` at `POST /dataset/{key}/export`, returning a UUID; job states are listed by `GET /export`; finished bytes resolve through `GET /export/{id}` as ZIP/octet-stream. Custom downloads require account authentication. Supported request formats and root/rank/synonym/extinct/classification options were recorded. No export endpoint was invoked.
+- Fields and scope: Proposed minimum compiler fields are usage ID, scientific name, authorship, rank, status, parent ID, and accepted usage ID. Provenance/quality/source fields are audit-only. Media, treatments, types, interactions, distributions, and COL vernacular bulk are excluded from the proposed input.
+- Decision: Recommend the full XR ColDP for the first acquisition because official material does not define whether a root-filtered archive includes ancestor usage rows or only classification data. This is a lineage-reliability decision, not a size estimate; archive size remains unmeasured.
+- Artifact/manifests: `col-xr-source-selection.proposal.json` is machine-readable but has `approval_status: proposed` and `download_authorized: false`; the acquisition loader rejects it.
+- Deviations from plan: None. Live work was limited to public GET metadata, exact taxon lookup, and official documentation/OpenAPI reads.
+- Risks or blockers: OpenAPI does not document field-selection parameters, rate/poll cadence, job/archive retention, or filtered ancestor-row semantics. This custom-export analysis was subsequently superseded for the first full-release acquisition by the public prebuilt GET evidence below.
+- Next safe task: Superseded by the public prebuilt delivery correction below; do not implement authenticated custom export for the first full XR acquisition.
+
+### Progress update — 2026-07-23 — Stage 2A public prebuilt delivery correction
+
+- Status: [~]
+- Scope completed: Corrected the proposed first acquisition from authenticated custom `POST /dataset/{key}/export` job creation to the official pinned public prebuilt `GET /dataset/315834/export.zip?extended=true&format=ColDP`. The canonical identity remains the dataset endpoint and exact parameters; redirect targets are execution evidence only.
+- Files changed: `database/taxonomy/col-xr-source-selection.proposal.json`; `database/taxonomy/scripts/{col_xr_delivery.py,refresh_col_xr.py}`; `database/taxonomy/tests/{test_col_xr_delivery.py,test_col_xr_metadata.py}`; `database/taxonomy/tests/fixtures/col_xr/official-public-download-head-315834.json`; taxonomy README; this plan.
+- Tests run and results: full Python suite — 981 passed, 1 skipped in 14.39s; focused COL acquisition/metadata/delivery suite — 85 passed in 0.53s; Stage 0 corpus — 100 queries passed; policy validator — 7 files, 16 languages, 12 namespaces; touched Python syntax, eight JSON artifacts, secret scan, diff whitespace, and no-archive filesystem checks passed.
+- Header evidence: HEAD returned one `302` to verified official host `download.checklistbank.org`, then `200 application/zip` with `Content-Length: 1383646570`, ETag `"5278c56a-65720b858a1cc"`, Last-Modified `Tue, 21 Jul 2026 15:31:43 GMT`, and byte-range support. No archive body was requested.
+- Contract changes: Full-release delivery requires no authentication or export job. Redirects are limited to three and only `download.checklistbank.org` is permitted. Final ZIP/octet-stream types are allowlisted. Compiler-required/audit/ignored fields now describe local consumption only; acquisition preserves the complete immutable archive.
+- Size and disk policy: Proposed maximum is 1.5 GiB (`1610612736` bytes), conservatively above the observed official HEAD length. Future approval must explicitly bind a maximum. Preflight reports expected and available bytes; streaming enforces maximum and declared length, hashes incrementally, uses staging, validates ZIP without full extraction, and retains original bytes/hash.
+- Approval boundary: The proposal remains `proposed` and `download_authorized: false`. A future separately generated `col-xr-source-selection.approved.json` must bind exact proposal/request hashes, release identity, timestamp, canonical endpoint, maximum bytes, and redirect hosts. No approved artifact and no real-download command were created.
+- Decisions retained: Full XR ColDP remains recommended because custom fungal-filter ancestor-row semantics are undocumented. The authenticated custom/partial export API remains documented but is not used by this proposal.
+- Exit items intentionally open: Real archive download, full archive validation, exact internal schema/fields/counts/license, checksum, and immutable promotion.
+- Next safe task: Maintainer review of the revised proposal and maximum. After explicit approval, add the fully tested approved-artifact-only streaming command before performing one bounded acquisition.
+
+### Progress update — 2026-07-23 — Stage 2A failed-attempt repair and retry contract
+
+- Status: [~]
+- Outcome: Stage 2A acquisition remains incomplete. Attempt 1 consumed the original transfer authorization by opening the GET response, but wrote zero bytes and promoted no archive.
+- Directory failures: Initial planning incorrectly required a future parent to exist. After nearest-existing-ancestor planning was added, streaming opened the response and then incorrectly attempted to recreate the already validated `.staging` directory. Both defects are now covered by offline regression tests.
+- Ordering repair: Layout owns directory creation and device validation. Streaming requires a real non-symlink staging directory on the planned device, rejects an existing destination, and opens the partial file exclusively before invoking transport. Local path, permission, race, or exclusive-open errors therefore occur before network access.
+- Evidence model: The failed manifest retains its original error and now has append-only attempt 1 evidence: transport attempted, response opened, zero bytes written, expected size 1,383,646,570, no partial removal was necessary, and failure phase/type/message/timestamps are explicit.
+- Retry model: Existing failed releases are eligible only when managed identity/policy/evidence match exactly, state is `failed`, attempt 1 wrote zero bytes, staging is empty, and no archive/extracted/unknown payload exists. Attempt 2 requires a separate authorization bound to proposal/request/original-approval hashes, attempts 1→2, maximum two GET attempts, immutable endpoint/ceiling, reason, timestamp, and acknowledgement of response-opened/zero-byte attempt 1. No retry authorization was created.
+- Offline status: `retry-status` is read-only and network-free. The real failed release currently reports eligible for separate retry authorization, no blockers, no unexpected paths, and required next authorization number 2.
+- Memory safety: Replaced reachable acquisition `Path.read_bytes()` archive hashes with bounded 8 MiB chunk hashing. ZIP member integrity paths already stream bounded chunks.
+- Tests run and results: focused COL XR acquisition/metadata/delivery repair suite — 111 passed in 0.64s; full Python suite — 1007 passed, 1 skipped in 20.69s; Stage 0 corpus — 100 queries passed; policy validator — 7 files, 16 languages, 12 namespaces; touched Python syntax, 12 JSON artifacts, secret scan, diff whitespace, Git-ignore rules, and source-byte absence checks passed. Repair tests use injected transports and explicitly prove local and retry-preflight failures make zero transport calls.
+- Network scope: This repair task performed no HEAD, GET, range request, redirect, DNS lookup, or other network operation.
+- Next safe task: Obtain an explicit retry-authorization artifact for attempt 2. Do not reuse the original approval or start network access without it.
+
+### Progress update — 2026-07-23 — Stage 2A attempt-2 retention and remote ZIP audit tooling
+
+- Status: [~]
+- Attempt 2 evidence preserved: Retry authorization SHA-256 `db7cc9d2a7ef603ceaea912415b536b239c80dc84be18d3ef33387a395cbb9c2`; 1,383,646,570 bytes transferred; streaming SHA-256 `397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9`; final redirect under `download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip`.
+- Structural outcome: Validation stopped because member count exceeded the unchanged 20,000-member ceiling. This is an unresolved policy limit, not a finding of corruption or malicious structure. The completed staging file was deleted by the old behavior; no archive or quarantine exists locally and none was fabricated.
+- Retention correction: Interrupted/incomplete bytes remain removable. Exact-size, fully hashed downloads that later fail structural validation now move atomically to managed `.quarantine/archive.zip`, never active `archive.zip`. Quarantine metadata records bytes/hash/attempt/reason/validator/rule/time/classification. Payload bytes are ignored; reports/checksums remain trackable; overwrite and ambiguous payloads fail closed.
+- State model: Explicit lifecycle outcomes now distinguish `transfer_failed`, `downloaded`, `quarantined`, `validated`, and `promoted`. Attempt history remains append-only. Exact quarantined bytes may be promoted only after size/hash and the approved validator pass.
+- Policy evidence required: Reassessment must include member count, central-directory bytes, aggregate/largest sizes, ratios, path normalization/duplicates/traversal, Unix types, methods/encryption, filename lengths, and ColDP file families. The 20,000 ceiling remains unchanged pending inventory.
+- Offline tooling: Added ordinary EOCD and ZIP64 discovery plus bounded central-directory parsing for exact count, sizes, flags/methods, types, path hazards, aggregates, largest/ratio lists, and groupings. Malformed/truncated records fail closed without data-member reads.
+- Proposed range audit: Machine-readable plan permits at most 64 MiB response data across one 65,557-byte suffix, optional 56-byte ZIP64 metadata, and one exact central directory. A future executor must require `206`, valid `Content-Range`, unchanged ETag/Last-Modified/length, approved HTTPS hosts/redirects, reject `200` before body, and perform no data-member range, retry, resume, or full download. Execution remains unauthorized.
+- Tests run and results: focused COL XR and remote-ZIP suite — 128 passed in 0.78s; full Python suite — 1024 passed, 1 skipped in 20.08s; Stage 0 corpus — 100 queries passed; policy validator — 7 files, 16 languages, 12 namespaces; touched Python syntax, 15 JSON artifacts, Git-ignore behavior, secret scan, diff whitespace, source-byte absence, and attempt-history evidence checks passed. Socket-blocked fixtures cover offline parser/planner isolation.
+- Network scope: This task performed no HEAD, GET, range request, redirect, DNS lookup, or other network operation. No attempt-3 authorization was created.
+- Next safe task: Obtain separate authorization for the bounded remote central-directory audit, then use its exact inventory to review—but not automatically relax—the 20,000-member policy.
+
+### Progress update — 2026-07-23 — Stage 2A member policy v2 and attempt-3 authorization
+
+- Status: [~]
+- Policy change: Versioned ZIP member policy v2 changes 20,000 from a hard stop to an audit warning and sets 250,000 as the emergency rejection ceiling. Member count alone is not corruption evidence; every path, type, encryption, compression, offset, expansion, integrity, and ColDP check remains mandatory.
+- Retention: Byte-complete structural or emergency-policy failures quarantine exact bytes under `.quarantine/archive.zip`; interrupted transfers remain removable. Active promotion remains validation-only.
+- Range audit: The earlier remote range proposal remains unauthorized and will not be executed for this attempt.
+- Attempt 3: A separate artifact binds release/dataset/endpoint, proposal/request/original approval/attempt-2 authorization hashes, prior attempt 2, authorized attempt 3, maximum three transfers, expected bytes/hash, redirect hosts, and member policy v2 thresholds.
+
+### Progress update — 2026-07-23 — offline quarantine metadata inspection
+
+- Status: [!]
+- Immutable archive: The quarantined archive remains 1,383,646,570 bytes with SHA-256 `397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9`; active and partial archive paths remain absent.
+- Inventory: The ZIP has exactly 21,100 regular deflated members and a 1,333,957-byte central directory. It exceeds the 20,000 warning threshold and passes the 250,000 emergency ceiling.
+- Metadata finding: The unique root `metadata.yaml` is 120,654,270 bytes uncompressed and 5,360,209 bytes compressed (ratio 22.509247307334473), with CRC32 `54f3ef78` and uncompressed SHA-256 `ae02692eaf1364d2928736435caac655271d28ea50177d57c197d0fd9e137771`.
+- Decision: The observed metadata exceeds the mandatory maximum 64 MiB COL XR override, so the override was not implemented. Per the safety gate, YAML parsing, remaining structural validation, and promotion stopped. The exact archive remains quarantined and Stage 2A is incomplete.
+- Next safe offline task: Determine why the official export embeds 21,085 source YAML files and a 120.7 MB aggregate root metadata document, then propose a separately reviewed validation strategy without weakening the 64 MiB gate.
+
+### Progress update — 2026-07-23 — bounded YAML policy and source reconciliation
+
+- Status: [!]
+- Superseding metadata policy: A separately approved policy permits at most 256 MiB only for the exact pinned COL XR proposal/request/release/endpoint and inspected root metadata hash. The general ceiling remains 5 MiB.
+- Complete YAML validation: `CSafeLoader` event parsing consumed 120,654,270 bytes in 7,366 bounded 64 KiB reads without constructing a Python document graph. It observed 13,641,047 events, 11,403,508 nodes, depth 5, zero anchors, zero aliases, and valid final-document termination.
+- Structure and identity: The root is a mapping identifying dataset `315834`, title `Catalogue of Life`, version `2026-07-17 XR`, issued `2026-07-17`, DOI `10.48580/dgykv`, and license `cc by`.
+- Provenance reconciliation: The root contains exactly 21,085 source references with unique numeric identifiers, exactly matching all 21,085 `source/<identifier>.yaml` members. These are delivery provenance rather than compiler input. A deterministic 20-file sample (first, last, smallest, largest, and 16 hash-selected paths) passed complete bounded YAML parsing.
+- Terminal structural finding: `NameUsage.tsv` is present and non-empty, but its official ColDP headers are namespace-qualified (`col:ID`, `col:parentID`, `col:status`, and similar). The current validator did not recognize `col:ID` as the required `ID`/`taxonID` field, so validation stopped and the archive remains quarantined.
+- Next safe offline task: Add separately reviewed, allowlist-based normalization for the official `col:` namespace, with fixtures proving arbitrary or deceptive namespace prefixes remain rejected, then resume the full `NameUsage` scan from quarantine.
+
+### Progress update — 2026-07-23 — pinned ChecklistBank header profile
+
+- Status: [!]
+- Descriptor evidence: The archive contains no `datapackage.json`, `meta.xml`, or other descriptor declaring `col:`. All observed primary TSVs use lowercase `col:` fields and the `clb:merged` extension. This is treated only as a pinned ChecklistBank export convention, not a universal ColDP namespace rule.
+- Header policy: One entity-specific resolver accepts exact canonical terms and exact lowercase `col:` allowlisted terms only for profile `checklistbank-col-xr-2026-07-17`. It preserves original-to-normalized provenance, retains known opaque `clb:merged`, rejects generic/nested/confusable/encoded prefixes and all normalization collisions, and never transforms cell values.
+- NameUsage pass: Header resolution succeeded for all 73 columns. A bounded streaming pass reached EOF across all 2,929,163,002 uncompressed bytes with SQLite-backed primary-ID tracking.
+- Terminal finding: Strict `csv.reader` TSV quoting semantics classified 112 records as malformed (`'\t' expected after '"'` or `unexpected end of data`). Per the stop gate, the scan was not retried and delimiter semantics were not weakened. The archive remains quarantined.
+- Evidence limitation: The streaming SHA-256 and row counters were maintained internally but the terminal exception occurred before report serialization. They are intentionally recorded as unavailable instead of repeating the full scan automatically.
+- Next safe offline task: Inspect bounded byte context for the recorded malformed line samples and establish whether ChecklistBank TSV treats quote characters literally or uses RFC-style CSV quoting. Propose and test exact parsing semantics before any new full scan.
+
+### Progress update — 2026-07-23 — literal ColDP TSV scan
+
+- Status: [!]
+- Parser correction: TSV parsing now splits only on physical tab bytes and removes exactly LF or CRLF record terminators. Quotes and unknown escapes remain literal. Recognized `\\t`, `\\n`, `\\r`, and `\\\\` escapes are decoded only in a separate semantic view; raw values and identifiers are preserved.
+- Evidence durability: The completed scan report was atomically written before duplicate and semantic policy evaluation. This completed report is explicitly marked complete and must not be confused with partial evidence.
+- Complete NameUsage evidence: 2,929,163,002 bytes reached EOF with ZIP CRC verified; SHA-256 `5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0`; 7,871,064 valid rows; zero blanks; zero duplicate primary IDs; zero self-parent references.
+- Former CSV diagnostics: 111 former strict-CSV quote failures are valid literal TSV records with exactly 73 columns. Bounded evidence retains line, row hash, byte length, quote context, and column count.
+- Semantic probes: Fungi `F` remains accepted kingdom under `CS5HF`; `Candolleomyces candolleanus` (`9Z2GC`) is accepted; `Psathyrella candolleana` (`4NDVN`) is a synonym pointing to `9Z2GC`.
+- Terminal finding: One record at line 1,853,650 contains a UTF-8 BOM outside the first header token. This is a genuine violation of the approved BOM rule, so the archive remains quarantined and remaining-table validation did not continue.
+- Next safe offline task: Inspect bounded evidence for line 1,853,650 and decide whether an embedded BOM is source corruption requiring rejection or a separately authorized, explicitly evidenced normalization case.
+
+### Progress update — 2026-07-23 — BOM compatibility inspection
+
+- Status: [!]
+- Exact occurrence: NameUsage line 1,853,650 has raw-row SHA-256 `156d19f3c53506a4f145799ff6ab1a5664c92b62e19e59bf20bd9573a907f9b5` and 511 bytes. It contains two consecutive `EF BB BF` sequences at record-body offsets 224 and 227.
+- Field location: Both occur in zero-based field 31 (`namePublishedInPage`), beginning five bytes into the scalar after `58, f`. They are neither at record start nor field start.
+- Structural context: The raw and one-removal views both have 73 columns; preceding and following records also have 73 columns. The affected row identifies accepted species `Virpazaria stojaspali` (`5BK77`).
+- Decision: The requested compatibility authority required exactly one BOM at record or field start. This row has two mid-value occurrences, so the conditions fail and no normalization rule, rescan, remaining-table validation, or promotion was performed.
+- Next safe offline task: Treat the double mid-scalar BOM as source-data corruption unless a new, explicit policy defines how a page citation such as `58, f<FEFF><FEFF>igs 6–7` should be represented without altering immutable source evidence.
+
+### Progress update — 2026-07-23 — Stage 2A validated promotion
+
+- Status: [x]
+- Approved correction: Machine-readable policy `source-corrections.json` records correction `col-xr-2026-07-17-nameusage-5BK77-page-double-bom-v1`. It is bound to archive, member, release, dataset, line, row, field, offsets, raw hashes, and semantic hash. Only the semantic non-identity page citation changes from `58, f<FEFF><FEFF>igs 6–7` to `58, figs 6–7`; raw evidence is unchanged.
+- Final NameUsage scan: 2,929,163,002 bytes; SHA-256 `5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0`; 7,871,065 rows; 111 former CSV false positives accepted; one correction; two removed semantic BOM code points; zero unapproved BOMs, malformed rows, blank rows, duplicate primary IDs, or self-parent references.
+- Semantic probes: Fungi `F` is the accepted kingdom under `CS5HF`; accepted `Candolleomyces candolleanus` is `9Z2GC`; synonym `Psathyrella candolleana` is `4NDVN` and targets `9Z2GC`.
+- Structural result: Root metadata passed complete bounded event parsing; 21,085 source references reconciled to 21,085 provenance members; the deterministic 20-file source sample passed; all 21,100 archive members passed path/type/encryption/compression/size/collision and streaming CRC checks.
+- Promotion: After validation and exit checks, `.quarantine/archive.zip` was atomically moved on device `16777232` to active `archive.zip`. Pre/post size remained 1,383,646,570 bytes and SHA-256 remained `397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9`.
+- Exit checks: Focused correction/schema/TSV/COL/ZIP/YAML tests — 189 passed; full Python suite — 1,106 passed, 1 skipped; frozen corpus — 100 passed; policy validator — 7 files, 16 languages, 12 namespaces.
+- Stage state: Stage 2A acquisition and immutable validation are complete. Stage 2 overall remains open for NorTaxa acquisition and source-delta work.
+- Next safe Stage 2 subtask: Begin Stage 2B fixture-first NorTaxa downloader work without importing or compiling the promoted COL archive.
 
 ### 2B. NorTaxa downloader
 
@@ -1008,6 +1158,7 @@ Copy under the relevant stage:
 | 2026-07-23 | Keep `no` as legacy/undetermined Norwegian; never collapse it or Sámi codes into `nb` | Existing artifacts use `no`, while `nb`, `nn`, `se`, `sma`, and `smj` have distinct semantics that must survive normalization | 1, 3–8 | Stage 1 contract |
 | 2026-07-23 | Preserve current supported non-fungal continuity records while associated-organism scope is reviewed | Current artifacts contain non-fungal taxa, but product evidence does not justify either importing all plants/animals or silently removing existing support | 1–3 | Stage 1 contract |
 | 2026-07-23 | Use JSON-compatible YAML for Stage 1 machine policies | It is valid YAML and permits standard-library offline validation without adding a production dependency | 1–2 | Stage 1 implementation |
+| 2026-07-23 | Propose the public prebuilt full `2026-07-17 XR` ColDP GET as the first compiler input, without authorizing acquisition | Public metadata pins dataset `315834` and Fungi root `F`; full XR avoids undocumented filtered-export ancestor behavior. HEAD verifies a 1,383,646,570-byte archive and supports a conservative proposed 1.5 GiB ceiling | 2A–3 | Proposed; maintainer approval required |
 
 ## 12. Suggested implementation batches
 
@@ -1031,7 +1182,7 @@ Do not combine Batches C through I into one pull request. The highest-risk ident
 
 These do not change the agreed product direction, but must be settled before their dependent stage exits:
 
-- [ ] Exact COL XR download format and filter that best balances complete fungal lineage, reproducibility, and archive size.
+- [~] Proposed the public prebuilt full ColDP GET for the first `2026-07-17 XR` acquisition to preserve complete lineage; HEAD size is verified, while explicit approval and real-archive validation remain required.
 - [ ] Whether Sporely's desktop artifact ships language tables together or as attachable packs, based on measured size and operational complexity.
 - [ ] Exact scope for plants/associated organisms currently used in Sporely.
 - [ ] Canonical Unicode/diacritic normalization and transliteration rules for search.

@@ -1,0 +1,22 @@
+{
+  "request_schema_version": 1,
+  "source_code": "col_xr",
+  "release_label": "2099-01-15 XR fixture",
+  "release_type": "Extended Release",
+  "dataset_key": 123456,
+  "issued_date": "2099-01-15",
+  "doi": "10.0000/fixture",
+  "archive_format": "ColDP",
+  "taxonomic_scope": {
+    "kingdom": "Fungi",
+    "include_ancestors": true,
+    "fixture_only": true
+  },
+  "included_fields": [
+    "NameUsage.ID",
+    "NameUsage.scientificName",
+    "NameUsage.status"
+  ],
+  "endpoint": "https://api.checklistbank.org/dataset/123456/export",
+  "expected_license": "CC BY 4.0 fixture expectation"
+}

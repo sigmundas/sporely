@@ -1,0 +1,36 @@
+{
+  "empty": false,
+  "last": true,
+  "limit": 100,
+  "offset": 0,
+  "result": [
+    {
+      "classification": [
+        {
+          "id": "CS5HF",
+          "name": "Eukaryota",
+          "rank": "domain",
+          "status": "accepted"
+        },
+        {
+          "id": "F",
+          "name": "Fungi",
+          "rank": "kingdom",
+          "status": "accepted"
+        }
+      ],
+      "id": "F",
+      "usage": {
+        "datasetKey": 315834,
+        "id": "F",
+        "name": {
+          "rank": "kingdom",
+          "scientificName": "Fungi"
+        },
+        "parentId": "CS5HF",
+        "status": "accepted"
+      }
+    }
+  ],
+  "total": 1
+}

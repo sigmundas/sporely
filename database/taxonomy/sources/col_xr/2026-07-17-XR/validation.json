@@ -1,0 +1,19 @@
+{
+  "active_archive_exposed": true,
+  "byte_count": 1383646570,
+  "classification": "complete_structural_validation",
+  "correction_policy_file": "source-corrections.json",
+  "failed_validator": null,
+  "original_transfer_attempt": 3,
+  "metadata_inspection_file": "structural-validation.json",
+  "nameusage_scan_file": "nameusage-scan.json",
+  "policy_rule": "all_structural_gates_passed",
+  "promoted_archive": "archive.zip",
+  "promoted_at": "2026-07-23T19:50:01Z",
+  "quarantine_path": null,
+  "quarantine_reason": null,
+  "result": "passed",
+  "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "state": "promoted",
+  "validation_timestamp": "2026-07-23T19:49:09.297635Z"
+}

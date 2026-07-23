@@ -1,0 +1,57 @@
+{
+  "approval_schema_version": 1,
+  "approval_source": "maintainer_explicit_approval",
+  "approval_status": "approved",
+  "approved_at": "2026-07-23T08:30:00Z",
+  "approved_canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "approved_http_method": "GET",
+  "approved_maximum_bytes": 1610612736,
+  "approved_redirect_hosts": [
+    "api.checklistbank.org",
+    "download.checklistbank.org"
+  ],
+  "authorization_scope": "one full transfer attempt",
+  "compiler_consumption": {
+    "archive_preservation": "preserve complete immutable bytes",
+    "compiler_audit_fields": [
+      "NameUsage.code",
+      "NameUsage.extinct",
+      "NameUsage.origin",
+      "NameUsage.referenceID",
+      "NameUsage.sectorID",
+      "NameUsage.sourceID"
+    ],
+    "compiler_ignored_entities": [
+      "Distribution",
+      "Media",
+      "SpeciesInteraction",
+      "Treatment",
+      "TypeMaterial",
+      "VernacularName"
+    ],
+    "compiler_required_fields": [
+      "NameUsage.ID",
+      "NameUsage.acceptedNameUsageID",
+      "NameUsage.authorship",
+      "NameUsage.parentID",
+      "NameUsage.rank",
+      "NameUsage.scientificName",
+      "NameUsage.status"
+    ]
+  },
+  "compiler_consumption_is_not_an_export_filter": true,
+  "custom_export_jobs_prohibited": true,
+  "declared_content_length": 1383646570,
+  "download_authorized": true,
+  "minimum_free_disk_bytes": 4294967296,
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "release_identity": {
+    "archive_format": "ColDP",
+    "dataset_key": 315834,
+    "doi": "10.48580/dgykv",
+    "issued_date": "2026-07-17",
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release"
+  },
+  "request_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a"
+}

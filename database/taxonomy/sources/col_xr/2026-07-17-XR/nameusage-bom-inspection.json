@@ -1,0 +1,50 @@
+{
+  "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "compatibility_rule_authorized": false,
+  "inspection_timestamp": "2026-07-23T19:24:17Z",
+  "member": {
+    "crc32": "f179faea",
+    "name": "NameUsage.tsv",
+    "sha256": "5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0",
+    "uncompressed_bytes": 2929163002
+  },
+  "neighbor_evidence": {
+    "following_columns": 73,
+    "following_row_sha256": "0c82e1dd2c3f768d307b8a0bb1db59d7bb14142bd1815db53b4cbf50f5929f55",
+    "preceding_columns": 73,
+    "preceding_row_sha256": "7abef8269274a047ce28d1eeed5451d7f60ee1d55c4b5a1ec7b54c2253148fe8"
+  },
+  "result": "rejected",
+  "row": {
+    "at_field_start": false,
+    "at_record_start": false,
+    "bom_byte_offsets_in_record_body": [
+      224,
+      227
+    ],
+    "bom_count": 2,
+    "bounded_escaped_context": "z|P.L.Reisch\\xfctz|Subai\\t\\t\\t\\t2009\\t\\t\\t\\t\\t\\t\\t2ff20c2b-9796-45b2-a6ea-1ce4d917a68b\\t\\t58, f\\ufeff\\ufeffigs 6\\u20137\\t\\t\\t\\t\\tzoological\\testablished\\t\\t\\t\\t2ff20c2b-9796-45b2-a6ea-1ce4d917a68b\\t",
+    "cleaned_columns": 73,
+    "cleaned_field_sha256_after_removing_one_bom": "c4551a560a7b0b15d2bb5d4b8afa40b643bd76e1b083dded72bc7cd907781887",
+    "cleaned_strict_utf8": true,
+    "field_index_zero_based": 31,
+    "field_name": "namePublishedInPage",
+    "field_number_one_based": 32,
+    "identity": {
+      "ID": "5BK77",
+      "authorship": "A. Reischütz, P. L. Reischütz & Subai, 2009",
+      "parentID": "7PKV4",
+      "rank": "species",
+      "scientificName": "Virpazaria stojaspali",
+      "status": "accepted"
+    },
+    "line": 1853650,
+    "mid_value": true,
+    "position_within_field_bytes": 5,
+    "raw_bytes": 511,
+    "raw_columns": 73,
+    "raw_field_sha256": "6ba3b50d10472e4b0f3c66573664b8176726ddefea0d836873659d93396c79c1",
+    "raw_row_sha256": "156d19f3c53506a4f145799ff6ab1a5664c92b62e19e59bf20bd9573a907f9b5"
+  },
+  "terminal_reason": "The row contains two consecutive UTF-8 BOM sequences in the middle of a meaningful namePublishedInPage scalar; the approved rule required exactly one occurrence at record or field start."
+}

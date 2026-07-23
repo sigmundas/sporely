@@ -1,0 +1,201 @@
+{
+  "approval_file": "approval.json",
+  "attempt_3_head_preflight": {
+    "accept_ranges": "bytes",
+    "attempt_number": 3,
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+    "content_disposition": null,
+    "content_length": 1383646570,
+    "content_type": "application/zip",
+    "etag": "\"5278c56a-65720b858a1cc\"",
+    "final_official_host": "download.checklistbank.org",
+    "last_modified": "Tue, 21 Jul 2026 15:31:43 GMT",
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip"
+    ],
+    "status": 200,
+    "verified_at": "2026-07-23T18:03:33.215878Z"
+  },
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "bytes_written": 0,
+      "cleanup_error": null,
+      "expected_bytes": 1383646570,
+      "failed_at": "2026-07-23T08:27:14.483190Z",
+      "failure_message": "[Errno 17] File exists: '/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/.staging'",
+      "failure_phase": "local_destination_setup_after_response_open",
+      "failure_type": "FileExistsError",
+      "partial_file_removed": false,
+      "response_opened": true,
+      "started_at": "2026-07-23T08:27:14.196292Z",
+      "transport_open_attempted": true
+    },
+    {
+      "attempt_number": 2,
+      "bytes_written": 1383646570,
+      "cleanup_error": null,
+      "completed_at": "2026-07-23T17:09:44.234933Z",
+      "expected_bytes": 1383646570,
+      "failed_at": null,
+      "failure_message": null,
+      "failure_phase": null,
+      "failure_type": null,
+      "partial_file_removed": false,
+      "response_opened": true,
+      "started_at": "2026-07-23T17:07:01.123410Z",
+      "transfer_result": "completed",
+      "transport_open_attempted": true
+    },
+    {
+      "attempt_number": 3,
+      "bytes_written": 1383646570,
+      "cleanup_error": null,
+      "completed_at": "2026-07-23T18:05:58.857240Z",
+      "expected_bytes": 1383646570,
+      "failed_at": null,
+      "failure_message": null,
+      "failure_phase": null,
+      "failure_type": null,
+      "partial_file_removed": false,
+      "response_opened": true,
+      "started_at": "2026-07-23T18:03:33.219339Z",
+      "transfer_result": "completed",
+      "transport_open_attempted": true
+    }
+  ],
+  "disk_preflight": {
+    "approved_maximum_bytes": 1610612736,
+    "available_disk_bytes": 140934352896,
+    "expected_bytes": 1383646570
+  },
+  "download": {
+    "bytes": 1383646570,
+    "canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+    "completed_at": "2026-07-23T18:05:58.857240Z",
+    "content_length": 1383646570,
+    "content_type": "application/zip",
+    "final_host": "download.checklistbank.org",
+    "read_timeout_seconds": 180,
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip"
+    ],
+    "resolved_source_url": "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip",
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "started_at": "2026-07-23T18:03:33.219339Z",
+    "transfer_attempts": 1,
+    "user_agent": "Sporely-Taxonomy-Acquisition/1 (approved COL XR 2026-07-17)"
+  },
+  "errors": [
+    "FileExistsError: [Errno 17] File exists: '/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/.staging'",
+    "attempt 2 AcquisitionError: ZIP member count is empty or exceeds the safety ceiling",
+    "attempt 3 AcquisitionError: metadata.yaml exceeds the safety ceiling",
+    "offline quarantine inspection: metadata.yaml is 120654270 bytes, exceeding the mandatory maximum source-specific ceiling of 67108864 bytes",
+    "offline validation: NameUsage.tsv uses namespaced ColDP headers; required ID/taxonID alias was not recognized",
+    "offline validation: NameUsage.tsv contains 112 malformed rows under strict csv.reader TSV quoting semantics",
+    "offline literal-TSV validation: unexpected UTF-8 BOM outside the first header token at line 1853650",
+    "offline BOM inspection: two consecutive BOM sequences occur mid-value in namePublishedInPage; compatibility normalization rejected"
+  ],
+  "execution": {
+    "planned_at": "2026-07-23T08:27:14.196292Z",
+    "transfer_attempt_limit": 1
+  },
+  "failed_at": "2026-07-23T18:05:59.548286Z",
+  "filesystem_preflight": {
+    "actual_available_disk_bytes": 140934348800,
+    "actual_device": 16777232,
+    "atomic_replace_layout": true,
+    "created_directories": [
+      "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources",
+      "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr",
+      "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR",
+      "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/.staging"
+    ],
+    "final_nearest_existing_ancestor": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy",
+    "planned_device": 16777232,
+    "staged_nearest_existing_ancestor": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy"
+  },
+  "lifecycle_outcome": "promoted",
+  "manifest_schema_version": 1,
+  "network_preflight": {
+    "accept_ranges": "bytes",
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+    "content_disposition": null,
+    "content_length": 1383646570,
+    "content_type": "application/zip",
+    "etag": "\"5278c56a-65720b858a1cc\"",
+    "final_official_host": "download.checklistbank.org",
+    "last_modified": "Tue, 21 Jul 2026 15:31:43 GMT",
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip"
+    ],
+    "status": 200
+  },
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "promotion": {
+    "archive_path": "archive.zip",
+    "atomic_replace": true,
+    "byte_count": 1383646570,
+    "device": 16777232,
+    "promoted_at": "2026-07-23T19:50:01Z",
+    "quarantine_absent": true,
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_path": ".quarantine/archive.zip"
+  },
+  "quarantine": null,
+  "release": {
+    "archive_format": "ColDP",
+    "dataset_key": 315834,
+    "doi": "10.48580/dgykv",
+    "issued_date": "2026-07-17",
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release"
+  },
+  "request_definition_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a",
+  "retry_authorizations": [
+    {
+      "attempt_number": 2,
+      "canonical_authorization_sha256": "db7cc9d2a7ef603ceaea912415b536b239c80dc84be18d3ef33387a395cbb9c2",
+      "file": "retry-authorization-attempt-2.json",
+      "recorded_at": "2026-07-23T17:07:00.525740Z"
+    },
+    {
+      "attempt_number": 3,
+      "canonical_authorization_sha256": "817935c03ad3e484011ca7f5bf5502d44d9e9d1b08ea24d57ec27927551fee99",
+      "file": "transfer-authorization-attempt-3.json",
+      "recorded_at": "2026-07-23T18:03:32.714220Z"
+    }
+  ],
+  "retry_filesystem_preflight": {
+    "available_disk_bytes": 141359767552,
+    "device": 16777232,
+    "exclusive_probe_removed": true,
+    "release_directory": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR",
+    "staging_directory": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/.staging"
+  },
+  "retry_head_preflight": {
+    "accept_ranges": "bytes",
+    "attempt_number": 2,
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+    "content_disposition": null,
+    "content_length": 1383646570,
+    "content_type": "application/zip",
+    "etag": "\"5278c56a-65720b858a1cc\"",
+    "final_official_host": "download.checklistbank.org",
+    "last_modified": "Tue, 21 Jul 2026 15:31:43 GMT",
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/e8/e8ce17c8-47c4-4b10-8316-7b699472c3b1.zip"
+    ],
+    "status": 200,
+    "verified_at": "2026-07-23T17:07:01.122737Z"
+  },
+  "source_code": "col_xr",
+  "state": "promoted",
+  "validation": {
+    "correction_policy_file": "source-corrections.json",
+    "nameusage_scan_file": "nameusage-scan.json",
+    "result": "passed",
+    "structural_validation_file": "structural-validation.json",
+    "validated_at": "2026-07-23T19:49:09.297635Z"
+  }
+}

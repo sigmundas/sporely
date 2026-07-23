@@ -1,0 +1,68 @@
+{
+  "archive": {
+    "byte_count": 1383646570,
+    "device": 16777232,
+    "path": ".quarantine/archive.zip",
+    "regular_file": true,
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "symlink": false
+  },
+  "archive_inventory": {
+    "central_directory_offset": 1382312591,
+    "central_directory_size": 1333957,
+    "compression_methods": {
+      "deflate": 21100
+    },
+    "emergency_ceiling": 250000,
+    "emergency_ceiling_passed": true,
+    "exact_member_count": 21100,
+    "member_types": {
+      "regular_file": 21100
+    },
+    "warning_threshold": 20000,
+    "warning_threshold_exceeded": true
+  },
+  "attempt_3_authorization_sha256": "817935c03ad3e484011ca7f5bf5502d44d9e9d1b08ea24d57ec27927551fee99",
+  "inspection_timestamp": "2026-07-23T18:12:42Z",
+  "metadata": {
+    "compressed_size": 5360209,
+    "compression_method": 8,
+    "compression_method_name": "deflate",
+    "compression_ratio": 22.509247307334473,
+    "crc32": "54f3ef78",
+    "external_attributes": 0,
+    "flag_bits": 2056,
+    "normalized_collision": false,
+    "path": "metadata.yaml",
+    "root_candidate_count": 1,
+    "sha256_uncompressed": "ae02692eaf1364d2928736435caac655271d28ea50177d57c197d0fd9e137771",
+    "streamed_crc_passed": true,
+    "uncompressed_size": 120654270
+  },
+  "policy_result": {
+    "classification": "structural_rejection",
+    "default_metadata_ceiling": 5242880,
+    "proposed_col_xr_ceiling": 67108864,
+    "reason": "metadata.yaml is 120654270 bytes, exceeding the mandatory maximum source-specific ceiling of 67108864 bytes",
+    "result": "rejected"
+  },
+  "state": "quarantined",
+  "top_level_summary": {
+    "Distribution.tsv": 1,
+    "Media.tsv": 1,
+    "NameRelation.tsv": 1,
+    "NameUsage.tsv": 1,
+    "Reference.tsv": 1,
+    "SpeciesEstimate.tsv": 1,
+    "SpeciesInteraction.tsv": 1,
+    "TaxonConceptRelation.tsv": 1,
+    "TaxonProperty.tsv": 1,
+    "TypeMaterial.tsv": 1,
+    "VernacularName.tsv": 1,
+    "metadata.yaml": 1,
+    "reference.bib": 1,
+    "reference.json": 1,
+    "reference.jsonl": 1,
+    "source": 21085
+  }
+}

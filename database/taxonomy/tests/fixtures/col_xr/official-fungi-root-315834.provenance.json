@@ -1,0 +1,9 @@
+{
+  "fixture_kind": "sanitized_official_response_provenance",
+  "captured_at": "2026-07-23T07:59:10Z",
+  "endpoint": "https://api.checklistbank.org/dataset/315834/nameusage/search?q=Fungi&type=EXACT&minRank=KINGDOM&maxRank=KINGDOM&limit=100",
+  "http_method": "GET",
+  "official_response_bytes": 1201,
+  "official_response_sha256": "c033c1e331b8b1ee865c8c163610de1f7074d51640309a1e4353926220d1bcfe",
+  "sanitization": "Retained the exact match, classification, dataset, rank, status, usage ID, and parent evidence; removed timestamps and internal source bookkeeping."
+}

@@ -1,0 +1,31 @@
+{
+  "approved_redirect_hosts": [
+    "api.checklistbank.org",
+    "download.checklistbank.org"
+  ],
+  "attempt_1_bytes_written": 0,
+  "attempt_1_response_opened": true,
+  "authorization_reason": "repair of the verified pre-stream filesystem-ordering defect",
+  "authorization_status": "approved",
+  "authorized_at": "2026-07-23T17:04:23Z",
+  "authorized_attempt_number": 2,
+  "canonical_authorization_sha256": "db7cc9d2a7ef603ceaea912415b536b239c80dc84be18d3ef33387a395cbb9c2",
+  "canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "expected_content_length": 1383646570,
+  "failed_attempt_number": 1,
+  "maximum_archive_bytes": 1610612736,
+  "maximum_get_attempts": 2,
+  "original_approval_sha256": "060adb247a5033d937037aab1472583ba63e9e5b637b6bd7a09a3e1119ce531d",
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "release_identity": {
+    "archive_format": "ColDP",
+    "dataset_key": 315834,
+    "doi": "10.48580/dgykv",
+    "issued_date": "2026-07-17",
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release"
+  },
+  "request_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a",
+  "retry_authorization_schema_version": 1,
+  "retry_authorized": true
+}

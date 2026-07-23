@@ -1,0 +1,14 @@
+{
+  "active_archive_exposed": false,
+  "byte_count": 1383646570,
+  "classification": "structural_rejection",
+  "failed_validator": "validate_archive",
+  "original_transfer_attempt": 3,
+  "metadata_inspection_file": "../nameusage-bom-inspection.json",
+  "policy_rule": "nameusage_bom_compatibility_conditions",
+  "quarantine_path": ".quarantine/archive.zip",
+  "quarantine_reason": "NameUsage line 1853650 contains two consecutive BOM sequences mid-value in namePublishedInPage; compatibility normalization was rejected",
+  "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "state": "quarantined",
+  "validation_timestamp": "2026-07-23T18:05:59.547021Z"
+}
