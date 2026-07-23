@@ -1,0 +1,17 @@
+{
+  "approval_status": "proposed",
+  "download": null,
+  "download_authorized": false,
+  "execution_attempts": [],
+  "manifest_schema_version": 1,
+  "profile_code": "nortaxa_dwca",
+  "release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "source_code": "nortaxa",
+  "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "state": "planned",
+  "validation": null
+}

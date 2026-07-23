@@ -19,6 +19,91 @@ Validate offline:
 `tax-YYYY.MM.DD-NN`; schema, content, source, and application versions are
 independent.
 
+## NorTaxa Stage 2B fixture boundary
+
+Stage 2A is complete: the pinned COL XR archive is promoted under
+`sources/col_xr/2026-07-17-XR/archive.zip` with its tracked request, manifest,
+checksum, corrections, and validation evidence. Stage 2B does not reopen,
+extract, parse, or compile that archive.
+
+Stage 2B is in progress and offline-only. The tracked
+`nortaxa-source-selection.proposal.json` proposes Nortaxa (Artsnavnebasen)
+version `1.284`, issued `2026-07-17`, as a versioned IPT Darwin Core Archive.
+Its archive, EML, resource-page, dataset UUID, published counts, weekly update
+frequency, expected CC-BY 4.0 license, allowed host, and 67,108,864-byte ceiling
+are unverified network-derived proposal values. The proposal is explicitly
+unauthorized. No NorTaxa archive or metadata has been downloaded and no
+approved acquisition artifact exists.
+
+The fixture request hash is
+`38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392`;
+the canonical source-selection proposal hash is
+`e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3`.
+The planned `sources/nortaxa/1.284/` release contains only a proposed
+`request.json` and planned `manifest.json`. Raw archive, staging, quarantine,
+and extracted bytes are ignored; validation evidence remains trackable.
+
+The `nortaxa_dwca` profile resolves tables, delimiters, quoting, encodings,
+line terminators, header counts, IDs, core IDs, and field indexes exclusively from the safe root
+`meta.xml`. It keeps the DwC-A core row ID, `dwc:taxonID`,
+`dwc:acceptedNameUsageID`, `dwc:parentNameUsageID`, extension `coreid`, and
+namespaced scientific-name identifiers such as `NBIC:54995` distinct. None is
+converted to an integer or treated as interchangeable. Acquisition preserves
+raw bytes, terms, and provenance; final Sporely identity reconciliation is a
+later compiler concern.
+
+The profile registry is source-profile metadata, not a complete shared
+acquisition framework. NorTaxa currently reuses the established COL canonical
+JSON/SHA-256, secret rejection, immutable-release error, atomic JSON writing,
+Git provenance, and safe ZIP-member helpers. Its DwC-A streaming and semantic
+validation remain source-specific. Tables are iterated from ZIP members in
+bounded chunks; complete tables and decoded strings are not materialized.
+Declared columns are distinct from required row values: accepted roots and
+higher taxa may omit usage, parent, family, genus, and epithet values, while
+synonyms require an accepted target and species/genus ranks receive appropriate
+semantic checks. Consistent unmapped physical columns are preserved.
+
+Offline commands:
+
+```text
+./.venv/bin/python database/taxonomy/scripts/refresh_nortaxa.py validate-request REQUEST.json
+./.venv/bin/python database/taxonomy/scripts/refresh_nortaxa.py normalize-request REQUEST.json
+./.venv/bin/python database/taxonomy/scripts/refresh_nortaxa.py plan REQUEST.json
+./.venv/bin/python database/taxonomy/scripts/refresh_nortaxa.py validate-fixture REQUEST.json FIXTURE.zip
+./.venv/bin/python database/taxonomy/scripts/refresh_nortaxa.py status database/taxonomy/sources/nortaxa/1.284
+```
+
+There is deliberately no live-download command.
+
+### Metadata-verification attempt 1
+
+A narrowly authorized metadata-only attempt ran on 2026-07-23. It made one
+GET to the exact versioned resource page, one GET to the exact versioned EML
+endpoint, and one HEAD to the exact versioned archive endpoint. No archive GET,
+Range request, retry, authentication, or external-link request occurred.
+
+The attempt failed during offline resource-page parsing because the first
+parser version treated a login form embedded in the normal IPT page as proof
+that the entire response was a login page. Its orchestration had already
+completed all three transports and retained response evidence only in process
+memory, so the exception occurred before byte counts, response hashes,
+redirects, sanitized fixtures, and archive headers were persisted. Those
+values are unavailable and are not inferred.
+
+The append-only failure record is
+`sources/nortaxa/1.284/metadata-verification-attempt-1.json`, canonical
+SHA-256
+`9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a`.
+The parser now distinguishes an embedded navigation login form from a
+standalone login response, and verification now journals each response before
+parsing it and stops the sequence immediately on a parsing failure. These
+repairs are offline-tested only.
+
+No source value was verified by attempt 1. The proposal remains unverified,
+the manifest remains `planned`, and no approval exists. A future metadata
+attempt requires separate explicit authorization; attempt 1 must not be
+retried under the consumed authorization.
+
 ## COL XR acquisition boundary
 
 COL releases must be explicitly pinned because Extended and Base releases are
@@ -44,7 +129,7 @@ Local fixture workflow:
 ./.venv/bin/python database/taxonomy/scripts/refresh_col_xr.py status database/taxonomy/sources/col_xr/<release>
 ```
 
-`plan` is a dry run and cannot make a network call. A managed release directory
+The COL `plan` command is a dry run and cannot make a network call. A managed release directory
 contains `request.json` and `manifest.json`; future staged bytes remain under
 `.staging/` until ZIP and metadata validation succeeds. Manifest states are
 `planned`, `downloaded`, `validated`, and `failed`. Only validated bytes are

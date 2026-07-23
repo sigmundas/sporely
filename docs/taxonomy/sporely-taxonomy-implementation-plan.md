@@ -6,7 +6,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Stages 0–1 complete — Batch A complete; Stage 2 may begin |
+| Status | Stages 0–1 and Stage 2A complete; Stage 2B fixture work in progress |
 | Created | 2026-07-22 |
 | Primary implementation repository | `sporely-py` |
 | Cloud schema and search repository | `sporely-web` |
@@ -543,11 +543,38 @@ COL publishes monthly and annual Base and Extended releases. Monthly releases ar
 
 ### 2B. NorTaxa downloader
 
-- [ ] Implement `refresh_nortaxa.py` to download the versioned IPT Darwin Core Archive once.
-- [ ] Read `meta.xml` instead of assuming filenames.
-- [ ] Preserve and distinguish `id`, `taxonID`, `acceptedNameUsageID`, and `parentNameUsageID` as text.
-- [ ] Validate required Taxon and VernacularName columns, counts, encoding, and identifier uniqueness within each namespace.
+- [~] Implement `refresh_nortaxa.py` to download the versioned IPT Darwin Core Archive once. The fixture-first offline request, planning, manifest, and validation boundary exists; live download remains deliberately absent.
+- [x] Read `meta.xml` instead of assuming filenames.
+- [x] Preserve and distinguish core row `id`, `taxonID`, `acceptedNameUsageID`, `parentNameUsageID`, extension `coreid`, and namespaced scientific-name IDs as text.
+- [~] Validate required Taxon and VernacularName columns, counts, encoding, and identifier uniqueness within each namespace. Structural fixture validation is implemented; real-source verification is pending.
 - [ ] Retain previous snapshot and manifest.
+
+### Progress update — 2026-07-23 — Stage 2B fixture-first NorTaxa DwC-A
+
+- Status: [~]. Stage 2B is not complete.
+- Proposal: Nortaxa (Artsnavnebasen), resource `artsnavnebase`, version `1.284`, issued `2026-07-17`, versioned IPT Darwin Core Archive; proposed archive/EML/resource endpoints on `ipt.artsdatabanken.no`; dataset UUID `a6c6cead-b5ce-4a4e-8cf5-1542ba708dec`; published Taxon/VernacularName counts `229018`/`58773`; weekly frequency; expected CC-BY 4.0; proposed ceiling 67,108,864 bytes. Every network-derived value remains proposed/unverified.
+- Authorization: `nortaxa-source-selection.proposal.json` is explicitly `proposed` with `download_authorized: false`. Canonical proposal SHA-256 is `e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3`. No approval artifact exists.
+- Request/layout: Canonical fixture request SHA-256 is `38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392`. It includes the canonical proposal SHA-256, and the persisted request and manifest repeat both identities. `sources/nortaxa/1.284/` contains only the proposed request and planned manifest; archive/staging/quarantine/extracted bytes are ignored while JSON evidence stays trackable.
+- Shared boundary: The registry is honestly limited to source-profile metadata. NorTaxa reuses Stage 2A canonical JSON/SHA-256, secret rejection, immutable-release error, Git provenance, atomic JSON writes, and safe ZIP-member helpers. Its bounded DwC-A streaming and semantic validation are source-specific under `nortaxa_dwca`; COL limits, corrections, namespaces, YAML and ColDP table behavior are not used.
+- Fixture contract: The deterministic ZIP uses safe nonstandard nested filenames, reordered-column/tab variants in tests, comma and tab delimiters, multiple ignored headers, UTF-8 Norwegian/Sámi and escaped content, and final rows both with and without newline. Its Taxon rows contain accepted `Candolleomyces candolleanus`, synonym `Psathyrella candolleana`, explicit accepted linkage, distinct core row IDs/taxon IDs, and `NBIC:54995`; VernacularName includes `hvit sprøsopp`, Bokmål, Nynorsk, Sámi, and preferred/non-preferred rows. Distribution is recognized and structurally checked but is not a compiler requirement.
+- Identifier boundary: core row ID is only the archive-local primary/link key; `dwc:taxonID`, accepted and parent usage references, extension `coreid`, and Artsorakel/NBIC scientific-name identifiers retain their raw strings and separate roles. `NBIC:54995` is never reduced to `54995`; no final Sporely mapping is decided.
+- Validation boundary: safe root `meta.xml` drives locations, row types, encoding, delimiter, line terminator, quote character, ignored headers, link indexes, field indexes, original term URIs, and canonical local names. ZIP table streams are read in bounded chunks without complete byte/string/table materialization. Declared columns are separate from semantic per-row requirements: accepted roots and higher taxa may omit accepted usage, parent, family, genus, and epithet fields; synonyms require accepted targets; genus/species rows enforce rank-relevant values. Consistent unmapped physical columns are allowed, while every declared index must exist and physical width must remain stable. Validation also covers XML declarations/entities, paths, ZIP safety/CRC/methods/ratios/counts/sizes, required files/terms, field bounds/EOF, duplicate IDs, usage references, orphan links, and incremental counts.
+- Repair update: Selection values are loaded from and checked against the proposal rather than embedded as Python constants. Endpoints reject duplicate query keys, fragments, credentials, unofficial hosts, and nonstandard ports. `plan` reports whether state was created or already idempotent; it no longer describes a state-writing operation as a dry run.
+- Repair verification: focused NorTaxa tests 41 passed; NorTaxa plus shared COL acquisition tests 83 passed; taxonomy tests 258 passed; full Python suite 1,147 passed and 1 skipped; frozen corpus 100 passed; policy validator 7 files, 16 languages, and 12 namespaces. Syntax, fixture XML/JSON, deterministic fixture evidence, Git-ignore, whitespace, secret-literal review, and socket-blocked network-isolation checks passed.
+- Archive/compiler boundary: acquisition retains immutable raw evidence and optional terms; it does not replace legacy `taxon.txt`/`vernacularname.txt`, reconcile identities, compile source rows, or build a database.
+- Network state: No NorTaxa network request occurred; no real archive, EML, or resource metadata was downloaded. The promoted COL XR archive was neither opened nor parsed.
+- Next safe task: separately authorize metadata-only verification of the proposed IPT endpoints and published values. Do not authorize or perform archive acquisition as part of that task.
+
+### Progress update — 2026-07-23 — Stage 2B metadata-verification attempt 1
+
+- Authorization consumed: exactly one bounded GET of the versioned resource page, one bounded GET of the versioned EML endpoint, and one bodyless HEAD of the versioned archive endpoint were performed. No archive GET, Range, retry, fallback, authentication, or external-link request occurred.
+- Outcome: failed during offline resource-page parsing. The normal IPT page contained login-form markup, and the initial heuristic incorrectly classified the complete page as a login response.
+- Evidence limitation: all three transports and response-policy checks had completed before parsing. Response bytes, hashes, byte counts, redirects, and HEAD headers were still held only in process memory; the parser exception terminated the process before persistence. They are unavailable and must not be reconstructed or invented. No official value is marked verified.
+- Append-only record: `sources/nortaxa/1.284/metadata-verification-attempt-1.json`, canonical SHA-256 `9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a`.
+- Offline repair: login detection now rejects a login form only when the selected title/resource identity is absent. Each response is now journaled before parsing, and a parse failure stops later operations. The added sequencing regression proves only the first GET occurs when resource parsing fails.
+- Validation after repair: focused metadata tests 22 passed; metadata plus NorTaxa/shared acquisition tests 105 passed; taxonomy tests 280 passed; full Python suite 1,169 passed and 1 skipped; frozen corpus 100 passed; policy validation, syntax, fixture XML/JSON, contact/secret-literal review, whitespace, Git-ignore, manifest, filesystem, and attempt-hash checks passed.
+- State: proposal/request identities are unchanged; manifest remains `planned` and unauthorized with empty acquisition attempts; no `metadata-verification.json`, sanitized official fixture, approval, archive, or validation artifact exists.
+- Next safe task: obtain separate explicit authorization for metadata-verification attempt 2. Do not reuse or retry attempt 1 authorization.
 
 ### 2C. Source deltas
 
