@@ -157,6 +157,124 @@ policy that permits a plain `<!DOCTYPE eml:eml …>` prolog while continuing
 to reject external-entity and external-resource declarations, proven with
 offline fixtures, before any future metadata attempt is authorized.
 
+### Metadata-verification attempt 3
+
+A third narrowly authorized metadata-only attempt ran on 2026-07-24 under a
+separate authorization bound to the proposal, canonical request, attempt-1,
+and attempt-2 record SHA-256 values. It performed one GET to the versioned
+resource page, one GET to the versioned EML endpoint, and one HEAD to the
+versioned archive endpoint. No archive GET, Range request, retry,
+authentication, or external-link request occurred.
+
+Each response was journaled atomically to the append-only attempt-3 record
+before the parser ran. Both GETs returned `HTTP 200` from
+`ipt.artsdatabanken.no` with no redirects. The resource page returned
+198,118 bytes of `text/html` with body SHA-256
+`dc67f8470e1603dda06041e8e8e9601561eb7bb7520a0024b6eb7dd7f18d92c5`; the
+EML endpoint returned 5,755 bytes of `text/xml` with body SHA-256
+`98dab203fdd38e13b8ec81a0d4d37129a56b90dc99ed69824d18851a53a0e6e9` — byte-
+identical to the attempt-2 EML body. Combined GET response volume was
+203,873 bytes, well within the 4 MiB metadata ceiling.
+
+Resource-page parsing succeeded and confirmed the observed dataset UUID,
+title/version/resource-key markers, CC-BY 4.0 license text, weekly update
+frequency, and the published VernacularName count. EML parsing succeeded:
+the declaration-aware prolog validator observed no XML declaration, no
+DOCTYPE, and root element `eml:eml`. Verified EML values include the
+proposal title `Nortaxa (Artsnavnebasen)`, package ID
+`a6c6cead-b5ce-4a4e-8cf5-1542ba708dec/v1.284`, publication date
+`2026-07-17`, publisher `Artsdatabanken`, and CC-BY 4.0 rights text. No
+`edition` value was exposed by the EML.
+
+The attempt failed on the archive HEAD gate. The HEAD returned `HTTP 200`
+with `content-type: application/zip` and no redirects, but the response
+omitted a positive `Content-Length` header. The verifier raised
+`AcquisitionError: archive HEAD lacks a positive Content-Length` in the
+parse phase of the third operation. Declared archive size, ETag,
+Last-Modified, Accept-Ranges, and Content-Disposition values are therefore
+unavailable and are not reconstructed.
+
+The append-only attempt-3 record is
+`sources/nortaxa/1.284/metadata-verification-attempt-3.json`, canonical
+SHA-256
+`3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0`. The
+attempt-1 and attempt-2 records, `request.json`, `manifest.json`, and
+`nortaxa-source-selection.proposal.json` remain byte-identical. The
+manifest remains `state: planned`, `approval_status: proposed`,
+`download_authorized: false`, with empty `execution_attempts`,
+`download: null`, and `validation: null`. No
+`metadata-verification.json`, sanitized official fixture, approval,
+archive, staging, quarantine, or extracted payload exists.
+
+Resource-page and EML values are verified. Archive HEAD values remain
+unavailable because the third operation failed its transport/response
+policy gate before parsing header evidence. The pinned NorTaxa 1.284
+selection is not yet eligible for a separately reviewed archive-download
+approval; archive acquisition remains unauthorized and Stage 2B is
+incomplete. Attempt 3 must not be retried under the consumed
+authorization. The next safe offline task is a separately reviewed
+Content-Length policy that either accepts a documented HEAD without a
+declared length while enforcing a bounded ceiling on the eventual GET, or
+that shifts the size-declaration requirement to a bounded pre-GET probe,
+proven with offline fixtures, before any future metadata attempt is
+authorized.
+
+### Offline repair — revised archive-size declaration policy
+
+The archive HEAD gate in `nortaxa_metadata.py` no longer treats a missing
+`Content-Length` header as a metadata-verification failure. The revised
+policy is:
+
+- `parse_content_length(header, ceiling)`: header ``None`` → ``None``
+  (declared size unavailable). Empty, non-digit, comma-separated conflicting
+  values, zero, negative, or over-ceiling values → hard `AcquisitionError`.
+  Repeated identical values (`"100, 100"`) are accepted.
+- `normalize_head(...)`: records `content_length` (`int` or `None`),
+  `content_length_declared` (`bool`), `size_declaration_status`
+  (`"declared"` or `"unavailable"`), and `size_declaration_reason`
+  (`"header_absent"` or `None`). `ETag`, `Last-Modified`, `Accept-Ranges`,
+  and `Content-Disposition` are optional evidence; their absence is not a
+  failure. Content-Type still must match the ZIP allowlist (or the
+  Content-Disposition must mention `.zip`), status must be 200, and
+  redirects must stay within the approved host.
+- No Range probe is introduced. A server may ignore ``Range`` and send the
+  full body; policy relies on the streamed ceiling and on optional length
+  consistency instead.
+
+`evaluate_archive_get(...)` encodes the ceiling-enforced GET policy that
+any later separately authorized archive download must satisfy:
+
+- ``ceiling`` is a required positive integer; it is enforced independently
+  of the response headers while the caller streams bytes.
+- ``completed_bytes`` may never exceed ``ceiling`` (one-byte overflow is a
+  hard failure whether or not a Content-Length was declared).
+- If Content-Length is present, it must be positive, within the ceiling,
+  and equal to ``completed_bytes``; the stream must reach EOF.
+- If Content-Length is absent, only a clean EOF within the ceiling is
+  accepted.
+- Partial-file quarantine, incremental hashing, atomic promotion, and the
+  no-extraction boundary are unchanged; the helper does not mutate the
+  filesystem.
+
+Under this revised policy the attempt-3 archive HEAD (HTTP 200,
+`application/zip`, no redirects, no `Content-Length` header) would be
+reclassified from a `parse_failed` gate rejection to a `parse_succeeded`
+observation with `size_declaration_status: "unavailable"`. The canonical
+attempt-3 evidence file
+`sources/nortaxa/1.284/metadata-verification-attempt-3.json`
+(SHA-256 `3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0`)
+is not modified: the terminology change is offline-only and applies to
+future attempts and to interpretations of the existing record.
+
+Because resource-page and EML values were verified in attempt 3 and the
+archive HEAD would now record HTTP 200 with `application/zip`, redirect-free
+delivery, and `size_declaration_status: "unavailable"`, the pinned NorTaxa
+1.284 selection would, under the revised policy, be eligible for a
+separately reviewed archive-acquisition approval. The eventual approval
+artifact must bind an explicit compressed-byte ceiling and require the
+above ``evaluate_archive_get`` checks at stream completion. No such
+approval, and no archive GET, exists.
+
 ### Offline repair — declaration-aware EML XML safety policy
 
 The old parser rejected `DOCTYPE`, `ENTITY`, `SYSTEM`, and `PUBLIC` as

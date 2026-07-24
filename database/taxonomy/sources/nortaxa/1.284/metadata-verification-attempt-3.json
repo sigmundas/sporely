@@ -1,0 +1,119 @@
+{
+  "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
+  "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
+  "attempt_number": 3,
+  "authorization_scope": {
+    "archive_get_authorized": false,
+    "maximum_cumulative_response_body_bytes": 4194304,
+    "metadata_only": true,
+    "retry_authorized": false
+  },
+  "cumulative_body_bytes": 203873,
+  "failure": {
+    "message": "archive HEAD lacks a positive Content-Length",
+    "type": "AcquisitionError"
+  },
+  "finished_at": "2026-07-24T18:43:47.098634Z",
+  "manifest_changed": false,
+  "operations": [
+    {
+      "body_bytes": 198118,
+      "body_sha256": "dc67f8470e1603dda06041e8e8e9601561eb7bb7520a0024b6eb7dd7f18d92c5",
+      "content_type": "text/html",
+      "final_url": "https://ipt.artsdatabanken.no/resource?r=artsnavnebase&v=1.284",
+      "method": "GET",
+      "operation": "resource_page",
+      "parsed": {
+        "counts": {
+          "VernacularName": 58773
+        },
+        "dataset_uuid_present": true,
+        "issued_date_present": false,
+        "license_present": true,
+        "observed_dataset_uuid": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec",
+        "observed_license": "CC-BY 4.0",
+        "publisher": "and",
+        "resource_key_present": true,
+        "text_sha256": "7868ab1c0fe7d1cbcbb859c3d50aae34bf22c9225952a3dad94144016d306713",
+        "title_present": true,
+        "version_present": true,
+        "weekly_present": true
+      },
+      "redirect_chain": [],
+      "requested_url": "https://ipt.artsdatabanken.no/resource?r=artsnavnebase&v=1.284",
+      "status": "parse_succeeded",
+      "status_code": 200
+    },
+    {
+      "body_bytes": 5755,
+      "body_sha256": "98dab203fdd38e13b8ec81a0d4d37129a56b90dc99ed69824d18851a53a0e6e9",
+      "content_type": "text/xml",
+      "final_url": "https://ipt.artsdatabanken.no/eml.do?r=artsnavnebase&v=1.284",
+      "method": "GET",
+      "operation": "eml",
+      "parsed": {
+        "alternate_identifiers": [
+          "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec",
+          "https://ipt.artsdatabanken.no/resource?r=artsnavnebase"
+        ],
+        "edition": null,
+        "package_id": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec/v1.284",
+        "prolog": {
+          "accepted_comments": 0,
+          "doctype_root": null,
+          "expected_root": "eml:eml",
+          "has_doctype": false,
+          "has_xml_declaration": false,
+          "prolog_bytes_scanned": 0,
+          "root_element": "eml:eml",
+          "utf8_bom": false,
+          "xml_declaration_encoding": null,
+          "xml_declaration_version": null
+        },
+        "publication_dates": [
+          "2026-07-17"
+        ],
+        "publishers": [
+          "Artsdatabanken",
+          "Artsdatabanken",
+          "Artdatabanken"
+        ],
+        "rights": [
+          "This work is licensed under a Creative Commons Attribution (CC-BY) 4.0 License."
+        ],
+        "title": "Nortaxa (Artsnavnebasen)",
+        "uuid_present": true
+      },
+      "redirect_chain": [],
+      "requested_url": "https://ipt.artsdatabanken.no/eml.do?r=artsnavnebase&v=1.284",
+      "status": "parse_succeeded",
+      "status_code": 200
+    },
+    {
+      "body_bytes": 0,
+      "body_sha256": null,
+      "content_type": "application/zip",
+      "error": {
+        "message": "archive HEAD lacks a positive Content-Length",
+        "phase": "parse",
+        "type": "AcquisitionError"
+      },
+      "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "method": "HEAD",
+      "operation": "archive_head",
+      "redirect_chain": [],
+      "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "status": "parse_failed",
+      "status_code": 200
+    }
+  ],
+  "outcome": "failed",
+  "proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "retry_performed": false,
+  "started_at": "2026-07-24T18:43:46.316937Z",
+  "tool": {
+    "name": "nortaxa_metadata.py",
+    "version": 1
+  }
+}
