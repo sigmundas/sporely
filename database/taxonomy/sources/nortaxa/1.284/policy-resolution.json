@@ -1,0 +1,144 @@
+{
+  "acquisition_authorization_status": "not_authorized",
+  "archive_head_observation": {
+    "body_bytes": 0,
+    "body_sha256": null,
+    "content_length_presence_recorded": false,
+    "content_length_value_recorded": false,
+    "content_type": "application/zip",
+    "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+    "preserved_transport_fields": [
+      "body_bytes",
+      "body_sha256",
+      "content_type",
+      "error",
+      "final_url",
+      "method",
+      "operation",
+      "redirect_chain",
+      "requested_url",
+      "status",
+      "status_code"
+    ],
+    "raw_headers_recorded": false,
+    "redirect_chain": [],
+    "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+    "status_code": 200
+  },
+  "attempt_3_closure_result": {
+    "final_metadata_verification_emitted": false,
+    "next_safe_task": "A separately authorized bounded HEAD retry under the revised policy that journals the raw HEAD headers dict before the parse phase begins. The new attempt must preserve either the Content-Length header value or explicit absence, plus presence/absence of ETag, Last-Modified, Accept-Ranges, Content-Disposition.",
+    "reason": "The attempt-3 archive_head transport journal preserves only status_code, content_type, redirect_chain, body_bytes, body_sha256, requested_url, final_url, method, operation, and the parse-phase error. It does not preserve a raw HEAD headers dict, so presence vs absence of Content-Length, ETag, Last-Modified, Accept-Ranges, and Content-Disposition is not deterministically recoverable. The revised policy distinguishes 'absent' (accepted as unavailable) from 'malformed/zero/negative/oversized' (hard failure); attempt 3 lacks the evidence required to make that determination. Closure condition 5 fails.",
+    "status": "insufficient_transport_evidence",
+    "unresolved_header_evidence": {
+      "accept_ranges": {
+        "status": "unavailable_due_to_parse_failure"
+      },
+      "content_disposition": {
+        "status": "unavailable_due_to_parse_failure"
+      },
+      "content_length": {
+        "status": "unavailable_due_to_parse_failure"
+      },
+      "etag": {
+        "status": "unavailable_due_to_parse_failure"
+      },
+      "last_modified": {
+        "status": "unavailable_due_to_parse_failure"
+      }
+    }
+  },
+  "attempt_3_reclassification_interpretation_only": {
+    "attempt_3_record_modified": false,
+    "note": "Under the revised policy the attempt-3 HEAD outcome would be reclassified from parse_failed to parse_succeeded ONLY if the missing header evidence were preserved. Because it is not preserved, no reclassification is applied. The attempt-3 record is not modified."
+  },
+  "bound_evidence": {
+    "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
+    "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
+    "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+    "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+    "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
+  },
+  "canonical_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
+  "closure_contract": {
+    "conditions": [
+      "failure_is_exclusively_a_superseded_policy_decision",
+      "resolution_binds_attempt_hash_and_exact_transport_evidence",
+      "deterministic_reevaluation_under_replacement_policy_succeeds",
+      "all_other_operations_succeeded",
+      "new_policy_requires_no_evidence_the_attempt_failed_to_preserve",
+      "final_artifact_references_the_resolution"
+    ],
+    "helper": "nortaxa_metadata.verify_closure_conditions",
+    "required_transport_evidence": [
+      "raw_headers_recorded",
+      "content_length_presence_recorded"
+    ]
+  },
+  "network_activity": {
+    "dns": false,
+    "download": false,
+    "extraction": false,
+    "get": false,
+    "head": false,
+    "note": "No network operation was performed during policy resolution. All evidence is derived from the immutable persisted attempt-3 record.",
+    "range": false
+  },
+  "policy_identifier": "nortaxa-archive-head-content-length-absent-v1",
+  "policy_resolution_schema_version": 2,
+  "policy_status": "resolved",
+  "profile_code": "nortaxa_dwca",
+  "release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "resolution": {
+    "content_length_absent_is_acceptable": true,
+    "content_length_present_rules": {
+      "malformed_or_conflicting_is_hard_failure": true,
+      "must_be_positive_integer": true,
+      "must_not_exceed_proposal_maximum_bytes": true,
+      "zero_negative_or_oversized_is_hard_failure": true
+    },
+    "mandatory_head_gate": {
+      "approved_https_host": "ipt.artsdatabanken.no",
+      "approved_redirect_chain_only": true,
+      "approved_zip_content_type_or_disposition": true,
+      "bodyless_head": true,
+      "http_status_200": true
+    },
+    "optional_delivery_metadata_rules": {
+      "absent_headers_are_recorded_as_not_exposed": true,
+      "absent_headers_do_not_weaken_get_safeguards": true,
+      "no_header_values_are_invented": true
+    }
+  },
+  "resolved_at": "2026-07-24T21:00:00Z",
+  "resolved_offline": true,
+  "source_code": "nortaxa",
+  "streaming_ceiling_compensating_controls": {
+    "abort_before_next_chunk_would_exceed_ceiling": true,
+    "absent_length_requires_clean_eof_within_ceiling": true,
+    "ceiling_bytes": 67108864,
+    "ceiling_source": "source_selection_proposal.archive_policy.proposed_maximum_bytes",
+    "declared_length_when_present_must_equal_completed_bytes_and_reach_eof": true,
+    "get_is_separately_authorized_operation": true,
+    "maintain_incremental_byte_count": true,
+    "maintain_incremental_sha256": true,
+    "never_promote_partial_file_as_final_archive": true,
+    "quarantine_or_delete_interrupted_or_oversized_partial_bytes": true,
+    "record_final_observed_size_and_sha256": true,
+    "require_non_empty_bytes_and_complete_structural_validation_before_promotion": true,
+    "stream_bounded_chunks_only": true,
+    "verify_free_disk_before_transport_against_ceiling": true
+  },
+  "supersedes_error": {
+    "error_messages": [
+      "archive HEAD lacks a positive Content-Length"
+    ],
+    "error_phase": "parse",
+    "error_type": "AcquisitionError",
+    "note": "The old parse gate raised the same message for absent, empty, non-digit, zero, and negative Content-Length values. The exact input is not deterministically recoverable from the persisted record.",
+    "operation": "archive_head"
+  }
+}

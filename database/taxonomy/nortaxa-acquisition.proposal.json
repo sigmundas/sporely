@@ -1,0 +1,124 @@
+{
+  "acquisition_proposal_schema_version": 2,
+  "approval_status": "proposed",
+  "archive_policy": {
+    "abort_before_next_chunk_would_exceed_maximum": true,
+    "accept_absent_content_length_under_streaming_ceiling": true,
+    "fail_if_received_bytes_exceed_maximum": true,
+    "fail_if_received_bytes_mismatch_declared_content_length_when_present": true,
+    "maximum_basis": "Existing source_selection_proposal.archive_policy.proposed_maximum_bytes; not changed by this acquisition proposal.",
+    "never_promote_partial_file_as_final_archive": true,
+    "print_expected_size_and_available_disk_before_download": true,
+    "proposed_maximum_bytes": 67108864,
+    "quarantine_or_delete_interrupted_or_oversized_partial_bytes": true,
+    "quarantine_path": ".quarantine/",
+    "record_final_observed_size_and_sha256": true,
+    "require_clean_eof_when_content_length_absent": true,
+    "require_complete_structural_validation_before_promotion": true,
+    "require_content_length_check_when_available": true,
+    "require_non_empty_bytes_before_promotion": true,
+    "require_streamed_incremental_byte_count": true,
+    "require_streamed_incremental_sha256": true,
+    "require_sufficient_local_free_space": true,
+    "retain_original_archive_bytes_and_sha256": true,
+    "staging_path": ".staging/",
+    "temporary_file_before_promotion": true,
+    "validate_zip_structure_without_full_extraction": true
+  },
+  "attempts_policy": {
+    "authentication_authorized": false,
+    "permitted_future_get_attempts": 1,
+    "range_requests_authorized": false,
+    "resume_authorized": false,
+    "retries_authorized": false
+  },
+  "authorization_state": {
+    "acquisition_approval_created": false,
+    "archive_body_retrieved": false,
+    "archive_extracted": false,
+    "archive_get_authorized": false
+  },
+  "bound_evidence": {
+    "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
+    "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
+    "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+    "policy_resolution_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
+    "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+    "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
+  },
+  "canonical_sha256": "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226",
+  "delivery": {
+    "accepted_final_content_types": [
+      "application/octet-stream",
+      "application/x-zip-compressed",
+      "application/zip",
+      "application/zip-compressed"
+    ],
+    "allowed_hosts": [
+      "ipt.artsdatabanken.no"
+    ],
+    "authentication_required": false,
+    "canonical_archive_endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+    "expected_archive_format": "Darwin Core Archive",
+    "expected_license": "CC-BY 4.0",
+    "http_method": "GET",
+    "https_only": true,
+    "max_redirects": 3,
+    "permitted_redirect_hosts": []
+  },
+  "download_authorized": false,
+  "future_approval_artifact": {
+    "cannot_be_created_before": [
+      "final metadata-verification.json exists",
+      "final metadata-verification.json references this policy resolution",
+      "final metadata-verification.json canonical SHA-256 is bound in the approval"
+    ],
+    "cannot_be_self_authorized": true,
+    "filename": "nortaxa-acquisition.approved.json",
+    "must_be_separately_generated": true,
+    "required_bound_fields": [
+      "acquisition_proposal_sha256",
+      "source_selection_proposal_sha256",
+      "request_sha256",
+      "metadata_verification_sha256",
+      "policy_resolution_sha256",
+      "approval_status",
+      "download_authorized",
+      "approved_at",
+      "approved_canonical_endpoint",
+      "approved_maximum_bytes",
+      "approved_redirect_hosts"
+    ]
+  },
+  "network_activity": {
+    "dns": false,
+    "download": false,
+    "extraction": false,
+    "get": false,
+    "head": false,
+    "note": "No network activity was performed while drafting this proposal.",
+    "range": false
+  },
+  "policy_helper": {
+    "closure_helper": "nortaxa_metadata.verify_closure_conditions",
+    "streaming_evaluator": "nortaxa_metadata.evaluate_archive_get",
+    "streaming_evaluator_binds_ceiling_and_length": true
+  },
+  "prerequisites": {
+    "metadata_verification_final_artifact_exists": false,
+    "metadata_verification_final_artifact_required_before_approval": true,
+    "next_prerequisite": "a separately authorized bounded HEAD retry that preserves raw HEAD headers (Content-Length presence/value, ETag, Last-Modified, Accept-Ranges, Content-Disposition), followed by an offline-closure emitted metadata-verification.json referencing this policy resolution"
+  },
+  "profile_code": "nortaxa_dwca",
+  "proposed_at": "2026-07-24T21:05:00Z",
+  "proposed_offline": true,
+  "release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "source_code": "nortaxa",
+  "unbound_evidence": {
+    "metadata_verification_sha256": null,
+    "reason": "No metadata-verification.json exists. Attempt 3 did not preserve sufficient HEAD transport evidence for offline closure under policy nortaxa-archive-head-content-length-absent-v1. A newly authorized HEAD attempt is required before this proposal can be considered for approval."
+  }
+}

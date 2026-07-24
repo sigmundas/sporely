@@ -433,27 +433,117 @@ def parse_eml(body: bytes, proposal: SourceProposal) -> dict[str, Any]:
     }
 
 
+def parse_content_length(header: str | None, ceiling: int) -> int | None:
+    """Parse a Content-Length header value against a positive-integer ceiling.
+
+    Returns the declared length in bytes when the header is present, well-formed,
+    positive, and within ``ceiling``. Returns ``None`` when the header is absent
+    (a legitimate "declared size unavailable" state). Raises ``AcquisitionError``
+    on any other shape: empty string, non-digit characters, comma-separated
+    conflicting values, zero, negative, or over the ceiling.
+    """
+    if not isinstance(ceiling, int) or ceiling <= 0:
+        raise AcquisitionError("ceiling must be a positive integer")
+    if header is None:
+        return None
+    text = header.strip()
+    if not text:
+        raise AcquisitionError("archive Content-Length is malformed")
+    parts = [part.strip() for part in text.split(",") if part.strip()]
+    if not parts:
+        raise AcquisitionError("archive Content-Length is malformed")
+    if len(set(parts)) != 1:
+        raise AcquisitionError("archive Content-Length has conflicting values")
+    value = parts[0]
+    if not value.isdigit():
+        raise AcquisitionError("archive Content-Length is malformed")
+    length = int(value)
+    if length <= 0:
+        raise AcquisitionError("archive Content-Length must be positive")
+    if length > ceiling:
+        raise AcquisitionError("archive Content-Length exceeds the ceiling")
+    return length
+
+
 def normalize_head(response: Response, proposal: SourceProposal, policy: MetadataPolicy) -> dict[str, Any]:
     if response.method != "HEAD" or response.body:
         raise AcquisitionError("archive metadata operation must remain bodyless HEAD")
     validate_response(response, policy, ZIP_TYPES)
     headers = {key.casefold(): value.strip() for key, value in response.headers.items()}
-    length_text = headers.get("content-length")
-    if not length_text or not length_text.isdigit() or int(length_text) <= 0:
-        raise AcquisitionError("archive HEAD lacks a positive Content-Length")
-    length = int(length_text)
-    if length > proposal.proposed_maximum_bytes:
-        raise AcquisitionError("archive HEAD length exceeds the proposed ceiling")
+    raw_length = headers.get("content-length")
+    length = parse_content_length(raw_length, proposal.proposed_maximum_bytes)
+    if length is None:
+        size_status = "unavailable"
+        size_reason = "header_absent"
+    else:
+        size_status = "declared"
+        size_reason = None
     disposition = headers.get("content-disposition")
     if _media_type(response.headers) not in ZIP_TYPES and not (disposition and ".zip" in disposition.casefold()):
         raise AcquisitionError("archive HEAD is inconsistent with ZIP delivery")
     return {
         "requested_url": response.requested_url, "final_url": response.final_url,
         "redirect_chain": list(response.redirect_urls), "status": response.status,
-        "content_type": _media_type(response.headers), "content_length": length,
+        "content_type": _media_type(response.headers),
+        "content_length": length,
+        "content_length_declared": length is not None,
+        "size_declaration_status": size_status,
+        "size_declaration_reason": size_reason,
         "etag": headers.get("etag"), "last_modified": headers.get("last-modified"),
         "accept_ranges": headers.get("accept-ranges"),
         "content_disposition": disposition,
+    }
+
+
+def evaluate_archive_get(
+    *,
+    ceiling: int,
+    content_length_header: str | None,
+    completed_bytes: int,
+    reached_eof: bool,
+) -> dict[str, Any]:
+    """Policy check for a completed archive GET stream.
+
+    The caller enforces ``ceiling`` while streaming and must abort before
+    exceeding it; this helper only inspects the caller-reported final state.
+    Raises ``AcquisitionError`` on any policy violation. Returns a small
+    evidence record describing the accepted outcome.
+
+    A malformed, conflicting, zero, negative, or over-ceiling Content-Length is
+    a hard failure. A missing Content-Length is accepted only when the stream
+    reached a clean EOF within the ceiling. A declared Content-Length must
+    match the completed byte count exactly and the stream must have reached
+    EOF. The ``Range`` request header is not required and is not consulted;
+    a server that ignores ``Range`` and returns the full body is acceptable
+    as long as the ceiling and length rules pass.
+    """
+    if not isinstance(ceiling, int) or ceiling <= 0:
+        raise AcquisitionError("archive GET ceiling must be a positive integer")
+    if not isinstance(completed_bytes, int) or completed_bytes < 0:
+        raise AcquisitionError("archive GET completed_bytes must be a non-negative integer")
+    if completed_bytes > ceiling:
+        raise AcquisitionError("archive GET stream exceeded the ceiling")
+    declared = parse_content_length(content_length_header, ceiling)
+    if declared is None:
+        if not reached_eof:
+            raise AcquisitionError("archive GET terminated before EOF and no Content-Length was declared")
+        return {
+            "size_declaration_status": "unavailable",
+            "declared_length": None,
+            "completed_bytes": completed_bytes,
+            "reached_eof": True,
+            "ceiling": ceiling,
+        }
+    if completed_bytes != declared:
+        raise AcquisitionError("archive GET completed byte count disagrees with declared Content-Length")
+    if not reached_eof:
+        raise AcquisitionError("archive GET terminated before EOF despite declared Content-Length")
+    return {
+        "size_declaration_status": "declared",
+        "declared_length": declared,
+        "completed_bytes": completed_bytes,
+        "reached_eof": True,
+        "ceiling": ceiling,
     }
 
 
@@ -669,6 +759,150 @@ def verify(
 
 def evidence_sha256(evidence: dict[str, Any]) -> str:
     return sha256_json(evidence)
+
+
+RESOLVABLE_PARSE_FAILURES: dict[str, dict[str, Any]] = {
+    "nortaxa-archive-head-content-length-absent-v1": {
+        "operation": "archive_head",
+        "superseded_error_type": "AcquisitionError",
+        "superseded_error_messages": (
+            "archive HEAD lacks a positive Content-Length",
+        ),
+        "required_transport_evidence": (
+            "raw_headers_recorded",
+            "content_length_presence_recorded",
+        ),
+    },
+}
+
+
+def verify_closure_conditions(
+    *,
+    policy_resolution: dict[str, Any],
+    attempt_record: dict[str, Any],
+    replacement_evaluator: Callable[[dict[str, Any]], str] | None = None,
+) -> dict[str, Any]:
+    """Enforce the formal contract for closing a `parse_failed` attempt.
+
+    A final metadata artifact may be emitted from an immutable parse-failed
+    attempt ONLY when all six conditions hold:
+
+    1. the failure is exclusively an explicitly superseded policy decision;
+    2. the resolution binds the attempt hash and the exact recorded transport
+       evidence (status code, content type, redirect chain, body bytes);
+    3. deterministic re-evaluation under the identified replacement policy
+       succeeds against the preserved transport evidence;
+    4. all other operations succeeded;
+    5. the new policy requires no evidence the attempt failed to preserve;
+    6. the final artifact references the resolution (asserted at write time).
+
+    Raises ``AcquisitionError`` with a specific reason string when any
+    condition fails. On success returns a summary dict; the caller writes
+    the final artifact and asserts condition 6 by binding the resolution
+    canonical SHA-256.
+    """
+    identifier = policy_resolution.get("policy_identifier")
+    if identifier not in RESOLVABLE_PARSE_FAILURES:
+        raise AcquisitionError(
+            f"closure: unknown or unregistered policy identifier {identifier!r}"
+        )
+    spec = RESOLVABLE_PARSE_FAILURES[identifier]
+
+    # Condition 2 (bindings before anything else): attempt hash and transport must be bound.
+    bound = policy_resolution.get("bound_evidence") or {}
+    attempt_number = attempt_record.get("attempt_number")
+    if attempt_number is None:
+        raise AcquisitionError("closure: attempt record does not identify an attempt_number")
+    key = f"attempt_{attempt_number}_sha256"
+    expected_hash = bound.get(key)
+    if not expected_hash:
+        raise AcquisitionError(f"closure: policy resolution does not bind {key}")
+    computed_hash = sha256_json(attempt_record)
+    if expected_hash != computed_hash:
+        raise AcquisitionError("closure: attempt hash does not match the policy resolution binding")
+
+    operations = attempt_record.get("operations") or []
+    if not isinstance(operations, list) or not operations:
+        raise AcquisitionError("closure: attempt record has no operations to evaluate")
+
+    target = spec["operation"]
+    target_ops = [op for op in operations if op.get("operation") == target]
+    if len(target_ops) != 1:
+        raise AcquisitionError(f"closure: attempt record lacks a unique {target!r} operation")
+    target_op = target_ops[0]
+
+    # Condition 1: failure is exclusively the superseded policy decision.
+    if target_op.get("status") != "parse_failed":
+        raise AcquisitionError(
+            f"closure: {target!r} status is {target_op.get('status')!r}, not parse_failed"
+        )
+    err = target_op.get("error") or {}
+    if err.get("phase") != "parse":
+        raise AcquisitionError("closure: failure was not raised in the parse phase")
+    if err.get("type") != spec["superseded_error_type"]:
+        raise AcquisitionError(
+            f"closure: error type {err.get('type')!r} is not superseded by this policy"
+        )
+    if err.get("message") not in spec["superseded_error_messages"]:
+        raise AcquisitionError(
+            "closure: error message is not among the explicitly superseded set"
+        )
+
+    # Condition 4: all other operations succeeded.
+    for op in operations:
+        if op.get("operation") == target:
+            continue
+        if op.get("status") != "parse_succeeded":
+            raise AcquisitionError(
+                f"closure: sibling operation {op.get('operation')!r} did not reach parse_succeeded"
+            )
+
+    # Condition 2 (continued): resolution's transport observation matches the record exactly.
+    observation = policy_resolution.get("archive_head_observation") or {}
+    for field in ("status_code", "content_type", "redirect_chain", "body_bytes", "body_sha256",
+                  "requested_url", "final_url"):
+        if field not in observation:
+            raise AcquisitionError(
+                f"closure: policy resolution omits transport field {field!r}"
+            )
+        if observation[field] != target_op.get(field):
+            raise AcquisitionError(
+                f"closure: policy resolution transport field {field!r} does not match the attempt record"
+            )
+
+    # Condition 5: new policy must not require evidence the attempt did not preserve.
+    preserved: set[str] = set()
+    # The attempt journal preserves a raw headers dict only when the transport step
+    # journaled it explicitly. In the frozen schema-2 attempt-3 record, HEAD headers
+    # were not captured because the parse gate stopped the sequence before header
+    # normalization; presence/absence of ETag, Last-Modified, Accept-Ranges,
+    # Content-Disposition, and even the exact shape of Content-Length is not in
+    # the record.
+    if any(key.lower() in {"raw_headers", "headers"} for key in target_op):
+        preserved.update({"raw_headers_recorded", "content_length_presence_recorded"})
+    missing_evidence = [name for name in spec["required_transport_evidence"] if name not in preserved]
+    if missing_evidence:
+        raise AcquisitionError(
+            "closure: attempt did not preserve required evidence: " + ", ".join(missing_evidence)
+        )
+
+    # Condition 3: deterministic re-evaluation succeeds.
+    if replacement_evaluator is None:
+        raise AcquisitionError(
+            "closure: a deterministic replacement evaluator is required to close a parse_failed attempt"
+        )
+    verdict = replacement_evaluator(target_op)
+    if verdict != "parse_succeeded":
+        raise AcquisitionError(
+            f"closure: replacement evaluator returned {verdict!r}, not 'parse_succeeded'"
+        )
+
+    return {
+        "operation": target,
+        "policy_identifier": identifier,
+        "attempt_sha256": computed_hash,
+        "resolved_status": "parse_succeeded",
+    }
 
 
 def replay_journal_state(state: dict[str, Any]) -> dict[str, Any]:

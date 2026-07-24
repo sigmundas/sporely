@@ -20,8 +20,10 @@ from nortaxa_metadata import (  # noqa: E402
     Response,
     VERIFICATION_STATE_SCHEMA,
     XML_TYPES,
+    evaluate_archive_get,
     evidence_sha256,
     normalize_head,
+    parse_content_length,
     parse_eml,
     parse_resource_html,
     replay_journal_state,
@@ -99,7 +101,11 @@ def test_valid_sanitized_resource_and_eml_fixtures() -> None:
     assert evidence["verdict"] == "passed"
     assert evidence["cumulative_body_bytes"] == len(resource_body()) + len(eml_body())
     assert [call[0] for call in transport.calls] == ["GET", "GET", "HEAD"]
-    assert evidence["observed"]["archive_head"]["content_length"] == 1234567
+    head_obs = evidence["observed"]["archive_head"]
+    assert head_obs["content_length"] == 1234567
+    assert head_obs["content_length_declared"] is True
+    assert head_obs["size_declaration_status"] == "declared"
+    assert head_obs["size_declaration_reason"] is None
     assert len(evidence_sha256(evidence)) == 64
     assert set(sanitized) == {"resource-page.sanitized.json", "eml.sanitized.json"}
     assert b"@" not in b"".join(sanitized.values())
@@ -187,15 +193,253 @@ def test_oversized_body_and_unexpected_content_type() -> None:
         validate_response(bad, policy, HTML_TYPES)
 
 
-@pytest.mark.parametrize("length", [None, "bad", "0", "67108865"])
-def test_unsupported_or_excessive_archive_head(length: str | None) -> None:
+@pytest.mark.parametrize(
+    ("length", "match"),
+    [
+        ("bad", "malformed"),
+        ("0", "positive"),
+        ("-1", "malformed"),
+        ("", "malformed"),
+        ("12, 34", "conflicting"),
+        ("67108865", "exceeds"),
+        ("1 234 567", "malformed"),
+        ("1.5e6", "malformed"),
+    ],
+)
+def test_malformed_or_excessive_archive_head_length_still_rejected(length: str, match: str) -> None:
+    proposal, _, policy = selected()
+    headers = {"Content-Type": "application/zip", "Content-Length": length}
+    head = Response("HEAD", proposal.archive_endpoint, proposal.archive_endpoint, (), 200, headers, b"")
+    with pytest.raises(AcquisitionError, match=match):
+        normalize_head(head, proposal, policy)
+
+
+def test_archive_head_missing_content_length_is_accepted_as_unavailable() -> None:
     proposal, _, policy = selected()
     headers = {"Content-Type": "application/zip"}
-    if length is not None:
-        headers["Content-Length"] = length
     head = Response("HEAD", proposal.archive_endpoint, proposal.archive_endpoint, (), 200, headers, b"")
-    with pytest.raises(AcquisitionError, match="Content-Length|length"):
-        normalize_head(head, proposal, policy)
+    parsed = normalize_head(head, proposal, policy)
+    assert parsed["content_length"] is None
+    assert parsed["content_length_declared"] is False
+    assert parsed["size_declaration_status"] == "unavailable"
+    assert parsed["size_declaration_reason"] == "header_absent"
+
+
+def test_archive_head_boundary_equal_to_ceiling_is_accepted() -> None:
+    proposal, _, policy = selected()
+    ceiling = proposal.proposed_maximum_bytes
+    headers = {"Content-Type": "application/zip", "Content-Length": str(ceiling)}
+    head = Response("HEAD", proposal.archive_endpoint, proposal.archive_endpoint, (), 200, headers, b"")
+    parsed = normalize_head(head, proposal, policy)
+    assert parsed["content_length"] == ceiling
+    assert parsed["size_declaration_status"] == "declared"
+
+
+def test_archive_head_optional_evidence_fields_may_be_absent() -> None:
+    proposal, _, policy = selected()
+    headers = {"Content-Type": "application/zip"}  # no ETag/Last-Modified/Accept-Ranges/Disposition
+    head = Response("HEAD", proposal.archive_endpoint, proposal.archive_endpoint, (), 200, headers, b"")
+    parsed = normalize_head(head, proposal, policy)
+    assert parsed["etag"] is None
+    assert parsed["last_modified"] is None
+    assert parsed["accept_ranges"] is None
+    assert parsed["content_disposition"] is None
+    assert parsed["size_declaration_status"] == "unavailable"
+
+
+def test_verify_completes_when_archive_head_omits_content_length() -> None:
+    proposal, request, policy = selected()
+    transport = valid_transport()
+    transport.responses[2] = response("HEAD", proposal.archive_endpoint, "application/zip")
+    evidence, sanitized = verify(proposal, request, transport, policy=policy)
+    assert evidence["verdict"] == "passed"
+    head = evidence["observed"]["archive_head"]
+    assert head["content_length"] is None
+    assert head["size_declaration_status"] == "unavailable"
+    assert set(sanitized) == {"resource-page.sanitized.json", "eml.sanitized.json"}
+    assert [call[0] for call in transport.calls] == ["GET", "GET", "HEAD"]
+
+
+# ----- parse_content_length -----
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (None, None),
+        ("1", 1),
+        ("1234567", 1234567),
+    ],
+)
+def test_parse_content_length_accepts_absent_or_positive(header, expected) -> None:
+    assert parse_content_length(header, 67108864) == expected
+
+
+@pytest.mark.parametrize(
+    ("header", "match"),
+    [
+        ("", "malformed"),
+        ("   ", "malformed"),
+        ("bad", "malformed"),
+        ("1.0", "malformed"),
+        ("0", "positive"),
+        ("-1", "malformed"),
+        ("100, 200", "conflicting"),
+        ("100, 100, 200", "conflicting"),
+        ("67108865", "exceeds"),
+    ],
+)
+def test_parse_content_length_rejects_malformed_or_over_ceiling(header, match) -> None:
+    with pytest.raises(AcquisitionError, match=match):
+        parse_content_length(header, 67108864)
+
+
+def test_parse_content_length_repeated_identical_values_accepted() -> None:
+    # Some proxies duplicate the header; if the values are identical it is not conflicting.
+    assert parse_content_length("100, 100", 1000) == 100
+
+
+def test_parse_content_length_requires_positive_ceiling() -> None:
+    with pytest.raises(AcquisitionError, match="ceiling"):
+        parse_content_length("1", 0)
+
+
+# ----- evaluate_archive_get: GET-stream policy -----
+
+
+CEILING = 1_000
+
+
+def test_evaluate_get_declared_length_matches_completed_bytes() -> None:
+    result = evaluate_archive_get(
+        ceiling=CEILING, content_length_header="500",
+        completed_bytes=500, reached_eof=True,
+    )
+    assert result["size_declaration_status"] == "declared"
+    assert result["declared_length"] == 500
+    assert result["completed_bytes"] == 500
+
+
+def test_evaluate_get_missing_length_with_clean_eof_under_ceiling() -> None:
+    result = evaluate_archive_get(
+        ceiling=CEILING, content_length_header=None,
+        completed_bytes=750, reached_eof=True,
+    )
+    assert result["size_declaration_status"] == "unavailable"
+    assert result["declared_length"] is None
+    assert result["completed_bytes"] == 750
+    assert result["reached_eof"] is True
+
+
+def test_evaluate_get_boundary_equality_declared() -> None:
+    result = evaluate_archive_get(
+        ceiling=CEILING, content_length_header=str(CEILING),
+        completed_bytes=CEILING, reached_eof=True,
+    )
+    assert result["completed_bytes"] == CEILING
+    assert result["declared_length"] == CEILING
+
+
+def test_evaluate_get_boundary_equality_undeclared() -> None:
+    result = evaluate_archive_get(
+        ceiling=CEILING, content_length_header=None,
+        completed_bytes=CEILING, reached_eof=True,
+    )
+    assert result["size_declaration_status"] == "unavailable"
+    assert result["completed_bytes"] == CEILING
+
+
+def test_evaluate_get_one_byte_overflow_declared_fails() -> None:
+    with pytest.raises(AcquisitionError, match="exceeded the ceiling"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=str(CEILING),
+            completed_bytes=CEILING + 1, reached_eof=True,
+        )
+
+
+def test_evaluate_get_one_byte_overflow_undeclared_fails() -> None:
+    with pytest.raises(AcquisitionError, match="exceeded the ceiling"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=None,
+            completed_bytes=CEILING + 1, reached_eof=True,
+        )
+
+
+def test_evaluate_get_truncated_declared_body_fails() -> None:
+    with pytest.raises(AcquisitionError, match="disagrees with declared Content-Length"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header="500",
+            completed_bytes=400, reached_eof=True,
+        )
+
+
+def test_evaluate_get_declared_but_stream_did_not_reach_eof_fails() -> None:
+    with pytest.raises(AcquisitionError, match="before EOF"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header="500",
+            completed_bytes=500, reached_eof=False,
+        )
+
+
+def test_evaluate_get_undeclared_and_no_eof_fails() -> None:
+    with pytest.raises(AcquisitionError, match="before EOF"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=None,
+            completed_bytes=500, reached_eof=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("header", "match"),
+    [
+        ("bad", "malformed"),
+        ("0", "positive"),
+        ("-5", "malformed"),
+        ("100, 200", "conflicting"),
+        (str(CEILING + 1), "exceeds"),
+    ],
+)
+def test_evaluate_get_rejects_malformed_or_over_ceiling_declaration(header, match) -> None:
+    with pytest.raises(AcquisitionError, match=match):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=header,
+            completed_bytes=500, reached_eof=True,
+        )
+
+
+def test_evaluate_get_server_ignored_range_full_body_ok() -> None:
+    # Caller had asked for a Range, but the server ignored it and streamed the
+    # full body. Policy must still accept it purely on the ceiling/length rules,
+    # because Range is not part of the declared-size decision.
+    result = evaluate_archive_get(
+        ceiling=CEILING, content_length_header=str(CEILING),
+        completed_bytes=CEILING, reached_eof=True,
+    )
+    assert result["declared_length"] == CEILING
+
+
+def test_evaluate_get_server_ignored_range_full_body_over_ceiling_rejected() -> None:
+    with pytest.raises(AcquisitionError, match="exceeded the ceiling"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=None,
+            completed_bytes=CEILING + 1, reached_eof=True,
+        )
+
+
+def test_evaluate_get_ceiling_must_be_positive_integer() -> None:
+    with pytest.raises(AcquisitionError, match="ceiling"):
+        evaluate_archive_get(
+            ceiling=0, content_length_header=None,
+            completed_bytes=0, reached_eof=True,
+        )
+
+
+def test_evaluate_get_completed_bytes_must_be_non_negative() -> None:
+    with pytest.raises(AcquisitionError, match="completed_bytes"):
+        evaluate_archive_get(
+            ceiling=CEILING, content_length_header=None,
+            completed_bytes=-1, reached_eof=True,
+        )
 
 
 def test_missing_malformed_headers_and_redirect_host() -> None:

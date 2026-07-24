@@ -366,9 +366,20 @@ for the duration of a single operation; the journal records their byte
 count and SHA-256 only.
 
 A final `metadata-verification.json` may only be emitted when every
-operation reaches `parse_succeeded` and cross-source consistency succeeds;
-partial evidence sets a `"final": false` flag on the state journal and
-cannot be mistaken for the completed artifact.
+operation reaches `parse_succeeded` and cross-source consistency succeeds,
+OR when a `parse_failed` operation satisfies the narrow resolved-success
+contract enforced by `nortaxa_metadata.verify_closure_conditions`: (1) the
+failure is exclusively an explicitly superseded policy decision registered in
+`RESOLVABLE_PARSE_FAILURES`; (2) the resolution binds the attempt canonical
+SHA-256 and the exact recorded transport evidence; (3) deterministic
+re-evaluation under the identified replacement policy returns
+`parse_succeeded`; (4) every sibling operation reached `parse_succeeded`;
+(5) the new policy requires no evidence the attempt failed to preserve;
+(6) the final artifact references the resolution by canonical SHA-256. Any
+transport failure, unsafe content type, malformed response, unrelated parser
+failure, missing required transport evidence, mismatched attempt hash, or
+arbitrary error type is refused. Partial evidence sets a `"final": false`
+flag on the state journal and cannot be mistaken for the completed artifact.
 
 `replay_journal_state(state)` reconstructs a read-only summary from a
 persisted state dictionary. It is deterministic, network-free, and does
@@ -379,6 +390,47 @@ distinguish `parse_succeeded`, `transport_failed`, `parse_failed`, and
 Attempt records remain append-only; attempts 1 and 2 are byte-identical
 under this repair, and archive acquisition remains unauthorized. Stage 2B
 remains incomplete.
+
+### Offline closure — policy resolution and insufficient attempt-3 evidence
+
+An offline corrective closure task ran on 2026-07-24 with no DNS, HEAD, GET,
+Range, download, or extraction. The `parse_failed` attempt-3 archive-HEAD
+outcome was audited against the formal resolved-success contract encoded in
+`nortaxa_metadata.verify_closure_conditions`.
+
+`sources/nortaxa/1.284/policy-resolution.json` (policy identifier
+`nortaxa-archive-head-content-length-absent-v1`, schema v2) binds the proposal,
+request, and attempts 1–3 canonical SHA-256 values; copies the attempt-3
+transport observation verbatim (HTTP 200, `application/zip`, empty redirect
+chain, zero-byte body, no body SHA-256); enumerates the closure contract's six
+conditions; and lists the streaming-ceiling compensating controls that any
+future GET must satisfy. It declares that no network request was performed.
+
+The attempt-3 archive-HEAD record preserves only the transport summary
+(`status_code`, `content_type`, `redirect_chain`, `body_bytes`, `body_sha256`,
+`requested_url`, `final_url`, `method`, `operation`, and the parse-phase
+error). It does NOT preserve a raw HEAD headers dict. Presence vs absence of
+`Content-Length`, `ETag`, `Last-Modified`, `Accept-Ranges`, and
+`Content-Disposition` is not deterministically recoverable — the revised
+policy distinguishes an absent Content-Length (accepted as unavailable) from a
+malformed/zero/negative/oversized value (hard failure), and attempt 3 lacks the
+evidence to make that determination. `attempt_3_closure_result.status` is
+`insufficient_transport_evidence` and all five HEAD headers are recorded as
+`unavailable_due_to_parse_failure`, NOT `not_exposed`.
+
+Consequently, no `metadata-verification.json` is emitted. The five conditions
+that a future closure would need are documented in the artifact's
+`closure_contract` block. The attempt-3 record is unmodified.
+
+`nortaxa-acquisition.proposal.json` at the taxonomy-directory root binds the
+release, proposal, request, attempts 1–3, and policy-resolution SHA-256 values,
+and explicitly declares `unbound_evidence.metadata_verification_sha256: null`
+with `prerequisites.metadata_verification_final_artifact_exists: false`. It
+remains `approval_status: proposed`, `download_authorized: false`, cannot be
+self-authorized, and cannot be created into an approval before a final
+`metadata-verification.json` exists. Archive acquisition remains explicitly
+unauthorized. Stage 2B remains incomplete pending a separately authorized
+bounded HEAD retry that preserves the raw HEAD headers dict.
 
 ## COL XR acquisition boundary
 
