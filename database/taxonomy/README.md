@@ -104,6 +104,164 @@ the manifest remains `planned`, and no approval exists. A future metadata
 attempt requires separate explicit authorization; attempt 1 must not be
 retried under the consumed authorization.
 
+### Metadata-verification attempt 2
+
+A second narrowly authorized metadata-only attempt ran on 2026-07-24 under a
+separate authorization bound to the same proposal, canonical request, and
+attempt-1 record SHA-256 values. It performed one GET to the versioned
+resource page and one GET to the versioned EML endpoint. The versioned
+archive HEAD was correctly not attempted because sequencing aborted before
+the third operation. No archive GET, Range request, retry, authentication,
+or external-link request occurred.
+
+Each response was journaled atomically to the append-only attempt-2 record
+before the parser ran. Both GETs returned `HTTP 200` from
+`ipt.artsdatabanken.no` with no redirects: the resource page returned 196,861
+bytes of `text/html` with body SHA-256
+`35501bb5f85f42672357bdf28efcf6f91142245508f3b65a786be776fc4aa067`, and the
+EML endpoint returned 5,755 bytes of `text/xml` with body SHA-256
+`98dab203fdd38e13b8ec81a0d4d37129a56b90dc99ed69824d18851a53a0e6e9`. Combined
+response body volume was 202,616 bytes, well within the 4 MiB metadata
+ceiling.
+
+The attempt failed with `AcquisitionError: unsafe EML declaration`. The
+bounded pre-parse safety gate refuses `<!DOCTYPE`, `<!ENTITY`, `SYSTEM`, and
+`PUBLIC` tokens anywhere in the EML body; the official response begins with
+an `<!DOCTYPE eml:eml …>` declaration that is exactly the token the gate
+rejects without a separately reviewed XML-safe-declaration policy. No
+retry, fallback endpoint, or gate weakening was performed. Archive HEAD
+values (Content-Length, ETag, Last-Modified, Accept-Ranges,
+Content-Disposition, and content type), EML values (`title`,
+`alternateIdentifier`/`packageId`, `pubDate`, `organizationName`,
+`intellectualRights`, `edition`), and parsed resource-page values are
+unavailable and are not reconstructed.
+
+The append-only attempt-2 record is
+`sources/nortaxa/1.284/metadata-verification-attempt-2.json`, canonical
+SHA-256
+`92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9`. The
+attempt-1 record, `request.json`, `manifest.json`, and
+`nortaxa-source-selection.proposal.json` remain byte-identical. The manifest
+remains `state: planned`, `approval_status: proposed`,
+`download_authorized: false`, with empty `execution_attempts`, `download:
+null`, and `validation: null`. No `metadata-verification.json`, sanitized
+official fixture, approval, archive, staging, quarantine, or extracted
+payload exists.
+
+No source value was verified by attempt 2. The pinned NorTaxa 1.284
+selection is not yet eligible for a separately reviewed archive-download
+approval; archive acquisition remains unauthorized and Stage 2B is
+incomplete. Attempt 2 must not be retried under the consumed authorization.
+The next safe offline task is a separately reviewed XML-safe-declaration
+policy that permits a plain `<!DOCTYPE eml:eml …>` prolog while continuing
+to reject external-entity and external-resource declarations, proven with
+offline fixtures, before any future metadata attempt is authorized.
+
+### Offline repair — declaration-aware EML XML safety policy
+
+The old parser rejected `DOCTYPE`, `ENTITY`, `SYSTEM`, and `PUBLIC` as
+plain substrings anywhere in an EML body. That was too coarse: it treated a
+harmless `<!DOCTYPE eml:eml>` prolog as unsafe and could theoretically be
+tripped by ordinary element text mentioning `SYSTEM` or `PUBLIC`.
+
+The replacement is a bounded, declaration-aware inspection of the XML
+prolog. It never resolves, loads, or fetches an external DTD, entity, or
+resource. Raw response bytes and their SHA-256 remain untouched — the
+policy only inspects a bounded window before the root element.
+
+Accepted grammar (only these shapes are permitted, in this order):
+
+1. an optional UTF-8 BOM;
+2. an optional XML declaration `<?xml version="1.0"|"1.1" [encoding="UTF-8"] ?>`
+   that must be the very first bytes if present, at most 256 bytes long, and
+   contain no other characters;
+3. zero or more well-formed XML comments (`<!-- ... -->`, up to 4 KiB each,
+   no embedded `--`);
+4. an optional single `<!DOCTYPE eml:eml>` with:
+   - required whitespace after the keyword,
+   - exact root name `eml:eml`,
+   - no external identifier (`SYSTEM`, `PUBLIC`),
+   - no internal subset (`[`, `]`),
+   - at most 256 bytes,
+   - only one occurrence, and only before the root element;
+5. optional whitespace/comments between declarations;
+6. exactly one root element start `<eml:eml …>` within the bounded prolog
+   window (default 4 KiB).
+
+Explicitly rejected: `SYSTEM` or `PUBLIC` external identifiers; internal
+subsets introduced with `[`; `<!ENTITY`, `<!NOTATION`, `<!ATTLIST`,
+`<!ELEMENT`, `<![CDATA[`, `<![INCLUDE[`, `<![IGNORE[`; general or parameter
+entity declarations and expansions; multiple DOCTYPE declarations; a DOCTYPE
+whose root name is not `eml:eml`; a DOCTYPE after the root element begins;
+declarations hidden inside or after comments; processing instructions other
+than the XML declaration; unterminated, malformed, or oversized declarations
+or comments; UTF-16 / UTF-32 BOMs; NUL bytes in the prolog; XInclude
+directives anywhere in the body; and any residual `<!ENTITY` or `<!DOCTYPE`
+after the root element (belt-and-braces check).
+
+External-resource resolution is prevented at three layers:
+
+1. the prolog validator refuses every construct that would introduce an
+   entity or external reference before parsing begins;
+2. `parse_eml` runs `xml.etree.ElementTree.fromstring` — whose expat
+   backend does not fetch external DTDs or resolve external general
+   entities by default;
+3. a post-prolog scan rejects `<!ENTITY`, `<!DOCTYPE`, and `xi:include`
+   anywhere in the remainder of the body, so an attacker cannot smuggle
+   them inside element content.
+
+The policy has not yet been proven against the official ChecklistBank
+response. Attempt 2 discarded that body; its exact DOCTYPE shape is
+unavailable and is not fabricated. Only clearly labelled synthetic fixtures
+are used for offline proof: `tests/fixtures/nortaxa/synthetic-eml.xml` and
+inline byte strings in `tests/test_nortaxa_metadata.py`. Attempts 1 and 2
+remain byte-identical; a future metadata attempt 3 still requires separate
+explicit authorization.
+
+### Offline repair — per-operation atomic parsed-result journaling
+
+`verify()` now exposes an optional `journal_sink` callback that runs after
+each state transition. The verification lifecycle is a three-operation
+state machine (`resource_page` → `eml` → `archive_head`), where each
+operation transitions through:
+
+1. `pending`;
+2. transport request performed and validated;
+3. **transport evidence journaled** (method, URLs, redirect chain, status,
+   content type, body byte count, body SHA-256, and HEAD headers when
+   applicable);
+4. parser invoked;
+5. **sanitized parsed result journaled** on success, or `parse_failed`
+   error record journaled on failure.
+
+The next network operation only begins after the preceding parsed-result
+journal transition has been emitted. When an operation fails, later
+operations transition to `skipped` with an explicit reason, so absent
+values are distinguishable from unavailable values. The verification-state
+schema version is `2` and the operation-name tuple
+`("resource_page", "eml", "archive_head")` is frozen.
+
+Sanitization is unchanged: publisher emails, contact telephone numbers,
+cookies, tokens, and complete official response bodies are not persisted
+by any journal transition. Response bodies remain in process memory only
+for the duration of a single operation; the journal records their byte
+count and SHA-256 only.
+
+A final `metadata-verification.json` may only be emitted when every
+operation reaches `parse_succeeded` and cross-source consistency succeeds;
+partial evidence sets a `"final": false` flag on the state journal and
+cannot be mistaken for the completed artifact.
+
+`replay_journal_state(state)` reconstructs a read-only summary from a
+persisted state dictionary. It is deterministic, network-free, and does
+not invoke parsers a second time; it exists so future audits can
+distinguish `parse_succeeded`, `transport_failed`, `parse_failed`, and
+`skipped` operations without touching the wire.
+
+Attempt records remain append-only; attempts 1 and 2 are byte-identical
+under this repair, and archive acquisition remains unauthorized. Stage 2B
+remains incomplete.
+
 ## COL XR acquisition boundary
 
 COL releases must be explicitly pinned because Extended and Base releases are

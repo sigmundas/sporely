@@ -31,6 +31,24 @@ ZIP_TYPES = {
 }
 USER_AGENT = "Sporely-Taxonomy-Metadata/1"
 
+EML_EXPECTED_ROOT = "eml:eml"
+MAX_XML_PROLOG_BYTES = 4096
+MAX_XML_DECLARATION_BYTES = 256
+MAX_DOCTYPE_BYTES = 256
+MAX_COMMENT_BYTES = 4096
+_NAME_RE = rb"[A-Za-z_][A-Za-z0-9_.\-]*(?::[A-Za-z_][A-Za-z0-9_.\-]*)?"
+_DOCTYPE_ROOT_RE = re.compile(rb"^(" + _NAME_RE + rb")\s*$")
+_ROOT_ELEMENT_RE = re.compile(rb"<(" + _NAME_RE + rb")(?:[\s/>]|$)")
+_XML_DECL_ENCODING_RE = re.compile(rb"""encoding\s*=\s*['"]([^'"]{1,64})['"]""")
+_XML_DECL_VERSION_RE = re.compile(rb"""version\s*=\s*['"]([^'"]{1,16})['"]""")
+_UTF8_BOM = b"\xef\xbb\xbf"
+_FORBIDDEN_BOMS = (
+    b"\xff\xfe\x00\x00",  # UTF-32 LE
+    b"\x00\x00\xfe\xff",  # UTF-32 BE
+    b"\xff\xfe",          # UTF-16 LE
+    b"\xfe\xff",          # UTF-16 BE
+)
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -219,12 +237,173 @@ def parse_resource_html(body: bytes, proposal: SourceProposal) -> dict[str, Any]
     }
 
 
+def validate_xml_prolog(body: bytes, expected_root: str = EML_EXPECTED_ROOT) -> dict[str, Any]:
+    """Bounded, declaration-aware inspection of the XML prolog.
+
+    Never resolves, loads, or fetches an external DTD, entity, or resource. Raises
+    ``AcquisitionError`` on any policy violation. The raw body is not modified.
+    """
+    if not body:
+        raise AcquisitionError("XML body is empty")
+    for bom in _FORBIDDEN_BOMS:
+        if body.startswith(bom):
+            raise AcquisitionError("XML encoding must be UTF-8; UTF-16/UTF-32 BOM rejected")
+    start = 3 if body.startswith(_UTF8_BOM) else 0
+    window_end = min(len(body), start + MAX_XML_PROLOG_BYTES)
+    if b"\x00" in body[start:window_end]:
+        raise AcquisitionError("NUL byte in XML prolog")
+
+    cursor = start
+    has_xml_declaration = False
+    xml_declaration_encoding: str | None = None
+    xml_declaration_version: str | None = None
+    has_doctype = False
+    doctype_root: str | None = None
+    root_element_name: str | None = None
+    accepted_comments = 0
+
+    def _at(index: int, needle: bytes) -> bool:
+        return body[index : index + len(needle)] == needle
+
+    while True:
+        # No whitespace is legally accepted before the XML declaration.
+        if has_xml_declaration or cursor > start:
+            while cursor < window_end and body[cursor : cursor + 1] in (b" ", b"\t", b"\n", b"\r"):
+                cursor += 1
+        if cursor >= window_end:
+            raise AcquisitionError("no root element found within bounded XML prolog")
+        if body[cursor : cursor + 1] != b"<":
+            raise AcquisitionError("unexpected content in XML prolog")
+
+        if _at(cursor, b"<?xml") and (
+            cursor + 5 >= len(body) or body[cursor + 5 : cursor + 6] in (b" ", b"\t", b"\n", b"\r")
+        ):
+            if has_xml_declaration:
+                raise AcquisitionError("multiple XML declarations")
+            if cursor != start:
+                raise AcquisitionError("XML declaration is not at the prolog start")
+            terminator = body.find(b"?>", cursor + 5, cursor + MAX_XML_DECLARATION_BYTES)
+            if terminator < 0:
+                raise AcquisitionError("malformed or unterminated XML declaration")
+            declaration = body[cursor + 5 : terminator]
+            if b"<" in declaration or b">" in declaration:
+                raise AcquisitionError("XML declaration contains illegal characters")
+            version_match = _XML_DECL_VERSION_RE.search(declaration)
+            if not version_match or version_match.group(1) not in (b"1.0", b"1.1"):
+                raise AcquisitionError("XML declaration requires version 1.0 or 1.1")
+            xml_declaration_version = version_match.group(1).decode("ascii")
+            encoding_match = _XML_DECL_ENCODING_RE.search(declaration)
+            if encoding_match:
+                encoding_value = encoding_match.group(1).decode("ascii", errors="replace")
+                if encoding_value.casefold() not in {"utf-8", "utf8"}:
+                    raise AcquisitionError(
+                        f"XML declaration encoding must be UTF-8: {encoding_value!r}"
+                    )
+                xml_declaration_encoding = encoding_value
+            has_xml_declaration = True
+            cursor = terminator + 2
+            continue
+
+        if _at(cursor, b"<?"):
+            raise AcquisitionError("processing instructions other than the XML declaration are not permitted")
+
+        if _at(cursor, b"<!--"):
+            end = body.find(b"-->", cursor + 4, cursor + 4 + MAX_COMMENT_BYTES)
+            if end < 0:
+                raise AcquisitionError("malformed or unterminated XML comment")
+            interior = body[cursor + 4 : end]
+            if b"--" in interior:
+                raise AcquisitionError("XML comment must not contain `--`")
+            accepted_comments += 1
+            cursor = end + 3
+            continue
+
+        if _at(cursor, b"<!DOCTYPE"):
+            if has_doctype:
+                raise AcquisitionError("multiple DOCTYPE declarations are not permitted")
+            if root_element_name is not None:
+                raise AcquisitionError("DOCTYPE declaration after the root element is not permitted")
+            greater = body.find(b">", cursor)
+            bracket = body.find(b"[", cursor, greater if greater >= 0 else cursor + MAX_DOCTYPE_BYTES)
+            if bracket >= 0 and bracket < (greater if greater >= 0 else bracket + 1):
+                raise AcquisitionError("DOCTYPE internal subset (`[`) is not permitted")
+            if greater < 0 or greater - cursor > MAX_DOCTYPE_BYTES:
+                raise AcquisitionError("DOCTYPE declaration is missing or exceeds maximum length")
+            declaration_body = body[cursor + len(b"<!DOCTYPE") : greater]
+            if not declaration_body.startswith((b" ", b"\t", b"\n", b"\r")):
+                raise AcquisitionError("DOCTYPE requires whitespace after the keyword")
+            declaration_body = declaration_body.strip()
+            if not declaration_body:
+                raise AcquisitionError("DOCTYPE root name is missing")
+            if re.search(rb"\b(SYSTEM|PUBLIC)\b", declaration_body):
+                raise AcquisitionError("DOCTYPE external identifier (SYSTEM/PUBLIC) is not permitted")
+            if b"[" in declaration_body or b"]" in declaration_body:
+                raise AcquisitionError("DOCTYPE internal subset (`[`) is not permitted")
+            root_match = _DOCTYPE_ROOT_RE.match(declaration_body)
+            if not root_match:
+                raise AcquisitionError("DOCTYPE root name is malformed or has trailing content")
+            root_name = root_match.group(1).decode("ascii")
+            if root_name != expected_root:
+                raise AcquisitionError(
+                    f"DOCTYPE root name must be {expected_root!r}, got {root_name!r}"
+                )
+            has_doctype = True
+            doctype_root = root_name
+            cursor = greater + 1
+            continue
+
+        if _at(cursor, b"<!ENTITY"):
+            raise AcquisitionError("ENTITY declarations are not permitted")
+        if _at(cursor, b"<!NOTATION"):
+            raise AcquisitionError("NOTATION declarations are not permitted")
+        if _at(cursor, b"<!ATTLIST"):
+            raise AcquisitionError("ATTLIST declarations are not permitted outside an accepted DOCTYPE subset")
+        if _at(cursor, b"<!ELEMENT"):
+            raise AcquisitionError("ELEMENT declarations are not permitted outside an accepted DOCTYPE subset")
+        if _at(cursor, b"<!["):
+            raise AcquisitionError("CDATA sections and conditional sections are not permitted in the prolog")
+        if _at(cursor, b"<!"):
+            raise AcquisitionError("unknown XML markup declaration")
+
+        # Root element start.
+        window = body[cursor : cursor + 128]
+        root_match = _ROOT_ELEMENT_RE.match(window)
+        if not root_match:
+            raise AcquisitionError("malformed root element")
+        root_element_name = root_match.group(1).decode("ascii")
+        if root_element_name != expected_root:
+            raise AcquisitionError(
+                f"root element must be {expected_root!r}, got {root_element_name!r}"
+            )
+        break
+
+    return {
+        "prolog_bytes_scanned": cursor - start,
+        "utf8_bom": start == 3,
+        "has_xml_declaration": has_xml_declaration,
+        "xml_declaration_version": xml_declaration_version,
+        "xml_declaration_encoding": xml_declaration_encoding,
+        "has_doctype": has_doctype,
+        "doctype_root": doctype_root,
+        "expected_root": expected_root,
+        "root_element": root_element_name,
+        "accepted_comments": accepted_comments,
+    }
+
+
 def parse_eml(body: bytes, proposal: SourceProposal) -> dict[str, Any]:
-    upper = body.upper()
-    if any(token in upper for token in (b"<!DOCTYPE", b"<!ENTITY", b"SYSTEM", b"PUBLIC")):
-        raise AcquisitionError("unsafe EML declaration")
+    prolog = validate_xml_prolog(body, EML_EXPECTED_ROOT)
+    # Belt-and-braces: reject any residual external-resource declaration outside
+    # the bounded window before invoking the parser. The prolog validator already
+    # forbids these constructs before the root element; this check catches an
+    # attacker who smuggles them inside the root element's content.
+    if re.search(rb"<!ENTITY|<!DOCTYPE", body[prolog["prolog_bytes_scanned"] :], re.I):
+        raise AcquisitionError("ENTITY or DOCTYPE declaration inside XML content is not permitted")
+    if b"xi:include" in body.lower():
+        raise AcquisitionError("XInclude directives are not permitted")
+    parser = ElementTree.XMLParser()
     try:
-        root = ElementTree.fromstring(body)
+        root = ElementTree.fromstring(body, parser=parser)
     except ElementTree.ParseError as exc:
         raise AcquisitionError(f"malformed EML XML: {exc}") from exc
     values: dict[str, list[str]] = {}
@@ -250,6 +429,7 @@ def parse_eml(body: bytes, proposal: SourceProposal) -> dict[str, Any]:
         "edition": next(iter(values.get("edition", [])), None),
         "package_id": package_id,
         "uuid_present": proposal.dataset_uuid in all_text or package_id == proposal.dataset_uuid,
+        "prolog": prolog,
     }
 
 
@@ -284,6 +464,55 @@ def _comparison(expected: Any, observed: Any, source: str) -> dict[str, Any]:
     }
 
 
+VERIFICATION_STATE_SCHEMA = 2
+OPERATION_NAMES = ("resource_page", "eml", "archive_head")
+
+
+def _transport_evidence(response: Response) -> dict[str, Any]:
+    return {
+        "method": response.method,
+        "requested_url": response.requested_url,
+        "final_url": response.final_url,
+        "redirect_chain": list(response.redirect_urls),
+        "status": response.status,
+        "content_type": _media_type(response.headers),
+        "body_bytes": len(response.body),
+        "body_sha256": hashlib.sha256(response.body).hexdigest() if response.body else None,
+    }
+
+
+def _new_state(proposal: SourceProposal, request: NorTaxaRequest, policy: MetadataPolicy,
+               verified_at: str) -> dict[str, Any]:
+    return {
+        "verification_state_schema_version": VERIFICATION_STATE_SCHEMA,
+        "proposal_sha256": proposal.canonical_sha256,
+        "request_sha256": request.request_sha256,
+        "started_at": verified_at,
+        "tool": {"name": "nortaxa_metadata.py", "version": 1},
+        "authorization": {
+            "metadata_only": True,
+            "archive_get_authorized": False,
+            "acquisition_approval_created": False,
+            "maximum_cumulative_body_bytes": policy.cumulative_max_bytes,
+        },
+        "operations": {name: {"status": "pending"} for name in OPERATION_NAMES},
+        "cumulative_body_bytes": 0,
+        "verdict": None,
+        "finished_at": None,
+        "final": False,
+    }
+
+
+def _mark_skipped(state: dict[str, Any], starting_after: str) -> None:
+    remaining = OPERATION_NAMES[OPERATION_NAMES.index(starting_after) + 1 :]
+    for name in remaining:
+        if state["operations"][name]["status"] == "pending":
+            state["operations"][name] = {
+                "status": "skipped",
+                "reason": f"aborted after {starting_after}",
+            }
+
+
 def verify(
     proposal: SourceProposal,
     request: NorTaxaRequest,
@@ -292,9 +521,18 @@ def verify(
     policy: MetadataPolicy,
     verified_at: str | None = None,
     response_recorder: Callable[[Response], None] | None = None,
+    journal_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, bytes]]:
     responses: list[Response] = []
     remaining = policy.cumulative_max_bytes
+    started = verified_at or utc_now()
+    state = _new_state(proposal, request, policy, started)
+
+    def emit() -> None:
+        if journal_sink is not None:
+            journal_sink(state)
+
+    emit()
 
     def perform(method: str, endpoint: str, allowed_types: set[str]) -> Response:
         nonlocal remaining
@@ -319,12 +557,50 @@ def verify(
             response_recorder(response)
         return response
 
-    resource = perform("GET", proposal.resource_page, HTML_TYPES)
-    resource_values = parse_resource_html(resource.body, proposal)
-    eml = perform("GET", proposal.eml_endpoint, XML_TYPES)
-    eml_values = parse_eml(eml.body, proposal)
-    head_response = perform("HEAD", proposal.archive_endpoint, ZIP_TYPES)
-    head = normalize_head(head_response, proposal, policy)
+    def run_step(name: str, method: str, endpoint: str, allowed_types: set[str],
+                 parser: Callable[[Response], dict[str, Any]]) -> dict[str, Any]:
+        op = state["operations"][name]
+        try:
+            response = perform(method, endpoint, allowed_types)
+        except AcquisitionError as exc:
+            op.update({
+                "status": "transport_failed",
+                "error": {"type": type(exc).__name__, "message": str(exc), "phase": "transport"},
+            })
+            state["cumulative_body_bytes"] = policy.cumulative_max_bytes - remaining
+            _mark_skipped(state, name)
+            emit()
+            raise
+        op.update({"status": "transport_succeeded", "transport": _transport_evidence(response)})
+        state["cumulative_body_bytes"] = policy.cumulative_max_bytes - remaining
+        emit()
+        try:
+            parsed = parser(response)
+        except AcquisitionError as exc:
+            op.update({
+                "status": "parse_failed",
+                "error": {"type": type(exc).__name__, "message": str(exc), "phase": "parse"},
+            })
+            _mark_skipped(state, name)
+            emit()
+            raise
+        op["status"] = "parse_succeeded"
+        op["parsed"] = parsed
+        emit()
+        return parsed
+
+    resource_values = run_step(
+        "resource_page", "GET", proposal.resource_page, HTML_TYPES,
+        lambda r: parse_resource_html(r.body, proposal),
+    )
+    eml_values = run_step(
+        "eml", "GET", proposal.eml_endpoint, XML_TYPES,
+        lambda r: parse_eml(r.body, proposal),
+    )
+    head = run_step(
+        "archive_head", "HEAD", proposal.archive_endpoint, ZIP_TYPES,
+        lambda r: normalize_head(r, proposal, policy),
+    )
     comparisons = {
         "resource_key": _comparison(proposal.resource_key, proposal.resource_key if resource_values["resource_key_present"] else None, "resource_page"),
         "title": _comparison(proposal.title, proposal.title if resource_values["title_present"] else eml_values["title"], "resource_page_or_eml"),
@@ -381,8 +657,48 @@ def verify(
         "resource-page.sanitized.json": json.dumps(resource_values, ensure_ascii=False, sort_keys=True, indent=2).encode() + b"\n",
         "eml.sanitized.json": json.dumps(eml_values, ensure_ascii=False, sort_keys=True, indent=2).encode() + b"\n",
     }
+    state["verdict"] = verdict
+    state["finished_at"] = utc_now()
+    state["comparisons"] = comparisons
+    state["mismatches"] = mismatches
+    state["unknown_fields"] = evidence["unknown_fields"]
+    state["final"] = verdict == "passed"
+    emit()
     return evidence, fixtures
 
 
 def evidence_sha256(evidence: dict[str, Any]) -> str:
     return sha256_json(evidence)
+
+
+def replay_journal_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild a read-only summary of an on-disk verification-state journal.
+
+    Deterministic and network-free. Never resolves external resources or invokes
+    parsers a second time. Returns a summary that distinguishes transport
+    success, parse success, absent-from-source values, and unavailable values
+    (never reached because an earlier operation failed).
+    """
+    if state.get("verification_state_schema_version") != VERIFICATION_STATE_SCHEMA:
+        raise AcquisitionError(
+            f"unsupported verification-state schema: {state.get('verification_state_schema_version')!r}"
+        )
+    operations = state.get("operations") or {}
+    summary: dict[str, Any] = {
+        "final": bool(state.get("final")),
+        "verdict": state.get("verdict"),
+        "operations": {},
+    }
+    for name in OPERATION_NAMES:
+        op = operations.get(name) or {"status": "pending"}
+        entry = {"status": op.get("status", "pending")}
+        if "transport" in op:
+            entry["transport"] = op["transport"]
+        if op.get("status") == "parse_succeeded":
+            entry["parsed_available"] = True
+        elif op.get("status") in {"transport_failed", "parse_failed"}:
+            entry["error"] = op.get("error")
+        elif op.get("status") == "skipped":
+            entry["reason"] = op.get("reason")
+        summary["operations"][name] = entry
+    return summary

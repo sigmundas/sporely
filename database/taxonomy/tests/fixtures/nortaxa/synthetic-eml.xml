@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<eml packageId="a6c6cead-b5ce-4a4e-8cf5-1542ba708dec">
+<eml:eml xmlns:eml="eml://ecoinformatics.org/eml-2.1.1" packageId="a6c6cead-b5ce-4a4e-8cf5-1542ba708dec">
   <dataset>
     <alternateIdentifier>artsnavnebase</alternateIdentifier>
     <title>Nortaxa (Artsnavnebasen)</title>
@@ -8,4 +8,4 @@
     <intellectualRights><para>CC-BY 4.0</para></intellectualRights>
     <edition>1.284</edition>
   </dataset>
-</eml>
+</eml:eml>
