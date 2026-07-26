@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from contextlib import ExitStack
 import hashlib
 from pathlib import Path
@@ -31,7 +31,7 @@ from PySide6.QtCore import (
     QEvent,
     QSize,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImageReader, QColor, QIcon, QFont
+from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QImage, QImageReader, QColor, QIcon, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractSpinBox,
@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QStackedLayout,
     QSizePolicy,
     QSplitter,
@@ -74,6 +75,8 @@ from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
     RAW_FORMATS,
     SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
+    SETTING_RAW_PROCESSING_BRIGHT_CUTOFF,
+    SETTING_RAW_PROCESSING_DARK_CUTOFF,
 )
 from database.schema import (
     load_objectives,
@@ -103,14 +106,22 @@ from utils.exif_reader import get_image_metadata, get_exif_data, get_gps_coordin
 from utils.heic_converter import maybe_convert_heic
 from utils.raw_render import (
     apply_auto_level_bounds_to_settings,
+    RAW_PREVIEW_MAX_DIM,
     RawRenderSettings,
     build_raw_processing_metadata,
     render_raw_image,
     render_raw_preview_proxy_rgb,
     render_raw_sampling_rgb,
     save_raw_preview_jpeg,
+    _resize_rgb_preview,
 )
-from utils.image_processing_pipeline import apply_post_decode_processing, compute_auto_level_bounds
+from utils.image_processing_pipeline import (
+    apply_post_decode_processing,
+    apply_post_decode_processing_fast,
+    compute_auto_level_bounds,
+    compute_pre_levels_working_rgb,
+    prepare_post_decode_fast_inputs,
+)
 from utils.raw_white_balance import estimate_white_balance_from_background
 
 try:  # pragma: no cover - optional capture-time helper
@@ -124,7 +135,41 @@ def _is_raw_path(path: str | None) -> bool:
         return False
     return Path(path).suffix.lower() in set(RAW_FORMATS)
 
-from .image_gallery_widget import ImageGalleryWidget
+
+# Enable with SPORELY_DEBUG_RAW_TIMING=1 to print stage-by-stage timings
+# for every RAW preview refresh in Prepare Images. Uses the same env var
+# and [raw-timing] prefix as Live Lab / the render pipeline so the two
+# streams can be compared side-by-side.
+_RAW_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+
+
+def _raw_prepare_timing(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _RAW_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if detail:
+        print(f"[raw-timing] prepare {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] prepare {stage}: {elapsed_ms:.1f} ms")
+
+
+@dataclass
+class _RawPreviewCacheEntry:
+    """Per-source cache: resized proxy + WB-processed fast-pipeline inputs
+    keyed by WB gains + histogram (keyed by WB gains — the pre-levels
+    working buffer shifts when custom multipliers change). Mirrors Live
+    Lab's _RawPreviewCacheEntry so slider events reuse the same numpy
+    arrays across frames."""
+    raw_rgb: np.ndarray
+    preview_rgb: np.ndarray | None = None
+    wb_processed: dict = field(default_factory=dict)
+    combined_histogram: np.ndarray | None = None
+    combined_histogram_key: tuple | None = None
+
+
+_RAW_PREVIEW_WB_CACHE_MAX = 6
+
+from .image_gallery_widget import ImageGalleryWidget, _microscope_tag_from_image
 from .combo_alerts import update_combo_alert, update_combo_alerts
 from .raw_processing_controls import RawProcessingControls
 from .zoomable_image_widget import ZoomableImageLabel
@@ -266,6 +311,7 @@ class ImageImportResult:
     mount_medium: Optional[str] = None
     stain: Optional[str] = None
     sample_type: Optional[str] = None
+    sample_source: Optional[str] = None
     notes: Optional[str] = None
     captured_at: Optional[QDateTime] = None
     gps_latitude: Optional[float] = None
@@ -329,6 +375,7 @@ def image_import_result_from_candidate(
     mount_medium: str | None,
     stain: str | None,
     sample_type: str | None,
+    sample_source: str | None,
     resize_to_optimal: bool,
     store_original: bool,
 ) -> ImageImportResult:
@@ -364,6 +411,7 @@ def image_import_result_from_candidate(
         mount_medium=mount_medium,
         stain=stain,
         sample_type=sample_type,
+        sample_source=sample_source,
         captured_at=captured_at,
         gps_latitude=gps_latitude,
         gps_longitude=gps_longitude,
@@ -735,6 +783,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         "mount": DatabaseTerms.MOUNT_MEDIA[0],
         "stain": DatabaseTerms.STAIN_TYPES[0],
         "sample": DatabaseTerms.SAMPLE_TYPES[0],
+        "sample_source": DatabaseTerms.SAMPLE_SOURCES[0],
     }
 
     def __init__(
@@ -759,6 +808,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.mount_options = self._load_tag_options("mount")
         self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
+        self.sample_source_options = self._load_tag_options("sample_source")
         self.contrast_default = self._preferred_tag_value(
             "contrast",
             self.contrast_options,
@@ -778,6 +828,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "sample",
             self.sample_options,
             DatabaseTerms.SAMPLE_TYPES[0],
+        )
+        self.sample_source_default = self._preferred_tag_value(
+            "sample_source",
+            self.sample_source_options,
+            DatabaseTerms.SAMPLE_SOURCES[0],
         )
         self.resize_to_optimal_default = bool(
             SettingsDB.get_setting("resize_to_optimal_sampling", False)
@@ -822,12 +877,25 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._observation_lon: float | None = observation_lon
         self._observation_source_index: int | None = None
         self._converted_import_paths: set[str] = set()
-        self._raw_preview_proxy_cache: dict[tuple[str, int, int, str], np.ndarray] = {}
+        # Cache of decoded RAW proxies keyed by (path, mtime, size, decode
+        # mode). Stores either the raw np.ndarray (legacy) or a full
+        # _RawPreviewCacheEntry with resized preview + WB-processed inputs
+        # reused across slider events. See _raw_preview_cache_entry.
+        self._raw_preview_proxy_cache: dict = {}
         self._pending_raw_preview_result: ImageImportResult | None = None
         self._raw_preview_refresh_timer = QTimer(self)
         self._raw_preview_refresh_timer.setSingleShot(True)
-        self._raw_preview_refresh_timer.setInterval(250)
+        # Match Live Lab's snappy sliders: ~24ms debounce means one preview
+        # per frame (60 Hz) — the fast pipeline + in-memory pixmap keeps up.
+        self._raw_preview_refresh_timer.setInterval(24)
         self._raw_preview_refresh_timer.timeout.connect(self._flush_pending_raw_preview)
+        # Disk-save of the JPEG derivative is decoupled from the display
+        # refresh so writing bytes doesn't block interactive scrubbing.
+        self._raw_preview_disk_save_timer = QTimer(self)
+        self._raw_preview_disk_save_timer.setSingleShot(True)
+        self._raw_preview_disk_save_timer.setInterval(300)
+        self._raw_preview_disk_save_timer.timeout.connect(self._flush_raw_preview_disk_save)
+        self._raw_preview_disk_save_target: ImageImportResult | None = None
         self._accepted = False
         self._close_cleanup_done = False
         self._setting_from_image_source = False
@@ -848,6 +916,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._continue_to_observation_details = bool(continue_to_observation_details)
         self._raw_copied_settings: dict | None = None
         self._dialog_gallery_splitter_syncing = False
+        # Any user-driven change (metadata, RAW settings, resize toggle,
+        # notes …) flips this to True and re-labels the Close button as
+        # "Save changes" so it's clear the click will persist edits.
+        self._is_dirty = False
 
         self._build_ui()
         self._setup_drop_targets()
@@ -948,13 +1020,27 @@ class ImageImportDialog(GeometryMixin, QDialog):
         main_layout.setSpacing(8)
 
         self.left_panel = self._build_left_panel()
-        self.left_panel.setMinimumWidth(320)
-        self.left_panel.setMaximumWidth(460)
         self.left_panel.setStyleSheet(
             "QPushButton { padding: 4px 8px; }"
             "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { padding: 4px 6px; }"
         )
-        self.left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        # Wrap the sidebar in a scroll area so long content (RAW controls +
+        # curve preview + notes) doesn't overflow when the dialog is short.
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.left_scroll.setFrameShape(QFrame.NoFrame)
+        self.left_scroll.setWidget(self.left_panel)
+        self.left_scroll.setMinimumWidth(320)
+        self.left_scroll.setMaximumWidth(460)
+        self.left_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        # Give the inner panel a sensible minimum width matching the scroll
+        # area so children (segmented selectors, combos) size the same way
+        # as before the scroll wrapper existed.
+        self.left_panel.setMinimumWidth(320)
 
         self.gallery = ImageGalleryWidget(
             self.tr("Images"),
@@ -964,6 +1050,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             min_height=125,
             default_height=175,
             thumbnail_size=110,
+            delete_menu_label_single=self.tr("Remove from staging"),
+            delete_menu_label_multi=self.tr("Remove selected from staging"),
         )
         self.gallery.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.gallery.set_reorderable(True)
@@ -971,7 +1059,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.gallery.setMaximumHeight(self._dialog_gallery_max_height())
         self.gallery.imageClicked.connect(self._on_gallery_clicked)
         self.gallery.selectionChanged.connect(self._on_gallery_selection_changed)
-        self.gallery.deleteRequested.connect(self._on_gallery_delete_requested)
+        # Unified delete signal: single X-icon fires with a one-element list
+        # (delegated to the single-item handler), menu multi fires with the
+        # full selection (delegated to the same shortcut handler).
+        self.gallery.deleteImagesRequested.connect(self._on_gallery_delete_images_requested)
         self.gallery.itemsReordered.connect(self._on_gallery_items_reordered)
         self.delete_shortcut = QShortcut(QKeySequence.Delete, self)
         self.delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
@@ -1036,7 +1127,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
-        self.main_splitter.addWidget(self.left_panel)
+        self.main_splitter.addWidget(self.left_scroll)
         self.main_splitter.addWidget(self.dialog_gallery_splitter)
         self.main_splitter.addWidget(self.details_panel)
         self.main_splitter.setStretchFactor(0, 0)
@@ -1093,6 +1184,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         bottom_row.addWidget(self.cancel_btn)
 
         next_label = self.tr("Continue") if self._continue_to_observation_details else self.tr("Close")
+        self._next_btn_default_label = next_label
+        self._next_btn_dirty_label = (
+            self.tr("Save and continue") if self._continue_to_observation_details
+            else self.tr("Save changes")
+        )
         self.next_btn = QPushButton(next_label)
         self.next_btn.setMinimumHeight(35)
         self.next_btn.clicked.connect(self._accept_and_close)
@@ -1235,21 +1331,37 @@ class ImageImportDialog(GeometryMixin, QDialog):
         else:
             combo.addItem(text, value)
 
-    def _populate_tag_combo(self, combo, category: str, options: list[str]) -> None:
+    def _populate_tag_combo(
+        self,
+        combo,
+        category: str,
+        options: list[str],
+        *,
+        pill_labels: dict[str, str] | None = None,
+        tooltips: dict[str, str] | None = None,
+    ) -> None:
         combo.clear()
         adder = getattr(self, "_add_choice_item", None)
         for canonical in options:
             if category == "contrast" and canonical == "Not_set":
                 continue
             display = DatabaseTerms.translate(category, canonical)
+            pill_override = (pill_labels or {}).get(canonical)
+            if canonical == "Not_set":
+                pill_text = "—"
+            elif pill_override:
+                pill_text = pill_override
+            else:
+                pill_text = display
+            tooltip = (tooltips or {}).get(canonical) or display
             if callable(adder):
                 adder(
                     combo,
                     display,
                     canonical,
-                    pill_text="—" if canonical == "Not_set" else display,
+                    pill_text=pill_text,
                     color=stain_color(canonical) if category == "stain" else None,
-                    tooltip=display,
+                    tooltip=tooltip,
                 )
             else:
                 combo.addItem(display, canonical)
@@ -1265,6 +1377,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_tag_combo_neutral_display(self.mount_combo, "mount", blank)
         self._set_tag_combo_neutral_display(self.stain_combo, "stain", blank)
         self._set_tag_combo_neutral_display(self.sample_combo, "sample", blank)
+        self._set_tag_combo_neutral_display(
+            self.sample_source_combo, "sample_source", blank
+        )
 
     def _set_combo_tag_value(self, combo, category: str, value: str | None) -> None:
         canonical = self._canonicalize_tag(category, value)
@@ -1339,6 +1454,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 getattr(self, "mount_combo", None),
                 getattr(self, "stain_combo", None),
                 getattr(self, "sample_combo", None),
+                getattr(self, "sample_source_combo", None),
             ):
                 update_combo_alert(combo, alert=False)
             return
@@ -1349,6 +1465,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 getattr(self, "mount_combo", None),
                 getattr(self, "stain_combo", None),
                 getattr(self, "sample_combo", None),
+                getattr(self, "sample_source_combo", None),
             )
         )
 
@@ -1358,6 +1475,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             (self.mount_combo, "mount"),
             (self.stain_combo, "stain"),
             (self.sample_combo, "sample"),
+            (self.sample_source_combo, "sample_source"),
         )
         for combo, _category in combos:
             combo.blockSignals(True)
@@ -1366,6 +1484,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._set_combo_tag_value(self.mount_combo, "mount", self._field_tag_value("mount"))
             self._set_combo_tag_value(self.stain_combo, "stain", self._field_tag_value("stain"))
             self._set_combo_tag_value(self.sample_combo, "sample", self._field_tag_value("sample"))
+            self._set_combo_tag_value(
+                self.sample_source_combo,
+                "sample_source",
+                self._field_tag_value("sample_source"),
+            )
         finally:
             for combo, _category in combos:
                 combo.blockSignals(False)
@@ -1453,7 +1576,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         scale_layout.addWidget(self.scale_warning_label)
         layout.addWidget(self.scale_group)
 
-        # ── Microscope details group (collapsed for field images) ───────────
+        # ── Microscope details (optical path: objective, contrast) ────────────
+        # `micro_settings_group` remains the enable/disable target when the
+        # user marks the row as a field image — see `_update_micro_settings_state`.
         self.micro_settings_group, micro_form = create_section_card(
             self.tr("Microscope"),
             QFormLayout,
@@ -1478,12 +1603,27 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.contrast_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
+        layout.addWidget(self.micro_settings_group)
+
+        # ── Slide / prep (mounted-specimen metadata) ──────────────────────────
+        # Mount medium, stain, specimen condition, and where the material was
+        # sampled from. These live on the slide, not the microscope path.
+        self.slide_prep_group, prep_form = create_section_card(
+            self.tr("Slide / prep"),
+            QFormLayout,
+            body_margins=(8, 8, 8, 8),
+        )
+        self.slide_prep_body = prep_form.parentWidget()
+        prep_form.setSpacing(6)
+        prep_form.setLabelAlignment(Qt.AlignLeft)
+        prep_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
         self.mount_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.mount_combo, "mount", self.mount_options)
         self._set_combo_tag_value(self.mount_combo, "mount", self.mount_default)
         self.mount_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.mount_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Mount:"), self.mount_combo)
+        prep_form.addRow(self.tr("Mount:"), self.mount_combo)
 
         self.stain_combo = AdaptiveChoiceSelector(self, compact=True)
         self.stain_combo.set_unselected_border_visible(False)
@@ -1491,16 +1631,31 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._set_combo_tag_value(self.stain_combo, "stain", self.stain_default)
         self.stain_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.stain_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Stain:"), self.stain_combo)
+        prep_form.addRow(self.tr("Stain:"), self.stain_combo)
 
         self.sample_combo = AdaptiveChoiceSelector(self, compact=True)
         self._populate_tag_combo(self.sample_combo, "sample", self.sample_options)
         self._set_combo_tag_value(self.sample_combo, "sample", self.sample_default)
         self.sample_combo.currentIndexChanged.connect(self._on_settings_changed)
         self.sample_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
-        micro_form.addRow(self.tr("Sample type:"), self.sample_combo)
+        prep_form.addRow(self.tr("Condition:"), self.sample_combo)
 
-        layout.addWidget(self.micro_settings_group)
+        self.sample_source_combo = AdaptiveChoiceSelector(self, compact=True)
+        self._populate_tag_combo(
+            self.sample_source_combo,
+            "sample_source",
+            self.sample_source_options,
+            pill_labels=DatabaseTerms.sample_source_compact_pills(),
+            tooltips=DatabaseTerms.sample_source_compact_tooltips(),
+        )
+        self._set_combo_tag_value(
+            self.sample_source_combo, "sample_source", self.sample_source_default
+        )
+        self.sample_source_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.sample_source_combo.currentIndexChanged.connect(self._update_lab_state_combo_alerts)
+        prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
+
+        layout.addWidget(self.slide_prep_group)
 
         notes_group, notes_layout = create_section_card(
             self.tr("Image note"),
@@ -1599,7 +1754,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.raw_paste_btn.setVisible(False)
         raw_action_layout.addWidget(self.raw_paste_btn)
 
-        raw_action_layout.addStretch(1)
+        # No leading/trailing stretch: the frame is centered as a whole via
+        # _position_raw_convert_button so the buttons sit compactly.
         self.raw_action_frame.adjustSize()
         self.raw_action_frame.hide()
         self.raw_action_frame.raise_()
@@ -1888,23 +2044,37 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "mount": self._get_combo_tag_value(self.mount_combo, "mount"),
             "stain": self._get_combo_tag_value(self.stain_combo, "stain"),
             "sample": self._get_combo_tag_value(self.sample_combo, "sample"),
+            "sample_source": self._get_combo_tag_value(
+                self.sample_source_combo, "sample_source"
+            ),
         }
         self.contrast_options = self._load_tag_options("contrast")
         self.mount_options = self._load_tag_options("mount")
         self.stain_options = self._load_tag_options("stain")
         self.sample_options = self._load_tag_options("sample")
+        self.sample_source_options = self._load_tag_options("sample_source")
         self.contrast_default = self.contrast_options[0] if self.contrast_options else DatabaseTerms.CONTRAST_METHODS[0]
         self.mount_default = self.mount_options[0] if self.mount_options else DatabaseTerms.MOUNT_MEDIA[0]
         self.stain_default = self.stain_options[0] if self.stain_options else DatabaseTerms.STAIN_TYPES[0]
         self.sample_default = self.sample_options[0] if self.sample_options else DatabaseTerms.SAMPLE_TYPES[0]
+        self.sample_source_default = (
+            self.sample_source_options[0]
+            if self.sample_source_options
+            else DatabaseTerms.SAMPLE_SOURCES[0]
+        )
         for category, combo in (
             ("contrast", self.contrast_combo),
             ("mount", self.mount_combo),
             ("stain", self.stain_combo),
             ("sample", self.sample_combo),
+            ("sample_source", self.sample_source_combo),
         ):
             options = getattr(self, f"{category}_options")
-            self._populate_tag_combo(combo, category, options)
+            populate_kwargs: dict = {}
+            if category == "sample_source":
+                populate_kwargs["pill_labels"] = DatabaseTerms.sample_source_compact_pills()
+                populate_kwargs["tooltips"] = DatabaseTerms.sample_source_compact_tooltips()
+            self._populate_tag_combo(combo, category, options, **populate_kwargs)
             value = current_values.get(category)
             index = combo.findData(value) if value is not None else -1
             if index < 0:
@@ -2285,16 +2455,26 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _update_action_buttons_state(self) -> None:
         if not hasattr(self, "next_btn") or not hasattr(self, "cancel_btn"):
             return
+        dirty = bool(getattr(self, "_is_dirty", False))
         if self._continue_to_observation_details:
             self.cancel_btn.setVisible(True)
-            self.next_btn.setText(self.tr("Continue"))
+            self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
+            self.next_btn.setText(
+                self._next_btn_dirty_label if dirty else self._next_btn_default_label
+            )
             return
+        # Edit mode: always expose a discard action so the user can bail out
+        # without saving. When there's nothing to save, the button labels
+        # collapse to "Cancel" / "Close" which are effectively equivalent.
+        self.cancel_btn.setVisible(True)
         if self._has_pending_resize_operations():
-            self.cancel_btn.setVisible(True)
+            self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
             self.next_btn.setText(self.tr("Apply"))
-        else:
-            self.cancel_btn.setVisible(False)
-            self.next_btn.setText(self.tr("Close"))
+            return
+        self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Close"))
+        self.next_btn.setText(
+            self._next_btn_dirty_label if dirty else self._next_btn_default_label
+        )
 
     def _update_micro_settings_state(self, enable: bool | None = None) -> None:
         if not hasattr(self, "contrast_combo"):
@@ -2314,8 +2494,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.micro_settings_body.setVisible(bool(enable))
             except Exception:
                 pass
+        if hasattr(self, "slide_prep_body"):
+            try:
+                self.slide_prep_body.setVisible(bool(enable))
+            except Exception:
+                pass
         if hasattr(self, "micro_settings_group"):
             self.micro_settings_group.setEnabled(enable)
+        if hasattr(self, "slide_prep_group"):
+            self.slide_prep_group.setEnabled(enable)
         self._sync_field_tag_display(not enable and bool(getattr(self, "field_radio", None) and self.field_radio.isChecked()))
 
     def _sync_scale_bar_length_unit_for_image_type(self) -> None:
@@ -3891,8 +4078,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
             field_mount = self._field_tag_value("mount")
             field_stain = self._field_tag_value("stain")
             field_sample = self._field_tag_value("sample")
+            field_sample_source = self._field_tag_value("sample_source")
         else:
             field_contrast = field_mount = field_stain = field_sample = None
+            field_sample_source = None
         for candidate in candidates:
             prepared_batch = prepare_image_import_candidates(
                 [candidate],
@@ -3907,6 +4096,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 mount_medium=field_mount,
                 stain=field_stain,
                 sample_type=field_sample,
+                sample_source=field_sample_source,
                 resize_to_optimal=self.resize_to_optimal_default,
                 store_original=self.store_original_default,
             )
@@ -4094,6 +4284,21 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._update_ai_controls_state()
             self._update_ai_table()
             self._update_ai_overlay()
+        self._update_import_gallery_multi_hint(len(self.selected_indices))
+
+    def _update_import_gallery_multi_hint(self, selected_count: int) -> None:
+        active = int(selected_count or 0) > 1
+        previous = bool(getattr(self, "_import_multi_hint_active", False))
+        if active == previous:
+            return
+        self._import_multi_hint_active = active
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
 
     @staticmethod
     def _image_result_key(result: ImageImportResult):
@@ -4525,25 +4730,57 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self.objective_combo.setCurrentIndex(idx)
         else:
             self.objective_combo.setCurrentIndex(0)
+        # Prefill policy for the tag combos when loading the currently-
+        # selected image into the form:
+        #
+        #   * If the row has a stored value, show it. Faithful to DB.
+        #   * If the row has no stored value AND this is a freshly-imported
+        #     new microscope image (no image_id yet), fall back to the
+        #     "last used" default from settings — that convenience is why
+        #     `_preferred_tag_value` exists.
+        #   * If the row has no stored value AND the image already exists
+        #     in the DB (image_id set → this is an Edit-Observation reload),
+        #     show the neutral "Not_set" placeholder so the UI reflects what
+        #     the DB and cloud actually hold. Prefilling with `last_used_*`
+        #     here was the misleading UX that made obs 631 appear to have
+        #     sample_source = "Spore print" in Prepare Images while the DB
+        #     column (and the cloud row) were still NULL.
+        is_new_image = not result.image_id
+
+        def _load_value(result_value, default, category):
+            if result_value:
+                return result_value
+            if not is_micro:
+                return self._field_tag_value(category)
+            if is_new_image:
+                return default
+            neutrals = DatabaseTerms.default_values(category)
+            return neutrals[0] if neutrals else None
+
         self._set_combo_tag_value(
             self.contrast_combo,
             "contrast",
-            result.contrast or (self.contrast_default if is_micro else self._field_tag_value("contrast")),
+            _load_value(result.contrast, self.contrast_default, "contrast"),
         )
         self._set_combo_tag_value(
             self.mount_combo,
             "mount",
-            result.mount_medium or (self.mount_default if is_micro else self._field_tag_value("mount")),
+            _load_value(result.mount_medium, self.mount_default, "mount"),
         )
         self._set_combo_tag_value(
             self.stain_combo,
             "stain",
-            result.stain or (self.stain_default if is_micro else self._field_tag_value("stain")),
+            _load_value(result.stain, self.stain_default, "stain"),
         )
         self._set_combo_tag_value(
             self.sample_combo,
             "sample",
-            result.sample_type or (self.sample_default if is_micro else self._field_tag_value("sample")),
+            _load_value(result.sample_type, self.sample_default, "sample"),
+        )
+        self._set_combo_tag_value(
+            self.sample_source_combo,
+            "sample_source",
+            _load_value(result.sample_source, self.sample_source_default, "sample_source"),
         )
         if hasattr(self, "image_note_input"):
             self.image_note_input.blockSignals(True)
@@ -4572,6 +4809,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         if getattr(self, "_loading_form", False):
             return
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         sender = self.sender()
         action = None
         if sender is self.objective_combo:
@@ -4588,8 +4828,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
             action = "stain"
         elif sender is self.sample_combo:
             action = "sample"
+        elif sender is self.sample_source_combo:
+            action = "sample_source"
         elif sender is self.image_note_input:
             action = "notes"
+            self._notes_mixed = False
         elif sender in (self.field_radio, self.micro_radio, self.image_type_group):
             action = "image_type"
             self._sync_scale_bar_length_unit_for_image_type()
@@ -4607,6 +4850,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if getattr(self, "_setting_from_image_source", False):
             return
         self._setting_from_image_source = False
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         indices = self.selected_indices or [self.selected_index]
         self._apply_metadata_to_indices(indices)
 
@@ -4666,20 +4912,32 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.custom_scale = self._resolve_selected_field_scale_value(field_scale_key)
         else:
             result.custom_scale = None
+        objective_mixed = getattr(self.objective_combo, "is_mixed", lambda: False)()
         if result.image_type == "microscope":
-            result.objective = selected_objective or None
+            if not objective_mixed:
+                result.objective = selected_objective or None
         else:
             result.objective = None
-        result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
-        result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
-        result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
-        result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
-        result.notes = self._current_image_note_text()
+        if not getattr(self.contrast_combo, "is_mixed", lambda: False)():
+            result.contrast = self._get_combo_tag_value(self.contrast_combo, "contrast")
+        if not getattr(self.mount_combo, "is_mixed", lambda: False)():
+            result.mount_medium = self._get_combo_tag_value(self.mount_combo, "mount")
+        if not getattr(self.stain_combo, "is_mixed", lambda: False)():
+            result.stain = self._get_combo_tag_value(self.stain_combo, "stain")
+        if not getattr(self.sample_combo, "is_mixed", lambda: False)():
+            result.sample_type = self._get_combo_tag_value(self.sample_combo, "sample")
+        if not getattr(self.sample_source_combo, "is_mixed", lambda: False)():
+            result.sample_source = self._get_combo_tag_value(
+                self.sample_source_combo, "sample_source"
+            )
+        if not getattr(self, "_notes_mixed", False):
+            result.notes = self._current_image_note_text()
         if result.image_type != "microscope":
             result.contrast = self._field_tag_value("contrast")
             result.mount_medium = self._field_tag_value("mount")
             result.stain = self._field_tag_value("stain")
             result.sample_type = self._field_tag_value("sample")
+            result.sample_source = self._field_tag_value("sample_source")
         result.needs_scale = (
             result.image_type == "microscope"
             and not result.objective
@@ -5337,6 +5595,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if not indices:
             return
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
         self._last_settings_action = "resize"
         self._apply_settings_to_indices(indices, action="resize")
 
@@ -5519,6 +5780,86 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
         self._update_ai_table()
         self._update_ai_overlay()
+        self._apply_multi_selection_to_form(self.selected_indices or [])
+
+    def _apply_multi_selection_to_form(self, indices: list[int]) -> None:
+        """Populate the sidebar form controls with mixed-state UI so the
+        user can bulk-edit metadata / notes / RAW settings across multiple
+        selected thumbnails.
+        """
+        valid = [i for i in indices if isinstance(i, int) and 0 <= i < len(self.import_results)]
+        if len(valid) <= 1:
+            return
+        results = [self.import_results[i] for i in valid]
+        self._loading_form = True
+        try:
+            image_types = {("microscope" if r.image_type == "microscope" else "field") for r in results}
+            if len(image_types) == 1:
+                target = next(iter(image_types))
+                (self.micro_radio if target == "microscope" else self.field_radio).setChecked(True)
+            self._sync_scale_bar_length_unit_for_image_type()
+
+            def _distinct(getter):
+                seen = []
+                for r in results:
+                    val = getter(r)
+                    if val not in seen:
+                        seen.append(val)
+                return seen
+
+            objectives = _distinct(lambda r: r.objective or None)
+            if len(objectives) <= 1:
+                target = objectives[0] if objectives else None
+                if target:
+                    idx = self.objective_combo.findData(target)
+                    self.objective_combo.setCurrentIndex(idx if idx >= 0 else 0)
+                else:
+                    self.objective_combo.setCurrentIndex(0)
+                self.objective_combo.clear_mixed()
+            else:
+                self.objective_combo.set_mixed_values(objectives)
+
+            for combo, category, getter in (
+                (self.contrast_combo, "contrast", lambda r: r.contrast),
+                (self.mount_combo, "mount", lambda r: r.mount_medium),
+                (self.stain_combo, "stain", lambda r: r.stain),
+                (self.sample_combo, "sample", lambda r: r.sample_type),
+                (self.sample_source_combo, "sample_source", lambda r: r.sample_source),
+            ):
+                values = _distinct(getter)
+                if len(values) <= 1:
+                    self._set_combo_tag_value(combo, category, values[0] if values else None)
+                    combo.clear_mixed()
+                else:
+                    combo.set_mixed_values(values)
+
+            if hasattr(self, "image_note_input"):
+                notes_values = _distinct(lambda r: (str(r.notes or "")))
+                self.image_note_input.blockSignals(True)
+                try:
+                    if len(notes_values) <= 1:
+                        self.image_note_input.setPlainText(notes_values[0] if notes_values else "")
+                        self.image_note_input.setPlaceholderText(self.tr("Optional note for the selected image"))
+                        self._notes_mixed = False
+                    else:
+                        self.image_note_input.setPlainText("")
+                        self.image_note_input.setPlaceholderText(self.tr("(Multiple notes)"))
+                        self._notes_mixed = True
+                finally:
+                    self.image_note_input.blockSignals(False)
+                    if hasattr(self.image_note_input, "_schedule_height_update"):
+                        self.image_note_input._schedule_height_update()
+
+            raw_results = [r for r in results if self._result_is_raw_backed(r)]
+            if raw_results and hasattr(self, "raw_group"):
+                self.raw_group.setVisible(True)
+                settings_list = [self._ensure_raw_settings(r) for r in raw_results]
+                self.raw_controls.set_mixed_settings(settings_list)
+            elif hasattr(self, "raw_group"):
+                self.raw_group.setVisible(False)
+        finally:
+            self._loading_form = False
+        self._update_lab_state_combo_alerts()
 
     def _format_exposure(self, value) -> str | None:
         if value is None:
@@ -5574,6 +5915,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if isinstance(result.image_id, int) and result.image_id > 0
         ]
         measured_image_ids: set[int] = set()
+        cloud_uploaded_ids: set[int] = set()
         if image_ids:
             conn = None
             try:
@@ -5585,8 +5927,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     tuple(image_ids),
                 )
                 measured_image_ids = {int(row[0]) for row in cursor.fetchall() if row and row[0] is not None}
+                # Cloud sync state so the top-center cloud badge shows for
+                # already-uploaded images, matching the Observations panel.
+                cursor.execute(
+                    f"SELECT id, cloud_id FROM images WHERE id IN ({placeholders})",
+                    tuple(image_ids),
+                )
+                cloud_uploaded_ids = {
+                    int(row[0]) for row in cursor.fetchall()
+                    if row and row[0] is not None and str(row[1] or "").strip()
+                }
             except Exception:
                 measured_image_ids = set()
+                cloud_uploaded_ids = set()
             finally:
                 if conn is not None:
                     conn.close()
@@ -5629,6 +5982,45 @@ class ImageImportDialog(GeometryMixin, QDialog):
             raw_source_kind = ""
             if isinstance(raw_source, dict):
                 raw_source_kind = str((raw_source.get("source") or {}).get("kind") or "").strip().lower()
+            # Compute the colored microscope tag (bottom-left) from the
+            # result's objective + contrast so Import dialog matches the
+            # Observations / Measure galleries.
+            microscope_tag_text, microscope_tag_color = _microscope_tag_from_image(
+                {
+                    "objective_name": result.objective,
+                    "contrast": result.contrast,
+                    "lab_metadata": result.lab_metadata,
+                },
+                translate=self.tr,
+            )
+            if microscope_tag_text and badges and (result.image_type or "").strip().lower() == "microscope":
+                badges = badges[1:]
+            # Replace the "From raw" tag (added by build_raw_source_badges)
+            # with "UNSAVED RAW" whenever the user has tweaked RAW settings
+            # on this image but hasn't yet run the full render — either by
+            # clicking "Apply new raw settings" or by closing the dialog
+            # with Save changes. The widget's bottom-left rendering picks
+            # the last badge containing "raw" as the standalone raw tag,
+            # so swapping in place gives the same rendering position
+            # without duplicating the label.
+            if bool(getattr(result, "raw_unsaved_changes", False)):
+                unsaved_label = (
+                    self.tr("UNSAVED RAW")
+                    if self._result_is_raw_backed(result)
+                    else self.tr("UNSAVED")
+                )
+                replaced = False
+                for badge_idx in range(len(badges) - 1, -1, -1):
+                    if "raw" in str(badges[badge_idx] or "").lower():
+                        badges[badge_idx] = unsaved_label
+                        replaced = True
+                        break
+                if not replaced:
+                    badges = badges + [unsaved_label]
+            cloud_uploaded = bool(
+                isinstance(result.image_id, int)
+                and int(result.image_id) in cloud_uploaded_ids
+            )
             items.append(
                 {
                     "id": result.image_id,
@@ -5642,12 +6034,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "gps_tag_text": gps_tag,
                     "gps_tag_highlight": gps_highlight,
                     "has_measurements": has_measurements,
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
+                    "cloud_uploaded": cloud_uploaded,
                     "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
-        self.gallery.set_items(items)
+        self.gallery.set_items(items, reveal="preserve")
         if selected:
-            self.gallery.select_paths(selected)
+            self.gallery.select_paths(selected, center=False)
         self._update_action_buttons_state()
 
     def _on_remove_selected(self) -> None:
@@ -5728,6 +6123,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self.preview.set_measurement_lines([])
             self.preview.set_scale_bar_draggable(False)
 
+    def _on_gallery_delete_images_requested(self, keys) -> None:
+        keys_list = list(keys or [])
+        if not keys_list:
+            return
+        if len(keys_list) == 1:
+            self._on_gallery_delete_requested(keys_list[0])
+        else:
+            # Multi-select delete from the right-click menu — same handler as
+            # Delete / Alt+D / Ctrl+D, which operates on the current gallery
+            # selection.
+            self._on_remove_selected()
+
     def _on_gallery_delete_requested(self, image_key) -> None:
         if image_key is None:
             return
@@ -5771,10 +6178,78 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._image_crop_undo_by_index = remap_dict(self._image_crop_undo_by_index)
         self._ai_selected_taxon = None
 
+    def _mark_dirty(self) -> None:
+        """Flip the dirty flag and re-label the action buttons so it's
+        obvious that Close will save and Cancel will discard. No-op while
+        the form is being populated."""
+        if getattr(self, "_loading_form", False):
+            return
+        if getattr(self, "_raw_loading", False):
+            return
+        if self._is_dirty:
+            return
+        self._is_dirty = True
+        self._update_action_buttons_state()
+
+    def _finalize_pending_raw_edits(self) -> None:
+        """Render final JPEGs for any RAW image whose settings changed but
+        that the user didn't explicitly click 'Apply new raw settings' on
+        before hitting Close/Save. Otherwise the on-disk file (and thus the
+        Measure gallery thumbnail) stays out of sync with the edits.
+
+        Shows a determinate progress bar in the hint area while working so
+        the multi-second full-quality re-render doesn't feel like a frozen
+        UI. Each image is ~1–3 s on a mirrorless RAW."""
+        results = list(getattr(self, "import_results", []) or [])
+        pending = [
+            (idx, res) for idx, res in enumerate(results)
+            if self._result_is_raw_backed(res)
+            and bool(getattr(res, "raw_unsaved_changes", False))
+        ]
+        if not pending:
+            return
+        show_progress = getattr(self, "_set_hint_progress_visible", None)
+        update_progress = getattr(self, "_set_hint_progress", None)
+        total = len(pending)
+        try:
+            if callable(show_progress):
+                show_progress(True)
+            for i, (index, result) in enumerate(pending, start=1):
+                if callable(update_progress):
+                    name = Path(result.filepath or "").name or f"image {index + 1}"
+                    percent = int(round((i - 1) / total * 100))
+                    update_progress(
+                        self.tr("Saving RAW {current} of {total}: {name}").format(
+                            current=i, total=total, name=name,
+                        ),
+                        percent,
+                    )
+                    QApplication.processEvents()
+                try:
+                    self._finalize_raw_settings_for_result(result, index)
+                except Exception:
+                    # Rendering failure is surfaced via result.processing_status
+                    # by the helper; keep processing the rest.
+                    continue
+            if callable(update_progress):
+                update_progress(self.tr("Saving RAW images complete."), 100)
+                QApplication.processEvents()
+        finally:
+            if callable(show_progress):
+                show_progress(False)
+
     def _accept_and_close(self) -> None:
         start_time = time.perf_counter()
         self._apply_to_selected()
         self._save_last_used_tag_settings()
+        # Auto-commit any RAW edits still marked "unsaved" so the derivative
+        # JPEG on disk reflects the current slider positions.
+        finalize_pending = getattr(self, "_finalize_pending_raw_edits", None)
+        if callable(finalize_pending):
+            try:
+                finalize_pending()
+            except Exception:
+                pass
         accepted_results = self._accepted_import_results()
         if len(accepted_results) != len(self.import_results):
             self.import_results = accepted_results
@@ -5818,6 +6293,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         SettingsDB.set_setting(
             DatabaseTerms.last_used_key("sample"),
             self._get_combo_tag_value(self.sample_combo, "sample"),
+        )
+        SettingsDB.set_setting(
+            DatabaseTerms.last_used_key("sample_source"),
+            self._get_combo_tag_value(self.sample_source_combo, "sample_source"),
         )
 
     def get_observation_gps(self) -> tuple[float | None, float | None]:
@@ -6038,15 +6517,83 @@ class ImageImportDialog(GeometryMixin, QDialog):
         source: str,
         settings: dict | RawRenderSettings | None,
     ) -> np.ndarray:
+        # Kept for backwards compatibility (curve widget etc.). The hot
+        # path goes through _raw_preview_cache_entry.
+        entry = self._raw_preview_cache_entry(source, settings)
+        return entry.raw_rgb
+
+    def _raw_preview_cache_entry(
+        self,
+        source: str,
+        settings: dict | RawRenderSettings | None,
+    ) -> _RawPreviewCacheEntry:
+        cache = self._raw_preview_proxy_cache
         cache_key = self._raw_preview_proxy_cache_key(source, settings)
-        if cache_key is None:
-            return render_raw_preview_proxy_rgb(source, settings=settings)
-        cached = self._raw_preview_proxy_cache.get(cache_key)
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if isinstance(cached, _RawPreviewCacheEntry):
+                return cached
+            if isinstance(cached, np.ndarray):
+                entry = _RawPreviewCacheEntry(
+                    raw_rgb=np.asarray(cached, dtype=np.float32)
+                )
+                cache[cache_key] = entry
+                return entry
+        decode_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        raw_rgb = render_raw_preview_proxy_rgb(source, settings=settings)
+        _raw_prepare_timing(
+            "proxy decode",
+            decode_start,
+            detail=f"{Path(source).name} -> {raw_rgb.shape[1]}x{raw_rgb.shape[0]}",
+        )
+        entry = _RawPreviewCacheEntry(raw_rgb=np.asarray(raw_rgb, dtype=np.float32))
+        if cache_key is not None:
+            cache[cache_key] = entry
+        return entry
+
+    @staticmethod
+    def _raw_preview_resized_for_entry(entry: _RawPreviewCacheEntry) -> np.ndarray:
+        if entry.preview_rgb is None:
+            resize_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            resized = _resize_rgb_preview(entry.raw_rgb, RAW_PREVIEW_MAX_DIM)
+            entry.preview_rgb = np.ascontiguousarray(resized.astype(np.float32, copy=False))
+            _raw_prepare_timing(
+                "proxy resize",
+                resize_start,
+                detail=f"-> {entry.preview_rgb.shape[1]}x{entry.preview_rgb.shape[0]}",
+            )
+        return entry.preview_rgb
+
+    @staticmethod
+    def _raw_preview_wb_inputs_for_entry(
+        entry: _RawPreviewCacheEntry,
+        settings: RawRenderSettings,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        preview = ImageImportDialog._raw_preview_resized_for_entry(entry)
+        wb_multipliers = settings.wb_multipliers
+        wb_space = (settings.wb_multiplier_space or "").strip().lower() or None
+        wb_key: tuple[float, float, float] | None = None
+        if wb_multipliers is not None and wb_space in {None, "post_decode_rgb"}:
+            try:
+                wb_key = (
+                    float(wb_multipliers[0]),
+                    float(wb_multipliers[1]),
+                    float(wb_multipliers[2]),
+                )
+            except Exception:
+                wb_key = None
+        cached = entry.wb_processed.get(wb_key)
         if cached is not None:
             return cached
-        proxy = render_raw_preview_proxy_rgb(source, settings=settings)
-        self._raw_preview_proxy_cache[cache_key] = proxy
-        return proxy
+        prep_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        prepared = prepare_post_decode_fast_inputs(preview, settings)
+        _raw_prepare_timing("wb inputs prepare", prep_start)
+        if len(entry.wb_processed) >= _RAW_PREVIEW_WB_CACHE_MAX:
+            oldest = next(iter(entry.wb_processed), None)
+            if oldest is not None:
+                entry.wb_processed.pop(oldest, None)
+        entry.wb_processed[wb_key] = prepared
+        return prepared
 
     @staticmethod
     def _raw_preview_output_path(source: str) -> Path:
@@ -6092,9 +6639,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
             body_spacing=6,
         )
         self.raw_controls = RawProcessingControls(self.raw_group)
+        self._push_raw_processing_cutoffs_to_controls()
         self.raw_controls.settingsChanged.connect(self._on_raw_settings_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._on_raw_wb_pick_toggled)
         raw_layout.addWidget(self.raw_controls)
+
+        # Curve + histogram preview — same widget as Live Lab, so users
+        # editing RAW here get the same visual feedback about what their
+        # slider positions actually do to the transfer curve.
+        try:
+            from .live_lab_tab import RawCurvePreviewWidget
+        except Exception:
+            RawCurvePreviewWidget = None
+        if RawCurvePreviewWidget is not None:
+            self.raw_curve_preview_widget = RawCurvePreviewWidget(self.raw_group)
+            raw_layout.addWidget(self.raw_curve_preview_widget, 0, Qt.AlignHCenter)
+        else:
+            self.raw_curve_preview_widget = None
 
         self.raw_group.setVisible(False)
         layout.addWidget(self.raw_group)
@@ -6112,8 +6673,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         margin = 12
         frame.adjustSize()
-        x = max(margin, self.preview.width() - frame.sizeHint().width() - margin)
-        y = max(margin, self.preview.height() - frame.sizeHint().height() - margin)
+        frame_width = frame.sizeHint().width()
+        frame_height = frame.sizeHint().height()
+        # Centered horizontally, anchored to the bottom of the preview,
+        # matching Live Lab's "Save current / Save all / Copy settings"
+        # placement.
+        x = max(margin, (self.preview.width() - frame_width) // 2)
+        y = max(margin, self.preview.height() - frame_height - margin)
         frame.move(x, y)
 
     def _update_raw_panel_for_result(self, result: ImageImportResult | None) -> None:
@@ -6206,12 +6772,62 @@ class ImageImportDialog(GeometryMixin, QDialog):
             settings = controls.settings()
         return settings.to_dict()
 
+    @staticmethod
+    def _raw_processing_setting_float(key: str, default: float, minimum: float, maximum: float) -> float:
+        raw = SettingsDB.get_setting(key, default)
+        try:
+            value = float(raw)
+        except Exception:
+            value = float(default)
+        if value != value or value in (float("inf"), float("-inf")):  # NaN / inf guard
+            value = float(default)
+        if value < float(minimum):
+            value = float(minimum)
+        if value > float(maximum):
+            value = float(maximum)
+        return float(value)
+
+    def _raw_processing_preferences(self) -> dict[str, float]:
+        return {
+            "dark_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_DARK_CUTOFF, 0.0, 0.0, 0.02
+            ),
+            "bright_cutoff": self._raw_processing_setting_float(
+                SETTING_RAW_PROCESSING_BRIGHT_CUTOFF, 0.0, 0.0, 0.02
+            ),
+        }
+
+    def _push_raw_processing_cutoffs_to_controls(self) -> None:
+        controls = getattr(self, "raw_controls", None)
+        if controls is None:
+            return
+        prefs = self._raw_processing_preferences()
+        controls.set_auto_level_cutoffs(
+            float(prefs.get("dark_cutoff", 0.0)),
+            float(prefs.get("bright_cutoff", 0.0)),
+        )
+
+    def refresh_raw_processing_preferences(self) -> None:
+        """Re-read Preferences into the RAW processing widget.
+
+        The Prepare Images dialog is non-modal, so the user can open
+        Preferences and change dark/bright cutoffs while a dialog is still
+        open. The Settings hub calls this hook after a save so subsequent
+        slider events use the new percentiles.
+        """
+        self._push_raw_processing_cutoffs_to_controls()
+
     def _raw_auto_level_settings_for_source(
         self,
         source: str,
         settings: dict | RawRenderSettings | None,
     ) -> RawRenderSettings:
         resolved = RawRenderSettings.from_dict(settings)
+        prefs = self._raw_processing_preferences()
+        dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
+        bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
+        black_percentile = max(0.0, min(1.0, dark_cutoff))
+        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff))
         try:
             analysis_settings = replace(
                 resolved,
@@ -6219,8 +6835,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 light_ev=0.0,
                 dark_ev=0.0,
                 auto_levels=False,
-                black_percentile=0.0,
-                white_percentile=1.0,
+                black_percentile=black_percentile,
+                white_percentile=white_percentile,
                 auto_levels_strength=1.0,
                 auto_levels_soft_tails=False,
                 auto_levels_tail_size=0.03,
@@ -6230,7 +6846,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 tone_highlights=0.0,
             )
             preview_rgb = self._raw_preview_proxy_for_result(source, analysis_settings)
-            black_level, white_level = compute_auto_level_bounds(preview_rgb, 0.0, 1.0)
+            black_level, white_level = compute_auto_level_bounds(
+                preview_rgb, black_percentile, white_percentile
+            )
         except Exception:
             return resolved
         return apply_auto_level_bounds_to_settings(resolved, black_level, white_level)
@@ -6238,16 +6856,156 @@ class ImageImportDialog(GeometryMixin, QDialog):
     def _on_raw_settings_changed(self, *_args) -> None:
         if getattr(self, "_raw_loading", False):
             return
-        index = self._current_single_index()
-        if index is None or index < 0 or index >= len(self.import_results):
+        selector = getattr(self, "_current_selection_indices", None)
+        if callable(selector):
+            indices = list(selector())
+        else:
+            selected_indices = list(getattr(self, "selected_indices", None) or [])
+            if selected_indices:
+                indices = [i for i in selected_indices if i is not None]
+            else:
+                single = getattr(self, "selected_index", None)
+                indices = [single] if single is not None else []
+        if not indices:
             return
-        result = self.import_results[index]
+        raw_indices = [
+            i for i in indices
+            if 0 <= i < len(self.import_results) and self._result_is_raw_backed(self.import_results[i])
+        ]
+        if not raw_indices:
+            return
+        raw_controls = getattr(self, "raw_controls", None)
+        mixed_fields = set()
+        form_dict: dict = {}
+        form_settings = None
+        if raw_controls is not None:
+            mixed_fn = getattr(raw_controls, "mixed_fields", None)
+            if callable(mixed_fn):
+                mixed_fields = set(mixed_fn())
+            settings_fn = getattr(raw_controls, "settings", None)
+            if callable(settings_fn):
+                form_settings = settings_fn()
+                form_dict = form_settings.to_dict()
+        if not form_dict:
+            form_dict = dict(self._collect_raw_settings_from_form(None))
+        was_unsaved_any = False
+        for idx in raw_indices:
+            result = self.import_results[idx]
+            was_unsaved_any = was_unsaved_any or bool(getattr(result, "raw_unsaved_changes", False))
+            base = dict(result.raw_settings or {})
+            merged = dict(form_dict)
+            for field_name in mixed_fields:
+                if field_name in base:
+                    merged[field_name] = base[field_name]
+                elif field_name in form_dict:
+                    merged.pop(field_name, None)
+            if "white_balance_mode" in mixed_fields:
+                for key in ("wb_multipliers", "wb_selection", "wb_multiplier_space",
+                            "wb_sample_point", "wb_selection_space"):
+                    if key in base:
+                        merged[key] = base[key]
+                    else:
+                        merged.pop(key, None)
+            result.raw_settings = merged
+            result.raw_unsaved_changes = True
+            self._schedule_raw_preview_refresh(result)
+        result = self.import_results[raw_indices[0]]
+        mark_dirty = getattr(self, "_mark_dirty", None)
+        if callable(mark_dirty):
+            mark_dirty()
+        was_unsaved = was_unsaved_any
+        # NOTE: curve widget refresh is intentionally NOT called here — it's
+        # driven off the debounced preview flush so it doesn't run
+        # synchronously on every slider tick with the full-res proxy (which
+        # can be 4000×3000 and add 100+ ms of latency per event).
+        # In multi-select we skip the panel reload because it would
+        # clobber the remaining mixed-state slider visuals.
+        if len(raw_indices) == 1:
+            self._update_raw_panel_for_result(result)
+        if not was_unsaved:
+            self._refresh_gallery()
+
+    def _refresh_prepare_raw_curve_preview(
+        self,
+        result: ImageImportResult | None,
+        *,
+        curve=None,
+    ) -> None:
+        widget = getattr(self, "raw_curve_preview_widget", None)
+        if widget is None:
+            return
+        if result is None:
+            widget.set_curve(None, None)
+            return
         if not self._result_is_raw_backed(result):
+            widget.set_curve(None, None)
             return
-        result.raw_settings = self._collect_raw_settings_from_form(result.raw_settings)
-        result.raw_unsaved_changes = True
-        self._schedule_raw_preview_refresh(result)
-        self._update_raw_panel_for_result(result)
+        source = self._raw_source_path_for_result(result)
+        if not source:
+            widget.set_curve(None, None)
+            return
+        settings = RawRenderSettings.from_dict(
+            result.raw_settings or self._ensure_raw_settings(result)
+        )
+        try:
+            entry = self._raw_preview_cache_entry(source, settings)
+            # Use the resized preview (≤1600 px) for the histogram.
+            rgb = self._raw_preview_resized_for_entry(entry)
+        except Exception:
+            widget.set_curve(None, None)
+            return
+        if curve is None:
+            # Fallback path (called without a pre-computed curve, e.g. on
+            # initial panel load): compute it once. The slider hot-path
+            # always reuses fast_result.curve so this cost only shows on
+            # the first refresh per image.
+            try:
+                from utils.image_processing_pipeline import compute_post_decode_transfer_curve
+                curve_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                curve = compute_post_decode_transfer_curve(rgb, settings)
+                _raw_prepare_timing("curve compute (fallback)", curve_start)
+            except Exception:
+                curve = None
+        # Histogram lives on the WB-applied pre-levels axis so the widget's
+        # clipped bars line up with `curve.input_values`. The distribution
+        # depends on the WB choice AND on the decode mode, so key on:
+        #   - white_balance_mode (camera / auto / custom / background)
+        #     — Camera WB and Auto WB both leave wb_multipliers=None but
+        #     rawpy decodes them differently.
+        #   - wb_sample_base_mode — for Custom WB derived from a picked
+        #     sample, the same gains under a different base mode produce a
+        #     different decoded buffer.
+        #   - normalized custom multipliers (only meaningful when set).
+        wb_gains: tuple[float, float, float] | None = None
+        try:
+            multipliers = getattr(settings, "wb_multipliers", None)
+            wb_space = str(getattr(settings, "wb_multiplier_space", None) or "").strip().lower() or None
+            if multipliers is not None and wb_space in {None, "post_decode_rgb"}:
+                wb_gains = (
+                    float(multipliers[0]),
+                    float(multipliers[1]),
+                    float(multipliers[2]),
+                )
+        except Exception:
+            wb_gains = None
+        wb_mode = str(getattr(settings, "white_balance_mode", "") or "camera").strip().lower() or "camera"
+        wb_base_mode = str(getattr(settings, "wb_sample_base_mode", "") or "").strip().lower() or None
+        histogram_cache_key = ("wb", wb_mode, wb_base_mode, wb_gains)
+        cached_pair = getattr(entry, "combined_histogram", None)
+        cached_key = getattr(entry, "combined_histogram_key", None)
+        histogram = cached_pair if cached_key == histogram_cache_key else None
+        if histogram is None:
+            try:
+                hist_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                hist_rgb = compute_pre_levels_working_rgb(rgb, settings)
+                hist = np.histogram(np.clip(hist_rgb, 0.0, 1.0).ravel(), bins=96, range=(0.0, 1.0))[0]
+                histogram = hist.astype(np.float32)
+                entry.combined_histogram = histogram
+                entry.combined_histogram_key = histogram_cache_key
+                _raw_prepare_timing("histogram compute", hist_start)
+            except Exception:
+                histogram = None
+        widget.set_curve(curve, histogram)
 
     def _on_raw_wb_pick_toggled(self, checked: bool) -> None:
         self._raw_wb_pick_mode = bool(checked)
@@ -6270,11 +7028,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
         source = self._raw_source_path_for_result(result)
         if not source:
             return
+        total_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         try:
-            import_dir = get_images_dir() / "imports"
-            import_dir.mkdir(parents=True, exist_ok=True)
-            settings = RawRenderSettings.from_dict(result.raw_settings or self._ensure_raw_settings(result))
-            preview_rgb = self._raw_preview_proxy_for_result(source, settings)
+            settings = RawRenderSettings.from_dict(
+                result.raw_settings or self._ensure_raw_settings(result)
+            )
+            entry = self._raw_preview_cache_entry(source, settings)
+            preview_rgb = self._raw_preview_resized_for_entry(entry)
             processing_settings = settings
             if (
                 processing_settings.white_balance_mode in {"background", "custom"}
@@ -6296,26 +7056,132 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     wb_multiplier_space="post_decode_rgb",
                     wb_sample_base_mode=self._raw_preview_decode_mode(settings),
                 )
-            preview_float = apply_post_decode_processing(preview_rgb, processing_settings)
-            preview_path = self._raw_preview_output_path(source)
-            save_raw_preview_jpeg(preview_float, preview_path, source)
+            # Fast in-memory path (matches Live Lab):
+            #   1. Reuse the resized proxy (decoded once per source).
+            #   2. Reuse the WB-processed inputs (cached per WB gains).
+            #   3. Run only the LUT-based fast pipeline per slider event.
+            #   4. Convert to QPixmap in memory; disk-save on a 300ms
+            #      debounce (via _schedule_raw_preview_disk_save).
+            prepared = self._raw_preview_wb_inputs_for_entry(entry, processing_settings)
+            fast_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            fast_result = apply_post_decode_processing_fast(
+                preview_rgb,
+                processing_settings,
+                prepared_inputs=prepared,
+            )
+            _raw_prepare_timing(
+                "post-decode fast",
+                fast_start,
+                detail=f"{preview_rgb.shape[1]}x{preview_rgb.shape[0]}",
+            )
+            preview_float = fast_result.rgb
+            controls = getattr(self, "raw_controls", None)
+            if controls is not None:
+                controls.sync_from_live_bounds(
+                    fast_result.debug.black_level,
+                    fast_result.debug.white_level,
+                )
         except Exception as exc:
             result.processing_status = "failed"
             result.failure_reason = str(exc)
             self._set_settings_hint(self.tr("RAW preview failed: {err}").format(err=exc), "#e74c3c")
             return
+        # Push the freshly-processed pixels to the viewer immediately.
+        if self._current_single_index() == index:
+            pixmap_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            try:
+                pixmap = self._rgb_to_pixmap(preview_float)
+            except Exception:
+                pixmap = None
+            _raw_prepare_timing("rgb -> pixmap", pixmap_start)
+            if pixmap is not None and not pixmap.isNull():
+                preview_source_path = result.raw_preview_path or result.filepath or source
+                view_state = None
+                if hasattr(self, "preview"):
+                    view_state = self.preview.get_view_state()
+                set_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+                self.preview.set_image_sources(pixmap, preview_source_path, True)
+                _raw_prepare_timing("viewer set_image_sources", set_start)
+                if view_state and view_state.get("size"):
+                    old_w, old_h = view_state["size"]
+                    new_w, new_h = pixmap.width(), pixmap.height()
+                    if old_w == new_w and old_h == new_h:
+                        try:
+                            self.preview.set_view_state(view_state["center"], view_state["zoom"])
+                        except Exception:
+                            pass
+                self.preview_stack.setCurrentWidget(self.preview)
+        result.processing_status = "preview"
+        # Cache the last-rendered RGB so the debounced disk-save doesn't
+        # have to redo the whole pipeline just to write bytes.
+        result._pending_raw_preview_rgb = preview_float
+        result._pending_raw_preview_source = source
+        self._schedule_raw_preview_disk_save(result)
+        # Curve widget refresh piggybacks on the debounced preview flush.
+        # `fast_result.curve` is the same curve compute_post_decode_transfer_curve
+        # would compute — so reuse it instead of re-running that ~100 ms
+        # analysis per tick.
+        refresh_curve = getattr(self, "_refresh_prepare_raw_curve_preview", None)
+        if callable(refresh_curve):
+            try:
+                refresh_curve(result, curve=getattr(fast_result, "curve", None))
+            except Exception:
+                pass
+        _raw_prepare_timing(
+            "TOTAL preview refresh",
+            total_start,
+            detail=f"{Path(source).name}",
+        )
+
+    @staticmethod
+    def _rgb_to_pixmap(rgb: np.ndarray) -> QPixmap:
+        arr = np.asarray(rgb)
+        if arr.dtype == np.uint8:
+            image8 = np.ascontiguousarray(arr[..., :3])
+        else:
+            image = np.asarray(arr[..., :3], dtype=np.float32)
+            image = np.clip(image, 0.0, 1.0)
+            image8 = np.ascontiguousarray(np.rint(image * 255.0).astype(np.uint8))
+        image8 = np.ascontiguousarray(image8)
+        height, width = image8.shape[:2]
+        qimage = QImage(
+            image8.data,
+            width,
+            height,
+            int(image8.strides[0]),
+            QImage.Format.Format_RGB888,
+        ).copy()
+        return QPixmap.fromImage(qimage)
+
+    def _schedule_raw_preview_disk_save(self, result: ImageImportResult) -> None:
+        self._raw_preview_disk_save_target = result
+        timer = getattr(self, "_raw_preview_disk_save_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _flush_raw_preview_disk_save(self) -> None:
+        result = self._raw_preview_disk_save_target
+        self._raw_preview_disk_save_target = None
+        if result is None or result not in self.import_results:
+            return
+        source = getattr(result, "_pending_raw_preview_source", None)
+        preview_float = getattr(result, "_pending_raw_preview_rgb", None)
+        if source is None or preview_float is None:
+            return
+        try:
+            preview_path = self._raw_preview_output_path(source)
+            save_raw_preview_jpeg(preview_float, preview_path, source)
+        except Exception:
+            return
         preview_str = str(preview_path)
         old_preview = result.raw_preview_path
-        if old_preview and old_preview != source:
+        if old_preview and old_preview != source and old_preview != preview_str:
             self._invalidate_cached_pixmap(old_preview)
             self._temp_preview_paths.discard(old_preview)
         result.raw_preview_path = preview_str
         result.preview_path = preview_str
         self._temp_preview_paths.add(preview_str)
         self._invalidate_cached_pixmap(preview_str)
-        result.processing_status = "preview"
-        if self._current_single_index() == index:
-            self._set_preview_for_result(result, preserve_view=True)
 
     def _handle_raw_wb_pick(self, pos) -> bool:
         if not getattr(self, "_raw_wb_pick_mode", False):
@@ -6367,10 +7233,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if index is None or index < 0 or index >= len(self.import_results):
             return
         result = self.import_results[index]
+        if self._finalize_raw_settings_for_result(result, index):
+            self._refresh_gallery()
+            self._select_image(index)
+            self._set_settings_hint(
+                self.tr("RAW settings applied to JPEG derivative"), "#27ae60"
+            )
+
+    def _finalize_raw_settings_for_result(
+        self,
+        result: ImageImportResult,
+        index: int | None = None,
+    ) -> bool:
+        """Render a final JPEG derivative for `result` using its current
+        raw_settings, and update the result to point at that derivative.
+        Returns True on success, False on failure or if the result isn't
+        RAW-backed. Shared by the explicit "Apply new raw settings" button
+        and the auto-finalize-on-close path."""
+        if not self._result_is_raw_backed(result):
+            return False
         source = self._raw_source_path_for_result(result)
         if not source:
             self._set_settings_hint(self.tr("RAW source not found"), "#e74c3c")
-            return
+            return False
         settings = result.raw_settings or self._ensure_raw_settings(result)
         try:
             import_dir = get_images_dir() / "imports"
@@ -6380,7 +7265,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             result.processing_status = "failed"
             result.failure_reason = str(exc)
             self._set_settings_hint(self.tr("RAW conversion failed: {err}").format(err=exc), "#e74c3c")
-            return
+            return False
         derivative_str = str(derivative)
         size = self._get_image_size(derivative_str) or (0, 0)
         capture_dt = None
@@ -6416,12 +7301,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         result.lab_metadata = lab
         if capture_dt is not None and not result.captured_at:
             result.captured_at = QDateTime(capture_dt)
-        self.image_paths[index] = derivative_str
+        if index is not None and 0 <= index < len(self.image_paths):
+            self.image_paths[index] = derivative_str
         self._converted_import_paths.add(derivative_str)
         self._invalidate_cached_pixmap(derivative_str)
-        self._refresh_gallery()
-        self._select_image(index)
-        self._set_settings_hint(self.tr("RAW settings applied to JPEG derivative"), "#27ae60")
+        return True
 
     def _stage_raw_candidates(self, new_results: list[ImageImportResult]) -> None:
         for result in new_results:

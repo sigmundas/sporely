@@ -31,7 +31,54 @@ from database.schema import load_objectives, objective_display_name, resolve_obj
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
+from .adaptive_choice_selector import objective_color, objective_short_label
 from .styles import pt
+
+
+# Padding around every thumbnail's outer selection-backdrop container.
+# The colored backdrop rectangle that appears when a thumbnail is selected
+# spans this padding on every side. Tuned to roughly half of the grid
+# spacing (10 px) so a selected thumb's backdrop occupies about half of
+# the visible gap between it and its neighbours without touching them.
+_THUMB_SELECTION_BACKDROP_PADDING = 6
+
+
+def _microscope_tag_from_image(image: dict, translate=None) -> tuple[str | None, str | None]:
+    """Return (label, color) for the colored microscope tag rendered in
+    the thumbnail's bottom-left. Mirrors
+    LiveLabTab._microscope_tag_for_metadata but reads from a plain image
+    row / import result dict, so every gallery instance can produce the
+    same tag."""
+    if not isinstance(image, dict):
+        return None, None
+    tr = translate if callable(translate) else (lambda text: text)
+    objective_name = image.get("objective_name")
+    if not objective_name:
+        lab_metadata = image.get("lab_metadata")
+        if isinstance(lab_metadata, dict):
+            objective_name = lab_metadata.get("objective_name") or (
+                lab_metadata.get("microscope") or {}
+            ).get("objective_name")
+    if not objective_name:
+        return None, None
+    objectives = load_objectives()
+    objective = objectives.get(str(objective_name))
+    tag_text = objective_short_label(objective, str(objective_name))
+    if not tag_text:
+        tag_text = (
+            objective_display_name(objective, str(objective_name))
+            if objective
+            else str(objective_name)
+        )
+    contrast = image.get("contrast")
+    if contrast is None:
+        lab_metadata = image.get("lab_metadata")
+        if isinstance(lab_metadata, dict):
+            contrast = lab_metadata.get("contrast")
+    canonical = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
+    if canonical and str(canonical).strip().lower() not in {"not_set", "not set"}:
+        tag_text = f"{tag_text} {DatabaseTerms.translate('contrast', canonical)}"
+    return tag_text, objective_color(objective, str(objective_name))
 
 _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
 
@@ -226,46 +273,12 @@ def paint_thumbnail_selection_overlay(
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing)
 
+    # Selection itself is drawn as a square backdrop behind the frame by
+    # ImageGalleryWidget._update_thumbnail_selection_backdrop. This overlay
+    # only handles the hover glow + RAW halo now — leaving `selected` here
+    # would paint a redundant rounded frame on top of the backdrop.
     if selected:
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(colors.fill)
-        painter.drawRoundedRect(base_rect, radius, radius)
-
-        outer_rect = base_rect.adjusted(
-            outer_width / 2.0,
-            outer_width / 2.0,
-            -outer_width / 2.0,
-            -outer_width / 2.0,
-        )
-        if outer_rect.width() > 0.0 and outer_rect.height() > 0.0:
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(colors.outer, outer_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawRoundedRect(
-                outer_rect,
-                max(1.0, radius - outer_width * 0.45),
-                max(1.0, radius - outer_width * 0.45),
-            )
-
-        inner_gap = max(1.0, size_hint * 0.01)
-        inner_rect = base_rect.adjusted(
-            outer_width + inner_gap + inner_width / 2.0,
-            outer_width + inner_gap + inner_width / 2.0,
-            -(outer_width + inner_gap + inner_width / 2.0),
-            -(outer_width + inner_gap + inner_width / 2.0),
-        )
-        if inner_rect.width() > 0.0 and inner_rect.height() > 0.0:
-            painter.setPen(QPen(colors.inner, inner_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.drawRoundedRect(
-                inner_rect,
-                max(1.0, radius - outer_width - inner_gap),
-                max(1.0, radius - outer_width - inner_gap),
-            )
-            corner_len = max(5.0, min(10.0, size_hint * 0.11))
-            corner_rect = base_rect.adjusted(outer_width * 0.75, outer_width * 0.75, -outer_width * 0.75, -outer_width * 0.75)
-            _draw_thumbnail_corner_brackets(painter, corner_rect, colors.corner, max(1.0, inner_width * 0.9), corner_len)
-
-        if badge_text:
-            _draw_thumbnail_selection_badge(painter, base_rect, badge_text, colors, size_hint)
+        pass
     elif hovered:
         hover_fill = QColor(colors.fill)
         hover_fill.setAlpha(max(18, hover_fill.alpha() // 2))
@@ -328,7 +341,24 @@ def center_horizontal_scroll_target(
     next_rect: QRectF | None = None,
     *,
     visible_neighbor_threshold: float = 0.25,
+    margin: float = 24.0,
 ) -> int | None:
+    """Return the scroll offset needed to bring `item_rect` (plus its
+    immediate neighbours) into view, or None when no scrolling is required.
+
+    Rules:
+    - Compute a "must be visible" range = item ∪ previous neighbour ∪ next
+      neighbour. If the whole range already fits inside the viewport, return
+      None. Extending the range means clicking a thumbnail near the visible
+      edge nudges the strip enough to make the adjacent thumbnails easy to
+      reach on the next click.
+    - Otherwise, scroll the minimum distance needed to bring the range into
+      view with a small margin. Range off the right edge nudges right; off
+      the left edge nudges left.
+    - `visible_neighbor_threshold` is accepted for backward compatibility
+      and ignored.
+    """
+    del visible_neighbor_threshold  # unused
     if item_rect is None:
         return None
     item_width = float(item_rect.width())
@@ -336,18 +366,89 @@ def center_horizontal_scroll_target(
     if item_width <= 0.0 or viewport_width <= 0.0:
         return None
 
-    item_visible = _visible_fraction(viewport_rect, item_rect)
-    previous_visible = _visible_fraction(viewport_rect, previous_rect)
-    next_visible = _visible_fraction(viewport_rect, next_rect)
-    should_center = (
-        item_visible < 0.999
-        or previous_visible < float(visible_neighbor_threshold)
-        or next_visible < float(visible_neighbor_threshold)
-    )
-    if not should_center:
+    item_left = float(item_rect.x())
+    item_right = item_left + item_width
+    must_left = item_left
+    must_right = item_right
+    if previous_rect is not None and previous_rect.width() > 0.0:
+        must_left = min(must_left, float(previous_rect.x()))
+    if next_rect is not None and next_rect.width() > 0.0:
+        must_right = max(
+            must_right, float(next_rect.x()) + float(next_rect.width())
+        )
+
+    view_left = float(viewport_rect.x())
+    view_right = view_left + viewport_width
+    margin_val = max(0.0, float(margin))
+
+    # Whole must-visible range already fits inside the viewport → done.
+    if must_left >= view_left and must_right <= view_right:
         return None
 
-    target = int(round(float(item_rect.x()) + (item_width / 2.0) - (viewport_width / 2.0)))
+    must_width = must_right - must_left
+    if must_width > viewport_width:
+        # Can't fit the whole must-visible range. Prefer to reveal the
+        # clicked item itself, nudged toward whichever edge it's clipped
+        # against — never dead-center it just because a neighbour is off
+        # the other side.
+        if item_left < view_left:
+            target = int(round(item_left - margin_val))
+        elif item_right > view_right:
+            target = int(round(item_right + margin_val - viewport_width))
+        else:
+            target = int(round(item_left + (item_width / 2.0) - (viewport_width / 2.0)))
+    elif must_left < view_left:
+        target = int(round(must_left - margin_val))
+    else:  # must_right > view_right
+        target = int(round(must_right + margin_val - viewport_width))
+    return max(int(minimum), min(int(maximum), target))
+
+
+def nudge_horizontal_scroll_target(
+    viewport_rect: QRectF,
+    item_rect: QRectF | None,
+    minimum: int,
+    maximum: int,
+    previous_rect: QRectF | None = None,
+    next_rect: QRectF | None = None,
+    *,
+    nudge_widths: float = 1.5,
+    edge_threshold_widths: float = 0.75,
+) -> int | None:
+    """Return a small horizontal nudge when a thumbnail is near either edge.
+
+    The target shifts the strip by roughly `nudge_widths` thumbnail widths
+    toward the center instead of fully centering the clicked thumbnail.
+    """
+    if item_rect is None:
+        return None
+    item_width = float(item_rect.width())
+    viewport_width = float(viewport_rect.width())
+    if item_width <= 0.0 or viewport_width <= 0.0:
+        return None
+
+    view_left = float(viewport_rect.x())
+    view_right = view_left + viewport_width
+    item_left = float(item_rect.x())
+    item_right = item_left + item_width
+    nudge_px = max(0.0, item_width * float(nudge_widths))
+    edge_threshold = max(nudge_px, item_width * float(edge_threshold_widths))
+
+    near_left = item_left < (view_left + edge_threshold)
+    near_right = item_right > (view_right - edge_threshold)
+    if previous_rect is not None and previous_rect.width() > 0.0:
+        near_left = near_left or float(previous_rect.x()) < view_left
+    if next_rect is not None and next_rect.width() > 0.0:
+        near_right = near_right or (float(next_rect.x()) + float(next_rect.width())) > view_right
+
+    if near_left and near_right:
+        return None
+    if near_left:
+        target = int(round(view_left - nudge_px))
+    elif near_right:
+        target = int(round(view_left + nudge_px))
+    else:
+        return None
     return max(int(minimum), min(int(maximum), target))
 
 
@@ -435,8 +536,11 @@ class ImageGalleryWidget(QGroupBox):
     imageDoubleClicked = Signal(object, str)
     measureBadgeClicked = Signal(object, str)
     editRequested = Signal(object, str)
-    deleteRequested = Signal(object)  # Can be int (db ID) or str (custom ID like "cal_0")
-    deleteSelectionRequested = Signal(list)
+    # Unified delete signal — always fires with a list of keys (can be int
+    # DB IDs or str custom IDs like "cal_0"). Single-item deletes (X icon
+    # click) fire with a one-element list; multi-item deletes (right-click
+    # "Delete selected photos") fire with the full selection.
+    deleteImagesRequested = Signal(list)
     moveToObservationRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
@@ -457,6 +561,8 @@ class ImageGalleryWidget(QGroupBox):
         show_move_to_observation: bool = False,
         show_edit: bool = False,
         publish_checkbox_hint: str = "",
+        delete_menu_label_single: str = "",
+        delete_menu_label_multi: str = "",
     ) -> None:
         super().__init__(title, parent)
         self._gallery_title = str(title or "")
@@ -475,6 +581,11 @@ class ImageGalleryWidget(QGroupBox):
         self._show_move_to_observation = bool(show_move_to_observation)
         self._show_edit = bool(show_edit)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
+        # Per-instance delete labels — lets callers say "Remove from batch"
+        # / "Remove from staging" instead of the generic "Delete photo" when
+        # the action is non-destructive to the underlying file.
+        self._delete_menu_label_single = str(delete_menu_label_single or "").strip()
+        self._delete_menu_label_multi = str(delete_menu_label_multi or "").strip()
         self._base_thumb_size = max(80, int(thumbnail_size))
         self._min_thumb_size = 80
         self._thumb_size = self._base_thumb_size
@@ -486,6 +597,11 @@ class ImageGalleryWidget(QGroupBox):
         self._frames: list[QFrame] = []
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
+        # Filepaths to re-select on the next set_items / observation reload
+        # (see set_selection_after_next_load). Survives the transient
+        # clear() that fires when the observations table loses selection
+        # mid-refresh.
+        self._pending_selection_paths: list[str] = []
         self._last_clicked_index: int | None = None
         self._drag_start_pos: QPoint | None = None
         self._drag_start_key = None
@@ -500,6 +616,15 @@ class ImageGalleryWidget(QGroupBox):
         self._render_index = 0
         self._center_request_generation = 0
         self._center_request_key = None
+        self._center_reveal_mode = "precise"
+        # Scroll behaviour to apply after the next batched render finishes.
+        # "preserve" restores the previous horizontal scroll offset (used
+        # for metadata refreshes so the view doesn't jitter). "new_at_end"
+        # scrolls to the far right so a freshly-appended thumbnail becomes
+        # visible. None means "no scroll manipulation from this refresh".
+        self._pending_scroll_mode: str | None = None
+        self._pending_scroll_restore: int | None = None
+        self._pending_scroll_stick_to_end = False
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_next_batch)
@@ -522,7 +647,12 @@ class ImageGalleryWidget(QGroupBox):
         self._grid = QHBoxLayout(self._container)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self._grid.setSpacing(10)
+        # No inter-container spacing — each thumbnail sits inside a
+        # selection-backdrop container that already carries the visual gap
+        # (via _THUMB_SELECTION_BACKDROP_PADDING). This lets two adjacent
+        # selected thumbnails' backdrops meet in the middle instead of
+        # leaving a dead strip between them.
+        self._grid.setSpacing(0)
         self._container.installEventFilter(self)
         self._scroll.setWidget(self._container)
         content_layout.addWidget(self._scroll)
@@ -566,6 +696,19 @@ class ImageGalleryWidget(QGroupBox):
         self._selected_keys = set()
         self._publish_checked_by_key = {}
         self._clear_widgets()
+
+    def set_selection_after_next_load(self, paths) -> None:
+        """Remember filepaths that should be re-selected as soon as the
+        next observation-load / set_items call produces items containing
+        them. Used to survive the "clear -> async reload" round-trip that
+        fires when the observations table momentarily loses selection
+        during a refresh."""
+        cleaned: list[str] = []
+        for path in paths or []:
+            text = str(path or "").strip()
+            if text:
+                cleaned.append(text)
+        self._pending_selection_paths = cleaned
 
     def invalidate_pixmap_cache(self, path: str | Path | None = None) -> None:
         if path is None:
@@ -633,15 +776,51 @@ class ImageGalleryWidget(QGroupBox):
         self._center_request_key = key
         QTimer.singleShot(0, lambda gen=generation, requested_key=key: self._center_on_key_if_current(gen, requested_key))
 
-    def _center_on_key_if_current(self, generation: int, key) -> None:
+    def _center_on_key_if_current(self, generation: int, key, retries: int = 3) -> None:
         if generation != self._center_request_generation or key != self._center_request_key:
             return
+        if not self._scroll:
+            return
         frame = self._frame_for_key(key)
-        if frame is None or not self._scroll:
+        if frame is None:
+            # Frame hasn't been rendered yet (batched render still in
+            # progress). Try again shortly instead of silently giving up —
+            # otherwise a caller that queues a center right after set_items
+            # will land on scroll=0 whenever the target isn't in the first
+            # batch.
+            if retries > 0:
+                QTimer.singleShot(
+                    16,
+                    lambda gen=generation, k=key, r=retries - 1: self._center_on_key_if_current(gen, k, r),
+                )
             return
         scrollbar = self._scroll.horizontalScrollBar()
         viewport = self._scroll.viewport()
         if scrollbar is None or viewport is None:
+            return
+        # For scroll targeting, use the OUTER selection-backdrop container's
+        # geometry — that's what's actually laid out in self._grid. The inner
+        # frame sits offset inside its container by the backdrop padding.
+        def _layout_geometry(widget):
+            outer = getattr(widget, "_outer_container", widget)
+            return outer.geometry() if outer is not None else widget.geometry()
+
+        # Force the grid layout to run so freshly-added rows have real
+        # geometry — otherwise .geometry() reports (0, 0, 0, 0) and we'd
+        # snap the strip to scroll=0.
+        grid_container = self._grid.parentWidget() if hasattr(self, "_grid") else None
+        if grid_container is not None and grid_container.layout() is not None:
+            try:
+                grid_container.layout().activate()
+            except Exception:
+                pass
+        frame_geometry = _layout_geometry(frame)
+        if frame_geometry.width() <= 0 and retries > 0:
+            # Layout hasn't settled yet — try again shortly.
+            QTimer.singleShot(
+                16,
+                lambda gen=generation, k=key, r=retries - 1: self._center_on_key_if_current(gen, k, r),
+            )
             return
         index = self._index_for_key(key)
         previous_frame = self._frames[index - 1] if index is not None and index > 0 and index - 1 < len(self._frames) else None
@@ -652,24 +831,74 @@ class ImageGalleryWidget(QGroupBox):
             float(viewport.width()),
             float(viewport.height()),
         )
-        target = center_horizontal_scroll_target(
-            viewport_rect,
-            QRectF(frame.geometry()),
-            int(scrollbar.minimum()),
-            int(scrollbar.maximum()),
-            QRectF(previous_frame.geometry()) if previous_frame is not None else None,
-            QRectF(next_frame.geometry()) if next_frame is not None else None,
-        )
+        previous_geometry = QRectF(_layout_geometry(previous_frame)) if previous_frame is not None else None
+        next_geometry = QRectF(_layout_geometry(next_frame)) if next_frame is not None else None
+        target = None
+        if self._center_reveal_mode == "nudge":
+            target = nudge_horizontal_scroll_target(
+                viewport_rect,
+                QRectF(frame_geometry),
+                int(scrollbar.minimum()),
+                int(scrollbar.maximum()),
+                previous_geometry,
+                next_geometry,
+            )
+        if target is None:
+            target = center_horizontal_scroll_target(
+                viewport_rect,
+                QRectF(frame_geometry),
+                int(scrollbar.minimum()),
+                int(scrollbar.maximum()),
+                previous_geometry,
+                next_geometry,
+            )
         if target is None:
             return
         scrollbar.setValue(target)
+        # Re-apply on the next event-loop tick. scrollbar.maximum() may still
+        # be growing as Qt lays out newly-added frames; a target beyond the
+        # current maximum gets silently clamped on the first setValue, so we
+        # need one more pass once the range has settled. Mirrors the
+        # follow-up tick in _apply_pending_scroll.
+        QTimer.singleShot(
+            0,
+            lambda sb=scrollbar, t=target: (
+                sb.setValue(max(int(sb.minimum()), min(int(sb.maximum()), int(t))))
+                if sb is not None else None
+            ),
+        )
 
     def _set_frame_selected_state(self, frame: QFrame, selected: bool) -> None:
         selected = bool(selected)
         if bool(getattr(frame, "_thumbnail_selected", False)) == selected:
             return
         frame._thumbnail_selected = selected
+        self._update_thumbnail_selection_backdrop(frame)
         self._update_thumbnail_selection_overlay(frame)
+
+    def _update_thumbnail_selection_backdrop(self, frame: QFrame) -> None:
+        """Toggle the outer selection-backdrop container's background based
+        on selection state. Replaces the old rounded overlay border with a
+        square backdrop that surrounds the frame + a few px of padding."""
+        container = getattr(frame, "_outer_container", None)
+        if container is None:
+            return
+        selected = bool(getattr(frame, "_thumbnail_selected", False))
+        colors = thumbnail_selection_colors(_palette_is_dark(container.palette()))
+        if selected:
+            background = QColor(colors.outer)
+            background.setAlpha(min(255, background.alpha() + 30))
+            rgba = (
+                f"rgba({background.red()}, {background.green()}, "
+                f"{background.blue()}, {background.alpha()})"
+            )
+            container.setStyleSheet(
+                f"QWidget#thumbSelectionContainer {{ background-color: {rgba}; }}"
+            )
+        else:
+            container.setStyleSheet(
+                "QWidget#thumbSelectionContainer { background-color: transparent; }"
+            )
 
     def _set_frame_hovered_state(self, frame: QFrame, hovered: bool) -> None:
         hovered = bool(hovered)
@@ -682,6 +911,12 @@ class ImageGalleryWidget(QGroupBox):
         self._fixed_thumbnail_size = bool(enabled)
         self._thumb_size = self._target_thumb_size()
         self._update_thumbnail_sizes()
+
+    def set_center_reveal_mode(self, mode: str) -> None:
+        text = str(mode or "").strip().lower()
+        if text not in {"precise", "nudge"}:
+            text = "precise"
+        self._center_reveal_mode = text
 
     def set_compact_overlay(self, enabled: bool) -> None:
         self._compact_overlay = bool(enabled)
@@ -767,7 +1002,39 @@ class ImageGalleryWidget(QGroupBox):
                 )
         self.set_items(items)
 
-    def set_items(self, items: Iterable[dict]) -> None:
+    def set_items(
+        self,
+        items: Iterable[dict],
+        preserve_scroll: bool = False,
+        *,
+        reveal: str | None = None,
+    ) -> None:
+        # `reveal` (preferred): "preserve" | "new_at_end" | "off" (or None).
+        # `preserve_scroll=True` remains for callers that haven't switched
+        # to the reveal API; when both are unset the refresh doesn't touch
+        # the scroll position.
+        mode = reveal
+        if mode is None:
+            mode = "preserve" if preserve_scroll else "off"
+        mode = str(mode or "off").strip().lower()
+        if mode not in {"preserve", "new_at_end", "off"}:
+            mode = "off"
+        self._pending_scroll_mode = mode if mode != "off" else None
+        if mode == "preserve" and self._scroll is not None:
+            scrollbar = self._scroll.horizontalScrollBar()
+            self._pending_scroll_restore = int(scrollbar.value()) if scrollbar is not None else None
+            self._pending_scroll_stick_to_end = bool(
+                scrollbar is not None
+                and int(scrollbar.maximum()) - int(scrollbar.value()) <= 2
+            )
+        else:
+            self._pending_scroll_restore = None
+            self._pending_scroll_stick_to_end = False
+        if self._pending_scroll_mode is not None:
+            # Cancel any pending center-request so it doesn't fight our
+            # scroll intent once layout settles.
+            self._center_request_generation += 1
+            self._center_request_key = None
         self._observation_load_generation += 1
         self._items = []
         for idx, item in enumerate(items):
@@ -804,18 +1071,19 @@ class ImageGalleryWidget(QGroupBox):
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
                 }
             )
+        self._consume_pending_selection_paths()
         self._render()
 
-    def set_observation_id(self, observation_id: int | None) -> None:
+    def set_observation_id(self, observation_id: int | None, *, reveal: str | None = None) -> None:
         self._observation_load_generation += 1
         if not observation_id:
             self.clear()
             return
         images = ImageDB.get_images_for_observation(observation_id)
         measurement_image_ids = self._spore_measurement_image_ids_for_observation(observation_id)
-        self._set_observation_rows(observation_id, images, measurement_image_ids)
+        self._set_observation_rows(observation_id, images, measurement_image_ids, reveal=reveal)
 
-    def set_observation_id_async(self, observation_id: int | None) -> None:
+    def set_observation_id_async(self, observation_id: int | None, *, reveal: str | None = None) -> None:
         self._observation_load_generation += 1
         generation = self._observation_load_generation
         if not observation_id:
@@ -824,8 +1092,8 @@ class ImageGalleryWidget(QGroupBox):
         loader = _ObservationGalleryLoader(int(observation_id))
         self._observation_loaders.add(loader)
         loader.loaded.connect(
-            lambda loaded_obs_id, images, measurement_ids, gen=generation:
-                self._on_observation_rows_loaded(gen, loaded_obs_id, images, measurement_ids)
+            lambda loaded_obs_id, images, measurement_ids, gen=generation, r=reveal:
+                self._on_observation_rows_loaded(gen, loaded_obs_id, images, measurement_ids, reveal=r)
         )
         loader.finished.connect(lambda worker=loader: self._observation_loaders.discard(worker))
         loader.finished.connect(loader.deleteLater)
@@ -837,6 +1105,8 @@ class ImageGalleryWidget(QGroupBox):
         observation_id: int,
         images: object,
         measurement_image_ids: object,
+        *,
+        reveal: str | None = None,
     ) -> None:
         if generation != self._observation_load_generation:
             return
@@ -844,7 +1114,7 @@ class ImageGalleryWidget(QGroupBox):
             measurement_ids = {int(v) for v in (measurement_image_ids or set())}
         except Exception:
             measurement_ids = set()
-        self._set_observation_rows(observation_id, list(images or []), measurement_ids)
+        self._set_observation_rows(observation_id, list(images or []), measurement_ids, reveal=reveal)
         self.observationLoaded.emit(int(observation_id))
 
     def _set_observation_rows(
@@ -852,6 +1122,8 @@ class ImageGalleryWidget(QGroupBox):
         observation_id: int | None,
         images: Iterable[dict],
         measurement_image_ids: set[int],
+        *,
+        reveal: str | None = None,
     ) -> None:
         if not observation_id:
             self.clear()
@@ -914,6 +1186,22 @@ class ImageGalleryWidget(QGroupBox):
             cloud_id = str(img.get("cloud_id") or "").strip()
             cloud_tombstone = cloud_tombstones.get(cloud_id) if cloud_id else None
             cloud_tombstone_synced = bool(str((cloud_tombstone or {}).get("delete_synced_at") or "").strip())
+            microscope_tag_text = img.get("microscope_tag_text")
+            microscope_tag_color = img.get("microscope_tag_color")
+            if microscope_tag_text is None:
+                computed_text, computed_color = _microscope_tag_from_image(img, self.tr)
+                microscope_tag_text = computed_text
+                if microscope_tag_color is None:
+                    microscope_tag_color = computed_color
+            # When the microscope tag is shown separately in the bottom-left,
+            # the first badge (image-type + objective detail) becomes
+            # redundant — strip it, matching Live Lab's behaviour.
+            if (
+                microscope_tag_text
+                and badges
+                and image_type == "microscope"
+            ):
+                badges = badges[1:]
             items.append(
                 {
                     "id": img_id,
@@ -921,8 +1209,8 @@ class ImageGalleryWidget(QGroupBox):
                     "has_measurements": bool(img_id and int(img_id) in measurement_image_ids),
                     "image_number": idx + 1,
                     "badges": badges,
-                    "microscope_tag_text": img.get("microscope_tag_text"),
-                    "microscope_tag_color": img.get("microscope_tag_color"),
+                    "microscope_tag_text": microscope_tag_text,
+                    "microscope_tag_color": microscope_tag_color,
                     "gps_tag_color": img.get("gps_tag_color"),
                     "cloud_id": cloud_id or None,
                     "cloud_uploaded": bool(cloud_id and not cloud_tombstone_synced),
@@ -930,8 +1218,33 @@ class ImageGalleryWidget(QGroupBox):
                     "publish_selected_default": image_type != "microscope",
                 }
             )
-        self._items = items
-        self._render()
+        self.set_items(items, reveal=reveal)
+
+    def _consume_pending_selection_paths(self) -> None:
+        pending = getattr(self, "_pending_selection_paths", None)
+        if not pending:
+            return
+        pending_set = {str(path or "").strip() for path in pending if path}
+        self._pending_selection_paths = []
+        if not pending_set:
+            return
+        matched_keys: set[str | int] = set()
+        first_key: str | int | None = None
+        first_id: object | None = None
+        for item in self._items:
+            filepath = str(item.get("filepath") or "").strip()
+            if filepath and filepath in pending_set:
+                key = item.get("id") if item.get("id") is not None else filepath
+                if key is None:
+                    continue
+                matched_keys.add(key)
+                if first_key is None:
+                    first_key = key
+                    first_id = item.get("id")
+        if matched_keys:
+            self._selected_keys = matched_keys
+            self._selected_id = first_id
+            self._last_clicked_index = self._index_for_key(first_key)
 
     @staticmethod
     def _cloud_badge_visible(item: dict) -> bool:
@@ -1025,11 +1338,19 @@ class ImageGalleryWidget(QGroupBox):
         edit_action = None
         if self._show_edit:
             edit_action = menu.addAction(self.tr("Edit photo"))
-        delete_text = self.tr("Delete selected photos") if len(selected_keys) > 1 else self.tr("Delete photo")
-        delete_action = menu.addAction(delete_text)
+        delete_action = None
+        if self._show_delete:
+            if len(selected_keys) > 1:
+                delete_text = self._delete_menu_label_multi or self.tr("Delete selected photos")
+            else:
+                delete_text = self._delete_menu_label_single or self.tr("Delete photo")
+            delete_action = menu.addAction(delete_text)
         move_action = None
         if self._show_move_to_observation:
             move_action = menu.addAction(self.tr("Move to observation"))
+        # An empty menu (no visible actions for this context) shouldn't pop up.
+        if not menu.actions():
+            return
 
         chosen = menu.exec(global_pos)
         if edit_action is not None and chosen == edit_action:
@@ -1037,8 +1358,8 @@ class ImageGalleryWidget(QGroupBox):
             image_path = getattr(frame, "image_path", "") or ""
             self.editRequested.emit(image_id, image_path)
             return
-        if chosen == delete_action:
-            self.deleteSelectionRequested.emit(list(selected_keys))
+        if delete_action is not None and chosen == delete_action:
+            self.deleteImagesRequested.emit(list(selected_keys))
         elif move_action is not None and chosen == move_action:
             self.moveToObservationRequested.emit(list(selected_keys))
 
@@ -1191,11 +1512,11 @@ class ImageGalleryWidget(QGroupBox):
             return [tr("From raw")]
         return []
 
-    def select_image(self, image_id: int | None) -> None:
+    def select_image(self, image_id: int | None, center: bool = True) -> None:
         current_keys = {image_id} if image_id is not None else set()
         if image_id == self._selected_id and self._selected_keys == current_keys:
             self._last_clicked_index = self._index_for_key(image_id)
-            if image_id is not None:
+            if image_id is not None and center:
                 self._queue_center_on_key(image_id)
             return
         previous_id = self._selected_id
@@ -1208,7 +1529,7 @@ class ImageGalleryWidget(QGroupBox):
             self._set_frame_selected_state(previous_frame, False)
         if new_frame is not None:
             self._set_frame_selected_state(new_frame, True)
-        if image_id is not None:
+        if image_id is not None and center:
             self._queue_center_on_key(image_id)
 
     def publish_selected_ids(self) -> set[int]:
@@ -1275,12 +1596,22 @@ class ImageGalleryWidget(QGroupBox):
         while self._render_index < end_index:
             item = self._items[self._render_index]
             self._render_index += 1
-            frame = self._create_thumbnail_widget(item)
+            # _create_thumbnail_widget returns the outer selection-backdrop
+            # container. self._frames still tracks the inner QFrame so all
+            # per-frame lookups (image_key, mouse handlers, etc.) stay
+            # unchanged; the grid gets the container so the padded backdrop
+            # has room to render behind the frame.
+            container = self._create_thumbnail_widget(item)
+            frame = getattr(container, "_thumbnail_frame", container)
             self._frames.append(frame)
-            self._grid.addWidget(frame)
+            self._grid.addWidget(container)
             key = self._item_key(item)
             if key in self._selected_keys:
                 self._set_frame_selected_state(frame, True)
+        # If the caller told us to manage scroll for this refresh
+        # ("preserve" or "new_at_end"), skip the "recenter on selected"
+        # behaviour so we don't fight our own scroll intent.
+        managed_scroll = self._pending_scroll_mode is not None
         if self._selected_id is not None:
             if self._multi_select and self._selected_keys:
                 if self._selected_id not in self._selected_keys:
@@ -1292,14 +1623,64 @@ class ImageGalleryWidget(QGroupBox):
                             break
                 self._last_clicked_index = self._index_for_key(self._selected_id)
                 self._apply_selection_styles()
-                if self._selected_id is not None:
+                if self._selected_id is not None and not managed_scroll:
                     self._queue_center_on_key(self._selected_id)
             else:
-                self._queue_center_on_key(self._selected_id)
+                if not managed_scroll:
+                    self._queue_center_on_key(self._selected_id)
         elif self._selected_keys:
             self._apply_selection_styles()
-        if generation == self._render_generation and self._render_index < len(self._items):
+        render_done = self._render_index >= len(self._items)
+        if generation == self._render_generation and not render_done:
             self._render_timer.start(0)
+            return
+        if managed_scroll and self._scroll is not None:
+            mode = self._pending_scroll_mode
+            snapshot = self._pending_scroll_restore
+            stick_to_end = self._pending_scroll_stick_to_end
+            self._pending_scroll_mode = None
+            self._pending_scroll_restore = None
+            self._pending_scroll_stick_to_end = False
+            self._apply_pending_scroll(mode, snapshot, stick_to_end=stick_to_end)
+
+    def _apply_pending_scroll(
+        self,
+        mode: str | None,
+        snapshot: int | None,
+        *,
+        stick_to_end: bool = False,
+    ) -> None:
+        if mode is None or self._scroll is None:
+            return
+        scrollbar = self._scroll.horizontalScrollBar()
+        if scrollbar is None:
+            return
+
+        def _apply(retries: int = 8):
+            try:
+                current_max = int(scrollbar.maximum())
+                follow_end = mode == "new_at_end" or (mode == "preserve" and stick_to_end)
+                if follow_end:
+                    target = current_max
+                elif mode == "preserve":
+                    target = int(snapshot if snapshot is not None else scrollbar.value())
+                else:
+                    return
+                clamped = max(int(scrollbar.minimum()), min(int(scrollbar.maximum()), target))
+                scrollbar.setValue(clamped)
+                if follow_end and retries > 0:
+                    # Thumbnail/layout updates can change the range after an
+                    # apparently stable tick. Keep following the right edge
+                    # briefly instead of stopping at the first stable value.
+                    QTimer.singleShot(16, lambda remaining=retries - 1: _apply(remaining))
+            except RuntimeError:
+                pass
+
+        # Immediate best-effort; then re-apply on the next event-loop tick
+        # so the scrollbar range has had a chance to grow as Qt lays out
+        # the freshly-added frames.
+        _apply()
+        QTimer.singleShot(0, _apply)
 
     def eventFilter(self, obj, event):
         if self._reorderable and event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
@@ -1356,16 +1737,13 @@ class ImageGalleryWidget(QGroupBox):
     @staticmethod
     def _apply_frame_glow(frame: QFrame, selected: bool, hovered: bool = False) -> None:
         raw_halo_color = getattr(frame, "raw_halo_color", None)
-        if selected:
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(30)
-            effect.setOffset(0, 0)
-            effect_color = QColor(raw_halo_color) if raw_halo_color else QColor(52, 152, 219, 230)
-            if not effect_color.isValid():
-                effect_color = QColor(52, 152, 219, 230)
-            effect.setColor(effect_color)
-            frame.setGraphicsEffect(effect)
-        elif raw_halo_color:
+        # Selection is now indicated by the outer square backdrop — the old
+        # drop-shadow was too soft and combined weirdly with the backdrop.
+        # Keep the shadow only for RAW halo + hover states.
+        if selected and raw_halo_color:
+            # Retain the RAW halo when a RAW thumbnail is selected.
+            pass  # falls through into the raw_halo_color branch below
+        if raw_halo_color:
             effect = QGraphicsDropShadowEffect(frame)
             effect.setBlurRadius(22)
             effect.setOffset(0, 0)
@@ -1524,6 +1902,12 @@ class ImageGalleryWidget(QGroupBox):
             bottom_left_layout.setContentsMargins(2, 2, 2, 2)
             bottom_left_layout.setSpacing(2)
 
+            # "From raw" first so it sits ABOVE the colored objective tag in
+            # the stack, anchored to the bottom-left corner of the thumbnail.
+            if raw_badge_text:
+                raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
+                bottom_left_layout.addWidget(raw_label, 0, Qt.AlignLeft)
+
             microscope_label = QLabel(str(microscope_tag_text))
             microscope_color = QColor(microscope_tag_color) if microscope_tag_color is not None else QColor("#3498db")
             text_color = _tag_text_color(microscope_color)
@@ -1543,10 +1927,6 @@ class ImageGalleryWidget(QGroupBox):
                 microscope_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
             microscope_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             bottom_left_layout.addWidget(microscope_label, 0, Qt.AlignLeft)
-
-            if raw_badge_text:
-                raw_label = _make_badge(raw_badge_text, raw_badge_text == "R")
-                bottom_left_layout.addWidget(raw_label, 0, Qt.AlignLeft)
 
             if clean_badges:
                 first_row = QHBoxLayout()
@@ -1670,7 +2050,7 @@ class ImageGalleryWidget(QGroupBox):
                 f" border-radius: {overlay_btn_radius}px; font-size: {overlay_font_px}{'px' if self._compact_overlay else 'pt'}; padding: 0px; }}"
                 "QToolButton:hover { background-color: #d6453a; }"
             )
-            delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteRequested.emit(key))
+            delete_btn.clicked.connect(lambda _, key=delete_key: self.deleteImagesRequested.emit([key]))
             overlay_layout.addWidget(delete_btn)
 
         image_layout.addWidget(overlay, 0, 0, alignment=Qt.AlignTop | Qt.AlignRight)
@@ -1734,7 +2114,25 @@ class ImageGalleryWidget(QGroupBox):
         frame.mouseReleaseEvent = lambda e: setattr(self, "_drag_start_pos", None)
         frame.mouseDoubleClickEvent = lambda e, img_id=frame.image_id, path=frame.image_path: self.imageDoubleClicked.emit(img_id, path or "")
         frame.installEventFilter(self)
-        return frame
+        # Wrap the frame in an outer container that provides the square
+        # selection backdrop. When a thumbnail is selected the container's
+        # background paints as a solid colored rectangle behind the frame,
+        # with a few pixels of padding on all sides so the color shows.
+        container = QWidget()
+        container.setObjectName("thumbSelectionContainer")
+        container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        container_layout = QVBoxLayout(container)
+        pad = _THUMB_SELECTION_BACKDROP_PADDING
+        container_layout.setContentsMargins(pad, pad, pad, pad)
+        container_layout.setSpacing(0)
+        container_layout.addWidget(frame)
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet(
+            "QWidget#thumbSelectionContainer { background-color: transparent; }"
+        )
+        container._thumbnail_frame = frame
+        frame._outer_container = container
+        return container
 
     def set_multi_select(self, enabled: bool) -> None:
         self._multi_select = bool(enabled)
@@ -1771,7 +2169,7 @@ class ImageGalleryWidget(QGroupBox):
     def center_on_key(self, key) -> None:
         self._queue_center_on_key(key)
 
-    def select_paths(self, paths: list[str]) -> None:
+    def select_paths(self, paths: list[str], center: bool = True) -> None:
         keys: set[str | int] = set()
         for item in self._items:
             filepath = item.get("filepath")
@@ -1791,8 +2189,26 @@ class ImageGalleryWidget(QGroupBox):
                     first_selected_key = key
                     break
         self._apply_selection_styles()
-        if first_selected_key is not None:
+        if first_selected_key is not None and center:
             self._queue_center_on_key(first_selected_key)
+
+    def exit_edit_selection(self) -> None:
+        """Clear the gallery selection entirely — no highlighted thumbnail(s)
+        remain. Used when a fresh capture arrives; any lingering selection
+        from a prior multi-select-for-edit is no longer relevant. Emits
+        selectionChanged so listeners can update their hints, and bumps the
+        center-request generation so any queued auto-scroll is cancelled."""
+        if not self._selected_keys and self._selected_id is None:
+            return
+        self._selected_keys = set()
+        self._selected_id = None
+        self._last_clicked_index = None
+        # Cancel any pending recenter — we don't want a stale center-request
+        # to snap the viewport once selection changes.
+        self._center_request_generation += 1
+        self._center_request_key = None
+        self._apply_selection_styles()
+        self.selectionChanged.emit(self.selected_paths())
 
     def _index_for_key(self, key) -> int | None:
         if key is None:
@@ -1840,8 +2256,13 @@ class ImageGalleryWidget(QGroupBox):
     def _on_frame_mouse_press(self, event, frame: QFrame) -> None:
         if event.button() == Qt.LeftButton:
             self.setFocus(Qt.MouseFocusReason)
+            # Record the press point in GLOBAL coordinates. Using event.position()
+            # (frame-local) breaks whenever the click triggers an auto-scroll —
+            # the frame slides under the stationary cursor, its local coord
+            # jumps by the scroll delta, and the drag threshold trips even
+            # though the physical mouse never moved.
             try:
-                self._drag_start_pos = event.position().toPoint()
+                self._drag_start_pos = event.globalPosition().toPoint()
             except Exception:
                 self._drag_start_pos = QPoint()
             self._drag_start_key = getattr(frame, "image_key", None)
@@ -1909,8 +2330,10 @@ class ImageGalleryWidget(QGroupBox):
             return
         if getattr(frame, "image_key", None) != self._drag_start_key:
             return
+        # Compare in GLOBAL coordinates — see _on_frame_mouse_press for why
+        # frame-local positions can't be trusted across auto-scroll.
         try:
-            current_pos = event.position().toPoint()
+            current_pos = event.globalPosition().toPoint()
         except Exception:
             return
         if (current_pos - self._drag_start_pos).manhattanLength() < QApplication.startDragDistance():
@@ -1926,7 +2349,10 @@ class ImageGalleryWidget(QGroupBox):
         pixmap = getattr(getattr(frame, "thumb_label", None), "pixmap", lambda: None)()
         if isinstance(pixmap, QPixmap) and not pixmap.isNull():
             drag.setPixmap(pixmap)
-            drag.setHotSpot(current_pos)
+            try:
+                drag.setHotSpot(event.position().toPoint())
+            except Exception:
+                pass
         drag.exec(Qt.MoveAction)
 
     def _on_click(self, event, img_id, path):
@@ -2007,14 +2433,27 @@ class ImageGalleryWidget(QGroupBox):
         # disappear, and so on.
         frame = max(0, int(self._scroll.frameWidth()) * 2)
         scrollbar_h = max(0, int(self._scroll.horizontalScrollBar().sizeHint().height()))
-        available_h = max(0, int(self._scroll.height()) - frame - scrollbar_h - 8)
+        # Reserve room for the selection-backdrop padding above + below the
+        # thumbnail — otherwise the bottom edge of the frame gets clipped
+        # by the strip's fixed height.
+        backdrop_padding = _THUMB_SELECTION_BACKDROP_PADDING * 2
+        available_h = max(
+            0,
+            int(self._scroll.height()) - frame - scrollbar_h - 8 - backdrop_padding,
+        )
         target = max(self._min_thumb_size, min(self._base_thumb_size, available_h))
         return target
 
     def _sync_container_height(self) -> None:
         if not hasattr(self, "_container") or self._container is None:
             return
-        row_height = max(0, int(self._thumb_size if self._frames or self._items else 0))
+        if self._frames or self._items:
+            # The row's actual height is the thumbnail plus the backdrop
+            # padding on both sides — otherwise the padded containers get
+            # clipped from below.
+            row_height = int(self._thumb_size) + 2 * _THUMB_SELECTION_BACKDROP_PADDING
+        else:
+            row_height = 0
         self._container.setFixedHeight(row_height)
 
     def _update_thumbnail_sizes(self) -> None:

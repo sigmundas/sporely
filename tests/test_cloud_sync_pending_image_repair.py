@@ -223,7 +223,11 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
 
     _patch_db_connections(monkeypatch, db_path)
 
-    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images()
+    # These tests exercise the dirty-scan itself; run in explicit media-upload
+    # mode so the gate does not turn the call into a no-op.
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
 
     assert _sync_status(db_path, 10) == "synced"
 
@@ -249,7 +253,11 @@ def test_dirty_scan_redirties_genuinely_pending_image(tmp_path, monkeypatch):
 
     _patch_db_connections(monkeypatch, db_path)
 
-    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images()
+    # These tests exercise the dirty-scan itself; run in explicit media-upload
+    # mode so the gate does not turn the call into a no-op.
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
 
     assert _sync_status(db_path, 12) == "dirty"
 
@@ -299,7 +307,11 @@ def test_metadata_only_association_persists_local_cloud_id_without_upload(tmp_pa
     assert _cloud_id(db_path, 5) == "cloud-image-5"
 
     # A second dirty-scan must not re-dirty the observation.
-    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images()
+    # These tests exercise the dirty-scan itself; run in explicit media-upload
+    # mode so the gate does not turn the call into a no-op.
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
     assert _sync_status(db_path, 377) == "synced"
 
 

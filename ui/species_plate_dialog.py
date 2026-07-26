@@ -49,6 +49,8 @@ _CIRCLE_ZOOM_MAX = 12.0
 _PREVIEW_SCALE = 0.40
 _TEXT_SCALE_DEFAULT = 1.0
 _BG_SLOTS_MAX = 3
+_EMPTY_SLOT_ID = "__empty__"
+_PUBLISH_EXCLUDED_SETTING_PREFIX = "artsobs_publish_excluded_image_ids_"
 
 _SLOT_KEYS = ["TL", "TC", "TR", "BL", "BR"]
 _OVERLAY_SLOT_KEYS = ["TL", "TC", "BR"]   # slots used by the 3_overlay layout
@@ -767,6 +769,19 @@ def _short_objective_label(name: str | None) -> str | None:
 def _is_not_set(canonical: str | None) -> bool:
     """True for the "Not_set" sentinel that DB uses for unset dropdown fields."""
     return canonical is None or canonical == "Not_set"
+
+
+def _slot_label_for(img: dict) -> str:
+    """Label for a plate slot; prefers sample source (Spore print, Hymenium, ...)
+    over specimen condition (Fresh/Dried), which describes the specimen, not the slot."""
+    source_raw = img.get("sample_source")
+    source_canonical = DatabaseTerms.canonicalize_sample_source(source_raw)
+    if source_canonical and not _is_not_set(source_canonical):
+        return _nice_label(source_raw)
+    sample_raw = img.get("sample_type")
+    if not _is_not_set(DatabaseTerms.canonicalize_sample(sample_raw)):
+        return _nice_label(sample_raw)
+    return ""
 
 
 def _microscope_badge_text(img_rec: dict) -> str:
@@ -1723,13 +1738,13 @@ class PlatePreviewCanvas(QWidget):
             if key and (key.startswith("clear:") or key.startswith("label:")):
                 self.setCursor(Qt.ArrowCursor)
             elif key and key.startswith("resize:"):
-                corner = key.split(":", 2)[2]
-                cur = (Qt.SizeFDiagCursor if corner in ("TL", "BR") else Qt.SizeBDiagCursor)
-                self.setCursor(cur)
+                # Size*DiagCursor / SizeAllCursor fall back to Qt-embedded
+                # bitmaps on macOS, which crashes in Qt 6.11 / macOS 26.
+                self.setCursor(Qt.ArrowCursor)
                 self._dlg._hint_ctrl.set_hint(
                     self._dlg.tr("Drag to resize inset"), "info")
             elif key and key.startswith("border:"):
-                self.setCursor(Qt.SizeAllCursor)
+                self.setCursor(Qt.ArrowCursor)
                 self._dlg._hint_ctrl.set_hint(
                     self._dlg.tr("Drag border to reposition shape — {del_hint} to delete").format(
                         del_hint=_del_hint()),
@@ -1882,10 +1897,15 @@ class SpeciesPlateDialog(QDialog):
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
         micro = [i for i in all_imgs if i.get("image_type") == "microscope"]
 
-        # Assign micro images to circle slots by sample_type keyword
+        # Assign micro images to circle slots by sample/source keyword.
+        # Sample source (Spore_print, Hymenium, ...) is what actually names the material;
+        # legacy rows may still carry a source token in sample_type until migrated.
         by_sample: dict[str, list[dict]] = {}
         for img in micro:
-            key = (img.get("sample_type") or "").strip().lower()
+            key = " ".join(
+                str(img.get(col) or "").strip().lower()
+                for col in ("sample_source", "sample_type", "micro_category")
+            ).strip()
             by_sample.setdefault(key, []).append(img)
 
         self._slot_images: dict[str, Optional[dict]] = {}
@@ -1908,9 +1928,7 @@ class SpeciesPlateDialog(QDialog):
             self._slot_images[slot] = found
             if found:
                 used.add(found["id"])
-                st = (found.get("sample_type") or "").strip()
-                filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-                self._slot_labels[slot] = filtered or _SLOT_FALLBACK_LABEL[slot]
+                self._slot_labels[slot] = _slot_label_for(found) or _SLOT_FALLBACK_LABEL[slot]
             else:
                 self._slot_labels[slot] = _SLOT_FALLBACK_LABEL[slot]
 
@@ -1920,9 +1938,7 @@ class SpeciesPlateDialog(QDialog):
                 img = remaining_micro.pop(0)
                 self._slot_images[slot] = img
                 used.add(img["id"])
-                st = (img.get("sample_type") or "").strip()
-                filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-                self._slot_labels[slot] = filtered or _SLOT_FALLBACK_LABEL[slot]
+                self._slot_labels[slot] = _slot_label_for(img) or _SLOT_FALLBACK_LABEL[slot]
 
         # ── Background slots (max 3, any image type) ───────────────────────
         self._bg_slots: list[Optional[dict]] = [None] * _BG_SLOTS_MAX
@@ -2036,14 +2052,30 @@ class SpeciesPlateDialog(QDialog):
         s = QSettings(SETTINGS_ORG, "SpeciesPlate")
         s.beginGroup(f"obs_{self._obs_id}")
         id_map = {img["id"]: img for img in self._all_images if img.get("id") is not None}
+
+        def _saved_image(raw) -> Optional[dict]:
+            text = str(raw or "").strip()
+            if not text or text == _EMPTY_SLOT_ID:
+                return None
+            try:
+                return id_map.get(int(text))
+            except (TypeError, ValueError):
+                return None
+
+        has_slot_state = any(s.contains(f"slot_{slot}_id") for slot in _SLOT_KEYS)
+        has_bg_state = any(s.contains(f"bg_{i}_id") for i in range(_BG_SLOTS_MAX))
         for slot in _SLOT_KEYS:
-            raw = s.value(f"slot_{slot}_id")
-            if raw is not None:
-                self._slot_images[slot] = id_map.get(int(raw))
+            key = f"slot_{slot}_id"
+            if s.contains(key):
+                self._slot_images[slot] = _saved_image(s.value(key))
+            elif has_slot_state:
+                self._slot_images[slot] = None
         for i in range(_BG_SLOTS_MAX):
-            raw = s.value(f"bg_{i}_id")
-            if raw is not None:
-                self._bg_slots[i] = id_map.get(int(raw))
+            key = f"bg_{i}_id"
+            if s.contains(key):
+                self._bg_slots[i] = _saved_image(s.value(key))
+            elif has_bg_state:
+                self._bg_slots[i] = None
         raw_layout = s.value("bg_layout")
         if raw_layout and raw_layout in _BG_LAYOUTS:
             self._bg_layout = raw_layout
@@ -2091,10 +2123,10 @@ class SpeciesPlateDialog(QDialog):
         s.beginGroup(f"obs_{self._obs_id}")
         for slot in _SLOT_KEYS:
             img = self._slot_images.get(slot)
-            s.setValue(f"slot_{slot}_id", img["id"] if img else None)
+            s.setValue(f"slot_{slot}_id", img["id"] if img else _EMPTY_SLOT_ID)
         for i in range(_BG_SLOTS_MAX):
             img = self._bg_slots[i]
-            s.setValue(f"bg_{i}_id", img["id"] if img else None)
+            s.setValue(f"bg_{i}_id", img["id"] if img else _EMPTY_SLOT_ID)
         bg_layout = self._bg_layout
         if hasattr(self, "_layout_btn_group"):
             checked = self._layout_btn_group.checkedButton()
@@ -2448,9 +2480,14 @@ class SpeciesPlateDialog(QDialog):
             self,
             show_delete=False,
             show_badges=True,
+            show_edit=True,
+            show_publish_checkbox=True,
+            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
+        self._gallery.editRequested.connect(self._on_species_plate_gallery_edit_requested)
+        self._gallery.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         right_layout.addWidget(self._gallery)
 
         main_row.addLayout(right_layout, 1)
@@ -2767,6 +2804,22 @@ class SpeciesPlateDialog(QDialog):
         # Refresh preview to update yellow/blue label rectangle highlight
         self._refresh_preview()
 
+    def _on_species_plate_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # "Edit photo" bounces out to the parent window's Observations tab
+        # → Prepare Images, mirroring the other galleries.
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "observations_tab"):
+                break
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        observations_tab = getattr(parent, "observations_tab", None) if parent is not None else None
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
+
     def _on_gallery_image_clicked(self, item_dict, filepath: str) -> None:
         """Assign the gallery image to the active slot/background."""
         active = self._canvas._active
@@ -2798,9 +2851,7 @@ class SpeciesPlateDialog(QDialog):
                 self._bg_slots[idx] = new_img
         else:
             self._slot_images[active] = new_img
-            st = (new_img.get("sample_type") or "").strip()
-            filtered = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st)) else _nice_label(st)
-            self._slot_labels[active] = filtered or _SLOT_FALLBACK_LABEL.get(active, active)
+            self._slot_labels[active] = _slot_label_for(new_img) or _SLOT_FALLBACK_LABEL.get(active, active)
             # Keep circles equalized when a new image is assigned
             if hasattr(self, "_equal_scale_chk") and self._equal_scale_chk.isChecked():
                 self._fit_new_slot_to_current_scale(active)
@@ -2818,11 +2869,13 @@ class SpeciesPlateDialog(QDialog):
         """Rebuild gallery with reuse enabled and used/selected highlights."""
         from ui.image_gallery_widget import ImageGalleryWidget as _IGW
         in_use = self._in_use_image_ids()
+        publish_selected = self._publish_selected_image_ids()
         items = []
         for img in self._all_images:
             if not img.get("filepath"):
                 continue
             image_type = (img.get("image_type") or "field").strip().lower()
+            img_id = img.get("id")
             obj_short = _short_objective_label(
                 img.get("objective_name") or img.get("magnification"))
             scale_val = _image_scale_mpp(img)
@@ -2845,15 +2898,107 @@ class SpeciesPlateDialog(QDialog):
                 lab_metadata=img.get("lab_metadata"),
                 translate=self.tr,
             )
+            cloud_id = str(img.get("cloud_id") or "").strip()
             items.append({
-                "id": img.get("id"),
+                "id": img_id,
                 "filepath": img.get("filepath", ""),
                 "image_type": image_type,
                 "badges": badges,
-                "frame_border_color": "#c0392b" if img.get("id") in in_use else None,
+                "frame_border_color": "#c0392b" if img_id in in_use else None,
+                # Show the cloud-sync icon top-center for images that have
+                # already been uploaded — matches the Observations tab so
+                # users can tell what's synced without leaving Species Plate.
+                "cloud_id": cloud_id or None,
+                "cloud_uploaded": bool(cloud_id),
+                "publish_selected": bool(img_id is not None and int(img_id) in publish_selected),
+                "publish_selected_default": image_type != "microscope",
             })
         self._gallery.set_items(items)
         self._sync_gallery_selection()
+
+    def _publish_excluded_image_ids(self) -> set[int]:
+        if not self._obs_id:
+            return set()
+        raw = SettingsDB.get_setting(f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}", "[]")
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                return {int(value) for value in loaded}
+        except Exception:
+            pass
+        return set()
+
+    def _set_publish_excluded_image_ids(self, excluded_ids: set[int]) -> None:
+        if not self._obs_id:
+            return
+        normalized = sorted({int(value) for value in (excluded_ids or set())})
+        SettingsDB.set_setting(
+            f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}",
+            json.dumps(normalized),
+        )
+
+    def _publish_selected_image_ids(self) -> set[int]:
+        all_ids = {
+            int(img.get("id"))
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        return all_ids - self._publish_excluded_image_ids()
+
+    def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
+        image_by_id = {
+            int(img.get("id")): dict(img)
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        all_ids = {
+            int(img.get("id"))
+            for img in self._all_images
+            if img.get("id") is not None
+        }
+        previous_selected = all_ids - self._publish_excluded_image_ids()
+        try:
+            selected = {int(value) for value in (selected_ids or set())}
+        except Exception:
+            selected = set()
+        unchecked_ids = previous_selected - selected
+        rechecked_ids = selected - previous_selected
+        for image_id in unchecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                ImageDB.queue_image_tombstone_for_local_image(image_id)
+            except Exception:
+                pass
+        for image_id in rechecked_ids:
+            img = image_by_id.get(image_id) or {}
+            cloud_id = str(img.get("cloud_id") or "").strip()
+            if not cloud_id:
+                continue
+            try:
+                tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                tombstone = None
+            if not tombstone:
+                continue
+            try:
+                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
+            except Exception:
+                pass
+            if str(tombstone.get("delete_synced_at") or "").strip():
+                try:
+                    ImageDB.clear_image_cloud_sync_state(image_id)
+                except Exception:
+                    pass
+        self._set_publish_excluded_image_ids(all_ids - selected)
+        try:
+            from utils.cloud_sync import mark_observation_dirty
+
+            mark_observation_dirty(int(self._obs_id))
+        except Exception:
+            pass
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -3152,14 +3297,17 @@ class SpeciesPlateDialog(QDialog):
                     parts.append(tech)
             if image_type != "field" and show_sample:
                 st_raw = img_rec.get("sample_type")
+                src_raw = img_rec.get("sample_source")
                 mt_raw = img_rec.get("mount_medium")
                 stain_raw = img_rec.get("stain")
                 stype = "" if _is_not_set(DatabaseTerms.canonicalize_sample(st_raw)) else _nice_label(st_raw)
+                source = "" if _is_not_set(DatabaseTerms.canonicalize_sample_source(src_raw)) \
+                    else _nice_label(src_raw)
                 mount = "" if _is_not_set(DatabaseTerms.canonicalize_mount(mt_raw)) \
                     else _nice_label(mt_raw)
                 stain = "" if _is_not_set(DatabaseTerms.canonicalize("stain", stain_raw)) \
                     else _nice_label(stain_raw)
-                for p in [stype, mount, stain]:
+                for p in [source, stype, mount, stain]:
                     if p and p not in parts:
                         parts.append(p)
             if parts:
@@ -3327,7 +3475,10 @@ class SpeciesPlateDialog(QDialog):
             int(img.get("id"))
             for img in self._all_images
             if img.get("id") is not None
-            and DatabaseTerms.canonicalize_sample(img.get("sample_type")) in {"spore", "spores"}
+            and (
+                DatabaseTerms.canonicalize_sample_source(img.get("sample_source")) == "Spore_print"
+                or DatabaseTerms.canonicalize_measure(img.get("micro_category")) == "Spores"
+            )
         }
         if not spore_image_ids:
             return ""

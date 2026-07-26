@@ -697,21 +697,19 @@ def test_observation_table_thumbnail_map_skips_tombstoned_first_image(monkeypatc
             """,
             ("cloud-image-1", "2026-05-29 11:26:30", "cloud-obs-1", 1, 11),
         )
+        conn.executemany(
+            "INSERT INTO thumbnails (image_id, size_preset, filepath) VALUES (?, ?, ?)",
+            [
+                (11, "small", str(tombstoned_thumb)),
+                (12, "small", str(active_thumb)),
+            ],
+        )
         conn.commit()
     finally:
         conn.close()
 
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(observations_tab, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(
-        observations_tab,
-        "get_thumbnail_path",
-        lambda image_id, size: {
-            11: str(tombstoned_thumb),
-            12: str(active_thumb),
-        }.get(image_id),
-    )
-
     tab = ObservationsTab.__new__(ObservationsTab)
     thumbnail_map = tab._build_observation_thumbnail_map([1])
 

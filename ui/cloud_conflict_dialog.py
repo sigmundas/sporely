@@ -208,17 +208,97 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes/1024:.1f} KB"
     return f"{size_bytes/(1024*1024):.1f} MB"
 
+
+def _conflict_headline(identity: dict) -> str:
+    """One-line human summary used everywhere the observation is named."""
+    species = str(identity.get('species') or 'Unknown species').strip() or 'Unknown species'
+    date_text = str(identity.get('date') or '').strip()
+    if date_text and date_text != '—':
+        return f'{species} — {date_text}'
+    return species
+
+
+def _conflict_subtitle(identity: dict, detail: dict) -> str:
+    parts: list[str] = []
+    location_text = str(identity.get('location') or '').strip()
+    if location_text and location_text != '—':
+        parts.append(location_text)
+    time_text = str(identity.get('time') or '').strip()
+    if time_text and time_text != '—':
+        parts.append(f'at {time_text}')
+    local_id = int(detail.get('local_id') or 0)
+    cloud_id = str(detail.get('cloud_id') or '').strip()
+    id_bits = []
+    if local_id:
+        id_bits.append(f'local #{local_id}')
+    if cloud_id:
+        id_bits.append(f'cloud {cloud_id}')
+    if id_bits:
+        parts.append('(' + ' · '.join(id_bits) + ')')
+    return ' · '.join(parts)
+
+
 def _conflict_list_label(detail: dict) -> str:
     identity = _conflict_identity(detail)
-    local_id = int(detail.get('local_id') or 0)
-    cloud_id = str(detail.get('cloud_id') or '').strip() or '?'
-    second_line = f"{identity['date']}"
-    if identity['time'] != '—':
-        second_line += f" {identity['time']}"
-    if identity['location'] != '—':
-        second_line += f" · {identity['location']}"
-    second_line += f"  (desktop #{local_id} ↔ cloud {cloud_id})"
-    return f"{identity['species']}\n{second_line}"
+    headline = _conflict_headline(identity)
+    subtitle = _conflict_subtitle(identity, detail)
+    return f'{headline}\n{subtitle}' if subtitle else headline
+
+
+def _conflict_overview_sentence(detail: dict) -> str:
+    """Plain-language TL;DR describing what needs review, without ids."""
+    field_labels = [
+        str(row.get('label') or row.get('field') or '').strip()
+        for row in (detail.get('field_rows') or [])
+        if row.get('local_changed') and row.get('remote_changed')
+    ]
+    field_labels = [label for label in field_labels if label]
+    local_only = [
+        str(row.get('label') or '').strip()
+        for row in (detail.get('field_rows') or [])
+        if row.get('local_changed') and not row.get('remote_changed')
+    ]
+    remote_only = [
+        str(row.get('label') or '').strip()
+        for row in (detail.get('field_rows') or [])
+        if row.get('remote_changed') and not row.get('local_changed')
+    ]
+    parts: list[str] = []
+    if field_labels:
+        joined = _join_english(field_labels)
+        parts.append(
+            f'Both this device and Sporely Cloud changed {joined} — the two versions no longer match.'
+        )
+    elif local_only and remote_only:
+        parts.append(
+            f'This device changed {_join_english(local_only)}; '
+            f'Sporely Cloud changed {_join_english(remote_only)}.'
+        )
+    elif local_only:
+        parts.append(f'This device changed {_join_english(local_only)}.')
+    elif remote_only:
+        parts.append(f'Sporely Cloud changed {_join_english(remote_only)}.')
+    measurement_conflicts = list(detail.get('measurement_conflicts') or [])
+    if measurement_conflicts:
+        parts.append(
+            f'{len(measurement_conflicts)} spore measurement(s) differ between this device and Sporely Cloud.'
+        )
+    if detail.get('image_mismatches'):
+        parts.append('Some photos are only on one side.')
+    if not parts:
+        parts.append('Both sides look similar — you may still need to pick a version to sync.')
+    return ' '.join(parts)
+
+
+def _join_english(items: list[str]) -> str:
+    values = [str(item or '').strip() for item in (items or []) if str(item or '').strip()]
+    if not values:
+        return ''
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f'{values[0]} and {values[1]}'
+    return ', '.join(values[:-1]) + f', and {values[-1]}'
 
 
 class CloudConflictDialog(QDialog):
@@ -246,12 +326,10 @@ class CloudConflictDialog(QDialog):
         root.setSpacing(12)
 
         intro = QLabel(
-            'Most cloud changes were synced automatically. '
-            'These observations still need review because both sides changed the same data, '
-            'or a cloud change would remove local media. '
-            'The table compares observation fields such as species, date, notes, and GPS. '
-            'The panels below summarize image and other media-related changes. '
-            'Choose which version to keep.'
+            'Most cloud changes were synced automatically. These observations still need review '
+            'because both sides — this device and Sporely Cloud (which is shared with the web app, '
+            "Android app, and any other devices you use) — edited the same observation. "
+            'Pick which version to keep, or merge safe additions.'
         )
         intro.setWordWrap(True)
         root.addWidget(intro)
@@ -289,17 +367,28 @@ class CloudConflictDialog(QDialog):
 
         self._title_label = QLabel('Select a conflicted observation')
         self._title_label.setStyleSheet('font-size: 16px; font-weight: 700;')
+        self._title_label.setWordWrap(True)
         right_layout.addWidget(self._title_label)
 
-        self._identity_label = QLabel('Species: —    Date: —    Time: —    Location: —')
+        self._identity_label = QLabel('')
         self._identity_label.setWordWrap(True)
+        self._identity_label.setStyleSheet('color: #6b7280;')
         right_layout.addWidget(self._identity_label)
+
+        self._overview_label = QLabel('')
+        self._overview_label.setWordWrap(True)
+        self._overview_label.setStyleSheet(
+            'background-color: #fff8e1; border: 1px solid #f0d68a;'
+            ' border-radius: 6px; padding: 8px; color: #4a3a10;'
+        )
+        self._overview_label.hide()
+        right_layout.addWidget(self._overview_label)
 
         meta_row = QHBoxLayout()
         meta_row.setSpacing(18)
         self._synced_label = QLabel('Last synced: —')
-        self._local_time_label = QLabel('Desktop changed: —')
-        self._remote_time_label = QLabel('Cloud changed: —')
+        self._local_time_label = QLabel('This device changed: —')
+        self._remote_time_label = QLabel('Sporely Cloud changed: —')
         meta_row.addWidget(self._synced_label)
         meta_row.addWidget(self._local_time_label)
         meta_row.addWidget(self._remote_time_label)
@@ -308,7 +397,9 @@ class CloudConflictDialog(QDialog):
 
         self._compare_table = QTableWidget(0, 4, self)
         self._compare_table.setFocusPolicy(Qt.NoFocus)
-        self._compare_table.setHorizontalHeaderLabels(['Field', 'Last synced', 'Desktop now', 'Cloud now'])
+        self._compare_table.setHorizontalHeaderLabels(
+            ['Field', 'Last synced', 'On this device', 'On Sporely Cloud']
+        )
         self._compare_table.verticalHeader().setVisible(False)
         self._compare_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._compare_table.setSelectionMode(QTableWidget.NoSelection)
@@ -322,8 +413,10 @@ class CloudConflictDialog(QDialog):
         right_layout.addWidget(self._compare_table, 2)
 
         summary_splitter = QSplitter(Qt.Horizontal, self)
-        self._desktop_box = self._make_summary_box('Desktop media changes')
-        self._cloud_box = self._make_summary_box('Cloud media changes')
+        self._desktop_box = self._make_summary_box('Photo changes on this device')
+        self._cloud_box = self._make_summary_box(
+            'Photo changes on Sporely Cloud (web, Android, other devices)'
+        )
         summary_splitter.addWidget(self._desktop_box)
         summary_splitter.addWidget(self._cloud_box)
         right_layout.addWidget(summary_splitter, 1)
@@ -344,11 +437,25 @@ class CloudConflictDialog(QDialog):
 
         action_row.addStretch(1)
 
-        self._keep_local_btn = QPushButton(self.tr('Use Desktop version'))
+        self._keep_local_btn = QPushButton(self.tr('Use this device'))
+        self._keep_local_btn.setToolTip(
+            self.tr(
+                'Overwrite the Sporely Cloud version with what is on this device. '
+                'Anything edited on the web app, Android app, or another device since '
+                'the last sync will be replaced.'
+            )
+        )
         self._keep_local_btn.clicked.connect(self._resolve_keep_local)
         action_row.addWidget(self._keep_local_btn)
 
-        self._keep_remote_btn = QPushButton(self.tr('Use Cloud version'))
+        self._keep_remote_btn = QPushButton(self.tr('Use Sporely Cloud'))
+        self._keep_remote_btn.setToolTip(
+            self.tr(
+                'Overwrite this device with the Sporely Cloud version. Local edits '
+                'since the last sync will be replaced. Local-only photo files are kept '
+                'on disk.'
+            )
+        )
         self._keep_remote_btn.clicked.connect(self._resolve_keep_cloud)
         action_row.addWidget(self._keep_remote_btn)
 
@@ -397,7 +504,7 @@ class CloudConflictDialog(QDialog):
             if not label:
                 local_id = int(conflict.get('local_id') or 0)
                 cloud_id = str(conflict.get('cloud_id') or '').strip() or '?'
-                label = f'Observation #{local_id}\n desktop #{local_id} ↔ cloud {cloud_id}'
+                label = f'Observation (loading details…)\nlocal #{local_id} · cloud {cloud_id}'
             item = QListWidgetItem(label)
             item.setToolTip(label.replace('\n', '\n'))
             item.setData(Qt.UserRole, dict(conflict))
@@ -496,30 +603,37 @@ class CloudConflictDialog(QDialog):
 
     def _clear_detail(self) -> None:
         self._title_label.setText('Select a conflicted observation')
-        self._identity_label.setText('Species: —    Date: —    Time: —    Location: —')
+        self._identity_label.setText('')
+        self._overview_label.setText('')
+        self._overview_label.hide()
         self._synced_label.setText('Last synced: —')
-        self._local_time_label.setText('Desktop changed: —')
-        self._remote_time_label.setText('Cloud changed: —')
+        self._local_time_label.setText('This device changed: —')
+        self._remote_time_label.setText('Sporely Cloud changed: —')
         self._compare_table.setRowCount(0)
-        self._summary_widget(self._desktop_box).setPlainText('No desktop image or media changes detected.')
-        self._summary_widget(self._cloud_box).setPlainText('No cloud image changes detected.')
+        self._summary_widget(self._desktop_box).setPlainText(
+            'No photo changes on this device since the last sync.'
+        )
+        self._summary_widget(self._cloud_box).setPlainText(
+            'No photo changes on Sporely Cloud since the last sync.'
+        )
         self._set_detail_enabled(False)
 
     def _populate_detail(self, detail: dict) -> None:
         self._set_detail_enabled(True)
         identity = _conflict_identity(detail)
-        
-        # ... (Identity and Timestamp labels remain the same) ...
-        self._title_label.setText(
-            f"{identity.get('species') or detail.get('title') or 'Observation'}  "
-            f"(desktop #{detail.get('local_id')} ↔ cloud {detail.get('cloud_id')})"
-        )
 
-        # Build detailed media change lists
-        desktop_lines = []
-        cloud_lines = []
+        self._title_label.setText(_conflict_headline(identity))
+        subtitle = _conflict_subtitle(identity, detail)
+        self._identity_label.setText(subtitle)
+        self._identity_label.setVisible(bool(subtitle))
 
-        # 1. Handle Observation Metadata Rows (Table)
+        overview = _conflict_overview_sentence(detail)
+        if overview:
+            self._overview_label.setText(overview)
+            self._overview_label.show()
+        else:
+            self._overview_label.hide()
+
         field_rows = list(detail.get('field_rows') or [])
         self._compare_table.setRowCount(len(field_rows))
         for row_index, row in enumerate(field_rows):
@@ -541,26 +655,36 @@ class CloudConflictDialog(QDialog):
         mismatches = list(detail.get('image_mismatches') or [])
         desktop_lines = list(detail.get('local_image_changes') or [])
         cloud_lines = list(detail.get('remote_image_changes') or [])
+        measurement_conflicts = list(detail.get('measurement_conflicts') or [])
+        if measurement_conflicts:
+            count = len(measurement_conflicts)
+            desktop_lines.append(
+                self.tr('{count} spore measurement(s) have local changes.').format(count=count)
+            )
+            cloud_lines.append(
+                self.tr('{count} corresponding cloud measurement(s) differ.').format(count=count)
+            )
 
-        if mismatches:
-            image_lines = [self.tr('Image differences needing review:')]
-            for mismatch in mismatches:
-                fname = str(mismatch.get('filename') or 'Unknown')
-                status = str(mismatch.get('status') or '').strip()
-                if status == 'local_only':
-                    image_lines.append(self.tr('• {name}: Desktop only copy').format(name=fname))
-                else:
-                    image_lines.append(self.tr('• {name}: Cloud only copy').format(name=fname))
-            desktop_lines = image_lines + desktop_lines
-
-        if detail.get('local_measurement_count'):
-            desktop_lines.append(f"Measurements: {int(detail.get('local_measurement_count'))} on desktop.")
+        local_only_count = sum(
+            1 for m in mismatches if str(m.get('status') or '').strip() == 'local_only'
+        )
+        cloud_only_count = sum(
+            1 for m in mismatches if str(m.get('status') or '').strip() != 'local_only'
+        )
+        if local_only_count:
+            desktop_lines.append(
+                self.tr('{count} photo(s) are only on this device.').format(count=local_only_count)
+            )
+        if cloud_only_count:
+            cloud_lines.append(
+                self.tr('{count} photo(s) are only on Sporely Cloud.').format(count=cloud_only_count)
+            )
 
         self._summary_widget(self._desktop_box).setPlainText(
-            _summary_text(desktop_lines, 'No specific desktop image changes.')
+            _summary_text(desktop_lines, 'No photo changes on this device since the last sync.')
         )
         self._summary_widget(self._cloud_box).setPlainText(
-            _summary_text(cloud_lines, 'No specific cloud image changes.')
+            _summary_text(cloud_lines, 'No photo changes on Sporely Cloud since the last sync.')
         )
 
     def _append_decisions_for_conflicts(

@@ -322,7 +322,7 @@ def _insert_local_measurement_row(
         conn.close()
 
 
-def test_pull_all_retries_missing_local_cloud_media_after_snapshot_stays_unchanged(
+def test_pull_all_reconciles_missing_local_cloud_media_from_partial_snapshot(
     tmp_path,
     monkeypatch,
 ):
@@ -487,10 +487,13 @@ def test_pull_all_retries_missing_local_cloud_media_after_snapshot_stays_unchang
         assert all(Path(row[1]).exists() for row in rows)
         assert second_snapshot == first_snapshot
 
-    assert profiler.retry_missing_cloud_media_branch_runs == 1
+    first_snapshot_payload = json.loads(first_snapshot[0])
+    assert "images" not in first_snapshot_payload
+    assert "measurements" not in first_snapshot_payload
+    assert profiler.retry_missing_cloud_media_branch_runs == 0
 
 
-def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_metadata(
+def test_pull_all_defers_remote_media_without_acknowledging_child_snapshot(
     tmp_path,
     monkeypatch,
 ):
@@ -650,7 +653,8 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
         conn.close()
 
     assert result["pulled"] == 1
-    assert result["errors"] == []
+    assert len(result["errors"]) == 1
+    assert "has not been materialized locally" in result["errors"][0]
     assert client.download_attempts == []
     assert generate_calls == []
     assert client.pull_bulk_calls == 1
@@ -665,8 +669,8 @@ def test_pull_all_can_skip_materializing_remote_images_without_losing_snapshot_m
     assert measurement_count == 0
     assert snapshot_row is not None
     snapshot = json.loads(snapshot_row[0])
-    assert len(snapshot["images"]) == len(remote_images)
-    assert len(snapshot["measurements"]) == len(remote_measurements)
+    assert "images" not in snapshot
+    assert "measurements" not in snapshot
 
 
 def test_pull_all_materializes_remote_images_without_direct_r2_secrets(
@@ -1560,6 +1564,93 @@ def test_cloud_media_materialization_state_detects_missing_and_ready_media(
     assert ready_state["needs_materialization"] is False
     assert ready_state["local_images_ready"] == 1
     assert ready_state["local_measurements_linked"] == 1
+
+
+def test_cloud_media_materialization_state_treats_metadata_only_microscope_anchor_as_ready(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "sporely.db"
+    _create_retry_db(db_path)
+
+    remote_images = [
+        {
+            "id": "cloud-image-anchor",
+            "desktop_id": 1,
+            "observation_id": "cloud-obs-1",
+            "storage_path": None,
+            "original_filename": "microscope-anchor.jpg",
+            "image_type": "microscope",
+            "sort_order": 0,
+            "deleted_at": None,
+            "mount_medium": "KOH",
+            "stain": "Melzer",
+            "sample_type": "Fresh",
+            "contrast": "DIC",
+        }
+    ]
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-anchor",
+            "desktop_id": None,
+            "image_id": "cloud-image-anchor",
+            "length_um": 12.5,
+            "width_um": 7.5,
+            "measurement_type": "manual",
+            "gallery_rotation": 90,
+            "p1_x": 1.1,
+            "p1_y": 2.2,
+            "p2_x": 3.3,
+            "p2_y": 4.4,
+            "p3_x": 5.5,
+            "p3_y": 6.6,
+            "p4_x": 7.7,
+            "p4_y": 8.8,
+            "measured_at": "2026-05-01T12:00:00Z",
+            "notes": "cloud note",
+        }
+    ]
+    _store_snapshot(
+        db_path,
+        "cloud-obs-1",
+        {
+            "observation": {
+                "id": "cloud-obs-1",
+                "desktop_id": 1,
+                "date": "2026-05-01",
+                "genus": "Flammulina",
+                "species": "velutipes",
+            },
+            "images": remote_images,
+            "measurements": remote_measurements,
+        },
+    )
+
+    anchor_path = tmp_path / "images" / "obs-1" / "microscope-anchor.jpg"
+    local_image_id = _insert_local_image_row(
+        db_path,
+        observation_id=1,
+        filepath=anchor_path,
+        cloud_id="cloud-image-anchor",
+        image_type="microscope",
+    )
+    _insert_local_measurement_row(
+        db_path,
+        image_id=local_image_id,
+        cloud_id="cloud-measurement-anchor",
+    )
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    state = cloud_sync.cloud_media_materialization_state_for_observation(1)
+    assert state["status"] == "already_materialized"
+    assert state["needs_materialization"] is False
+    assert state["remote_images_considered"] == 1
+    assert state["remote_measurements_considered"] == 1
+    assert state["local_images_ready"] == 1
+    assert state["local_images_missing_files"] == 0
+    assert state["local_measurements_linked"] == 1
 
 
 def test_cloud_media_materialization_state_without_snapshot_is_conservative(

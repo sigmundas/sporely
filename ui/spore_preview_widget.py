@@ -1,8 +1,6 @@
 """Magnified spore preview widget with draggable sides for fine-tuning."""
-from functools import lru_cache
-
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QPolygonF, QBrush, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QPolygonF, QBrush, QPainterPath
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 import math
 
@@ -16,11 +14,6 @@ from .measurement_overlay_style import (
     rectangle_thin_stroke_width,
     rectangle_corner_segments,
 )
-
-
-@lru_cache(maxsize=None)
-def _cursor(shape: Qt.CursorShape) -> QCursor:
-    return QCursor(shape)
 
 
 class SporePreviewWidget(QWidget):
@@ -529,7 +522,7 @@ class PreviewImageLabel(QLabel):
         if self._cursor_shape == shape:
             return
         self._cursor_shape = shape
-        self.setCursor(_cursor(shape))
+        self.setCursor(shape)
 
     def _measure_stroke_style(self, color=None):
         base = QColor(color) if color is not None else QColor(self.measure_color)
@@ -949,7 +942,9 @@ class PreviewImageLabel(QLabel):
 
             # Check if hovering inside rectangle
             if len(self.screen_corners) == 4 and self.is_point_inside_polygon(mouse_pos, self.screen_corners):
-                self._set_cursor_shape(Qt.SizeAllCursor)
+                # SizeAllCursor falls back to a Qt-embedded bitmap on macOS,
+                # which crashes in Qt 6.11 / macOS 26 CoreGraphics.
+                self._set_cursor_shape(Qt.ArrowCursor)
                 self.update()
                 return
 

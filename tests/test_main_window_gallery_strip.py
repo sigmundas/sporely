@@ -65,21 +65,25 @@ def _build_scroll_scene(frame_specs):
     return scroll, container, frames
 
 
-def test_analysis_gallery_selection_recenters_near_edge_thumbnail(monkeypatch, qapp):
+def test_analysis_gallery_selection_nudges_offscreen_thumbnail_into_view(monkeypatch, qapp):
     window = _build_minimal_window(monkeypatch)
 
+    # Frame 42 is placed off the right edge of the viewport (viewport is
+    # 500px wide at scroll=100 → visible x range 100..600, but frame 42
+    # spans 620..740). Selecting it should nudge the strip just enough to
+    # reveal it, not recenter it or leave it hidden.
     scroll, container, frames = _build_scroll_scene(
         [
-            (41, 530, 120),
-            (42, 650, 120),
-            (43, 780, 120),
+            (41, 500, 120),
+            (42, 620, 120),
+            (43, 750, 120),
         ]
     )
     qapp.processEvents()
 
     window.gallery_scroll = scroll
     window._gallery_thumbnail_frames = frames
-    scroll.horizontalScrollBar().setValue(300)
+    scroll.horizontalScrollBar().setValue(100)
     qapp.processEvents()
 
     expected = center_horizontal_scroll_target(
@@ -90,13 +94,72 @@ def test_analysis_gallery_selection_recenters_near_edge_thumbnail(monkeypatch, q
         QRectF(frames[41].geometry()),
         QRectF(frames[43].geometry()),
     )
+    assert expected is not None  # sanity: item is off-screen so a scroll IS required
 
     window._select_analysis_gallery_measurement(42, update_plot=False)
     qapp.processEvents()
     qapp.processEvents()
 
-    value = scroll.horizontalScrollBar().value()
-    assert value == expected
+    assert scroll.horizontalScrollBar().value() == expected
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_selection_leaves_comfortable_thumbnail_alone(monkeypatch, qapp):
+    # Clicking a thumbnail that's fully visible AND whose immediate
+    # neighbours are also fully visible must not shift the strip. The old
+    # "recenter when a neighbour < 25% visible" algorithm caused jumpy
+    # behaviour on right-edge clicks.
+    window = _build_minimal_window(monkeypatch)
+    # 41, 42, 43 all fit inside viewport [300, 800] with room to spare.
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (41, 400, 120),
+            (42, 520, 120),
+            (43, 640, 120),
+        ]
+    )
+    qapp.processEvents()
+
+    window.gallery_scroll = scroll
+    window._gallery_thumbnail_frames = frames
+    scroll.horizontalScrollBar().setValue(300)
+    qapp.processEvents()
+
+    window._select_analysis_gallery_measurement(42, update_plot=False)
+    qapp.processEvents()
+    qapp.processEvents()
+
+    assert scroll.horizontalScrollBar().value() == 300  # unchanged
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_selection_nudges_to_reveal_partial_neighbour(monkeypatch, qapp):
+    # Clicking a fully-visible thumbnail whose previous neighbour is only
+    # partially visible must nudge the strip left so the neighbour is
+    # comfortably reachable on the next click.
+    window = _build_minimal_window(monkeypatch)
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (41, 260, 120),  # 260..380 — starts left of viewport (300)
+            (42, 380, 120),  # 380..500 — fully visible
+            (43, 500, 120),  # 500..620 — fully visible
+        ]
+    )
+    qapp.processEvents()
+
+    window.gallery_scroll = scroll
+    window._gallery_thumbnail_frames = frames
+    scroll.horizontalScrollBar().setValue(300)
+    qapp.processEvents()
+
+    window._select_analysis_gallery_measurement(42, update_plot=False)
+    qapp.processEvents()
+    qapp.processEvents()
+
+    # must_left = 260 (previous neighbour's left) → target = 260 - 24 = 236
+    assert scroll.horizontalScrollBar().value() == 236
 
     window.deleteLater()
 
@@ -181,6 +244,44 @@ def test_refresh_observation_images_skips_measure_gallery_rebuild_when_unchanged
     assert window.current_image_index == 1
     assert window._measure_gallery_observation_id == 7
     assert window._measure_gallery_signature == tuple((img["id"], img["filepath"]) for img in images)
+
+    window.deleteLater()
+
+
+def test_measure_tab_prefers_selected_observation_thumbnail(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    calls: list[tuple[str, object]] = []
+
+    window.active_observation_id = 7
+    window.active_observation_name = "Observation 7"
+    window.current_image_id = 2
+    window.observation_images = [
+        {"id": 2, "filepath": "/tmp/image-2.jpg"},
+        {"id": 5, "filepath": "/tmp/image-5.jpg"},
+    ]
+    window.refresh_observation_images = lambda select_image_id=None, force_refresh=False: calls.append(
+        ("refresh", select_image_id)
+    )
+    window.update_measurements_table = lambda: calls.append(("table", None))
+    window.goto_image_index = lambda index: calls.append(("goto", index))
+    window.measure_button = SimpleNamespace(
+        setEnabled=lambda enabled: calls.append(("measure", bool(enabled)))
+    )
+    window.observations_tab = SimpleNamespace(
+        get_selected_observation=lambda: (7, "Observation 7"),
+        selected_observation_id=7,
+        _image_browser_observation_id=7,
+        image_browser=SimpleNamespace(current_image_id=lambda: 5),
+    )
+
+    main_window.MainWindow.on_tab_changed(window, 1)
+
+    assert calls == [
+        ("refresh", 5),
+        ("table", None),
+        ("goto", 1),
+        ("measure", True),
+    ]
 
     window.deleteLater()
 

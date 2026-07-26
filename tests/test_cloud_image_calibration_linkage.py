@@ -120,6 +120,7 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
 
     cloud_id = client.push_image_metadata(
         {
@@ -185,10 +186,10 @@ def test_import_remote_images_resolves_calibration_uuid_to_local_calibration_id(
         def set_image_desktop_id(self, cloud_image_id, desktop_id):
             desktop_id_calls.append((cloud_image_id, desktop_id))
 
-    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: DummyClient())
     monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
 
     cloud_sync._import_remote_images(
+        DummyClient(),
         {"id": "cloud-obs-1"},
         1,
         "cloud-obs-1",
@@ -207,7 +208,7 @@ def test_import_remote_images_resolves_calibration_uuid_to_local_calibration_id(
     assert desktop_id_calls == [("cloud-img-1", 23)]
 
 
-def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, tmp_path):
+def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, tmp_path, capsys):
     db_path = _create_linkage_db(tmp_path)
     _patch_linkage_connections(monkeypatch, db_path)
 
@@ -260,7 +261,11 @@ def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, 
         def list_remote_calibrations(self):
             return [dict(row) for row in remote_rows]
 
-    result = cloud_sync.pull_calibrations(DummyClient())
+    progress_messages = []
+    result = cloud_sync.pull_calibrations(
+        DummyClient(),
+        progress_cb=lambda message, _current, _total: progress_messages.append(message),
+    )
 
     conn = sqlite3.connect(db_path)
     try:
@@ -278,6 +283,13 @@ def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, 
     assert result["errors"] == []
     assert calibration_row[1] == calibration_uuid
     assert image_row[0] == calibration_row[0]
+    output = capsys.readouterr().out
+    assert "calibration image linking: start" in output
+    assert "calibration image linking: complete" in output
+    assert "snapshots=1 images=1 calibrations=1 duration=" in output
+    assert "execution_context=" in output
+    assert "Linking calibration images…" in progress_messages
+    assert "Calibration image linking complete." in progress_messages
 
 
 def test_get_conflict_detail_uses_calibration_uuid_for_image_matching(monkeypatch):

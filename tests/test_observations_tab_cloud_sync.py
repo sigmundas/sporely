@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
 
 from ui import observations_tab
@@ -178,9 +179,10 @@ def test_cloud_auto_sync_worker_metadata_only_skips_image_preparation(monkeypatc
     assert sync_kwargs["sync_images"] is False
     assert sync_kwargs["prepare_images_cb"] is None
     assert sync_kwargs["materialize_remote_images"] is False
+    assert sync_kwargs["child_safety_pull"] is True
 
 
-def test_refresh_clicked_materializes_remote_images(monkeypatch):
+def test_observation_tab_sync_now_matches_preferences_media_sync_mode(monkeypatch):
     calls: dict[str, object] = {}
 
     fake_tab = SimpleNamespace(
@@ -196,7 +198,9 @@ def test_refresh_clicked_materializes_remote_images(monkeypatch):
     assert calls["start"] == {
         "show_status": True,
         "run_refresh_flow": True,
+        "sync_images": True,
         "materialize_remote_images": True,
+        "full_pull": False,
     }
     assert "refresh" not in calls
     assert "finish" not in calls
@@ -482,6 +486,7 @@ def test_cloud_sync_plan_limit_error_opens_detail_dialog(monkeypatch):
         _cloud_sync_run_refresh_flow=False,
         _finish_manual_refresh_flow=lambda: calls.setdefault("finished", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("recorded", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _cloud_sync_show_status=True,
         _set_status_progress_visible=lambda *args, **kwargs: None,
         _set_status_progress_cancel_visible=lambda *args, **kwargs: None,
@@ -522,6 +527,7 @@ def test_cloud_sync_error_for_invalid_login_clears_progress_and_reports_sign_in_
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
         _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
         set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
@@ -631,6 +637,40 @@ def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_pa
     cleanup()
 
 
+def test_cloud_sync_collector_includes_persisted_checked_unmeasured_microscope(tmp_path, monkeypatch):
+    microscope_path = tmp_path / "microscope.jpg"
+    microscope_path.write_bytes(b"microscope")
+    microscope_row = {
+        "id": 2,
+        "filepath": str(microscope_path),
+        "original_filepath": None,
+        "image_type": "microscope",
+        "source_role": "local_canonical",
+        "file_purpose": "microscope",
+    }
+
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [microscope_row],
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_cloud_explicit_media_upload_selection",
+        lambda observation_id: {2},
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_measurement_counts_for_observation_images",
+        lambda observation_id: {},
+    )
+
+    fake_tab = SimpleNamespace(_publish_excluded_image_ids=lambda observation_id: set())
+    rows = observations_tab.ObservationsTab._collect_cloud_sync_image_rows(fake_tab, 631)
+
+    assert [row["id"] for row in rows] == [2]
+
+
 def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, monkeypatch):
     field_path = tmp_path / "field.jpg"
     field_path.write_bytes(b"field")
@@ -701,6 +741,7 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
         _set_status_progress=lambda *args, **kwargs: calls.setdefault("progress", (args, kwargs)),
         _finish_manual_refresh_flow=lambda: calls.setdefault("finish", True),
         _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
         _show_cloud_conflict_dialog=lambda *args, **kwargs: calls.setdefault("conflicts", True),
         _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: calls.setdefault("deleted", True),
         set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
@@ -740,7 +781,34 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
     assert status_kwargs["level"] == "success"
 
 
-def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
+def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
+    calls: dict[str, object] = {}
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda **kwargs: calls.setdefault("refresh", True),
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=False,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", True),
+        _refresh_cloud_sync_idle_hint=lambda: calls.setdefault("idle_hint", True),
+    )
+    result = {
+        "pushed": 0,
+        "pulled": 0,
+        "errors": [],
+        "deleted_remote": [],
+        "sync_summary": cloud_sync._new_sync_summary(),
+    }
+    result["sync_summary"]["calibrations_skipped_noop"] = 32
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(fake_tab, result)
+
+    assert "refresh" not in calls
+    assert calls["record"] is True
+    assert calls["idle_hint"] is True
+
+
+@pytest.mark.parametrize("image_type", ["field", "microscope"])
+def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
@@ -753,8 +821,8 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
         observations_tab.ImageDB,
         "get_images_for_observation",
         lambda observation_id: [
-            {"id": 1, "cloud_id": "cloud-1"},
-            {"id": 2, "cloud_id": "cloud-2"},
+            {"id": 1, "cloud_id": "cloud-1", "image_type": image_type},
+            {"id": 2, "cloud_id": "cloud-2", "image_type": image_type},
         ],
     )
     monkeypatch.setattr(
@@ -780,6 +848,8 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch):
         _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
             (int(obs_id), tuple(sorted(int(v) for v in excluded)))
         ),
+        _publish_seeded_microscope_ids=lambda observation_id: set(),
+        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -856,16 +926,72 @@ def test_gallery_publish_recheck_clears_synced_tombstone(monkeypatch):
     assert calls["dirty"] == [7]
 
 
-def test_default_publish_selection_leaves_all_microscope_images_unchecked():
-    selected0, next0 = observations_tab._default_publish_selected_for_new_image("microscope", 0)
-    selected1, next1 = observations_tab._default_publish_selected_for_new_image("microscope", next0)
-    selected2, next2 = observations_tab._default_publish_selected_for_new_image("microscope", next1)
-    selected_field, next_field = observations_tab._default_publish_selected_for_new_image("field", next2)
+def test_default_publish_selection_selects_one_microscope_image_per_magnification():
+    selected_groups: set[str] = set()
 
-    assert selected0 is False
+    selected0, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "40x",
+        selected_groups,
+    )
+    selected1, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "40x",
+        selected_groups,
+    )
+    selected2, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "microscope",
+        "63x",
+        selected_groups,
+    )
+    selected3, selected_groups = observations_tab._default_publish_selected_for_new_image(
+        "field",
+        None,
+        selected_groups,
+    )
+
+    assert selected0 is True
     assert selected1 is False
-    assert selected2 is False
-    assert selected_field is True
+    assert selected2 is True
+    assert selected3 is True
+    assert selected_groups == {"40x", "63x"}
+
+
+def test_ensure_microscope_publish_defaults_selects_first_image_in_each_magnification_group(monkeypatch):
+    state = {
+        "excluded": set(),
+        "seeded": set(),
+    }
+
+    def _publish_excluded_image_ids(_observation_id):
+        return set(state["excluded"])
+
+    def _set_publish_excluded_image_ids(_observation_id, excluded_ids):
+        state["excluded"] = {int(v) for v in excluded_ids}
+
+    def _publish_seeded_microscope_ids(_observation_id):
+        return set(state["seeded"])
+
+    def _set_publish_seeded_microscope_ids(_observation_id, seeded_ids):
+        state["seeded"] = {int(v) for v in seeded_ids}
+
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_excluded_image_ids", _publish_excluded_image_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_excluded_image_ids", _set_publish_excluded_image_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_seeded_microscope_ids", _publish_seeded_microscope_ids)
+    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_seeded_microscope_ids", _set_publish_seeded_microscope_ids)
+
+    images = [
+        {"id": 1, "image_type": "microscope", "objective_name": "40x Plan"},
+        {"id": 2, "image_type": "microscope", "objective_name": "40x Plan"},
+        {"id": 3, "image_type": "microscope", "objective_name": "63x Plan"},
+        {"id": 4, "image_type": "microscope", "objective_name": "63x Plan"},
+        {"id": 5, "image_type": "microscope", "objective_name": "100x Plan"},
+    ]
+
+    observations_tab.ObservationsTab._ensure_microscope_publish_defaults(91, images)
+
+    assert state["excluded"] == {2, 4}
+    assert state["seeded"] == {1, 2, 3, 4, 5}
 
 
 def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_default(monkeypatch):
@@ -971,6 +1097,62 @@ def test_refresh_image_gallery_summary_shows_default_ai_crop_for_field_images(mo
     assert items[0]["crop_source_size"] == (1000, 500)
 
 
+def test_gallery_click_updates_thumbnail_preview_and_ai_selection(qapp, tmp_path):
+    image_path = tmp_path / "gallery-image.png"
+    image = QImage(24, 24, QImage.Format_ARGB32)
+    image.fill(QColor("#ff6600"))
+    assert image.save(str(image_path))
+
+    selected_rows: list[int] = []
+    preview_pixmaps: list[object] = []
+    ai_updates: list[str] = []
+
+    class _FakeSelectionModel:
+        def selectedRows(self):
+            if not selected_rows:
+                return []
+            return [SimpleNamespace(row=lambda: selected_rows[-1])]
+
+    class _FakeImageTable:
+        def selectRow(self, row):
+            selected_rows.append(int(row))
+
+        def selectionModel(self):
+            return _FakeSelectionModel()
+
+    fake_dialog = SimpleNamespace(
+        image_metadata=[
+            {
+                "filepath": str(image_path),
+                "filename": image_path.name,
+            }
+        ],
+        image_results=[SimpleNamespace(filepath=str(image_path))],
+        image_table=_FakeImageTable(),
+        thumbnail_label=SimpleNamespace(
+            width=lambda: 120,
+            height=lambda: 120,
+            setPixmap=lambda pixmap: preview_pixmaps.append(pixmap),
+            setText=lambda _text: None,
+        ),
+        tr=lambda text: text,
+        _apply_metadata_from_index=lambda _index: None,
+        _update_ai_controls_state=lambda: ai_updates.append("controls"),
+        _update_ai_table=lambda: ai_updates.append("table"),
+        _ai_selected_index=None,
+        selected_image_index=-1,
+    )
+    fake_dialog.on_image_selected = MethodType(observations_tab.ObservationDetailsDialog.on_image_selected, fake_dialog)
+
+    observations_tab.ObservationDetailsDialog._on_gallery_image_clicked(fake_dialog, 7, str(image_path))
+
+    assert selected_rows == [0]
+    assert fake_dialog.selected_image_index == 0
+    assert fake_dialog._ai_selected_index == 0
+    assert preview_pixmaps
+    assert ai_updates == ["controls", "table"]
+
+
 def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):
     image_path = tmp_path / "image.jpg"
     image_path.write_bytes(b"image")
@@ -1058,9 +1240,9 @@ def test_cloud_sync_idle_hint_lists_observation_ids(monkeypatch):
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Cloud sync blocked for observation ID 401." in message
     assert "Cloud sync pending for observation IDs 390, 389, 385." in message
     assert "Open Sync now to review the error details, then click Sync now to retry uploads." in message
@@ -1095,9 +1277,9 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Cloud sync sign-in failed. Please check your email and password." in message
     assert "Sign in again, then click Sync now to retry uploads." in message
     assert "Cloud sync pending" not in message
@@ -1134,11 +1316,260 @@ def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkey
 
     assert hint_controller.calls
     kind, message, tone, timeout_ms = hint_controller.calls[-1]
-    assert kind == "status"
+    assert kind == "hint"
     assert tone == "warning"
-    assert timeout_ms and timeout_ms > 0
+    assert timeout_ms is None
     assert "Logged in, click Sync now to sync." in message
     assert "Sign in again, then click Sync now to retry uploads." not in message
+
+
+def test_refresh_cloud_sync_idle_hint_uses_persistent_channel(monkeypatch):
+    """The failure summary must go through set_hint, not set_status, so it
+    stays visible instead of reverting to 'Ready.' after the toast timer."""
+    hint_controller = _DummyHintController()
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "error",
+            "cloud_last_sync_summary": "Cloud sync failed.",
+            "cloud_last_sync_errors_json": json.dumps(["Cloud sync failed."]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert [call[0] for call in hint_controller.calls] == ["hint"]
+    _, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert timeout_ms is None
+    assert tone == "warning"
+    assert "Cloud sync failed." in message
+
+
+def test_on_cloud_sync_error_installs_sticky_hint_even_when_toast_hidden(monkeypatch):
+    """After a sync error, the persistent hint must reflect the failure so
+    that when the temporary toast expires the bar does not fall back to
+    'Ready.'.  Must happen regardless of _cloud_sync_show_status."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {}
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        observations_tab,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        refresh_observations=lambda **kwargs: None,
+        _cloud_sync_run_refresh_flow=False,
+        _finish_manual_refresh_flow=lambda: None,
+        _summarize_sync_error=lambda msg: "Cloud sync failed.",
+        _record_cloud_sync_status=(
+            lambda summary, *, errors, status: stored_settings.update(
+                {
+                    "cloud_last_sync_status": status,
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_errors_json": json.dumps(errors or []),
+                }
+            )
+        ),
+        _cloud_sync_show_status=False,
+        _notify_active_settings_hub_cloud_status=lambda: None,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+        ),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_error(tab, "boom")
+
+    # No toast (show_status is False), but a persistent hint must be installed.
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected persistent hint to be installed"
+    _, message, tone, _ = hint_calls[-1]
+    assert tone == "warning"
+    assert "Cloud sync failed." in message
+
+
+def test_on_cloud_sync_finished_clean_resets_persistent_hint(monkeypatch):
+    """A clean, no-error sync must reset the persistent hint away from any
+    prior failure state."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {
+        "cloud_last_sync_status": "error",
+        "cloud_last_sync_summary": "Cloud sync failed.",
+        "cloud_last_sync_errors_json": json.dumps(["Cloud sync failed."]),
+    }
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        observations_tab,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "summarize_sync_change_activity",
+        lambda result: {"any_real_change": False},
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "summarize_sync_issues",
+        lambda errors: {
+            "conflicts": [],
+            "conflict_count": 0,
+            "blocked_count": 0,
+            "retryable_count": 0,
+            "other_count": 0,
+            "blocked_errors": [],
+            "retryable_errors": [],
+            "other_errors": [],
+            "display_count": 0,
+        },
+    )
+    monkeypatch.setattr(observations_tab, "format_sync_summary", lambda summary: "")
+    monkeypatch.setattr(
+        observations_tab, "format_original_upload_summary", lambda summary: ""
+    )
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        refresh_observations=lambda **kwargs: None,
+        _cloud_sync_run_refresh_flow=False,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=(
+            lambda summary, *, errors, status: stored_settings.update(
+                {
+                    "cloud_last_sync_status": status,
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_errors_json": json.dumps(errors or []),
+                }
+            )
+        ),
+        _cloud_sync_show_status=False,
+        _notify_active_settings_hub_cloud_status=lambda: None,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+        ),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        tab,
+        {"pushed": 0, "pulled": 0, "errors": [], "deleted_remote": []},
+    )
+
+    assert stored_settings.get("cloud_last_sync_status") == "ok"
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected persistent hint to be installed after clean sync"
+    _, message, tone, _ = hint_calls[-1]
+    assert tone == "info"
+    assert message == "Ready."
+
+
+def test_on_cloud_login_failure_toast_survives_idle_hint_refresh(monkeypatch, qapp):
+    """_on_cloud_login_failure must call the persistent hint refresh FIRST
+    and only THEN overlay a long-lived warning toast, so that the visible
+    toast is not cut short by the default 4 s timer of a later set_status."""
+    hint_controller = _DummyHintController()
+    stored_settings: dict[str, object] = {}
+
+    monkeypatch.setattr(main_window, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(stored_settings))
+    monkeypatch.setattr(
+        main_window,
+        "update_app_settings",
+        lambda updates: stored_settings.update(updates),
+    )
+
+    fake_settings_db = SimpleNamespace(set_setting=lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window, "SettingsDB", fake_settings_db)
+
+    status_calls: list[tuple[str, str, int]] = []
+
+    def _fake_set_status_message(message, level="info", auto_clear_ms=8000):
+        status_calls.append((str(message), str(level), int(auto_clear_ms)))
+
+    fake_window = SimpleNamespace(
+        _cloud_client=None,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+
+    observations_tab_fake = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+        _reset_status_progress=lambda: None,
+        _set_status_progress_visible=lambda visible: None,
+        set_status_message=_fake_set_status_message,
+        _refresh_cloud_sync_idle_hint=(
+            lambda: observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(
+                observations_tab_fake
+            )
+        ),
+    )
+
+    dialog = SimpleNamespace(
+        tr=lambda text: text,
+        observations_tab=observations_tab_fake,
+        _refresh_cloud_sync_ui=lambda: None,
+        parent=lambda: None,
+    )
+
+    # Bypass the modal QMessageBox to keep the test headless.
+    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: 0)
+
+    main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_failure(dialog, "Bad creds")
+
+    # 1) Persistent hint installed (via set_hint), reflecting the failure.
+    hint_calls = [c for c in hint_controller.calls if c[0] == "hint"]
+    assert hint_calls, "expected _refresh_cloud_sync_idle_hint to run first"
+    _, hint_message, hint_tone, _ = hint_calls[-1]
+    assert hint_tone == "warning"
+    assert "sign-in failed" in hint_message.lower()
+
+    # 2) Toast came AFTER the hint, and lasts at least 20 s.
+    assert status_calls, "expected set_status_message toast"
+    toast_message, toast_level, toast_ms = status_calls[-1]
+    assert toast_level == "warning"
+    assert toast_ms >= 20000
+    assert "sign-in failed" in toast_message.lower()
+
+    # 3) The hint refresh ran before the toast — verify no additional
+    #    set_status went to the controller AFTER the hint was installed
+    #    (which would otherwise reset the timer to the 4 s default).
+    last_hint_idx = max(i for i, c in enumerate(hint_controller.calls) if c[0] == "hint")
+    later_status_calls = [c for c in hint_controller.calls[last_hint_idx + 1 :] if c[0] == "status"]
+    assert later_status_calls == [], "no set_status must run after the persistent hint is installed"
 
 
 def test_observation_status_info_maps_draft_private_friends_public():
@@ -1427,7 +1858,7 @@ def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
         SimpleNamespace(
             _build_common_name_map=lambda observations: {},
             _lookup_common_name=lambda obs, name_map: None,
-            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
             _recent_cloud_import_ids=lambda: set(),
             _observation_publish_target=lambda obs: obs.get("publish_target"),
             _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1465,7 +1896,7 @@ def test_observation_table_row_cache_includes_local_publication_and_coordinate_f
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: obs.get("publish_target"),
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1529,6 +1960,78 @@ def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields()
     assert row["has_coords"] is True
 
 
+def test_observation_table_row_cache_falls_back_to_ai_selected_scientific_name():
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields,
+        fake_tab,
+    )
+    fake_tab._build_species_name = MethodType(
+        observations_tab.ObservationsTab._build_species_name,
+        fake_tab,
+    )
+
+    obs = {
+        "id": 901,
+        "genus": "",
+        "species": "",
+        "species_guess": "",
+        "ai_selected_scientific_name": "Panaeolus acuminatus",
+        "common_name": "",
+        "location": "Forest",
+    }
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(fake_tab, [obs])
+    row = rows[0]
+
+    assert row["genus"] == "Panaeolus"
+    assert row["species"] == "acuminatus"
+    assert row["species_name"] == "Panaeolus acuminatus"
+    assert row["common_name"] == "- (Panaeolus acuminatus)"
+
+
+def test_cloud_row_cache_falls_back_to_ai_selected_scientific_name():
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields,
+        fake_tab,
+    )
+
+    remote_rows = [
+        {
+            "id": 748,
+            "genus": "",
+            "species": "",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Panaeolus acuminatus",
+            "common_name": "",
+            "date": "2026-06-25 07:41:23",
+            "created_at": "2026-06-25T13:58:52",
+            "location": "Bakke kirke",
+            "sharing_scope": "public",
+            "visibility": "public",
+            "is_draft": 0,
+            "publish_target": None,
+        }
+    ]
+
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(fake_tab, remote_rows)
+    row = rows[0]
+
+    assert row["genus"] == "Panaeolus"
+    assert row["species"] == "acuminatus"
+    assert row["species_name"] == "Panaeolus acuminatus"
+    assert row["common_name"] == "- (Panaeolus acuminatus)"
+
+
 def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
     obs = observations_tab.ObservationDB.get_observation(451)
     fake_tab, table = _make_observation_table_render_tab()
@@ -1537,7 +2040,7 @@ def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
         SimpleNamespace(
             _build_common_name_map=lambda observations: {},
             _lookup_common_name=lambda obs, name_map: None,
-            _build_observation_thumbnail_map=lambda observation_ids: {},
+            _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
             _recent_cloud_import_ids=lambda: set(),
             _observation_publish_target=lambda obs: obs.get("publish_target"),
             _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1568,7 +2071,7 @@ def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
     builder_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: obs.get("publish_target"),
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
@@ -1598,11 +2101,96 @@ def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
     assert table.cellWidget(0, 9).text() == first_external.text()
 
 
+def test_observation_table_search_ignores_hidden_raw_fields(qapp):
+    builder_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+        _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip()
+        or None,
+    )
+    obs = {
+        "id": 901,
+        "genus": "Agaricus",
+        "species": "campestris",
+        "species_guess": "",
+        "ai_selected_scientific_name": "Agaricus campestris",
+        "common_name": "",
+        "location": "Meadow",
+        "date": "2026-06-15",
+        "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        "publish_target": None,
+    }
+
+    row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(builder_tab, [obs])
+    assert "parasola" not in row_cache[0]["search_text"]
+
+    fake_tab, table = _make_observation_table_render_tab(search_text="parasola")
+    observations_tab.ObservationsTab._render_observations_table(
+        fake_tab,
+        row_cache,
+        query="parasola",
+        restore_selection=False,
+        show_status=False,
+        status_message=None,
+    )
+
+    assert table.rowCount() == 0
+
+
+def test_cloud_observation_table_search_ignores_hidden_raw_fields(monkeypatch):
+    monkeypatch.setattr(
+        observations_tab.ObservationDB,
+        "get_observation",
+        lambda observation_id: {
+            "id": observation_id,
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Agaricus campestris",
+            "common_name": "",
+            "location": "Meadow",
+            "date": "2026-06-15",
+            "publish_target": None,
+            "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        },
+    )
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+    )
+
+    remote_rows = [
+        {
+            "id": 900,
+            "desktop_id": 901,
+            "genus": "Agaricus",
+            "species": "campestris",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Agaricus campestris",
+            "common_name": "",
+            "location": "Meadow",
+            "date": "2026-06-15",
+            "created_at": "2026-06-15T12:00:00",
+            "sharing_scope": "public",
+            "visibility": "public",
+            "is_draft": 0,
+            "publish_target": None,
+            "ai_state_json": '{"notes": "Parasola plicatilis"}',
+        }
+    ]
+
+    rows = observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(fake_tab, remote_rows)
+    assert "parasola" not in rows[0]["search_text"]
+
+
 def test_observation_table_row_cache_formats_date_and_spore_count():
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
-        _build_observation_thumbnail_map=lambda observation_ids: {},
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _build_observation_spore_count_map=lambda observation_ids: {},
         _recent_cloud_import_ids=lambda: set(),
         _observation_publish_target=lambda obs: None,
         _build_species_name=lambda obs: f"{(obs.get('genus') or '').strip()} {(obs.get('species') or '').strip()}".strip() or None,
@@ -1629,6 +2217,25 @@ def test_observation_table_row_cache_formats_date_and_spore_count():
 
     assert rows[0]["spore_short"] == "18"
     assert rows[0]["date"] == expected_date
+
+
+def test_observation_table_row_cache_uses_bulk_measurement_counts():
+    fake_tab = SimpleNamespace(
+        _build_common_name_map=lambda observations: {},
+        _lookup_common_name=lambda obs, name_map: None,
+        _build_observation_thumbnail_map=lambda observation_ids, **kwargs: {},
+        _build_observation_spore_count_map=lambda observation_ids: {389: 23},
+        _recent_cloud_import_ids=lambda: set(),
+        _observation_publish_target=lambda obs: None,
+        _build_species_name=lambda obs: "Agaricus campestris",
+    )
+
+    rows = observations_tab.ObservationsTab._build_observation_table_rows_cache(
+        fake_tab,
+        [{"id": 389, "genus": "Agaricus", "species": "campestris"}],
+    )
+
+    assert rows[0]["spore_short"] == "23"
 
 
 def test_cloud_observation_table_row_cache_formats_date_and_spore_count():

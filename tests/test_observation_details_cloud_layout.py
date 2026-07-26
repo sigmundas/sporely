@@ -195,6 +195,7 @@ def test_edit_observation_cloud_controls_show_selected_ai_summary(monkeypatch, q
 
     assert "Selected AI:" in dialog.ai_selected_summary_label.text()
     assert "Entoloma clypeatum" in dialog.ai_selected_summary_label.text()
+    assert "p=97%" in dialog.ai_selected_summary_label.text()
 
     data = dialog.get_data()
     assert data["ai_selected_service"] == "inat"

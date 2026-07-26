@@ -85,6 +85,10 @@ Cloud sync should not overwrite higher-quality local originals or device-local w
 - Cloud media is authoritative for cross-device and web display, but should be treated as a derivative
   or cache when a better local original exists.
 - Cloud should never silently downsample the desktop source of truth.
+- A normal bidirectional sync may reuse its initially loaded remote observation index only when the
+  complete push result proves there were no dirty observation candidates, calibration writes,
+  tombstones, reconciliation attempts, errors, or other cloud mutations. Incomplete or positive
+  mutation results require a fresh post-push index before pull comparisons.
 
 ## Domain Crosswalk
 
@@ -200,6 +204,15 @@ does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload 
   original. Recovery downloads write to a separate cache path and remain secondary until an
   explicit restore action copies them into place.
 - `notes` should not be used as a hidden file-role flag.
+- The gallery publish checkbox is authoritative for field and microscope image bytes. A checked
+  field image is eligible for upload; a checked microscope image is eligible even without spore
+  measurements. Unchecking either type excludes it from upload and queues a tombstone when the
+  image already has a cloud identity. Microscope seeded-checkbox state distinguishes an initialized
+  selection from an untouched legacy backlog, so ordinary media sync does not opt in old images.
+- Image, measurement, deletion, and publish-selection mutations mark their owning observation dirty
+  immediately. The global scan for eligible `cloud_id IS NULL` image rows is a versioned, periodic
+  repair pass for legacy or interrupted state, not a prerequisite for every normal media sync. Its
+  completion watermark advances only after a successful sweep.
 
 #### `source_role`
 
@@ -229,8 +242,8 @@ authoritative; that comes from `source_role`.
 
 | Purpose | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
 | --- | --- | --- | --- | --- | --- |
-| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
-| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Yes |
+| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
+| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
 | `calibration` | Original calibration capture | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Usually local-only |
 | `reference` | Calibration reference derivative or other compact reference asset | No | Yes | Yes, as a derivative asset | Yes |
 | `plot` | Generated comparison or measurement plot | No | Yes | Publish-only, later if needed | Yes, if published |
@@ -406,6 +419,60 @@ Cloud derivative rule:
 
 - `image_key`
 - `thumb_key`
+
+#### Measurement reconciliation cadence
+
+- Every normal sync scans for eligible local measurement rows that do not yet have cloud ids and
+  repairs them immediately.
+- Remote existence checks for already-stamped measurement and image ids are recovery work, not
+  ordinary fast-path work. They run when the reconciliation policy version changes, during the
+  periodic child-safety pass, or during an explicit full pull.
+- The durable `cloud_measurement_reconcile_version` and `cloud_measurement_reconcile_at` settings
+  advance only after the stamped-id verification completes. Transport or reconciliation failure
+  therefore leaves the verification due for the next sync.
+- If deep verification finds independently deleted remote rows, the existing observation and
+  mosaic repair paths remain responsible for restoring or re-dirtying the affected local state.
+
+#### Structured observation-level spore summaries
+
+**`cloud-only, computed`** — table `public.observation_spore_summaries`.
+
+- One row per `(observation_id, context_hash)` where `context_hash` is a
+  deterministic SHA-256 over the normalized preparation-context object
+  `{measurement_type, sample_type, mount_reagent, stain_reagent,
+  contrast_method}`.
+- Written by sporely-py during cloud sync in
+  `utils/spore_summary_sync.py::sync_observation_spore_summaries(...)`,
+  invoked from `utils/cloud_sync.py::_push_summary_for_current_observation(...)`
+  after the observation has an established cloud id — independent of
+  image-byte upload success.
+- Numeric contract: min / p05 / mean / median / p95 / max / sample SD
+  (ddof=1) for length, width, Q; plus `n_spores`, `n_paired`, `n_length`,
+  `n_width`. Percentile convention is numpy default (linear
+  interpolation) — matched between the desktop writer and any server
+  aggregate to guarantee client/server consistency.
+- Canonical `q_mean` is the mean of individual `length_i / width_i`
+  ratios, NEVER `length_mean_um / width_mean_um`. Canonical `length_mean_um`
+  and `width_mean_um` use the paired denominator only.
+- Provenance: `stats_version` (bumped on writer-semantic changes),
+  `computed_at`, `source_app = 'sporely-py'`, `source_app_version = APP_VERSION`.
+- **Local persistence deferred.** Summaries are deterministic and cheap
+  to recompute from `spore_measurements` + `images` on each sync. No
+  local SQLite mirror.
+- **Idempotence.** Sync GETs existing `(id, context_hash)` for the
+  observation, PATCHes matching hashes, POSTs new ones, DELETEs any
+  hash that used to exist remotely but is no longer in the local
+  computed set. Zero local summaries wipes every remote row for the
+  observation.
+- **Compatibility.** If the cloud deployment predates the table,
+  `STATUS_SKIP_TABLE_MISSING` is returned and the observation sync
+  continues. Any non-auth / non-temporary error is surfaced via
+  `sync_all(...)`'s returned `result["errors"]` list and marks the
+  observation dirty for retry.
+- **RLS.** Base table is owner-full; public reads exclusively via the
+  `get_public_observation_spore_summaries` RPC (Stage E/H).
+- Design and stage-by-stage progress notes:
+  [docs/spore-statistics-species-profiles.md](spore-statistics-species-profiles.md).
 
 `sync-required, staged calibration fields`:
 
@@ -608,7 +675,18 @@ These stay `desktop-only`:
 - Cloud image tombstones should be recorded locally and used to block reupload or recreation, but
   the desktop active image row stays visible for now. Files, measurements, and annotations remain
   intact, and any UI hiding or explicit delete confirmation is deferred.
-- `scale_bar_*` exists on both sides but is currently shared-but-ignored.
+- `scale_bar_*` exists on both sides but is currently shared-but-ignored. Landing renders
+  the microscope scale bar from `observation_images.scale_microns_per_pixel` (already synced;
+  now surfaced by `search_public_observation_images` / `get_public_observation_images`), not
+  from the endpoint coordinates. The `scale_bar_*` endpoints remain deferred until we need a
+  pixel-exact reproduction of the desktop overlay.
+- `spore_measurement_mosaics.tile_width_px`, `tile_height_px`, `common_crop_width_um`,
+  `common_crop_height_um` are `desktop-source` fields uploaded on every mosaic upsert
+  (`utils/cloud_sync.py::_push_spore_mosaic_for_observation`). All four are nullable on the
+  cloud side; the pusher sends `None` for non-positive manifest values so old / degenerate
+  rows land as SQL NULL, which the public RPC treats as "no scale bar" (keys dropped via
+  `jsonb_strip_nulls`). The desktop `SporeMosaicManifest` already computes these values
+  under the common-crop model; the previous contract simply did not put them on the wire.
 - Current cloud `reference_values` is too flat for shared provenance and usage tracking.
 
 ## Analysis and Reference Data Proposal

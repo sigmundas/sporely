@@ -1,4 +1,39 @@
+import pytest
+
 from database import reverse_location_lookup as lookup
+from database.reverse_location_lookup import normalize_country_code
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("no", "NO"),
+        ("NO", "NO"),
+        (" NO ", "NO"),
+        ("nO", "NO"),
+        ("se", "SE"),
+        ("Norway", None),
+        ("N1", None),
+        ("USA", None),
+        ("N", None),
+        ("N-O", None),
+        (12, None),
+        (True, None),
+        (b"no", "NO"),
+        (b"\xff\xfe", None),
+    ],
+)
+def test_normalize_country_code_rules(value, expected):
+    assert normalize_country_code(value) == expected
+
+
+def test_normalize_country_code_never_defaults_to_a_country():
+    # A malformed value must not silently become a valid country.
+    for bad in ("Norge", "?", "n?", "01", "123", "NOR"):
+        assert normalize_country_code(bad) is None
 
 
 def test_nominatim_suggestions_include_display_and_local_hierarchy():
@@ -39,7 +74,7 @@ def test_lookup_location_suggestions_prefers_valid_artsdatabanken_for_norway(mon
 
     result = lookup.lookup_location_suggestions(63.425816, 10.412362)
 
-    assert result.country_code == "no"
+    assert result.country_code == "NO"
     assert result.country_name == "Norge"
     assert result.source == "artsdatabanken"
     assert result.suggestions == ["Skipsmodelltanken", "Broder Knudtzons vei", "Østbyen"]
@@ -93,7 +128,7 @@ def test_lookup_location_suggestions_prefers_dawa_for_denmark(monkeypatch):
 
     result = lookup.lookup_location_suggestions(55.708928, 9.539420)
 
-    assert result.country_code == "dk"
+    assert result.country_code == "DK"
     assert result.country_name == "Danmark"
     assert result.source == "dawa"
     assert result.suggestions == [

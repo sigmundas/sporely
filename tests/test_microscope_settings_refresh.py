@@ -33,11 +33,12 @@ def _build_tag_combo_dialog_dummy(reduced_lists: dict[str, list[str]]) -> Simple
     dummy = SimpleNamespace()
     dummy.tr = lambda text: text
     dummy._add_choice_item = lambda combo, text, value, **kwargs: combo.addItem(text, value)
-    dummy._populate_tag_combo = lambda combo, category, options: ImageImportDialog._populate_tag_combo(
+    dummy._populate_tag_combo = lambda combo, category, options, **kwargs: ImageImportDialog._populate_tag_combo(
         dummy,
         combo,
         category,
         options,
+        **kwargs,
     )
     dummy._get_combo_tag_value = lambda combo, category: combo.currentData()
     dummy._update_lab_state_combo_alerts = lambda *_args: None
@@ -46,6 +47,7 @@ def _build_tag_combo_dialog_dummy(reduced_lists: dict[str, list[str]]) -> Simple
     dummy.mount_combo = QComboBox()
     dummy.stain_combo = QComboBox()
     dummy.sample_combo = QComboBox()
+    dummy.sample_source_combo = QComboBox()
     return dummy
 
 
@@ -55,6 +57,7 @@ def test_database_settings_refresh_emits_and_rebuilds_open_controls(monkeypatch,
         "mount": ["Not_set", "Water"],
         "stain": ["Not_set", "Cotton_Blue"],
         "sample": ["Not_set", "Dried"],
+        "sample_source": ["Not_set", "Spore_print"],
     }
     image_dummy = _build_tag_combo_dialog_dummy(reduced_lists)
     for combo, value in (
@@ -76,11 +79,13 @@ def test_database_settings_refresh_emits_and_rebuilds_open_controls(monkeypatch,
     live_dummy.mount_combo = QComboBox()
     live_dummy.stain_combo = QComboBox()
     live_dummy.sample_combo = QComboBox()
+    live_dummy.sample_source_combo = QComboBox()
     for combo, value in (
         (live_dummy.contrast_combo, "Phase"),
         (live_dummy.mount_combo, "Water"),
         (live_dummy.stain_combo, "Congo_Red"),
         (live_dummy.sample_combo, "Spore_print"),
+        (live_dummy.sample_source_combo, "Hymenium"),
     ):
         combo.addItem("Not set", "Not_set")
         combo.addItem(str(value), value)
@@ -136,6 +141,7 @@ def test_database_settings_refresh_emits_and_rebuilds_open_controls(monkeypatch,
     assert _combo_values(live_dummy.mount_combo) == ["Not_set", "Water"]
     assert _combo_values(live_dummy.stain_combo) == ["Not_set", "Cotton_Blue"]
     assert _combo_values(live_dummy.sample_combo) == ["Not_set", "Dried"]
+    assert _combo_values(live_dummy.sample_source_combo) == ["Not_set", "Spore_print"]
 
 
 def test_prepare_images_scale_controls_split_field_and_microscope_modes(qapp):
@@ -298,6 +304,8 @@ def test_prepare_images_scale_bar_workflow_sets_custom_scale(qapp):
     dummy.stain_combo.addItem("Not set", "Not_set")
     dummy.sample_combo = QComboBox()
     dummy.sample_combo.addItem("Not set", "Not_set")
+    dummy.sample_source_combo = QComboBox()
+    dummy.sample_source_combo.addItem("Not set", "Not_set")
     dummy.objective_combo = QComboBox()
     dummy.objective_combo.addItem("Not set", None)
     dummy.objective_combo.addItem("40x", "40x")

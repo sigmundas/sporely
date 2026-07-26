@@ -2,6 +2,37 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-07-12
+
+### Added
+- **Structured observation-level spore summaries.** Sporely-py now computes deterministic per-observation summary rows (min / p05 / mean / median / p95 / max / sample SD for length, width, Q, plus paired/length/width/spore counts) directly from the raw `spore_measurements` table joined with each image's preparation context (`mount_medium` / `stain` / `sample_type` / `contrast`). Multiple contexts on one observation produce multiple summary rows keyed by a deterministic SHA-256 `context_hash`. Canonical Lm/Wm/Qm are always mean-of-paired; Qm is the mean of individual length_i/width_i ratios, never `Lm/Wm`.
+- **Cloud table `public.observation_spore_summaries`** in the shared Supabase project. Structured summaries are upserted from `sporely-py` on each cloud sync, keyed by `(observation_id, context_hash)`. Existing observations backfill automatically on the next sync. Owner-only RLS on the table; public reads go exclusively through the new RPC below.
+- **Public RPC `get_public_observation_spore_summaries(p_observation_ids, [p_sample_type, p_mount_reagent, p_stain_reagent, p_contrast_method])`** returns structured measured summary rows for public/community-visible observations, respecting `is_draft`, `can_read_observation`, and `can_access_spore_data`. Optional context filters narrow rows to a single preparation. Every non-empty filter must match the SAME summary row — cross-row satisfaction is not possible.
+- **Observation-balanced species profiles on the landing site.** `ExploreSporePanel` now fetches structured measured summaries for the observations on screen, aggregates them with unweighted arithmetic means (Parmasto-style), and shows canonical Lm/Wm/Qm plus between-observation SD, contributor count, and profile status (`Insufficient measured data` / `Provisional` / `Community-supported` / `Strong`). Rendered `—` for Mean cells when no eligible measured summaries exist.
+- **Legacy fallback preserved** for older observations whose only spore data lives in `observations.spore_statistics` text. The landing parser wraps them as `meanSource='legacy_text'` rows and never fabricates Lm/Wm from p05/p95 midpoints. Only `meanSource='measured'` rows contribute to the canonical species profile.
+
+### Changed
+- **Removed spore-count-weighted canonical means.** `poolSporeSummaries` in the landing bundle no longer emits `length_mean_um` / `width_mean_um` / `q_mean` — those were spore-count weighted and violated the Parmasto-style rule that a specimen with 300 spores must not dominate a specimen with 20. Canonical means now come exclusively from `poolObservationSporeSummaries` (unweighted arithmetic mean across eligible observation/context means). The pool function's remaining role is envelope ranges only.
+- **`observations.spore_statistics` literature text is untouched** — the writer still emits it and existing displays continue to render it verbatim. It is no longer parsed to invent means for canonical profiles.
+
+### Fixed
+- **Metadata-only microscope image leak.** `search_public_observation_images` and `get_public_observation_images` no longer return metadata-only microscope anchors (`storage_path IS NULL`) as gallery images. Those anchors continue to contribute measurements, summaries, and mosaic tiles — they just do not surface as displayable images. `storage_exif_safe` / `fullUrl` gate preserved verbatim.
+
+### Migrations (Supabase, in this order)
+1. `20260712120000_add_observation_spore_summaries.sql`
+2. `20260713120000_add_public_spore_summary_rpc.sql`
+3. `20260714120000_add_context_filters_to_public_spore_summary_rpc.sql`
+4. `20260714130000_fix_search_public_observation_images_hide_metadata_only.sql`
+
+All four are forward-only and backward-compatible: older desktop clients keep syncing without writing to the new table; older landing bundles keep working via `DEFAULT NULL` on the new filter args.
+
+### Not shipping in this release
+- Parmasto-style matcher (planned as a separate stage; no z-score / Mahalanobis / distance scoring yet).
+- Removal of the legacy `observations.spore_statistics` string.
+- Historical backfill scripts — backfill happens automatically as users upgrade sporely-py.
+
+Full design and stage-by-stage progress notes live in [docs/spore-statistics-species-profiles.md](docs/spore-statistics-species-profiles.md).
+
 ## 2026-06-22
 
 ### Performance

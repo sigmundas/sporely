@@ -37,7 +37,16 @@ class DatabaseTerms:
         "Trypan_Blue",
         "Chlorazol_Black_E",
     ]
-    SAMPLE_TYPES = ["Not_set", "Fresh", "Dried", "Spore_print"]
+    SAMPLE_TYPES = ["Not_set", "Fresh", "Dried"]
+    SAMPLE_SOURCES = [
+        "Not_set",
+        "Spore_print",
+        "Hymenium",
+        "Stipe",
+        "Pileus",
+        "Context",
+        "Other",
+    ]
     MEASURE_CATEGORIES = [
         "Spores", "Field", "Basidia", "Pileipellis",
         "Pleurocystidia", "Cheilocystidia", "Caulocystidia", "Other", "Calibration"
@@ -78,7 +87,46 @@ class DatabaseTerms:
         "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
         "Fresh": QT_TRANSLATE_NOOP("DatabaseTerms", "Fresh"),
         "Dried": QT_TRANSLATE_NOOP("DatabaseTerms", "Dried"),
+    }
+
+    SAMPLE_SOURCE_DISPLAY = {
+        "Not_set": QT_TRANSLATE_NOOP("DatabaseTerms", "Not set"),
         "Spore_print": QT_TRANSLATE_NOOP("DatabaseTerms", "Spore print"),
+        "Hymenium": QT_TRANSLATE_NOOP("DatabaseTerms", "Hymenium"),
+        "Stipe": QT_TRANSLATE_NOOP("DatabaseTerms", "Stipe"),
+        "Pileus": QT_TRANSLATE_NOOP("DatabaseTerms", "Pileus"),
+        "Context": QT_TRANSLATE_NOOP("DatabaseTerms", "Context"),
+        "Other": QT_TRANSLATE_NOOP("DatabaseTerms", "Other"),
+    }
+
+    SAMPLE_PUBLIC_LABEL = QT_TRANSLATE_NOOP("DatabaseTerms", "Unknown")
+    SAMPLE_COMPACT_LABEL = "–"
+
+    # Compact pill labels used inside side-panel selectors where vertical space
+    # is scarce. Storage keys are the canonical values (unchanged) and the
+    # dropdown text in wider views keeps SAMPLE_SOURCE_DISPLAY. Only pill mode
+    # in the compact panels shows these shortened labels.
+    SAMPLE_SOURCE_COMPACT_PILL = {
+        "Spore_print": QT_TRANSLATE_NOOP("DatabaseTerms", "Print"),
+        "Hymenium": QT_TRANSLATE_NOOP("DatabaseTerms", "Hymenium"),
+        "Stipe": QT_TRANSLATE_NOOP("DatabaseTerms", "Stipe"),
+        "Pileus": QT_TRANSLATE_NOOP("DatabaseTerms", "Pileus"),
+        "Context": QT_TRANSLATE_NOOP("DatabaseTerms", "Context"),
+        "Other": QT_TRANSLATE_NOOP("DatabaseTerms", "Other"),
+    }
+
+    SAMPLE_SOURCE_COMPACT_TOOLTIPS = {
+        "Spore_print": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Spores from a spore print/deposit"
+        ),
+        "Hymenium": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Fertile surface, e.g. gills, pores, teeth or folds"
+        ),
+        "Stipe": QT_TRANSLATE_NOOP(
+            "DatabaseTerms", "Spores/material taken from the stem"
+        ),
+        "Pileus": QT_TRANSLATE_NOOP("DatabaseTerms", "Cap tissue or cap surface"),
+        "Context": QT_TRANSLATE_NOOP("DatabaseTerms", "Inner flesh/trama"),
     }
     
     MEASURE_DISPLAY = {
@@ -159,7 +207,19 @@ class DatabaseTerms:
     def canonicalize_sample(cls, value: str | None) -> str | None:
         if value is None:
             return None
+        # Legacy: Spore_print used to live on the sample-condition tag.
+        # It's now a sample_source; drop it from condition rather than surface as free text.
+        if cls._normalize_token(value) == cls._normalize_token("Spore_print"):
+            return None
         lookup = cls._build_lookup(cls.SAMPLE_DISPLAY)
+        canonical = lookup.get(cls._normalize_token(value))
+        return canonical or cls._fallback_canonical(value)
+
+    @classmethod
+    def canonicalize_sample_source(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        lookup = cls._build_lookup(cls.SAMPLE_SOURCE_DISPLAY)
         canonical = lookup.get(cls._normalize_token(value))
         return canonical or cls._fallback_canonical(value)
 
@@ -189,6 +249,8 @@ class DatabaseTerms:
             return cls.canonicalize_stain(value)
         if category == "sample":
             return cls.canonicalize_sample(value)
+        if category == "sample_source":
+            return cls.canonicalize_sample_source(value)
         if category == "measure":
             return cls.canonicalize_measure(value)
         return cls._fallback_canonical(value)
@@ -220,10 +282,56 @@ class DatabaseTerms:
     
     @classmethod
     def translate_sample(cls, canonical_name: str | None) -> str:
-        """Get translated display name for sample type."""
+        """Get translated display name for sample (specimen condition)."""
         canonical = cls.canonicalize_sample(canonical_name)
         display = cls.SAMPLE_DISPLAY.get(canonical or "", cls._fallback_display(canonical_name))
         return cls.tr(display)
+
+    @classmethod
+    def translate_sample_source(cls, canonical_name: str | None) -> str:
+        """Get translated display name for sample source."""
+        canonical = cls.canonicalize_sample_source(canonical_name)
+        display = cls.SAMPLE_SOURCE_DISPLAY.get(
+            canonical or "", cls._fallback_display(canonical_name)
+        )
+        return cls.tr(display)
+
+    @classmethod
+    def public_sample_label(cls, canonical_name: str | None) -> str:
+        """Public-facing label for sample (specimen condition).
+
+        Never surfaces 'Not set'; renders 'Unknown' for unset/absent/legacy values.
+        """
+        canonical = cls.canonicalize_sample(canonical_name)
+        if not canonical or canonical == "Not_set":
+            return cls.tr(cls.SAMPLE_PUBLIC_LABEL)
+        return cls.translate_sample(canonical)
+
+    @classmethod
+    def compact_sample_label(cls, canonical_name: str | None) -> str:
+        """Compact editor label for sample; renders '–' when unset."""
+        canonical = cls.canonicalize_sample(canonical_name)
+        if not canonical or canonical == "Not_set":
+            return cls.SAMPLE_COMPACT_LABEL
+        return cls.translate_sample(canonical)
+
+    @classmethod
+    def public_sample_source_label(cls, canonical_name: str | None) -> str:
+        """Public-facing label for sample source; unset renders 'Unknown'."""
+        canonical = cls.canonicalize_sample_source(canonical_name)
+        if not canonical or canonical == "Not_set":
+            return cls.tr(cls.SAMPLE_PUBLIC_LABEL)
+        return cls.translate_sample_source(canonical)
+
+    @classmethod
+    def sample_source_compact_pills(cls) -> dict[str, str]:
+        """Translated compact pill labels for sample_source (e.g. Spore_print → 'Print')."""
+        return {key: cls.tr(text) for key, text in cls.SAMPLE_SOURCE_COMPACT_PILL.items()}
+
+    @classmethod
+    def sample_source_compact_tooltips(cls) -> dict[str, str]:
+        """Translated tooltips describing each sample source in the compact panels."""
+        return {key: cls.tr(text) for key, text in cls.SAMPLE_SOURCE_COMPACT_TOOLTIPS.items()}
     
     @classmethod
     def translate_measure(cls, canonical_name: str | None) -> str:
@@ -242,6 +350,8 @@ class DatabaseTerms:
             return cls.translate_stain(canonical_name)
         if category == "sample":
             return cls.translate_sample(canonical_name)
+        if category == "sample_source":
+            return cls.translate_sample_source(canonical_name)
         if category == "measure":
             return cls.translate_measure(canonical_name)
         return cls.tr(cls._fallback_display(canonical_name))
@@ -256,6 +366,8 @@ class DatabaseTerms:
             return list(cls.STAIN_TYPES)
         if category == "sample":
             return list(cls.SAMPLE_TYPES)
+        if category == "sample_source":
+            return list(cls.SAMPLE_SOURCES)
         if category == "measure":
             return list(cls.MEASURE_CATEGORIES)
         return []
@@ -267,6 +379,7 @@ class DatabaseTerms:
             "mount": "mount_options",
             "stain": "stain_options",
             "sample": "sample_options",
+            "sample_source": "sample_source_options",
             "measure": "measure_categories",
         }
         return mapping.get(category, "")
@@ -278,6 +391,7 @@ class DatabaseTerms:
             "mount": "last_used_mount",
             "stain": "last_used_stain",
             "sample": "last_used_sample",
+            "sample_source": "last_used_sample_source",
             "measure": "last_used_measure",
         }
         return mapping.get(category, "")

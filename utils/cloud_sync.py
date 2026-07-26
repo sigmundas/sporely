@@ -24,8 +24,9 @@ import random
 import sqlite3
 import shutil
 import tempfile
+import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.parse import quote, urlparse
@@ -53,6 +54,7 @@ from database.models import (
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
 )
+from database.reverse_location_lookup import normalize_country_code
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
@@ -70,6 +72,7 @@ from utils.original_sync_policy import (
     should_download_full_original,
 )
 from utils.publish_targets import normalize_publish_target
+from utils.taxon_text import resolve_observation_taxon_fields
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -80,11 +83,54 @@ from utils.r2_storage import (
     normalize_media_key,
 )
 from utils.thumbnail_generator import generate_all_sizes
+from utils.spore_summary_sync import (
+    STATUS_SKIP_NO_CLOUD_ID as SUMMARY_STATUS_SKIP_NO_CLOUD_ID,
+    STATUS_SKIP_TABLE_MISSING as SUMMARY_STATUS_SKIP_TABLE_MISSING,
+    STATUS_SYNCED as SUMMARY_STATUS_SYNCED,
+    _is_missing_table_error as _is_summary_table_missing_error,
+    sync_observation_spore_summaries,
+)
 
 logger = logging.getLogger(__name__)
 
+# Sporely-py's source_app_version for public.observation_spore_summaries
+# rows (Stage D). Set once at app startup via
+# ``set_cloud_sync_source_app_version(main.APP_VERSION)`` — kept as a
+# module-level slot rather than a direct ``from main import APP_VERSION``
+# because ``main`` drags in PySide6 at import time. Consumers should not
+# read this directly; call ``_current_source_app_version()``.
+_CLOUD_SYNC_SOURCE_APP_VERSION: str | None = None
+
+
+def set_cloud_sync_source_app_version(version: str | None) -> None:
+    """Record the running app version for the summary sync layer.
+
+    Safe to call multiple times; only the last non-empty value sticks.
+    """
+    global _CLOUD_SYNC_SOURCE_APP_VERSION
+    text = str(version or "").strip()
+    _CLOUD_SYNC_SOURCE_APP_VERSION = text or None
+
+
+def _current_source_app_version() -> str | None:
+    return _CLOUD_SYNC_SOURCE_APP_VERSION
+
+
+_CLOUD_DEBUG_TIMING = str(os.environ.get('SPORELY_DEBUG_RAW_TIMING') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _cloud_timing_log(stage: str, start: float | None, *, detail: str = '') -> None:
+    if not _CLOUD_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = max(0.0, (_cloud_sync_perf_counter() - start) * 1000.0)
+    if detail:
+        print(f"[raw-timing] cloud delete {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] cloud delete {stage}: {elapsed_ms:.1f} ms")
+
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 SUPABASE_KEY = 'sb_publishable_nZrERVFN3WR4Aqn2yggc7Q_siAG1TCV'
+_UNSET = object()
 _SUPABASE_AUTH_TIMEOUT = 30
 _SUPABASE_REST_TIMEOUT = 60
 _SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
@@ -109,6 +155,22 @@ _SUPABASE_TRANSIENT_ERROR_HINTS = (
 _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
     'Supabase/cloud sync is temporarily unavailable; local data was not overwritten.'
 )
+_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING = 'cloud_last_child_safety_pull_at'
+_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS = 24
+_CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING = 'cloud_measurement_reconcile_version'
+_CLOUD_MEASUREMENT_RECONCILE_AT_SETTING = 'cloud_measurement_reconcile_at'
+_CLOUD_MEASUREMENT_RECONCILE_VERSION = 1
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING = 'cloud_pending_image_repair_version'
+_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
+_CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
+_PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS = frozenset({
+    'ai_selected_service',
+    'ai_selected_taxon_id',
+    'ai_selected_scientific_name',
+    'ai_selected_probability',
+    'ai_selected_at',
+})
 _CLOUD_KEYRING_SERVICE = 'Sporely.Cloud'
 _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
 _profile_suffix = runtime_profile_scope()
@@ -134,6 +196,11 @@ _OBS_PUSH_COLS = [
     'ai_selected_service', 'ai_selected_taxon_id',
     'ai_selected_scientific_name', 'ai_selected_probability',
     'ai_selected_at',
+    # Red-list is pushable so a desktop-derived value (fallback from an AI
+    # prediction, or an explicit user pick) can round-trip to the cloud. Local
+    # NULL is protected from wiping cloud values by `_merge_cloud_selected_ai_fields`
+    # which fills in the remote value before push.
+    'red_list_category', 'red_list_categories_json',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -143,6 +210,12 @@ _OBS_PUSH_COLS = [
     'spore_statistics', 'auto_threshold',
     'source_type', 'citation', 'data_provider', 'author',
     'spore_data_visibility',
+    # Geography: `country_code` is normalized to NULL or ^[A-Z]{2}$ before
+    # sending. `region_id` is preserve-only from cloud — the desktop never
+    # invents it, and outgoing PATCH payloads intentionally omit this key so
+    # the cloud value survives. See `push_observation` for the patch shaping.
+    'country_code',
+    'region_id',
 ]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 
@@ -1417,7 +1490,14 @@ _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'calibration_uuid',
     'scale_microns_per_pixel', 'resample_scale_factor',
-    'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
+    'mount_medium', 'stain',
+    # `sample_type` is now specimen condition only (Not_set / Fresh / Dried).
+    # `sample_source` records where the material came from (Spore_print,
+    # Hymenium, Stipe, Pileus, Context, Other). Legacy sample_type='Spore_print'
+    # rows are backfilled into sample_source at push time — see
+    # `_normalize_image_push_sample_fields`.
+    'sample_type', 'sample_source',
+    'contrast', 'measure_color',
     'crop_mode', 'notes',
     'gps_source', 'storage_path',
     'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
@@ -1502,6 +1582,7 @@ _IMAGE_METADATA_ONLY_FIELDS = frozenset({
     'mount_medium',
     'stain',
     'sample_type',
+    'sample_source',
     'contrast',
     'measure_color',
     'gps_source',
@@ -1522,6 +1603,11 @@ _SNAPSHOT_OBS_FIELDS = [
     'ai_selected_service', 'ai_selected_taxon_id',
     'ai_selected_scientific_name', 'ai_selected_probability',
     'ai_selected_at',
+    # Red-list category picked for the observation (either directly by the
+    # user or copied from the selected AI prediction). Included in the
+    # snapshot so cloud-pulled observations show the same badge under
+    # Taxonomy → Red list as they do in sporely-web.
+    'red_list_category', 'red_list_categories_json',
     'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
     'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
     'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
@@ -1532,13 +1618,21 @@ _SNAPSHOT_OBS_FIELDS = [
     'source_type', 'citation', 'data_provider', 'author',
     'visibility',
     'spore_data_visibility',
+    'country_code',
+    'region_id',
 ]
 
 _SNAPSHOT_IMG_FIELDS = [
     'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
     'calibration_uuid',
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
-    'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
+    'mount_medium', 'stain',
+    # sample_type = specimen condition; sample_source = where the material
+    # was taken from. Both participate in the image snapshot / media
+    # signature so cloud pull round-trips them and metadata-only sync can
+    # patch them without triggering byte uploads.
+    'sample_type', 'sample_source',
+    'contrast', 'measure_color',
     'crop_mode', 'notes',
     'gps_source', 'storage_path', 'original_filename',
     'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
@@ -1965,6 +2059,10 @@ _PULL_CONFLICT_RE = re.compile(
 _REVIEW_CONFLICT_RE = re.compile(
     r"^cloud\s+(?P<cloud_id>[^:]+):\s+needs review before applying remaining cloud changes to local observation\s+(?P<local_id>\d+)(?:\s+\((?P<reason>.*)\))?$"
 )
+_MEASUREMENT_CONFLICT_RE = re.compile(
+    r"^obs\s+(?P<local_id>\d+):\s+skipped cloud measurement\s+"
+    r"(?P<measurement_id>\S+)\s+because the local copy changed$"
+)
 
 
 class CloudSyncError(Exception):
@@ -1977,6 +2075,35 @@ class AccountMismatchError(CloudSyncError):
 
 class CloudTemporarilyUnavailableError(CloudSyncError):
     pass
+
+
+class CloudReauthRequiredError(CloudSyncError):
+    """Raised when the refresh endpoint proves the refresh token is dead.
+
+    Distinct from CloudTemporarilyUnavailableError (Supabase glitch, retry
+    likely fine) and from generic CloudSyncError (transport-level noise).
+    Reaching this state means the current session cannot be resumed and the
+    user must sign in again — but callers still must not wipe stored tokens
+    unless the user explicitly signs out.
+    """
+
+
+class CloudSessionAccountMismatchError(AccountMismatchError):
+    """Raised when a stale SporelyCloudClient sees on-disk session tokens
+    that belong to a different Sporely Cloud user than the one this
+    client is bound to.
+
+    Usually happens when the user signed out and signed back in as a
+    different account while an old worker/thread was still alive: the
+    worker's in-memory ``user_id`` still points at the previous
+    account, but the on-disk tokens now belong to the new one.  We
+    refuse to adopt the new account's tokens or call the refresh
+    endpoint with them — the worker should surface this and stop.
+    Inherits from :class:`AccountMismatchError` so existing handlers
+    that only catch that base class keep working; catch this subclass
+    to distinguish "stale worker" from "database linked to a different
+    account".
+    """
 
 
 ACCOUNT_MISMATCH_MESSAGE = (
@@ -2524,7 +2651,6 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'invalid jwt',
     'expired access token',
     'access token expired',
-    'auth refresh failed',
     'token expired',
     'session expired',
     'authentication failed',
@@ -2535,14 +2661,69 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'pgrst303',
 )
 
+# Hints that identify a *terminal* refresh-token invalidation coming from
+# Supabase's refresh endpoint.  Anything matching this list means the
+# session cannot be resumed and the user must sign in again.  A plain
+# 401 or an expired-JWT hint is NOT enough — those are recoverable by
+# refreshing.
+_CLOUD_REAUTH_REQUIRED_HINTS = (
+    'invalid_grant',
+    'invalid refresh token',
+    'refresh token not found',
+    'refresh_token_not_found',
+    'refresh_token_already_used',
+)
+
 
 def is_cloud_auth_error(error) -> bool:
+    """Broad classification: does *error* smell like an auth/token issue?
+
+    Used by the request layer to decide whether to try a refresh and by
+    the sync loops to decide whether to abort early.  Deliberately does
+    not match a raw ``403`` — PostgREST returns 403 for RLS denials,
+    which are authorization (not authentication) failures and must not
+    be conflated with an expired session.
+    """
+    if isinstance(error, CloudReauthRequiredError):
+        return True
     code, texts = _collect_sync_error_details(error)
     haystack = ' '.join(dict.fromkeys(texts)).lower()
     code_text = str(code or '').strip().lower()
-    if code_text in {'401', '403'}:
+    if code_text == '401':
         return True
     return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
+
+
+def is_cloud_reauth_required_error(error) -> bool:
+    """Strict classification: is this error terminal for the current session?
+
+    Returns True only when we can prove the stored refresh token itself
+    is dead — e.g. the refresh endpoint returned ``invalid_grant`` — so
+    the UI can prompt the user to sign in again.  A wrapper such as
+    ``CloudTemporarilyUnavailableError`` chained from a generic ``"auth
+    refresh failed"`` string is NOT sufficient: that shape can result
+    from a rotation race or a transient Supabase blip, and treating it
+    as terminal would wipe a still-valid refresh token on next restart.
+    """
+    if isinstance(error, CloudReauthRequiredError):
+        return True
+    seen: set[int] = set()
+    value = error
+    while value is not None:
+        if isinstance(value, CloudReauthRequiredError):
+            return True
+        try:
+            marker = id(value)
+        except Exception:
+            marker = None
+        if marker is not None:
+            if marker in seen:
+                break
+            seen.add(marker)
+        value = getattr(value, '__cause__', None) or getattr(value, '__context__', None)
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    return any(hint in haystack for hint in _CLOUD_REAUTH_REQUIRED_HINTS)
 
 
 def _sleep_supabase_backoff(attempt: int) -> None:
@@ -2584,8 +2765,11 @@ def _response_indicates_auth_error(response: requests.Response) -> bool:
         status_code = int(getattr(response, 'status_code', 0) or 0)
     except Exception:
         status_code = 0
-    if status_code in {401, 403}:
+    if status_code == 401:
         return True
+    # 403 is intentionally excluded: PostgREST/Supabase return 403 for
+    # RLS denials, which are authorization failures and must not trigger
+    # a token refresh or session wipe.
     try:
         return is_cloud_auth_error(getattr(response, 'text', ''))
     except Exception:
@@ -2639,12 +2823,16 @@ def _request_with_transient_retry(
                 refreshed_ok = bool(refresh_callback()) if callable(refresh_callback) else False
             except CloudTemporarilyUnavailableError:
                 raise
+            except CloudReauthRequiredError:
+                # Propagate untouched — this is the only way callers can
+                # tell that the refresh token itself is dead.
+                raise
             except Exception as exc:
                 raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
             if refreshed_ok:
                 continue
             raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
-                f'{method} {url} status={getattr(response, "status_code", "")}: auth refresh failed'
+                f'{method} {url} status={getattr(response, "status_code", "")}: refresh unavailable'
             )
 
         if _response_indicates_transient_supabase_error(response):
@@ -2677,6 +2865,129 @@ def _decode_jwt_subject(access_token: str | None) -> str:
     except Exception:
         return ''
     return _normalize_cloud_user_id(data.get('sub') if isinstance(data, dict) else None)
+
+
+def _decode_jwt_expiry(access_token: str | None) -> int | None:
+    """Return the ``exp`` claim (unix seconds) of *access_token* or None.
+
+    None signals the token is either missing or not decodable — callers
+    should treat that as "unknown expiry" rather than "expired".
+    """
+    token = str(access_token or '').strip()
+    parts = token.split('.')
+    if len(parts) < 2:
+        return None
+    payload = parts[1]
+    padding = '=' * (-len(payload) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode((payload + padding).encode('ascii')).decode('utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    exp = data.get('exp')
+    try:
+        return int(exp) if exp is not None else None
+    except Exception:
+        return None
+
+
+# Number of seconds before ``exp`` at which we treat a JWT as "about to
+# expire" and refresh proactively.  Supabase access tokens are typically
+# 60 minutes, so 5 minutes gives comfortable headroom without spamming
+# the refresh endpoint on healthy sessions.
+_CLOUD_JWT_EXPIRY_LEEWAY_SECONDS = 5 * 60
+
+
+def _jwt_expires_soon(
+    access_token: str | None,
+    *,
+    leeway_seconds: int = _CLOUD_JWT_EXPIRY_LEEWAY_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """True when *access_token* has expired or is within *leeway_seconds*.
+
+    An undecodable token returns False here — callers rely on a normal
+    401 to detect death for tokens whose expiry we can't inspect.
+    """
+    exp = _decode_jwt_expiry(access_token)
+    if exp is None:
+        return False
+    current = float(now) if now is not None else time.time()
+    return exp <= current + max(0, int(leeway_seconds))
+
+
+def _read_current_cloud_session_settings() -> tuple[str | None, str | None, str | None]:
+    """Snapshot the current on-disk session tokens.
+
+    Returns a triple ``(access_token, user_id, refresh_token)`` where
+    each element is either a non-empty string or None.  Reading through
+    a single helper keeps every call site symmetric with respect to
+    ``get_app_settings()`` monkeypatches in tests.
+    """
+    settings = get_app_settings()
+    access_raw = str(settings.get('cloud_access_token') or '').strip()
+    user_raw = _normalize_cloud_user_id(settings.get('cloud_user_id'))
+    refresh_raw = str(settings.get('cloud_refresh_token') or '').strip()
+    return (
+        access_raw or None,
+        user_raw or None,
+        refresh_raw or None,
+    )
+
+
+# Serializes refresh attempts across every :class:`SporelyCloudClient`
+# instance in this process.  Supabase refresh tokens are single-use with
+# reuse detection, so two workers racing to refresh with the same token
+# is a common cause of spurious "invalid_grant" errors.  Holding this
+# lock while re-reading settings, choosing the newest refresh token,
+# calling the refresh endpoint, and persisting the result turns that
+# race into a wait — the second thread arrives after the first has
+# already saved rotated tokens and simply adopts them.
+_CLOUD_REFRESH_LOCK = threading.RLock()
+
+
+def _settings_session_is_compatible(
+    client_user_id: str | None,
+    settings_user_id: str | None,
+    settings_access_token: str | None,
+) -> bool:
+    """Return True when on-disk session tokens are safe to adopt.
+
+    The rules mirror the Stage-4 spec:
+
+    * A client with no identity yet (``client_user_id`` empty/None) can
+      adopt anything — this is the fresh-startup / just-signed-in shape.
+    * If both the client and settings carry an explicit ``user_id``,
+      they must match.
+    * If settings does not carry a ``user_id`` but does carry an
+      access token, we accept adoption iff the token's ``sub`` claim
+      decodes to the client's user id.
+    * If settings carries neither a matching ``user_id`` nor a
+      decodable access-token subject, and the client already has an
+      identity, we refuse — we cannot prove ownership.
+    * If settings is entirely empty (no user id and no access token),
+      there is nothing to adopt and nothing to conflict with; the
+      caller may proceed with its own tokens.
+    """
+    client_id = _normalize_cloud_user_id(client_user_id) or None
+    if not client_id:
+        return True
+    settings_id = _normalize_cloud_user_id(settings_user_id) or None
+    if settings_id:
+        return settings_id == client_id
+    # No settings user id.  If settings holds no access token either,
+    # there is no on-disk session to conflict with — treat as
+    # compatible so the caller can proceed with its own refresh token.
+    token_text = str(settings_access_token or '').strip()
+    if not token_text:
+        return True
+    subject = _decode_jwt_subject(token_text)
+    if not subject:
+        # Access token present but its subject is undecodable — refuse
+        # to adopt because we cannot verify ownership.
+        return False
+    return subject == client_id
 
 
 def _load_linked_cloud_user_id() -> str:
@@ -2772,6 +3083,20 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
             entry['cloud_id'] = str(review_match.group('cloud_id') or '').strip() or None
             entry['pull_skipped'] = True
             continue
+        measurement_match = _MEASUREMENT_CONFLICT_RE.match(text)
+        if measurement_match:
+            local_id = int(measurement_match.group('local_id'))
+            entry = conflict_entries.setdefault(
+                str(local_id),
+                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
+            )
+            entry['pull_skipped'] = True
+            entry['measurement_conflict'] = True
+            measurement_ids = entry.setdefault('measurement_ids', [])
+            measurement_id = str(measurement_match.group('measurement_id') or '').strip()
+            if measurement_id and measurement_id not in measurement_ids:
+                measurement_ids.append(measurement_id)
+            continue
         other_errors.append(text)
 
     conflicts = sorted(
@@ -2840,6 +3165,18 @@ def _normalize_observation_field_value(field: str, value):
         return raw if raw in {'private', 'friends', 'public'} else 'public'
     if field == 'spore_statistics':
         return _normalize_observation_json_value(value)
+    if field == 'red_list_categories_json':
+        # Local column is TEXT (JSON string); cloud column is JSONB (dict).
+        # Compare structurally so re-pulls don't perpetually report "changed"
+        # just because of the string/dict shape difference.
+        return _normalize_observation_json_value(value)
+    if field == 'country_code':
+        return normalize_country_code(value)
+    if field == 'region_id':
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
     return _normalize_snapshot_value(value)
 
 
@@ -2875,9 +3212,17 @@ def _observation_push_payload(record: dict | None, *, local: bool) -> dict:
     for field in _OBSERVATION_FLOAT_FIELDS:
         payload[field] = _normalize_observation_float_value(payload.get(field))
     payload['spore_statistics'] = _normalize_observation_json_value(payload.get('spore_statistics'))
+    # red_list_categories_json is TEXT locally, JSONB on cloud. Decode the string
+    # (or pass through a dict) so PostgREST sees a JSON object, not a quoted
+    # string. Missing / empty values map to None so nothing gets pushed.
+    payload['red_list_categories_json'] = _normalize_observation_json_value(
+        payload.get('red_list_categories_json')
+    )
     raw_publish_target = str(payload.get('publish_target') or '').strip()
     if raw_publish_target:
         payload['publish_target'] = normalize_publish_target(raw_publish_target)
+    payload['country_code'] = normalize_country_code(payload.get('country_code'))
+    payload['region_id'] = _normalize_observation_field_value('region_id', payload.get('region_id'))
     return payload
 
 
@@ -2952,6 +3297,101 @@ def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | Non
     return diff_fields
 
 
+def _coords_match(
+    local_lat, local_lon, baseline_lat, baseline_lon,
+) -> bool:
+    """Return True when local coords equal the sync baseline within float tolerance.
+
+    Uses the same tolerances as observation float diff detection so harmless
+    JSON serialization drift does not spuriously flag a coordinate change.
+    """
+    left_lat = _normalize_observation_float_value(local_lat)
+    left_lon = _normalize_observation_float_value(local_lon)
+    right_lat = _normalize_observation_float_value(baseline_lat)
+    right_lon = _normalize_observation_float_value(baseline_lon)
+    if left_lat is None and right_lat is None and left_lon is None and right_lon is None:
+        return True
+    if (left_lat is None) != (right_lat is None) or (left_lon is None) != (right_lon is None):
+        return False
+    return math.isclose(
+        float(left_lat), float(right_lat),
+        rel_tol=_OBSERVATION_FLOAT_REL_TOL,
+        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+    ) and math.isclose(
+        float(left_lon), float(right_lon),
+        rel_tol=_OBSERVATION_FLOAT_REL_TOL,
+        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+    )
+
+
+def _shape_geography_patch_payload(
+    payload: dict,
+    obs: dict | None,
+    cloud_id: str | None,
+) -> None:
+    """Enforce the coord-change / preserve-only rules for country_code + region_id.
+
+    Semantics (see spec §4):
+    - field absent  → cloud value is preserved
+    - field = null  → cloud value is explicitly cleared
+    - field = code  → cloud value is replaced
+
+    Rules applied here for an existing (PATCH) observation:
+
+    * region_id is preserve-only on desktop sync. When coordinates are
+      unchanged we never send it. When coordinates changed we send NULL so
+      the stale cloud region is dropped.
+    * country_code with unchanged coords + no local value → omit key
+      (do not clobber the cloud value; may be a stale offline sync).
+    * country_code with unchanged coords + valid local code → send code.
+    * country_code with changed coords + valid geocode → send new code.
+    * country_code with changed coords + no valid code → send NULL.
+
+    The baseline for coord comparison is the stored cloud snapshot for the
+    linked cloud observation. When no snapshot exists yet (first push after
+    linking) we fall back to omitting the geography keys — the cloud row
+    is authoritative and will keep whatever it already holds.
+    """
+    local_row = dict(obs or {})
+    normalized_country = normalize_country_code(local_row.get('country_code'))
+
+    cloud_key = str(cloud_id or '').strip()
+    snapshot = None
+    baseline_lat = None
+    baseline_lon = None
+    if cloud_key:
+        raw_snapshot = _load_cloud_observation_snapshot(cloud_key)
+        snapshot = _parse_cloud_observation_snapshot(raw_snapshot) if raw_snapshot else None
+    if snapshot:
+        baseline_obs = snapshot.get('observation') or {}
+        baseline_lat = baseline_obs.get('gps_latitude')
+        baseline_lon = baseline_obs.get('gps_longitude')
+    else:
+        # No baseline available: treat as coords unchanged to preserve cloud
+        # geography (safer than clobbering with a stale local value).
+        baseline_lat = local_row.get('gps_latitude')
+        baseline_lon = local_row.get('gps_longitude')
+
+    coords_unchanged = _coords_match(
+        local_row.get('gps_latitude'),
+        local_row.get('gps_longitude'),
+        baseline_lat,
+        baseline_lon,
+    )
+
+    if coords_unchanged:
+        # Preserve cloud region_id (never sent) and skip country if local is empty.
+        payload.pop('region_id', None)
+        if normalized_country is None:
+            payload.pop('country_code', None)
+        else:
+            payload['country_code'] = normalized_country
+    else:
+        # Coordinates changed. Region tied to old coords is stale; clear it.
+        payload['region_id'] = None
+        payload['country_code'] = normalized_country  # may be None
+
+
 def _local_image_snapshot_payload(image_row: dict | None) -> dict:
     row = dict(image_row or {})
     payload = {
@@ -2967,6 +3407,7 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'mount_medium': _normalize_snapshot_value(row.get('mount_medium')),
         'stain': _normalize_snapshot_value(row.get('stain')),
         'sample_type': _normalize_snapshot_value(row.get('sample_type')),
+        'sample_source': _normalize_snapshot_value(row.get('sample_source')),
         'contrast': _normalize_snapshot_value(row.get('contrast')),
         'measure_color': _normalize_snapshot_value(row.get('measure_color')),
         'crop_mode': _normalize_snapshot_value(row.get('crop_mode')),
@@ -2984,6 +3425,9 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
         'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
         'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
+        'ai_crop_is_custom': _normalize_snapshot_value(
+            None if row.get('ai_crop_is_custom') is None else bool(row.get('ai_crop_is_custom'))
+        ),
     }
     return payload
 
@@ -3029,6 +3473,19 @@ def _deleted_remote_image_identity_keys(remote_images: list[dict] | None) -> set
     return keys
 
 
+def _locally_tombstoned_snapshot_image_identity_keys(
+    baseline_images: list[dict] | None,
+) -> set[str]:
+    baseline_rows = [dict(row or {}) for row in (baseline_images or [])]
+    cloud_ids = [str(row.get('id') or '').strip() for row in baseline_rows]
+    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(cloud_ids)
+    keys: set[str] = set()
+    for row in baseline_rows:
+        if str(row.get('id') or '').strip() in tombstoned_cloud_ids:
+            keys.update(_image_identity_keys(row))
+    return keys
+
+
 def _image_label(image_row: dict | None) -> str:
     row = dict(image_row or {})
     filename = str(row.get('original_filename') or '').strip()
@@ -3044,6 +3501,107 @@ def _image_label(image_row: dict | None) -> str:
     if desktop_id:
         return f'local image {desktop_id}'
     return 'image'
+
+
+def _image_kind_noun(image_row: dict | None, *, plural: bool = False) -> str:
+    """Human-readable name for what kind of image a row is.
+
+    We group by (image_type, micro_category) so summaries can say
+    "2 microscope photos" instead of listing filenames the user cannot
+    map back to what they saw in the app.
+    """
+    row = dict(image_row or {})
+    image_type = str(row.get('image_type') or '').strip().lower()
+    micro_category = str(row.get('micro_category') or '').strip().lower()
+    if image_type == 'microscope':
+        if micro_category == 'spore':
+            singular = 'spore photo'
+        elif micro_category:
+            singular = f'{micro_category} microscope photo'
+        else:
+            singular = 'microscope photo'
+    elif image_type == 'field':
+        singular = 'field photo'
+    elif image_type:
+        singular = f'{image_type} photo'
+    else:
+        singular = 'photo'
+    return singular + ('s' if plural and not singular.endswith('s') else '')
+
+
+def _pluralize_image_count(rows: list[dict]) -> str:
+    """Turn a list of image rows into 'N x' where x collapses by kind.
+
+    Examples: '2 microscope photos'; '1 field photo and 1 spore photo';
+    '3 photos' when kinds are mixed and there are many.
+    """
+    if not rows:
+        return ''
+    buckets: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for row in rows:
+        key = _image_kind_noun(row, plural=False)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(row)
+    parts: list[str] = []
+    for key in order:
+        count = len(buckets[key])
+        noun = key if count == 1 else (key + 's' if not key.endswith('s') else key)
+        parts.append(f'{count} {noun}')
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f'{parts[0]} and {parts[1]}'
+    return ', '.join(parts[:-1]) + f', and {parts[-1]}'
+
+
+_IMAGE_METADATA_FIELD_GROUPS = (
+    (
+        'the AI crop',
+        {
+            'ai_crop_x1',
+            'ai_crop_y1',
+            'ai_crop_x2',
+            'ai_crop_y2',
+            'ai_crop_source_w',
+            'ai_crop_source_h',
+            'ai_crop_is_custom',
+            'crop_mode',
+        },
+    ),
+    (
+        'the microscope calibration',
+        {
+            'calibration_uuid',
+            'objective_name',
+            'scale_microns_per_pixel',
+            'resample_scale_factor',
+        },
+    ),
+    (
+        'the microscope settings',
+        {
+            'mount_medium',
+            'stain',
+            'sample_type',
+            'contrast',
+            'measure_color',
+        },
+    ),
+    ('the notes', {'notes'}),
+    ('the photo type', {'image_type', 'micro_category'}),
+    ('the GPS source', {'gps_source'}),
+)
+
+
+def _image_metadata_group_for_field(field: str) -> str:
+    normalized = str(field or '').strip()
+    for label, members in _IMAGE_METADATA_FIELD_GROUPS:
+        if normalized in members:
+            return label
+    return _format_image_metadata_field_label(normalized)
 
 
 def _image_metadata_payload(image_row: dict | None) -> dict:
@@ -3085,6 +3643,13 @@ def _summarize_image_changes(
     *,
     ignored_keys: set[str] | None = None,
 ) -> list[str]:
+    """Return short, user-facing lines describing what changed to images.
+
+    We group by "kind of change" (crop, notes, calibration) and by
+    "kind of image" (microscope photo, field photo) rather than listing
+    raw filenames — the user sees results in the app UI, they don't
+    remember `img_1.webp`.
+    """
     current = [dict(row or {}) for row in (current_images or [])]
     baseline = [dict(row or {}) for row in (baseline_images or [])]
     ignored = {str(key or '').strip() for key in (ignored_keys or set()) if str(key or '').strip()}
@@ -3099,33 +3664,37 @@ def _summarize_image_changes(
 
     lines: list[str] = []
 
-    metadata_changes = []
+    # {group_label: [image_row, ...]} — each image row is only recorded
+    # once per group even when several fields inside the group changed.
+    change_buckets: dict[str, list[dict]] = {}
+    change_order: list[str] = []
     for key in shared_keys:
         c_meta = _image_metadata_payload(current_map[key])
         b_meta = _image_metadata_payload(baseline_map[key])
-        if c_meta != b_meta:
-            changed_fields = [k for k, v in c_meta.items() if v != b_meta.get(k)]
-            label = _image_label(current_map[key])
-            friendly_fields = ', '.join(_format_image_metadata_field_label(field) for field in changed_fields)
-            metadata_changes.append(f"{label} changed: {friendly_fields}")
+        if c_meta == b_meta:
+            continue
+        seen_groups: set[str] = set()
+        for field, value in c_meta.items():
+            if value == b_meta.get(field):
+                continue
+            group = _image_metadata_group_for_field(field)
+            if group in seen_groups:
+                continue
+            seen_groups.add(group)
+            if group not in change_buckets:
+                change_buckets[group] = []
+                change_order.append(group)
+            change_buckets[group].append(current_map[key])
 
     if added:
-        labels = ", ".join(_image_label(row) for row in added[:3])
-        if len(added) > 3:
-            labels += ", …"
-        lines.append(f'Images added since last sync: {labels}')
+        lines.append(f'Added {_pluralize_image_count(added)}.')
     if removed:
-        labels = ", ".join(_image_label(row) for row in removed[:3])
-        if len(removed) > 3:
-            labels += ", …"
-        lines.append(f'Images removed since last sync: {labels}')
-    if metadata_changes:
-        for mc in metadata_changes[:5]:
-            lines.append(mc)
-        if len(metadata_changes) > 5:
-            lines.append(f"...and {len(metadata_changes) - 5} more metadata changes")
+        lines.append(f'Removed {_pluralize_image_count(removed)}.')
+    for group in change_order:
+        rows = change_buckets[group]
+        lines.append(f'Changed {group} on {_pluralize_image_count(rows)}.')
     if not lines and len(current) != len(baseline) and not ignored:
-        lines.append(f'Image count changed since last sync: {len(baseline)} -> {len(current)}')
+        lines.append(f'Photo count went from {len(baseline)} to {len(current)}.')
     return lines
 
 
@@ -3259,7 +3828,12 @@ def _remaining_local_changes_after_remote_merge(
     *,
     local_media_changed: bool,
 ) -> bool:
-    return bool(field_changes.get('local_only_fields') or field_changes.get('conflict_fields') or local_media_changed)
+    blocking_local_only_fields = {
+        str(field or '').strip()
+        for field in (field_changes.get('local_only_fields') or [])
+        if str(field or '').strip() not in _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+    }
+    return bool(blocking_local_only_fields or field_changes.get('conflict_fields') or local_media_changed)
 
 
 def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str] | None = None) -> str:
@@ -3739,6 +4313,47 @@ def summarize_sync_change_activity(result: dict | None) -> dict:
     }
 
 
+_SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS = (
+    'observations_redirtied_pending_local_images',
+    'observations_patched',
+    'observations_deleted_remote',
+    'images_uploaded',
+    'images_cloud_id_repaired',
+    'images_deleted_remote',
+    'measurements_patched',
+    'calibrations_pushed',
+    'calibrations_pulled',
+    'calibrations_conflicts',
+    'calibration_reference_images_uploaded',
+    'remote_media_downloads',
+    'remote_media_materializations',
+)
+
+
+def sync_result_requires_observation_refresh(result: dict | None) -> bool:
+    """Return False only when a complete sync result proves a UI no-op."""
+    data = dict(result or {})
+    summary = data.get('sync_summary')
+    if not isinstance(summary, dict):
+        return True
+    if data.get('cancelled') or data.get('skipped'):
+        return True
+    if data.get('errors') or data.get('deleted_remote'):
+        return True
+
+    for key in ('pushed', 'pulled'):
+        try:
+            if int(data.get(key, 0) or 0) != 0:
+                return True
+        except Exception:
+            return True
+
+    return any(
+        _sync_summary_value(summary, key) > 0
+        for key in _SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS
+    )
+
+
 def _observation_display_name(obs: dict | None) -> str:
     record = obs or {}
     parts = [
@@ -3832,51 +4447,180 @@ def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
 
 def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
     row = dict(image_row or {})
-    return not _is_generated_cloud_image(row)
+    if _is_generated_cloud_image(row):
+        return False
+    if str(row.get('deleted_at') or '').strip():
+        return False
+    if str(row.get('purged_at') or '').strip():
+        return False
+    return True
+
+
+def _is_metadata_only_microscope_cloud_image(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    return not _normalize_cloud_media_key(row.get('storage_path'))
+
+
+def _is_spore_measurement_source_image(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() == 'microscope':
+        return True
+    if _normalize_cloud_media_key(row.get('storage_path')):
+        return True
+    return _resolve_existing_local_image_asset_path(str(row.get('filepath') or '')) is not None
+
+
+def _is_local_metadata_only_microscope_anchor(image_row: dict | None) -> bool:
+    row = dict(image_row or {})
+    if not should_pull_cloud_image_to_desktop(row):
+        return False
+    if str(row.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    return bool(str(row.get('cloud_id') or '').strip())
+
+
+def _update_image_columns_without_touching_observation(
+    image_id: int,
+    updates: dict[str, object | None],
+) -> None:
+    if image_id <= 0 or not updates:
+        return
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(images)")
+        image_columns = {
+            str(row[1] or '').strip()
+            for row in cursor.fetchall()
+            if str(row[1] or '').strip()
+        }
+        assignments: list[str] = []
+        values: list[object | None] = []
+        for column_name, column_value in updates.items():
+            if column_name not in image_columns:
+                continue
+            assignments.append(f"{column_name} = ?")
+            values.append(column_value)
+        if not assignments:
+            return
+        values.append(int(image_id))
+        cursor.execute(
+            f"UPDATE images SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _cloud_pulled_image_order_key(image_row: dict) -> tuple[int, int, str, int]:
+    image_type = str(image_row.get('image_type') or '').strip().lower()
+    if image_type == 'field':
+        type_rank = 0
+    elif image_type == 'microscope':
+        type_rank = 1
+    else:
+        type_rank = 2
+    sort_order = _safe_int(image_row.get('sort_order'))
+    sort_rank = sort_order if sort_order is not None else 10**9
+    created_at = str(image_row.get('created_at') or '').strip()
+    image_id = _safe_int(image_row.get('id')) or 0
+    return (type_rank, sort_rank, created_at, image_id)
+
+
+def _normalize_cloud_pulled_image_order(local_id: int) -> None:
+    try:
+        obs_id = int(local_id)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+
+    image_rows = [dict(row or {}) for row in ImageDB.get_images_for_observation(obs_id) or []]
+    if len(image_rows) < 2:
+        return
+
+    # Only normalize the mixed cloud-pulled cases. Local manual galleries keep
+    # their existing order unless we have imported cloud recovery cache rows.
+    has_cloud_cache_row = any(
+        str(row.get('source_role') or '').strip().lower() == 'cloud_recovery_cache'
+        for row in image_rows
+    )
+    if not has_cloud_cache_row:
+        return
+
+    image_types = {str(row.get('image_type') or '').strip().lower() for row in image_rows}
+    if 'field' not in image_types or 'microscope' not in image_types:
+        return
+
+    ordered_rows = sorted(image_rows, key=_cloud_pulled_image_order_key)
+    ordered_ids = [_safe_int(row.get('id')) for row in ordered_rows]
+    ordered_ids = [image_id for image_id in ordered_ids if image_id is not None]
+    current_ids = [_safe_int(row.get('id')) for row in image_rows]
+    current_ids = [image_id for image_id in current_ids if image_id is not None]
+    if ordered_ids == current_ids:
+        return
+
+    for index, image_id in enumerate(ordered_ids):
+        _update_image_columns_without_touching_observation(int(image_id), {'sort_order': index})
 
 
 def _cloud_observation_snapshot(
     remote: dict,
-    remote_images: list[dict],
+    remote_images: list[dict] | None,
     remote_measurements: list[dict] | None = None,
+    *,
+    include_images: bool = True,
+    include_measurements: bool = True,
 ) -> str:
     obs_part = {
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
     }
-    images_part = []
-    filtered_images = [
-        dict(row or {})
-        for row in (remote_images or [])
-        if should_pull_cloud_image_to_desktop(row)
-    ]
-    for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
-        image_payload = {
-            field: _normalize_snapshot_value(image.get(field))
-            for field in _SNAPSHOT_IMG_FIELDS
-        }
-        for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
-            passive_value = _normalize_cloud_media_key(image.get(field))
-            if passive_value:
-                image_payload[field] = _normalize_snapshot_value(passive_value)
-        images_part.append(image_payload)
-    measurements_part = []
-    filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
-    for measurement in sorted(
-        filtered_measurements,
-        key=lambda row: (
-            str(row.get('image_id') or ''),
-            _safe_int(row.get('desktop_id')),
-            str(row.get('id') or ''),
-        ),
-    ):
-        measurements_part.append(
-            {
-                field: _normalize_snapshot_value(measurement.get(field))
-                for field in _SNAPSHOT_MEAS_FIELDS
+    payload = {'observation': obs_part}
+    if include_images:
+        images_part = []
+        filtered_images = [
+            dict(row or {})
+            for row in (remote_images or [])
+            if should_pull_cloud_image_to_desktop(row)
+        ]
+        for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
+            image_payload = {
+                field: _normalize_snapshot_value(image.get(field))
+                for field in _SNAPSHOT_IMG_FIELDS
             }
-        )
-    payload = {'observation': obs_part, 'images': images_part, 'measurements': measurements_part}
+            for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
+                passive_value = _normalize_cloud_media_key(image.get(field))
+                if passive_value:
+                    image_payload[field] = _normalize_snapshot_value(passive_value)
+            images_part.append(image_payload)
+        payload['images'] = images_part
+    if include_measurements:
+        measurements_part = []
+        filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
+        for measurement in sorted(
+            filtered_measurements,
+            key=lambda row: (
+                str(row.get('image_id') or ''),
+                _safe_int(row.get('desktop_id')),
+                str(row.get('id') or ''),
+            ),
+        ):
+            measurements_part.append(
+                {
+                    field: _normalize_snapshot_value(measurement.get(field))
+                    for field in _SNAPSHOT_MEAS_FIELDS
+                }
+            )
+        payload['measurements'] = measurements_part
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
@@ -4142,6 +4886,11 @@ def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | No
         if local_image is None:
             missing_remote_images.append(remote_image)
             continue
+        if (
+            _is_metadata_only_microscope_cloud_image(remote_image)
+            and _is_local_metadata_only_microscope_anchor(local_image)
+        ):
+            continue
         if _resolve_existing_local_image_asset_path(local_image.get('filepath')) is None:
             missing_remote_images.append(remote_image)
     return missing_remote_images
@@ -4226,14 +4975,160 @@ def _group_remote_measurements_by_observation(
     return grouped
 
 
+def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str | None]:
+    """Return whether the periodic metadata-only child reconciliation is due."""
+    raw_last = get_app_settings().get(_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING)
+    last_text = str(raw_last or '').strip() or None
+    if last_text is None:
+        return True, None
+
+    last_at = _parse_sync_timestamp(last_text)
+    if last_at is None:
+        return True, last_text
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    stale_before = current.astimezone(timezone.utc) - timedelta(
+        hours=_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS
+    )
+    return last_at <= stale_before, last_text
+
+
+def _cloud_measurement_remote_verification_due(
+    *,
+    full_pull: bool,
+    child_safety_pull: bool,
+    safety_pull_due: bool,
+) -> tuple[bool, str]:
+    """Select deep stamped-ID verification without weakening local repair."""
+    if full_pull:
+        return True, 'full_pull'
+
+    settings = get_app_settings()
+    stored_version = _safe_int(settings.get(_CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING))
+    if stored_version != _CLOUD_MEASUREMENT_RECONCILE_VERSION:
+        return True, f'version_{stored_version}_to_{_CLOUD_MEASUREMENT_RECONCILE_VERSION}'
+
+    if child_safety_pull and safety_pull_due:
+        return True, 'child_safety_pull'
+    return False, 'fresh_watermark'
+
+
+def _cloud_pending_image_repair_scan_due(
+    now: datetime | None = None,
+) -> tuple[bool, str]:
+    """Schedule the legacy/interrupted-state scan outside ordinary no-op syncs."""
+    stored_version = _safe_int(
+        SettingsDB.get_setting(_CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING, '')
+    )
+    if stored_version != _CLOUD_PENDING_IMAGE_REPAIR_VERSION:
+        return True, f'version_{stored_version}_to_{_CLOUD_PENDING_IMAGE_REPAIR_VERSION}'
+
+    last_text = str(
+        SettingsDB.get_setting(_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING, '') or ''
+    ).strip()
+    last_at = _parse_sync_timestamp(last_text)
+    if last_at is None:
+        return True, 'missing_or_invalid_watermark'
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    stale_before = current.astimezone(timezone.utc) - timedelta(
+        hours=_CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS
+    )
+    if last_at <= stale_before:
+        return True, 'stale_watermark'
+    return False, 'fresh_watermark'
+
+
+def _record_cloud_pending_image_repair_scan_complete() -> bool:
+    completed_at = datetime.now(timezone.utc).isoformat()
+    try:
+        SettingsDB.set_setting(
+            _CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING,
+            str(_CLOUD_PENDING_IMAGE_REPAIR_VERSION),
+        )
+        SettingsDB.set_setting(_CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING, completed_at)
+    except Exception as exc:
+        print(
+            f'[cloud_sync] pending image repair watermark persist failed: {exc}',
+            flush=True,
+        )
+        return False
+    return True
+
+
+_PUSH_SUMMARY_REMOTE_LIST_REUSE_SAFE_POSITIVE_KEYS = frozenset({
+    'calibrations_skipped_noop',
+    'calibration_remote_lookups',
+})
+
+
+def _push_phase_requires_remote_observation_refresh(
+    calibration_push_result: dict | None,
+    push_result: dict | None,
+) -> bool:
+    """Return False only when push results prove no cloud mutation occurred."""
+    calibration_data = dict(calibration_push_result or {})
+    push_data = dict(push_result or {})
+    if calibration_data.get('errors') or push_data.get('errors'):
+        return True
+
+    required_zero_values = (
+        calibration_data.get('pushed'),
+        push_data.get('pushed'),
+        push_data.get('total'),
+    )
+    try:
+        if any(int(value) != 0 for value in required_zero_values):
+            return True
+    except (TypeError, ValueError):
+        return True
+
+    for key in ('spore_measurement_reconcile', 'spore_summary_reconcile'):
+        reconciliation = push_data.get(key)
+        if not isinstance(reconciliation, dict):
+            return True
+        try:
+            if int(reconciliation.get('attempted')) != 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+
+    summary = push_data.get('sync_summary')
+    if not isinstance(summary, dict):
+        return True
+    for key, value in summary.items():
+        if key in _PUSH_SUMMARY_REMOTE_LIST_REUSE_SAFE_POSITIVE_KEYS:
+            continue
+        if _sync_summary_value(summary, key) > 0:
+            return True
+    return False
+
+
 def sync_all(
     client: SporelyCloudClient,
     progress_cb: ProgressCallback | None = None,
     sync_images: bool = True,
     materialize_remote_images: bool = True,
     prepare_images_cb: PreparedImagesCallback | None = None,
+    full_pull: bool = True,
+    child_safety_pull: bool = False,
 ) -> dict:
-    """Run a full bidirectional sync: push local changes then pull remote ones."""
+    """Run a full bidirectional sync: push local changes then pull remote ones.
+
+    ``full_pull=False`` enables the "no-op fast path" appropriate for background
+    / Refresh sync: the pull step only touches observations whose remote
+    ``updated_at`` is newer than the local ``synced_at``, skipping the bulk
+    image-metadata + measurement prefetches that dominate no-op sync time.
+    Spore-summary reconciliation across all synced observations is also
+    skipped — per-observation summaries still sync inside push for locally
+    dirty rows. ``child_safety_pull=True`` periodically upgrades only the pull
+    phase to a metadata-only deep reconciliation so child changes cannot stay
+    hidden indefinitely when a parent timestamp was not bumped.
+    """
     profiler = CloudSyncProfiler() if _cloud_sync_profile_enabled() else None
     profile_token = None
     if profiler is not None:
@@ -4275,6 +5170,24 @@ def sync_all(
                 remote_calibrations=remote_calibrations,
             )
 
+        safety_pull_due = False
+        safety_pull_last = None
+        if child_safety_pull and not full_pull:
+            safety_pull_due, safety_pull_last = _cloud_child_safety_pull_due()
+        verify_stamped_measurements, measurement_verify_reason = (
+            _cloud_measurement_remote_verification_due(
+                full_pull=full_pull,
+                child_safety_pull=child_safety_pull,
+                safety_pull_due=safety_pull_due,
+            )
+        )
+        print(
+            f'[cloud_sync] spore measurement remote verification: '
+            f'{"enabled" if verify_stamped_measurements else "skipped"} '
+            f'reason={measurement_verify_reason}',
+            flush=True,
+        )
+
         # Phase 1: Push local edits to the cloud
         with _cloud_sync_phase_scope(profiler, 'push_all'):
             push_result = push_all(
@@ -4285,25 +5198,58 @@ def sync_all(
                 progress_state=progress_state,
                 remote_obs=remote_obs,
                 sync_calibrations=False,
+                full_pull=full_pull,
+                verify_stamped_measurements=verify_stamped_measurements,
             )
 
-        # Refresh remote observations after the push phase so pull-side
-        # comparisons see the cloud state that now includes any local metadata
-        # edits we just pushed. This network round-trip runs before the first
-        # pull-side progress update, so announce it and time it.
+        # Refresh after any push-side cloud mutation so pull comparisons see
+        # the resulting parent timestamps. A fully-described zero-candidate,
+        # zero-reconciliation push can safely reuse the initial list.
         _set_progress_phase(progress_state, 'refresh_remote')
-        _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
-        refresh_start = _cloud_sync_perf_counter()
-        with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
-            remote_obs = client.list_remote_observations()
-        refresh_elapsed = _cloud_sync_perf_counter() - refresh_start
-        print(
-            f"[cloud_sync] observation preflight: remote observations refreshed "
-            f"count={len(remote_obs or [])} duration={refresh_elapsed * 1000:.0f}ms",
-            flush=True,
-        )
+        if _push_phase_requires_remote_observation_refresh(
+            calibration_push_result,
+            push_result,
+        ):
+            _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
+            refresh_start = _cloud_sync_perf_counter()
+            with _cloud_sync_phase_scope(profiler, 'refresh_remote_observations_after_push'):
+                remote_obs = client.list_remote_observations()
+            refresh_elapsed = _cloud_sync_perf_counter() - refresh_start
+            print(
+                f"[cloud_sync] observation preflight: remote observations refreshed "
+                f"count={len(remote_obs or [])} duration={refresh_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
+        else:
+            _emit_progress(
+                progress_cb,
+                "Cloud observations unchanged; reusing loaded list…",
+                progress_state,
+            )
+            print(
+                f"[cloud_sync] observation preflight: remote observations reused "
+                f"count={len(remote_obs or [])} reason=push_phase_proven_no_cloud_mutation",
+                flush=True,
+            )
 
-        # Phase 2: Pull cloud edits to the desktop
+        if child_safety_pull and not full_pull:
+            if safety_pull_due:
+                print(
+                    f"[cloud_sync] child-change safety pull: "
+                    f"reason=stale_child_watermark last={safety_pull_last or 'missing'} "
+                    f"interval_hours={_CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[cloud_sync] child-change safety pull skipped: "
+                    f"fresh watermark last={safety_pull_last}",
+                    flush=True,
+                )
+
+        # Phase 2: Pull cloud edits to the desktop. A due safety pass changes
+        # only candidate breadth; media upload and materialization remain
+        # controlled by their existing independent flags.
         with _cloud_sync_phase_scope(profiler, 'pull_all'):
             pull_result = pull_all(
                 client,
@@ -4312,7 +5258,27 @@ def sync_all(
                 remote_obs=remote_obs,
                 sync_calibrations=False,
                 materialize_remote_images=materialize_remote_images,
+                sync_images=sync_images,
+                full_pull=full_pull or safety_pull_due,
             )
+        # Row-level review issues are a completed reconciliation outcome, not a
+        # failed safety pass. Exceptions from auth, transport, or bulk child
+        # fetches escape pull_all and therefore never reach this write.
+        completed_settings: dict[str, object] = {}
+        completed_at = datetime.now(timezone.utc).isoformat()
+        if safety_pull_due:
+            completed_settings[_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING] = completed_at
+        measurement_verification_completed = bool(
+            verify_stamped_measurements
+            and push_result.get('spore_measurement_reconcile') is not None
+        )
+        if measurement_verification_completed:
+            completed_settings.update({
+                _CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: _CLOUD_MEASUREMENT_RECONCILE_VERSION,
+                _CLOUD_MEASUREMENT_RECONCILE_AT_SETTING: completed_at,
+            })
+        if completed_settings:
+            update_app_settings(completed_settings)
 
         _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
@@ -4599,6 +5565,161 @@ def _local_calibration_lookup(rows: list[dict] | None = None) -> dict[str, dict]
     return lookup
 
 
+_LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE = {'Spore_print', 'spore_print', 'spore print', 'Print', 'print'}
+
+# Canonical CLOUD representation for `observation_images.sample_source`.
+# The sporely-web Stage 2A migration
+# (`20260715120000_add_sample_source_to_observation_images.sql`) picked
+# lowercase snake_case (`spore_print`, `hymenium`, `stipe`, `pileus`,
+# `context`, `other`) so public RPCs can `lower(btrim(...))`-normalize
+# variants safely. Desktop keeps Title_Case locally (matches every other
+# tag category) and translates at the boundary — see
+# `_desktop_to_cloud_sample_source` on push and
+# `_cloud_to_desktop_sample_source` on pull.
+_CLOUD_SAMPLE_SOURCE_VALUES = frozenset({
+    'spore_print', 'hymenium', 'stipe', 'pileus', 'context', 'other',
+})
+
+
+def _desktop_to_cloud_sample_source(value: object) -> str | None:
+    """Translate a desktop-canonical `sample_source` to the cloud canonical form.
+
+    Desktop stores Title_Case (`Spore_print`, `Hymenium`, ...). Cloud stores
+    lowercase snake_case. Legacy / compact variants (`Print`, `spore print`,
+    ...) are canonicalized via `DatabaseTerms.canonicalize_sample_source`
+    first, then lowercased. Returns None for empty / unknown values so the
+    push omits the field entirely rather than sending garbage.
+    """
+    from database.database_tags import DatabaseTerms
+
+    text = str(value or '').strip()
+    if not text:
+        return None
+    # The `Print` compact-pill label isn't in SAMPLE_SOURCE_DISPLAY but should
+    # still round-trip to `spore_print` on the cloud.
+    if text.lower() in {'print', 'spore print', 'spore_print', 'sporeprint'}:
+        return 'spore_print'
+    canonical = DatabaseTerms.canonicalize_sample_source(text)
+    if not canonical or canonical == 'Not_set':
+        return None
+    lowered = canonical.lower()
+    return lowered if lowered in _CLOUD_SAMPLE_SOURCE_VALUES else None
+
+
+def _cloud_to_desktop_sample_source(value: object) -> str | None:
+    """Translate a cloud `sample_source` value back to desktop Title_Case.
+
+    Accepts either the canonical lowercase snake_case (`spore_print`,
+    `hymenium`, ...) or the historical Title_Case some clients may still
+    emit (`Spore_print`, `Hymenium`, ...). Anything else — including 'Not_set'
+    and empty strings — returns None so the local column stays NULL.
+    """
+    from database.database_tags import DatabaseTerms
+
+    text = str(value or '').strip()
+    if not text:
+        return None
+    canonical = DatabaseTerms.canonicalize_sample_source(text)
+    if not canonical or canonical == 'Not_set':
+        return None
+    return canonical
+
+
+def _split_legacy_sample_type_into_source(
+    sample_type: object,
+    sample_source: object,
+) -> tuple[str | None, str | None]:
+    """Split a legacy `sample_type='Spore_print'` row into (condition, source).
+
+    Historically, `Spore_print` lived on `images.sample_type` alongside
+    Fresh/Dried. Stage 1 moved it to its own `sample_source` category. If the
+    local column still carries the legacy value (e.g. because a row hasn't
+    been touched since the migration), route it into `sample_source` for the
+    push payload and clear the condition side. Explicit sample_source always
+    wins — this only fills gaps.
+
+    Returns ``(condition, source)`` as canonical strings or None.
+    """
+    from database.database_tags import DatabaseTerms
+
+    raw_type = str(sample_type or '').strip()
+    raw_source = str(sample_source or '').strip()
+
+    normalized_type = DatabaseTerms.canonicalize_sample(raw_type) if raw_type else None
+    normalized_source = (
+        DatabaseTerms.canonicalize_sample_source(raw_source) if raw_source else None
+    )
+
+    if raw_type in _LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE and not normalized_source:
+        # Legacy value stuck on the wrong column — promote it. Any of the
+        # historical spore-print spellings (Spore_print, spore print, and the
+        # compact-pill label "Print") map to the canonical Spore_print value.
+        normalized_source = 'Spore_print'
+        normalized_type = None
+    elif raw_type in _LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE:
+        # Already have a source; just clear the legacy condition value.
+        normalized_type = None
+
+    if normalized_type == 'Not_set':
+        normalized_type = None
+    if normalized_source == 'Not_set':
+        normalized_source = None
+    return normalized_type, normalized_source
+
+
+def _apply_image_sample_fields_to_push_payload(
+    payload: dict,
+    image_row: dict,
+    *,
+    client: 'SporelyCloudClient | None' = None,
+    obs_cloud_id: str | None = None,
+) -> None:
+    """Normalize sample_type / sample_source on the outgoing image payload.
+
+    * Splits legacy `sample_type='Spore_print'` into `sample_source='Spore_print'`.
+    * Null-safe merge for `sample_source`: when the local column is empty we
+      OMIT `sample_source` from the payload entirely. On a PATCH, PostgREST
+      leaves the existing cloud value untouched; on a POST (new row), the
+      column defaults to NULL — same as sending NULL — so nothing is lost.
+      This avoids a network round-trip and prevents unrelated image-metadata
+      patches from wiping cloud values.
+    * Drops `sample_source` from the payload entirely when the cloud
+      deployment is older and doesn't have the column (schema-cache safety).
+      The capability probe only runs when we actually have a value to send —
+      keeps the no-op path (empty local sample_source) free of any network
+      round-trip.
+    """
+    condition, source = _split_legacy_sample_type_into_source(
+        image_row.get('sample_type'),
+        image_row.get('sample_source'),
+    )
+    payload['sample_type'] = condition
+
+    if not source:
+        # No value to push. Omit the field so PATCH leaves cloud alone; POST
+        # defaults NULL. No capability probe needed on this fast path — that
+        # keeps existing tests (which don't monkeypatch every probe) working.
+        payload.pop('sample_source', None)
+        return
+
+    # Boundary translation: desktop Title_Case → cloud lowercase snake_case.
+    cloud_source = _desktop_to_cloud_sample_source(source)
+    if not cloud_source:
+        payload.pop('sample_source', None)
+        return
+
+    if client is not None:
+        try:
+            supported = bool(client._observation_images_support_sample_source())
+        except Exception:
+            supported = False
+        if not supported:
+            payload.pop('sample_source', None)
+            return
+
+    payload['sample_source'] = cloud_source
+
+
 def _image_calibration_uuid(image_row: dict | None) -> str | None:
     row = dict(image_row or {})
     uuid_value = _normalize_calibration_uuid(row.get('calibration_uuid'))
@@ -4633,6 +5754,19 @@ def _local_calibration_id_for_image(image_row: dict | None) -> int | None:
 
 def _reconcile_local_image_calibration_links() -> int:
     """Backfill local image calibration_id values from stored cloud snapshots."""
+    phase_start = _cloud_sync_perf_counter()
+    snapshot_count = 0
+    image_count = 0
+    calibration_count = 0
+    thread_name = threading.current_thread().name
+    execution_context = (
+        'ui_thread' if threading.current_thread() is threading.main_thread() else 'worker_thread'
+    )
+    print(
+        f"[cloud_sync] calibration image linking: start "
+        f"thread={thread_name} execution_context={execution_context}",
+        flush=True,
+    )
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
@@ -4646,8 +5780,10 @@ def _reconcile_local_image_calibration_links() -> int:
             return 0
         if not snapshot_rows:
             return 0
+        snapshot_count = len(snapshot_rows)
 
         calibration_lookup = _local_calibration_lookup()
+        calibration_count = len(calibration_lookup)
         try:
             local_image_rows = cursor.execute(
                 'SELECT id, cloud_id, calibration_id FROM images WHERE cloud_id IS NOT NULL'
@@ -4660,6 +5796,7 @@ def _reconcile_local_image_calibration_links() -> int:
             for row in local_image_rows
             if str(row['cloud_id']).strip()
         }
+        image_count = len(local_images_by_cloud_id)
         updates: list[tuple[int, int]] = []
 
         for snapshot_row in snapshot_rows:
@@ -4699,6 +5836,14 @@ def _reconcile_local_image_calibration_links() -> int:
         return 0
     finally:
         conn.close()
+        print(
+            f"[cloud_sync] calibration image linking: complete "
+            f"snapshots={snapshot_count} images={image_count} "
+            f"calibrations={calibration_count} duration="
+            f"{(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms "
+            f"thread={thread_name} execution_context={execution_context}",
+            flush=True,
+        )
 
 
 def _calibration_sync_warning(direction: str, local_row: dict | None, remote_row: dict | None, fields: list[str]) -> str:
@@ -4945,6 +6090,7 @@ def pull_calibrations(
     try:
         _emit_progress(progress_cb, "Linking calibration images…", progress_state)
         reconciled_links = _reconcile_local_image_calibration_links()
+        _emit_progress(progress_cb, "Calibration image linking complete.", progress_state)
     except Exception as exc:
         errors.append(f'calibration reconciliation: {exc}')
     reconcile_elapsed = _cloud_sync_perf_counter() - reconcile_start
@@ -5213,17 +6359,18 @@ def _safe_int(value, default: int = 0) -> int:
 
 def _observation_sync_species_label(obs: dict | None) -> str:
     record = dict(obs or {})
-    parts = [
-        str(record.get('genus') or '').strip(),
-        str(record.get('species') or '').strip(),
-    ]
-    label = " ".join(part for part in parts if part).strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        record.get('genus'),
+        record.get('species'),
+        record.get('species_guess'),
+        record.get('ai_selected_scientific_name'),
+    )
+    label = " ".join(part for part in (genus, species) if part).strip()
     if label:
         return label
     common_name = str(record.get('common_name') or '').strip()
     if common_name:
         return common_name
-    species_guess = str(record.get('species_guess') or '').strip()
     if species_guess:
         return species_guess
     return ''
@@ -5343,6 +6490,14 @@ def _local_cloud_media_signature(
             if calibration_table_exists and has_image_calibration_id
             else "NULL AS calibration_uuid"
         )
+        # `sample_source` is a Stage-2 addition; on databases that haven't
+        # applied `database/schema.py` migration yet (test schemas, older
+        # installs) the column may not exist. Fall back to NULL so the SELECT
+        # doesn't blow up, matching the calibration_id treatment above.
+        sample_source_column_sql = (
+            "images.sample_source" if 'sample_source' in image_columns
+            else "NULL AS sample_source"
+        )
         calibration_join_sql = (
             "LEFT JOIN calibrations ON calibrations.id = images.calibration_id"
             if calibration_table_exists and has_image_calibration_id
@@ -5363,6 +6518,7 @@ def _local_cloud_media_signature(
                 images.mount_medium,
                 images.stain,
                 images.sample_type,
+                {sample_source_column_sql},
                 images.contrast,
                 images.measure_color,
                 images.crop_mode,
@@ -5453,6 +6609,7 @@ def _local_cloud_media_signature(
                 'mount_medium': _normalize_snapshot_value(row.get('mount_medium')),
                 'stain': _normalize_snapshot_value(row.get('stain')),
                 'sample_type': _normalize_snapshot_value(row.get('sample_type')),
+                'sample_source': _normalize_snapshot_value(row.get('sample_source')),
                 'contrast': _normalize_snapshot_value(row.get('contrast')),
                 'measure_color': _normalize_snapshot_value(row.get('measure_color')),
                 'crop_mode': _normalize_snapshot_value(row.get('crop_mode')),
@@ -5673,6 +6830,13 @@ def _prepared_item_remote_payload(
         'mount_medium': _normalize_snapshot_value(image_row.get('mount_medium')),
         'stain': _normalize_snapshot_value(image_row.get('stain')),
         'sample_type': _normalize_snapshot_value(image_row.get('sample_type')),
+        # Compared against the same field on the remote payload — both sides
+        # normalize to the desktop-canonical Title_Case form so lowercase
+        # cloud values (`spore_print`) match Title_Case local values
+        # (`Spore_print`) without triggering a false diff.
+        'sample_source': _normalize_snapshot_value(
+            _cloud_to_desktop_sample_source(image_row.get('sample_source'))
+        ),
         'contrast': _normalize_snapshot_value(image_row.get('contrast')),
         'measure_color': _normalize_snapshot_value(image_row.get('measure_color')),
         'crop_mode': _normalize_snapshot_value(image_row.get('crop_mode')),
@@ -5725,6 +6889,12 @@ def _remote_image_payload(
         'mount_medium': _normalize_snapshot_value(image.get('mount_medium')),
         'stain': _normalize_snapshot_value(image.get('stain')),
         'sample_type': _normalize_snapshot_value(image.get('sample_type')),
+        # Cloud canonical is lowercase snake_case (`spore_print`); desktop
+        # canonical is Title_Case (`Spore_print`). Normalize inbound values
+        # so downstream diff / write paths see the desktop form.
+        'sample_source': _normalize_snapshot_value(
+            _cloud_to_desktop_sample_source(image.get('sample_source'))
+        ),
         'contrast': _normalize_snapshot_value(image.get('contrast')),
         'measure_color': _normalize_snapshot_value(image.get('measure_color')),
         'crop_mode': _normalize_snapshot_value(image.get('crop_mode')),
@@ -6153,6 +7323,28 @@ def _cloud_publish_excluded_image_ids(observation_id: int | None) -> set[int]:
     return set()
 
 
+def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
+    """Microscope image ids whose publish checkbox has an initialized checked state.
+
+    The seeded-id setting distinguishes an intentional/defaulted checkbox state
+    from an old microscope backlog whose publish controls have never been
+    initialized. Exclusions remain authoritative for both image types.
+    """
+    if not observation_id:
+        return set()
+    key = f"artsobs_publish_micro_seeded_ids_{int(observation_id or 0)}"
+    raw = SettingsDB.get_setting(key, "[]")
+    try:
+        loaded = json.loads(raw or "[]")
+        if isinstance(loaded, list):
+            seeded_ids = {int(value) for value in loaded}
+        else:
+            seeded_ids = set()
+    except Exception:
+        seeded_ids = set()
+    return seeded_ids - _cloud_publish_excluded_image_ids(observation_id)
+
+
 def _cloud_publish_path_key(path: str | None) -> str:
     if not path:
         return ""
@@ -6162,14 +7354,147 @@ def _cloud_publish_path_key(path: str | None) -> str:
         return str(Path(path)).lower()
 
 
-def _pending_cloud_pushable_image_ids(observation_id: int) -> list[int]:
+PendingImageDecision = dict  # {"pending": bool, "reason": str}
+
+# Reasons emitted by explain_pending_cloud_image_decision. Kept as string
+# constants so callers can group-count them in diagnostic summaries.
+PENDING_REASON_PENDING_UPLOAD = "pending_upload"
+PENDING_REASON_ALREADY_SYNCED = "skipped_already_synced"
+PENDING_REASON_WRONG_TYPE = "skipped_wrong_type"
+PENDING_REASON_GENERATED = "skipped_generated_cloud_image"
+PENDING_REASON_EXCLUDED = "skipped_excluded_by_user"
+PENDING_REASON_DUPLICATE = "skipped_duplicate_path"
+PENDING_REASON_MISSING_FILE = "skipped_missing_file"
+PENDING_REASON_CACHE_ROW = "skipped_cloud_cache_row"
+PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS = "skipped_microscope_no_measurements"
+
+
+def explain_pending_cloud_image_decision(
+    row: dict,
+    *,
+    seen_paths: set[str],
+    excluded_ids: set[int],
+    image_measurement_counts: dict[int, int] | None = None,
+    explicit_media_upload_selection: set[int] | None = None,
+) -> PendingImageDecision:
+    """Shared predicate: should this image row upload its bytes to cloud right now?
+
+    Used by both the dirty-scan (`_mark_cloud_observations_dirty_for_pending_local_images`
+    → `_pending_cloud_pushable_image_ids`) and the upload-collection code path so
+    both agree on which rows are pending. If they disagree the dirty-scan can
+    perpetually re-dirty observations over rows that upload will skip anyway.
+
+    Policy (matches the ``sync_images=True`` explicit media-upload semantics):
+
+      * Field images: eligible unless the user unchecked them from publish or
+        their local file is missing.
+      * Microscope images: eligible only when the user explicitly selected them
+        for media upload, or they have at least one spore measurement (the
+        "public spore points anchor" case). Bare microscope photos that were
+        imported ages ago with no measurements attached stay LOCAL — otherwise a
+        first-time Refresh would upload the entire microscope backlog.
+      * Cloud-cache rows (`source_role=cloud_recovery_cache` or
+        `file_purpose=cache`): never re-upload bytes; they're stubs that only
+        need metadata patches, which the sync handles separately.
+      * Any image that already has ``cloud_id`` set: not pending — it already
+        exists on cloud.
+
+    The helper mutates ``seen_paths`` when it accepts the row so duplicate paths
+    within the same observation collapse to a single upload.
+    """
+    reasons: dict[str, bool] = {}
+    image_id = _safe_int(row.get("id"))
+    if image_id <= 0:
+        return {"pending": False, "reason": PENDING_REASON_WRONG_TYPE}
+
+    image_type = str(row.get("image_type") or "").strip().lower()
+    if image_type not in {"field", "microscope"}:
+        return {"pending": False, "reason": PENDING_REASON_WRONG_TYPE}
+
+    if _is_generated_cloud_image(row):
+        return {"pending": False, "reason": PENDING_REASON_GENERATED}
+
+    if image_id in excluded_ids:
+        return {"pending": False, "reason": PENDING_REASON_EXCLUDED}
+
+    if str(row.get("cloud_id") or "").strip():
+        filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
+        path_key = _cloud_publish_path_key(filepath) if filepath else ""
+        if path_key:
+            # Synced canonical rows own their filepath too. Reserving it here
+            # prevents a duplicate cloud_id-null row from being re-dirtied and
+            # uploaded as a second copy of the same local file.
+            seen_paths.add(path_key)
+        return {"pending": False, "reason": PENDING_REASON_ALREADY_SYNCED}
+
+    source_role = str(row.get("source_role") or "").strip().lower()
+    file_purpose = str(row.get("file_purpose") or "").strip().lower()
+    is_cloud_origin = source_role == "cloud_recovery_cache" or file_purpose == "cache"
+
+    filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
+    if not is_cloud_origin and (not filepath or not Path(filepath).exists()):
+        # Non cloud-origin rows need a local file to encode. Cache rows are
+        # allowed through without a file — the sync will repair their cloud_id
+        # via a metadata patch.
+        return {"pending": False, "reason": PENDING_REASON_MISSING_FILE}
+
+    path_key = _cloud_publish_path_key(filepath) if filepath else ""
+    if path_key and path_key in seen_paths:
+        return {"pending": False, "reason": PENDING_REASON_DUPLICATE}
+
+    if image_type == "microscope" and not is_cloud_origin:
+        # Cache-row cloud_id-null repairs bypass this check — see above.
+        # Otherwise: microscope images are eligible only when the user
+        # explicitly selected them for upload, or when they carry at least one
+        # spore measurement (mosaic-anchor use case). Bare microscope photos
+        # with no measurements stay local until the user opts in.
+        explicit = explicit_media_upload_selection or set()
+        if image_id not in explicit:
+            counts = image_measurement_counts or {}
+            if int(counts.get(image_id, 0) or 0) == 0:
+                return {
+                    "pending": False,
+                    "reason": PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS,
+                }
+
+    if path_key:
+        seen_paths.add(path_key)
+    return {"pending": True, "reason": PENDING_REASON_PENDING_UPLOAD}
+
+
+def _measurement_counts_for_observation_images(observation_id: int) -> dict[int, int]:
+    """Return image_id → count of spore_measurements. Empty on any DB error."""
+    counts: dict[int, int] = {}
+    try:
+        conn = get_connection()
+        try:
+            for row in conn.execute(
+                "SELECT image_id, COUNT(*) AS n FROM spore_measurements "
+                "WHERE image_id IN (SELECT id FROM images WHERE observation_id = ?) "
+                "GROUP BY image_id",
+                (int(observation_id),),
+            ).fetchall():
+                counts[_safe_int(row[0])] = int(row[1] or 0)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[cloud_sync] Could not fetch measurement counts for obs {observation_id}: {exc}")
+    return counts
+
+
+def _pending_cloud_pushable_image_ids(
+    observation_id: int,
+    *,
+    explicit_media_upload_selection: set[int] | None = None,
+    diagnostic_log: bool = False,
+) -> list[int]:
     """Image ids still missing a cloud_id that cloud sync would actually push.
 
-    This mirrors ``ObservationsTab._collect_cloud_sync_image_rows`` so the
-    dirty-scan does not perpetually re-dirty observations over rows that sync
-    intentionally skips — publish-excluded images, duplicate file paths and
-    (for non cloud-origin rows) missing files. Without this alignment those
-    rows keep ``cloud_id IS NULL`` forever and re-trigger the scan on every run.
+    Uses :func:`explain_pending_cloud_image_decision` so this stays in lock-step
+    with the upload-collection predicate. Any row the upload path would skip
+    (excluded, duplicate, missing file, cache row, microscope-no-measurements)
+    is dropped here too, so the dirty-scan cannot perpetually re-dirty
+    observations over rows the sync intentionally leaves local.
     """
     try:
         excluded_ids = _cloud_publish_excluded_image_ids(observation_id)
@@ -6206,44 +7531,59 @@ def _pending_cloud_pushable_image_ids(observation_id: int) -> list[int]:
     finally:
         conn.close()
 
+    measurement_counts = _measurement_counts_for_observation_images(observation_id)
+    if explicit_media_upload_selection is None:
+        explicit_media_upload_selection = _cloud_explicit_media_upload_selection(observation_id)
+
     pending: list[int] = []
     seen_paths: set[str] = set()
+    reason_counts: dict[str, int] = {}
     for image in rows or []:
         row = dict(image)
-        image_id = _safe_int(row.get("id"))
-        if image_id <= 0 or image_id in excluded_ids:
-            continue
-        image_type = str(row.get("image_type") or "").strip().lower()
-        if image_type not in {"field", "microscope"}:
-            continue
-        if not should_push_local_image_to_cloud(row):
-            continue
-        filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
-        source_role = str(row.get("source_role") or "").strip().lower()
-        file_purpose = str(row.get("file_purpose") or "").strip().lower()
-        is_cloud_origin = source_role == "cloud_recovery_cache" or file_purpose == "cache"
-        if not is_cloud_origin and (not filepath or not Path(filepath).exists()):
-            # Non cloud-origin rows are only pushed when their local file exists;
-            # otherwise sync skips them and they would re-dirty forever.
-            continue
-        if filepath:
-            path_key = _cloud_publish_path_key(filepath)
-            if path_key in seen_paths:
-                continue
-            seen_paths.add(path_key)
-        if not str(row.get("cloud_id") or "").strip():
-            pending.append(image_id)
+        decision = explain_pending_cloud_image_decision(
+            row,
+            seen_paths=seen_paths,
+            excluded_ids=excluded_ids,
+            image_measurement_counts=measurement_counts,
+            explicit_media_upload_selection=explicit_media_upload_selection,
+        )
+        reason = decision.get("reason") or ""
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if decision.get("pending"):
+            pending.append(_safe_int(row.get("id")))
+
+    if diagnostic_log and rows:
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(reason_counts.items()))
+        print(
+            f"[cloud_sync] pending scan obs {observation_id}: rows={len(rows)} "
+            f"pending={len(pending)} {summary}"
+        )
+
     return pending
 
 
-def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
+def _mark_cloud_observations_dirty_for_pending_local_images(
+    *,
+    include_pending_local_media_uploads: bool = False,
+    explicit_media_upload_selection: set[int] | None = None,
+    diagnostic_log: bool = False,
+) -> bool:
     """Mark synced observations dirty when they still have cloud-eligible local images.
 
-    This catches older observations that were left in a synced state after a
-    previous sync skipped microscope images or otherwise failed to assign a
-    cloud_id to newly added local media.
+    Only runs when the caller explicitly requests a media-upload pass. Metadata-only
+    background sync must NOT re-dirty observations over local rows that have no
+    cloud_id — those rows are treated as local-only until the user explicitly runs
+    "Upload media". Otherwise a fresh install with hundreds of pre-existing local
+    microscope photos would surface as "everything dirty" and start pushing bytes.
+
+    Callers pass ``include_pending_local_media_uploads=True`` from the explicit
+    media-upload code path. All other callers (Refresh, auto-sync) must leave the
+    default False so the scan is a no-op.
     """
+    if not include_pending_local_media_uploads:
+        return True
     dirty_ids: list[int] = []
+    scan_completed = True
     conn = get_connection()
     try:
         conn.row_factory = sqlite3.Row
@@ -6266,6 +7606,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
     except Exception as exc:
         print(f"[cloud_sync] Could not mark observations dirty for pending local images: {exc}")
         candidate_ids = []
+        scan_completed = False
     finally:
         conn.close()
 
@@ -6273,11 +7614,16 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
         if obs_id <= 0:
             continue
         try:
-            pending_ids = _pending_cloud_pushable_image_ids(obs_id)
+            pending_ids = _pending_cloud_pushable_image_ids(
+                obs_id,
+                explicit_media_upload_selection=explicit_media_upload_selection,
+                diagnostic_log=diagnostic_log,
+            )
         except Exception as exc:
             print(
                 f"[cloud_sync] Could not evaluate pending local images for observation {obs_id}: {exc}"
             )
+            scan_completed = False
             continue
         pending_count = len(pending_ids)
         if pending_count > 0:
@@ -6287,7 +7633,7 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
             )
             dirty_ids.append(obs_id)
     if not dirty_ids:
-        return
+        return scan_completed
 
     _increment_sync_summary(
         _cloud_sync_current_summary(),
@@ -6312,8 +7658,10 @@ def _mark_cloud_observations_dirty_for_pending_local_images() -> None:
     except Exception as exc:
         conn.rollback()
         print(f"[cloud_sync] Could not update dirty state for pending local images: {exc}")
+        scan_completed = False
     finally:
         conn.close()
+    return scan_completed
 
 
 def _has_pending_local_push_work() -> bool:
@@ -6516,16 +7864,26 @@ def _stamp_observation_synced(local_id: int, cloud_id: str) -> None:
     _set_observation_sync_state(int(local_id), str(cloud_id or '').strip(), dirty=False)
 
 
-def _set_observation_sync_state(local_id: int, cloud_id: str, *, dirty: bool) -> None:
+def _set_observation_sync_state(
+    local_id: int,
+    cloud_id: str,
+    *,
+    dirty: bool,
+    synced_at: str | None | object = _UNSET,
+) -> None:
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        if synced_at is _UNSET:
+            synced_at_value: str | None = datetime.now(timezone.utc).isoformat()
+        else:
+            synced_at_value = synced_at if synced_at is None else str(synced_at)
         update_observation_sync_state(
             cursor,
             int(local_id),
             cloud_id=str(cloud_id or '').strip() or None,
             sync_status='dirty' if dirty else 'synced',
-            synced_at=datetime.now(timezone.utc).isoformat(),
+            synced_at=synced_at_value,
             clear_sync_error_state=True,
         )
         conn.commit()
@@ -6594,12 +7952,18 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
     raw_location_public = remote.get('location_public')
     location_public = _normalize_observation_bool_value(raw_location_public, default=None)
     raw_publish_target = str(remote.get('publish_target') or '').strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        remote.get('genus'),
+        remote.get('species'),
+        remote.get('species_guess'),
+        remote.get('ai_selected_scientific_name'),
+    )
     return {
         'date': remote.get('date'),
-        'genus': remote.get('genus'),
-        'species': remote.get('species'),
+        'genus': genus,
+        'species': species,
         'common_name': remote.get('common_name'),
-        'species_guess': remote.get('species_guess'),
+        'species_guess': species_guess,
         'location': remote.get('location'),
         'habitat': remote.get('habitat'),
         'notes': remote.get('notes'),
@@ -6638,6 +8002,8 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat_nin2_note': remote.get('habitat_nin2_note'),
         'habitat_substrate_note': remote.get('habitat_substrate_note'),
         'habitat_grows_on_note': remote.get('habitat_grows_on_note'),
+        'country_code': normalize_country_code(remote.get('country_code')),
+        'region_id': _normalize_observation_field_value('region_id', remote.get('region_id')),
         'allow_nulls': True,
     }
 
@@ -6648,6 +8014,15 @@ def _remote_observation_extra_values(remote: dict) -> dict:
     if serialized_spore_stats is not None and not isinstance(serialized_spore_stats, str):
         serialized_spore_stats = json.dumps(serialized_spore_stats, ensure_ascii=False, sort_keys=True)
     raw_auto_threshold = _normalize_observation_float_value(remote.get('auto_threshold'))
+    # The cloud stores red_list_categories_json as JSONB; the local column is
+    # TEXT. Serialize back to a JSON string so the local writer stores the
+    # exact same payload sporely-web shows in Taxonomy → Red list.
+    raw_red_categories = remote.get('red_list_categories_json')
+    serialized_red_categories = _normalize_observation_json_value(raw_red_categories)
+    if serialized_red_categories is not None and not isinstance(serialized_red_categories, str):
+        serialized_red_categories = json.dumps(
+            serialized_red_categories, ensure_ascii=False, sort_keys=True
+        )
     return {
         'inaturalist_id': _normalize_observation_int_value(remote.get('inaturalist_id')),
         'mushroomobserver_id': _normalize_observation_int_value(remote.get('mushroomobserver_id')),
@@ -6657,6 +8032,8 @@ def _remote_observation_extra_values(remote: dict) -> dict:
         'author': remote.get('author'),
         'spore_statistics': serialized_spore_stats,
         'auto_threshold': raw_auto_threshold,
+        'red_list_category': remote.get('red_list_category'),
+        'red_list_categories_json': serialized_red_categories,
     }
 
 
@@ -6665,7 +8042,11 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
 
     Existing desktop observations may have `NULL` in the newly added fields until
     they are re-pulled from cloud. When we push an unrelated desktop edit, we
-    don't want those missing local values to wipe the cloud selection.
+    don't want those missing local values to wipe the cloud selection. Red-list
+    fields are included here as a forward-compatible safety net: they are
+    currently pull-only (absent from `_OBS_PUSH_COLS`) so the merge has no
+    effect today, but if that ever changes the local NULL will not overwrite
+    a cloud-populated value.
     """
     merged = dict(local_obs or {})
     remote = dict(remote_obs or {})
@@ -6675,6 +8056,8 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
         'ai_selected_scientific_name',
         'ai_selected_probability',
         'ai_selected_at',
+        'red_list_category',
+        'red_list_categories_json',
     ):
         local_value = merged.get(field)
         if local_value not in (None, ''):
@@ -6727,6 +8110,28 @@ def _cloud_identification_prediction_taxon(prediction: dict, service: str | None
         taxon.setdefault('taxon_id', taxon_id)
     if service == 'inat' and vernacular_name and not taxon.get('preferred_common_name'):
         taxon['preferred_common_name'] = vernacular_name
+
+    # Preserve Artsorakel redlist metadata so the desktop's Species AI panel
+    # can render the badge for predictions produced remotely. sporely-web
+    # emits `redlistCategory` / `redlist_category` (lowercase l) plus the
+    # rich `redlist_categories` payload; the raw Artsorakel API uses
+    # `redListCategory` (capital L). Copy whichever form we find and mirror
+    # it under all three aliases so the reader in observations_tab.py can
+    # pick it up regardless of casing.
+    for key in ('redListCategory', 'redlistCategory', 'redlist_category'):
+        value = pred.get(key) or taxon.get(key)
+        if value:
+            for alias in ('redListCategory', 'redlistCategory', 'redlist_category'):
+                taxon.setdefault(alias, value)
+            break
+    for key in ('redListCategories', 'redlistCategories', 'redlist_categories'):
+        value = pred.get(key)
+        if value is None:
+            value = taxon.get(key)
+        if isinstance(value, dict) and value:
+            for alias in ('redListCategories', 'redlistCategories', 'redlist_categories'):
+                taxon.setdefault(alias, value)
+            break
 
     return taxon or None
 
@@ -7478,6 +8883,7 @@ def _apply_remote_image_metadata_only_to_local(
         'mount_medium': remote_image.get('mount_medium'),
         'stain': remote_image.get('stain'),
         'sample_type': remote_image.get('sample_type'),
+        'sample_source': _cloud_to_desktop_sample_source(remote_image.get('sample_source')),
         'contrast': remote_image.get('contrast'),
         'crop_mode': remote_image.get('crop_mode'),
         'sort_order': remote_image.get('sort_order'),
@@ -7499,6 +8905,197 @@ def _apply_remote_image_metadata_only_to_local(
         conn.commit()
     finally:
         conn.close()
+
+
+def _promote_temp_imported_image_if_needed(
+    local_image_id: int,
+    observation_id: int,
+    temp_dir: Path,
+) -> Path | None:
+    """Copy a temp-backed imported image into a durable images path.
+
+    Some sync tests and older rows do not have an observation folder_path yet,
+    which means ``ImageDB.add_image(..., copy_to_folder=True)`` can leave the
+    image pointing at the temp download path. That path is cleaned up at the
+    end of the import, so the row would look missing on the next reconciliation
+    pass. If the stored filepath still lives under the temp dir, copy it to a
+    stable observation-owned location and update the row.
+    """
+    if local_image_id <= 0:
+        return None
+    try:
+        temp_root = Path(temp_dir).resolve()
+        image_row = ImageDB.get_image(int(local_image_id)) or {}
+    except Exception:
+        return None
+    current_path_text = str(image_row.get('filepath') or '').strip()
+    if not current_path_text:
+        return None
+    try:
+        current_path = Path(current_path_text).resolve()
+    except Exception:
+        return None
+    try:
+        if not current_path.is_relative_to(temp_root):
+            return current_path
+    except Exception:
+        if str(current_path).startswith(str(temp_root)):
+            pass
+        else:
+            return current_path
+
+    fallback_dir = Path(get_images_dir()) / f'observation_{int(observation_id)}'
+    fallback_dir.mkdir(parents=True, exist_ok=True)
+    target_path = fallback_dir / current_path.name
+    counter = 1
+    while target_path.exists():
+        target_path = fallback_dir / f"{current_path.stem}_{counter}{current_path.suffix}"
+        counter += 1
+    shutil.copy2(current_path, target_path)
+    try:
+        ImageDB.update_image(int(local_image_id), filepath=str(target_path))
+    except Exception:
+        return None
+    return target_path
+
+
+def _ensure_local_metadata_only_microscope_anchor(
+    client: "SporelyCloudClient" | None,
+    local_observation_id: int,
+    remote_image: dict,
+    local_image: dict | None = None,
+) -> int | None:
+    """Create or update a file-less microscope anchor for a remote row.
+
+    These rows are valid measurement anchors even though the raw microscope
+    bytes were never uploaded. The local row must keep its cloud id mapping and
+    metadata, but it must not trigger the download/materialization branch.
+    """
+    remote_row = dict(remote_image or {})
+    if not _is_metadata_only_microscope_cloud_image(remote_row):
+        return None
+
+    cloud_image_id = str(remote_row.get('id') or '').strip()
+    if not cloud_image_id:
+        return None
+
+    existing_local = dict(local_image or {})
+    local_image_id = _safe_int(existing_local.get('id'))
+    existing_path = str(existing_local.get('filepath') or '').strip()
+    has_local_file = bool(existing_path)
+    if has_local_file:
+        try:
+            has_local_file = Path(existing_path).exists()
+        except Exception:
+            has_local_file = False
+
+    calibration_id = _local_calibration_id_for_image(remote_row)
+    ai_crop_box = _remote_ai_crop_box(remote_row)
+    ai_crop_source_size = _remote_ai_crop_source_size(remote_row)
+    metadata_columns = {
+        'image_type': 'microscope',
+        'scale_microns_per_pixel': remote_row.get('scale_microns_per_pixel'),
+        'notes': remote_row.get('notes'),
+        'micro_category': remote_row.get('micro_category'),
+        'objective_name': remote_row.get('objective_name'),
+        'measure_color': remote_row.get('measure_color'),
+        'mount_medium': remote_row.get('mount_medium'),
+        'stain': remote_row.get('stain'),
+        'sample_type': remote_row.get('sample_type'),
+        'sample_source': _cloud_to_desktop_sample_source(remote_row.get('sample_source')),
+        'contrast': remote_row.get('contrast'),
+        'sort_order': remote_row.get('sort_order'),
+        'crop_mode': remote_row.get('crop_mode'),
+        'gps_source': remote_row.get('gps_source'),
+        'resample_scale_factor': remote_row.get('resample_scale_factor'),
+        'ai_crop_x1': ai_crop_box[0] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_y1': ai_crop_box[1] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_x2': ai_crop_box[2] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_y2': ai_crop_box[3] if ai_crop_box and len(ai_crop_box) == 4 else None,
+        'ai_crop_source_w': ai_crop_source_size[0] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
+        'ai_crop_source_h': ai_crop_source_size[1] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
+        'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_row),
+        'captured_at': remote_row.get('captured_at'),
+    }
+    if calibration_id is not None:
+        metadata_columns['calibration_id'] = calibration_id
+
+    if local_image_id > 0:
+        update_columns = dict(metadata_columns)
+        if not has_local_file:
+            update_columns['filepath'] = ''
+        _update_image_columns_without_touching_observation(local_image_id, update_columns)
+    else:
+        created_local_image_id = ImageDB.add_image(
+            observation_id=int(local_observation_id),
+            filepath='',
+            image_type='microscope',
+            scale=remote_row.get('scale_microns_per_pixel'),
+            notes=remote_row.get('notes'),
+            micro_category=remote_row.get('micro_category'),
+            objective_name=remote_row.get('objective_name'),
+            measure_color=remote_row.get('measure_color'),
+            mount_medium=remote_row.get('mount_medium'),
+            stain=remote_row.get('stain'),
+            sample_type=remote_row.get('sample_type'),
+            sample_source=_cloud_to_desktop_sample_source(remote_row.get('sample_source')),
+            contrast=remote_row.get('contrast'),
+            sort_order=remote_row.get('sort_order'),
+            crop_mode=remote_row.get('crop_mode'),
+            gps_source=remote_row.get('gps_source'),
+            resample_scale_factor=remote_row.get('resample_scale_factor'),
+            calibration_id=calibration_id,
+            ai_crop_box=ai_crop_box,
+            ai_crop_source_size=ai_crop_source_size,
+            ai_crop_is_custom=_remote_ai_crop_is_custom(remote_row),
+            captured_at=remote_row.get('captured_at'),
+            copy_to_folder=False,
+            mark_observation_dirty=False,
+            source_role='cloud_recovery_cache',
+            file_purpose='cache',
+            original_mime_type=None,
+            working_mime_type=None,
+        )
+        local_image_id = _safe_int(created_local_image_id)
+        if local_image_id <= 0:
+            return None
+        has_local_file = False
+
+    _update_image_columns_without_touching_observation(
+        local_image_id,
+        {
+            'cloud_id': cloud_image_id,
+            'synced_at': datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    if not has_local_file:
+        _update_image_columns_without_touching_observation(
+            local_image_id,
+            {
+                'filepath': '',
+                'source_role': 'cloud_recovery_cache',
+                'file_purpose': 'cache',
+                'original_mime_type': None,
+                'working_mime_type': None,
+            },
+        )
+
+    if client is not None:
+        set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
+        if callable(set_image_desktop_id):
+            try:
+                set_image_desktop_id(cloud_image_id, int(local_image_id))
+                remote_row['desktop_id'] = int(local_image_id)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+
+    if local_image is not None:
+        local_image['id'] = local_image_id
+        local_image['cloud_id'] = cloud_image_id
+        if not has_local_file:
+            local_image['filepath'] = ''
+    return local_image_id
 
 
 def _remote_image_bytes_match_local(local_image: dict, remote_image: dict) -> bool:
@@ -7605,6 +9202,7 @@ def _sync_existing_remote_image_to_local(
             'mount_medium': remote_image.get('mount_medium'),
             'stain': remote_image.get('stain'),
             'sample_type': remote_image.get('sample_type'),
+            'sample_source': _cloud_to_desktop_sample_source(remote_image.get('sample_source')),
             'contrast': remote_image.get('contrast'),
             'crop_mode': remote_image.get('crop_mode'),
             'sort_order': remote_image.get('sort_order'),
@@ -7650,8 +9248,6 @@ def _apply_remote_images_to_local(
     materialize_remote_images: bool = True,
 ) -> list[str]:
     warnings: list[str] = []
-    if not materialize_remote_images:
-        return warnings
     local_images = ImageDB.get_images_for_observation(int(local_id))
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
@@ -7675,6 +9271,22 @@ def _apply_remote_images_to_local(
             continue
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image:
+            if _is_metadata_only_microscope_cloud_image(remote_image):
+                _ensure_local_metadata_only_microscope_anchor(
+                    client,
+                    int(local_id),
+                    remote_image,
+                    local_image=local_image,
+                )
+                continue
+            if not materialize_remote_images:
+                _apply_remote_image_metadata_only_to_local(local_image, remote_image)
+                try:
+                    client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
+                    remote_image['desktop_id'] = int(local_image.get('id'))
+                except Exception:
+                    pass
+                continue
             try:
                 _sync_existing_remote_image_to_local(
                     client,
@@ -7694,8 +9306,24 @@ def _apply_remote_images_to_local(
                 pass
             continue
 
+        if _is_metadata_only_microscope_cloud_image(remote_image):
+            _ensure_local_metadata_only_microscope_anchor(
+                client,
+                int(local_id),
+                remote_image,
+            )
+            continue
+        if not materialize_remote_images:
+            continue
+
         storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
         if not storage_path:
+            warning = (
+                f"obs {local_id}: skipped cloud image {cloud_image_id} "
+                f"because it is missing storage path"
+            )
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
             continue
         temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
         try:
@@ -7739,6 +9367,7 @@ def _apply_remote_images_to_local(
                 mount_medium=remote_image.get('mount_medium'),
                 stain=remote_image.get('stain'),
                 sample_type=remote_image.get('sample_type'),
+                sample_source=_cloud_to_desktop_sample_source(remote_image.get('sample_source')),
                 contrast=remote_image.get('contrast'),
                 crop_mode=remote_image.get('crop_mode'),
                 sort_order=remote_image.get('sort_order'),
@@ -7756,6 +9385,11 @@ def _apply_remote_images_to_local(
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
             )
+            download_path = _promote_temp_imported_image_if_needed(
+                int(local_image_id),
+                int(local_id),
+                temp_dir,
+            ) or download_path
             conn = get_connection()
             try:
                 conn.execute(
@@ -7795,6 +9429,7 @@ def _apply_remote_images_to_local(
             except Exception as exc:
                 warnings.append(f"obs {local_id}: could not remove local image {image_id}: {exc}")
 
+    _normalize_cloud_pulled_image_order(int(local_id))
     return warnings
 
 
@@ -7804,6 +9439,9 @@ def _store_remote_snapshot(
     remote: dict | None = None,
     remote_images: list[dict] | None = None,
     remote_measurements: list[dict] | None = None,
+    *,
+    include_images: bool = True,
+    include_measurements: bool = True,
 ) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
@@ -7814,25 +9452,39 @@ def _store_remote_snapshot(
     profiler = _cloud_sync_current_profiler()
     if profiler is not None:
         try:
-            profiler.record_store_remote_snapshot_fetch(images=remote_images is None)
-            profiler.record_store_remote_snapshot_fetch(measurements=remote_measurements is None)
+            profiler.record_store_remote_snapshot_fetch(images=include_images and remote_images is None)
+            profiler.record_store_remote_snapshot_fetch(
+                measurements=include_measurements and remote_measurements is None
+            )
         except Exception:
             pass
-    images = (
-        [dict(row or {}) for row in (remote_images or [])]
-        if remote_images is not None
-        else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
-    )
-    if remote_measurements is not None:
-        measurements = [dict(row or {}) for row in remote_measurements]
+    if include_images:
+        images = (
+            [dict(row or {}) for row in (remote_images or [])]
+            if remote_images is not None
+            else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
+        )
     else:
-        measurements = list(_pull_remote_measurements_for_images(
-            client,
-            [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
-        ))
+        images = []
+    if include_measurements:
+        if remote_measurements is not None:
+            measurements = [dict(row or {}) for row in remote_measurements]
+        else:
+            measurements = list(_pull_remote_measurements_for_images(
+                client,
+                [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
+            ))
+    else:
+        measurements = []
     _store_cloud_observation_snapshot(
         cloud_value,
-        _cloud_observation_snapshot(remote_obs, images, measurements),
+        _cloud_observation_snapshot(
+            remote_obs,
+            images if include_images else None,
+            measurements if include_measurements else None,
+            include_images=include_images,
+            include_measurements=include_measurements,
+        ),
     )
 
 
@@ -7996,6 +9648,24 @@ def resolve_conflict_keep_local(
         if not images_ok:
             mark_observation_dirty(int(local_id))
             raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
+
+    _ensure_metadata_anchors_for_public_spore_observation(
+        client,
+        local_obs,
+        int(local_id),
+        cloud_id,
+    )
+    _push_measurements_for_observation(client, int(local_id))
+    try:
+        _push_spore_mosaic_for_observation(client, int(local_id), cloud_id)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic push errored while keeping local observation '
+            f'{int(local_id)}: {exc}',
+            flush=True,
+        )
 
     _store_remote_snapshot(client, cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
@@ -8215,28 +9885,133 @@ class SporelyCloudClient:
     def _response_indicates_auth_error(self, response: requests.Response) -> bool:
         return _response_indicates_auth_error(response)
 
-    def _refresh_session_if_possible(self) -> bool:
-        refresh_token = str(self.refresh_token or '').strip()
-        if not refresh_token:
-            return False
-        try:
-            refreshed = type(self).refresh_login(refresh_token)
-        except CloudTemporarilyUnavailableError:
-            raise
-        except CloudSyncError:
-            return False
-        self.access_token = refreshed.access_token
-        self.user_id = refreshed.user_id
-        self.refresh_token = refreshed.refresh_token
-        self._s.headers.update({
-            'Authorization': f'Bearer {self.access_token}',
-        })
+    def _adopt_session_from_values(
+        self,
+        access_token: str,
+        user_id: str | None,
+        refresh_token: str | None,
+    ) -> None:
+        """Copy a freshly-observed session onto this client in-memory.
+
+        Kept small so both the "adopt from settings" and "adopt from
+        refresh response" branches of :meth:`_refresh_session_if_possible`
+        stay symmetric.
+        """
+        self.access_token = access_token
+        self.user_id = (
+            _decode_jwt_subject(access_token)
+            or _normalize_cloud_user_id(user_id)
+            or self.user_id
+        )
+        if refresh_token:
+            self.refresh_token = refresh_token
+        self._s.headers.update({'Authorization': f'Bearer {self.access_token}'})
         self._media_worker = None
-        try:
-            self.save_credentials()
-        except Exception:
-            pass
-        return True
+
+    def _refresh_session_if_possible(self) -> bool:
+        # Serialize every refresh attempt so concurrent clients cannot
+        # race Supabase into rotating the same refresh token twice.
+        with _CLOUD_REFRESH_LOCK:
+            settings_access, settings_user_id, settings_refresh = (
+                _read_current_cloud_session_settings()
+            )
+            self_access = str(self.access_token or '').strip() or None
+
+            # Account-safety guard: if the on-disk session belongs to a
+            # *different* Sporely Cloud user than this client is bound
+            # to, refuse to adopt or refresh with any of it.  A stale
+            # worker must not authenticate as another account just
+            # because settings rotated under it.
+            if not _settings_session_is_compatible(
+                self.user_id, settings_user_id, settings_access
+            ):
+                raise CloudSessionAccountMismatchError(
+                    "Stored cloud session belongs to a different account "
+                    "than this client instance; refusing to adopt or refresh."
+                )
+
+            # Fast path: another thread already rotated tokens while we
+            # were waiting for the lock.  Adopt the newer access token
+            # and skip the network round-trip entirely.
+            if (
+                settings_access
+                and settings_access != self_access
+                and not _jwt_expires_soon(settings_access)
+            ):
+                self._adopt_session_from_values(
+                    settings_access, settings_user_id, settings_refresh
+                )
+                return True
+
+            # Refresh path: prefer whichever refresh token settings has
+            # right now over our in-memory copy.  The account-safety
+            # guard above has already confirmed settings belongs to the
+            # same user, so preferring the settings refresh token is
+            # safe.
+            candidate_refresh = settings_refresh or (
+                str(self.refresh_token or '').strip() or None
+            )
+            if not candidate_refresh:
+                return False
+
+            try:
+                refreshed = type(self).refresh_login(candidate_refresh)
+            except CloudTemporarilyUnavailableError:
+                raise
+            except CloudReauthRequiredError:
+                # Before treating the session as dead, re-read settings
+                # one more time — another thread may have just rotated
+                # the refresh token so ``candidate_refresh`` looks dead
+                # to Supabase (reuse detection) even though the session
+                # is fine.
+                after_access, after_user_id, after_refresh = (
+                    _read_current_cloud_session_settings()
+                )
+                # Re-apply the account guard to the fresh snapshot.  If
+                # the user switched accounts while we were mid-refresh
+                # we must not adopt or retry with the new account's
+                # tokens.  Propagate the original reauth-required
+                # signal so the caller can prompt sign-in.
+                if not _settings_session_is_compatible(
+                    self.user_id, after_user_id, after_access
+                ):
+                    raise
+                if (
+                    after_access
+                    and after_access != settings_access
+                    and not _jwt_expires_soon(after_access)
+                ):
+                    self._adopt_session_from_values(
+                        after_access, after_user_id, after_refresh
+                    )
+                    return True
+                if after_refresh and after_refresh != candidate_refresh:
+                    # A newer refresh token appeared on disk after we
+                    # snapshotted.  Retry once with it before giving up.
+                    try:
+                        refreshed = type(self).refresh_login(after_refresh)
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudReauthRequiredError:
+                        # The newer token is also dead — this session
+                        # really does need sign-in.  Do NOT clear tokens
+                        # here; the UI decides how to prompt the user.
+                        raise
+                    except CloudSyncError:
+                        return False
+                else:
+                    raise
+            except CloudSyncError:
+                return False
+
+            self._adopt_session_from_values(
+                refreshed.access_token, refreshed.user_id, refreshed.refresh_token
+            )
+            try:
+                self.save_credentials()
+            except Exception:
+                pass
+            return True
 
     def _request_with_refresh(self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs):
         return _request_with_transient_retry(
@@ -8281,8 +10056,22 @@ class SporelyCloudClient:
     def _observation_images_support_upload_metadata(self) -> bool:
         return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
 
+    def _observation_images_support_storage_exif_safe(self) -> bool:
+        return self._has_column('observation_images', 'storage_exif_safe')
+
     def _observation_images_support_original_storage_path(self) -> bool:
         return self._has_column('observation_images', 'original_storage_path')
+
+    def _observation_images_support_sample_source(self) -> bool:
+        """`sample_source` is added by the sporely-web Stage 2A migration.
+
+        Older cloud deployments only have `sample_type`. When missing here,
+        push drops `sample_source` from the payload so PostgREST doesn't
+        return a schema-cache error, and legacy `sample_type='Spore_print'`
+        stays on the payload so the value doesn't get silently dropped
+        during the transition.
+        """
+        return self._has_column('observation_images', 'sample_source')
 
     def _measurement_supports_media_keys(self) -> bool:
         return self._has_column('spore_measurements', 'image_key') or self._has_column('spore_measurements', 'thumb_key')
@@ -8351,7 +10140,22 @@ class SporelyCloudClient:
             timeout=_SUPABASE_AUTH_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'Refresh failed (status={resp.status_code}): {resp.text}')
+            body_text = str(getattr(resp, 'text', '') or '')
+            body_lower = body_text.lower()
+            status_code = int(getattr(resp, 'status_code', 0) or 0)
+            # Supabase returns 400 with an ``invalid_grant`` (or similar)
+            # body only when it can prove the refresh token itself is dead:
+            # revoked, rotated, expired, or reused past the detection
+            # window.  Any *other* non-ok status is treated as a generic
+            # CloudSyncError so a rotation race or transient blip does not
+            # look terminal to callers.
+            if status_code == 400 and any(
+                hint in body_lower for hint in _CLOUD_REAUTH_REQUIRED_HINTS
+            ):
+                raise CloudReauthRequiredError(
+                    f'Refresh failed (status={status_code}): {body_text}'
+                )
+            raise CloudSyncError(f'Refresh failed (status={status_code}): {body_text}')
         d = resp.json()
         return cls(
             access_token=d['access_token'],
@@ -8367,16 +10171,40 @@ class SporelyCloudClient:
         refresh_token = settings.get('cloud_refresh_token')
         token_text = str(token or '').strip()
         user_id_text = _normalize_cloud_user_id(user_id)
+        refresh_text = str(refresh_token or '').strip() or None
         if token_text and user_id_text:
             token_user_id = _decode_jwt_subject(token_text)
-            return cls(
+            client = cls(
                 access_token=token_text,
                 user_id=token_user_id or user_id_text,
-                refresh_token=refresh_token,
+                refresh_token=refresh_text,
             )
-        if refresh_token:
+            expiry_seconds = _decode_jwt_expiry(token_text)
+            # Only refresh proactively when we can *prove* the token is
+            # near expiry AND we have a refresh token to spend.  If the
+            # JWT is undecodable, keep the historical fast path and rely
+            # on a first-request 401 to trigger the locked refresh.
+            if (
+                expiry_seconds is not None
+                and _jwt_expires_soon(token_text)
+                and refresh_text
+            ):
+                try:
+                    client._refresh_session_if_possible()
+                    return client
+                except CloudTemporarilyUnavailableError:
+                    # Transient — return the client anyway.  A first API
+                    # call will retry the refresh through the same lock.
+                    return client
+                except CloudReauthRequiredError:
+                    # Session is genuinely dead — fall through to the
+                    # saved-password path below without wiping tokens.
+                    pass
+            else:
+                return client
+        if refresh_text:
             try:
-                client = cls.refresh_login(str(refresh_token))
+                client = cls.refresh_login(str(refresh_text))
                 client.save_credentials()
                 return client
             except CloudTemporarilyUnavailableError:
@@ -8842,9 +10670,13 @@ class SporelyCloudClient:
                 if not diff_fields:
                     _increment_sync_summary(summary, 'observations_skipped_noop')
                     return existing_id
+            # Coord-change / preserve-only geography rules — see §4 in the spec.
+            _shape_geography_patch_payload(payload, obs, existing_id)
             self._patch(f'observations?id=eq.{existing_id}', payload)
             _increment_sync_summary(summary, 'observations_patched')
             return existing_id
+        # New observation: never invent a region_id.
+        payload.pop('region_id', None)
         rows = self._post('observations', payload)
         _increment_sync_summary(summary, 'observations_patched')
         return rows[0]['id']
@@ -8885,14 +10717,51 @@ class SporelyCloudClient:
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
         payload['desktop_id']        = img['id']
+        # A local image reaching the push path is active (local tombstones are
+        # filtered by the caller). Clear a stale remote soft-delete so its
+        # measurements become visible again through public RPCs.
+        payload['deleted_at']        = None
         payload['original_filename'] = (
             str(img.get('original_filename') or '').strip()
             or Path(img.get('filepath') or '').name
             or None
         )
-        payload['storage_path']      = _normalize_cloud_media_key(storage_path)
+        # storage_path handling.
+        #
+        # `_normalize_cloud_media_key('')` returns `''`, not `None`. The
+        # cloud RLS WITH CHECK is:
+        #   (storage_path LIKE '<uid>/%') OR (storage_path IS NULL AND image_type = 'microscope')
+        #
+        # Two failure modes to avoid:
+        #   1. Sending storage_path='' — neither NULL nor uid-prefixed, so
+        #      the policy rejects every PATCH with 42501.
+        #   2. Sending storage_path=NULL for a non-microscope row —
+        #      violates the NULL-only-if-microscope leg, also 42501.
+        #
+        # When the caller has no key (metadata-only PATCH), omit the field
+        # entirely so PostgREST leaves the existing cloud value untouched:
+        # NULL for a metadata-only microscope anchor, or the real R2 key
+        # for an uploaded row. Only include storage_path when the caller
+        # explicitly needs to write one.
+        normalized_storage_path = _normalize_cloud_media_key(storage_path)
+        if normalized_storage_path:
+            payload['storage_path'] = normalized_storage_path
+        else:
+            payload.pop('storage_path', None)
         if payload.get('gps_source') is not None:
             payload['gps_source'] = bool(payload['gps_source'])
+        # Sample condition + source normalization for the push payload.
+        # Handles the legacy row shape where `sample_type='Spore_print'`
+        # from a pre-split desktop still exists locally, and applies the
+        # null-safe merge against the current cloud row so an unrelated
+        # metadata push does not wipe `sample_source` when the local column
+        # is empty.
+        _apply_image_sample_fields_to_push_payload(
+            payload,
+            img,
+            client=self,
+            obs_cloud_id=obs_cloud_id,
+        )
         if not self._observation_images_support_ai_crop():
             for key in (
                 'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
@@ -8904,6 +10773,8 @@ class SporelyCloudClient:
         if self._observation_images_support_upload_metadata():
             for key in _IMG_UPLOAD_META_COLS:
                 payload[key] = img.get(key)
+        if self._observation_images_support_storage_exif_safe():
+            payload['storage_exif_safe'] = True
 
         existing_id = self._find_cloud_image(img['id'])
         if existing_id:
@@ -9641,19 +11512,64 @@ class SporelyCloudClient:
         cloud_id = str(obs_cloud_id or '').strip()
         if not cloud_id:
             raise CloudSyncError('Missing cloud observation id')
+        total_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
+        meta_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         image_rows = self.pull_image_metadata(cloud_id) or []
+        _cloud_timing_log(
+            'pull image metadata',
+            meta_start,
+            detail=f'cloud_id={cloud_id} rows={len(image_rows)}',
+        )
         storage_paths = [
             _normalize_cloud_media_key(row.get('storage_path'))
             for row in image_rows
             if _normalize_cloud_media_key(row.get('storage_path'))
         ]
+        storage_error: list[Exception] = []
+        storage_thread = None
         if storage_paths:
-            try:
-                self._storage_remove(storage_paths)
-            except CloudSyncError as exc:
-                print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+            storage_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
+            def _remove_storage_worker() -> None:
+                try:
+                    client = SporelyCloudClient.from_stored_credentials() or self
+                    client._storage_remove(storage_paths)
+                except Exception as exc:
+                    storage_error.append(exc)
+
+            storage_thread = threading.Thread(
+                target=_remove_storage_worker,
+                name=f'Cloud storage delete {cloud_id}',
+                daemon=True,
+            )
+            storage_thread.start()
+        images_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observation_images?observation_id=eq.{cloud_id}')
+        _cloud_timing_log(
+            'delete observation_images rows',
+            images_delete_start,
+            detail=f'cloud_id={cloud_id}',
+        )
+        observation_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observations?id=eq.{cloud_id}')
+        _cloud_timing_log(
+            'delete observation row',
+            observation_delete_start,
+            detail=f'cloud_id={cloud_id}',
+        )
+        if storage_thread is not None:
+            storage_thread.join()
+            if storage_error:
+                exc = storage_error[0]
+                if isinstance(exc, CloudSyncError):
+                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+                else:
+                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
+            _cloud_timing_log(
+                'storage remove',
+                storage_start,
+                detail=f'cloud_id={cloud_id} paths={len(storage_paths)}',
+            )
+        _cloud_timing_log('TOTAL delete_cloud_observation', total_start, detail=f'cloud_id={cloud_id}')
 
     def download_image_file(self, storage_path: str, dest_path: str | Path) -> Path:
         """Download one cloud image from Cloudflare R2 into a local path."""
@@ -10165,12 +12081,19 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(resolved_cloud_id))
     baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
-    tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
+    tombstoned_remote_image_keys = (
+        _deleted_remote_image_identity_keys(remote_images_raw)
+        | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
+    )
     remote_images = [
         dict(row or {})
         for row in remote_images_raw
         if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
     ]
+    remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+    )
 
     # 1. Field Comparisons
     local_payload = _observation_compare_payload(local_obs, local=True)
@@ -10210,10 +12133,42 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'status': 'local_only' if l_img else 'cloud_only',
         })
 
+    _, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
+    local_measurements_by_cloud_id = {
+        str(row.get('cloud_id') or '').strip(): dict(row)
+        for row in local_measurements_by_id.values()
+        if str(row.get('cloud_id') or '').strip()
+    }
+    local_images_by_id = {
+        _safe_int(row.get('id')): dict(row)
+        for row in local_images_raw
+        if _safe_int(row.get('id')) > 0
+    }
+    measurement_conflicts: list[dict] = []
+    for remote_measurement in remote_measurements:
+        remote_measurement_id = str(remote_measurement.get('id') or '').strip()
+        local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
+        if local_measurement is None:
+            continue
+        local_image = local_images_by_id.get(_safe_int(local_measurement.get('image_id'))) or {}
+        diff_fields = _measurement_push_diff_fields(
+            local_measurement,
+            remote_measurement,
+            cloud_image_id=str(local_image.get('cloud_id') or '').strip(),
+        )
+        if diff_fields:
+            measurement_conflicts.append({
+                'cloud_id': remote_measurement_id,
+                'local_id': _safe_int(local_measurement.get('id')),
+                'fields': diff_fields,
+            })
+
     return {
         'local_id': int(local_id),
         'cloud_id': resolved_cloud_id,
         'title': _observation_display_name(local_obs),
+        'local_observation': dict(local_obs or {}),
+        'remote_observation': dict(remote_obs or {}),
         'field_rows': field_rows,
         'image_mismatches': image_mismatches,
         'local_image_changes': _summarize_image_changes(
@@ -10227,6 +12182,7 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             ignored_keys=tombstoned_remote_image_keys,
         ),
         'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
+        'measurement_conflicts': measurement_conflicts,
     }
 # ── High-level sync entry points ──────────────────────────────────────────────
 
@@ -10238,6 +12194,8 @@ def push_all(
     progress_state: dict | None = None,
     remote_obs: list[dict] | None = None,
     sync_calibrations: bool = True,
+    full_pull: bool = True,
+    verify_stamped_measurements: bool = True,
 ) -> dict:
     """Push all unsynced / dirty observations (and optionally images) to cloud.
 
@@ -10267,16 +12225,37 @@ def push_all(
 
     if sync_images:
         pending_scan_start = _cloud_sync_perf_counter()
-        _mark_cloud_observations_dirty_for_pending_local_images()
+        pending_scan_due, pending_scan_reason = _cloud_pending_image_repair_scan_due()
+        pending_scan_completed = False
+        if pending_scan_due:
+            pending_scan_completed = _mark_cloud_observations_dirty_for_pending_local_images(
+                include_pending_local_media_uploads=True,
+            )
+            if pending_scan_completed:
+                pending_scan_completed = _record_cloud_pending_image_repair_scan_complete()
         pending_scan_elapsed = _cloud_sync_perf_counter() - pending_scan_start
         redirtied = _sync_summary_value(
             _cloud_sync_current_summary(), 'observations_redirtied_pending_local_images'
         )
-        print(
-            f"[cloud_sync] observation preflight: pending image dirty scan complete "
-            f"re_dirtied={redirtied} duration={pending_scan_elapsed * 1000:.0f}ms",
-            flush=True,
-        )
+        if pending_scan_due:
+            print(
+                f"[cloud_sync] observation preflight: pending image dirty scan complete "
+                f"re_dirtied={redirtied} completed={pending_scan_completed} "
+                f"reason={pending_scan_reason} duration={pending_scan_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
+        else:
+            print(
+                f"[cloud_sync] observation preflight: pending image dirty scan skipped "
+                f"reason={pending_scan_reason} duration={pending_scan_elapsed * 1000:.0f}ms",
+                flush=True,
+            )
+
+    # Image deletion is metadata work, not image-byte preparation. Flush the
+    # global queue before pruning to dirty observations so an unchecked image
+    # is removed from cloud views even when its observation otherwise takes
+    # the no-op fast path.
+    tombstone_warnings = _push_pending_image_tombstones(client)
 
     calibration_result = {'pushed': 0, 'total': 0, 'errors': []}
     if sync_calibrations:
@@ -10306,7 +12285,7 @@ def push_all(
 
     total = len(observations)
     pushed = 0
-    errors = list(calibration_result.get('errors') or [])
+    errors = list(calibration_result.get('errors') or []) + list(tombstone_warnings or [])
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     # Mark the preflight complete before switching to the per-observation
     # phase so the bar sits at the push_observations start value.
@@ -10391,6 +12370,7 @@ def push_all(
             )
 
             # Update local record with cloud_id and sync_status
+            previous_status = str(obs.get('sync_status') or '').strip().lower()
             conn2 = get_connection()
             cursor2 = conn2.cursor()
             update_observation_sync_state(
@@ -10403,6 +12383,12 @@ def push_all(
             )
             conn2.commit()
             conn2.close()
+            if previous_status == 'dirty':
+                print(
+                    f"[cloud_sync] sync_status transition obs {obs['id']}: dirty→synced "
+                    f"caller=push_all",
+                    flush=True,
+                )
 
             _advance_progress(progress_state, 1)
             _emit_progress(
@@ -10414,9 +12400,22 @@ def push_all(
                 progress_state,
             )
 
+            # Local observation id is used both inside the image-sync
+            # branch and by the (independent) spore-summary sync below.
+            # Hoist it so the summary path runs even when `sync_images`
+            # is False.
+            local_obs_id = _safe_int(obs.get('id'))
+
+            # (The metadata-only stored-signature refresh used to happen HERE,
+            # right after stamping the observation synced. That was too eager:
+            # it wiped the image-signature drift BEFORE the metadata-only
+            # image PATCH branch below could detect it, so image tag edits
+            # never reached cloud on a Refresh. Moved to run AFTER the
+            # metadata-only PATCH branch — see the trailing refresh block
+            # below the `if not sync_images ...` guard.)
+
             images_synced = True
             if sync_images:
-                local_obs_id = _safe_int(obs.get('id'))
 
                 def _push_measurements_for_current_observation() -> None:
                     if local_obs_id <= 0:
@@ -10429,6 +12428,9 @@ def push_all(
                         ),
                         progress_state,
                     )
+                    _ensure_metadata_anchors_for_public_spore_observation(
+                        client, obs, local_obs_id, cloud_id,
+                    )
                     try:
                         _push_measurements_for_observation(client, local_obs_id)
                     except Exception as e:
@@ -10440,6 +12442,31 @@ def push_all(
                             f'[cloud_sync] Observation {obs["id"]}: measurements pushed '
                             f'(local_id={local_obs_id})'
                         )
+                    # Public spore mosaic (atlas + tile manifest).
+                    #
+                    # Runs unconditionally after the measurement attempt so a
+                    # first-time mosaic still generates when measurements
+                    # already exist in the cloud and this sync is a pure
+                    # noop for measurements (all cache-hit). The mosaic
+                    # pusher is best-effort: it queries the local DB itself,
+                    # reads whichever measurement cloud_ids are already
+                    # populated, and no-ops (with a `Mosaic skip …` log) if
+                    # there aren't enough of them. A mosaic failure never
+                    # aborts the observation sync — the public RPC falls
+                    # back to per-spore `cropUrl` when no mosaic row exists.
+                    try:
+                        _push_spore_mosaic_for_observation(
+                            client, local_obs_id, cloud_id,
+                        )
+                    except Exception as mosaic_exc:
+                        if is_cloud_auth_error(mosaic_exc) or is_cloud_temporary_unavailable_error(mosaic_exc):
+                            raise
+                        print(
+                            f'[cloud_sync] Mosaic push errored obs {local_obs_id}: '
+                            f'{mosaic_exc}',
+                            flush=True,
+                        )
+
 
                 stored_local_media_signature = (
                     _load_local_cloud_media_signature(local_obs_id)
@@ -10617,6 +12644,123 @@ def push_all(
                         _refresh_local_cloud_media_signature(local_obs_id)
                     else:
                         mark_observation_dirty(local_obs_id)
+
+            # Metadata-only image PATCH pass under the fast Refresh mode
+            # (`sync_images=False`). The `if sync_images:` block above gates
+            # the byte-upload path AND the metadata PATCH path together —
+            # but pure metadata edits on already-linked cloud images (e.g.
+            # setting sample_source / mount_medium on a metadata-only
+            # microscope anchor) should still reach cloud on a normal
+            # Refresh, because they only require a PATCH, not a byte upload.
+            #
+            # Trigger policy: any observation that survived the dirty scan
+            # AND has a cloud_id is a candidate. We PATCH each of its images
+            # that already has a cloud_id. The push is idempotent — cloud
+            # rows whose values already match get a no-op PATCH — so we
+            # don't try to be clever about pre-filtering by signature. The
+            # earlier signature-only gate silently skipped legitimate edits
+            # whenever the stored signature was missing (e.g. after a manual
+            # recovery step that cleared it).
+            if not sync_images and had_existing_cloud and local_obs_id > 0:
+                try:
+                    local_images_for_patch = ImageDB.get_images_for_observation(local_obs_id)
+                except Exception as fetch_exc:
+                    print(
+                        f"[cloud_sync] Metadata-only patch: could not read local "
+                        f"images for obs {local_obs_id}: {fetch_exc}",
+                        flush=True,
+                    )
+                    local_images_for_patch = []
+                # Only metadata-only microscope anchors are safe to PATCH
+                # under Refresh (`sync_images=False`). Field images require
+                # byte-upload gating: PATCHing their metadata with an empty
+                # local `storage_path` would either wipe the cloud key or,
+                # for non-microscope rows, trip the RLS WITH CHECK
+                # (`storage_path IS NULL AND image_type = 'microscope'`)
+                # with a 42501 rejection. Media/storage edits on field
+                # images remain gated behind `sync_images=True`.
+                images_to_patch = [
+                    dict(img)
+                    for img in local_images_for_patch
+                    if _is_local_metadata_only_microscope_anchor(img)
+                ]
+                if images_to_patch:
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: metadata-only '
+                        f'image PATCH under Refresh (sync_images=False) '
+                        f'image_ids={[img.get("id") for img in images_to_patch]}',
+                        flush=True,
+                    )
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            (
+                                f"Patching image metadata for observation "
+                                f"{i + 1}/{max(1, total)} "
+                                f"(no bytes uploaded)"
+                            ),
+                        ),
+                        progress_state,
+                    )
+                    images_metadata_synced = True
+                    for local_img in images_to_patch:
+                        try:
+                            client.push_image_metadata(
+                                local_img,
+                                cloud_id,
+                                str(local_img.get('storage_path') or ''),
+                            )
+                        except Exception as patch_exc:
+                            if is_cloud_auth_error(patch_exc) or is_cloud_temporary_unavailable_error(patch_exc):
+                                raise
+                            images_metadata_synced = False
+                            print(
+                                f"[cloud_sync] Metadata-only PATCH failed for image "
+                                f"{local_img.get('id')} (cloud "
+                                f"{local_img.get('cloud_id')}): {patch_exc}",
+                                flush=True,
+                            )
+                    if images_metadata_synced:
+                        _refresh_local_cloud_media_signature(local_obs_id)
+                    else:
+                        mark_observation_dirty(local_obs_id)
+
+            # Metadata-only stored-signature refresh: runs AFTER the PATCH
+            # branch above (which needs to detect drift). Prevents the
+            # dirty-loop from obs 368 by acknowledging any drift the fast
+            # sync couldn't reconcile (e.g. sample_type canonicalization).
+            if not sync_images and local_obs_id > 0:
+                try:
+                    _refresh_local_cloud_media_signature(local_obs_id)
+                except Exception as sig_exc:
+                    print(
+                        f"[cloud_sync] Could not refresh local media signature for obs "
+                        f"{local_obs_id}: {sig_exc}",
+                        flush=True,
+                    )
+
+            # Structured observation-level spore summaries (Stage D).
+            # Runs once per observation, outside the `sync_images` block,
+            # because the summary is derived entirely from local
+            # spore_measurements + local image context — it does not
+            # require cloud image or cloud measurement rows to exist. In
+            # particular this means summaries still sync when
+            # `sync_images=False`, when image byte upload failed
+            # (`images_synced=False`), or when only preparation-context
+            # fields (mount_medium / stain / contrast / sample_type)
+            # changed. Missing-table errors are treated as a
+            # compatibility skip; unexpected errors surface via `errors`
+            # so the user sees them in the sync result.
+            if local_obs_id > 0 and cloud_id:
+                _push_summary_for_current_observation(
+                    client,
+                    obs=obs,
+                    local_obs_id=local_obs_id,
+                    cloud_id=cloud_id,
+                    errors=errors,
+                )
+
             _store_remote_snapshot(client, cloud_id)
 
             pushed += 1
@@ -10674,6 +12818,47 @@ def push_all(
             errors.append(raw_error)
             _advance_progress(progress_state, 1)
 
+    # Backfill passes for observations skipped by the main dirty loop.
+    #
+    # Measurement reconciliation MUST run before summary reconciliation:
+    # summaries count local measurements, and if the writer publishes
+    # `n_paired = 29` for a species whose cloud raw table only has 20
+    # measurements, the public spore RPC and the public summary RPC
+    # disagree until the raw table catches up. Filling raw measurements
+    # first keeps the two invariants consistent for the same species.
+    #
+    # Both repairs also run on the normal Refresh path. Measurement
+    # reconciliation is a local candidate scan, while summary reconciliation
+    # performs one bulk coverage read and only invokes the per-observation
+    # writer for missing/stale context hashes. This keeps no-op Refresh cheap
+    # without making historical sync gaps depend on a full pull.
+    measurement_reconcile = None
+    summary_reconcile = None
+    profiler = _cloud_sync_current_profiler()
+    try:
+        with _cloud_sync_phase_scope(profiler, 'reconcile_missing_spore_measurements'):
+            measurement_reconcile = _reconcile_missing_spore_measurements(
+                client,
+                errors,
+                verify_stamped_remote=verify_stamped_measurements,
+            )
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(
+            f'spore measurement reconciliation: unexpected error: {reconcile_exc}'
+        )
+        measurement_reconcile = None
+
+    try:
+        with _cloud_sync_phase_scope(profiler, 'reconcile_missing_spore_summaries'):
+            summary_reconcile = _reconcile_missing_spore_summaries(client, errors)
+    except Exception as reconcile_exc:
+        if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):
+            raise
+        errors.append(f'spore summary reconciliation: unexpected error: {reconcile_exc}')
+        summary_reconcile = None
+
     result = {
         'pushed': pushed,
         'total': total,
@@ -10681,6 +12866,10 @@ def push_all(
         'calibrations_total': calibration_result.get('total', 0),
         'errors': errors,
     }
+    if summary_reconcile is not None:
+        result['spore_summary_reconcile'] = summary_reconcile
+    if measurement_reconcile is not None:
+        result['spore_measurement_reconcile'] = measurement_reconcile
     if format_original_upload_summary(original_upload_summary):
         result['original_sync'] = original_upload_summary
     sync_summary = _cloud_sync_current_summary()
@@ -10921,10 +13110,6 @@ def _reconcile_metadata_only_linked_images(
     }
 
     stored_stats = _stored_local_media_signature_image_stats(obs_local_id)
-    if not stored_stats:
-        # Without a baseline we can't tell if bytes changed — leave the
-        # normal encode-and-check path in charge.
-        return skip_ids, kept_cloud_ids
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
@@ -10942,7 +13127,12 @@ def _reconcile_metadata_only_linked_images(
         remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
         if not remote_storage_path:
             continue
-        if not _local_image_source_bytes_unchanged(stored_stats, img):
+        source_role = str(img.get('source_role') or '').strip().lower()
+        file_purpose = str(img.get('file_purpose') or '').strip().lower()
+        is_cloud_recovery_cache = (
+            source_role == 'cloud_recovery_cache' or file_purpose == 'cache'
+        )
+        if not is_cloud_recovery_cache and not _local_image_source_bytes_unchanged(stored_stats, img):
             continue
 
         # Detect metadata drift without any WebP encoding.
@@ -10971,6 +13161,18 @@ def _reconcile_metadata_only_linked_images(
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise
+                if is_cloud_recovery_cache:
+                    # Recovery-cache bytes came from this cloud row. Never
+                    # feed them back through WebP preparation/upload merely
+                    # because a local metadata patch failed.
+                    print(
+                        f'[cloud_sync] Observation {obs_local_id}: metadata-only patch '
+                        f'for recovery-cache image {local_cloud_id} failed ({exc}); '
+                        f'skipping byte upload'
+                    )
+                    skip_ids.add(local_image_id)
+                    kept_cloud_ids.add(local_cloud_id)
+                    continue
                 # Fall back to the normal path if the direct patch failed.
                 print(
                     f'[cloud_sync] Observation {obs_local_id}: metadata-only patch '
@@ -10985,11 +13187,16 @@ def _reconcile_metadata_only_linked_images(
                 f'(source bytes unchanged since last sync)'
             )
         else:
+            reason = (
+                'cloud recovery cache is remote-owned'
+                if is_cloud_recovery_cache
+                else 'source bytes unchanged since last sync, metadata matches'
+            )
             print(
                 f'[cloud_sync] Observation {obs_local_id}: skipped already synced cloud image '
                 f'actual_upload=False image_id={local_image_id} cloud_image_id={local_cloud_id} '
                 f'storage_path={remote_storage_path} '
-                f'(source bytes unchanged since last sync, metadata matches)'
+                f'({reason})'
             )
 
         skip_ids.add(local_image_id)
@@ -11540,6 +13747,327 @@ def _push_images_for_observation(
                 pass
 
 
+# Column subset that is safe to send on a metadata-only microscope image
+# insert. Excludes storage_path (NULL), desktop_id/observation_id/user_id
+# (set explicitly by the helper), and original_filename (derived).
+_METADATA_ONLY_IMG_FIELDS = [
+    'sort_order', 'image_type', 'micro_category', 'objective_name',
+    'calibration_uuid',
+    'scale_microns_per_pixel', 'resample_scale_factor',
+    'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
+    'crop_mode', 'notes',
+    'gps_source',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h', 'ai_crop_is_custom',
+]
+
+
+def _ensure_metadata_only_microscope_image_for_public_spores(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+    image_row: dict,
+) -> str | None:
+    """Create or reuse a metadata-only cloud row for a microscope image.
+
+    The row anchors ``spore_measurements.image_id`` without uploading the
+    microscope frame. It has ``storage_path = NULL`` and
+    ``image_type = 'microscope'``, which the web migration
+    ``20260706100000_add_metadata_only_microscope_images.sql`` explicitly
+    allows and hides from public image galleries. Public sporePoints /
+    mosaic tile RPCs still see the row because they don't require
+    ``storage_path``.
+
+    Contract:
+    * Only microscope images qualify. Non-microscope rows are skipped —
+      the cloud CHECK constraint would reject them anyway.
+    * Only images that have at least one *public-eligible* spore
+      measurement locally (``length_um`` and ``width_um`` present, and
+      the measurement_type is one of NULL/''/'manual'/'spore'/'spores')
+      get an anchor. This avoids polluting the cloud with anchors that
+      can never contribute to public sporePoints.
+    * Idempotent — if the local row already has a ``cloud_id``, it is
+      returned unchanged. If the remote has a row by ``desktop_id``, we
+      reconcile the local cloud_id and return the existing id.
+    * Never uploads image bytes. Never calls ``upload_image_file`` or
+      the R2 client — the caller can guarantee "no full microscope
+      source uploads" simply by using this helper.
+
+    Returns the cloud id (str) on success, or ``None`` when the row was
+    skipped. Auth / temporary-unavailable errors propagate so the
+    caller can abort the whole backfill cleanly.
+    """
+    if not obs_cloud_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image=? obs={obs_local_id} reason=no_obs_cloud_id',
+            flush=True,
+        )
+        return None
+
+    row = dict(image_row or {})
+    local_image_id = _safe_int(row.get('id'))
+    if local_image_id <= 0:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image=? obs={obs_local_id} reason=no_local_id',
+            flush=True,
+        )
+        return None
+
+    image_type = str(row.get('image_type') or '').strip().lower()
+    if image_type != 'microscope':
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image={local_image_id} reason=not_microscope',
+            flush=True,
+        )
+        return None
+
+    existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
+    if existing_local_cloud_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: linked '
+            f'local_image={local_image_id} cloud_image={existing_local_cloud_id}',
+            flush=True,
+        )
+        return existing_local_cloud_id
+
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) FROM spore_measurements
+            WHERE image_id = ?
+              AND length_um IS NOT NULL
+              AND width_um  IS NOT NULL
+              AND (
+                measurement_type IS NULL
+                OR measurement_type = ''
+                OR lower(measurement_type) IN ('manual', 'spore', 'spores')
+              )
+            """,
+            (local_image_id,),
+        )
+        public_spore_count = int(cursor.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+    if public_spore_count <= 0:
+        print(
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image={local_image_id} reason=no_public_spore_measurements',
+            flush=True,
+        )
+        return None
+
+    # Missing local source file is informational, not a hard skip: we
+    # still want the metadata row so the measurement lands in public
+    # sporePoints. The mosaic pusher will separately skip the tile.
+    filepath = str(row.get('filepath') or '').strip()
+    if filepath and not Path(filepath).exists():
+        print(
+            f'[cloud_sync] Mosaic image metadata: note '
+            f'local_image={local_image_id} reason=missing_source_file',
+            flush=True,
+        )
+
+    # Reuse a remote row by desktop_id so a lost local cloud_id doesn't
+    # produce a duplicate observation_images row.
+    try:
+        remote_cloud_id = client._find_cloud_image(local_image_id)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic image metadata: lookup failed '
+            f'local_image={local_image_id}: {exc}',
+            flush=True,
+        )
+        remote_cloud_id = None
+
+    if remote_cloud_id:
+        _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True)
+        print(
+            f'[cloud_sync] Mosaic image metadata: linked '
+            f'local_image={local_image_id} cloud_image={remote_cloud_id} (reused)',
+            flush=True,
+        )
+        return str(remote_cloud_id)
+
+    payload: dict = {}
+    for field in _METADATA_ONLY_IMG_FIELDS:
+        if field in row:
+            payload[field] = row.get(field)
+    calibration_uuid = _image_calibration_uuid(row)
+    if calibration_uuid:
+        payload['calibration_uuid'] = calibration_uuid
+    else:
+        payload.pop('calibration_uuid', None)
+    payload['image_type'] = 'microscope'
+    payload['storage_path'] = None
+    payload['observation_id'] = obs_cloud_id
+    payload['user_id'] = client.user_id
+    payload['desktop_id'] = local_image_id
+    payload['original_filename'] = (
+        str(row.get('original_filename') or '').strip()
+        or Path(str(row.get('filepath') or '')).name
+        or None
+    )
+    if payload.get('gps_source') is not None:
+        payload['gps_source'] = bool(payload['gps_source'])
+    if hasattr(client, '_observation_images_support_ai_crop'):
+        try:
+            if not client._observation_images_support_ai_crop():
+                for key in (
+                    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+                    'ai_crop_source_w', 'ai_crop_source_h',
+                ):
+                    payload.pop(key, None)
+        except Exception:
+            pass
+    if hasattr(client, '_observation_images_support_ai_crop_custom'):
+        try:
+            if not client._observation_images_support_ai_crop_custom():
+                payload.pop('ai_crop_is_custom', None)
+        except Exception:
+            pass
+
+    print(
+        f'[cloud_sync] Mosaic image metadata: create '
+        f'local_image={local_image_id} obs={obs_local_id} '
+        f'cloud_obs={obs_cloud_id} type=microscope storage_path=NULL',
+        flush=True,
+    )
+
+    rows = client._post('observation_images', payload)
+    cloud_image_id = ''
+    if isinstance(rows, list) and rows:
+        cloud_image_id = str(rows[0].get('id') or '').strip()
+    elif isinstance(rows, dict):
+        cloud_image_id = str(rows.get('id') or '').strip()
+
+    if not cloud_image_id:
+        print(
+            f'[cloud_sync] Mosaic image metadata: create returned no id '
+            f'local_image={local_image_id}',
+            flush=True,
+        )
+        return None
+
+    _reconcile_local_image_cloud_id(local_image_id, cloud_image_id, mark_synced=True)
+    print(
+        f'[cloud_sync] Mosaic image metadata: linked '
+        f'local_image={local_image_id} cloud_image={cloud_image_id}',
+        flush=True,
+    )
+    return cloud_image_id
+
+
+def _ensure_metadata_only_microscope_images_for_observation(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+) -> dict:
+    """Loop wrapper around ``_ensure_metadata_only_microscope_image_for_public_spores``.
+
+    Walks every local microscope image on the observation that is missing
+    a ``cloud_id`` and tries to establish a metadata-only anchor for it.
+    Non-fatal per-image failures are logged and counted, but do not stop
+    the loop. Auth / temporary errors propagate so the backfill aborts.
+    Returns a counters dict with ``considered``, ``created``, ``linked``,
+    ``skipped``, ``failed``.
+    """
+    counters = {'considered': 0, 'ensured': 0, 'skipped': 0, 'failed': 0}
+    if not obs_cloud_id:
+        return counters
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute(
+            """
+            SELECT id, observation_id, filepath, original_filepath,
+                   cloud_id, sort_order, image_type, micro_category,
+                   objective_name, scale_microns_per_pixel,
+                   resample_scale_factor, mount_medium, stain, sample_type,
+                   contrast, measure_color, crop_mode, notes, gps_source,
+                   ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
+                   ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom
+            FROM images
+            WHERE observation_id = ?
+              AND image_type = 'microscope'
+              AND (cloud_id IS NULL OR cloud_id = '')
+            ORDER BY id
+            """,
+            (obs_local_id,),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    for image_row in rows:
+        counters['considered'] += 1
+        local_image_id = _safe_int(image_row.get('id'))
+        try:
+            result = _ensure_metadata_only_microscope_image_for_public_spores(
+                client, obs_local_id, obs_cloud_id, image_row,
+            )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            counters['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic image metadata: failed '
+                f'local_image={local_image_id}: {exc}',
+                flush=True,
+            )
+            continue
+        if result:
+            counters['ensured'] += 1
+        else:
+            counters['skipped'] += 1
+
+    return counters
+
+
+def _ensure_metadata_anchors_for_public_spore_observation(
+    client: 'SporelyCloudClient',
+    obs: dict,
+    obs_local_id: int,
+    obs_cloud_id: str,
+) -> None:
+    """Public spore pre-step: create metadata-only microscope image anchors.
+
+    Runs immediately before the normal-sync measurement push for any
+    observation whose ``spore_data_visibility='public'``. Mirrors the
+    backfill path so newly-added measurements on unshared microscope
+    frames reach public sporePoints without a manual backfill run.
+
+    Auth / temporary cloud errors propagate — the caller aborts. Other
+    per-image errors are logged (already inside the helper) and the
+    per-observation wrapper's own catch keeps sync moving.
+    """
+    if obs_local_id <= 0 or not obs_cloud_id:
+        return
+    visibility = str(
+        (obs or {}).get('spore_data_visibility') or 'public'
+    ).strip().lower()
+    if visibility != 'public':
+        return
+    try:
+        _ensure_metadata_only_microscope_images_for_observation(
+            client, obs_local_id, obs_cloud_id,
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic image metadata: observation failed '
+            f'local={obs_local_id} cloud={obs_cloud_id}: {exc}',
+            flush=True,
+        )
+
+
 def _push_measurements_for_observation(
     client: SporelyCloudClient,
     obs_local_id: int,
@@ -11607,6 +14135,7 @@ def _push_measurements_for_observation(
     )
 
     pushed_cloud_ids: set[str] = set()
+    local_id_stamp_failures: list[int] = []
     for meas in measurements:
         cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
         if not cloud_image_id:
@@ -11617,31 +14146,1831 @@ def _push_measurements_for_observation(
                 cloud_image_id,
                 remote_measurement_cache=remote_measurement_cache,
             )
-            pushed_cloud_ids.add(cloud_meas_id)
-            if str(meas.get('cloud_id') or '').strip() != cloud_meas_id:
-                conn = get_connection()
-                try:
-                    conn.execute(
-                        'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
-                        (cloud_meas_id, int(meas['id'])),
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
         except Exception as e:
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
+            continue
+
+        pushed_cloud_ids.add(cloud_meas_id)
+
+        # Split the local cloud_id stamp into its own try/except so a
+        # local UPDATE failure becomes VISIBLE instead of getting
+        # swallowed by the broad "push failed" handler above. Without
+        # this, a database lock / stale connection could silently
+        # prevent cloud_id from ever being persisted locally, which is
+        # exactly the "reconcile keeps pushing the same measurements"
+        # failure mode.
+        normalized_cloud_meas_id = str(cloud_meas_id or '').strip()
+        normalized_local_cloud_id = str(meas.get('cloud_id') or '').strip()
+        if normalized_cloud_meas_id and normalized_local_cloud_id != normalized_cloud_meas_id:
+            try:
+                conn = get_connection()
+                try:
+                    conn.execute(
+                        'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
+                        (normalized_cloud_meas_id, int(meas['id'])),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as stamp_exc:
+                local_id_stamp_failures.append(int(meas.get('id') or 0))
+                print(
+                    f'[cloud_sync] Measurement {meas["id"]} cloud_id stamp '
+                    f'failed (cloud id={cloud_meas_id!r}): {stamp_exc}',
+                    flush=True,
+                )
 
     push_elapsed = _cloud_sync_perf_counter() - push_start
+    stamp_failure_suffix = (
+        f' local_stamp_failures={len(local_id_stamp_failures)}'
+        if local_id_stamp_failures else ''
+    )
     print(
         (
             f'[cloud_sync] Observation {obs_local_id}: measurement push finalized '
-            f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)} '
+            f'measurements={len(measurements)} pushed={len(pushed_cloud_ids)}'
+            f'{stamp_failure_suffix} '
             f'duration={push_elapsed * 1000:.0f}ms'
         ),
         flush=True,
     )
+
+
+def _reconcile_missing_spore_measurements(
+    client: SporelyCloudClient,
+    errors: list[str],
+    *,
+    verify_stamped_remote: bool = True,
+) -> dict[str, int]:
+    """Backfill raw `public.spore_measurements` rows for observations
+    that were synced pre-Stage-D or otherwise skipped the measurement
+    push loop.
+
+    The main ``push_all`` loop only visits observations where
+    `cloud_id IS NULL OR sync_status = 'dirty'`. `_push_measurements_
+    for_observation` runs inside that loop; an observation that was
+    once synced but never re-dirtied can end up with LOCAL measurements
+    that never made it to cloud `spore_measurements`. The summary
+    writer counts local measurements — so a summary row can advertise
+    n_paired = 29 while the cloud raw table only exposes 20 through
+    the public spore RPCs, and the two disagree until this pass runs.
+
+    We always target observations with an unstamped local measurement. When
+    ``verify_stamped_remote`` is enabled by a version upgrade, child-safety
+    pass, or explicit recovery pull, stamped cloud ids are also checked for
+    remote deletion. This keeps ordinary sync proportional to local pending
+    work without losing periodic recovery from recreated cloud datasets.
+
+    `_push_measurements_for_observation` is per-measurement idempotent:
+    each row is either PATCHed (only if its payload differs from the
+    remote) or POSTed if missing. Fully-covered observations therefore
+    also survive an accidental extra call cheaply, but we still filter
+    them out here so the reconciliation pass stays fast in steady
+    state.
+
+    Returns a small counter dict for the sync result. Errors from
+    individual observations are appended to `errors` per the surrounding
+    convention; auth/temporary errors propagate.
+    """
+    reconcile_start = _cloud_sync_perf_counter()
+    counters = {'candidates': 0, 'attempted': 0}
+    print('[cloud_sync] spore measurement reconciliation: start', flush=True)
+
+    local_query_start = _cloud_sync_perf_counter()
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        cursor = conn.cursor()
+        # The reconciliation source query MUST mirror the filter
+        # used by `_push_measurements_for_observation` exactly. If we
+        # flag observations whose only "missing" measurements are
+        # attached to non-microscope images or to tombstoned images,
+        # the push helper refuses to push them, `spore_measurements
+        # .cloud_id` stays NULL, and we re-select the same observation
+        # every sync — the "measurements=22 pushed=22 but reconcile
+        # picks it up again next sync" bug from the field log.
+        cursor.execute(
+            '''
+            SELECT o.id AS local_id,
+                   o.cloud_id AS observation_cloud_id,
+                   i.id AS image_local_id,
+                   i.cloud_id AS image_cloud_id,
+                   m.id AS measurement_local_id,
+                   m.cloud_id AS measurement_cloud_id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            JOIN spore_measurements m ON m.image_id = i.id
+            LEFT JOIN image_tombstones t ON t.deleted_cloud_id = i.cloud_id
+            WHERE o.cloud_id IS NOT NULL
+              AND trim(o.cloud_id) != ''
+              AND i.cloud_id IS NOT NULL
+              AND trim(i.cloud_id) != ''
+              AND i.image_type = 'microscope'
+              AND t.id IS NULL
+            ORDER BY o.id, m.id
+            '''
+        )
+        eligible_rows = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+    print(
+        f'[cloud_sync] spore measurement reconciliation: local candidate scan complete '
+        f'eligible_rows={len(eligible_rows)} '
+        f'duration={(_cloud_sync_perf_counter() - local_query_start) * 1000:.0f}ms',
+        flush=True,
+    )
+
+    candidate_ids = {
+        int(row['local_id'])
+        for row in eligible_rows
+        if not str(row.get('measurement_cloud_id') or '').strip()
+    }
+
+    # Verify stamped ids with narrow ID-only requests. Pulling full remote
+    # measurement payloads here was the source of the old no-op Refresh
+    # slowdown; existence is all reconciliation needs.
+    stamped_ids = sorted({
+        str(row.get('measurement_cloud_id') or '').strip()
+        for row in eligible_rows
+        if str(row.get('measurement_cloud_id') or '').strip()
+    })
+    remote_ids: set[str] = set()
+    deleted_image_ids: set[str] = set()
+    getter = getattr(client, '_get', None)
+    measurement_requests = 0
+    measurement_rows = 0
+    image_requests = 0
+    image_rows_count = 0
+    if stamped_ids and callable(getter) and verify_stamped_remote:
+        measurement_verify_start = _cloud_sync_perf_counter()
+        for start in range(0, len(stamped_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+            chunk = stamped_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
+            rows = getter(
+                f'spore_measurements?id=in.({",".join(chunk)})'
+                f'&user_id=eq.{client.user_id}&select=id'
+            )
+            measurement_requests += 1
+            measurement_rows += len(rows or [])
+            remote_ids.update(
+                str(row.get('id') or '').strip()
+                for row in rows or []
+                if str(row.get('id') or '').strip()
+            )
+        candidate_ids.update(
+            int(row['local_id'])
+            for row in eligible_rows
+            if str(row.get('measurement_cloud_id') or '').strip() not in remote_ids
+        )
+        print(
+            f'[cloud_sync] spore measurement reconciliation: stamped measurement verification complete '
+            f'ids={len(stamped_ids)} requests={measurement_requests} rows={measurement_rows} '
+            f'duration={(_cloud_sync_perf_counter() - measurement_verify_start) * 1000:.0f}ms',
+            flush=True,
+        )
+
+        image_cloud_ids = sorted({
+            str(row.get('image_cloud_id') or '').strip()
+            for row in eligible_rows
+            if str(row.get('image_cloud_id') or '').strip()
+        })
+        image_verify_start = _cloud_sync_perf_counter()
+        for start in range(0, len(image_cloud_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+            chunk = image_cloud_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
+            image_rows = getter(
+                f'observation_images?id=in.({",".join(chunk)})'
+                f'&user_id=eq.{client.user_id}&select=id,deleted_at,purged_at'
+            )
+            image_requests += 1
+            image_rows_count += len(image_rows or [])
+            deleted_image_ids.update(
+                str(row.get('id') or '').strip()
+                for row in image_rows or []
+                if str(row.get('id') or '').strip()
+                and str(row.get('deleted_at') or '').strip()
+                and not str(row.get('purged_at') or '').strip()
+            )
+        candidate_ids.update(
+            int(row['local_id'])
+            for row in eligible_rows
+            if str(row.get('image_cloud_id') or '').strip() in deleted_image_ids
+        )
+        print(
+            f'[cloud_sync] spore measurement reconciliation: cloud image verification complete '
+            f'ids={len(image_cloud_ids)} requests={image_requests} rows={image_rows_count} '
+            f'duration={(_cloud_sync_perf_counter() - image_verify_start) * 1000:.0f}ms',
+            flush=True,
+        )
+    elif stamped_ids and not verify_stamped_remote:
+        print(
+            f'[cloud_sync] spore measurement reconciliation: stamped remote verification skipped '
+            f'ids={len(stamped_ids)} reason=periodic_verification_not_due',
+            flush=True,
+        )
+
+    candidates = sorted(candidate_ids)
+    observation_cloud_ids = {
+        int(row['local_id']): str(row.get('observation_cloud_id') or '').strip()
+        for row in eligible_rows
+        if str(row.get('observation_cloud_id') or '').strip()
+    }
+    counters['candidates'] = len(candidates)
+    if not candidates:
+        print(
+            f'[cloud_sync] spore measurement reconciliation: complete '
+            f'candidates=0 attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
+        return counters
+
+    print(
+        f'[cloud_sync] Spore measurement reconciliation: '
+        f'{len(candidates)} synced observations have missing remote '
+        f'measurements; backfilling public.spore_measurements.',
+        flush=True,
+    )
+
+    for local_id in candidates:
+        if local_id <= 0:
+            continue
+        counters['attempted'] += 1
+        try:
+            # Restore active local microscope anchors before reconciling their
+            # measurements. Existing measurement rows keep their image FKs.
+            restore_ids = sorted({
+                str(row.get('image_cloud_id') or '').strip()
+                for row in eligible_rows
+                if int(row['local_id']) == local_id
+                and str(row.get('image_cloud_id') or '').strip() in deleted_image_ids
+            })
+            for image_cloud_id in restore_ids:
+                client._patch(
+                    f'observation_images?id=eq.{image_cloud_id}'
+                    f'&user_id=eq.{client.user_id}',
+                    {'deleted_at': None},
+                )
+            _push_measurements_for_observation(client, local_id)
+            cloud_observation_id = observation_cloud_ids.get(local_id, '')
+            if cloud_observation_id:
+                _push_spore_mosaic_for_observation(
+                    client,
+                    local_id,
+                    cloud_observation_id,
+                )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            errors.append(
+                f'obs {local_id}: measurement reconciliation failed: {exc}'
+            )
+            try:
+                mark_observation_sync_dirty(local_id)
+            except Exception:
+                pass
+    print(
+        f'[cloud_sync] spore measurement reconciliation: complete '
+        f'candidates={counters["candidates"]} attempted={counters["attempted"]} '
+        f'duration={(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+        flush=True,
+    )
+    return counters
+
+
+def _reconcile_missing_spore_summaries(
+    client: SporelyCloudClient,
+    errors: list[str],
+) -> dict[str, int]:
+    """Backfill / reconcile `public.observation_spore_summaries` for
+    every observation that has been synced at least once and has local
+    spore measurements.
+
+    The pass compares the complete set of local and remote context hashes.
+    This catches both wholly missing rows and partial coverage (for example,
+    KOH present but water missing) without routing every fully-covered
+    observation through another network request.
+
+    Metadata-only microscope anchors (`observation_images.storage_path`
+    NULL) are covered because the local join key is `image_id`, not
+    `storage_path`. Summaries are computed from local measurements plus
+    local image context; raw microscope image bytes are irrelevant.
+
+    The main ``push_all`` loop scans
+    ``WHERE cloud_id IS NULL OR sync_status = 'dirty'`` and only that
+    subset runs the writer inline. This pass exists specifically to
+    catch observations that were synced before Stage D landed (or
+    otherwise did not go dirty this session). Steady-state network cost is
+    one bulk GET, independent of the number of measured observations.
+
+    Returns a small counter dict for the caller's summary/log stanza.
+    """
+    reconcile_start = _cloud_sync_perf_counter()
+    counters = {'candidates': 0, 'attempted': 0}
+    print('[cloud_sync] spore summary reconciliation: start', flush=True)
+
+    # Fetch all remote coverage in one request. A missing-table response
+    # means this deployment predates Stage B; other errors follow the
+    # surrounding sync error policy.
+    remote_fetch_start = _cloud_sync_perf_counter()
+    try:
+        remote_rows = client._get(
+            f'observation_spore_summaries'
+            f'?user_id=eq.{client.user_id}'
+            f'&select=observation_id,context_hash'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        if _is_summary_table_missing_error(exc):
+            print(
+                '[cloud_sync] Spore summary reconciliation: cloud table missing '
+                '(older deployment); skipping backfill pass.',
+                flush=True,
+            )
+            print(
+                f'[cloud_sync] spore summary reconciliation: complete '
+                f'candidates=0 attempted=0 duration='
+                f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+                flush=True,
+            )
+            return counters
+        # Unknown non-auth error — record it and stop. A per-observation
+        # retry via the main dirty loop still works for the individual
+        # case.
+        errors.append(f'spore summary reconciliation: probe failed: {exc}')
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates=0 attempted=0 probe_error=True duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
+        return counters
+    print(
+        f'[cloud_sync] spore summary reconciliation: remote coverage fetch complete '
+        f'rows={len(remote_rows or [])} '
+        f'duration={(_cloud_sync_perf_counter() - remote_fetch_start) * 1000:.0f}ms',
+        flush=True,
+    )
+
+    local_query_start = _cloud_sync_perf_counter()
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT DISTINCT o.id AS local_id, o.cloud_id AS cloud_id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            JOIN spore_measurements m ON m.image_id = i.id
+            WHERE o.cloud_id IS NOT NULL AND trim(o.cloud_id) != ''
+            ORDER BY o.id
+            '''
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+    print(
+        f'[cloud_sync] spore summary reconciliation: local candidate scan complete '
+        f'observations={len(candidates)} '
+        f'duration={(_cloud_sync_perf_counter() - local_query_start) * 1000:.0f}ms',
+        flush=True,
+    )
+
+    counters['candidates'] = len(candidates)
+    if not candidates:
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates=0 attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
+        return counters
+
+    remote_hashes_by_observation: dict[str, set[str]] = {}
+    for remote_row in remote_rows or []:
+        remote_observation_id = str(remote_row.get('observation_id') or '').strip()
+        context_hash = str(remote_row.get('context_hash') or '').strip()
+        if remote_observation_id and context_hash:
+            remote_hashes_by_observation.setdefault(remote_observation_id, set()).add(context_hash)
+
+    valid_candidates: list[tuple[int, str]] = []
+    from utils import spore_summary_sync as spore_summary_sync_module
+    from utils.spore_summary import compute_observation_spore_summaries
+
+    hash_build_start = _cloud_sync_perf_counter()
+    for row in candidates:
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if not cloud_id:
+            continue
+        try:
+            local_id = int(row.get('local_id') or 0)
+        except (TypeError, ValueError):
+            local_id = 0
+        if local_id <= 0:
+            continue
+        measurements = spore_summary_sync_module.load_measurements_with_context(local_id)
+        local_hashes = {
+            str(summary.get('context_hash') or '').strip()
+            for summary in compute_observation_spore_summaries(
+                observation_id=local_id,
+                measurements=measurements,
+            )
+            if str(summary.get('context_hash') or '').strip()
+        }
+        if local_hashes != remote_hashes_by_observation.get(cloud_id, set()):
+            valid_candidates.append((local_id, cloud_id))
+    print(
+        f'[cloud_sync] spore summary reconciliation: local hash comparison complete '
+        f'observations={len(candidates)} mismatched={len(valid_candidates)} '
+        f'duration={(_cloud_sync_perf_counter() - hash_build_start) * 1000:.0f}ms',
+        flush=True,
+    )
+
+    if not valid_candidates:
+        print(
+            f'[cloud_sync] spore summary reconciliation: complete '
+            f'candidates={counters["candidates"]} attempted=0 duration='
+            f'{(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+            flush=True,
+        )
+        return counters
+
+    print(
+        f'[cloud_sync] Spore summary reconciliation: attempting '
+        f'{len(valid_candidates)} synced observations '
+        f'with missing or stale summary contexts.',
+        flush=True,
+    )
+
+    for local_id, cloud_id in valid_candidates:
+        counters['attempted'] += 1
+        _push_summary_for_current_observation(
+            client,
+            obs={'id': local_id},
+            local_obs_id=local_id,
+            cloud_id=cloud_id,
+            errors=errors,
+        )
+    print(
+        f'[cloud_sync] spore summary reconciliation: complete '
+        f'candidates={counters["candidates"]} attempted={counters["attempted"]} '
+        f'duration={(_cloud_sync_perf_counter() - reconcile_start) * 1000:.0f}ms',
+        flush=True,
+    )
+    return counters
+
+
+def _push_summary_for_current_observation(
+    client: SporelyCloudClient,
+    *,
+    obs: dict,
+    local_obs_id: int,
+    cloud_id: str,
+    errors: list[str],
+) -> dict | None:
+    """Sync structured spore summaries for one observation (Stage D).
+
+    Returns the sync helper's result dict, or ``None`` if the summary
+    call raised. Missing-table errors (older cloud deployments without
+    ``public.observation_spore_summaries``) are logged and treated as a
+    soft skip — they do not add to ``errors``. Auth / temporary-
+    unavailable errors re-raise so the outer sync loop can abort. Any
+    other unexpected error is appended to ``errors`` using the same
+    ``"obs <local_id>: ..."`` format as the surrounding
+    ``CloudSyncError`` reporting, so the caller and the returned
+    ``sync_all`` result surface the failure instead of hiding it in a
+    print statement.
+    """
+    try:
+        summary_result = sync_observation_spore_summaries(
+            client,
+            local_observation_id=local_obs_id,
+            remote_observation_id=cloud_id,
+            user_id=client.user_id,
+            source_app_version=_current_source_app_version(),
+        )
+    except Exception as summary_exc:
+        if is_cloud_auth_error(summary_exc) or is_cloud_temporary_unavailable_error(summary_exc):
+            raise
+        errors.append(
+            f"obs {obs.get('id')}: spore summary sync failed: {summary_exc}"
+        )
+        try:
+            mark_observation_sync_dirty(int(obs.get('id') or 0))
+        except Exception:
+            pass
+        print(
+            f'[cloud_sync] Spore summary push errored obs '
+            f'{local_obs_id}: {summary_exc}',
+            flush=True,
+        )
+        return None
+
+    status = summary_result.get('status')
+    if status == SUMMARY_STATUS_SKIP_TABLE_MISSING:
+        # Compatibility skip: older cloud deployment; recorded but not
+        # a user-visible error.
+        print(
+            f'[cloud_sync] Spore summary push skipped obs '
+            f'{local_obs_id}: cloud table missing '
+            f'(older deployment); continuing sync.',
+            flush=True,
+        )
+    elif status == SUMMARY_STATUS_SKIP_NO_CLOUD_ID:
+        # Defensive; the caller only invokes this helper when cloud_id
+        # is set, so this branch is unusual — flag it to `errors` so it
+        # is visible if it ever happens.
+        errors.append(
+            f"obs {obs.get('id')}: spore summary sync skipped (no cloud id available)"
+        )
+        print(
+            f'[cloud_sync] Spore summary push skipped obs '
+            f'{local_obs_id}: no cloud id available yet.',
+            flush=True,
+        )
+    elif status == SUMMARY_STATUS_SYNCED and (
+        summary_result.get('inserted')
+        or summary_result.get('updated')
+        or summary_result.get('deleted')
+    ):
+        # Only log when something actually changed. Fully-idempotent
+        # syncs (unchanged > 0 with zero writes) stay quiet so the log
+        # is a signal of real cloud mutation, not sync heartbeat.
+        print(
+            f'[cloud_sync] Spore summaries synced obs '
+            f'{local_obs_id}: '
+            f'inserted={summary_result.get("inserted", 0)} '
+            f'updated={summary_result.get("updated", 0)} '
+            f'unchanged={summary_result.get("unchanged", 0)} '
+            f'deleted={summary_result.get("deleted", 0)} '
+            f'total_local={summary_result.get("total_local", 0)}',
+            flush=True,
+        )
+    return summary_result
+
+
+# Public status codes returned by `_push_spore_mosaic_for_observation`. Kept
+# as short kebab-cased strings so callers can aggregate them into counters
+# and log them verbatim. Auth / temporary errors are NOT translated to a
+# code — they propagate as exceptions so the caller can abort cleanly.
+MOSAIC_STATUS_GENERATED = 'generated'
+MOSAIC_STATUS_SKIP_UNCHANGED = 'skip_unchanged'
+MOSAIC_STATUS_SKIP_NO_OBSERVATION = 'skip_no_observation'
+MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA = 'skip_no_public_spore_data'
+MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS = 'skip_no_eligible_measurements'
+MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES = 'skip_missing_source_images'
+MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES = 'skip_no_usable_sources'
+MOSAIC_STATUS_FAIL_BUILD = 'fail_build'
+MOSAIC_STATUS_FAIL_UPLOAD = 'fail_upload'
+MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP = 'fail_mosaic_lookup'
+MOSAIC_STATUS_FAIL_MOSAIC_UPSERT = 'fail_mosaic_upsert'
+MOSAIC_STATUS_FAIL_NO_MOSAIC_ID = 'fail_no_mosaic_id'
+MOSAIC_STATUS_FAIL_TILE_CLEANUP = 'fail_tile_cleanup'
+MOSAIC_STATUS_FAIL_TILE_INSERT = 'fail_tile_insert'
+
+
+# ── Local-only mosaic signature ─────────────────────────────────────────────
+#
+# The signature is a stable SHA-1 hex string over the tuple of local inputs
+# that determine both the rendered mosaic bytes AND the remote tile manifest.
+# Normal sync compares it to `observations.mosaic_signature` (local column,
+# never synced to cloud) and skips the expensive render/upload/tile-rewrite
+# when nothing has changed and a remote mosaic row still exists.
+#
+# Included in the signature:
+#   * observation:  spore_data_visibility, MOSAIC_PIPELINE_VERSION
+#   * per measurement (sorted by local id):
+#       id, cloud_id, image_id, image_cloud_id,
+#       p1..p4 (x,y), length_um, width_um, measurement_type, gallery_rotation
+#   * per source image referenced by those measurements:
+#       image_id, image_cloud_id, resolved source path (str),
+#       file mtime_ns, file size_bytes,
+#       scale_microns_per_pixel, resample_scale_factor
+#
+# Design notes / anti-footguns:
+#   * (mtime_ns, size_bytes) alone is not enough — a different file with the
+#     same size and mtime would look identical. The signature always pairs
+#     the file fingerprint with the resolved path and local/cloud image id.
+#   * Numbers, empty strings and Nones are normalised so trivially different
+#     text (`""` vs `None`) doesn't produce a different digest.
+#   * SHA-1 is used because we're not authenticating anything — this is a
+#     cheap change-detector for a local cache; collisions here would just
+#     mean "one skipped rebuild we should have done", which is bounded by
+#     the remote-mosaic-row presence check.
+
+
+def _canonical_signature_value(value):
+    """Normalise a single input value for the canonical JSON payload."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        # Round to 6 dp so a floating-point 12.3400000001 doesn't invalidate
+        # a signature that used 12.34 the last time round.
+        return round(float(value), 6)
+    text = str(value).strip()
+    if text == '':
+        return None
+    return text
+
+
+def _file_stat_fingerprint(path: Path) -> dict:
+    """Return {'mtime_ns': int, 'size_bytes': int} or {} on stat failure.
+
+    Kept small and stable — extra fields would just add churn without
+    strengthening change detection.
+    """
+    try:
+        st = path.stat()
+    except Exception:
+        return {}
+    return {
+        'mtime_ns': int(getattr(st, 'st_mtime_ns', 0) or 0),
+        'size_bytes': int(getattr(st, 'st_size', 0) or 0),
+    }
+
+
+def _resolve_local_image_path(filepath: str) -> Path | None:
+    """Best-effort resolution of a local image path.
+
+    Mirrors the fallback the mosaic pipeline uses: absolute paths as-is,
+    otherwise join against ``get_images_dir()``.
+    """
+    raw = str(filepath or '').strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        try:
+            path = get_images_dir() / path
+        except Exception:
+            return path
+    return path
+
+
+def _local_spore_mosaic_signature(
+    obs_local_id: int,
+    eligible_rows: list[dict],
+    observation_row: dict,
+) -> str:
+    """Compute a deterministic SHA-1 signature of the mosaic inputs.
+
+    The pusher must pass its own already-filtered `eligible_rows` (same
+    list it feeds into the mosaic builder) so the signature is 1:1 with
+    what actually goes out. The signature is stable across process
+    restarts as long as the local inputs have not changed.
+    """
+    from utils.cloud_spore_mosaic import MOSAIC_PIPELINE_VERSION
+
+    obs_visibility = _canonical_signature_value(
+        (observation_row or {}).get('spore_data_visibility') or 'public'
+    )
+
+    # Sort measurements by stable local id for determinism. The pusher's
+    # own SELECT already uses `ORDER BY m.id`, but re-sorting here means
+    # the helper is safe to call with rows fetched in any order.
+    sorted_rows = sorted(
+        (dict(r) for r in (eligible_rows or [])),
+        key=lambda r: int(r.get('id') or 0),
+    )
+
+    measurements_payload: list[dict] = []
+    # Collect per-image fingerprints. Keyed by (local_image_id, cloud_image_id,
+    # resolved_path_str) so a rename or a bytes-swap produces a new signature.
+    image_fps: dict[tuple, dict] = {}
+
+    for row in sorted_rows:
+        local_image_id = _canonical_signature_value(row.get('image_id'))
+        image_cloud_id = _canonical_signature_value(row.get('image_cloud_id'))
+        filepath = str(row.get('image_filepath') or '').strip()
+        resolved = _resolve_local_image_path(filepath)
+        resolved_str = str(resolved) if resolved is not None else None
+
+        measurements_payload.append({
+            'id': _canonical_signature_value(row.get('id')),
+            'cloud_id': _canonical_signature_value(row.get('cloud_id')),
+            'image_id': local_image_id,
+            'image_cloud_id': image_cloud_id,
+            'p1_x': _canonical_signature_value(row.get('p1_x')),
+            'p1_y': _canonical_signature_value(row.get('p1_y')),
+            'p2_x': _canonical_signature_value(row.get('p2_x')),
+            'p2_y': _canonical_signature_value(row.get('p2_y')),
+            'p3_x': _canonical_signature_value(row.get('p3_x')),
+            'p3_y': _canonical_signature_value(row.get('p3_y')),
+            'p4_x': _canonical_signature_value(row.get('p4_x')),
+            'p4_y': _canonical_signature_value(row.get('p4_y')),
+            'length_um': _canonical_signature_value(row.get('length_um')),
+            'width_um': _canonical_signature_value(row.get('width_um')),
+            'measurement_type': _canonical_signature_value(row.get('measurement_type')),
+            'gallery_rotation': _canonical_signature_value(row.get('gallery_rotation')),
+        })
+
+        image_key = (local_image_id, image_cloud_id, resolved_str)
+        if image_key not in image_fps:
+            fp: dict = {
+                'image_id': local_image_id,
+                'image_cloud_id': image_cloud_id,
+                'source_path': resolved_str,
+                'scale_microns_per_pixel': _canonical_signature_value(
+                    row.get('scale_microns_per_pixel')
+                ),
+                'resample_scale_factor': _canonical_signature_value(
+                    row.get('resample_scale_factor')
+                ),
+            }
+            if resolved is not None:
+                stat_fp = _file_stat_fingerprint(resolved)
+                fp['mtime_ns'] = stat_fp.get('mtime_ns')
+                fp['size_bytes'] = stat_fp.get('size_bytes')
+            else:
+                fp['mtime_ns'] = None
+                fp['size_bytes'] = None
+            image_fps[image_key] = fp
+
+    images_payload = sorted(
+        image_fps.values(),
+        key=lambda fp: (
+            fp.get('image_id') or 0,
+            fp.get('image_cloud_id') or '',
+            fp.get('source_path') or '',
+        ),
+    )
+
+    payload = {
+        'v': int(MOSAIC_PIPELINE_VERSION),
+        'obs': {
+            'local_id': int(obs_local_id or 0),
+            'spore_data_visibility': obs_visibility,
+        },
+        'measurements': measurements_payload,
+        'images': images_payload,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha1(canonical.encode('utf-8')).hexdigest()
+
+
+def _load_local_mosaic_signature(obs_local_id: int) -> str:
+    """Read the cached signature from `observations.mosaic_signature`.
+
+    Missing column (older DB that hasn't run init/migration) is treated as
+    "no cached signature" so the mosaic pusher still rebuilds cleanly.
+    """
+    if obs_local_id <= 0:
+        return ''
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            'SELECT mosaic_signature FROM observations WHERE id = ?',
+            (int(obs_local_id),),
+        )
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        return ''
+    finally:
+        conn.close()
+    if row is None:
+        return ''
+    return str(row[0] or '').strip()
+
+
+def _store_local_mosaic_signature(obs_local_id: int, signature: str) -> None:
+    """Persist the freshly-computed signature.
+
+    Only called on successful mosaic upload + tile rewrite so partial
+    failures never poison the cache.
+    """
+    if obs_local_id <= 0 or not signature:
+        return
+    conn = get_connection()
+    try:
+        conn.execute(
+            'UPDATE observations SET mosaic_signature = ? WHERE id = ?',
+            (str(signature).strip(), int(obs_local_id)),
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        conn.close()
+
+
+def _clear_local_mosaic_signature(obs_local_id: int) -> None:
+    if obs_local_id <= 0:
+        return
+    conn = get_connection()
+    try:
+        conn.execute(
+            'UPDATE observations SET mosaic_signature = NULL WHERE id = ?',
+            (int(obs_local_id),),
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        conn.close()
+
+
+def _remote_mosaic_row_exists(
+    client: 'SporelyCloudClient',
+    obs_cloud_id: str,
+    version: int,
+) -> bool:
+    """Return True iff a `spore_measurement_mosaics` row exists for the
+    observation + pipeline version and (best-effort) at least one tile.
+
+    On lookup failure we return False so the caller rebuilds — better a
+    redundant rebuild than a silent skip that hides a wiped mosaic.
+    """
+    obs = str(obs_cloud_id or '').strip()
+    if not obs or version < 1:
+        return False
+    try:
+        rows = client._get(
+            f'spore_measurement_mosaics'
+            f'?observation_id=eq.{obs}'
+            f'&version=eq.{int(version)}'
+            f'&user_id=eq.{client.user_id}'
+            f'&select=id,storage_key&limit=1'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        return False
+    if not rows:
+        return False
+    mosaic_row = rows[0] if isinstance(rows, list) else rows
+    mosaic_id = str((mosaic_row or {}).get('id') or '').strip()
+    storage_key = str((mosaic_row or {}).get('storage_key') or '').strip()
+    if not mosaic_id or not storage_key:
+        return False
+    # Cheap tile-existence probe. If we can't read tiles (e.g. RLS quirk)
+    # we still trust the mosaic row's presence — the caller can rebuild
+    # the manifest later if it turns out to be missing.
+    try:
+        tiles = client._get(
+            f'spore_measurement_mosaic_tiles'
+            f'?mosaic_id=eq.{mosaic_id}'
+            f'&select=measurement_id&limit=1'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        return True
+    return bool(tiles)
+
+
+def diagnose_public_spore_mosaic_gates(
+    client: 'SporelyCloudClient | None',
+    obs_local_id: int,
+    obs_cloud_id: str | None = None,
+    *,
+    include_remote: bool = True,
+    log: bool = True,
+) -> dict:
+    """Report why the mosaic pusher would (or would not) include each spore.
+
+    Counts measurements at every gate between "row exists locally" and
+    "spore point is served by `get_public_observation`" so an operator
+    can see, at a glance, which predicate is dropping measurements.
+    Local counts are always populated. Remote counts (Supabase +
+    `get_public_observation`) are best-effort; on failure the error
+    string lands in the result under `*_error` keys and the local counts
+    are still returned. Pass `client=None` to skip the remote step
+    entirely.
+
+    Returns a dict with these keys:
+      obs_local_id, obs_cloud_id,
+      total_local,
+      with_p1_p2,
+      with_p1_p2_p3_p4,
+      with_length_and_width_um,
+      image_has_cloud_id,
+      measurement_has_cloud_id,
+      excluded_by_measurement_type,
+      by_image_type   -> {image_type: count},
+      pusher_would_select,
+      remote_images (optional),
+      remote_microscope_images (optional),
+      remote_measurements (optional),
+      public_rpc_sporePoints (optional).
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+
+        def _count(sql: str, params: tuple = ()) -> int:
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+            return int(row[0]) if row else 0
+
+        total_local = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ?',
+            (obs_local_id,),
+        )
+        with_p1p2 = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL '
+            '  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL',
+            (obs_local_id,),
+        )
+        with_p1234 = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL '
+            '  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL '
+            '  AND m.p3_x IS NOT NULL AND m.p3_y IS NOT NULL '
+            '  AND m.p4_x IS NOT NULL AND m.p4_y IS NOT NULL',
+            (obs_local_id,),
+        )
+        with_um = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? '
+            '  AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL',
+            (obs_local_id,),
+        )
+        image_has_cloud_id = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? AND i.cloud_id IS NOT NULL',
+            (obs_local_id,),
+        )
+        meas_has_cloud_id = _count(
+            'SELECT COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? AND m.cloud_id IS NOT NULL',
+            (obs_local_id,),
+        )
+        excluded_by_type = _count(
+            "SELECT COUNT(*) FROM spore_measurements m "
+            "JOIN images i ON i.id = m.image_id "
+            "WHERE i.observation_id = ? "
+            "  AND m.measurement_type IS NOT NULL "
+            "  AND m.measurement_type != '' "
+            "  AND lower(m.measurement_type) NOT IN ('manual', 'spore', 'spores')",
+            (obs_local_id,),
+        )
+        pusher_selected = _count(
+            "SELECT COUNT(*) "
+            "FROM spore_measurements m "
+            "JOIN images i ON i.id = m.image_id "
+            "WHERE i.observation_id = ? "
+            "  AND i.image_type = 'microscope' "
+            "  AND i.cloud_id IS NOT NULL "
+            "  AND m.cloud_id IS NOT NULL "
+            "  AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL "
+            "  AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL "
+            "  AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL "
+            "  AND ("
+            "    m.measurement_type IS NULL"
+            "    OR m.measurement_type = ''"
+            "    OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')"
+            "  )",
+            (obs_local_id,),
+        )
+        cursor.execute(
+            'SELECT i.image_type, COUNT(*) FROM spore_measurements m '
+            'JOIN images i ON i.id = m.image_id '
+            'WHERE i.observation_id = ? GROUP BY i.image_type',
+            (obs_local_id,),
+        )
+        by_image_type = {
+            str(row[0] or 'NULL'): int(row[1]) for row in cursor.fetchall()
+        }
+    finally:
+        conn.close()
+
+    result: dict = {
+        'obs_local_id': obs_local_id,
+        'obs_cloud_id': obs_cloud_id,
+        'total_local': total_local,
+        'with_p1_p2': with_p1p2,
+        'with_p1_p2_p3_p4': with_p1234,
+        'with_length_and_width_um': with_um,
+        'image_has_cloud_id': image_has_cloud_id,
+        'measurement_has_cloud_id': meas_has_cloud_id,
+        'excluded_by_measurement_type': excluded_by_type,
+        'by_image_type': by_image_type,
+        'pusher_would_select': pusher_selected,
+    }
+
+    obs_cloud_id_str = str(obs_cloud_id or '').strip()
+    if include_remote and client is not None and obs_cloud_id_str:
+        try:
+            img_rows = client._get(
+                'observation_images'
+                f'?observation_id=eq.{obs_cloud_id_str}'
+                f'&user_id=eq.{client.user_id}'
+                '&select=id,image_type,deleted_at,purged_at&limit=1000'
+            )
+        except Exception as exc:
+            result['remote_images_error'] = str(exc)
+            img_rows = []
+        result['remote_images'] = len(img_rows)
+        microscope_ids: list[str] = []
+        for row in img_rows:
+            if row.get('deleted_at') or row.get('purged_at'):
+                continue
+            if row.get('image_type') != 'microscope':
+                continue
+            image_id = str(row.get('id') or '').strip()
+            if image_id:
+                microscope_ids.append(image_id)
+        result['remote_microscope_images'] = len(microscope_ids)
+
+        if microscope_ids:
+            try:
+                ids_in = ','.join(microscope_ids)
+                m_rows = client._get(
+                    'spore_measurements'
+                    f'?image_id=in.({ids_in})'
+                    f'&user_id=eq.{client.user_id}'
+                    '&select=id,measurement_type&limit=2000'
+                )
+                result['remote_measurements'] = len(m_rows)
+            except Exception as exc:
+                result['remote_measurements_error'] = str(exc)
+        else:
+            result['remote_measurements'] = 0
+
+        try:
+            rpc_result = client._rpc(
+                'get_public_observation',
+                {'p_observation_id': int(obs_cloud_id_str)},
+            )
+            row = None
+            if isinstance(rpc_result, list) and rpc_result:
+                row = rpc_result[0]
+            elif isinstance(rpc_result, dict):
+                row = rpc_result
+            spore_points = row.get('sporePoints') if isinstance(row, dict) else None
+            result['public_rpc_sporePoints'] = (
+                len(spore_points) if isinstance(spore_points, list) else 0
+            )
+        except Exception as exc:
+            result['public_rpc_error'] = str(exc)
+
+    if log:
+        prefix = f'[cloud_sync] Mosaic gate obs {obs_local_id} cloud={obs_cloud_id_str or "?"}:'
+        print(f'{prefix} total_local={result["total_local"]}', flush=True)
+        print(
+            f'{prefix}   with_p1_p2={result["with_p1_p2"]} '
+            f'with_p1_p2_p3_p4={result["with_p1_p2_p3_p4"]} '
+            f'with_length_and_width_um={result["with_length_and_width_um"]}',
+            flush=True,
+        )
+        print(
+            f'{prefix}   image_has_cloud_id={result["image_has_cloud_id"]} '
+            f'measurement_has_cloud_id={result["measurement_has_cloud_id"]} '
+            f'excluded_by_measurement_type={result["excluded_by_measurement_type"]}',
+            flush=True,
+        )
+        print(f'{prefix}   by_image_type={result["by_image_type"]}', flush=True)
+        print(f'{prefix}   pusher_would_select={result["pusher_would_select"]}', flush=True)
+        if 'remote_images' in result:
+            print(
+                f'{prefix}   remote_images={result["remote_images"]} '
+                f'remote_microscope_images={result["remote_microscope_images"]} '
+                f'remote_measurements={result.get("remote_measurements", "?")}',
+                flush=True,
+            )
+        if 'public_rpc_sporePoints' in result:
+            print(
+                f'{prefix}   public_rpc_sporePoints={result["public_rpc_sporePoints"]}',
+                flush=True,
+            )
+        for key in ('remote_images_error', 'remote_measurements_error', 'public_rpc_error'):
+            if key in result:
+                print(f'{prefix}   {key}={result[key]!r}', flush=True)
+
+    return result
+
+
+def _push_spore_mosaic_for_observation(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    obs_cloud_id: str,
+) -> str:
+    """Generate + upload one public spore mosaic (atlas + tile manifest).
+
+    Best-effort: for anything other than an auth / temporary-unavailable
+    error, the function logs a `[cloud_sync] Mosaic …` line and returns a
+    short status string (see `MOSAIC_STATUS_*` constants) instead of
+    raising, so a mosaic problem never breaks the rest of an observation
+    sync. Auth / temporary errors DO propagate so a stale token or 503
+    aborts the caller cleanly instead of quietly turning every remaining
+    observation into a `fail_*` line.
+
+    Runs only when the observation has `spore_data_visibility='public'`
+    and at least one microscope measurement already has a cloud id —
+    matching the visibility surface of the public observation RPC. The
+    per-measurement `thumb_key` / `cropUrl` fallback on the public RPC
+    remains authoritative when this step is skipped or fails.
+    """
+    if not obs_cloud_id:
+        return MOSAIC_STATUS_SKIP_NO_OBSERVATION
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT spore_data_visibility FROM observations WHERE id = ?',
+            (obs_local_id,),
+        )
+        obs_row = cursor.fetchone()
+        if obs_row is None:
+            return MOSAIC_STATUS_SKIP_NO_OBSERVATION
+        observation_row = dict(obs_row)
+        visibility = str(observation_row.get('spore_data_visibility') or 'public').strip().lower()
+        if visibility != 'public':
+            print(
+                f'[cloud_sync] Mosaic skip obs {obs_local_id}: '
+                f'spore_data_visibility={visibility!r}',
+                flush=True,
+            )
+            return MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA
+
+        cursor.execute(
+            '''
+            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
+                   m.gallery_rotation, m.cloud_id,
+                   i.cloud_id                 AS image_cloud_id,
+                   i.filepath                 AS image_filepath,
+                   i.scale_microns_per_pixel  AS scale_microns_per_pixel,
+                   i.resample_scale_factor    AS resample_scale_factor
+            FROM spore_measurements m
+            JOIN images i ON i.id = m.image_id
+            WHERE i.observation_id = ?
+              AND i.image_type = 'microscope'
+              AND i.cloud_id IS NOT NULL
+              AND m.cloud_id IS NOT NULL
+              AND m.length_um IS NOT NULL
+              AND m.width_um  IS NOT NULL
+              AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
+              AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
+              AND (
+                m.measurement_type IS NULL
+                OR m.measurement_type = ''
+                OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
+              )
+            ORDER BY m.id
+            ''',
+            (obs_local_id,),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    if not rows:
+        print(
+            f'[cloud_sync] Mosaic skip obs {obs_local_id}: no eligible public measurements',
+            flush=True,
+        )
+        return MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS
+
+    # Local import to keep the top-level cloud_sync import graph unchanged
+    # for tests that stub PIL or the mosaic module.
+    from utils.cloud_spore_mosaic import (
+        DEFAULT_TILE_SIZE_PX,
+        MOSAIC_PIPELINE_VERSION,
+        build_spore_mosaic,
+        build_storage_key,
+        compute_content_digest,
+        sources_from_measurement_rows,
+    )
+
+    # Cheap change-detection guard. If nothing that determines the mosaic
+    # bytes or tile manifest has changed AND a valid remote mosaic row
+    # still exists, we can skip Pillow / WebP / R2 / tile-rewrite entirely.
+    # Missing remote row → rebuild even when the local signature matches,
+    # so a wiped mosaic (or a fresh pipeline version) always recovers.
+    new_signature = _local_spore_mosaic_signature(obs_local_id, rows, observation_row)
+    stored_signature = _load_local_mosaic_signature(obs_local_id)
+    if new_signature and stored_signature and new_signature == stored_signature:
+        try:
+            remote_ok = _remote_mosaic_row_exists(
+                client, obs_cloud_id, MOSAIC_PIPELINE_VERSION,
+            )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            remote_ok = False
+        if remote_ok:
+            print(
+                f'[cloud_sync] Mosaic skip obs {obs_local_id}: '
+                f'signature unchanged',
+                flush=True,
+            )
+            return MOSAIC_STATUS_SKIP_UNCHANGED
+        print(
+            f'[cloud_sync] Mosaic rebuild obs {obs_local_id}: '
+            f'signature unchanged but remote mosaic row missing',
+            flush=True,
+        )
+
+    print(
+        f'[cloud_sync] Mosaic start obs {obs_local_id}: measurements={len(rows)}',
+        flush=True,
+    )
+    sources, source_skipped = sources_from_measurement_rows(
+        rows,
+        image_dir=get_images_dir(),
+    )
+    for mid, reason in source_skipped:
+        print(f'[cloud_sync]   Mosaic source skip m={mid}: {reason}', flush=True)
+
+    if not sources:
+        # Distinguish "we couldn't open any file" (fixable by resyncing
+        # media) from "the source rows themselves were malformed".
+        all_missing = bool(source_skipped) and all(
+            reason == 'source image missing' for _mid, reason in source_skipped
+        )
+        code = (
+            MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+            if all_missing
+            else MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES
+        )
+        print(
+            f'[cloud_sync] Mosaic abort obs {obs_local_id}: no usable sources ({code})',
+            flush=True,
+        )
+        return code
+
+    try:
+        manifest = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic build failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_BUILD
+
+    if manifest is None or not manifest.tiles:
+        print(
+            f'[cloud_sync] Mosaic empty obs {obs_local_id}: nothing to upload',
+            flush=True,
+        )
+        return MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+
+    for mid, reason in manifest.skipped:
+        print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
+
+    print(
+        (
+            f'[cloud_sync] Mosaic physical crop plan obs {obs_local_id}: '
+            f'common_crop_um=({manifest.common_crop_width_um:.3f},{manifest.common_crop_height_um:.3f}) '
+            f'output_tile=({manifest.tile_width_px},{manifest.tile_height_px})'
+        ),
+        flush=True,
+    )
+
+    # Diagnostic log for the first few tiles so we can see, at a glance,
+    # whether the polygon geometry landed for a given observation. Useful
+    # when a backfill run "succeeds" but the landing tile still looks
+    # empty — the log makes it obvious whether the pipeline is emitting
+    # polygon overlays or falling back to bare tiles.
+    _DIAG_TILE_LIMIT = 3
+    with_polygon = sum(
+        1 for tile in manifest.tiles if tile.overlay_json is not None
+    )
+    print(
+        (
+            f'[cloud_sync] Mosaic diag obs {obs_local_id}: '
+            f'tiles={len(manifest.tiles)} with_polygon={with_polygon}'
+        ),
+        flush=True,
+    )
+    for tile in manifest.tiles[:_DIAG_TILE_LIMIT]:
+        diag = tile.diagnostics or {}
+        print(
+            (
+                f'[cloud_sync]   Mosaic diag m={tile.measurement_id} '
+                f'p3={diag.get("have_p3")} p4={diag.get("have_p4")} '
+                f'gallery_rot={diag.get("gallery_rotation_deg")} '
+                f'rot={diag.get("rotation_deg")} '
+                f'L_um={diag.get("length_um")} W_um={diag.get("width_um")} '
+                f'L_axis_px={diag.get("length_axis_px")} '
+                f'W_axis_px={diag.get("width_axis_px")} '
+                f'L_pxpum={diag.get("length_axis_px_per_um")} '
+                f'W_pxpum={diag.get("width_axis_px_per_um")} '
+                f'fallback={diag.get("scale_fallback_reason")} '
+                f'natural_um={diag.get("natural_crop_um")} '
+                f'common_um={diag.get("common_crop_um")} '
+                f'crop_px={diag.get("crop_px")} '
+                f'crop_after={diag.get("crop_rect_after_shift")} '
+                f'padded=({diag.get("padded_x")},{diag.get("padded_y")}) '
+                f'tile=({tile.w_px},{tile.h_px}) '
+                f'polygon={diag.get("polygon_present")} '
+                f'reason={diag.get("reason_no_polygon")} '
+                f'poly_bounds={diag.get("polygon_bounds")}'
+            ),
+            flush=True,
+        )
+
+    version = int(MOSAIC_PIPELINE_VERSION)
+    # Content-address the storage key so `Cache-Control: immutable` is safe:
+    # the URL changes on every byte change, so browsers/CDNs never return
+    # stale mosaic bytes for an updated observation. The DB version stays
+    # 1 — only the storage key rotates.
+    content_digest = compute_content_digest(manifest.image_bytes)
+    storage_key = build_storage_key(client.user_id, obs_cloud_id, version, content_digest)
+    cache_control = 'public, max-age=31536000, immutable'
+    upload_meta = {
+        'user_id': client.user_id,
+        'uploaded_at': datetime.now(timezone.utc).isoformat(),
+        'uploaded_by': client.user_id,
+        'upload_mode': 'full',
+        'upload_variant': 'spore_mosaic',
+        'stored_width': str(manifest.width_px),
+        'stored_height': str(manifest.height_px),
+        'stored_bytes': str(len(manifest.image_bytes)),
+    }
+
+    try:
+        if direct_r2_runtime_available():
+            client._get_r2().put_bytes(
+                manifest.image_bytes,
+                storage_key,
+                content_type=manifest.content_type,
+                cache_control=cache_control,
+                timeout=120,
+                custom_metadata=upload_meta,
+            )
+        else:
+            worker = client._get_media_worker()
+            response = worker.put_bytes(
+                manifest.image_bytes,
+                storage_key,
+                content_type=manifest.content_type,
+                cache_control=cache_control,
+                timeout=120,
+                upload_meta=upload_meta,
+                options={
+                    'uploadMode': 'full',
+                    'uploadVariant': 'spore_mosaic',
+                    'sourceWidth': manifest.width_px,
+                    'sourceHeight': manifest.height_px,
+                    'storedWidth': manifest.width_px,
+                    'storedHeight': manifest.height_px,
+                },
+            )
+            confirmed = _normalize_cloud_media_key(
+                str((response or {}).get('key') or storage_key)
+            )
+            if confirmed:
+                storage_key = confirmed
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic upload failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_UPLOAD
+
+    try:
+        existing = client._get(
+            f'spore_measurement_mosaics'
+            f'?observation_id=eq.{obs_cloud_id}'
+            f'&version=eq.{version}'
+            f'&user_id=eq.{client.user_id}'
+            f'&select=id'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic lookup failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP
+
+    mosaic_payload: dict = {
+        'observation_id': obs_cloud_id,
+        'user_id': client.user_id,
+        'storage_key': storage_key,
+        'width_px': manifest.width_px,
+        'height_px': manifest.height_px,
+        'tile_size_px': manifest.tile_size_px,
+        'version': version,
+        # Per-tile geometry + physical scale. The web contract added
+        # nullable columns for these in migration
+        # 20260721120000_add_mosaic_scale_and_image_scale_to_public_rpcs
+        # so landing can render an atlas-wide scale bar without baking
+        # it into pixels. Sent as `None` when the manifest reports a
+        # non-positive value so the cloud row stores NULL rather than 0.
+        'tile_width_px': (
+            int(manifest.tile_width_px) if manifest.tile_width_px > 0 else None
+        ),
+        'tile_height_px': (
+            int(manifest.tile_height_px) if manifest.tile_height_px > 0 else None
+        ),
+        'common_crop_width_um': (
+            float(manifest.common_crop_width_um)
+            if manifest.common_crop_width_um > 0 else None
+        ),
+        'common_crop_height_um': (
+            float(manifest.common_crop_height_um)
+            if manifest.common_crop_height_um > 0 else None
+        ),
+    }
+
+    try:
+        if existing:
+            mosaic_id = str(existing[0]['id'])
+            patch_payload = dict(mosaic_payload)
+            patch_payload['updated_at'] = datetime.now(timezone.utc).isoformat()
+            client._patch(f'spore_measurement_mosaics?id=eq.{mosaic_id}', patch_payload)
+        else:
+            rows_ret = client._post('spore_measurement_mosaics', mosaic_payload)
+            mosaic_id = str(rows_ret[0]['id']) if rows_ret else ''
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic upsert failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
+
+    if not mosaic_id:
+        print(
+            f'[cloud_sync] Mosaic upsert returned no id obs {obs_local_id}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
+
+    # Refresh tile manifest: DELETE any existing tiles for the
+    # measurement ids we're about to insert, then bulk INSERT.
+    #
+    # We filter by `measurement_id` (the tile table PK) rather than
+    # by `mosaic_id` so a version bump correctly clears the previous
+    # version's tiles: on the v1 → v2 transition the freshly-upserted
+    # v2 mosaic row has no tiles yet, so filtering by mosaic_id would
+    # be a no-op and leave the v1 tiles in place, which then collide
+    # on INSERT because the PK is (measurement_id) and unique across
+    # all mosaic versions.
+    tile_measurement_ids = [
+        str(tile.cloud_measurement_id).strip()
+        for tile in manifest.tiles
+        if str(tile.cloud_measurement_id or '').strip()
+    ]
+    if tile_measurement_ids:
+        # PostgREST `in.(a,b,c)` filter. Bigint ids don't need quoting.
+        # Batch in chunks to keep the URL under typical proxy limits
+        # even for observations with hundreds of measurements.
+        try:
+            _BATCH = 200
+            for i in range(0, len(tile_measurement_ids), _BATCH):
+                chunk = tile_measurement_ids[i : i + _BATCH]
+                ids_expr = ','.join(chunk)
+                client._delete(
+                    f'spore_measurement_mosaic_tiles?measurement_id=in.({ids_expr})'
+                )
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            print(
+                f'[cloud_sync] Mosaic tile cleanup failed obs {obs_local_id}: {exc}',
+                flush=True,
+            )
+            return MOSAIC_STATUS_FAIL_TILE_CLEANUP
+
+    tile_payload = [
+        {
+            'measurement_id': tile.cloud_measurement_id,
+            'mosaic_id': mosaic_id,
+            'x_px': tile.x_px,
+            'y_px': tile.y_px,
+            'w_px': tile.w_px,
+            'h_px': tile.h_px,
+            'overlay_json': tile.overlay_json,
+        }
+        for tile in manifest.tiles
+    ]
+
+    try:
+        client._post('spore_measurement_mosaic_tiles', tile_payload)  # bulk insert
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic tile insert failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_TILE_INSERT
+
+    # Only persist the signature once tile rewrite completes cleanly.
+    # A partial success (upload OK but tile insert failed) leaves the
+    # cache untouched so the next sync retries the rebuild.
+    if new_signature:
+        try:
+            _store_local_mosaic_signature(obs_local_id, new_signature)
+        except Exception as exc:  # pragma: no cover
+            print(
+                f'[cloud_sync] Mosaic signature persist failed obs {obs_local_id}: {exc}',
+                flush=True,
+            )
+
+    overlay_count = sum(1 for t in manifest.tiles if t.overlay_json is not None)
+    print(
+        (
+            f'[cloud_sync] Mosaic done obs {obs_local_id}: '
+            f'tiles={len(manifest.tiles)} overlays={overlay_count} '
+            f'size={manifest.width_px}x{manifest.height_px} '
+            f'tile_size={manifest.tile_size_px} '
+            f'bytes={len(manifest.image_bytes)} '
+            f'storage_key={storage_key}'
+        ),
+        flush=True,
+    )
+    return MOSAIC_STATUS_GENERATED
+
+
+def backfill_public_spore_mosaics(
+    client: 'SporelyCloudClient',
+    *,
+    observation_cloud_ids: list[int] | list[str] | None = None,
+    limit: int | None = None,
+    push_measurements: bool = True,
+    ensure_image_metadata: bool = True,
+    diagnose: bool = False,
+) -> dict:
+    """Explicit backfill/repair path for public spore mosaics.
+
+    Iterates every locally-known observation that already has a cloud id
+    and calls `_push_spore_mosaic_for_observation` for each — same code
+    path normal sync uses, but bypassing the "dirty observation" filter
+    that skips clean rows during regular pushes. This lets a user
+    (re)generate mosaics for observations that were synced before mosaic
+    support existed, or for a specific set of `--observation-cloud-id`
+    values during debugging.
+
+    Arguments:
+    * `observation_cloud_ids` — optional whitelist. Values may be ints or
+      digit strings; they are compared as strings against the local
+      `observations.cloud_id` column.
+    * `limit` — optional cap on how many observations to process. Applied
+      after the whitelist filter.
+
+    Auth / temporary-unavailable errors from the underlying pusher
+    propagate here, aborting the backfill mid-run so a bad token doesn't
+    silently mark every remaining observation as `failed`. Every other
+    per-observation failure is logged and the loop continues.
+
+    Returns a counts dict with these keys (all ints):
+      candidates, generated,
+      skipped_no_cloud_id, skipped_no_public_spores,
+      skipped_no_measurement_cloud_ids, skipped_missing_source_images,
+      failed.
+    """
+    id_filter: set[str] | None = None
+    if observation_cloud_ids is not None:
+        id_filter = {
+            str(value).strip()
+            for value in observation_cloud_ids
+            if str(value or '').strip()
+        }
+
+    print(
+        (
+            f'[cloud_sync] Mosaic backfill: start '
+            f'observation_cloud_ids='
+            f'{sorted(id_filter) if id_filter is not None else None} '
+            f'limit={limit}'
+        ),
+        flush=True,
+    )
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id AS local_id,
+                   cloud_id,
+                   spore_data_visibility
+            FROM observations
+            WHERE cloud_id IS NOT NULL AND cloud_id != ''
+            ORDER BY id
+            '''
+        )
+        all_rows = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    filtered: list[dict] = []
+    for row in all_rows:
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        if id_filter is not None and cloud_id not in id_filter:
+            continue
+        filtered.append({**row, 'cloud_id': cloud_id})
+        if limit is not None and len(filtered) >= limit:
+            break
+
+    counts = {
+        'candidates': len(filtered),
+        'generated': 0,
+        'skipped_no_cloud_id': 0,          # placeholder for symmetry — pre-filtered
+        'skipped_no_public_spores': 0,
+        'skipped_no_measurement_cloud_ids': 0,
+        'skipped_missing_source_images': 0,
+        'skipped_unchanged': 0,
+        'failed': 0,
+    }
+
+    if id_filter is not None:
+        # Whitelist entries that never matched anything locally deserve a log.
+        matched = {str(row.get('cloud_id') or '').strip() for row in filtered}
+        for wanted in sorted(id_filter - matched):
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local=? cloud={wanted} '
+                f'reason=no_local_observation_with_cloud_id',
+                flush=True,
+            )
+
+    for row in filtered:
+        local_id = int(row['local_id'])
+        cloud_id = str(row['cloud_id'])
+        print(
+            f'[cloud_sync] Mosaic backfill: candidate local={local_id} cloud={cloud_id}',
+            flush=True,
+        )
+
+        # Anchor every local microscope image that has public-eligible spore
+        # measurements to a metadata-only cloud row (storage_path = NULL).
+        # This is what unlocks the "26 vs 8 sporePoints" gap for
+        # observations whose microscope frames were intentionally not
+        # uploaded. No image bytes are uploaded here — only metadata.
+        if ensure_image_metadata:
+            try:
+                _ensure_metadata_only_microscope_images_for_observation(
+                    client, local_id, cloud_id,
+                )
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                print(
+                    f'[cloud_sync] Mosaic image metadata: observation failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+
+        # Ensure every locally-known measurement for this observation exists
+        # in the cloud before we build a mosaic. Otherwise the pusher's
+        # `m.cloud_id IS NOT NULL` gate drops measurements that were made
+        # in the desktop app after the last regular sync — which is exactly
+        # what caused observations to show only a subset of their spores in
+        # the public strip.
+        if push_measurements:
+            try:
+                _push_measurements_for_observation(client, local_id)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                print(
+                    f'[cloud_sync] Mosaic backfill: measurement push failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+
+        if diagnose:
+            try:
+                diagnose_public_spore_mosaic_gates(
+                    client, local_id, cloud_id, include_remote=True, log=True,
+                )
+            except Exception as exc:
+                print(
+                    f'[cloud_sync] Mosaic backfill: diagnose failed '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+
+        # Backfill always bypasses the sync-time mosaic signature guard so
+        # an operator can force a rebuild without touching the local rows.
+        # Clearing the cached signature is enough — the pusher's own check
+        # requires a non-empty stored value to skip, so a NULL means
+        # "always rebuild, then store the fresh signature on success".
+        _clear_local_mosaic_signature(local_id)
+
+        try:
+            status = _push_spore_mosaic_for_observation(client, local_id, cloud_id)
+        except Exception as exc:
+            # Auth / temporary errors abort the whole backfill run. Everything
+            # else was translated to a status code inside the pusher; if we
+            # still see an exception it's a real unexpected error, so count
+            # it as a failure but don't stop the loop.
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                print(
+                    f'[cloud_sync] Mosaic backfill: aborting on auth/temporary error '
+                    f'local={local_id} cloud={cloud_id}: {exc}',
+                    flush=True,
+                )
+                raise
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: unexpected failure local={local_id} '
+                f'cloud={cloud_id}: {exc}',
+                flush=True,
+            )
+            continue
+
+        if status == MOSAIC_STATUS_GENERATED:
+            counts['generated'] += 1
+        elif status == MOSAIC_STATUS_SKIP_UNCHANGED:
+            # Backfill always passes force_rebuild=True so this branch is
+            # only hit from a stray direct pusher call; count it as a
+            # skip but keep it separate from failure buckets.
+            counts['skipped_unchanged'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=signature_unchanged',
+                flush=True,
+            )
+        elif status == MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA:
+            counts['skipped_no_public_spores'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_public_spore_data',
+                flush=True,
+            )
+        elif status == MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS:
+            counts['skipped_no_measurement_cloud_ids'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_measurement_cloud_ids',
+                flush=True,
+            )
+        elif status in (
+            MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES,
+            MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES,
+        ):
+            counts['skipped_missing_source_images'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=missing_source_images',
+                flush=True,
+            )
+        elif status == MOSAIC_STATUS_SKIP_NO_OBSERVATION:
+            # We only ever queue observations that came from the DB, so this
+            # shouldn't fire. Count it as a failure rather than silently drop.
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: skipped local={local_id} '
+                f'cloud={cloud_id} reason=no_observation_row',
+                flush=True,
+            )
+        elif status.startswith('fail_'):
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: failed local={local_id} '
+                f'cloud={cloud_id} reason={status}',
+                flush=True,
+            )
+        else:
+            # Unknown status — count as failed so we notice.
+            counts['failed'] += 1
+            print(
+                f'[cloud_sync] Mosaic backfill: unknown status local={local_id} '
+                f'cloud={cloud_id} reason={status!r}',
+                flush=True,
+            )
+
+    total_skipped = (
+        counts['skipped_no_cloud_id']
+        + counts['skipped_no_public_spores']
+        + counts['skipped_no_measurement_cloud_ids']
+        + counts['skipped_missing_source_images']
+        + counts['skipped_unchanged']
+    )
+    print(
+        (
+            f'[cloud_sync] Mosaic backfill: complete '
+            f'candidates={counts["candidates"]} generated={counts["generated"]} '
+            f'skipped={total_skipped} failed={counts["failed"]}'
+        ),
+        flush=True,
+    )
+    return counts
 
 
 _SETTING_CLOUD_EXIF_BACKFILL_STATE = 'cloud_exif_backfill_checked'
@@ -11795,8 +16124,19 @@ def pull_all(
     remote_obs: list[dict] | None = None,
     sync_calibrations: bool = True,
     materialize_remote_images: bool = True,
+    sync_images: bool = True,
+    full_pull: bool = True,
 ) -> dict:
-    """Pull new cloud observations and apply remote updates to clean local rows."""
+    """Pull new cloud observations and apply remote updates to clean local rows.
+
+    ``full_pull=False`` enables the fast path: candidates are pruned to just
+    the observations whose remote ``updated_at`` is newer than local
+    ``synced_at`` (or whose local row / snapshot is missing). Bulk image and
+    measurement fetches only run when there is at least one active candidate,
+    and they only fetch the active cloud IDs — not all 1500+ images in the
+    account. If no observation actually changed remotely, the pull returns
+    early after logging a `no-op fast path` line.
+    """
     # Pull preflight: EXIF backfill, candidate build, and the bulk image /
     # measurement fetches all run before the first per-observation progress
     # update. On a no-change sync these were part of the silent gap that left the
@@ -11806,7 +16146,7 @@ def pull_all(
     _set_progress_phase(progress_state, 'pull_preflight', phase_total=3)
     _emit_progress(progress_cb, "Preparing cloud observations…", progress_state)
 
-    _emit_progress(progress_cb, "Checking image EXIF metadata…", progress_state)
+    _emit_progress(progress_cb, "Checking local metadata cache…", progress_state)
     exif_start = _cloud_sync_perf_counter()
     exif_counts = _backfill_missing_exif_on_cloud_images() or {}
     exif_elapsed = _cloud_sync_perf_counter() - exif_start
@@ -11853,14 +16193,170 @@ def pull_all(
             candidate_cloud_ids.append(cloud_id)
 
     total = len(candidates)
+
+    # Fast-path pruning + convergence.
+    #
+    # A no-op Refresh with 220 synced observations was still fetching bulk
+    # image + measurement metadata every run because 119 of them had a remote
+    # `updated_at` newer than local `synced_at`. My earlier prune passed them
+    # through to the reconciliation loop, but the reconciliation loop found
+    # nothing to do (snapshot still matched) and did NOT bump `synced_at`, so
+    # the same 119 kept surviving prune forever.
+    #
+    # Two changes below:
+    #  1. Reason-annotated prune: for each candidate, record exactly WHY it
+    #     survived (missing_snapshot / remote_newer / no_local / missing_ts /
+    #     parse_error).
+    #  2. Cheap observation-only equality check for the "remote_newer" and
+    #     "missing_snapshot" reasons: if the observation fields already match
+    #     the stored snapshot, stamp synced (converging next run) and refresh
+    #     the snapshot with the fresh remote row — no image / measurement
+    #     bulk fetch required.
+    fast_path_skipped_ids: list[str] = []
+    fast_path_reason_counts: dict[str, int] = {}
+    fast_path_reason_samples: list[str] = []
+    fast_path_converged_ids: list[str] = []
+
+    def _record_reason(reason: str, cloud_id: str, remote_updated, local_synced, local_id) -> None:
+        fast_path_reason_counts[reason] = fast_path_reason_counts.get(reason, 0) + 1
+        if len(fast_path_reason_samples) < 20:
+            fast_path_reason_samples.append(
+                f"cloud={cloud_id or '?'} local={local_id or '?'} reason={reason} "
+                f"remote_updated_at={remote_updated} local_synced_at={local_synced}"
+            )
+
+    if not full_pull:
+        pruned: list[tuple[dict, dict | None, str]] = []
+        pruned_cloud_ids: list[str] = []
+        for remote, local_obs, stored_snapshot in candidates:
+            cloud_id = str(remote.get('id') or '').strip()
+            local_id = _safe_int((local_obs or {}).get('id')) if local_obs else None
+            remote_updated_raw = remote.get('updated_at')
+            local_synced_raw = (local_obs or {}).get('synced_at')
+
+            if local_obs is None:
+                _record_reason('no_local', cloud_id, remote_updated_raw, local_synced_raw, local_id)
+                pruned.append((remote, local_obs, stored_snapshot))
+                if cloud_id:
+                    pruned_cloud_ids.append(cloud_id)
+                continue
+
+            remote_updated = _parse_sync_timestamp(remote_updated_raw)
+            local_synced = _parse_sync_timestamp(local_synced_raw)
+
+            if not stored_snapshot:
+                # Cheap convergence: if the remote observation fields already
+                # match a synthesized empty baseline, we still need to seed a
+                # snapshot but we can skip the bulk image/measurement fetch
+                # when the local row has no images we haven't already pulled.
+                # For safety this branch remains a candidate — first-time
+                # snapshot capture is a real event.
+                _record_reason('missing_snapshot', cloud_id, remote_updated_raw, local_synced_raw, local_id)
+                pruned.append((remote, local_obs, stored_snapshot))
+                if cloud_id:
+                    pruned_cloud_ids.append(cloud_id)
+                continue
+
+            if remote_updated is None or local_synced is None:
+                _record_reason('missing_ts', cloud_id, remote_updated_raw, local_synced_raw, local_id)
+                pruned.append((remote, local_obs, stored_snapshot))
+                if cloud_id:
+                    pruned_cloud_ids.append(cloud_id)
+                continue
+
+            if remote_updated > local_synced:
+                # Cheap convergence: server bumped updated_at but the
+                # observation-level fields may still match the stored
+                # snapshot. If they do, stamp synced_at + refresh the
+                # snapshot right here so the next fast pull skips this row
+                # without a bulk image/measurement fetch.
+                snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
+                snapshot_obs = snapshot_data.get('observation') or {}
+                baseline_payload = _baseline_observation_compare_payload(snapshot_obs)
+                remote_payload = _observation_compare_payload(remote, local=False)
+                observation_fields_match = all(
+                    _observation_field_values_match(
+                        field,
+                        remote_payload.get(field),
+                        baseline_payload.get(field),
+                    )
+                    for field in _SNAPSHOT_OBS_FIELDS
+                    if field not in {'id', 'desktop_id'}
+                )
+                local_status = str((local_obs or {}).get('sync_status') or '').strip().lower()
+                if observation_fields_match and local_status != 'dirty':
+                    # Converge without deep fetch: stamp synced + refresh
+                    # snapshot (preserving previous images/measurements).
+                    if cloud_id and local_id and local_id > 0:
+                        _stamp_observation_synced(local_id, cloud_id)
+                        try:
+                            snapshot_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
+                            snapshot_measurements = [dict(row or {}) for row in (snapshot_data.get('measurements') or [])]
+                            _store_remote_snapshot(
+                                client,
+                                cloud_id,
+                                remote=remote,
+                                remote_images=snapshot_images,
+                                remote_measurements=snapshot_measurements,
+                            )
+                        except Exception as snap_exc:
+                            print(
+                                f"[cloud_sync] fast pull: could not refresh snapshot for obs "
+                                f"{local_id}: {snap_exc}",
+                                flush=True,
+                            )
+                    fast_path_converged_ids.append(cloud_id or '?')
+                    continue
+
+                _record_reason('remote_newer', cloud_id, remote_updated_raw, local_synced_raw, local_id)
+                pruned.append((remote, local_obs, stored_snapshot))
+                if cloud_id:
+                    pruned_cloud_ids.append(cloud_id)
+                continue
+
+            fast_path_skipped_ids.append(cloud_id or '?')
+        candidates = pruned
+        candidate_cloud_ids = pruned_cloud_ids
+        total = len(candidates)
+
     candidate_elapsed = _cloud_sync_perf_counter() - candidate_start
     print(
         f"[cloud_sync] pull preflight: candidate build complete "
-        f"count={total} duration={candidate_elapsed * 1000:.0f}ms",
+        f"count={total} duration={candidate_elapsed * 1000:.0f}ms "
+        f"full_pull={full_pull} skipped_unchanged={len(fast_path_skipped_ids)} "
+        f"fast_path_converged={len(fast_path_converged_ids)}",
         flush=True,
     )
+    if not full_pull and fast_path_reason_counts:
+        reasons_str = ", ".join(f"{k}={v}" for k, v in sorted(fast_path_reason_counts.items()))
+        print(
+            f"[cloud_sync] fast pull candidate reasons: {reasons_str}",
+            flush=True,
+        )
+        if _cloud_sync_debug_enabled():
+            for sample in fast_path_reason_samples:
+                print(f"[cloud_sync]   {sample}", flush=True)
     # Candidate-build step complete.
     _advance_progress(progress_state, 1)
+
+    # Fast-path: if nothing needs pulling, short-circuit the bulk fetches.
+    if not full_pull and total == 0:
+        print(
+            f"[cloud_sync] no-op fast path: local_dirty=(see push) "
+            f"remote_changed=0 full_pull=False pull_candidates=0 "
+            f"skipped_unchanged={len(fast_path_skipped_ids)}",
+            flush=True,
+        )
+        return {
+            'pulled': 0,
+            'imported_local_ids': [],
+            'errors': errors,
+            'calibrations_pulled': calibration_result.get('pulled', 0),
+            'calibrations_total': calibration_result.get('total', 0),
+            'fast_path_used': True,
+            'skipped_unchanged': len(fast_path_skipped_ids),
+        }
+
     if total:
         _emit_progress(progress_cb, "Loading cloud image metadata…", progress_state)
     bulk_start = _cloud_sync_perf_counter()
@@ -11947,16 +16443,6 @@ def pull_all(
                 )
                 if cloud_id:
                     client.set_desktop_id(cloud_id, local_id)
-                    # The prefetched remote rows are mutated in-place when
-                    # cloud desktop IDs are written back, so the snapshot can
-                    # reuse them without another fetch.
-                    _store_remote_snapshot(
-                        client,
-                        cloud_id,
-                        remote=remote,
-                        remote_images=remote_images,
-                        remote_measurements=remote_measurements,
-                    )
                 _refresh_local_cloud_media_signature(local_id)
                 pulled += 1
                 imported_local_ids.append(int(local_id))
@@ -11978,7 +16464,12 @@ def pull_all(
                     local_observation_id=local_id,
                     cloud_observation_id=cloud_id,
                 )
-                tombstoned_remote_image_keys = _deleted_remote_image_identity_keys(remote_images_raw)
+                snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
+                baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
+                tombstoned_remote_image_keys = (
+                    _deleted_remote_image_identity_keys(remote_images_raw)
+                    | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
+                )
                 remote_images = [
                     dict(row or {})
                     for row in remote_images_raw
@@ -11991,6 +16482,7 @@ def pull_all(
                     stored_snapshot,
                 )
                 should_store_snapshot = True
+                store_full_snapshot = True
                 local_media_changed = False
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
@@ -12019,18 +16511,24 @@ def pull_all(
                         materialize_remote_images=materialize_remote_images,
                     )
                     errors.extend(measurement_result.get('warnings') or [])
-                    if measurement_result.get('conflict'):
-                        _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                    remote_media_pending = bool(
+                        _remote_images_missing_locally(local_id, remote_images)
+                        or measurement_result.get('skipped_materialization')
+                        or measurement_result.get('failed')
+                    )
+                    materialization_failed = bool(materialize_remote_images and remote_media_pending)
+                    if measurement_result.get('conflict') or materialization_failed:
+                        _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
-                    _refresh_local_cloud_media_signature(local_id)
+                    if not remote_media_pending:
+                        _refresh_local_cloud_media_signature(local_id)
+                    store_full_snapshot = not remote_media_pending and not bool(measurement_result.get('conflict'))
                     pulled += 1
                 elif remote_changed:
-                    snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
                     baseline_obs = _baseline_observation_compare_payload(
                         snapshot_data.get('observation') or {}
                     )
-                    baseline_images = [dict(row or {}) for row in (snapshot_data.get('images') or [])]
                     field_changes = _analyze_observation_field_changes(local_obs, remote, baseline_obs)
                     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
                     remote_image_changes = _analyze_image_changes(
@@ -12134,15 +16632,61 @@ def pull_all(
                         materialize_remote_images=materialize_remote_images,
                     )
                     errors.extend(measurement_result.get('warnings') or [])
+                    remote_media_pending = bool(
+                        (not materialize_remote_images and _remote_images_missing_locally(local_id, remote_images))
+                        or measurement_result.get('skipped_materialization')
+                        or measurement_result.get('failed')
+                    )
+                    effective_media_changed = local_media_changed if sync_images else False
                     remaining_local_changes = _remaining_local_changes_after_remote_merge(
                         field_changes,
-                        local_media_changed=local_media_changed,
-                    ) or bool(measurement_result.get('conflict'))
+                        local_media_changed=effective_media_changed,
+                    ) or bool(measurement_result.get('conflict')) or bool(
+                        materialize_remote_images and remote_media_pending
+                    )
                     should_store_snapshot = should_store_snapshot and not bool(conflict_fields)
-                    _set_observation_sync_state(local_id, cloud_id, dirty=remaining_local_changes)
-                    if not local_media_changed:
+                    if remaining_local_changes:
+                        _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
+                    else:
+                        _stamp_observation_synced(local_id, cloud_id)
+                    if remaining_local_changes:
+                        # Explain why the pull left this observation dirty so a
+                        # repeat sync can be diagnosed without adding ad-hoc prints.
+                        reasons: list[str] = []
+                        blocking_local_only_fields = sorted(
+                            set(field_changes.get('local_only_fields') or [])
+                            - _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+                        )
+                        if blocking_local_only_fields:
+                            reasons.append(f"local_only_fields={blocking_local_only_fields}")
+                        if field_changes.get('conflict_fields'):
+                            reasons.append(f"conflict_fields={sorted(field_changes['conflict_fields'])}")
+                        if effective_media_changed:
+                            reasons.append("local_media_changed")
+                        if measurement_result.get('conflict'):
+                            reasons.append("measurement_conflict")
+                        print(
+                            f"[cloud_sync] sync_status transition obs {local_id}: →dirty "
+                            f"caller=pull_all reasons={reasons or ['unknown']} "
+                            f"sync_images={sync_images}",
+                            flush=True,
+                        )
+                    # Metadata-only mode: even if bytes drifted, refresh the
+                    # stored signature to acknowledge current DB state so the
+                    # next sync doesn't re-flag the same drift.
+                    if (not local_media_changed or not sync_images) and not remote_media_pending:
                         _refresh_local_cloud_media_signature(local_id)
+                    store_full_snapshot = not remaining_local_changes and not bool(conflict_fields)
                     pulled += 1
+                elif not local_dirty:
+                    # Neither branch fired: the observation survived prune
+                    # (remote updated_at is newer than local synced_at, or the
+                    # timestamps couldn't be parsed) but the reconcile loop
+                    # found remote fully matched local snapshot. Stamp synced
+                    # so the next fast pull skips this row instead of paying
+                    # the bulk image + measurement fetch cost forever.
+                    if cloud_id:
+                        _stamp_observation_synced(local_id, cloud_id)
                 # Metadata-only pulls intentionally skip the retry pass because
                 # that branch exists solely to re-materialize missing cloud media.
                 if stored_snapshot and materialize_remote_images:
@@ -12179,11 +16723,16 @@ def pull_all(
                             materialize_remote_images=materialize_remote_images,
                         )
                         errors.extend(measurement_result.get('warnings') or [])
-                        if measurement_result.get('conflict'):
-                            _set_observation_sync_state(local_id, cloud_id, dirty=True)
+                        retry_remote_media_pending = bool(
+                            _remote_images_missing_locally(local_id, retry_remote_images)
+                            or measurement_result.get('skipped_materialization')
+                            or measurement_result.get('failed')
+                        )
+                        if measurement_result.get('conflict') or retry_remote_media_pending:
+                            _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                         else:
                             _stamp_observation_synced(local_id, cloud_id)
-                        if not local_media_changed:
+                        if not local_media_changed and not retry_remote_media_pending:
                             _refresh_local_cloud_media_signature(local_id)
                         if not remote_changed:
                             pulled += 1
@@ -12194,6 +16743,8 @@ def pull_all(
                         remote=remote,
                         remote_images=remote_images,
                         remote_measurements=remote_measurements,
+                        include_images=store_full_snapshot,
+                        include_measurements=store_full_snapshot,
                     )
         except Exception as e:
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
@@ -12249,14 +16800,35 @@ def _create_local_from_remote(
     spore_data_visibility = raw_spore_vis if raw_spore_vis in {'private', 'friends', 'public'} else 'public'
     raw_publish_target = str(remote.get('publish_target') or '').strip()
 
+    # Serialize the JSONB red-list payload back to TEXT so the local column
+    # matches what a fresh save from the desktop would store. Missing / empty
+    # values map to None so the badge falls back to "Not set" cleanly.
+    raw_red_categories = remote.get('red_list_categories_json')
+    normalized_red_categories = _normalize_observation_json_value(raw_red_categories)
+    if normalized_red_categories is not None and not isinstance(normalized_red_categories, str):
+        red_list_categories_json_text = json.dumps(
+            normalized_red_categories, ensure_ascii=False, sort_keys=True
+        )
+    elif isinstance(normalized_red_categories, str):
+        red_list_categories_json_text = normalized_red_categories
+    else:
+        red_list_categories_json_text = None
+    red_list_category_text = str(remote.get('red_list_category') or '').strip() or None
+
     # Map cloud columns to create_observation kwargs
     remote_captured_at = str(remote.get('captured_at') or '').strip()
+    genus, species, species_guess = resolve_observation_taxon_fields(
+        remote.get('genus'),
+        remote.get('species'),
+        remote.get('species_guess'),
+        remote.get('ai_selected_scientific_name'),
+    )
     kwargs = dict(
         date=remote_captured_at or remote.get('date') or datetime.now().strftime('%Y-%m-%d'),
-        genus=remote.get('genus'),
-        species=remote.get('species'),
+        genus=genus,
+        species=species,
         common_name=remote.get('common_name'),
-        species_guess=remote.get('species_guess'),
+        species_guess=species_guess,
         location=remote.get('location'),
         habitat=remote.get('habitat'),
         notes=remote.get('notes'),
@@ -12275,6 +16847,8 @@ def _create_local_from_remote(
         ai_selected_scientific_name=remote.get('ai_selected_scientific_name'),
         ai_selected_probability=_normalize_observation_float_value(remote.get('ai_selected_probability')),
         ai_selected_at=remote.get('ai_selected_at'),
+        red_list_category=red_list_category_text,
+        red_list_categories_json=red_list_categories_json_text,
         source_type=remote.get('source_type') or 'personal',
         author=remote.get('author'),
         habitat_nin2_path=remote.get('habitat_nin2_path'),
@@ -12287,26 +16861,39 @@ def _create_local_from_remote(
         habitat_grows_on_note=remote.get('habitat_grows_on_note'),
         publish_target=normalize_publish_target(raw_publish_target) if raw_publish_target else None,
         interesting_comment=_normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
+        country_code=normalize_country_code(remote.get('country_code')),
+        region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
     )
     local_id = ObservationDB.create_observation(**kwargs)
 
-    # Stamp the cloud_id and sync_status on the newly created row
+    # Bind the cloud row immediately, but keep the observation pending until
+    # the child image / measurement import outcome is known.
     conn = get_connection()
     cursor = conn.cursor()
     update_observation_sync_state(
         cursor,
         int(local_id),
         cloud_id=remote['id'],
-        sync_status='synced',
-        synced_at=datetime.now(timezone.utc).isoformat(),
+        sync_status='dirty',
+        synced_at=None,
         clear_sync_error_state=True,
     )
     conn.commit()
     conn.close()
 
     cloud_id = str(remote.get('id') or '').strip()
+    image_result = {
+        'imported': 0,
+        'metadata_applied': 0,
+        'skipped_materialization': 0,
+        'failed': 0,
+        'warnings': [],
+        'errors': [],
+        'complete': True,
+    }
     if cloud_id:
-        _import_remote_images(
+        image_result = _import_remote_images(
+            client,
             remote,
             local_id,
             cloud_id,
@@ -12325,30 +16912,60 @@ def _create_local_from_remote(
             remote_measurements=remote_measurements,
             materialize_remote_images=materialize_remote_images,
         )
+        if image_result.get('warnings'):
+            for warning in image_result['warnings']:
+                print(f'[cloud_sync] Observation {local_id}: {warning}')
         if measurement_result.get('warnings'):
             for warning in measurement_result['warnings']:
                 print(f'[cloud_sync] Observation {local_id}: {warning}')
+        complete = bool(image_result.get('complete')) and bool(measurement_result.get('complete'))
+        if complete and not image_result.get('errors') and not measurement_result.get('errors') and not measurement_result.get('conflict'):
+            _stamp_observation_synced(local_id, cloud_id)
+        else:
+            _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
+        try:
+            _store_remote_snapshot(
+                client,
+                cloud_id,
+                remote=remote,
+                remote_images=remote_images,
+                remote_measurements=remote_measurements,
+                include_images=complete,
+                include_measurements=complete,
+            )
+        except Exception:
+            pass
 
     return local_id
 
 
 def _import_remote_images(
+    client: SporelyCloudClient | None,
     remote: dict,
     local_id: int,
-    cloud_id: str,
+    cloud_id: str | None = None,
     progress_cb: ProgressCallback | None = None,
     progress_state: dict | None = None,
     remote_index: int | None = None,
     remote_total: int | None = None,
     remote_images: list[dict] | None = None,
     materialize_remote_images: bool = True,
-) -> None:
+) -> dict:
     """Download and create local image rows for a newly pulled cloud observation."""
-    if not materialize_remote_images:
-        return
-    client = SporelyCloudClient.from_stored_credentials()
+    result = {
+        'imported': 0,
+        'metadata_applied': 0,
+        'skipped_materialization': 0,
+        'failed': 0,
+        'warnings': [],
+        'errors': [],
+        'complete': True,
+    }
     if client is None:
-        return
+        result['errors'].append('Could not load Sporely Cloud credentials.')
+        result['complete'] = False
+        return result
+    synced_at = datetime.now(timezone.utc).isoformat()
     
     remote_images_raw = (
         [dict(row or {}) for row in remote_images]
@@ -12372,11 +16989,10 @@ def _import_remote_images(
     )
     
     if not images_to_pull:
-        return
+        return result
         
     _extend_progress_total(progress_state, len(images_to_pull))
     temp_dir = Path(tempfile.mkdtemp(prefix=f'sporely_cloud_pull_{local_id}_'))
-    synced_at = datetime.now(timezone.utc).isoformat()
     try:
         for idx, image_row in enumerate(images_to_pull, start=1):
             try:
@@ -12394,21 +17010,92 @@ def _import_remote_images(
                         ),
                         progress_state,
                     )
-                
+
+                if not materialize_remote_images:
+                    if _is_metadata_only_microscope_cloud_image(image_row):
+                        local_image_id = _ensure_local_metadata_only_microscope_anchor(
+                            client,
+                            int(local_id),
+                            image_row,
+                        )
+                        if local_image_id is None:
+                            result['failed'] += 1
+                            result['complete'] = False
+                            result['errors'].append(
+                                f'obs {int(local_id)}: failed to create metadata-only microscope anchor for cloud image {cloud_image_id or "?"}'
+                            )
+                        else:
+                            result['imported'] += 1
+                            result['metadata_applied'] += 1
+                        continue
+                    result['skipped_materialization'] += 1
+                    result['complete'] = False
+                    result['warnings'].append(
+                        f"obs {int(local_id)}: deferred cloud image {cloud_image_id or '?'} because byte materialization is disabled"
+                    )
+                    continue
+
                 storage_path = _normalize_cloud_media_key(image_row.get('storage_path'))
-                if not storage_path: continue
+                if _is_metadata_only_microscope_cloud_image(image_row):
+                    local_image_id = _ensure_local_metadata_only_microscope_anchor(
+                        client,
+                        int(local_id),
+                        image_row,
+                    )
+                    if local_image_id is None:
+                        result['failed'] += 1
+                        result['complete'] = False
+                        result['errors'].append(
+                            f'obs {int(local_id)}: failed to create metadata-only microscope anchor for cloud image {cloud_image_id or "?"}'
+                        )
+                    else:
+                        result['imported'] += 1
+                        result['metadata_applied'] += 1
+                    continue
+                if not storage_path:
+                    warning = (
+                        f"obs {int(local_id)}: skipped cloud image {cloud_image_id or '?'} "
+                        f"because it is missing storage path"
+                    )
+                    print(f'[cloud_sync] Warning: {warning}')
+                    result['failed'] += 1
+                    result['complete'] = False
+                    result['warnings'].append(warning)
+                    result['errors'].append(warning)
+                    continue
 
                 image_temp_dir = temp_dir / (str(image_row.get('id') or idx).strip() or str(idx))
                 image_temp_dir.mkdir(parents=True, exist_ok=True)
                 download_path = image_temp_dir / (Path(str(image_row.get('original_filename') or '')).name or 'img.jpg')
                 client.download_image_file(storage_path, download_path)
                 download_path = _rename_to_detected_image_extension(download_path)
-                new_image_type = str(image_row.get('image_type') or 'field').strip().lower()
+                image_type = str(image_row.get('image_type') or 'field').strip().lower()
+                if image_type == 'field':
+                    lat, lon, altitude, gps_acc, datetime_str = _load_obs_exif_fallback(
+                        int(local_id),
+                        fallback_datetime=image_row.get('captured_at'),
+                    )
+                    img_lat = image_row.get('gps_latitude') if image_row.get('gps_latitude') is not None else lat
+                    img_lon = image_row.get('gps_longitude') if image_row.get('gps_longitude') is not None else lon
+                    img_alt = image_row.get('gps_altitude') if image_row.get('gps_altitude') is not None else altitude
+                    img_acc = image_row.get('gps_accuracy') if image_row.get('gps_accuracy') is not None else gps_acc
+                    _inject_obs_exif_into_field_image(
+                        download_path,
+                        img_lat,
+                        img_lon,
+                        img_alt,
+                        datetime_str,
+                        camera_model=image_row.get('camera_model'),
+                        iso=image_row.get('iso'),
+                        exposure_time=image_row.get('exposure_time'),
+                        f_number=image_row.get('f_number'),
+                        gps_accuracy=img_acc,
+                    )
 
                 local_image_id = ImageDB.add_image(
                     observation_id=int(local_id),
                     filepath=str(download_path),
-                    image_type=str(image_row.get('image_type') or 'field'),
+                    image_type=str(image_type or 'field'),
                     scale=image_row.get('scale_microns_per_pixel'),
                     notes=image_row.get('notes'),
                     micro_category=image_row.get('micro_category'),
@@ -12417,6 +17104,7 @@ def _import_remote_images(
                     mount_medium=image_row.get('mount_medium'),
                     stain=image_row.get('stain'),
                     sample_type=image_row.get('sample_type'),
+                    sample_source=_cloud_to_desktop_sample_source(image_row.get('sample_source')),
                     contrast=image_row.get('contrast'),
                     sort_order=image_row.get('sort_order'),
                     crop_mode=image_row.get('crop_mode'),
@@ -12434,6 +17122,11 @@ def _import_remote_images(
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
                 )
+                download_path = _promote_temp_imported_image_if_needed(
+                    int(local_image_id),
+                    int(local_id),
+                    temp_dir,
+                ) or download_path
                 cloud_image_id = str(image_row.get('id') or '').strip()
 
                 # Update sync metadata
@@ -12459,16 +17152,30 @@ def _import_remote_images(
                 file_sig = _file_content_signature(download_path)
                 if file_sig:
                     _store_cloud_image_file_signature(local_id, local_image_id, file_sig)
+                result['imported'] += 1
                 _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
 
             except Exception as e:
                 if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
+                detail = str(e or '').strip() or e.__class__.__name__
+                result['failed'] += 1
+                result['complete'] = False
+                result['errors'].append(
+                    f'obs {int(local_id)}: failed image import for cloud image {image_row.get("id") or "?"}: {detail}'
+                )
                 print(f'[cloud_sync] Failed image import: {e}')
             finally:
                 _advance_progress(progress_state, 1)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+    if result['failed'] or result['skipped_materialization']:
+        result['complete'] = False
+    try:
+        _normalize_cloud_pulled_image_order(int(local_id))
+    except Exception:
+        pass
+    return result
 
 
 def _import_remote_measurements_for_observation(
@@ -12481,11 +17188,27 @@ def _import_remote_measurements_for_observation(
 ) -> dict:
     warnings: list[str] = []
     if not str(cloud_id or '').strip():
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': [],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 0,
+            'complete': True,
+        }
     if client is None:
         client = SporelyCloudClient.from_stored_credentials()
     if client is None:
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': ['Could not load Sporely Cloud credentials.'],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 1,
+            'complete': False,
+        }
 
     remote_images_raw = (
         [dict(row or {}) for row in remote_images]
@@ -12506,7 +17229,15 @@ def _import_remote_measurements_for_observation(
     remote_measurements_by_obs = _group_remote_measurements_by_observation(remote_images_raw, measurement_rows_source)
     measurement_rows = [dict(row or {}) for row in remote_measurements_by_obs.get(str(cloud_id), [])]
     if not measurement_rows:
-        return {'warnings': warnings, 'conflict': False, 'imported': 0}
+        return {
+            'warnings': warnings,
+            'errors': [],
+            'conflict': False,
+            'imported': 0,
+            'skipped_materialization': 0,
+            'failed': 0,
+            'complete': True,
+        }
 
     def _load_local_images() -> tuple[dict[str, dict], dict[int, dict]]:
         local_images = ImageDB.get_images_for_observation(int(local_id))
@@ -12547,6 +17278,15 @@ def _import_remote_measurements_for_observation(
     set_measurement_desktop_id = getattr(client, 'set_measurement_desktop_id', None)
     imported = 0
     conflict = False
+    skipped_materialization = 0
+    failed = 0
+    skip_groups: dict[str, dict[str, object]] = {}
+
+    def _record_skip(key: str, remote_image_id: str | None) -> None:
+        bucket = skip_groups.setdefault(key, {'count': 0, 'image_ids': set()})
+        bucket['count'] = int(bucket['count'] or 0) + 1
+        if remote_image_id:
+            bucket['image_ids'].add(remote_image_id)
 
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
@@ -12560,29 +17300,22 @@ def _import_remote_measurements_for_observation(
             remote_image_id = str(remote_row.get('image_id') or '').strip()
             remote_image = remote_image_lookup.get(remote_image_id)
             if not remote_image:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because cloud image {remote_image_id or '?'} is unavailable"
-                )
+                _record_skip('missing_remote_image', remote_image_id or None)
                 continue
-            if not should_pull_cloud_image_to_desktop(remote_image):
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"on excluded image {remote_image_id or '?'}"
-                )
+            if not _is_spore_measurement_source_image(remote_image):
+                _record_skip('excluded_image', remote_image_id or None)
                 continue
             if remote_image_id in tombstoned_remote_image_ids:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because cloud image {remote_image_id} has a local tombstone"
-                )
+                _record_skip('tombstoned_image', remote_image_id or None)
                 continue
 
             local_image = local_images_by_cloud_id.get(remote_image_id)
             if local_image is None:
                 if not materialize_remote_images:
-                    # Measurement import for cloud images without local media is deferred
-                    # until those images are materialized on this device.
+                    skipped_materialization += 1
+                    warnings.append(
+                        f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} because cloud image {remote_image_id} has not been materialized locally"
+                    )
                     continue
                 warnings.extend(
                     _apply_remote_images_to_local(
@@ -12596,27 +17329,16 @@ def _import_remote_measurements_for_observation(
                 local_images_by_cloud_id, local_images_by_id = _load_local_images()
                 local_image = local_images_by_cloud_id.get(remote_image_id)
             if local_image is None:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because image {remote_image_id or '?'} could not be materialized"
-                )
+                _record_skip('missing_local_anchor', remote_image_id or None)
                 continue
 
-            remote_image_type = str(remote_image.get('image_type') or '').strip().lower()
-            local_image_type = str(local_image.get('image_type') or '').strip().lower()
-            if remote_image_type == 'microscope' or local_image_type == 'microscope':
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"on excluded image {remote_image_id or '?'}"
-                )
+            if not _is_spore_measurement_source_image(local_image):
+                _record_skip('excluded_image', remote_image_id or None)
                 continue
 
             local_image_id = _safe_int(local_image.get('id'))
             if local_image_id <= 0:
-                warnings.append(
-                    f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
-                    f"because the local image anchor is missing"
-                )
+                _record_skip('missing_local_anchor', remote_image_id or None)
                 continue
 
             local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
@@ -12625,7 +17347,6 @@ def _import_remote_measurements_for_observation(
                 if remote_desktop_measurement_id > 0:
                     local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
 
-            remote_payload = _measurement_compare_payload(remote_row, local=False)
             if local_measurement is None:
                 write_values = _measurement_write_values(remote_row, local_image_id)
                 cursor.execute(
@@ -12677,11 +17398,18 @@ def _import_remote_measurements_for_observation(
                     local_measurements_by_id[new_local_measurement_id] = dict(local_measurements_by_cloud_id[remote_measurement_id])
                 continue
 
-            local_payload = _measurement_compare_payload(local_measurement, local=True)
-            for identity_key in ('id', 'desktop_id'):
-                local_payload.pop(identity_key, None)
-                remote_payload.pop(identity_key, None)
-            if local_payload != remote_payload:
+            # The local image the measurement should live under has already
+            # been resolved (via local_images_by_cloud_id above), so pin both
+            # sides to the same cloud image id — image_id is identity, not
+            # content, and this stops a stale/missing local images.cloud_id
+            # from making every measurement on that image look "locally
+            # modified". Routing through the shared comparator also picks up
+            # float tolerance and sqlite/pgrest type normalisation.
+            if not _measurement_payloads_match(
+                local_measurement,
+                remote_row,
+                cloud_image_id=remote_image_id,
+            ):
                 conflict = True
                 warnings.append(
                     f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
@@ -12744,10 +17472,53 @@ def _import_remote_measurements_for_observation(
         conn.commit()
         conn.close()
 
+    for key, template in (
+        (
+            'missing_remote_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) because cloud images {image_ids} are unavailable',
+        ),
+        (
+            'excluded_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) on {image_count} excluded image(s): {image_ids}',
+        ),
+        (
+            'tombstoned_image',
+            'obs {local_id}: skipped {count} cloud measurement(s) because cloud images {image_ids} have a local tombstone',
+        ),
+        (
+            'missing_local_anchor',
+            'obs {local_id}: skipped {count} cloud measurement(s) because {image_count} image anchor(s) could not be materialized: {image_ids}',
+        ),
+    ):
+        bucket = skip_groups.get(key)
+        if not bucket:
+            continue
+        count = int(bucket.get('count') or 0)
+        if count <= 0:
+            continue
+        image_ids = sorted(
+            {str(value) for value in bucket.get('image_ids') or set()},
+            key=lambda value: (len(value), value),
+        )
+        image_ids_text = ', '.join(image_ids) if image_ids else '?'
+        image_count = len(image_ids) if image_ids else 1
+        warnings.append(
+            template.format(
+                local_id=int(local_id),
+                count=count,
+                image_ids=image_ids_text,
+                image_count=image_count,
+            )
+        )
+
     return {
         'warnings': warnings,
+        'errors': [],
         'conflict': conflict,
         'imported': imported,
+        'skipped_materialization': skipped_materialization,
+        'failed': failed,
+        'complete': not conflict and skipped_materialization == 0 and failed == 0,
     }
 
 
@@ -13001,6 +17772,18 @@ def materialize_cloud_media_for_observation(
                 local_image = local_images_by_id.get(remote_desktop_id)
 
         if local_image is not None:
+            if _is_metadata_only_microscope_cloud_image(remote_image):
+                _ensure_local_metadata_only_microscope_anchor(
+                    client,
+                    local_id,
+                    remote_image,
+                    local_image=local_image,
+                )
+                summary['skipped_already_materialized'] += 1
+                _ensure_local_cloud_link(local_image, remote_image)
+                _advance_progress(progress_state, 1)
+                continue
+
             existing_asset_path = _local_image_asset_path(local_image)
             if existing_asset_path is not None:
                 summary['skipped_already_materialized'] += 1
@@ -13040,6 +17823,22 @@ def materialize_cloud_media_for_observation(
             summary['downloaded'] += 1
             _ensure_local_cloud_link(repair_local_image, remote_image)
             local_images_by_cloud_id, local_images_by_id = _load_local_image_lookup(local_id)
+            _advance_progress(progress_state, 1)
+            continue
+
+        if _is_metadata_only_microscope_cloud_image(remote_image):
+            local_image_id = _ensure_local_metadata_only_microscope_anchor(
+                client,
+                local_id,
+                remote_image,
+            )
+            if local_image_id is None:
+                summary['failed'] += 1
+                summary['errors'].append(
+                    f'obs {local_id}: failed to materialize cloud image {cloud_image_id}'
+                )
+            else:
+                summary['skipped_already_materialized'] += 1
             _advance_progress(progress_state, 1)
             continue
 
@@ -13244,7 +18043,13 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
             existing_asset_path = _resolve_existing_local_image_asset_path(
                 str((local_image or {}).get('filepath') or '')
             )
-            if existing_asset_path is None:
+            if (
+                existing_asset_path is None
+                and _is_metadata_only_microscope_cloud_image(remote_image)
+                and _is_local_metadata_only_microscope_anchor(local_image)
+            ):
+                summary['local_images_ready'] += 1
+            elif existing_asset_path is None:
                 summary['local_images_missing_files'] += 1
             else:
                 summary['local_images_ready'] += 1

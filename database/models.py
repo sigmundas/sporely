@@ -4,6 +4,8 @@ import shutil
 import re
 import json
 import uuid
+import os
+import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from datetime import datetime
@@ -26,6 +28,7 @@ from utils.publish_targets import (
     normalize_publish_target,
     infer_publish_target_from_coords,
 )
+from database.reverse_location_lookup import normalize_country_code
 
 _UNSET = object()
 _CLOUD_APP_SETTING_KEYS = {
@@ -46,6 +49,17 @@ _CLOUD_SQLITE_SETTING_PREFIXES = (
 _CLOUD_SQLITE_SETTING_KEYS = {
     "sporely_cloud_media_signature_v1",
 }
+_OBS_DEBUG_TIMING = bool(os.environ.get("SPORELY_DEBUG_RAW_TIMING"))
+
+
+def _obs_timing_log(stage: str, start: float | None, *, detail: str = "") -> None:
+    if not _OBS_DEBUG_TIMING or start is None:
+        return
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if detail:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms | {detail}")
+    else:
+        print(f"[raw-timing] observations {stage}: {elapsed_ms:.1f} ms")
 
 # Images directory
 def _images_dir() -> Path:
@@ -989,7 +1003,9 @@ class ObservationDB:
                           ai_selected_taxon_id: str | None = None,
                           ai_selected_scientific_name: str | None = None,
                           ai_selected_probability: float | None = None,
-                          ai_selected_at: str | None = None) -> int:
+                          ai_selected_at: str | None = None,
+                          country_code: str | None = None,
+                          region_id: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -1028,6 +1044,8 @@ class ObservationDB:
         resolved_spore_visibility = str(spore_data_visibility or "public").strip().lower()
         if resolved_spore_visibility not in {"private", "friends", "public"}:
             resolved_spore_visibility = "public"
+        resolved_country_code = normalize_country_code(country_code)
+        resolved_region_id = str(region_id).strip() if isinstance(region_id, str) and region_id.strip() else None
 
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
@@ -1043,8 +1061,9 @@ class ObservationDB:
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json,
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-                                     ai_selected_probability, ai_selected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     ai_selected_probability, ai_selected_at,
+                                     country_code, region_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1059,7 +1078,8 @@ class ObservationDB:
               habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
               open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json,
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-              ai_selected_probability, ai_selected_at))
+              ai_selected_probability, ai_selected_at,
+              resolved_country_code, resolved_region_id))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1099,7 +1119,9 @@ class ObservationDB:
                            ai_selected_taxon_id: str | object = _UNSET,
                            ai_selected_scientific_name: str | object = _UNSET,
                            ai_selected_probability: float | object = _UNSET,
-                           ai_selected_at: str | object = _UNSET) -> Optional[str]:
+                           ai_selected_at: str | object = _UNSET,
+                           country_code: str | None | object = _UNSET,
+                           region_id: str | None | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1281,6 +1303,20 @@ class ObservationDB:
             if ai_selected_at is not _UNSET and (allow_nulls or ai_selected_at is not None):
                 updates.append('ai_selected_at = ?')
                 values.append(ai_selected_at)
+            if country_code is not _UNSET and (allow_nulls or country_code is not None):
+                updates.append('country_code = ?')
+                # Never fabricate a country: NULL/blank/malformed -> None.
+                values.append(normalize_country_code(country_code))
+            if region_id is not _UNSET and (allow_nulls or region_id is not None):
+                updates.append('region_id = ?')
+                # Desktop preserves whatever cloud provided; only accept string values here.
+                if region_id is None:
+                    values.append(None)
+                elif isinstance(region_id, str):
+                    text = region_id.strip()
+                    values.append(text or None)
+                else:
+                    values.append(str(region_id).strip() or None)
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)
@@ -1537,6 +1573,7 @@ class ObservationDB:
 
         Returns a list of file or folder paths that could not be deleted.
         """
+        total_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -1548,6 +1585,7 @@ class ObservationDB:
         shared_folder_ref = False
         try:
             # Collect image filepaths and observation folder before deleting rows
+            fetch_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             cursor.execute('SELECT folder_path FROM observations WHERE id = ?', (observation_id,))
             obs_row = cursor.fetchone()
             if obs_row and obs_row[0]:
@@ -1573,7 +1611,13 @@ class ObservationDB:
                 for row in cursor.fetchall()
                 if str(row[0] or '').strip()
             ]
+            _obs_timing_log(
+                "delete_observation fetch related rows",
+                fetch_start,
+                detail=f"obs_id={observation_id} images={len(image_rows)} thumbs={len(thumbnail_paths)}",
+            )
 
+            shared_refs_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             for row in image_rows:
                 for candidate in (row["filepath"], row["original_filepath"]):
                     if not candidate:
@@ -1619,8 +1663,14 @@ class ObservationDB:
                         (observation_id, folder_prefix, folder_prefix),
                     ).fetchone()
                     shared_folder_ref = bool(shared_image_row)
+            _obs_timing_log(
+                "delete_observation shared reference scan",
+                shared_refs_start,
+                detail=f"obs_id={observation_id} files={len(shared_file_refs)} folder_ref={shared_folder_ref}",
+            )
 
             # Delete dependent rows first (annotations -> measurements -> thumbnails -> images -> session logs)
+            db_delete_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
             cursor.execute('''
                 DELETE FROM spore_annotations
                 WHERE image_id IN (SELECT id FROM images WHERE observation_id = ?)
@@ -1651,6 +1701,7 @@ class ObservationDB:
             cursor.execute('DELETE FROM observations WHERE id = ?', (observation_id,))
 
             conn.commit()
+            _obs_timing_log("delete_observation database transaction", db_delete_start, detail=f"obs_id={observation_id}")
         except Exception:
             conn.rollback()
             raise
@@ -1658,6 +1709,7 @@ class ObservationDB:
             conn.close()
 
         # Remove thumbnails and image files from disk
+        file_cleanup_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         images_root = _images_dir()
         thumbnails_root = _thumbnails_dir()
         for thumb_path in sorted(set(thumbnail_paths)):
@@ -1698,6 +1750,12 @@ class ObservationDB:
             for candidate in (row["filepath"], row["original_filepath"]):
                 if candidate:
                     failed_paths.extend(_prune_empty_dirs(Path(candidate).parent, images_root))
+        _obs_timing_log(
+            "delete_observation filesystem cleanup",
+            file_cleanup_start,
+            detail=f"obs_id={observation_id} failed={len(failed_paths)}",
+        )
+        _obs_timing_log("TOTAL delete_observation", total_start, detail=f"obs_id={observation_id}")
         return failed_paths
 
 class ImageDB:
@@ -1722,7 +1780,8 @@ class ImageDB:
                   micro_category: str = None, objective_name: str = None,
                   measure_color: str = None, mount_medium: str = None,
                   stain: str = None,
-                  sample_type: str = None, contrast: str = None,
+                  sample_type: str = None, sample_source: str = None,
+                  contrast: str = None,
                   sort_order: int | None = None,
                   captured_at: object = None,
                   calibration_id: int = None,
@@ -1938,6 +1997,7 @@ class ImageDB:
             ("file_purpose", file_purpose),
             ("original_mime_type", original_mime_type),
             ("working_mime_type", working_mime_type),
+            ("sample_source", sample_source),
         ):
             if column_name not in image_columns:
                 continue
@@ -2118,6 +2178,102 @@ class ImageDB:
             conn.close()
 
     @staticmethod
+    def move_images_to_observation(
+        image_ids: list[int],
+        source_observation_id: int,
+        target_observation_id: int,
+    ) -> int:
+        """Move images locally and republish cloud-linked rows at the target.
+
+        Measurements retain their local image_id and therefore move with the
+        image. Existing cloud image/measurement ids are reset because their
+        remote rows belong to the source observation.
+        """
+        clean_ids = list(dict.fromkeys(
+            int(image_id) for image_id in image_ids if int(image_id) > 0
+        ))
+        source_id = int(source_observation_id)
+        target_id = int(target_observation_id)
+        if not clean_ids or source_id <= 0 or target_id <= 0 or source_id == target_id:
+            return 0
+
+        conn = get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            next_sort_order_row = cursor.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM images WHERE observation_id = ?",
+                (target_id,),
+            ).fetchone()
+            next_sort_order = int(next_sort_order_row[0] or 0)
+            source_cloud_row = cursor.execute(
+                "SELECT cloud_id FROM observations WHERE id = ?",
+                (source_id,),
+            ).fetchone()
+            source_cloud_id = str(source_cloud_row[0] or "").strip() if source_cloud_row else ""
+
+            moved = 0
+            for image_id in clean_ids:
+                image = cursor.execute(
+                    "SELECT * FROM images WHERE id = ? AND observation_id = ?",
+                    (image_id, source_id),
+                ).fetchone()
+                if image is None:
+                    continue
+                cloud_id = str(image["cloud_id"] or "").strip()
+                if cloud_id:
+                    _upsert_image_tombstone(
+                        cursor,
+                        deleted_cloud_id=cloud_id,
+                        deleted_storage_path=image["filepath"] or image["original_filepath"],
+                        deleted_observation_cloud_id=source_cloud_id or None,
+                        local_observation_id=source_id,
+                        local_image_id=None,
+                        image_type=image["image_type"],
+                        filepath=image["filepath"],
+                        original_filepath=image["original_filepath"],
+                    )
+                    # This tombstone tracks only the old remote row. It must
+                    # not hide the still-active local image at its destination.
+                    cursor.execute(
+                        """
+                        UPDATE image_tombstones
+                        SET local_image_id = NULL,
+                            local_observation_id = ?,
+                            deleted_observation_cloud_id = ?,
+                            delete_synced_at = NULL
+                        WHERE deleted_cloud_id = ?
+                        """,
+                        (source_id, source_cloud_id or None, cloud_id),
+                    )
+
+                cursor.execute(
+                    "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?",
+                    (image_id,),
+                )
+                cursor.execute(
+                    """
+                    UPDATE images
+                    SET observation_id = ?, sort_order = ?, cloud_id = NULL, synced_at = NULL
+                    WHERE id = ?
+                    """,
+                    (target_id, next_sort_order, image_id),
+                )
+                next_sort_order += 1
+                moved += 1
+
+            if moved:
+                _touch_observation(cursor, source_id, mark_dirty=True)
+                _touch_observation(cursor, target_id, mark_dirty=True)
+            conn.commit()
+            return moved
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
     def get_images_for_observation(observation_id: int) -> List[dict]:
         """Get all images for an observation, oldest-first by capture order."""
         conn = get_connection()
@@ -2269,6 +2425,7 @@ class ImageDB:
                      measure_color: str = None, image_type: str = None,
                      sort_order: int | None = None,
                      mount_medium: str = None, stain: str = None, sample_type: str = None,
+                     sample_source: str | None | object = _UNSET,
                      contrast: str = None, calibration_id: int | None | object = _UNSET,
                      ai_crop_box: tuple[float, float, float, float] | None | object = _UNSET,
                      ai_crop_source_size: tuple[int, int] | None | object = _UNSET,
@@ -2318,6 +2475,9 @@ class ImageDB:
         if sample_type is not None:
             updates.append('sample_type = ?')
             values.append(sample_type)
+        if sample_source is not _UNSET and 'sample_source' in image_columns:
+            updates.append('sample_source = ?')
+            values.append(sample_source)
         if contrast is not None:
             updates.append('contrast = ?')
             values.append(contrast)

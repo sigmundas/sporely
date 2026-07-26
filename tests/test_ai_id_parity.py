@@ -556,6 +556,7 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
     assert dialog.species_input.text() == "regalis"
     assert dialog.vernacular_input.text() == "Kongefluesopp"
     assert "Amanita regalis" in dialog.ai_selected_summary_label.text()
+    assert "p=84%" in dialog.ai_selected_summary_label.text()
 
     dialog.taxonomy_tabs.setCurrentWidget(dialog.grows_tab)
     dialog._on_ai_copy_to_taxonomy("arts")
@@ -571,6 +572,23 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
 
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
+
+
+def test_inat_ai_prediction_scores_render_as_percentages() -> None:
+    dialog = SimpleNamespace(
+        _ai_prediction_score=observations_tab.ObservationDetailsDialog._ai_prediction_score,
+    )
+
+    assert observations_tab.ObservationDetailsDialog._format_ai_prediction_score(
+        dialog,
+        {"probability": 0.6},
+        source="inat",
+    ) == "60%"
+    assert observations_tab.ObservationDetailsDialog._format_ai_prediction_score(
+        dialog,
+        {"probability": 0.581},
+        source="inat",
+    ) == "58.1%"
 
 
 def test_existing_observation_hydrates_taxonomy_from_species_guess(

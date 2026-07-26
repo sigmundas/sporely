@@ -229,6 +229,60 @@ def test_cloud_push_and_pull_carry_selected_ai_fields(tmp_path, monkeypatch) -> 
     assert captured["payload"]["ai_selected_at"] == "2026-05-01T12:34:56Z"
 
 
+def test_cloud_pull_backfills_taxonomy_from_selected_ai_scientific_name(tmp_path, monkeypatch) -> None:
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    _patch_connection_helpers(monkeypatch, db_path)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_import_remote_measurements_for_observation",
+        lambda *args, **kwargs: {"warnings": [], "conflict": False, "imported": 0},
+    )
+
+    cloud_obs = {
+        "id": "cloud-124",
+        "date": "2026-05-01",
+        "genus": "",
+        "species": "",
+        "common_name": "ask",
+        "species_guess": "",
+        "location": "Forest",
+        "habitat": None,
+        "notes": None,
+        "open_comment": None,
+        "interesting_comment": False,
+        "visibility": "public",
+        "sharing_scope": "public",
+        "location_public": True,
+        "is_draft": False,
+        "location_precision": "exact",
+        "spore_data_visibility": "public",
+        "uncertain": False,
+        "unspontaneous": False,
+        "gps_latitude": 63.0,
+        "gps_longitude": 10.0,
+        "publish_target": None,
+        "determination_method": None,
+        "source_type": "personal",
+        "author": "Tester",
+        "ai_selected_service": "inat",
+        "ai_selected_taxon_id": "12345",
+        "ai_selected_scientific_name": "Entoloma clypeatum",
+        "ai_selected_probability": 0.97,
+        "ai_selected_at": "2026-05-01T12:34:56Z",
+    }
+
+    local_id = cloud_sync._create_local_from_remote(
+        cloud_obs,
+        materialize_remote_images=False,
+    )
+    local_row = models.ObservationDB.get_observation(local_id)
+    assert local_row is not None
+    assert local_row["genus"] == "Entoloma"
+    assert local_row["species"] == "clypeatum"
+    assert local_row["species_guess"] == "Entoloma clypeatum"
+    assert local_row["ai_selected_scientific_name"] == "Entoloma clypeatum"
+
+
 def test_cloud_identification_rows_hydrate_desktop_ai_state(tmp_path, monkeypatch) -> None:
     db_path = _init_fresh_database(tmp_path, monkeypatch)
     _patch_connection_helpers(monkeypatch, db_path)

@@ -1,5 +1,218 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Spore-mosaic scale-bar payload
+
+Landing renders per-observation scale bars over the spore mosaic (and over
+microscope images) from calibration fields the pipeline already computed but
+never persisted. The mosaic upsert in
+`utils/cloud_sync.py::_push_spore_mosaic_for_observation` now sends
+`tile_width_px`, `tile_height_px`, `common_crop_width_um`, and
+`common_crop_height_um` alongside the existing `tile_size_px` payload; the
+web-side migration `20260721120000_add_mosaic_scale_and_image_scale_to_public_rpcs`
+adds the four nullable columns and pipes them into the public
+`get_public_observation` RPC via `jsonb_strip_nulls`, so legacy rows still
+emit the mosaic sub-object without the four keys.
+
+Non-positive manifest values become `None` in the upsert payload so
+degenerate rows land as SQL NULL rather than 0 (a numeric 0 would poison
+the landing µm-per-pixel math). `MOSAIC_PIPELINE_VERSION` is unchanged —
+the atlas bytes are the same; only the manifest metadata is new. Regression
+guard: `tests/test_cloud_spore_mosaic_signature.py::test_pusher_sends_tile_geometry_and_common_crop_um_in_mosaic_upsert`
+inspects the actual `_post` payload the pusher hands to the stub client, so
+a silent removal of any of the four keys would break the test rather than
+silently disable the scale bar downstream.
+
+### Checked-image cloud sync and authoritative uncheck deletion
+
+Field and microscope gallery checkboxes are now authoritative for cloud media selection. Checked
+microscope images can upload without measurements, while unchecked images are excluded and an
+already-synced cloud image is tombstoned so it disappears from cloud views. The global image
+tombstone queue is flushed before dirty-observation pruning, which means deletion still converges
+on an otherwise no-op sync.
+
+The observation-tab `Sync now` action now uses the same normal media-sync mode as Profile & Cloud:
+`sync_images=True`, `materialize_remote_images=True`, and `full_pull=False`. Deep reconciliation
+remains a separate recovery operation rather than being coupled to ordinary media sync.
+
+### Observation index and sync-completion performance
+
+Timing instrumentation isolated an 8.6-second observation row-cache rebuild after startup and every
+sync. The bottleneck was not table rendering or cloud calibration linking; it was repeated taxonomy,
+measurement, image, and thumbnail database work.
+
+Covered changes:
+
+- Added one-pass vernacular lookup for all unique table taxa, including language filtering and
+  scientific-name synonym resolution.
+- Replaced per-observation measurement-statistics reads with one grouped spore-count query.
+- Replaced per-image image/tombstone/thumbnail reads with one ordered joined query that preserves
+  field-first thumbnail selection and excludes tombstoned images.
+- Used temporary requested-id tables so the bulk paths remain safe beyond a typical SQLite bind
+  parameter limit.
+- Added worker/UI completion timings and corrected `SPORELY_DEBUG_RAW_TIMING=0` so zero disables
+  diagnostics and `=1` enables them.
+
+Measured with 262 observations, row-cache construction fell from about 8.6 seconds to 0.42–0.43
+seconds. Total startup observation refresh fell to about 0.61 seconds, and post-sync UI completion
+fell from about 8.7 seconds to about 0.57 seconds.
+
+### Metadata-safe fast sync and child-change safety pull
+
+Metadata reconciliation is independent from remote-byte materialization. Existing local image rows
+can receive cloud metadata while byte downloads remain deferred, failed imports preserve retryable
+state, and snapshots are not advanced past unapplied work. Fast pull continues to prune unchanged
+observations, with a periodic metadata-only child-safety pass covering cloud image or measurement
+changes that cannot be trusted to touch the parent observation timestamp.
+
+Remote existence checks for already-stamped spore measurements and their cloud image rows now run
+as recovery reconciliation rather than on every ordinary sync. A reconciliation policy version
+forces one verification after this change; subsequent deep checks run with the periodic child-safety
+pass or an explicit full pull. Locally unstamped eligible measurements are still detected and
+repaired on every sync, and a failed deep verification does not advance its durable marker. This
+removes 40 remote requests from the measured steady-state no-op path (about 4.2 seconds for 3,348
+measurements and 572 images) without weakening repair of independently deleted cloud rows.
+
+Live validation reduced no-op worker time from about 5.9 seconds to 1.60 seconds. The observations
+tab also avoids its roughly 0.52-second post-sync table rebuild when the complete sync result proves
+there were no local, remote, conflict, deletion, error, repair, or status changes. Results without
+the full summary contract and all non-no-op outcomes retain the conservative refresh.
+
+Live validation showed proven no-op completion handlers falling to 30–34 ms, while a sync that
+patched an observation and four new measurements retained the 0.58-second table refresh. Proven
+zero-candidate pushes also reuse the remote observation list loaded at sync start, avoiding a second
+150–197 ms request. Any calibration write, dirty observation, tombstone, reconciliation attempt,
+error, unknown result shape, or other positive mutation counter keeps the post-push refresh.
+
+The global pending-image dirty sweep is now periodic repair work rather than a tax on every normal
+media sync. Image and measurement mutations plus publish-checkbox changes already dirty the affected
+observation immediately. A versioned 24-hour repair marker retains recovery for legacy or interrupted
+state and advances only after a complete scan. This removes about 0.26 seconds from ordinary no-op
+sync while preserving the checkbox and tombstone contract.
+
+Final profiling with 262 observations measured a steady no-op worker at about 1.40 seconds after
+remote-list reuse, down from the original 5.9 seconds, with no-op UI completion at about 30 ms. A
+subsequent real-change run confirmed that direct measurement and image-selection changes still made
+the observation eligible immediately: one selected image uploaded, measurement rows and summaries
+updated, the mosaic regenerated, the remote list refreshed, and the observation table rebuilt. The
+version-triggered pending-image repair sweep found no missed observations, confirming it is now a
+safety net rather than the primary change detector.
+
+### Public spore mosaic convergence
+
+Normal sync can create metadata-only microscope anchors for public-eligible measurements without
+uploading the underlying microscope frame. Mosaic rendering is guarded by a stable local input
+signature plus remote-row presence, so unchanged mosaics avoid repeated Pillow/WebP work while
+pipeline-version changes and missing remote mosaics still force regeneration.
+
+### RAW Auto Levels — three-way invariant between widget, pipeline, and Preferences
+
+The shared `RawProcessingControls` widget (`ui/raw_processing_controls.py`) had three
+independent bugs that only surfaced together when the user opened the advanced RAW
+panel with a non-default bright cutoff in Preferences:
+
+1. **Preferences cutoffs never reached the pipeline.** `_settings_from_controls`
+   hard-coded `black_percentile=0.0, white_percentile=1.0`, so the auto-levels stage
+   always stretched image min → 0 and image max → 1 regardless of the user's
+   Preferences cutoff (defaults 0% dark, 0% bright — but Preferences let users set
+   e.g. 0.05% bright to clip outlier hot pixels). The two seed-analysis helpers
+   (`ImageImportDialog._raw_auto_level_settings_for_source`,
+   `LiveLabTab._raw_auto_level_settings_for_source`) also passed `0.0, 1.0` to
+   `compute_auto_level_bounds`, so the Light/Dark readout the widget cached also
+   ignored Preferences.
+2. **Curve-preview histogram was drawn on the output axis of the curve's input
+   axis.** `_refresh_prepare_raw_curve_preview` / the Live Lab equivalent computed
+   the histogram from `apply_post_decode_processing_fast(...).rgb` — post-pipeline
+   values in [0, 1] — but then plotted them against `curve.input_values` (WB-applied
+   pre-levels luminance). Bins landed in the wrong X position and the "clipped"
+   red-tint comparison (`bin_center < dark_bound`) crossed spaces silently. Fixed
+   by computing histograms on `compute_pre_levels_working_rgb(rgb, settings)`, a
+   new helper that runs only the post-decode WB stage.
+3. **Auto Levels toggle didn't preserve pixels.** The pipeline recomputes bounds
+   live from percentiles when `auto_levels=True` and zeroes `light_ev`/`dark_ev`;
+   when `auto_levels=False` it uses the slider `light_ev`/`dark_ev` through
+   `apply_light_dark_levels`. Because the slider values weren't kept in sync with
+   the pipeline's actual bounds, toggling Auto off caused a visible image jump.
+   Fixed by adding `RawProcessingControls.sync_from_live_bounds(black, white)`,
+   called by both callers after every `apply_post_decode_processing_fast` render,
+   that converts the used bounds to `light_ev = -log2(white)`,
+   `dark_ev = log2(1 - black)` (mirroring `apply_auto_level_bounds_to_settings`)
+   and pushes them into the sliders under `QSignalBlocker`. Because
+   `apply_light_dark_levels` collapses to the same `(x-black)/(white-black)`
+   formula as `hard_luminance_levels`, toggling Auto off then reproduces the same
+   pixels within LUT/quantisation tolerance (`< 4e-3` max per-pixel diff for the
+   1000-step slider grid — see `test_auto_off_freezes_image_after_slider_sync`).
+
+The pipeline zeroing block in `apply_post_decode_processing_fast` was **not**
+removed — the sliders are display-only when Auto is on, and the pipeline stays
+the source of truth for the actual applied stretch. The invariant is that after
+`sync_from_live_bounds` runs, the sliders' EV values reconstruct the exact same
+transform the pipeline just applied.
+
+**Layout change.** The Auto Levels checkable QPushButton at the trailing edge of
+the Light row was replaced by a labeled two-option pill (`AutoLevelsToggle`) on
+its own row. The adapter exposes `isChecked/setChecked/toggled/setProperty("mixed")`
+so every existing call site (`QSignalBlocker(...)`, mixed-state tri-flag,
+hint-registration) keeps working; a `setProperty("mixed", True)` temporarily
+flips the inner `QButtonGroup` to non-exclusive so both buttons can be visually
+deselected.
+
+**Cache key.** The curve-preview histogram cache on `_RawPreviewCacheEntry` now
+keys on `(white_balance_mode, wb_sample_base_mode, wb_multipliers)` rather than
+gains alone — Camera WB and Auto WB both leave `wb_multipliers=None` but rawpy
+decodes them differently, so a gains-only key served the wrong histogram back
+across WB-mode switches.
+
+**Preferences live-refresh.** `_save_raw_processing_preferences` in `main_window`
+now calls `LiveLabTab.refresh_raw_processing_preferences()` (public wrapper for
+the private cutoff push) and iterates `QApplication.topLevelWidgets()` to notify
+any open non-modal `ImageImportDialog`. Without this, changing bright/dark
+cutoffs in Preferences while a panel was open only took effect on the next
+panel rebuild.
+
+### macOS cursor crash — avoid bitmap-fallback `Qt.CursorShape`
+
+Repeated hard crashes were observed during Measure and in the species plate dialog on
+macOS 26 (Tahoe) with PySide6 / Qt 6.11. The crash always looked the same:
+
+```
+QWidget.setCursor(...)
+  → QWindowPrivate::setCursor
+  → QCocoaCursor::convertCursor
+  → QImage::toCGImage
+  → CGImageCreate → verify_image_parameters → valid_image_colorspace
+  → CGColorSpaceGetType → __CF_IS_OBJC → EXC_BREAKPOINT
+```
+
+Cause: only a subset of `Qt.CursorShape` values map to a native `NSCursor` on macOS.
+Everything else (`SizeAllCursor`, `SizeFDiagCursor`, `SizeBDiagCursor`, `SizeVerCursor`,
+`SizeHorCursor`, `SplitVCursor`, `SplitHCursor`, `DragCopy/Move/LinkCursor`,
+`WhatsThisCursor`, `BusyCursor`) falls back to a Qt-embedded bitmap that is pushed
+through `QImage::toCGImage`. In Qt 6.11 / macOS 26 that path hands CoreGraphics a
+garbage colorspace pointer and traps.
+
+Rule of thumb: on macOS, only use these cursor shapes in `setCursor(...)`:
+
+- `Qt.ArrowCursor`
+- `Qt.CrossCursor`
+- `Qt.IBeamCursor`
+- `Qt.PointingHandCursor`
+- `Qt.OpenHandCursor` / `Qt.ClosedHandCursor`
+- `Qt.WaitCursor`
+- `Qt.ForbiddenCursor`
+
+Anything else risks the same crash. If a resize/move affordance is wanted, prefer
+setting a status/hint via `HintController` rather than a specialty cursor.
+
+Fix locations (2026-07): [ui/zoomable_image_widget.py](ui/zoomable_image_widget.py)
+(`_crop_corner_cursor` returns `None`), [ui/spore_preview_widget.py](ui/spore_preview_widget.py)
+(hover-inside-rectangle uses `Qt.ArrowCursor`), [ui/species_plate_dialog.py](ui/species_plate_dialog.py)
+(resize/border hover uses `Qt.ArrowCursor`), [ui/hint_status.py](ui/hint_status.py)
+(`_apply_hint_affordance` always calls `unsetCursor()`).
+
+Also worth noting: passing `Qt.CursorShape` directly to `setCursor(...)` is fine and
+avoids constructing a PySide-owned `QCursor` wrapper, but it does **not** dodge the
+crash on its own — the shape has to be a native one.
+
 ### Calibration history cloud indicator
 
 The Calibration History table now shows a leading cloud-status column so cloud-synced calibrations

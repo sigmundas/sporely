@@ -434,6 +434,22 @@ def migrate_database():
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y1 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_x2 REAL")
             cursor.execute("ALTER TABLE images ADD COLUMN scale_bar_y2 REAL")
+        if "sample_source" not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN sample_source TEXT")
+            # Legacy sample_type='Spore_print' is a material source, not a condition —
+            # hoist it into the new column and clear the old one so specimen condition
+            # only ever holds Fresh/Dried/NULL. Skip when sample_type predates the schema
+            # (some legacy test fixtures create images without it).
+            if "sample_type" in columns:
+                cursor.execute(
+                    """
+                    UPDATE images
+                       SET sample_source = 'Spore_print',
+                           sample_type = NULL
+                     WHERE lower(coalesce(sample_type, '')) IN ('spore_print', 'sporeprint', 'spore print')
+                       AND (sample_source IS NULL OR sample_source = '')
+                    """
+                )
         ensure_image_provenance_columns(cursor)
         cursor.execute("SELECT id, mount_medium, stain FROM images")
         for image_id, mount_medium, stain in cursor.fetchall():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 import pytest
 
@@ -328,6 +328,71 @@ def test_upload_observation_to_artsobs_marks_pending_images_and_persists_artsdat
     assert status_messages[-1][1] == "warning"
     assert "Observation published, but image upload failed. Images remain pending." in status_messages[-1][0]
     assert "One or more web image uploads failed." in status_messages[-1][0]
+
+
+def test_resolve_artsobs_taxon_resolution_falls_back_to_picker_search(monkeypatch):
+    html_body = (
+        '<li class="listitem"><a href="#" data-id="52332"><span class="node-leaf">&nbsp;</span>'
+        '<span class="item "><span class="itemjson">{"taxonid": "52332", '
+        '"taxonname":"slank flekkskivesopp","scientificname":"&lt;i&gt;Panaeolus acuminatus&lt;/i&gt;", '
+        '"speciesgroupid": "4","protectionlevelid": "1","auktor":"(Schaeff.) Quél.", '
+        '"leaf" : "true"}</span><span class="itemname">slank flekkskivesopp</span> '
+        '<span class="auktor"></span> </span></a></li>'
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get(url, params=None, headers=None, cookies=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = dict(params or {})
+        captured["headers"] = dict(headers or {})
+        captured["cookies"] = dict(cookies or {})
+        return SimpleNamespace(status_code=200, text=html_body, raise_for_status=lambda: None)
+
+    monkeypatch.setattr(observations_tab.requests, "get", fake_get)
+    monkeypatch.setattr(
+        observations_tab.ObservationDB,
+        "resolve_adb_taxon_id",
+        lambda *args, **kwargs: None,
+    )
+
+    fake_tab = SimpleNamespace(
+        _artsobs_lookup_cookies={"cookie": "ok"},
+        _normalize_taxon_text=MethodType(observations_tab.ObservationsTab._normalize_taxon_text, SimpleNamespace()),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields,
+        fake_tab,
+    )
+    fake_tab._extract_artsobs_taxon_pair = MethodType(
+        observations_tab.ObservationsTab._extract_artsobs_taxon_pair,
+        fake_tab,
+    )
+    fake_tab._resolve_accepted_taxon_pair = lambda genus, species: None
+    fake_tab._lookup_artsobservasjoner_taxon_id = MethodType(
+        observations_tab.ObservationsTab._lookup_artsobservasjoner_taxon_id,
+        fake_tab,
+    )
+    fake_tab._resolve_artsobs_taxon_id = MethodType(
+        observations_tab.ObservationsTab._resolve_artsobs_taxon_id,
+        fake_tab,
+    )
+
+    resolution = observations_tab.ObservationsTab._resolve_artsobs_taxon_resolution(
+        fake_tab,
+        {
+            "genus": "",
+            "species": "",
+            "species_guess": "",
+            "ai_selected_service": "inat",
+            "ai_selected_scientific_name": "Panaeolus acuminatus",
+        },
+    )
+
+    assert resolution.taxon_id == 52332
+    assert resolution.source_field == "artsobservasjoner.picker_search"
+    assert captured["url"] == "https://www.artsobservasjoner.no/Taxon/PickerSearch"
+    assert captured["cookies"] == {"cookie": "ok"}
+    assert captured["params"]["search"] == "Panaeolus acuminatus"
 
 
 def test_collect_artsobs_image_paths_prefers_smallest_candidate(tmp_path, monkeypatch):

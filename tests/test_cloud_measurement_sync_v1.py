@@ -111,6 +111,9 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
     db_path = _init_measurement_sync_db(tmp_path)
     call_order = []
     desktop_id_calls = []
+    image_file = tmp_path / "derived" / "cloud-image-1.jpg"
+    image_file.parent.mkdir(parents=True, exist_ok=True)
+    image_file.write_bytes(b"field image")
 
     class DummyClient:
         def pull_measurements_for_images(self, image_cloud_ids):
@@ -129,19 +132,28 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
         finally:
             conn.close()
 
-    def fake_import_remote_images(remote, local_id, cloud_id, **kwargs):
+    def fake_import_remote_images(client, remote, local_id, cloud_id, **kwargs):
         call_order.append("images")
         _insert_image(
             db_path,
             id=7,
             observation_id=local_id,
             cloud_id="cloud-image-1",
-            filepath="/derived/cloud-image-1.jpg",
+            filepath=str(image_file),
             image_type="field",
             sort_order=0,
             created_at="2026-05-01T10:00:00Z",
             scale_microns_per_pixel=None,
         )
+        return {
+            "imported": 1,
+            "metadata_applied": 0,
+            "skipped_materialization": 0,
+            "failed": 0,
+            "warnings": [],
+            "errors": [],
+            "complete": True,
+        }
 
     _patch_test_db_connections(monkeypatch, db_path)
     monkeypatch.setattr(cloud_sync.ObservationDB, "create_observation", fake_create_observation)
@@ -158,6 +170,7 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
             "id": "cloud-image-1",
             "observation_id": "cloud-obs-1",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
             "sort_order": 0,
         }
     ]
@@ -217,7 +230,7 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
     assert call_order == ["images"]
     assert observation[0] == "cloud-obs-1"
     assert observation[1] == "synced"
-    assert image == (7, "cloud-image-1", "/derived/cloud-image-1.jpg", None)
+    assert image == (7, "cloud-image-1", str(image_file), None)
     assert measurement == (
         7,
         "cloud-measurement-1",
@@ -259,6 +272,7 @@ def test_import_remote_measurements_skips_when_image_missing_and_cannot_material
             "id": "cloud-image-missing",
             "observation_id": "cloud-obs-2",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-2/cloud-image-missing.jpg",
             "sort_order": 0,
         }
     ]
@@ -299,6 +313,8 @@ def test_import_remote_measurements_skips_tombstoned_image_and_keeps_unrelated_m
     tmp_path,
 ):
     db_path = _init_measurement_sync_db(tmp_path)
+    image_2_path = tmp_path / "image-2.jpg"
+    image_2_path.write_bytes(b"image 2")
 
     conn = sqlite3.connect(db_path)
     try:
@@ -324,7 +340,7 @@ def test_import_remote_measurements_skips_tombstoned_image_and_keeps_unrelated_m
         id=11,
         observation_id=1,
         cloud_id="cloud-image-2",
-        filepath="/local/image-2.jpg",
+        filepath=str(image_2_path),
         image_type="field",
         sort_order=0,
         created_at="2026-05-02T09:00:00Z",
@@ -343,12 +359,14 @@ def test_import_remote_measurements_skips_tombstoned_image_and_keeps_unrelated_m
             "id": "cloud-image-1",
             "observation_id": "cloud-obs-1",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
             "sort_order": 0,
         },
         {
             "id": "cloud-image-2",
             "observation_id": "cloud-obs-1",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-1/cloud-image-2.jpg",
             "sort_order": 1,
         },
     ]
@@ -433,6 +451,7 @@ def test_import_remote_measurements_does_not_anchor_to_unrelated_local_image_id(
             "desktop_id": 42,
             "observation_id": "cloud-obs-2",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-2/cloud-image-unsafe.jpg",
             "sort_order": 0,
         }
     ]
@@ -471,6 +490,8 @@ def test_import_remote_measurements_does_not_anchor_to_unrelated_local_image_id(
 
 def test_import_remote_measurements_skips_conflicting_local_edit(monkeypatch, tmp_path):
     db_path = _init_measurement_sync_db(tmp_path)
+    image_3_path = tmp_path / "image-3.jpg"
+    image_3_path.write_bytes(b"image 3")
 
     _patch_test_db_connections(monkeypatch, db_path)
 
@@ -479,7 +500,7 @@ def test_import_remote_measurements_skips_conflicting_local_edit(monkeypatch, tm
         id=11,
         observation_id=1,
         cloud_id="cloud-image-3",
-        filepath="/local/image-3.jpg",
+        filepath=str(image_3_path),
         image_type="field",
         sort_order=0,
         created_at="2026-05-03T10:00:00Z",
@@ -519,6 +540,7 @@ def test_import_remote_measurements_skips_conflicting_local_edit(monkeypatch, tm
             "id": "cloud-image-3",
             "observation_id": "cloud-obs-3",
             "image_type": "field",
+            "storage_path": "user/cloud-obs-3/cloud-image-3.jpg",
             "sort_order": 0,
         }
     ]
@@ -933,46 +955,78 @@ def test_push_measurement_logs_diff_fields_for_real_change(capsys):
     assert "length_um" in output
 
 
-def test_import_remote_measurements_skips_microscope_image(monkeypatch, tmp_path):
+def test_import_remote_measurements_imports_from_metadata_only_microscope_anchor(
+    monkeypatch,
+    tmp_path,
+):
     db_path = _init_measurement_sync_db(tmp_path)
 
     _patch_test_db_connections(monkeypatch, db_path)
-
-    _insert_image(
-        db_path,
-        id=13,
-        observation_id=1,
-        cloud_id="cloud-micro-image",
-        filepath="/local/micro-image.jpg",
-        image_type="microscope",
-        sort_order=0,
-        created_at="2026-05-04T10:00:00Z",
-        scale_microns_per_pixel=None,
-    )
+    download_calls: list[str] = []
+    desktop_id_calls: list[tuple[str, int]] = []
 
     class DummyClient:
         def pull_measurements_for_images(self, image_cloud_ids):
             raise AssertionError("remote measurements should be supplied directly in this test")
 
-        def set_measurement_desktop_id(self, *args, **kwargs):
-            raise AssertionError("microscope-linked measurements must stay skipped")
+        def download_image_file(self, storage_path, dest_path):
+            download_calls.append(storage_path)
+            raise AssertionError("metadata-only microscope anchors must not be downloaded")
+
+        def set_measurement_desktop_id(self, cloud_measurement_id, desktop_id):
+            desktop_id_calls.append((cloud_measurement_id, desktop_id))
+
+    def fake_add_image(**kwargs):
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO images (
+                    observation_id, filepath, image_type, sort_order,
+                    mount_medium, stain, sample_type, contrast
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    kwargs["observation_id"],
+                    kwargs["filepath"],
+                    kwargs["image_type"],
+                    kwargs.get("sort_order"),
+                    kwargs.get("mount_medium"),
+                    kwargs.get("stain"),
+                    kwargs.get("sample_type"),
+                    kwargs.get("contrast"),
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(cloud_sync.ImageDB, "add_image", fake_add_image)
 
     remote_images = [
         {
-            "id": "cloud-micro-image",
+            "id": "cloud-image-4",
             "observation_id": "cloud-obs-4",
             "image_type": "microscope",
+            "storage_path": None,
+            "mount_medium": "KOH",
+            "stain": "Melzer",
+            "sample_type": "Fresh",
+            "contrast": "DIC",
             "sort_order": 0,
         }
     ]
     remote_measurements = [
         {
             "id": "cloud-measurement-4",
-            "image_id": "cloud-micro-image",
+            "image_id": "cloud-image-4",
             "length_um": 14.0,
             "width_um": 6.0,
             "measurement_type": "manual",
             "measured_at": "2026-05-04T12:00:00Z",
+            "gallery_rotation": 0,
         }
     ]
 
@@ -986,13 +1040,117 @@ def test_import_remote_measurements_skips_microscope_image(monkeypatch, tmp_path
 
     conn = sqlite3.connect(db_path)
     try:
+        image_row = conn.execute(
+            """
+            SELECT id, cloud_id, filepath, image_type, mount_medium, stain, sample_type, contrast
+            FROM images
+            ORDER BY id
+            """,
+        ).fetchone()
+        measurement_row = conn.execute(
+            """
+            SELECT id, image_id, cloud_id, length_um, width_um, measurement_type, gallery_rotation,
+                   measured_at
+            FROM spore_measurements
+            ORDER BY id
+            """,
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert result["imported"] == 1
+    assert result["conflict"] is False
+    assert result["warnings"] == []
+    assert image_row == (
+        1,
+        "cloud-image-4",
+        "",
+        "microscope",
+        "KOH",
+        "Melzer",
+        "Fresh",
+        "DIC",
+    )
+    assert measurement_row == (
+        1,
+        1,
+        "cloud-measurement-4",
+        14.0,
+        6.0,
+        "manual",
+        0,
+        "2026-05-04T12:00:00Z",
+    )
+    assert download_calls == []
+    assert desktop_id_calls == [("cloud-measurement-4", 1)]
+
+
+def test_import_remote_measurements_groups_generated_mosaic_skips(monkeypatch, tmp_path):
+    db_path = _init_measurement_sync_db(tmp_path)
+
+    _patch_test_db_connections(monkeypatch, db_path)
+    download_calls: list[str] = []
+
+    class DummyClient:
+        def pull_measurements_for_images(self, image_cloud_ids):
+            raise AssertionError("remote measurements should be supplied directly in this test")
+
+        def download_image_file(self, storage_path, dest_path):
+            download_calls.append(storage_path)
+            raise AssertionError("generated mosaic images must not be downloaded")
+
+        def set_measurement_desktop_id(self, *args, **kwargs):
+            raise AssertionError("generated mosaic measurements must be skipped")
+
+    remote_images = [
+        {
+            "id": "cloud-generated-image",
+            "observation_id": "cloud-obs-5",
+            "image_type": "microscope",
+            "notes": "generated media spore mosaic",
+            "original_filename": "cloud_extra_mosaic.jpg",
+            "sort_order": 0,
+        }
+    ]
+    remote_measurements = [
+        {
+            "id": "cloud-measurement-5",
+            "image_id": "cloud-generated-image",
+            "length_um": 12.0,
+            "width_um": 5.0,
+            "measurement_type": "manual",
+            "measured_at": "2026-05-05T12:00:00Z",
+        },
+        {
+            "id": "cloud-measurement-6",
+            "image_id": "cloud-generated-image",
+            "length_um": 13.0,
+            "width_um": 5.5,
+            "measurement_type": "manual",
+            "measured_at": "2026-05-05T12:05:00Z",
+        },
+    ]
+
+    result = cloud_sync._import_remote_measurements_for_observation(
+        DummyClient(),
+        local_id=1,
+        cloud_id="cloud-obs-5",
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
         measurement_count = conn.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0]
     finally:
         conn.close()
 
     assert result["imported"] == 0
+    assert result["conflict"] is False
     assert measurement_count == 0
-    assert any("excluded image" in warning for warning in result["warnings"])
+    assert len(result["warnings"]) == 1
+    assert "skipped 2 cloud measurement(s) on 1 excluded image(s): cloud-generated-image" in result["warnings"][0]
+    assert download_calls == []
 
 
 def test_push_measurements_for_observation_skips_tombstoned_image_measurements(

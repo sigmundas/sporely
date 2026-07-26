@@ -1,9 +1,11 @@
 """Shared RAW processing controls used by Prepare Images and Live Lab."""
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 from PySide6.QtCore import Signal, QSignalBlocker, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -12,6 +14,8 @@ from PySide6.QtWidgets import (
     QSlider,
     QFormLayout,
     QSizePolicy,
+    QStyle,
+    QStyleOptionSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -24,6 +28,189 @@ from .segmented_selector import SegmentedSelector
 _EV_SLIDER_SCALE = 1000
 _EV_SLIDER_MAX = 2000
 _TRAILING_WIDTH = 48
+
+
+class MixedStateSlider(QSlider):
+    """QSlider that can paint two ghost handles at a min/max range.
+
+    Used to indicate a multi-selection whose values disagree. While the
+    slider is in mixed mode the real handle is hidden and the two ghost
+    thumbs show the spread. Any mouse press exits mixed mode so the click
+    lands on a real value.
+    """
+
+    def __init__(self, orientation, parent=None) -> None:
+        super().__init__(orientation, parent)
+        self._mixed_min: int | None = None
+        self._mixed_max: int | None = None
+
+    def is_mixed(self) -> bool:
+        return self._mixed_min is not None and self._mixed_max is not None
+
+    def set_mixed_range(self, min_value: int | None, max_value: int | None) -> None:
+        if min_value is None or max_value is None or int(min_value) == int(max_value):
+            if self.is_mixed():
+                self._mixed_min = None
+                self._mixed_max = None
+                self.update()
+            return
+        lo = int(min(min_value, max_value))
+        hi = int(max(min_value, max_value))
+        self._mixed_min = lo
+        self._mixed_max = hi
+        self.update()
+
+    def clear_mixed_range(self) -> None:
+        if self.is_mixed():
+            self._mixed_min = None
+            self._mixed_max = None
+            self.update()
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if self.is_mixed():
+            self.clear_mixed_range()
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+        if self.is_mixed():
+            self.clear_mixed_range()
+        super().keyPressEvent(event)
+
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        if self.is_mixed():
+            self.clear_mixed_range()
+        super().wheelEvent(event)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        if not self.is_mixed():
+            super().paintEvent(event)
+            return
+        opt = QStyleOptionSlider()
+        self.initStyleOption(opt)
+        # Paint groove without an active handle by removing the SC_SliderHandle
+        # sub-control before painting.
+        painter = QPainter(self)
+        opt.subControls = QStyle.SC_SliderGroove | QStyle.SC_SliderTickmarks
+        self.style().drawComplexControl(QStyle.CC_Slider, opt, painter, self)
+        groove_rect = self.style().subControlRect(
+            QStyle.CC_Slider, opt, QStyle.SC_SliderGroove, self
+        )
+        handle_rect = self.style().subControlRect(
+            QStyle.CC_Slider, opt, QStyle.SC_SliderHandle, self
+        )
+        span = groove_rect.width() - handle_rect.width()
+        if span <= 0:
+            painter.end()
+            return
+        value_span = max(1, self.maximum() - self.minimum())
+        def _pos_for(value: int) -> int:
+            return QStyle.sliderPositionFromValue(
+                self.minimum(), self.maximum(), int(value), span, opt.upsideDown
+            )
+        lo_x = groove_rect.x() + _pos_for(int(self._mixed_min or 0))
+        hi_x = groove_rect.x() + _pos_for(int(self._mixed_max or 0))
+        # Range fill between the two ghost handles.
+        palette = self.palette()
+        accent = palette.color(palette.ColorRole.Highlight)
+        fill_color = QColor(accent)
+        fill_color.setAlpha(60)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(fill_color)
+        fill_top = groove_rect.center().y() - 2
+        painter.drawRect(min(lo_x, hi_x), fill_top, abs(hi_x - lo_x) + handle_rect.width(), 4)
+        # Two ghost handle circles.
+        ghost_color = QColor(accent)
+        ghost_color.setAlpha(160)
+        border_color = QColor(accent).darker(140)
+        painter.setBrush(ghost_color)
+        painter.setPen(QPen(border_color, 1))
+        diameter = handle_rect.height() - 4
+        if diameter < 8:
+            diameter = 8
+        cy = groove_rect.center().y() - diameter // 2
+        for x in (lo_x, hi_x):
+            painter.drawEllipse(x, cy, diameter, diameter)
+        painter.end()
+
+
+class AutoLevelsToggle(QWidget):
+    """Segmented On/Off pill for the Auto levels control.
+
+    Exposes a small subset of the QCheckBox API (isChecked / setChecked /
+    toggled / setEnabled) so callers that used to hold a checkable
+    QPushButton keep working. `setProperty("mixed", True)` visually deselects
+    both buttons to indicate a disagreeing multi-selection; the property is
+    still readable via `.property("mixed")` for `mixed_fields()`.
+    """
+
+    toggled = Signal(bool)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._checked = False
+        self._selector = SegmentedSelector(self, compact=True, button_height=28, container_height=32)
+        self._on_button = self._selector.add_option(self.tr("On"), True)
+        self._off_button = self._selector.add_option(self.tr("Off"), False, checked=True)
+        self._selector.selectionChanged.connect(self._on_selection_changed)
+
+        heading = QLabel(self.tr("Auto levels"), self)
+        heading.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+
+        row_layout = QVBoxLayout(self)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(2)
+        row_layout.addWidget(heading)
+        row_layout.addWidget(self._selector, 0, Qt.AlignLeft)
+
+    def isChecked(self) -> bool:  # noqa: N802 (Qt API name)
+        return bool(self._checked)
+
+    def setChecked(self, checked: bool) -> None:  # noqa: N802 (Qt API name)
+        target = bool(checked)
+        if target == self._checked:
+            self._sync_selector(target)
+            return
+        self._checked = target
+        self._sync_selector(target)
+        self.setProperty("mixed", False)
+        self.toggled.emit(target)
+
+    def text(self) -> str:
+        return self.tr("Auto levels")
+
+    def _sync_selector(self, checked: bool) -> None:
+        # Programmatically flip the underlying selection without re-emitting
+        # selectionChanged (SegmentedSelector only emits on user click, but
+        # the button toggle can still trigger unwanted focus behavior — a
+        # blocker keeps things quiet).
+        button = self._on_button if checked else self._off_button
+        with QSignalBlocker(self._selector):
+            button.setChecked(True)
+
+    def _on_selection_changed(self, value) -> None:
+        target = bool(value)
+        if target == self._checked:
+            return
+        self._checked = target
+        self.setProperty("mixed", False)
+        self.toggled.emit(target)
+
+    def setProperty(self, name, value) -> bool:  # noqa: N802 (Qt API name)
+        # Reflect "mixed" state visually by deselecting both buttons via a
+        # temporary non-exclusive group. QButtonGroup requires exclusive=False
+        # to allow zero-checked state.
+        if name == "mixed":
+            mixed = bool(value)
+            group = self._selector.button_group
+            if mixed:
+                group.setExclusive(False)
+                with QSignalBlocker(self._selector):
+                    self._on_button.setChecked(False)
+                    self._off_button.setChecked(False)
+            else:
+                group.setExclusive(True)
+                self._sync_selector(self._checked)
+        return super().setProperty(name, value)
 
 
 class RawProcessingControls(QWidget):
@@ -44,8 +231,14 @@ class RawProcessingControls(QWidget):
         self._auto_level_settings: RawRenderSettings | None = None
         self._loading = False
         self._slider_change_pending = False
+        self._mixed_wb_mode = False
         self._show_shadow_lift = bool(show_shadow_lift)
         self._show_tone_controls_when_disabled = bool(show_tone_controls_when_disabled)
+        # Percentile cutoffs pushed in from Preferences. Kept as fractions
+        # (0.0005 == 0.05%) so we can hand them straight to the pipeline as
+        # black_percentile / (1 - white_percentile).
+        self._dark_cutoff: float = 0.0
+        self._bright_cutoff: float = 0.0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -73,6 +266,13 @@ class RawProcessingControls(QWidget):
         white_balance_row.setMinimumHeight(44)
         layout.addWidget(white_balance_row)
 
+        self.auto_levels_toggle = AutoLevelsToggle(self)
+        self.auto_levels_toggle.toggled.connect(self._on_control_changed)
+        # Historical aliases used across the codebase and tests.
+        self.auto_levels_btn = self.auto_levels_toggle
+        self.auto_levels_checkbox = self.auto_levels_toggle
+        layout.addWidget(self.auto_levels_toggle)
+
         slider_form = QFormLayout()
         slider_form.setContentsMargins(0, 0, 0, 0)
         slider_form.setHorizontalSpacing(8)
@@ -89,31 +289,30 @@ class RawProcessingControls(QWidget):
             return row
 
         self.light_label = QLabel(self.tr("Light:"), self)
-        self.light_slider = QSlider(Qt.Horizontal, self)
+        self.light_slider = MixedStateSlider(Qt.Horizontal, self)
         self.light_slider.setRange(0, _EV_SLIDER_MAX)
         self.light_slider.setSingleStep(1)
         self.light_slider.setPageStep(25)
+        self.light_slider.setMaximumWidth(240)
         self.light_slider.valueChanged.connect(self._on_control_changed)
         self.light_slider.sliderReleased.connect(self._on_slider_released)
-        self.auto_levels_btn = QPushButton(self.tr("Auto"), self)
-        self.auto_levels_btn.setCheckable(True)
-        self.auto_levels_btn.setFixedWidth(_TRAILING_WIDTH)
-        self.auto_levels_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        self.auto_levels_btn.toggled.connect(self._on_control_changed)
-        self.auto_levels_checkbox = self.auto_levels_btn  # backwards-compat alias
+        light_trailing = QWidget(self)
+        light_trailing.setFixedWidth(_TRAILING_WIDTH)
+        light_trailing.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.light_value_label = QLabel("", self)
         self.light_value_label.setVisible(False)
-        self.light_row = _build_slider_row(self.light_slider, self.auto_levels_btn)
+        self.light_row = _build_slider_row(self.light_slider, light_trailing)
         slider_form.addRow(self.light_label, self.light_row)
         self.exposure_row = self.light_row
         self.exposure_slider = self.light_slider
         self.exposure_value_label = self.light_value_label
 
         self.dark_label = QLabel(self.tr("Dark:"), self)
-        self.dark_slider = QSlider(Qt.Horizontal, self)
+        self.dark_slider = MixedStateSlider(Qt.Horizontal, self)
         self.dark_slider.setRange(0, _EV_SLIDER_MAX)
         self.dark_slider.setSingleStep(1)
         self.dark_slider.setPageStep(25)
+        self.dark_slider.setMaximumWidth(240)
         self.dark_slider.valueChanged.connect(self._on_control_changed)
         self.dark_slider.sliderReleased.connect(self._on_slider_released)
         dark_trailing = QWidget(self)
@@ -127,10 +326,11 @@ class RawProcessingControls(QWidget):
         self.dark_exposure_value_label = self.dark_value_label
 
         self.contrast_label = QLabel(self.tr("Contrast:"), self)
-        self.contrast_slider = QSlider(Qt.Horizontal, self)
+        self.contrast_slider = MixedStateSlider(Qt.Horizontal, self)
         self.contrast_slider.setRange(-100, 100)
         self.contrast_slider.setSingleStep(1)
         self.contrast_slider.setPageStep(5)
+        self.contrast_slider.setMaximumWidth(240)
         self.contrast_slider.valueChanged.connect(self._on_control_changed)
         self.contrast_slider.sliderReleased.connect(self._on_slider_released)
         self.contrast_value_label = QLabel("", self)
@@ -144,7 +344,7 @@ class RawProcessingControls(QWidget):
         slider_form.addRow(QLabel("", self), self.tone_curve_checkbox)
 
         self.curve_strength_label = QLabel(self.tr("Strength:"), self)
-        self.curve_strength_slider = QSlider(Qt.Horizontal, self)
+        self.curve_strength_slider = MixedStateSlider(Qt.Horizontal, self)
         self.curve_strength_slider.setRange(0, 100)
         self.curve_strength_slider.setSingleStep(1)
         self.curve_strength_slider.setPageStep(5)
@@ -160,7 +360,7 @@ class RawProcessingControls(QWidget):
         self.strength_value_label = self.curve_strength_value_label
 
         self.curve_midpoint_label = QLabel(self.tr("Midpoint:"), self)
-        self.curve_midpoint_slider = QSlider(Qt.Horizontal, self)
+        self.curve_midpoint_slider = MixedStateSlider(Qt.Horizontal, self)
         self.curve_midpoint_slider.setRange(0, 100)
         self.curve_midpoint_slider.setSingleStep(1)
         self.curve_midpoint_slider.setPageStep(5)
@@ -175,7 +375,7 @@ class RawProcessingControls(QWidget):
         self.midpoint_value_label = self.curve_midpoint_value_label
 
         self.shadows_label = QLabel(self.tr("Shadows:"), self)
-        self.shadows_slider = QSlider(Qt.Horizontal, self)
+        self.shadows_slider = MixedStateSlider(Qt.Horizontal, self)
         self.shadows_slider.setRange(-100, 100)
         self.shadows_slider.setSingleStep(1)
         self.shadows_slider.setPageStep(5)
@@ -192,7 +392,7 @@ class RawProcessingControls(QWidget):
         self.shadow_lift_value_label = self.shadows_value_label
 
         self.highlights_label = QLabel(self.tr("Highlights:"), self)
-        self.highlights_slider = QSlider(Qt.Horizontal, self)
+        self.highlights_slider = MixedStateSlider(Qt.Horizontal, self)
         self.highlights_slider.setRange(-100, 100)
         self.highlights_slider.setSingleStep(1)
         self.highlights_slider.setPageStep(5)
@@ -213,6 +413,7 @@ class RawProcessingControls(QWidget):
         return self._settings
 
     def set_settings(self, settings: RawRenderSettings | dict | None) -> None:
+        self._clear_mixed_state()
         self._settings = RawRenderSettings.from_dict(settings)
         if bool(self._settings.auto_levels) and self._auto_level_settings is None:
             self._auto_level_settings = RawRenderSettings.from_dict(self._settings)
@@ -220,12 +421,198 @@ class RawProcessingControls(QWidget):
         if bool(self.auto_levels_checkbox.isChecked()) and self._auto_level_settings is not None:
             self._apply_auto_level_settings()
 
+    def set_mixed_settings(self, settings_list) -> None:
+        """Populate controls with ghost min/max handles for fields that
+        disagree across the supplied per-image settings.
+
+        Fields that agree across every element are set to that common
+        value using the normal path; disagreeing fields put their slider
+        into mixed mode (dual ghost handles) or, for boolean/segmented
+        controls, into a no-selection / tri-state visual.
+        """
+        resolved = [RawRenderSettings.from_dict(s) for s in (settings_list or [])]
+        if not resolved:
+            self.set_settings(None)
+            return
+        if len(resolved) == 1:
+            self.set_settings(resolved[0])
+            return
+        self._loading = True
+        self._slider_change_pending = False
+        try:
+            base = resolved[0]
+            self._settings = base
+            slider_specs = list(self._mixed_slider_specs())
+            for slider, extractor in slider_specs:
+                values = [int(round(extractor(s))) for s in resolved]
+                lo, hi = min(values), max(values)
+                with QSignalBlocker(slider):
+                    if lo == hi:
+                        slider.clear_mixed_range()
+                        slider.setValue(lo)
+                    else:
+                        slider.setValue(lo)
+                        slider.set_mixed_range(lo, hi)
+            wb_modes = {str(s.white_balance_mode or "camera").strip().lower() or "camera" for s in resolved}
+            with QSignalBlocker(self.white_balance_selector):
+                if len(wb_modes) == 1:
+                    self.white_balance_selector.set_selected_value(next(iter(wb_modes)))
+                else:
+                    self.white_balance_selector.set_selected_value("camera")
+            self._mixed_wb_mode = len(wb_modes) > 1
+            auto_levels_values = {bool(s.auto_levels) for s in resolved}
+            with QSignalBlocker(self.auto_levels_checkbox):
+                if len(auto_levels_values) == 1:
+                    self.auto_levels_checkbox.setChecked(next(iter(auto_levels_values)))
+                    self.auto_levels_checkbox.setProperty("mixed", False)
+                else:
+                    self.auto_levels_checkbox.setChecked(False)
+                    self.auto_levels_checkbox.setProperty("mixed", True)
+            tone_enabled = {bool(s.tone_curve_enabled) for s in resolved}
+            with QSignalBlocker(self.tone_curve_checkbox):
+                if len(tone_enabled) == 1:
+                    self.tone_curve_checkbox.setChecked(next(iter(tone_enabled)))
+                    self.tone_curve_checkbox.setProperty("mixed", False)
+                else:
+                    self.tone_curve_checkbox.setChecked(False)
+                    self.tone_curve_checkbox.setProperty("mixed", True)
+            self._refresh_mixed_value_labels()
+            self._set_tone_controls_enabled(bool(self.tone_curve_checkbox.isChecked()) or len(tone_enabled) > 1)
+            self._refresh_pick_button_text()
+        finally:
+            self._loading = False
+
+    def mixed_fields(self) -> set:
+        """Return the set of field names still in mixed state."""
+        mixed: set = set()
+        for name, slider, _ in self._named_mixed_slider_specs():
+            if slider.is_mixed():
+                mixed.add(name)
+        if getattr(self, "_mixed_wb_mode", False):
+            mixed.add("white_balance_mode")
+        if self.auto_levels_checkbox.property("mixed"):
+            mixed.add("auto_levels")
+        if self.tone_curve_checkbox.property("mixed"):
+            mixed.add("tone_curve_enabled")
+        return mixed
+
+    def _clear_mixed_state(self) -> None:
+        for _, slider, _ in self._named_mixed_slider_specs():
+            slider.clear_mixed_range()
+        self._mixed_wb_mode = False
+        self.auto_levels_checkbox.setProperty("mixed", False)
+        self.tone_curve_checkbox.setProperty("mixed", False)
+
+    def _mixed_slider_specs(self):
+        for _, slider, extractor in self._named_mixed_slider_specs():
+            yield slider, extractor
+
+    def _named_mixed_slider_specs(self):
+        return (
+            ("light_ev", self.light_slider, lambda s: float(s.light_ev) * _EV_SLIDER_SCALE),
+            ("dark_ev", self.dark_slider, lambda s: abs(float(s.dark_ev)) * _EV_SLIDER_SCALE),
+            ("tone_contrast", self.contrast_slider, lambda s: float(s.tone_contrast) * 100.0),
+            ("tone_curve_strength", self.curve_strength_slider, lambda s: float(s.tone_curve_strength) * 100.0),
+            ("tone_curve_midpoint", self.curve_midpoint_slider, lambda s: float(s.tone_curve_midpoint) * 100.0),
+            ("tone_shadows", self.shadows_slider, lambda s: float(s.tone_shadows) * 100.0),
+            ("tone_highlights", self.highlights_slider, lambda s: float(s.tone_highlights) * 100.0),
+        )
+
+    def _refresh_mixed_value_labels(self) -> None:
+        # Blank the trailing value label for sliders still in mixed mode so
+        # the number doesn't lie about which image the user is looking at.
+        def _text(slider, formatter):
+            return "" if slider.is_mixed() else formatter(slider.value())
+        self.light_value_label.setText(_text(self.light_slider, self._ev_value_text))
+        self.dark_value_label.setText(_text(self.dark_slider, self._dark_ev_value_text))
+        self.curve_strength_value_label.setText(
+            "" if self.curve_strength_slider.is_mixed() else f"{float(self.curve_strength_slider.value()) / 100.0:.2f}"
+        )
+        self.curve_midpoint_value_label.setText(
+            "" if self.curve_midpoint_slider.is_mixed() else f"{float(self.curve_midpoint_slider.value()) / 100.0:.2f}"
+        )
+        self.contrast_value_label.setText(_text(self.contrast_slider, self._signed_percent_value_text))
+        self.shadows_value_label.setText(_text(self.shadows_slider, self._signed_percent_value_text))
+        self.highlights_value_label.setText(_text(self.highlights_slider, self._signed_percent_value_text))
+
     def set_auto_level_settings(self, settings: RawRenderSettings | dict | None) -> None:
         resolved = RawRenderSettings.from_dict(settings)
         self._auto_level_settings = resolved
         if self._loading or not self.auto_levels_checkbox.isChecked():
             return
         self._apply_auto_level_settings()
+
+    def set_auto_level_cutoffs(self, dark_cutoff: float, bright_cutoff: float) -> None:
+        """Push the Preferences dark/bright cutoff fractions into the widget.
+
+        The values become the ``black_percentile`` / ``1 - white_percentile``
+        used by the auto-levels stage. Called by containers that own the
+        widget so the shared pill (which knows nothing about SettingsDB)
+        renders with the user's configured cutoffs.
+        """
+        try:
+            dark = float(dark_cutoff)
+        except Exception:
+            dark = 0.0
+        try:
+            bright = float(bright_cutoff)
+        except Exception:
+            bright = 0.0
+        self._dark_cutoff = max(0.0, min(1.0, dark))
+        self._bright_cutoff = max(0.0, min(1.0, bright))
+        # Refresh the cached settings snapshot so callers reading
+        # ``settings()`` back before touching any control see the new
+        # percentiles.
+        self._settings = replace(
+            RawRenderSettings.from_dict(self._settings),
+            black_percentile=float(self._dark_cutoff),
+            white_percentile=float(1.0 - self._bright_cutoff),
+        )
+
+    def sync_from_live_bounds(self, black_level: float | None, white_level: float | None) -> None:
+        """Reflect the bounds the pipeline actually used on the Light/Dark sliders.
+
+        Called with the auto-levels stage's per-render ``debug.black_level`` /
+        ``debug.white_level``. Values get converted to the same ``light_ev`` /
+        ``dark_ev`` scale that ``apply_light_dark_levels`` uses, so toggling
+        Auto Levels off freezes the image at these bounds (the pipeline then
+        reads the sliders instead of recomputing).
+        """
+        if self._loading:
+            return
+        if black_level is None or white_level is None:
+            return
+        try:
+            black_point = float(black_level)
+            white_point = float(white_level)
+        except (TypeError, ValueError):
+            return
+        if not (math.isfinite(black_point) and math.isfinite(white_point)):
+            return
+        if white_point <= black_point:
+            return
+        black_point = max(0.0, min(1.0, black_point))
+        white_point = max(1e-6, min(1.0, white_point))
+        light_ev = float(max(0.0, min(2.0, -math.log2(max(1e-6, white_point)))))
+        dark_ev = float(max(-2.0, min(0.0, math.log2(max(1e-6, 1.0 - black_point)))))
+        base = RawRenderSettings.from_dict(self._auto_level_settings or self._settings)
+        updated = replace(
+            base,
+            light_ev=light_ev,
+            dark_ev=dark_ev,
+            exposure_ev=light_ev + dark_ev,
+        )
+        self._auto_level_settings = updated
+        if not self.auto_levels_checkbox.isChecked():
+            return
+        # Only push into the sliders; do NOT re-emit settingsChanged. The
+        # pipeline is still doing live recompute, so a re-render was already
+        # triggered by whatever slider event fired.
+        with QSignalBlocker(self.light_slider):
+            self.light_slider.setValue(int(round(light_ev * _EV_SLIDER_SCALE)))
+        with QSignalBlocker(self.dark_slider):
+            self.dark_slider.setValue(int(round(abs(dark_ev) * _EV_SLIDER_SCALE)))
+        self._refresh_value_labels()
 
     def set_pick_checked(self, checked: bool) -> None:
         with QSignalBlocker(self.pick_button):
@@ -285,13 +672,25 @@ class RawProcessingControls(QWidget):
         self._refresh_value_labels()
 
     def _refresh_value_labels(self) -> None:
-        self.light_value_label.setText(self._ev_value_text(self.light_slider.value()))
-        self.dark_value_label.setText(self._dark_ev_value_text(self.dark_slider.value()))
-        self.curve_strength_value_label.setText(f"{float(self.curve_strength_slider.value()) / 100.0:.2f}")
-        self.curve_midpoint_value_label.setText(f"{float(self.curve_midpoint_slider.value()) / 100.0:.2f}")
-        self.contrast_value_label.setText(self._signed_percent_value_text(self.contrast_slider.value()))
-        self.shadows_value_label.setText(self._signed_percent_value_text(self.shadows_slider.value()))
-        self.highlights_value_label.setText(self._signed_percent_value_text(self.highlights_slider.value()))
+        def _mixed(slider) -> bool:
+            return isinstance(slider, MixedStateSlider) and slider.is_mixed()
+        self.light_value_label.setText("" if _mixed(self.light_slider) else self._ev_value_text(self.light_slider.value()))
+        self.dark_value_label.setText("" if _mixed(self.dark_slider) else self._dark_ev_value_text(self.dark_slider.value()))
+        self.curve_strength_value_label.setText(
+            "" if _mixed(self.curve_strength_slider) else f"{float(self.curve_strength_slider.value()) / 100.0:.2f}"
+        )
+        self.curve_midpoint_value_label.setText(
+            "" if _mixed(self.curve_midpoint_slider) else f"{float(self.curve_midpoint_slider.value()) / 100.0:.2f}"
+        )
+        self.contrast_value_label.setText(
+            "" if _mixed(self.contrast_slider) else self._signed_percent_value_text(self.contrast_slider.value())
+        )
+        self.shadows_value_label.setText(
+            "" if _mixed(self.shadows_slider) else self._signed_percent_value_text(self.shadows_slider.value())
+        )
+        self.highlights_value_label.setText(
+            "" if _mixed(self.highlights_slider) else self._signed_percent_value_text(self.highlights_slider.value())
+        )
 
     def _settings_from_controls(self) -> RawRenderSettings:
         base_settings = RawRenderSettings.from_dict(self._settings)
@@ -312,8 +711,8 @@ class RawProcessingControls(QWidget):
             light_ev=light_ev,
             dark_ev=dark_ev,
             auto_levels=bool(self.auto_levels_checkbox.isChecked()),
-            black_percentile=0.0,
-            white_percentile=1.0,
+            black_percentile=float(max(0.0, min(1.0, self._dark_cutoff))),
+            white_percentile=float(max(0.0, min(1.0, 1.0 - self._bright_cutoff))),
             auto_levels_strength=1.0,
             auto_levels_soft_tails=False,
             auto_levels_tail_size=0.03,
@@ -386,9 +785,17 @@ class RawProcessingControls(QWidget):
         if self._loading:
             return
         sender = self.sender()
-        if sender is self.auto_levels_checkbox and self.auto_levels_checkbox.isChecked():
-            self._apply_auto_level_settings()
+        if sender is self.white_balance_selector:
+            self._mixed_wb_mode = False
+        if sender is self.auto_levels_checkbox:
+            self.auto_levels_checkbox.setProperty("mixed", False)
+            if self.auto_levels_checkbox.isChecked():
+                self._apply_auto_level_settings()
+        if sender is self.tone_curve_checkbox:
+            self.tone_curve_checkbox.setProperty("mixed", False)
         if isinstance(sender, QSlider):
+            if isinstance(sender, MixedStateSlider) and sender.is_mixed():
+                sender.clear_mixed_range()
             if sender in {self.light_slider, self.dark_slider} and self.auto_levels_checkbox.isChecked():
                 with QSignalBlocker(self.auto_levels_checkbox):
                     self.auto_levels_checkbox.setChecked(False)

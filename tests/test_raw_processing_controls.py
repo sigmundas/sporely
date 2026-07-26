@@ -7,7 +7,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from ui.raw_processing_controls import RawProcessingControls
+from PySide6.QtCore import QSignalBlocker
+
+from ui.raw_processing_controls import AutoLevelsToggle, RawProcessingControls
 from utils.raw_render import RawRenderSettings
 
 
@@ -30,8 +32,9 @@ def test_raw_processing_controls_round_trip_preserves_raw_settings(qapp):
     assert controls.shadow_lift_slider is controls.shadows_slider
     assert controls.shadow_lift_value_label is controls.shadows_value_label
     assert controls.auto_levels_checkbox.isHidden() is False
-    assert controls.auto_levels_checkbox.text() == "Auto"
+    assert controls.auto_levels_checkbox.text() == "Auto levels"
     assert controls.auto_levels_btn is controls.auto_levels_checkbox
+    assert controls.auto_levels_toggle is controls.auto_levels_checkbox
     assert controls.contrast_label.text() == "Contrast:"
     assert controls.contrast_slider.minimum() == -100
     assert controls.contrast_slider.maximum() == 100
@@ -206,3 +209,112 @@ def test_raw_processing_controls_set_settings_does_not_emit_settings_changed(qap
     )
 
     assert emissions == []
+
+
+# --- AutoLevelsToggle adapter tests ------------------------------------------------
+#
+# The toggle is the compatibility layer between the old checkable QPushButton
+# and the new segmented pill; every observable the widget code and existing
+# tests rely on needs to be exercised. In particular the mixed-state path
+# (temporary non-exclusive button group) is the most fragile bit.
+
+
+def test_auto_levels_toggle_set_checked_updates_selected_segment(qapp):
+    toggle = AutoLevelsToggle()
+    assert toggle.isChecked() is False
+    assert toggle._off_button.isChecked() is True
+    assert toggle._on_button.isChecked() is False
+
+    toggle.setChecked(True)
+    assert toggle.isChecked() is True
+    assert toggle._on_button.isChecked() is True
+    assert toggle._off_button.isChecked() is False
+
+    toggle.setChecked(False)
+    assert toggle.isChecked() is False
+    assert toggle._off_button.isChecked() is True
+    assert toggle._on_button.isChecked() is False
+
+
+def test_auto_levels_toggle_user_click_emits_toggled_exactly_once(qapp):
+    toggle = AutoLevelsToggle()
+    emissions: list[bool] = []
+    toggle.toggled.connect(lambda checked: emissions.append(bool(checked)))
+
+    # `.click()` mirrors a real mouse click on the pill: QButtonGroup fires
+    # buttonClicked → SegmentedSelector emits selectionChanged →
+    # AutoLevelsToggle._on_selection_changed emits `toggled` exactly once.
+    toggle._on_button.click()
+    assert toggle.isChecked() is True
+    assert emissions == [True]
+
+    toggle._off_button.click()
+    assert toggle.isChecked() is False
+    assert emissions == [True, False]
+
+
+def test_auto_levels_toggle_signal_blocker_suppresses_toggled(qapp):
+    toggle = AutoLevelsToggle()
+    emissions: list[bool] = []
+    toggle.toggled.connect(lambda checked: emissions.append(bool(checked)))
+
+    with QSignalBlocker(toggle):
+        toggle.setChecked(True)
+    assert toggle.isChecked() is True
+    assert emissions == []
+
+    # After the blocker unwinds, later changes emit normally.
+    toggle.setChecked(False)
+    assert emissions == [False]
+
+
+def test_auto_levels_toggle_mixed_state_deselects_both_and_survives_readback(qapp):
+    toggle = AutoLevelsToggle()
+    toggle.setChecked(True)
+
+    toggle.setProperty("mixed", True)
+    assert toggle.property("mixed") is True
+    assert toggle._on_button.isChecked() is False
+    assert toggle._off_button.isChecked() is False
+    # `isChecked()` should keep reporting the last committed selection —
+    # mixed is a visual state, not a value change.
+    assert toggle.isChecked() is True
+
+
+def test_auto_levels_toggle_leaving_mixed_restores_prior_selection(qapp):
+    toggle = AutoLevelsToggle()
+    toggle.setChecked(True)
+    toggle.setProperty("mixed", True)
+
+    toggle.setProperty("mixed", False)
+    assert toggle.property("mixed") is False
+    # Button group is exclusive again and the previously-committed choice
+    # is what shows selected.
+    assert toggle._selector.button_group.exclusive() is True
+    assert toggle._on_button.isChecked() is True
+    assert toggle._off_button.isChecked() is False
+    assert toggle.isChecked() is True
+
+    # And a subsequent user click still works — no stuck-button symptoms.
+    toggle._off_button.click()
+    assert toggle.isChecked() is False
+    assert toggle._off_button.isChecked() is True
+
+
+def test_auto_levels_toggle_mixed_state_does_not_leak_into_is_checked(qapp):
+    toggle = AutoLevelsToggle()
+    # Off → mixed → back to off.
+    toggle.setChecked(False)
+    toggle.setProperty("mixed", True)
+    assert toggle.isChecked() is False
+    toggle.setProperty("mixed", False)
+    assert toggle.isChecked() is False
+
+    # On → mixed → set to off explicitly — the explicit set wins.
+    toggle.setChecked(True)
+    toggle.setProperty("mixed", True)
+    toggle.setChecked(False)
+    assert toggle.isChecked() is False
+    assert toggle.property("mixed") is False
+    assert toggle._off_button.isChecked() is True
+    assert toggle._on_button.isChecked() is False

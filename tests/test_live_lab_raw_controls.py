@@ -209,7 +209,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     def _gallery_item_key(item):
         return item.get("id") if item.get("id") is not None else item.get("filepath")
 
-    def _gallery_select_paths(paths):
+    def _gallery_select_paths(paths, center=True):
         normalized_paths = {str(path) for path in (paths or []) if path}
         selected_keys = set()
         first_selected = None
@@ -222,7 +222,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
                     first_selected = key
         state.session_gallery._selected_keys = selected_keys
         state.session_gallery.selected = first_selected
-        state.session_gallery._centered_on = first_selected
+        if center:
+            state.session_gallery._centered_on = first_selected
 
     def _gallery_selected_paths():
         selected = []
@@ -246,15 +247,17 @@ def _build_raw_controls_state() -> SimpleNamespace:
             setattr(state.session_gallery, "selected", None),
             setattr(state.session_gallery, "_selected_keys", set()),
         ),
-        set_items=lambda items: setattr(state.session_gallery, "items", list(items)) or setattr(
+        set_items=lambda items, preserve_scroll=False: setattr(
+            state.session_gallery, "items", list(items)
+        ) or setattr(
             state.session_gallery,
             "visible",
             bool(items),
         ),
-        select_image=lambda image_id: (
+        select_image=lambda image_id, center=True: (
             setattr(state.session_gallery, "selected", image_id),
             setattr(state.session_gallery, "_selected_keys", {image_id} if image_id is not None else set()),
-            setattr(state.session_gallery, "_centered_on", image_id),
+            setattr(state.session_gallery, "_centered_on", image_id if center else state.session_gallery._centered_on),
         ),
         selected_keys=lambda: set(state.session_gallery._selected_keys),
         selected_paths=_gallery_selected_paths,
@@ -584,8 +587,6 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._pending_raw_capture_index_for_key = lambda key: live_lab_tab.LiveLabTab._pending_raw_capture_index_for_key(state, key)
     state._pending_raw_gallery_items = lambda: live_lab_tab.LiveLabTab._pending_raw_gallery_items(state)
     state._session_gallery_items = lambda: live_lab_tab.LiveLabTab._session_gallery_items(state)
-    state._refresh_pending_raw_gallery = lambda: live_lab_tab.LiveLabTab._refresh_pending_raw_gallery(state)
-    state._on_pending_raw_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, image_id, path)
     state._on_session_gallery_clicked = lambda image_id, path: live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, image_id, path)
     state._update_pending_raw_controls = lambda: live_lab_tab.LiveLabTab._update_pending_raw_controls(state)
     state._refresh_live_image_hover_hint = lambda capture=None: live_lab_tab.LiveLabTab._refresh_live_image_hover_hint(state, capture)
@@ -945,6 +946,49 @@ def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_pa
     assert float(histogram.min()) >= 0.0
 
 
+def test_live_lab_raw_curve_preview_uses_visible_pending_preview_when_memory_rgb_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    _qapp()
+    state = _build_raw_controls_state()
+    monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        state,
+        "_raw_curve_preview_fallback_rgb",
+        lambda: pytest.fail("curve preview should use the visible pending preview instead of the fallback ramp"),
+    )
+
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    preview_path = tmp_path / "current_preview.jpg"
+    image = QImage(24, 24, QImage.Format.Format_RGB32)
+    image.fill(Qt.red)
+    assert image.save(str(preview_path))
+
+    capture = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        preview_path=preview_path,
+        preview_rgb=None,
+        status="pending",
+        rendered_settings=RawRenderSettings.default(),
+    )
+    state._pending_raw_captures = [capture]
+    state._selected_pending_raw_index = 0
+    state.live_image_label.original_pixmap = QPixmap.fromImage(image)
+    state.live_image_label._full_image_path = str(preview_path)
+
+    live_lab_tab.LiveLabTab._refresh_raw_curve_preview(state)
+
+    histogram = state.raw_curve_preview_widget.current_histogram()
+    assert histogram is not None
+    assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
+    assert state.raw_curve_preview_widget.current_curve is not None
+
+
 def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode(
     tmp_path,
     monkeypatch,
@@ -970,6 +1014,38 @@ def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode
     assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
     assert float(histogram.max()) <= 1.0
     assert float(histogram.min()) >= 0.0
+
+
+def test_live_lab_raw_curve_preview_histogram_uses_pre_levels_working_buffer(tmp_path, monkeypatch):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    settings = RawRenderSettings.default()
+    key = state._raw_preview_proxy_cache_key(source_path, settings)
+    state._pending_raw_preview_proxy_cache = {
+        key: live_lab_tab._RawPreviewCacheEntry(
+            raw_rgb=np.full((2, 2, 3), 0.1, dtype=np.float32),
+        )
+    }
+
+    # Force the pre-levels helper to a known constant so the histogram
+    # peak lands in a predictable bin regardless of the WB stage.
+    pre_levels_rgb = np.full((2, 2, 3), 0.75, dtype=np.float32)
+    monkeypatch.setattr(
+        live_lab_tab,
+        "compute_pre_levels_working_rgb",
+        lambda rgb, settings: pre_levels_rgb,
+    )
+
+    analysis = live_lab_tab.LiveLabTab._raw_curve_preview_analysis_from_path(state, source_path, settings)
+    assert analysis is not None
+    _rgb, histogram = analysis
+    assert histogram is not None
+    assert histogram.size == live_lab_tab._TONE_CURVE_PREVIEW_HISTOGRAM_BINS
+    # 0.75 lands in bin int(0.75 * 96) == 72 (the histogram is normalized
+    # by peak so we check bin position, not amplitude).
+    assert int(histogram.argmax()) == 72
 
 
 def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_selection(tmp_path, monkeypatch):
@@ -3646,7 +3722,7 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     assert state.sample_combo.currentData() == "Dried"
 
     first_item = state.session_gallery.items[0]
-    live_lab_tab.LiveLabTab._on_pending_raw_gallery_clicked(state, first_item["id"], first_item["filepath"])
+    live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, first_item["id"], first_item["filepath"])
 
     assert state._selected_pending_raw_index == 0
     assert state.session_gallery.selected == f"pending:{source_one}"
@@ -3947,6 +4023,94 @@ def test_live_lab_start_session_keeps_pending_raw_gallery_visible(tmp_path, monk
     assert state.viewer_title_label.text().startswith("Pending RAW")
     assert state._queue_companion_source(str(source_path)) is False
     assert len(state._pending_raw_captures) == 1
+
+
+def test_live_lab_refresh_session_gallery_reveals_new_item_at_end(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = [101, 102]
+    state._selected_session_image_id = 102
+    state._pending_reveal_new_at_end = True
+
+    refresh_args: list[str] = []
+    items = [
+        {"id": 101, "filepath": str(tmp_path / "a.jpg")},
+        {"id": 102, "filepath": str(tmp_path / "b.jpg")},
+    ]
+    state._session_gallery_items = lambda: (list(items), 102)
+    state.session_gallery.set_items = lambda new_items, reveal="off", preserve_scroll=False: (
+        state.session_gallery.__setattr__("items", list(new_items)),
+        refresh_args.append(str(reveal)),
+    )
+    state.session_gallery.select_image = lambda image_id, center=True: setattr(state.session_gallery, "selected", image_id)
+    state.session_gallery.selected = None
+
+    live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+
+    assert state.session_gallery.items == items
+    assert refresh_args == ["new_at_end"]
+    assert state.session_gallery.selected == 102
+
+
+def test_live_lab_show_pending_raw_capture_selects_without_recentering(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    preview_path = tmp_path / "previews" / "P070020_1_preview.jpg"
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    preview_path.write_text("preview", encoding="utf-8")
+
+    state = _build_raw_controls_state()
+    state._pending_raw_captures = [
+        live_lab_tab.PendingRawCapture(
+            source_path=source_path,
+            companion_jpeg_path=None,
+            lab_metadata={"image_type": "microscope"},
+            raw_settings=RawRenderSettings.default(),
+            preview_path=preview_path,
+            group_key="group-1",
+        )
+    ]
+    state._selected_pending_raw_index = 0
+
+    calls: list[tuple[object, bool]] = []
+    state.session_gallery.select_image = lambda image_id, center=True: calls.append((image_id, bool(center)))
+    state.session_gallery.is_multi_select = lambda: False
+    state._apply_microscope_state_to_controls = lambda *args, **kwargs: None
+    state._sync_raw_processing_controls_from_settings = lambda *args, **kwargs: None
+    state._update_pending_raw_controls = lambda: None
+    state._refresh_raw_processing_context_ui = lambda: None
+    state._refresh_session_gallery = lambda: None
+    state._show_pending_raw_capture = live_lab_tab.LiveLabTab._show_pending_raw_capture.__get__(state, type(state))
+
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+
+    assert calls == [(f"pending:{source_path}", False)]
+
+
+def test_live_lab_pending_thumbnail_click_does_not_rebuild_gallery(tmp_path):
+    _qapp()
+    source_path = tmp_path / "P070021_1.ORF"
+    state = _build_raw_controls_state()
+    capture = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        group_key="group-1",
+    )
+    state._pending_raw_captures = [capture]
+    pending_key = f"pending:{source_path}"
+    state.session_gallery._selected_keys = {pending_key}
+    suppression_seen: list[bool] = []
+    state._show_pending_raw_capture = lambda _index: suppression_seen.append(
+        bool(getattr(state, "_suppress_pending_raw_gallery_refresh", False))
+    )
+
+    live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, pending_key, str(source_path))
+
+    assert suppression_seen == [True]
+    assert state._suppress_pending_raw_gallery_refresh is False
 
 
 def test_live_lab_pending_raw_controls_still_rerender_after_session_stop(tmp_path, monkeypatch):

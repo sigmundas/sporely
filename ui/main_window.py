@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                  QToolTip, QCompleter, QSplitterHandle, QFrame,
                                  QPlainTextEdit, QSlider, QGraphicsOpacityEffect,
                                  QListWidget, QListWidgetItem, QStackedWidget,
-                                 QScrollArea, QGridLayout)
+                                 QScrollArea, QGridLayout, QMenu)
 from PySide6.QtGui import (
     QPixmap,
     QAction,
@@ -162,8 +162,8 @@ from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
-from utils.cloud_sync import is_cloud_auth_error
-from .delegates import SpeciesItemDelegate
+from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
+from .delegates import SpeciesItemDelegate, AISuggestionItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
     normalize_vernacular_language,
@@ -208,7 +208,7 @@ from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
-from .hint_status import HintBar, HintStatusController
+from .hint_status import HintBar, HintProgressStack, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
 from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
@@ -1025,7 +1025,7 @@ class SettingsHubDialog(QDialog):
     """Single settings hub with left-nav pane and stacked content pages.
 
     Consolidates: User profile, Database, Online publishing, Language, Appearance,
-    and advanced RAW processing preferences.
+    image-import and advanced RAW processing preferences.
     Calibration is intentionally excluded (it's a workflow, not a preference).
     """
 
@@ -1034,7 +1034,8 @@ class SettingsHubDialog(QDialog):
     PAGE_PUBLISHING = 2
     PAGE_LANGUAGE   = 3
     PAGE_APPEARANCE = 4
-    PAGE_RAW_PROCESSING = 5
+    PAGE_IMAGE_IMPORT = 5
+    PAGE_RAW_PROCESSING = PAGE_IMAGE_IMPORT  # Backward-compatible page constant.
 
     def __init__(self, parent=None, start_page: int = 0):
         super().__init__(parent)
@@ -1081,7 +1082,7 @@ class SettingsHubDialog(QDialog):
             self.tr("Online publishing"),
             self.tr("Language"),
             self.tr("Appearance"),
-            self.tr("RAW processing"),
+            self.tr("Image import"),
         ):
             item = QListWidgetItem(label)
             item.setSizeHint(QSize(180, 36))
@@ -1093,7 +1094,7 @@ class SettingsHubDialog(QDialog):
         self._stack.addWidget(self._build_publishing_page())
         self._stack.addWidget(self._build_language_page())
         self._stack.addWidget(self._build_appearance_page())
-        self._stack.addWidget(self._build_raw_processing_page())
+        self._stack.addWidget(self._build_image_import_page())
 
         # Wire nav after stack exists
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
@@ -1166,6 +1167,8 @@ class SettingsHubDialog(QDialog):
             help_button = getattr(self._artsobs_dialog, "_help_button", None)
         elif page_index == self.PAGE_DATABASE:
             hint_bar = getattr(self._db_dialog, "hint_bar", None)
+        elif page_index == self.PAGE_APPEARANCE:
+            hint_bar = getattr(self, "_appearance_hint_bar", None)
 
         if hint_bar is not None:
             self._hub_hint_layout.addWidget(hint_bar, 1)
@@ -1262,6 +1265,7 @@ class SettingsHubDialog(QDialog):
             lambda: self._request_settings_cloud_sync(
                 sync_images=True,
                 materialize_remote_images=True,
+                full_pull=False,
             )
         )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
@@ -1354,21 +1358,173 @@ class SettingsHubDialog(QDialog):
             layout.addWidget(btn)
             btn.clicked.connect(self._save_appearance)
 
-        layout.addStretch()
+        columns_label = QLabel(self.tr("Observations table columns:"))
+        columns_label.setStyleSheet("font-weight: bold; margin-top: 12px;")
+        layout.addWidget(columns_label)
+
+        catalog = ObservationsTab.column_catalog()
+        default_visible = set(ObservationsTab.DEFAULT_VISIBLE_COLUMNS)
+        stored_visible = self._read_observations_visible_columns(default_visible)
+
+        self._observations_columns_default_hint = self.tr(
+            "Toggle columns shown in the Observations table. Hover an item to see what it contains."
+        )
+        self._observations_columns_loading = True
+        self._observations_columns_list = QListWidget(page)
+        self._observations_columns_list.setAlternatingRowColors(True)
+        self._observations_columns_list.setSpacing(2)
+        self._observations_columns_list.setMouseTracking(True)
+        self._observations_columns_list.viewport().setMouseTracking(True)
+        self._observations_columns_list.setStyleSheet(
+            "QListWidget::item { padding: 4px 6px; min-height: 22px; }"
+        )
+        for key, label, hint in catalog:
+            item = QListWidgetItem(label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if key in stored_visible else Qt.Unchecked)
+            item.setData(Qt.UserRole, key)
+            item.setData(Qt.UserRole + 1, hint)
+            self._observations_columns_list.addItem(item)
+        self._observations_columns_list.itemEntered.connect(
+            self._on_observations_columns_item_hovered
+        )
+        self._observations_columns_list.itemChanged.connect(
+            self._on_observations_columns_item_changed
+        )
+        self._observations_columns_list.viewport().installEventFilter(self)
+        layout.addWidget(self._observations_columns_list, 1)
+
+        self._appearance_hint_bar = HintBar(page)
+        self._appearance_hint_controller = HintStatusController(
+            self._appearance_hint_bar, self
+        )
+        self._appearance_hint_controller.set_hint(self._observations_columns_default_hint)
+        # The hint bar itself is docked into the shared hub bottom row by
+        # _update_embedded_bottom_row when this page is active.
+
+        self._appearance_columns_changed = False
+        self._observations_columns_loading = False
         self._load_appearance_settings()
         return page
 
-    def _build_raw_processing_page(self) -> QWidget:
+    @staticmethod
+    def _read_observations_visible_columns(default_visible: set[str]) -> set[str]:
+        raw = SettingsDB.get_setting(ObservationsTab.SETTING_VISIBLE_COLUMNS, "")
+        text = str(raw or "").strip()
+        if not text:
+            return set(default_visible)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return set(default_visible)
+        if not isinstance(parsed, list):
+            return set(default_visible)
+        allowed = set(ObservationsTab.COLUMN_KEYS)
+        keys = {str(item) for item in parsed if isinstance(item, str) and item in allowed}
+        if not keys:
+            return set(default_visible)
+        return keys
+
+    def _on_observations_columns_item_hovered(self, item: QListWidgetItem) -> None:
+        hint = item.data(Qt.UserRole + 1) if item is not None else None
+        controller = getattr(self, "_appearance_hint_controller", None)
+        if controller is None:
+            return
+        if isinstance(hint, str) and hint.strip():
+            controller.set_hint(hint)
+        else:
+            controller.set_hint(self._observations_columns_default_hint)
+
+    def _on_observations_columns_item_changed(self, _item: QListWidgetItem) -> None:
+        if getattr(self, "_observations_columns_loading", False):
+            return
+        keys: list[str] = []
+        list_widget = getattr(self, "_observations_columns_list", None)
+        if list_widget is None:
+            return
+        for row in range(list_widget.count()):
+            entry = list_widget.item(row)
+            if entry is None:
+                continue
+            if entry.checkState() != Qt.Checked:
+                continue
+            key = entry.data(Qt.UserRole)
+            if isinstance(key, str) and key:
+                keys.append(key)
+        SettingsDB.set_setting(
+            ObservationsTab.SETTING_VISIBLE_COLUMNS,
+            json.dumps(keys),
+        )
+        self._appearance_columns_changed = True
+        parent = self.parent()
+        observations_tab = getattr(parent, "observations_tab", None) if parent else None
+        if observations_tab is not None:
+            refresher = getattr(
+                observations_tab, "refresh_observations_column_visibility", None
+            )
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Leave:
+            list_widget = getattr(self, "_observations_columns_list", None)
+            controller = getattr(self, "_appearance_hint_controller", None)
+            if list_widget is not None and watched is list_widget.viewport() and controller is not None:
+                controller.set_hint(self._observations_columns_default_hint)
+        return super().eventFilter(watched, event)
+
+    def _build_image_import_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        info = QLabel(self.tr(
-            "These advanced RAW settings affect Live Lab review renders and the curve inspector defaults."
-        ))
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        live_group, live_layout = create_section_card(self.tr("Live lab"), parent=page)
+        live_layout.setSpacing(8)
+
+        self._live_lab_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        self._live_lab_mode_selector.add_option(
+            self.tr("Live capture (watch folder)"),
+            LiveLabTab.SESSION_MODE_LIVE,
+            checked=True,
+        )
+        self._live_lab_mode_selector.add_option(
+            self.tr("Offline (log only)"),
+            LiveLabTab.SESSION_MODE_OFFLINE,
+        )
+        saved_mode = LiveLabTab.SESSION_MODE_LIVE
+        live_lab = self._settings_live_lab()
+        if live_lab is not None:
+            saved_mode = live_lab._selected_session_mode()
+        else:
+            saved_mode = str(SettingsDB.get_setting(LiveLabTab.SETTING_SESSION_MODE, saved_mode) or saved_mode)
+        self._live_lab_mode_selector.set_selected_value(saved_mode)
+        self._live_lab_mode_selector.selectionChanged.connect(self._save_live_lab_import_preferences)
+        live_layout.addWidget(self._live_lab_mode_selector)
+
+        folder_row = QHBoxLayout()
+        folder_row.setContentsMargins(0, 0, 0, 0)
+        folder_row.setSpacing(8)
+        self._live_lab_watch_dir_input = QLineEdit()
+        self._live_lab_watch_dir_input.setPlaceholderText(self.tr("Choose the microscope capture folder"))
+        self._live_lab_watch_dir_input.setText(
+            str(SettingsDB.get_setting(LiveLabTab.SETTING_WATCH_DIR, "") or "").strip()
+        )
+        self._live_lab_watch_dir_input.textChanged.connect(self._save_live_lab_import_preferences)
+        folder_row.addWidget(self._live_lab_watch_dir_input, 1)
+        self._live_lab_browse_button = QPushButton(self.tr("Browse"))
+        self._live_lab_browse_button.clicked.connect(self._choose_live_lab_watch_dir)
+        folder_row.addWidget(self._live_lab_browse_button)
+        live_layout.addLayout(folder_row)
+
+        running = bool(live_lab is not None and live_lab.is_session_running())
+        self._live_lab_mode_selector.setEnabled(not running)
+        self._live_lab_watch_dir_input.setReadOnly(running)
+        self._live_lab_browse_button.setEnabled(not running)
+        layout.addWidget(live_group)
 
         group, form = create_section_card(self.tr("Advanced RAW processing"), QFormLayout, parent=page)
         form.setLabelAlignment(Qt.AlignLeft)
@@ -1462,6 +1618,37 @@ class SettingsHubDialog(QDialog):
         layout.addStretch()
         self._load_raw_processing_settings()
         return page
+
+    def _settings_live_lab(self):
+        return getattr(self.parent(), "live_lab_tab", None)
+
+    def _save_live_lab_import_preferences(self, *_args) -> None:
+        mode = str(self._live_lab_mode_selector.selected_value(LiveLabTab.SESSION_MODE_LIVE) or "")
+        if mode not in {LiveLabTab.SESSION_MODE_LIVE, LiveLabTab.SESSION_MODE_OFFLINE}:
+            mode = LiveLabTab.SESSION_MODE_LIVE
+        watch_dir = str(self._live_lab_watch_dir_input.text() or "").strip()
+        SettingsDB.set_setting(LiveLabTab.SETTING_SESSION_MODE, mode)
+        SettingsDB.set_setting(LiveLabTab.SETTING_WATCH_DIR, watch_dir)
+
+        live_lab = self._settings_live_lab()
+        if live_lab is not None and not live_lab.is_session_running():
+            with QSignalBlocker(live_lab.session_mode_selector):
+                live_lab.session_mode_selector.set_selected_value(mode)
+            with QSignalBlocker(live_lab.watch_dir_input):
+                live_lab.watch_dir_input.setText(watch_dir)
+                live_lab.watch_dir_input.setToolTip(watch_dir)
+            live_lab._update_session_controls()
+
+    def _choose_live_lab_watch_dir(self) -> None:
+        current = str(self._live_lab_watch_dir_input.text() or "").strip()
+        start_dir = current if current and Path(current).is_dir() else str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(
+            self,
+            self.tr("Choose microscope capture folder"),
+            start_dir,
+        )
+        if chosen:
+            self._live_lab_watch_dir_input.setText(chosen)
 
     @staticmethod
     def _configure_raw_percent_spinbox(
@@ -1643,6 +1830,30 @@ class SettingsHubDialog(QDialog):
                     capture_selector.selected_value(LiveLabTab.RAW_CAPTURE_MODE_REVIEW),
                 ),
             )
+        # Preferences live in the same window as Live Lab's advanced RAW
+        # panel — push the new cutoffs into that widget so its Auto Levels
+        # pipeline uses the updated black/white percentiles on the very
+        # next slider event, without requiring a panel rebuild. Also
+        # notify any open Prepare Images dialogs (non-modal — can coexist
+        # with Preferences).
+        live_lab = self._settings_live_lab()
+        if live_lab is not None:
+            refresher = getattr(live_lab, "refresh_raw_processing_preferences", None)
+            if callable(refresher):
+                try:
+                    refresher()
+                except Exception:
+                    pass
+        try:
+            for widget in QApplication.topLevelWidgets():
+                refresher = getattr(widget, "refresh_raw_processing_preferences", None)
+                if callable(refresher) and widget is not live_lab:
+                    try:
+                        refresher()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     # ── Save helpers ──────────────────────────────────────────────────────────
 
@@ -1916,16 +2127,16 @@ class SettingsHubDialog(QDialog):
         try:
             user_info = client.fetch_current_user_info()
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             user_info = {}
         account_email = str(user_info.get("email") or account_email or "").strip()
         try:
             cloud_profile = client.fetch_profile()
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             cloud_profile = {}
         from utils.cloud_sync import fetch_cloud_usage_summary
@@ -1933,8 +2144,8 @@ class SettingsHubDialog(QDialog):
         try:
             summary = fetch_cloud_usage_summary(client)
         except Exception as exc:
-            if is_cloud_auth_error(exc):
-                self._clear_invalid_cloud_session()
+            if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                self._mark_cloud_session_needs_reauth(exc)
                 return
             summary = {}
 
@@ -2084,6 +2295,7 @@ class SettingsHubDialog(QDialog):
         *,
         sync_images: bool,
         materialize_remote_images: bool,
+        full_pull: bool,
     ) -> None:
         main_window = self._settings_hub_main_window()
         if main_window is None:
@@ -2109,6 +2321,7 @@ class SettingsHubDialog(QDialog):
                     run_refresh_flow=False,
                     sync_images=bool(sync_images),
                     materialize_remote_images=bool(materialize_remote_images),
+                    full_pull=bool(full_pull),
                 )
             )
         finally:
@@ -2406,6 +2619,42 @@ class SettingsHubDialog(QDialog):
             pass
         self._on_cloud_logout_changed()
 
+    def _mark_cloud_session_needs_reauth(self, exc: Exception | None = None) -> None:
+        """Flag the session as needing sign-in without wiping stored tokens.
+
+        Called when profile fetch/save hits an auth-shaped error.  The
+        stored refresh token might still be valid — a rotation race or
+        transient Supabase blip can look identical to a truly dead
+        session — so we leave the tokens on disk and surface a sticky
+        hint instead of forcing a re-login on next restart.
+        """
+        summary = self.tr(
+            "Sporely Cloud session needs sign-in.  Sign in again, then click Sync now."
+        )
+        error_text = str(exc or "").strip()
+        try:
+            update_app_settings(
+                {
+                    "cloud_last_sync_status": "reauth_required",
+                    "cloud_last_sync_summary": summary,
+                    "cloud_last_sync_error_count": 1 if error_text else 0,
+                    "cloud_last_sync_errors_json": json.dumps(
+                        [error_text] if error_text else []
+                    ),
+                }
+            )
+        except Exception:
+            pass
+        main_window = self._settings_hub_main_window()
+        observations_tab = getattr(main_window, "observations_tab", None) if main_window else None
+        if observations_tab is not None:
+            updater = getattr(observations_tab, "_refresh_cloud_sync_idle_hint", None)
+            if callable(updater):
+                try:
+                    updater()
+                except Exception:
+                    pass
+
     def _save_profile(self) -> bool:
         username = self._profile_username.text().strip().lstrip("@")
         name = self._profile_name.text().strip()
@@ -2429,8 +2678,8 @@ class SettingsHubDialog(QDialog):
                 )
                 self._cloud_profile_loaded_user_id = str(getattr(client, "user_id", "") or "").strip()
             except Exception as exc:
-                if is_cloud_auth_error(exc):
-                    self._clear_invalid_cloud_session()
+                if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
+                    self._mark_cloud_session_needs_reauth(exc)
                 QMessageBox.warning(
                     self,
                     self.tr("Profile Not Synced"),
@@ -2501,6 +2750,10 @@ class SettingsHubDialog(QDialog):
     @property
     def database_changed(self) -> bool:
         return self._database_changed
+
+    @property
+    def appearance_columns_changed(self) -> bool:
+        return bool(getattr(self, "_appearance_columns_changed", False))
 
 
 class ArtsobservasjonerSettingsDialog(QDialog):
@@ -3796,16 +4049,16 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     hide_progress(False)
                 except Exception:
                     pass
-            set_status = getattr(observations_tab, "set_status_message", None)
-            if callable(set_status):
-                try:
-                    set_status(summary, level="warning", auto_clear_ms=12000)
-                except Exception:
-                    pass
             updater = getattr(observations_tab, "_refresh_cloud_sync_idle_hint", None)
             if callable(updater):
                 try:
                     updater()
+                except Exception:
+                    pass
+            set_status = getattr(observations_tab, "set_status_message", None)
+            if callable(set_status):
+                try:
+                    set_status(summary, level="warning", auto_clear_ms=20000)
                 except Exception:
                     pass
         self._refresh_cloud_sync_ui()
@@ -5775,6 +6028,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
+        self._reference_panel_loaded_observation_id: int | None = None
+        self._reference_panel_loaded_taxon: tuple[str, str] | None = None
         self.species_availability = SpeciesDataAvailability()
         self._ref_completer_suppress = False
         self._ref_taxon_fill_from_vernacular = False
@@ -7491,6 +7746,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self,
             show_delete=True,
             show_badges=True,
+            show_edit=True,
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
@@ -7499,9 +7755,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
         self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
-        self.measure_gallery.deleteRequested.connect(self._on_measure_gallery_delete_requested)
+        self.measure_gallery.deleteImagesRequested.connect(self._on_measure_gallery_delete_selection_requested)
+        self.measure_gallery.editRequested.connect(self._on_measure_gallery_edit_requested)
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
         self.measure_gallery.itemsReordered.connect(self._on_measure_gallery_items_reordered)
+        self.measure_gallery.selectionChanged.connect(self._on_measure_gallery_selection_changed)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
@@ -8012,8 +8270,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.setSpacing(8)
 
-        self.gallery_hint_bar = HintBar(self)
-        bottom_row.addWidget(self.gallery_hint_bar, 1)
+        # Combined hint + progress area at the bottom of the Analysis tab.
+        # The QStackedWidget inside HintProgressStack swaps between the
+        # HintBar and a progress panel, matching the pattern the Live Lab
+        # tab uses, so long-running RAW re-renders show a visible bar
+        # instead of freezing the UI silently.
+        self.gallery_hint_progress = HintProgressStack(self)
+        self.gallery_hint_bar = self.gallery_hint_progress.hint_bar
+        bottom_row.addWidget(self.gallery_hint_progress, 1)
         self._gallery_hint_controller = HintStatusController(self.gallery_hint_bar, self)
         if self._pending_gallery_hint_widgets:
             for widget, hint, tone, allow_when_disabled in self._pending_gallery_hint_widgets:
@@ -8489,6 +8753,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
         self.ref_genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.ref_species_input.setPlaceholderText(self.tr("e.g., velutipes"))
+
+        self.ref_ai_suggestions_combo = QComboBox()
+        self.ref_ai_suggestions_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.ref_ai_suggestions_combo.setPlaceholderText(self.tr("No AI suggestions"))
+        self._ref_ai_suggestions_delegate = AISuggestionItemDelegate(self.ref_ai_suggestions_combo)
+        self.ref_ai_suggestions_combo.setItemDelegate(self._ref_ai_suggestions_delegate)
+        popup_view = self.ref_ai_suggestions_combo.view()
+        if popup_view is not None:
+            popup_view.setItemDelegate(self._ref_ai_suggestions_delegate)
+        self._style_dropdown_popup_readability(
+            self.ref_ai_suggestions_combo.view(),
+            self.ref_ai_suggestions_combo,
+        )
+        self.ref_ai_suggestions_combo.activated.connect(self._on_ref_ai_suggestion_activated)
+
         self.ref_source_input = QComboBox()
         self.ref_source_input.setEditable(True)
         self.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
@@ -8506,6 +8785,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         source_layout.addWidget(self.ref_source_input, 1)
         source_layout.addWidget(self.ref_cloud_btn, 0)
 
+        form.addRow(self.tr("AI suggestions:"), self.ref_ai_suggestions_combo)
         form.addRow(self.ref_vernacular_label, self.ref_vernacular_input)
         form.addRow(self.tr("Genus:"), self.ref_genus_input)
         form.addRow(self.tr("Species:"), self.ref_species_input)
@@ -8601,6 +8881,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._refresh_reference_series_table()
         self._update_reference_add_state()
         self._sync_reference_overlay_controls_state()
+        self._refresh_reference_ai_suggestions()
         return panel
 
     def _style_dropdown_popup_readability(self, popup, font_source=None):
@@ -8718,6 +8999,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._populate_reference_panel_sources(auto_select_single=False)
         self._maybe_load_reference_panel_reference()
         self._update_reference_add_state()
+        self._save_gallery_settings()
 
     def _ref_vernacular_choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
         if not isinstance(index, QModelIndex) or not index.isValid():
@@ -10196,6 +10478,259 @@ class MainWindow(GeometryMixin, QMainWindow):
         _set_cell(2, 2, ref_values.get("q_p50"))
         _set_cell(2, 4, ref_values.get("q_max"))
 
+    def _collect_reference_ai_suggestions(self) -> list[dict]:
+        """Return AI suggestion entries for the active observation.
+
+        Merges Artsorkael + iNaturalist predictions across all images,
+        deduplicates by (source, scientific name), keeps the highest score,
+        and sorts descending by score.
+        """
+        obs_id = getattr(self, "active_observation_id", None)
+        obs_tab = getattr(self, "observations_tab", None)
+        if not obs_id or obs_tab is None:
+            return []
+        state = None
+        getter = getattr(obs_tab, "get_ai_suggestions_for_observation", None)
+        if callable(getter):
+            try:
+                state = getter(int(obs_id))
+            except Exception:
+                state = None
+        if not isinstance(state, dict):
+            observation = None
+            try:
+                observation = ObservationDB.get_observation(int(obs_id))
+            except Exception:
+                observation = None
+            loader = getattr(obs_tab, "_load_observation_ai_state", None)
+            if callable(loader) and observation is not None:
+                try:
+                    state = loader(observation)
+                except Exception:
+                    state = None
+        if not isinstance(state, dict):
+            return []
+
+        best_by_key: dict[tuple[str, str], dict] = {}
+        for source_key, preds_key in (("arts", "predictions"), ("inat", "inat_predictions")):
+            preds_by_image = state.get(preds_key)
+            if not isinstance(preds_by_image, dict):
+                continue
+            for _image_idx, preds in preds_by_image.items():
+                if not isinstance(preds, (list, tuple)):
+                    continue
+                for pred in preds:
+                    if not isinstance(pred, dict):
+                        continue
+                    entry = self._build_reference_ai_entry(pred, source_key)
+                    if entry is None:
+                        continue
+                    dedupe_key = (source_key, entry["scientific_name"].casefold())
+                    existing = best_by_key.get(dedupe_key)
+                    if existing is None or entry["score"] > existing["score"]:
+                        best_by_key[dedupe_key] = entry
+        entries = list(best_by_key.values())
+        entries.sort(key=lambda e: e.get("score", 0.0), reverse=True)
+        return entries
+
+    @staticmethod
+    def _ref_ai_prediction_score(pred: dict) -> float:
+        for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
+            value = pred.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return 0.0
+
+    @staticmethod
+    def _ref_ai_scientific_from_taxon(taxon: dict) -> str:
+        for key in ("scientificName", "scientific_name"):
+            value = str(taxon.get(key) or "").strip()
+            if value:
+                return value
+        value = str(taxon.get("name") or "").strip()
+        parts = value.split()
+        if len(parts) >= 2 and parts[0][:1].isupper() and parts[1][:1].islower():
+            return value
+        return ""
+
+    @staticmethod
+    def _ref_ai_genus_species_from_taxon(taxon: dict) -> tuple[str, str]:
+        genus = (
+            taxon.get("genus")
+            or taxon.get("genusName")
+            or taxon.get("genus_name")
+            or ""
+        )
+        species = (
+            taxon.get("species")
+            or taxon.get("specificEpithet")
+            or taxon.get("specific_epithet")
+            or ""
+        )
+        genus = str(genus or "").strip()
+        species = str(species or "").strip()
+        if genus and species:
+            return genus, species
+        sci = MainWindow._ref_ai_scientific_from_taxon(taxon)
+        parts = sci.split()
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+        return "", ""
+
+    @staticmethod
+    def _ref_ai_first_common_name(value) -> str:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                text = MainWindow._ref_ai_first_common_name(item)
+                if text:
+                    return text
+            return ""
+        if isinstance(value, dict):
+            for item in value.values():
+                text = MainWindow._ref_ai_first_common_name(item)
+                if text:
+                    return text
+            return ""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        parts = re.split(
+            r"\s*(?:\r?\n|[,;/|•·・]|\s+-\s+|\s+\bor\b\s+|\s+\band\b\s+)\s*",
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )
+        return (parts[0] if parts else text).strip()
+
+    def _ref_ai_vernacular_from_taxon(self, taxon: dict, source: str) -> str:
+        stored = SettingsDB.get_setting("vernacular_language", "no")
+        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
+        vernacular_names = taxon.get("vernacularNames") or taxon.get("vernacular_names") or {}
+        if isinstance(vernacular_names, dict) and lang:
+            direct = vernacular_names.get(lang)
+            text = self._ref_ai_first_common_name(direct)
+            if text:
+                return text
+            for code, value in vernacular_names.items():
+                if normalize_vernacular_language(str(code)) != lang:
+                    continue
+                text = self._ref_ai_first_common_name(value)
+                if text:
+                    return text
+        for key in ("preferred_common_name", "preferred_common_names", "common_name", "common_names"):
+            text = self._ref_ai_first_common_name(taxon.get(key))
+            if text:
+                return text
+        for key in ("vernacularName", "vernacular_name"):
+            text = self._ref_ai_first_common_name(taxon.get(key))
+            if text:
+                return text
+        if isinstance(vernacular_names, dict):
+            for value in vernacular_names.values():
+                text = self._ref_ai_first_common_name(value)
+                if text:
+                    return text
+        return ""
+
+    def _build_reference_ai_entry(self, pred: dict, source: str) -> dict | None:
+        try:
+            from .observations_tab import _normalize_ai_prediction_taxon
+        except Exception:
+            return None
+        try:
+            taxon = _normalize_ai_prediction_taxon(pred, source=source) or {}
+        except Exception:
+            taxon = dict(pred or {})
+        scientific = self._ref_ai_scientific_from_taxon(taxon)
+        genus, species = self._ref_ai_genus_species_from_taxon(taxon)
+        if not scientific and genus and species:
+            scientific = f"{genus} {species}"
+        if not scientific:
+            return None
+        vernacular = self._ref_ai_vernacular_from_taxon(taxon, source)
+        score = self._ref_ai_prediction_score(pred)
+        return {
+            "source": source,
+            "scientific_name": scientific,
+            "vernacular": vernacular,
+            "genus": genus,
+            "species": species,
+            "score": score,
+        }
+
+    @staticmethod
+    def _format_ref_ai_display(entry: dict) -> str:
+        scientific = str(entry.get("scientific_name") or "").strip()
+        vernacular = str(entry.get("vernacular") or "").strip()
+        score = float(entry.get("score") or 0.0)
+        percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
+        base = scientific
+        if vernacular and vernacular.casefold() != scientific.casefold():
+            base = f"{scientific} ({vernacular})"
+        return f"{base}  {percent}%"
+
+    def _refresh_reference_ai_suggestions(self) -> None:
+        combo = getattr(self, "ref_ai_suggestions_combo", None)
+        if combo is None:
+            return
+        entries = self._collect_reference_ai_suggestions()
+        header = (
+            self.tr("Select an AI suggestion...")
+            if entries
+            else self.tr("No AI suggestions")
+        )
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem(header, None)
+            first_item = combo.model().item(0) if hasattr(combo.model(), "item") else None
+            if first_item is not None:
+                first_item.setData("", AISuggestionItemDelegate.SOURCE_ROLE)
+            for entry in entries:
+                combo.addItem(self._format_ref_ai_display(entry), entry)
+                idx = combo.count() - 1
+                item = combo.model().item(idx) if hasattr(combo.model(), "item") else None
+                if item is not None:
+                    item.setData(entry.get("source", ""), AISuggestionItemDelegate.SOURCE_ROLE)
+            combo.setCurrentIndex(0)
+        finally:
+            combo.blockSignals(False)
+        combo.setEnabled(True)
+
+    def _on_ref_ai_suggestion_activated(self, index: int) -> None:
+        combo = getattr(self, "ref_ai_suggestions_combo", None)
+        if combo is None or index <= 0:
+            return
+        entry = combo.itemData(index)
+        if not isinstance(entry, dict):
+            return
+        genus = str(entry.get("genus") or "").strip()
+        species = str(entry.get("species") or "").strip()
+        vernacular = str(entry.get("vernacular") or "").strip()
+        if hasattr(self, "ref_genus_input") and genus:
+            self.ref_genus_input.blockSignals(True)
+            self.ref_genus_input.setText(genus)
+            self.ref_genus_input.blockSignals(False)
+        if hasattr(self, "ref_species_input") and species:
+            self.ref_species_input.blockSignals(True)
+            self.ref_species_input.setText(species)
+            self.ref_species_input.blockSignals(False)
+        if hasattr(self, "ref_vernacular_input"):
+            self.ref_vernacular_input.blockSignals(True)
+            self.ref_vernacular_input.setText(vernacular)
+            self.ref_vernacular_input.blockSignals(False)
+        if genus and species:
+            self._set_reference_panel_loaded_taxon(
+                getattr(self, "active_observation_id", None), genus, species
+            )
+            self._populate_reference_panel_sources(auto_select_single=False)
+            self._maybe_load_reference_panel_reference()
+        self._update_reference_add_state()
+
     def _on_reference_panel_plot_clicked(self):
         source_data = self.ref_source_input.currentData()
         if source_data:
@@ -10235,6 +10770,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 else:
                     self.ref_source_input.setCurrentText(data.get("source"))
         self.reference_values = data
+        self._apply_reference_panel_values(data)
         self._add_reference_series_entry(data)
 
     def _on_reference_panel_edit_clicked(self):
@@ -10352,6 +10888,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_species_input.setText("")
         self.ref_source_input.setCurrentText("")
         self.reference_values = {}
+        self._set_reference_panel_loaded_taxon(None, None, None)
         self._set_reference_series([])
         self._apply_reference_panel_values({})
         self._update_reference_add_state()
@@ -11371,8 +11908,37 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._prefetch_adjacent_images()
 
-    def refresh_observation_images(self, select_image_id=None):
-        """Refresh the image list for the active observation."""
+    def _notify_measurements_changed(self, observation_id: int | None = None) -> None:
+        """Called after adding / updating / deleting spore measurements.
+
+        Schedules a debounced, per-row refresh of the observations table's
+        Spores column for the affected observation instead of triggering
+        a full refresh_observations() (which iterates every row + reloads
+        every thumbnail and costs seconds on realistic observation
+        counts).
+        """
+        try:
+            obs_id = int(observation_id or self.active_observation_id or 0)
+        except (TypeError, ValueError):
+            obs_id = 0
+        if obs_id <= 0:
+            return
+        tab = getattr(self, "observations_tab", None)
+        scheduler = getattr(tab, "schedule_observation_row_refresh", None)
+        if callable(scheduler):
+            try:
+                scheduler(obs_id)
+            except Exception:
+                pass
+
+    def refresh_observation_images(self, select_image_id=None, force_refresh: bool = False):
+        """Refresh the image list for the active observation.
+
+        `force_refresh=True` bypasses the "same-signature short-circuit" so
+        edits that change an image's content without changing its id or path
+        (e.g. saving new RAW settings from Prepare Images) still cause the
+        Measure gallery to rebuild.
+        """
         if not self.active_observation_id:
             self.observation_images = []
             self.current_image_index = -1
@@ -11400,12 +11966,22 @@ class MainWindow(GeometryMixin, QMainWindow):
             for img in new_observation_images
         )
         gallery_changed = (
-            self._measure_gallery_observation_id != self.active_observation_id
+            force_refresh
+            or self._measure_gallery_observation_id != self.active_observation_id
             or self._measure_gallery_signature != new_signature
         )
         self.observation_images = new_observation_images
         if hasattr(self, "measure_gallery") and gallery_changed:
-            self.measure_gallery.set_observation_id(self.active_observation_id)
+            # Same-observation refresh (post-edit, signature change) should
+            # keep the user's scroll position on the strip; switching to a
+            # different observation resets scroll as before.
+            same_observation = (
+                self._measure_gallery_observation_id == self.active_observation_id
+            )
+            self.measure_gallery.set_observation_id(
+                self.active_observation_id,
+                reveal="preserve" if same_observation else None,
+            )
             self._apply_measure_gallery_publish_selection()
         self._measure_gallery_observation_id = self.active_observation_id
         self._measure_gallery_signature = new_signature
@@ -11430,6 +12006,94 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "measure_gallery"):
             self.measure_gallery.select_image(self.current_image_id)
         return gallery_changed
+
+    def refresh_after_image_edit(
+        self,
+        image_paths: list[str] | None = None,
+        preserve_image_id: int | None = None,
+    ) -> None:
+        """Called after Prepare Images saves changes to existing images.
+
+        Invalidates cached thumbnails/pixmaps for the edited files (whose
+        paths+ids didn't change but whose bytes did), forces the Measure
+        gallery to rebuild, reselects the image the user was viewing before
+        the edit, and reloads that image in the viewer so the new bytes
+        actually appear. Preserved session view state (zoom / pan) is
+        re-applied by load_image_record via
+        _apply_measure_session_view_for_current_image.
+        """
+        try:
+            preserve_image_id = int(preserve_image_id) if preserve_image_id else None
+        except Exception:
+            preserve_image_id = None
+
+        normalized_paths: list[str] = []
+        for path in image_paths or []:
+            text = str(path or "").strip()
+            if text:
+                normalized_paths.append(text)
+
+        # 1. Invalidate main-window per-path pixmap cache.
+        if normalized_paths:
+            for path in normalized_paths:
+                self._pixmap_cache.pop(path, None)
+                try:
+                    self._pixmap_cache_order.remove(path)
+                except ValueError:
+                    pass
+        else:
+            self._pixmap_cache.clear()
+            self._pixmap_cache_order.clear()
+
+        # 2. Invalidate Measure gallery's per-path pixmap cache so its
+        #    thumbnails re-render from the fresh JPEG on disk.
+        gallery = getattr(self, "measure_gallery", None)
+        if gallery is not None:
+            invalidate = getattr(gallery, "invalidate_pixmap_cache", None)
+            if callable(invalidate):
+                if normalized_paths:
+                    for path in normalized_paths:
+                        try:
+                            invalidate(path)
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        invalidate(None)
+                    except Exception:
+                        pass
+
+        # 3. Nuke Analysis-strip caches — measurement thumbnails are drawn
+        #    from the source image, so they're stale for any measurement
+        #    whose image was just edited.
+        self._gallery_thumb_cache = {}
+        self._gallery_pixmap_cache = {}
+
+        # 4. Force the Measure gallery to rebuild even when the signature is
+        #    unchanged, and select the pre-edit image.
+        self.refresh_observation_images(
+            select_image_id=preserve_image_id,
+            force_refresh=True,
+        )
+
+        # 5. Reload the currently-selected image so the viewer picks up the
+        #    edited bytes. load_image_record restores the saved session
+        #    view state (zoom / pan) via
+        #    _apply_measure_session_view_for_current_image, provided the
+        #    caller stashed it before showing Prepare Images.
+        target_id = preserve_image_id or self.current_image_id
+        if target_id:
+            for image in self.observation_images:
+                if image.get("id") == target_id:
+                    try:
+                        self.load_image_record(image, refresh_table=False)
+                    except Exception:
+                        pass
+                    break
+
+        # 6. Analysis strip: schedule a rebuild if visible.
+        if hasattr(self, "is_analysis_visible") and self.is_analysis_visible():
+            self.schedule_gallery_refresh()
 
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
@@ -11711,6 +12375,43 @@ class MainWindow(GeometryMixin, QMainWindow):
         except Exception:
             pass
 
+    def _on_measure_gallery_selection_changed(self, selected_paths) -> None:
+        # Persistent hint while a multi-select is active in the Measure
+        # gallery — mirrors the Live-Lab pattern so users understand that
+        # sidebar edits / publish toggles will apply to every selected item.
+        try:
+            count = len([p for p in (selected_paths or []) if p])
+        except Exception:
+            count = 0
+        active = count > 1
+        previous = bool(getattr(self, "_measure_multi_hint_active", False))
+        if active == previous:
+            return
+        self._measure_multi_hint_active = active
+        controller = getattr(self, "_hint_controller", None)
+        if controller is None:
+            return
+        if active:
+            controller.set_hint(self.tr("Selected images will be edited"), tone="info")
+        else:
+            controller.set_hint("")
+
+    def _on_measure_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        observations_tab = getattr(self, "observations_tab", None)
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
+
+    def _on_measure_gallery_delete_selection_requested(self, keys) -> None:
+        # Multi-select delete via the right-click menu: delegate to the
+        # existing single-delete handler which owns the confirmation +
+        # measurement-count safeguards.
+        for key in keys or []:
+            self._on_measure_gallery_delete_requested(key)
+
     def _on_measure_gallery_delete_requested(self, image_key):
         image_id = None
         if isinstance(image_key, int):
@@ -11770,6 +12471,50 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         image_data = self.observation_images[index]
         self.load_image_record(image_data, display_name=self.active_observation_name, refresh_table=True)
+
+    def _selected_observation_tab_image_id(self) -> int | None:
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is None:
+            return None
+        browser = getattr(observations_tab, "image_browser", None)
+        if browser is None:
+            return None
+        try:
+            selected_observation_id = int(getattr(observations_tab, "selected_observation_id", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        if selected_observation_id <= 0:
+            return None
+        try:
+            browser_observation_id = int(getattr(observations_tab, "_image_browser_observation_id", 0) or 0)
+        except (TypeError, ValueError):
+            browser_observation_id = 0
+        if browser_observation_id != selected_observation_id:
+            return None
+        try:
+            image_id = int(browser.current_image_id() or 0)
+        except Exception:
+            return None
+        return image_id or None
+
+    def _show_measure_image_for_selected_observation(self, target_image_id: int | None) -> None:
+        if target_image_id:
+            try:
+                target_image_id = int(target_image_id)
+            except (TypeError, ValueError):
+                target_image_id = None
+        if target_image_id:
+            for idx, image in enumerate(self.observation_images):
+                try:
+                    if int(image.get("id") or 0) != target_image_id:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                if int(self.current_image_id or 0) != target_image_id:
+                    self.goto_image_index(idx)
+                return
+        if not self.current_image_id and self.observation_images:
+            self.goto_image_index(0)
 
     def get_objective_name_for_storage(self):
         """Return the objective name to store with an image."""
@@ -11915,6 +12660,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
 
         if last_image_data:
+            try:
+                ObservationsTab._ensure_microscope_publish_defaults(
+                    self.active_observation_id,
+                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
+                )
+            except Exception:
+                pass
             self.load_image_record(last_image_data, refresh_table=True)
             self.refresh_observation_images(select_image_id=last_image_data['id'])
 
@@ -12346,7 +13098,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             notes=notes_json,
             points=self.points[:2]  # Fallback for DB schema
         )
-        
+        self._notify_measurements_changed()
+
         ImageDB.update_image(
             self.current_image_id,
             scale=self.microns_per_pixel,
@@ -12419,6 +13172,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             notes=f"Q={q_value:.1f}" if q_value is not None else None,
             points=self.points[:2] if self.measure_mode == "lines" else self.points
         )
+        self._notify_measurements_changed()
 
         ImageDB.update_image(
             self.current_image_id,
@@ -14268,13 +15022,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                 else:
                     self.active_observation_name = display_name
-                    self.refresh_observation_images(select_image_id=self.current_image_id)
+                    selected_image_id = self._selected_observation_tab_image_id()
+                    self.refresh_observation_images(
+                        select_image_id=selected_image_id or self.current_image_id
+                    )
                     self.update_measurements_table()
-                    if (
-                        not self.current_image_id
-                        and getattr(self, "observation_images", None)
-                    ):
-                        self.goto_image_index(0)
+                    self._show_measure_image_for_selected_observation(selected_image_id)
         if index == 3 and hasattr(self, "live_lab_tab"):
             self.live_lab_tab.sync_from_active_observation()
         if index == 4 and hasattr(self, "ingestion_hub_tab"):
@@ -14784,10 +15537,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         col = (display_index - 1) % items_per_row
         self.gallery_grid.addWidget(container, row, col)
         container.mousePressEvent = lambda _event, mid=int(measurement_id): self._select_analysis_gallery_measurement(mid)
-        # Match Observations-gallery behaviour: double-click opens Prepare
-        # Images for this measurement's source image.
+        # Double-click jumps to the Measure tab with this measurement's
+        # source image loaded — same as the link icon overlay and the
+        # right-click "Edit photo" action. Prepare Images is intentionally
+        # NOT bound to double-click here so double-click semantics stay
+        # consistent with the Observations-tab convention (enlarge / view,
+        # not edit).
         container.mouseDoubleClickEvent = (
-            lambda _event, mid=int(measurement_id): self._open_prepare_images_from_analysis_gallery(mid)
+            lambda _event, mid=int(measurement_id): self.open_measurement_from_gallery(mid)
+        )
+        # Right-click → "Edit photo" context menu, mirroring the Observations
+        # gallery. Uses Qt.CustomContextMenu so the menu fires reliably
+        # regardless of what mousePressEvent does with the right button.
+        container.setContextMenuPolicy(Qt.CustomContextMenu)
+        container.customContextMenuRequested.connect(
+            lambda pos, mid=int(measurement_id), c=container:
+                self._show_analysis_gallery_thumbnail_context_menu(mid, c.mapToGlobal(pos))
         )
         self._refresh_analysis_gallery_frame_state(int(measurement_id))
         render_state["display_index"] = display_index + 1
@@ -15231,6 +15996,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         category = self.gallery_filter_combo.currentData() if hasattr(self, "gallery_filter_combo") else None
         normalized = self.normalize_measurement_category(category) if category else None
         show_q = normalized in (None, "spores")
+        show_reference_overlays = normalized in (None, "spores")
         Q = L / W
         specimen_parmasto = self._parmasto_specimen_metrics(L, W)
         category_label = self._format_observation_legend_label()
@@ -15609,7 +16375,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             ax_scatter.set_aspect("auto")
 
-        reference_series = self._resolved_reference_series_entries(dark)
+        # Reference values in this view are spore-specific, so hide them for other measurement types.
+        reference_series = self._resolved_reference_series_entries(dark) if show_reference_overlays else []
 
         def _fallback(low, mid_low, mid_high, high):
             left = low if low is not None else mid_low
@@ -16737,43 +17504,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._prepare_analysis_gallery_for_tab_switch()
         QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
 
-    def _open_prepare_images_from_analysis_gallery(self, measurement_id: int) -> None:
-        """Open the Prepare Images dialog for the measurement's source image.
-
-        Mirrors the Observations-gallery behaviour where double-clicking a
-        thumbnail jumps into Prepare Images with that image pre-selected.
-        """
-        measurement_id = int(measurement_id or 0)
-        if not measurement_id:
-            return
-        measurement = self._get_measurement_by_id(measurement_id)
-        if not measurement:
-            return
-        image_id = measurement.get("image_id")
-        if not image_id:
-            return
-        image_data = ImageDB.get_image(image_id)
-        if not image_data:
-            return
-        observation_id = image_data.get("observation_id") or self.active_observation_id
-        if not observation_id:
-            return
-        target_path = (image_data.get("filepath") or "").strip() or None
-        observations_tab = getattr(self, "observations_tab", None)
-        if observations_tab is None:
-            return
-        # open_edit_images_direct works on the observation currently selected in
-        # the observations table. Ensure the analysis-tab's active observation
-        # is the one that ends up in Prepare Images, even if the user hasn't
-        # re-selected the row since switching tabs.
-        table = getattr(observations_tab, "table", None)
-        if table is not None:
-            for row_index in range(table.rowCount()):
-                if observations_tab._observation_id_for_row(row_index) == int(observation_id):
-                    table.selectRow(row_index)
-                    observations_tab.selected_observation_id = int(observation_id)
-                    break
-        observations_tab.open_edit_images_direct(selected_image_path=target_path)
+    def _show_analysis_gallery_thumbnail_context_menu(
+        self,
+        measurement_id: int,
+        global_pos,
+    ) -> None:
+        # Selecting first mirrors the Observations gallery: right-click
+        # both focuses the thumbnail (blue frame moves) and opens the menu.
+        self._select_analysis_gallery_measurement(int(measurement_id))
+        menu = QMenu(self)
+        # Deletion isn't available here — Analysis thumbnails represent
+        # measurements, not the underlying image. "Edit photo" jumps to the
+        # source image in the Measure tab (same as the link icon overlay
+        # per thumbnail).
+        edit_action = menu.addAction(self.tr("Edit photo"))
+        chosen = menu.exec(global_pos)
+        if chosen == edit_action:
+            self.open_measurement_from_gallery(int(measurement_id))
 
     def _open_measurement_from_gallery_impl(self, measurement_id: int):
         """Deferred gallery-to-measure navigation to avoid tab-switch crashes mid-click."""
@@ -17825,6 +18572,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Propagate side-effects from embedded sub-dialogs
         if dialog.database_changed:
             self._populate_measure_categories()
+        publishing_reload_requested = False
         if dialog.publishing_changed:
             if hasattr(self, "observations_tab"):
                 try:
@@ -17832,8 +18580,23 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.observations_tab._invalidate_publish_login_status_cache()
                     self.observations_tab._update_publish_controls()
                     self.observations_tab.refresh_observations(show_status=False)
+                    publishing_reload_requested = True
                 except Exception:
                     pass
+        # Column preference changes only apply visibility on-the-fly; the
+        # actual data reload (needed when a microscope column was newly
+        # enabled) is done once here to keep checkbox clicks instant.
+        if dialog.appearance_columns_changed and not publishing_reload_requested:
+            observations_tab = getattr(self, "observations_tab", None)
+            if observations_tab is not None:
+                reloader = getattr(
+                    observations_tab, "reload_observations_after_column_change", None
+                )
+                if callable(reloader):
+                    try:
+                        reloader()
+                    except Exception:
+                        pass
         self._update_corner_ui()
 
     def open_profile_dialog(self):
@@ -17885,6 +18648,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         run_refresh_flow: bool = False,
         sync_images: bool = True,
         materialize_remote_images: bool = False,
+        full_pull: bool = False,
     ) -> bool:
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is None:
@@ -17897,6 +18661,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             run_refresh_flow=run_refresh_flow,
             sync_images=sync_images,
             materialize_remote_images=materialize_remote_images,
+            full_pull=full_pull,
         ))
 
     def is_cloud_sync_running(self) -> bool:
@@ -18303,6 +19068,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.ref_source_input.setCurrentIndex(idx)
                 else:
                     self.ref_source_input.setCurrentText(source)
+            if self.active_observation_id:
+                obs = ObservationDB.get_observation(self.active_observation_id)
+                obs_genus = self._clean_ref_genus_text(obs.get("genus")) if obs else ""
+                obs_species = self._clean_ref_species_text(obs.get("species")) if obs else ""
+                self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
 
         restored_series = []
         saved_series = settings.get("reference_series")
@@ -18918,6 +19688,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         current_image_id = self.current_image_id
 
         MeasurementDB.delete_measurement(measurement_id)
+        self._notify_measurements_changed()
 
         # Remove only the lines for this measurement
         if measurement_id in self.measurement_lines:
@@ -19174,42 +19945,89 @@ class MainWindow(GeometryMixin, QMainWindow):
             if genus:
                 self._update_ref_species_suggestions(genus, species_text)
 
+    def _reference_panel_current_taxon(self) -> tuple[str, str]:
+        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
+        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
+        return genus, species
+
+    def _set_reference_panel_loaded_taxon(
+        self,
+        observation_id: int | None,
+        genus: str | None,
+        species: str | None,
+    ) -> None:
+        self._reference_panel_loaded_observation_id = observation_id
+        if genus and species:
+            self._reference_panel_loaded_taxon = (genus, species)
+        else:
+            self._reference_panel_loaded_taxon = None
+
     def load_reference_values(self):
         """Load reference values for the active observation."""
         self.reference_values = {}
+        self._refresh_reference_ai_suggestions()
         if not self.active_observation_id:
+            self._set_reference_panel_loaded_taxon(None, None, None)
             return
         obs = ObservationDB.get_observation(self.active_observation_id)
         if not obs:
+            self._set_reference_panel_loaded_taxon(None, None, None)
             return
-        genus = obs.get("genus")
-        species = obs.get("species")
+        obs_genus = self._clean_ref_genus_text(obs.get("genus"))
+        obs_species = self._clean_ref_species_text(obs.get("species"))
+        current_genus, current_species = self._reference_panel_current_taxon()
+        same_observation = self._reference_panel_loaded_observation_id == self.active_observation_id
+        loaded_taxon = self._reference_panel_loaded_taxon or ()
+        preserve_current_taxon = bool(
+            same_observation
+            and current_genus
+            and current_species
+            and (not loaded_taxon or (current_genus, current_species) != tuple(loaded_taxon))
+        )
+        if preserve_current_taxon:
+            genus, species = current_genus, current_species
+        else:
+            genus, species = obs_genus, obs_species
+            self._set_reference_panel_loaded_taxon(self.active_observation_id, genus, species)
         if not (genus and species):
             if hasattr(self, "ref_genus_input"):
+                self.ref_genus_input.blockSignals(True)
                 self.ref_genus_input.setText("")
+                self.ref_genus_input.blockSignals(False)
             if hasattr(self, "ref_species_input"):
+                self.ref_species_input.blockSignals(True)
                 self.ref_species_input.setText("")
+                self.ref_species_input.blockSignals(False)
             if hasattr(self, "ref_source_input"):
+                self.ref_source_input.blockSignals(True)
                 self.ref_source_input.setCurrentText("")
+                self.ref_source_input.blockSignals(False)
             if hasattr(self, "ref_vernacular_input"):
+                self.ref_vernacular_input.blockSignals(True)
                 self.ref_vernacular_input.setText("")
+                self.ref_vernacular_input.blockSignals(False)
             self._apply_reference_panel_values({})
             return
+        if not preserve_current_taxon:
+            if hasattr(self, "ref_source_input"):
+                self.ref_source_input.blockSignals(True)
+                self.ref_source_input.setCurrentText("")
+                self.ref_source_input.blockSignals(False)
+            if hasattr(self, "ref_vernacular_input"):
+                self.ref_vernacular_input.blockSignals(True)
+                self.ref_vernacular_input.setText("")
+                self.ref_vernacular_input.blockSignals(False)
         ref = ReferenceDB.get_reference(genus, species)
         if ref:
             self.reference_values = ref
         if hasattr(self, "ref_genus_input"):
+            self.ref_genus_input.blockSignals(True)
             self.ref_genus_input.setText(genus or "")
+            self.ref_genus_input.blockSignals(False)
         if hasattr(self, "ref_species_input"):
+            self.ref_species_input.blockSignals(True)
             self.ref_species_input.setText(species or "")
-        if hasattr(self, "ref_source_input"):
-            self.ref_source_input.blockSignals(True)
-            self.ref_source_input.setCurrentText("")
-            self.ref_source_input.blockSignals(False)
-        if hasattr(self, "ref_vernacular_input"):
-            self.ref_vernacular_input.blockSignals(True)
-            self.ref_vernacular_input.setText("")
-            self.ref_vernacular_input.blockSignals(False)
+            self.ref_species_input.blockSignals(False)
         if hasattr(self, "ref_source_input"):
             self._populate_reference_panel_sources()
             source = self.reference_values.get("source") if self.reference_values else None
@@ -19267,6 +20085,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.active_observation_id = None
         self.active_observation_name = None
+        self._set_reference_panel_loaded_taxon(None, None, None)
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.set_target_observation(None)
@@ -19311,6 +20130,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         observation = ObservationDB.get_observation(observation_id)
         self.auto_threshold = observation.get("auto_threshold") if observation else None
         self._update_spore_sharing_ui(observation_id)
+        self._set_reference_panel_loaded_taxon(None, None, None)
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()
@@ -19319,11 +20139,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         if schedule_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
         self.update_measurements_table()
-        self.refresh_observation_images()
+        selected_image_id = self._selected_observation_tab_image_id()
+        self.refresh_observation_images(select_image_id=selected_image_id)
         if hasattr(self, "measure_button"):
             self.measure_button.setEnabled(True)
-        if self.observation_images:
-            self.goto_image_index(0)
+        self._show_measure_image_for_selected_observation(selected_image_id)
 
         # Switch to the Measure tab
         if switch_tab:
@@ -19408,6 +20228,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
 
         if last_image_data:
+            try:
+                ObservationsTab._ensure_microscope_publish_defaults(
+                    self.active_observation_id,
+                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
+                )
+            except Exception:
+                pass
             self.load_image_record(last_image_data, refresh_table=True)
             self.refresh_observation_images(select_image_id=last_image_data['id'])
 

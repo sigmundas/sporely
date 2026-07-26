@@ -3,8 +3,18 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from database import models
 from utils import cloud_sync
+
+
+@pytest.fixture(autouse=True)
+def _isolate_spore_summary_sync(monkeypatch):
+    """Observation metadata tests do not exercise spore-summary networking."""
+    monkeypatch.setattr(cloud_sync, "_push_summary_for_current_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_summaries", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_measurements", lambda *args, **kwargs: 0)
 
 
 def _init_metadata_sync_db(tmp_path):
@@ -364,7 +374,7 @@ def test_sync_all_ends_progress_on_neutral_finalizing_message(monkeypatch, tmp_p
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(
         cloud_sync,
         "push_calibrations",
@@ -459,11 +469,11 @@ def test_pull_all_emits_phase_progress_messages(monkeypatch, tmp_path):
         materialize_remote_images=False,
     )
 
-    assert "Checking image EXIF metadata…" in messages
+    assert "Checking local metadata cache…" in messages
     assert "Loading cloud image metadata…" in messages
     assert "Loading cloud measurements…" in messages
     # EXIF check announced before the image-metadata fetch.
-    assert messages.index("Checking image EXIF metadata…") < messages.index("Loading cloud image metadata…")
+    assert messages.index("Checking local metadata cache…") < messages.index("Loading cloud image metadata…")
     assert messages.index("Loading cloud image metadata…") < messages.index("Loading cloud measurements…")
 
 
@@ -480,7 +490,7 @@ def test_sync_all_emits_preflight_message_between_calibration_push_and_observati
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(
         cloud_sync,
         "push_calibrations",
@@ -582,7 +592,7 @@ def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_media_changes", lambda: None)
-    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda: None)
+    monkeypatch.setattr(cloud_sync, "_mark_cloud_observations_dirty_for_pending_local_images", lambda **_kwargs: None)
     monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *args, **kwargs: {"pushed": 0, "total": 0, "errors": []})
     monkeypatch.setattr(cloud_sync, "_load_linked_cloud_user_id", lambda: "user-123")
     monkeypatch.setattr(cloud_sync, "_save_linked_cloud_user_id", lambda user_id: None)
@@ -824,6 +834,44 @@ def test_pull_all_reports_deleted_remote_observations_in_sync_summary(monkeypatc
         }
     ]
     assert result["sync_summary"]["observations_deleted_remote"] == 1
+
+
+def test_push_image_metadata_marks_reencoded_uploads_as_exif_safe(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    posted_payloads: list[dict] = []
+
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: None)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: True)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: True)
+    monkeypatch.setattr(client, "_set_observation_media_keys", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda path, payload: posted_payloads.append({"path": path, "payload": dict(payload)}) or [{"id": "cloud-image-11"}],
+    )
+
+    cloud_id = client.push_image_metadata(
+        {
+            "id": 11,
+            "filepath": "/tmp/source.jpg",
+            "sort_order": 0,
+            "upload_mode": "full",
+            "source_width": 4000,
+            "source_height": 3000,
+            "stored_width": 4000,
+            "stored_height": 3000,
+            "stored_bytes": 123456,
+        },
+        "cloud-obs-1",
+        "user-123/cloud-obs-1/11.webp",
+    )
+
+    assert cloud_id == "cloud-image-11"
+    assert len(posted_payloads) == 1
+    assert posted_payloads[0]["path"] == "observation_images"
+    assert posted_payloads[0]["payload"]["storage_exif_safe"] is True
 
 
 class _RecordingMeasurementClient(cloud_sync.SporelyCloudClient):

@@ -78,7 +78,20 @@ from database.models import SettingsDB
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.9.6"
+APP_VERSION = "0.9.11"
+
+
+# Publish the running version to the cloud-sync layer so structured spore
+# summaries carry `source_app_version` when written to Supabase. Kept as a
+# push from main.py (rather than a `from main import APP_VERSION` inside
+# utils/) because utility modules must not import PySide6 transitively via
+# main.
+try:
+    from utils.cloud_sync import set_cloud_sync_source_app_version
+except Exception:  # pragma: no cover — cloud_sync should always be importable
+    set_cloud_sync_source_app_version = None
+if set_cloud_sync_source_app_version is not None:
+    set_cloud_sync_source_app_version(APP_VERSION)
 
 
 def _canonical_ui_language(code: str | None) -> str | None:

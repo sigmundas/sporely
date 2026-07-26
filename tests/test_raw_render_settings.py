@@ -214,6 +214,22 @@ def test_render_raw_image_preview_mode_downscales_to_1600px_max_edge(tmp_path, m
         assert rendered.format == "JPEG"
 
 
+def test_render_raw_image_honors_webp_output_suffix(tmp_path, monkeypatch):
+    source_path = tmp_path / "sample.nef"
+    source_path.write_bytes(b"raw-bytes")
+    output_path = tmp_path / "imports" / "sample.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rgb = np.full((2, 2, 3), 0.5, dtype=np.float64)
+    raw = _DummyRaw(rgb)
+    monkeypatch.setattr("utils.raw_render.import_rawpy", lambda: _DummyRawpyModule(raw))
+
+    rendered_path = render_raw_image(source_path, output_path=output_path)
+
+    assert rendered_path == output_path
+    with Image.open(rendered_path) as rendered:
+        assert rendered.format == "WEBP"
+
+
 def test_save_raw_preview_jpeg_downscales_to_1600px_max_edge(tmp_path):
     source_path = tmp_path / "sample.nef"
     source_path.write_bytes(b"raw-bytes")
@@ -431,3 +447,18 @@ def test_build_raw_processing_metadata_includes_rendered_at(tmp_path):
     )
 
     assert metadata["local_derivative"]["rendered_at"] == "2026:05:16 19:44:11"
+
+
+def test_build_raw_processing_metadata_marks_webp_derivatives(tmp_path):
+    source_path = tmp_path / "sample.nef"
+    derivative_path = tmp_path / "sample.webp"
+    metadata = build_raw_processing_metadata(
+        source_path,
+        derivative_path,
+        RawRenderSettings.default(),
+        width=2,
+        height=2,
+    )
+
+    assert metadata["local_derivative"]["format"] == "webp"
+    assert metadata["local_derivative"]["mime_type"] == "image/webp"

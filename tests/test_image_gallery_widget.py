@@ -60,12 +60,12 @@ def _build_gallery_items(tmp_path, count: int = 3) -> list[dict]:
     return items
 
 
-def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden():
-    viewport_rect = QRectF(300, 0, 500, 120)
-
+def test_center_horizontal_scroll_target_returns_none_when_item_and_neighbours_visible():
+    # Target and both neighbours fully inside the viewport → no scroll.
+    viewport_rect = QRectF(300, 0, 700, 120)
     target_rect = QRectF(650, 0, 120, 120)
     previous_rect = QRectF(530, 0, 120, 120)
-    next_rect = QRectF(780, 0, 120, 120)
+    next_rect = QRectF(780, 0, 120, 120)  # ends at 900 < viewport_right (1000)
     assert center_horizontal_scroll_target(
         viewport_rect,
         target_rect,
@@ -73,15 +73,18 @@ def test_center_horizontal_scroll_target_centers_when_neighbor_is_mostly_hidden(
         2000,
         previous_rect,
         next_rect,
-    ) == 460
+    ) is None
 
 
-def test_center_horizontal_scroll_target_centers_when_previous_neighbor_is_mostly_hidden():
+def test_center_horizontal_scroll_target_nudges_left_to_reveal_previous_neighbour():
+    # Regression: clicking a thumbnail that's already fully visible but
+    # whose previous neighbour is only partially visible should nudge the
+    # strip left so the neighbour becomes fully visible + margin.
     viewport_rect = QRectF(300, 0, 500, 120)
-
-    target_rect = QRectF(330, 0, 120, 120)
-    previous_rect = QRectF(200, 0, 120, 120)
-    next_rect = QRectF(450, 0, 120, 120)
+    target_rect = QRectF(420, 0, 120, 120)  # fully in [300, 800]
+    previous_rect = QRectF(260, 0, 120, 120)  # left edge clipped
+    next_rect = QRectF(540, 0, 120, 120)  # fully in view
+    # must_left = 260 → target = 260 - margin(24) = 236
     assert center_horizontal_scroll_target(
         viewport_rect,
         target_rect,
@@ -89,7 +92,57 @@ def test_center_horizontal_scroll_target_centers_when_previous_neighbor_is_mostl
         2000,
         previous_rect,
         next_rect,
-    ) == 140
+    ) == 236
+
+
+def test_center_horizontal_scroll_target_nudges_right_to_reveal_next_neighbour():
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(560, 0, 120, 120)  # fully in [300, 800]
+    previous_rect = QRectF(440, 0, 120, 120)  # fully in view
+    next_rect = QRectF(720, 0, 120, 120)  # ends at 840, clipped
+    # must_right = 840 → target = 840 + margin(24) - viewport_width(500) = 364
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+        previous_rect,
+        next_rect,
+    ) == 364
+
+
+def test_center_horizontal_scroll_target_nudges_right_when_item_off_right_no_neighbours():
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(720, 0, 120, 120)  # extends to x=840, past view right 800
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+    ) == 720 + 120 + 24 - 500  # 364
+
+
+def test_center_horizontal_scroll_target_nudges_left_when_item_off_left_no_neighbours():
+    viewport_rect = QRectF(300, 0, 500, 120)
+    target_rect = QRectF(220, 0, 120, 120)  # left edge is left of viewport
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        2000,
+    ) == 220 - 24  # 196
+
+
+def test_center_horizontal_scroll_target_clamps_to_scrollbar_range():
+    viewport_rect = QRectF(0, 0, 500, 120)
+    target_rect = QRectF(1900, 0, 120, 120)  # far off to the right
+    # Would want 1900+120+24-500=1544, but max is 500 → clamped.
+    assert center_horizontal_scroll_target(
+        viewport_rect,
+        target_rect,
+        0,
+        500,
+    ) == 500
 
 
 def test_center_on_key_ignores_stale_queued_requests(monkeypatch, qapp):
@@ -135,6 +188,91 @@ def test_center_on_key_ignores_stale_queued_requests(monkeypatch, qapp):
     queued_callbacks[0]()
 
     assert scroll.horizontalScrollBar().value() == expected
+
+
+def test_center_on_key_nudge_mode_shifts_by_about_one_and_half_thumbnail_widths(qapp):
+    widget = ImageGalleryWidget("Images")
+    scroll, _, frames = _build_scroll_scene(
+        [
+            (1, 400, 120),
+            (2, 520, 120),
+            (3, 640, 120),
+            (4, 760, 120),
+            (5, 880, 120),
+        ]
+    )
+
+    widget._scroll = scroll
+    widget._frames = frames
+    widget._items = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]
+    widget.set_center_reveal_mode("nudge")
+
+    scroll.horizontalScrollBar().setValue(300)
+    qapp.processEvents()
+
+    widget._center_request_generation = 1
+    widget._center_request_key = 3
+    widget._center_on_key_if_current(1, 3, retries=0)
+
+    assert scroll.horizontalScrollBar().value() == 480
+
+
+def test_set_items_reveal_new_at_end_scrolls_to_last_thumb(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.resize(500, 140)
+    widget.show()
+    qapp.processEvents()
+
+    items: list[dict] = []
+    for index in range(12):
+        image_path = tmp_path / f"end-{index + 1}.png"
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(QColor.fromHsv((index * 25) % 360, 180, 220))
+        assert image.save(str(image_path))
+        items.append(
+            {
+                "id": index + 1,
+                "filepath": str(image_path),
+                "image_number": index + 1,
+            }
+        )
+
+    widget.set_items(items, reveal="new_at_end")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+
+    scrollbar = widget._scroll.horizontalScrollBar()
+    assert scrollbar.value() == scrollbar.maximum()
+
+
+def test_set_items_preserve_keeps_gallery_pinned_to_right_edge(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.resize(500, 140)
+    widget.show()
+    qapp.processEvents()
+
+    items: list[dict] = []
+    for index in range(12):
+        image_path = tmp_path / f"preserve-end-{index + 1}.png"
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(QColor.fromHsv((index * 25) % 360, 180, 220))
+        assert image.save(str(image_path))
+        items.append({"id": index + 1, "filepath": str(image_path)})
+
+    widget.set_items(items, reveal="new_at_end")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+    scrollbar = widget._scroll.horizontalScrollBar()
+    assert scrollbar.value() == scrollbar.maximum()
+
+    widget.set_items(items, reveal="preserve")
+    for _ in range(12):
+        qapp.processEvents()
+        QTest.qWait(16)
+
+    assert scrollbar.value() == scrollbar.maximum()
 
 
 def test_select_image_updates_only_previous_and_new_frame_state(monkeypatch, qapp):
@@ -318,14 +456,14 @@ def test_delete_menu_emits_all_selected_keys_for_multiselect(monkeypatch, qapp, 
     qapp.processEvents()
 
     deleted_keys: list[list[object]] = []
-    widget.deleteSelectionRequested.connect(lambda keys: deleted_keys.append(list(keys)))
+    widget.deleteImagesRequested.connect(lambda keys: deleted_keys.append(list(keys)))
 
     monkeypatch.setattr(
         widget,
         "_show_thumbnail_context_menu",
         lambda frame, global_pos: (
             widget._set_context_menu_selection(frame),
-            widget.deleteSelectionRequested.emit(widget.selected_image_keys()),
+            widget.deleteImagesRequested.emit(widget.selected_image_keys()),
         ),
     )
 
@@ -383,7 +521,9 @@ def test_raw_source_badge_uses_raw_label():
     assert badges == ["From raw"]
 
 
-def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path):
+def test_existing_thumbnail_delete_button_emits_single_key_list(qapp, tmp_path):
+    # X-icon click now emits the unified deleteImagesRequested signal with a
+    # one-element list, matching the right-click menu's payload shape.
     widget = ImageGalleryWidget("Images")
     items = _build_gallery_items(tmp_path, 1)
     widget.set_items(items)
@@ -391,8 +531,8 @@ def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path)
     widget.show()
     qapp.processEvents()
 
-    deleted_keys: list[object] = []
-    widget.deleteRequested.connect(deleted_keys.append)
+    deleted_keys: list[list[object]] = []
+    widget.deleteImagesRequested.connect(lambda keys: deleted_keys.append(list(keys)))
 
     delete_btn = None
     for candidate in widget._frames[0].findChildren(QToolButton):
@@ -404,7 +544,7 @@ def test_existing_thumbnail_delete_button_still_emits_single_key(qapp, tmp_path)
     QTest.mouseClick(delete_btn, Qt.LeftButton)
     qapp.processEvents()
 
-    assert deleted_keys == [1]
+    assert deleted_keys == [[1]]
 
 
 def test_thumbnail_selection_overlay_tracks_resized_frame(monkeypatch, qapp):

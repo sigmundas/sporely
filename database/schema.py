@@ -1151,6 +1151,8 @@ def init_database():
             open_comment TEXT,
             private_comment TEXT,
             interesting_comment INTEGER DEFAULT 0,
+            country_code TEXT,
+            region_id TEXT,
             ai_state_json TEXT,
             ai_selected_service TEXT,
             ai_selected_taxon_id TEXT,
@@ -1375,6 +1377,18 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add reverse-geocoded ISO 3166-1 alpha-2 country column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN country_code TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add cloud region id column (preserved from cloud data; desktop never invents it)
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN region_id TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Images table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS images (
@@ -1392,6 +1406,7 @@ def init_database():
             mount_medium TEXT,
             stain TEXT,
             sample_type TEXT,
+            sample_source TEXT,
             contrast TEXT,
             measure_color TEXT,
             notes TEXT,
@@ -1462,6 +1477,29 @@ def init_database():
     # Add sample_type column if it doesn't exist
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN sample_type TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    # Add sample_source column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN sample_source TEXT')
+    except sqlite3.OperationalError:
+        pass
+
+    # Migrate legacy sample_type='Spore_print' rows: move to sample_source, clear sample_type.
+    # Sample_type historically conflated specimen condition and material source; Spore_print
+    # is a source, not a condition. Only touch rows where sample_source is still empty so we
+    # never overwrite an explicit user value.
+    try:
+        cursor.execute(
+            """
+            UPDATE images
+               SET sample_source = 'Spore_print',
+                   sample_type = NULL
+             WHERE lower(coalesce(sample_type, '')) IN ('spore_print', 'sporeprint', 'spore print')
+               AND (sample_source IS NULL OR sample_source = '')
+            """
+        )
     except sqlite3.OperationalError:
         pass
 
@@ -1777,6 +1815,12 @@ def init_database():
         "ALTER TABLE observations ADD COLUMN location_public INTEGER DEFAULT 1",
         "ALTER TABLE observations ADD COLUMN location_precision TEXT DEFAULT 'exact'",
         "ALTER TABLE observations ADD COLUMN spore_data_visibility TEXT DEFAULT 'public'",
+        # Local-only cache of the last sync's public spore-mosaic input signature
+        # (SHA-1 over eligible measurements + source-file fingerprints + pipeline
+        # version). Never synced to cloud. Cleared when local mosaic inputs
+        # change (see _clear_local_mosaic_signature). NULL means "no cached
+        # signature yet"; treated as "always rebuild".
+        "ALTER TABLE observations ADD COLUMN mosaic_signature TEXT",
         "ALTER TABLE images ADD COLUMN cloud_id TEXT",
         "ALTER TABLE images ADD COLUMN synced_at TIMESTAMP",
     ):

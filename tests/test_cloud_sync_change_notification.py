@@ -8,6 +8,8 @@ These cover two regressions:
     logged so the silent pause can be traced.
 """
 
+import pytest
+
 from utils import cloud_sync
 
 
@@ -77,6 +79,43 @@ def test_remote_deletion_review_is_not_folded_into_real_change():
 
     assert activity["deleted_remote_rows"] == 1
     assert activity["any_real_change"] is False
+
+
+def test_complete_noop_result_does_not_require_observation_refresh():
+    result = _result_with_summary(calibrations_skipped_noop=32)
+    result.update({"pushed": 0, "pulled": 0, "errors": [], "deleted_remote": []})
+
+    assert cloud_sync.sync_result_requires_observation_refresh(result) is False
+
+
+def test_observation_refresh_is_conservative_for_incomplete_result():
+    assert cloud_sync.sync_result_requires_observation_refresh(
+        {"pushed": 0, "pulled": 0, "errors": []}
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "result_update, summary_update",
+    [
+        ({"pushed": 1}, {}),
+        ({"pulled": 1}, {}),
+        ({"errors": ["retry"]}, {}),
+        ({"deleted_remote": [{"cloud_id": "abc"}]}, {}),
+        ({}, {"observations_redirtied_pending_local_images": 1}),
+        ({}, {"images_cloud_id_repaired": 1}),
+        ({}, {"remote_media_materializations": 1}),
+        ({}, {"calibrations_conflicts": 1}),
+    ],
+)
+def test_observation_refresh_preserved_for_changes_and_status_updates(
+    result_update,
+    summary_update,
+):
+    result = _result_with_summary(**summary_update)
+    result.update({"pushed": 0, "pulled": 0, "errors": [], "deleted_remote": []})
+    result.update(result_update)
+
+    assert cloud_sync.sync_result_requires_observation_refresh(result) is True
 
 
 def test_progress_gap_logs_slow_step_between_ui_updates(monkeypatch, capsys):

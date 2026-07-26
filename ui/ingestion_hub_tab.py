@@ -258,17 +258,22 @@ class IngestionHubTab(QWidget):
         self.staging_gallery = ImageGalleryWidget(
             self.tr("Staging grid"),
             parent=self,
-            show_delete=False,
+            show_delete=True,
             show_badges=True,
+            show_edit=True,
             thumbnail_size=132,
             default_height=GALLERY_DEFAULT_HEIGHT,
             min_height=GALLERY_MIN_HEIGHT,
+            delete_menu_label_single=self.tr("Remove from batch"),
+            delete_menu_label_multi=self.tr("Remove selected from batch"),
         )
         self.staging_gallery.set_multi_select(True)
         self.staging_gallery.set_reorderable(True)
         self.staging_gallery.imageClicked.connect(self._on_gallery_clicked)
         self.staging_gallery.selectionChanged.connect(self._on_gallery_selection_changed)
         self.staging_gallery.itemsReordered.connect(self._on_staging_gallery_items_reordered)
+        self.staging_gallery.editRequested.connect(self._on_staging_gallery_edit_requested)
+        self.staging_gallery.deleteImagesRequested.connect(self._on_staging_gallery_delete_selection_requested)
 
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
@@ -909,6 +914,35 @@ class IngestionHubTab(QWidget):
         match = self._match_for_path(target_path)
         if match:
             self._show_match(match)
+
+    def _on_staging_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        # "Edit photo" only makes sense for images that have already been
+        # imported into the DB (they carry the "Imported" badge). Route to
+        # Prepare Images via the Observations tab; otherwise no-op.
+        path = (filepath or "").strip() or None
+        if not path:
+            return
+        match = self._match_for_path(path)
+        if not match or not bool(match.get("already_imported")):
+            return
+        observations_tab = getattr(self._main_window, "observations_tab", None) if getattr(self, "_main_window", None) else None
+        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        if callable(opener):
+            opener(selected_image_path=path)
+
+    def _on_staging_gallery_delete_selection_requested(self, keys) -> None:
+        # "Delete" in the staging context means exclude from this ingest
+        # batch — the underlying files aren't touched.
+        added = False
+        for key in keys or []:
+            path = str(key or "").strip()
+            if not path:
+                continue
+            if path not in self._excluded_paths:
+                self._excluded_paths.add(path)
+                added = True
+        if added:
+            self._refresh_gallery()
 
     def _on_staging_gallery_items_reordered(self, ordered_keys) -> None:
         obs_id = self._selected_observation_id()
