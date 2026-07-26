@@ -2813,17 +2813,17 @@ Auf alle ausgewählten Bilder anwenden?</translation>
         <location filename="../ui/image_import_dialog.py" line="1589"/>
         <location filename="../ui/image_import_dialog.py" line="6139"/>
         <source>Apply new raw settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Neue RAW-Einstellungen anwenden</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1593"/>
         <source>Copy settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Einstellungen kopieren</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1597"/>
         <source>Paste settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Einstellungen einfügen</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1764"/>
@@ -2982,17 +2982,17 @@ Maßstab fehlt: {missing}</translation>
         <location filename="../ui/image_import_dialog.py" line="6162"/>
         <location filename="../ui/image_import_dialog.py" line="6183"/>
         <source>the selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>das ausgewählte Bild</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6164"/>
         <source>Copied RAW settings from {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>RAW-Einstellungen von {name} kopiert.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6185"/>
         <source>Pasted RAW settings to {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>RAW-Einstellungen in {name} eingefügt.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6424"/>
@@ -5369,7 +5369,7 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
     <message>
         <location filename="../ui/observations_tab.py" line="12930"/>
         <source>Guess species using AI - all field images are used when nothing is selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Art mit KI erraten - alle Feldbilder werden verwendet, wenn nichts ausgewählt ist</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="13387"/>
@@ -5564,7 +5564,7 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
     <message>
         <location filename="../ui/observations_tab.py" line="15926"/>
         <source>Delete {count} selected image(s)?</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} ausgewählte(s) Bild(er) löschen?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="15984"/>
@@ -6236,7 +6236,7 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
     <message>
         <location filename="../ui/observations_tab.py" line="2098"/>
         <source>Table</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabelle</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="2152"/>
@@ -6263,7 +6263,7 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
         <location filename="../ui/observations_tab.py" line="2506"/>
         <location filename="../ui/observations_tab.py" line="6652"/>
         <source>Select a different observation to move the photos to.</source>
-        <translation type="unfinished"></translation>
+        <translation>Wählen Sie eine andere Beobachtung, um die Fotos dorthin zu verschieben.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="3036"/>
@@ -6357,7 +6357,7 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
         <location filename="../ui/observations_tab.py" line="4224"/>
         <location filename="../ui/observations_tab.py" line="4711"/>
         <source>Both</source>
-        <translation type="unfinished"></translation>
+        <translation>Beide</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="4705"/>
@@ -6520,17 +6520,17 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
     <message>
         <location filename="../ui/observations_tab.py" line="6578"/>
         <source>Delete {count} selected images?</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} ausgewählte(s) Bild(er) löschen?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6590"/>
         <source>selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>ausgewähltes Bild</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6600"/>
         <source>{count} images deleted.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Bilder gelöscht.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6640"/>
@@ -6540,12 +6540,12 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
     <message>
         <location filename="../ui/observations_tab.py" line="6678"/>
         <source>Could not move selected images: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgewählte Bilder konnten nicht verschoben werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6697"/>
         <source>Moved {count} images to observation {obs_id}.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Bilder zu Beobachtung {obs_id} verschoben.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7263"/>
@@ -8561,29 +8561,6 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
         <location filename="../ui/observations_tab.py" line="1828"/>
         <source>Failed to load image</source>
         <translation>Bild konnte nicht geladen werden</translation>
-    </message>
-</context>
-<context>
-    <name>_ObservationsTab</name>
-    <message>
-        <location filename="../ui/observations_tab.py" line="2013"/>
-        <source>Generate a species plate for selected observation</source>
-        <translation>Arten-Tafel für ausgewählte Beobachtung erstellen</translation>
-    </message>
-    <message>
-        <location filename="../ui/observations_tab.py" line="2068"/>
-        <source>Import observations from zip archive</source>
-        <translation>Beobachtungen aus ZIP-Archiv importieren</translation>
-    </message>
-    <message>
-        <location filename="../ui/observations_tab.py" line="2108"/>
-        <source>Show thumbnail</source>
-        <translation>Vorschaubild anzeigen</translation>
-    </message>
-    <message>
-        <location filename="../ui/observations_tab.py" line="2151"/>
-        <source>External</source>
-        <translation>Extern</translation>
     </message>
 </context>
 <context>

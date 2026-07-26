@@ -2593,17 +2593,17 @@ Vil du uppdatera disse bildene til 책 bruke den nye kalibreringen och beregne m�
         <location filename="../ui/image_import_dialog.py" line="1589"/>
         <location filename="../ui/image_import_dialog.py" line="6139"/>
         <source>Apply new raw settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Anv채nd nya raw-inst채llningar</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1593"/>
         <source>Copy settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopiera inst채llningar</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1597"/>
         <source>Paste settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Klistra in inst채llningar</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1654"/>
@@ -2800,17 +2800,17 @@ Original EXIF-data utel채mnas f철r att spara utrymme och skydda integriteten.</t
         <location filename="../ui/image_import_dialog.py" line="6162"/>
         <location filename="../ui/image_import_dialog.py" line="6183"/>
         <source>the selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>den valda bilden</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6164"/>
         <source>Copied RAW settings from {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopierade RAW-inst채llningar fr책n {name}.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6185"/>
         <source>Pasted RAW settings to {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Klistrade in RAW-inst채llningar till {name}.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6424"/>
@@ -5233,7 +5233,7 @@ Namn och e-post (valfritt) l채ggs till observationer i databasn, vilket 채r anv�
     <message>
         <location filename="../ui/observations_tab.py" line="12930"/>
         <source>Guess species using AI - all field images are used when nothing is selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Gissa art med AI - alla f채ltbilder anv채nds n채r inget 채r valt</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="12932"/>
@@ -5566,7 +5566,7 @@ Namn och e-post (valfritt) l채ggs till observationer i databasn, vilket 채r anv�
     <message>
         <location filename="../ui/observations_tab.py" line="15926"/>
         <source>Delete {count} selected image(s)?</source>
-        <translation type="unfinished"></translation>
+        <translation>Ta bort {count} valda bilder?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="15984"/>
@@ -6324,7 +6324,7 @@ Open Sync now to review the error details.</source>
     <message>
         <location filename="../ui/observations_tab.py" line="2098"/>
         <source>Table</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabell</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="2152"/>
@@ -6351,7 +6351,7 @@ Open Sync now to review the error details.</source>
         <location filename="../ui/observations_tab.py" line="2506"/>
         <location filename="../ui/observations_tab.py" line="6652"/>
         <source>Select a different observation to move the photos to.</source>
-        <translation type="unfinished"></translation>
+        <translation>V채lj en annan observation att flytta bilderna till.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="3036"/>
@@ -6439,7 +6439,7 @@ Open Sync now to review the error details.</source>
         <location filename="../ui/observations_tab.py" line="4224"/>
         <location filename="../ui/observations_tab.py" line="4711"/>
         <source>Both</source>
-        <translation type="unfinished"></translation>
+        <translation>B책da</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="4717"/>
@@ -6656,17 +6656,17 @@ Open Sync now to review the error details.</source>
     <message>
         <location filename="../ui/observations_tab.py" line="6578"/>
         <source>Delete {count} selected images?</source>
-        <translation type="unfinished"></translation>
+        <translation>Ta bort {count} valda bilder?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6590"/>
         <source>selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>vald bild</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6600"/>
         <source>{count} images deleted.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} bilder borttagna.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6640"/>
@@ -6676,12 +6676,12 @@ Open Sync now to review the error details.</source>
     <message>
         <location filename="../ui/observations_tab.py" line="6678"/>
         <source>Could not move selected images: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunde inte flytta valda bilder: {error}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6697"/>
         <source>Moved {count} images to observation {obs_id}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Flyttade {count} bilder till observation {obs_id}.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7263"/>

@@ -2586,17 +2586,17 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
         <location filename="../ui/image_import_dialog.py" line="1589"/>
         <location filename="../ui/image_import_dialog.py" line="6139"/>
         <source>Apply new raw settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Bruk nye raw-innstillinger</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1593"/>
         <source>Copy settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopier innstillinger</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1597"/>
         <source>Paste settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Lim inn innstillinger</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="1654"/>
@@ -2737,17 +2737,17 @@ Original EXIF-data er utelatt for å spare plass og beskytte personvernet.</tran
         <location filename="../ui/image_import_dialog.py" line="6162"/>
         <location filename="../ui/image_import_dialog.py" line="6183"/>
         <source>the selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>det valgte bildet</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6164"/>
         <source>Copied RAW settings from {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopierte RAW-innstillinger fra {name}.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6185"/>
         <source>Pasted RAW settings to {name}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Limte inn RAW-innstillinger til {name}.</translation>
     </message>
     <message>
         <location filename="../ui/image_import_dialog.py" line="6424"/>
@@ -5369,7 +5369,7 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
     <message>
         <location filename="../ui/observations_tab.py" line="12930"/>
         <source>Guess species using AI - all field images are used when nothing is selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Gjett art med AI - alle feltbilder brukes når ingenting er valgt</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="13387"/>
@@ -5564,7 +5564,7 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
     <message>
         <location filename="../ui/observations_tab.py" line="15926"/>
         <source>Delete {count} selected image(s)?</source>
-        <translation type="unfinished"></translation>
+        <translation>Slette {count} valgte bilder?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="15984"/>
@@ -6236,7 +6236,7 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
     <message>
         <location filename="../ui/observations_tab.py" line="2098"/>
         <source>Table</source>
-        <translation type="unfinished"></translation>
+        <translation>Tabell</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="2152"/>
@@ -6263,7 +6263,7 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
         <location filename="../ui/observations_tab.py" line="2506"/>
         <location filename="../ui/observations_tab.py" line="6652"/>
         <source>Select a different observation to move the photos to.</source>
-        <translation type="unfinished"></translation>
+        <translation>Velg en annen observasjon å flytte bildene til.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="3036"/>
@@ -6357,7 +6357,7 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
         <location filename="../ui/observations_tab.py" line="4224"/>
         <location filename="../ui/observations_tab.py" line="4711"/>
         <source>Both</source>
-        <translation type="unfinished"></translation>
+        <translation>Begge</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="4705"/>
@@ -6520,17 +6520,17 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
     <message>
         <location filename="../ui/observations_tab.py" line="6578"/>
         <source>Delete {count} selected images?</source>
-        <translation type="unfinished"></translation>
+        <translation>Slette {count} valgte bilder?</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6590"/>
         <source>selected image</source>
-        <translation type="unfinished"></translation>
+        <translation>valgt bilde</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6600"/>
         <source>{count} images deleted.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} bilder slettet.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6640"/>
@@ -6540,12 +6540,12 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
     <message>
         <location filename="../ui/observations_tab.py" line="6678"/>
         <source>Could not move selected images: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke flytte valgte bilder: {error}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="6697"/>
         <source>Moved {count} images to observation {obs_id}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Flyttet {count} bilder til observasjon {obs_id}.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7263"/>
