@@ -87,7 +87,11 @@ from database.models import (
 from database.vernacular_db import VernacularDB
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
 from .taxon_input_controller import TaxonInputController
-from database.reverse_location_lookup import LocationLookupResult, lookup_location_suggestions
+from database.reverse_location_lookup import (
+    LocationLookupResult,
+    lookup_location_suggestions,
+    normalize_country_code,
+)
 from database.database_tags import DatabaseTerms
 from database.schema import (
     get_connection,
@@ -3461,6 +3465,29 @@ class ObservationsTab(QWidget):
 
     def schedule_metadata_cloud_sync(self, observation_id: int | None = None) -> None:
         return
+
+    @staticmethod
+    def _coords_meaningfully_changed(
+        old_lat, old_lon, new_lat, new_lon,
+    ) -> bool:
+        """Return True when the observation's coordinates moved beyond float noise."""
+        def _coerce(value):
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        left_lat = _coerce(old_lat)
+        left_lon = _coerce(old_lon)
+        right_lat = _coerce(new_lat)
+        right_lon = _coerce(new_lon)
+        if left_lat is None and right_lat is None and left_lon is None and right_lon is None:
+            return False
+        if (left_lat is None) != (right_lat is None) or (left_lon is None) != (right_lon is None):
+            return True
+        return abs(left_lat - right_lat) > 1e-6 or abs(left_lon - right_lon) > 1e-6
 
     def _on_metadata_sync_timeout(self) -> None:
         return
@@ -10831,6 +10858,8 @@ class ObservationsTab(QWidget):
                     ai_state_json=self._serialize_ai_state(ai_state),
                     gps_latitude=data.get('gps_latitude'),
                     gps_longitude=data.get('gps_longitude'),
+                    country_code=data.get('country_code'),
+                    region_id=data.get('region_id'),
                     allow_nulls=True
                 )
                 self.schedule_metadata_cloud_sync(obs_id)
@@ -10908,19 +10937,38 @@ class ObservationsTab(QWidget):
                     _debug_import_flow(
                         f"edit observation {obs_id}: metadata from Prepare Images gps=({obs_lat}, {obs_lon})"
                     )
-                    ObservationDB.update_observation(
-                        obs_id,
+                    coords_changed = self._coords_meaningfully_changed(
+                        (observation or {}).get("gps_latitude"),
+                        (observation or {}).get("gps_longitude"),
+                        obs_lat,
+                        obs_lon,
+                    )
+                    update_kwargs = dict(
                         gps_latitude=obs_lat,
                         gps_longitude=obs_lon,
                         allow_nulls=True,
                     )
+                    # Prepare Images does not run a reverse geocode, so if the
+                    # user moved the point the previously-stored country/region
+                    # are stale. Clear them locally so a later push does not
+                    # ship a country tied to old coordinates.
+                    if coords_changed:
+                        update_kwargs["country_code"] = None
+                        update_kwargs["region_id"] = None
+                    ObservationDB.update_observation(obs_id, **update_kwargs)
                     self.schedule_metadata_cloud_sync(obs_id)
                     if observation is not None:
                         observation["gps_latitude"] = obs_lat
                         observation["gps_longitude"] = obs_lon
+                        if coords_changed:
+                            observation["country_code"] = None
+                            observation["region_id"] = None
                     if draft_observation is not None:
                         draft_observation["gps_latitude"] = obs_lat
                         draft_observation["gps_longitude"] = obs_lon
+                        if coords_changed:
+                            draft_observation["country_code"] = None
+                            draft_observation["region_id"] = None
                     # Direct-edit branch: persist image results + refresh
                     # Measure/Analysis without re-opening the details dialog.
                     if skip_return:
@@ -11040,12 +11088,23 @@ class ObservationsTab(QWidget):
         image_results       = image_dialog.import_results
         obs_lat, obs_lon    = image_dialog.get_observation_gps()
         step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-        ObservationDB.update_observation(
-            obs_id,
+        coords_changed = self._coords_meaningfully_changed(
+            observation.get("gps_latitude"),
+            observation.get("gps_longitude"),
+            obs_lat,
+            obs_lon,
+        )
+        update_kwargs = dict(
             gps_latitude=obs_lat,
             gps_longitude=obs_lon,
             allow_nulls=True,
         )
+        if coords_changed:
+            # No fresh geocode here; drop stale geography so a later cloud
+            # push does not carry over the old country/region.
+            update_kwargs["country_code"] = None
+            update_kwargs["region_id"] = None
+        ObservationDB.update_observation(obs_id, **update_kwargs)
         _obs_timing_log("update_observation gps", step_start)
         step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self.schedule_metadata_cloud_sync(obs_id)
@@ -13234,8 +13293,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._publish_target_sync_in_progress = False
         self._location_lookup_name = ""
         self._location_lookup_suggestions: list[str] = []
+        # ``_location_country_code`` holds the normalized (uppercase 2-letter)
+        # country code — either an empty string when unknown or a validated
+        # ISO 3166-1 alpha-2 code. ``_location_region_id`` is preserve-only
+        # from cloud data; the desktop never invents it.
         self._location_country_code = ""
         self._location_country_name = ""
+        self._location_region_id: str | None = None
+        # Tracks the latitude/longitude the current in-memory country/region
+        # were resolved from. Used to keep stale async lookup results from
+        # overwriting geography associated with newly entered coordinates.
+        self._location_country_coords: tuple[float, float] | None = None
         self._inaturalist_taxon_id: int | None = None
         self._red_list_category = ""
         self._red_list_categories: dict | None = None
@@ -15986,8 +16054,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_loading_form", False):
             self._deferred_location_lookup_pending = True
             return
+        # Coordinates just changed — any previously-cached country/region are
+        # associated with the OLD point. Drop region_id (never invented) and
+        # clear the country_code until the new geocode returns. This is what
+        # makes the save path emit an explicit clear when a lookup ultimately
+        # fails after a coordinate change.
         self._location_country_code = ""
         self._location_country_name = ""
+        self._location_region_id = None
+        self._location_country_coords = None
         self._refresh_location_reporting_summary()
         self._location_lookup_timer.start()
 
@@ -16055,10 +16130,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         """Store place-name suggestions from the API and apply the best one when appropriate."""
         if isinstance(result, LocationLookupResult):
             if not self._location_lookup_result_matches_current_coords(result):
+                # Stale async result for an old coordinate — discard it so it
+                # cannot overwrite geography associated with newer coords.
                 return
             suggestions = list(result.suggestions)
-            self._location_country_code = str(result.country_code or "").strip().lower()
+            normalized_code = normalize_country_code(result.country_code)
+            self._location_country_code = normalized_code or ""
             self._location_country_name = str(result.country_name or "").strip()
+            try:
+                self._location_country_coords = (
+                    float(result.latitude),
+                    float(result.longitude),
+                )
+            except (TypeError, ValueError):
+                self._location_country_coords = None
         elif isinstance(result, (list, tuple)):
             suggestions = [str(value or "").strip() for value in result]
         else:
@@ -16172,6 +16257,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_name = f"{genus} {species}".strip() if genus and species else None
         self.map_helper.show_map_service_dialog(lat, lon, species_name)
 
+    def _resolved_country_code_for_current_coords(
+        self,
+        lat: float | None,
+        lon: float | None,
+    ) -> str | None:
+        """Return the country code to save with the observation.
+
+        Only propagate a country code when the value in memory was resolved
+        from coordinates that match what is currently in the form. This keeps
+        a stale async lookup from an older point out of the save path.
+        """
+        code = normalize_country_code(getattr(self, "_location_country_code", None))
+        if not code:
+            return None
+        cached = getattr(self, "_location_country_coords", None)
+        if lat is None or lon is None or not cached:
+            return None
+        try:
+            cached_lat = float(cached[0])
+            cached_lon = float(cached[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if abs(cached_lat - float(lat)) > 1e-6 or abs(cached_lon - float(lon)) > 1e-6:
+            return None
+        return code
+
     def get_data(self):
         """Return observation data as dict."""
         genus = self.genus_input.text().strip() or None
@@ -16188,6 +16299,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             lat = self.lat_input.value()
         if self.lon_input.value() > self.lon_input.minimum():
             lon = self.lon_input.value()
+        country_code = self._resolved_country_code_for_current_coords(lat, lon)
+        # ``region_id`` is preserve-only from the cloud. We surface whatever was
+        # loaded so the standard save path can pass it back into
+        # ``update_observation`` unchanged; if coordinates changed we do NOT
+        # invent one, and the sync layer will explicitly clear it when the
+        # cloud row is patched.
+        region_id = self._location_region_id if self._location_country_coords else None
 
         publish_target = normalize_publish_target(self.publish_target_combo.currentData())
         include_regional_habitat = self._regional_habitat_tabs_enabled()
@@ -16262,7 +16380,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             ) or None,
             'habitat_grows_on_note': (self.grows_on_note_input.toPlainText().strip() if hasattr(self, "grows_on_note_input") else "") or None,
             'gps_latitude': lat,
-            'gps_longitude': lon
+            'gps_longitude': lon,
+            'country_code': country_code,
+            'region_id': region_id,
         }
 
     def on_taxonomy_tab_changed(self, index):
@@ -16458,6 +16578,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _maybe_autoselect_publish_target_from_coords(self, _value=None) -> None:
         self._location_country_code = ""
         self._location_country_name = ""
+        self._location_region_id = None
+        self._location_country_coords = None
         self._refresh_location_reporting_summary()
 
     def _tab_title_with_state(self, title: str, filled: bool) -> str:
@@ -18905,6 +19027,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.lat_input.setValue(lat)
         if lon is not None:
             self.lon_input.setValue(lon)
+        # Restore any previously persisted geography so a subsequent save does
+        # not accidentally clear cloud values. ``normalize_country_code`` is
+        # forgiving of legacy lowercase storage while still filtering junk.
+        stored_country = normalize_country_code(obs.get("country_code"))
+        self._location_country_code = stored_country or ""
+        raw_region = obs.get("region_id")
+        if isinstance(raw_region, str):
+            region_text = raw_region.strip()
+            self._location_region_id = region_text or None
+        elif raw_region is None:
+            self._location_region_id = None
+        else:
+            self._location_region_id = str(raw_region).strip() or None
+        try:
+            if lat is not None and lon is not None:
+                self._location_country_coords = (float(lat), float(lon))
+            else:
+                self._location_country_coords = None
+        except (TypeError, ValueError):
+            self._location_country_coords = None
         saved_target = resolve_observation_publish_target(
             obs,
             default_target=self._active_reporting_target(),

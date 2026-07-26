@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import threading
 import time
 from typing import Any
@@ -16,6 +17,43 @@ ARTSDATABANKEN_MAX_DIST = 0.006
 
 _nominatim_lock = threading.Lock()
 _last_nominatim_request_at = 0.0
+
+_COUNTRY_CODE_RE = re.compile(r"^[A-Z]{2}$")
+
+
+def normalize_country_code(value: Any) -> str | None:
+    """Return ``value`` as a validated two-letter uppercase country code or ``None``.
+
+    Applies the shared desktop rule for any reverse-geocoder, save/update path,
+    cloud pull, snapshot, or outgoing payload:
+
+    - ``None``, non-string-like, blank, or malformed → ``None``
+    - Exactly two ASCII letters → uppercase two-letter code
+
+    Deliberately conservative: does NOT map country names, three-letter codes,
+    or codes containing digits to a default. Never silently returns ``"NO"`` or
+    any other country.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        # ``bool`` is a subclass of ``int``; treat it as invalid input.
+        return None
+    if not isinstance(value, (str, bytes)):
+        return None
+    if isinstance(value, bytes):
+        try:
+            text = value.decode("ascii", errors="strict")
+        except UnicodeDecodeError:
+            return None
+    else:
+        text = value
+    text = text.strip().upper()
+    if not text:
+        return None
+    if not _COUNTRY_CODE_RE.match(text):
+        return None
+    return text
 
 
 @dataclass(frozen=True)
@@ -123,8 +161,7 @@ def _country_code_from_nominatim(data: dict[str, Any]) -> str | None:
     addr = data.get("address")
     if not isinstance(addr, dict):
         return None
-    code = str(addr.get("country_code") or "").strip().lower()
-    return code or None
+    return normalize_country_code(addr.get("country_code"))
 
 
 def _country_name_from_nominatim(data: dict[str, Any]) -> str | None:
@@ -202,13 +239,13 @@ def lookup_location_suggestions(
     suggestions: list[str | None] = []
     source = "nominatim"
 
-    if country_code == "no":
+    if country_code == "NO":
         arts = _request_artsdatabanken(lat, lon, timeout=timeout)
         arts_name = artsdatabanken_suggestion(arts)
         if arts_name:
             suggestions.append(arts_name)
             source = "artsdatabanken"
-    elif country_code == "dk":
+    elif country_code == "DK":
         dawa = _request_dawa(lat, lon, timeout=timeout)
         dawa_name = dawa_suggestion(dawa)
         if dawa_name:

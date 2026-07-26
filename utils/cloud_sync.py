@@ -54,6 +54,7 @@ from database.models import (
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
 )
+from database.reverse_location_lookup import normalize_country_code
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
@@ -209,6 +210,12 @@ _OBS_PUSH_COLS = [
     'spore_statistics', 'auto_threshold',
     'source_type', 'citation', 'data_provider', 'author',
     'spore_data_visibility',
+    # Geography: `country_code` is normalized to NULL or ^[A-Z]{2}$ before
+    # sending. `region_id` is preserve-only from cloud — the desktop never
+    # invents it, and outgoing PATCH payloads intentionally omit this key so
+    # the cloud value survives. See `push_observation` for the patch shaping.
+    'country_code',
+    'region_id',
 ]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 
@@ -1611,6 +1618,8 @@ _SNAPSHOT_OBS_FIELDS = [
     'source_type', 'citation', 'data_provider', 'author',
     'visibility',
     'spore_data_visibility',
+    'country_code',
+    'region_id',
 ]
 
 _SNAPSHOT_IMG_FIELDS = [
@@ -3161,6 +3170,13 @@ def _normalize_observation_field_value(field: str, value):
         # Compare structurally so re-pulls don't perpetually report "changed"
         # just because of the string/dict shape difference.
         return _normalize_observation_json_value(value)
+    if field == 'country_code':
+        return normalize_country_code(value)
+    if field == 'region_id':
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
     return _normalize_snapshot_value(value)
 
 
@@ -3205,6 +3221,8 @@ def _observation_push_payload(record: dict | None, *, local: bool) -> dict:
     raw_publish_target = str(payload.get('publish_target') or '').strip()
     if raw_publish_target:
         payload['publish_target'] = normalize_publish_target(raw_publish_target)
+    payload['country_code'] = normalize_country_code(payload.get('country_code'))
+    payload['region_id'] = _normalize_observation_field_value('region_id', payload.get('region_id'))
     return payload
 
 
@@ -3277,6 +3295,101 @@ def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | Non
         if not _observation_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
             diff_fields.append(field)
     return diff_fields
+
+
+def _coords_match(
+    local_lat, local_lon, baseline_lat, baseline_lon,
+) -> bool:
+    """Return True when local coords equal the sync baseline within float tolerance.
+
+    Uses the same tolerances as observation float diff detection so harmless
+    JSON serialization drift does not spuriously flag a coordinate change.
+    """
+    left_lat = _normalize_observation_float_value(local_lat)
+    left_lon = _normalize_observation_float_value(local_lon)
+    right_lat = _normalize_observation_float_value(baseline_lat)
+    right_lon = _normalize_observation_float_value(baseline_lon)
+    if left_lat is None and right_lat is None and left_lon is None and right_lon is None:
+        return True
+    if (left_lat is None) != (right_lat is None) or (left_lon is None) != (right_lon is None):
+        return False
+    return math.isclose(
+        float(left_lat), float(right_lat),
+        rel_tol=_OBSERVATION_FLOAT_REL_TOL,
+        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+    ) and math.isclose(
+        float(left_lon), float(right_lon),
+        rel_tol=_OBSERVATION_FLOAT_REL_TOL,
+        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+    )
+
+
+def _shape_geography_patch_payload(
+    payload: dict,
+    obs: dict | None,
+    cloud_id: str | None,
+) -> None:
+    """Enforce the coord-change / preserve-only rules for country_code + region_id.
+
+    Semantics (see spec §4):
+    - field absent  → cloud value is preserved
+    - field = null  → cloud value is explicitly cleared
+    - field = code  → cloud value is replaced
+
+    Rules applied here for an existing (PATCH) observation:
+
+    * region_id is preserve-only on desktop sync. When coordinates are
+      unchanged we never send it. When coordinates changed we send NULL so
+      the stale cloud region is dropped.
+    * country_code with unchanged coords + no local value → omit key
+      (do not clobber the cloud value; may be a stale offline sync).
+    * country_code with unchanged coords + valid local code → send code.
+    * country_code with changed coords + valid geocode → send new code.
+    * country_code with changed coords + no valid code → send NULL.
+
+    The baseline for coord comparison is the stored cloud snapshot for the
+    linked cloud observation. When no snapshot exists yet (first push after
+    linking) we fall back to omitting the geography keys — the cloud row
+    is authoritative and will keep whatever it already holds.
+    """
+    local_row = dict(obs or {})
+    normalized_country = normalize_country_code(local_row.get('country_code'))
+
+    cloud_key = str(cloud_id or '').strip()
+    snapshot = None
+    baseline_lat = None
+    baseline_lon = None
+    if cloud_key:
+        raw_snapshot = _load_cloud_observation_snapshot(cloud_key)
+        snapshot = _parse_cloud_observation_snapshot(raw_snapshot) if raw_snapshot else None
+    if snapshot:
+        baseline_obs = snapshot.get('observation') or {}
+        baseline_lat = baseline_obs.get('gps_latitude')
+        baseline_lon = baseline_obs.get('gps_longitude')
+    else:
+        # No baseline available: treat as coords unchanged to preserve cloud
+        # geography (safer than clobbering with a stale local value).
+        baseline_lat = local_row.get('gps_latitude')
+        baseline_lon = local_row.get('gps_longitude')
+
+    coords_unchanged = _coords_match(
+        local_row.get('gps_latitude'),
+        local_row.get('gps_longitude'),
+        baseline_lat,
+        baseline_lon,
+    )
+
+    if coords_unchanged:
+        # Preserve cloud region_id (never sent) and skip country if local is empty.
+        payload.pop('region_id', None)
+        if normalized_country is None:
+            payload.pop('country_code', None)
+        else:
+            payload['country_code'] = normalized_country
+    else:
+        # Coordinates changed. Region tied to old coords is stale; clear it.
+        payload['region_id'] = None
+        payload['country_code'] = normalized_country  # may be None
 
 
 def _local_image_snapshot_payload(image_row: dict | None) -> dict:
@@ -7889,6 +8002,8 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat_nin2_note': remote.get('habitat_nin2_note'),
         'habitat_substrate_note': remote.get('habitat_substrate_note'),
         'habitat_grows_on_note': remote.get('habitat_grows_on_note'),
+        'country_code': normalize_country_code(remote.get('country_code')),
+        'region_id': _normalize_observation_field_value('region_id', remote.get('region_id')),
         'allow_nulls': True,
     }
 
@@ -10555,9 +10670,13 @@ class SporelyCloudClient:
                 if not diff_fields:
                     _increment_sync_summary(summary, 'observations_skipped_noop')
                     return existing_id
+            # Coord-change / preserve-only geography rules — see §4 in the spec.
+            _shape_geography_patch_payload(payload, obs, existing_id)
             self._patch(f'observations?id=eq.{existing_id}', payload)
             _increment_sync_summary(summary, 'observations_patched')
             return existing_id
+        # New observation: never invent a region_id.
+        payload.pop('region_id', None)
         rows = self._post('observations', payload)
         _increment_sync_summary(summary, 'observations_patched')
         return rows[0]['id']
@@ -16742,6 +16861,8 @@ def _create_local_from_remote(
         habitat_grows_on_note=remote.get('habitat_grows_on_note'),
         publish_target=normalize_publish_target(raw_publish_target) if raw_publish_target else None,
         interesting_comment=_normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
+        country_code=normalize_country_code(remote.get('country_code')),
+        region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
     )
     local_id = ObservationDB.create_observation(**kwargs)
 

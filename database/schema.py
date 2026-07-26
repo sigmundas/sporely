@@ -1151,6 +1151,8 @@ def init_database():
             open_comment TEXT,
             private_comment TEXT,
             interesting_comment INTEGER DEFAULT 0,
+            country_code TEXT,
+            region_id TEXT,
             ai_state_json TEXT,
             ai_selected_service TEXT,
             ai_selected_taxon_id TEXT,
@@ -1372,6 +1374,18 @@ def init_database():
         pass  # Column already exists
     try:
         cursor.execute('ALTER TABLE observations ADD COLUMN red_list_categories_json TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add reverse-geocoded ISO 3166-1 alpha-2 country column if it doesn't exist
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN country_code TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add cloud region id column (preserved from cloud data; desktop never invents it)
+    try:
+        cursor.execute('ALTER TABLE observations ADD COLUMN region_id TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
 

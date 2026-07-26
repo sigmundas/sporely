@@ -28,6 +28,7 @@ from utils.publish_targets import (
     normalize_publish_target,
     infer_publish_target_from_coords,
 )
+from database.reverse_location_lookup import normalize_country_code
 
 _UNSET = object()
 _CLOUD_APP_SETTING_KEYS = {
@@ -1002,7 +1003,9 @@ class ObservationDB:
                           ai_selected_taxon_id: str | None = None,
                           ai_selected_scientific_name: str | None = None,
                           ai_selected_probability: float | None = None,
-                          ai_selected_at: str | None = None) -> int:
+                          ai_selected_at: str | None = None,
+                          country_code: str | None = None,
+                          region_id: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
@@ -1041,6 +1044,8 @@ class ObservationDB:
         resolved_spore_visibility = str(spore_data_visibility or "public").strip().lower()
         if resolved_spore_visibility not in {"private", "friends", "public"}:
             resolved_spore_visibility = "public"
+        resolved_country_code = normalize_country_code(country_code)
+        resolved_region_id = str(region_id).strip() if isinstance(region_id, str) and region_id.strip() else None
 
         cursor.execute('''
             INSERT INTO observations (date, genus, species, common_name, location, habitat,
@@ -1056,8 +1061,9 @@ class ObservationDB:
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json,
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-                                     ai_selected_probability, ai_selected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     ai_selected_probability, ai_selected_at,
+                                     country_code, region_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1072,7 +1078,8 @@ class ObservationDB:
               habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
               open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json,
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-              ai_selected_probability, ai_selected_at))
+              ai_selected_probability, ai_selected_at,
+              resolved_country_code, resolved_region_id))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1112,7 +1119,9 @@ class ObservationDB:
                            ai_selected_taxon_id: str | object = _UNSET,
                            ai_selected_scientific_name: str | object = _UNSET,
                            ai_selected_probability: float | object = _UNSET,
-                           ai_selected_at: str | object = _UNSET) -> Optional[str]:
+                           ai_selected_at: str | object = _UNSET,
+                           country_code: str | None | object = _UNSET,
+                           region_id: str | None | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1294,6 +1303,20 @@ class ObservationDB:
             if ai_selected_at is not _UNSET and (allow_nulls or ai_selected_at is not None):
                 updates.append('ai_selected_at = ?')
                 values.append(ai_selected_at)
+            if country_code is not _UNSET and (allow_nulls or country_code is not None):
+                updates.append('country_code = ?')
+                # Never fabricate a country: NULL/blank/malformed -> None.
+                values.append(normalize_country_code(country_code))
+            if region_id is not _UNSET and (allow_nulls or region_id is not None):
+                updates.append('region_id = ?')
+                # Desktop preserves whatever cloud provided; only accept string values here.
+                if region_id is None:
+                    values.append(None)
+                elif isinstance(region_id, str):
+                    text = region_id.strip()
+                    values.append(text or None)
+                else:
+                    values.append(str(region_id).strip() or None)
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)
