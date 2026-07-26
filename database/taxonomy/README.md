@@ -432,6 +432,89 @@ self-authorized, and cannot be created into an approval before a final
 unauthorized. Stage 2B remains incomplete pending a separately authorized
 bounded HEAD retry that preserves the raw HEAD headers dict.
 
+## NorTaxa Stage 2B offline acquisition executor
+
+`scripts/acquire_nortaxa.py` implements the future archive-acquisition
+boundary for the pinned NorTaxa `1.284` release. This implementation task was
+entirely offline: it created no approval, made no DNS/HEAD/GET/Range request,
+downloaded or extracted no archive, and did not change the planned manifest or
+any immutable proposal, request, metadata-attempt, policy-resolution, or final
+metadata-verification artifact. The existing acquisition proposal remains
+`proposed`, `download_authorized: false`, and `ready_for_approval: false`.
+Because this executor is not yet committed, the proposal is deliberately not
+marked executor-ready and no speculative executor commit is recorded.
+
+The executor state machine is:
+
+```text
+approval + evidence + clean committed Git state validated
+  -> exclusive release lock
+  -> local path/filesystem/free-space preflight
+  -> append-only attempt-consumed journal (durable before transport)
+  -> exactly one injected/production GET open
+  -> bounded streaming + incremental byte count/SHA-256 + clean EOF
+  -> existing NorTaxa structural ZIP validation (no extraction)
+  -> durable promotion-ready receipt
+  -> atomic archive.zip promotion + release-directory fsync
+  -> append-only durable acquisition result
+```
+
+The approval validator is strict and fail-closed. It binds the current
+acquisition proposal, source-selection proposal, canonical request,
+policy-resolution, final metadata verification, attempt 4, exact source and
+release identity, dataset UUID, canonical HTTPS endpoint, single allowed host,
+one GET, the no-redirect/no-Range/no-retry/no-resume/no-fallback/no-auth policy,
+an approved ceiling no greater than 67,108,864 bytes, the executor file hash,
+test-evidence hash, and the exact clean executor Git commit. Unknown fields,
+expired or superseded approvals, dirty trees, mismatches, and authority
+broadening are rejected. The executor never writes or modifies an approval.
+
+The release lock serializes all processes. The one permitted network attempt
+is consumed by an exclusive, fsynced journal before `transport.open`; once that
+journal exists, a crash or exception cannot restore GET authority. Lock
+contention fails immediately and there is no retry loop. Local free-space
+failure occurs before attempt consumption and before transport.
+
+Streaming uses a unique `.staging/*.part` file on the final archive's
+filesystem. Each read is bounded to at most `remaining + 1`; an overflow byte
+is detected before it is written. Missing Content-Length is accepted only
+after non-empty clean EOF within the ceiling. A present Content-Length is
+parsed by the existing metadata policy and must be positive, within the
+ceiling, and exactly equal to the completed stream. On every handled
+pre-promotion interruption, overflow, validation failure, or unexpected
+exception, the explicit disposition is deletion of the staged payload. The
+consumed-attempt journal remains. A process-killed orphan staging file can
+never be promoted by a later run because the journal blocks another GET and
+the executor does not resume staging files.
+
+Before promotion, the executor calls `refresh_nortaxa.validate_fixture`, which
+retains the existing member-path/traversal, member-count, compressed and
+uncompressed size, compression-ratio, normalized/case collision, encryption,
+method, CRC, EOF, `meta.xml`, and DwC-A semantic protections without
+extracting members. It never overwrites an existing final archive.
+
+Crash recovery is intentionally asymmetric. Before promotion, consumed
+authority remains consumed and no new GET is possible. Immediately before
+promotion, an immutable receipt records the completed size/hash, allowlisted
+bounded response metadata, stream-policy result, and structural-validation
+result. If the archive was promoted but the final result was not recorded, a
+later invocation under the same approval rehashes and structurally revalidates
+the promoted archive against that receipt and writes the append-only result;
+it does not invoke transport. No state reports `result: passed` until both the
+archive promotion and durable result artifact exist.
+
+The production HTTP adapter is present for later separately approved use but
+was not invoked here. It constructs one plain GET, disables redirects, has no
+retry client, and sends no cookie, authorization, Range, conditional, resume,
+or fallback request data. Tests use only synthetic approvals in isolated
+temporary directories, injected byte streams, injected Git/clock/free-space
+state, and socket/DNS guards that raise on any network entry point.
+
+The remaining blocker is independent review and commit of the executor and its
+proof. Only after that commit may maintainers update executor-readiness
+evidence and separately create a time-bounded approval artifact bound to the
+committed SHA. No live acquisition is authorized by this code or documentation.
+
 ## COL XR acquisition boundary
 
 COL releases must be explicitly pinned because Extended and Base releases are

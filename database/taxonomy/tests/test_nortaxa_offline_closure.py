@@ -709,12 +709,14 @@ def test_revised_acquisition_proposal_binds_attempt_4_and_final_metadata() -> No
         assert ap[f] is False
 
 
-def test_revised_acquisition_proposal_reports_missing_executor() -> None:
+def test_revised_acquisition_proposal_remains_historical_until_executor_commit() -> None:
     data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
     audit = data["prerequisites"]["executor_readiness_audit"]
     assert audit["expected_downloader_script"] == "database/taxonomy/scripts/acquire_nortaxa.py"
     assert audit["expected_downloader_present"] is False
-    assert not (Path("database/taxonomy/scripts/acquire_nortaxa.py").exists())
+    assert Path("database/taxonomy/scripts/acquire_nortaxa.py").exists()
+    assert data["prerequisites"]["executor_ready"] is False
+    assert data["authorization_state"]["ready_for_approval"] is False
 
 
 def test_policy_resolution_unchanged_by_this_task() -> None:
