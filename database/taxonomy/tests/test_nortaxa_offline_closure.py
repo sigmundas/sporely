@@ -344,16 +344,18 @@ def test_closure_refuses_when_policy_resolution_omits_transport_field() -> None:
 # ----- Unauthorized acquisition proposal -----
 
 
-def test_acquisition_proposal_bound_after_attempt_4_but_blocked_by_executor() -> None:
+def test_acquisition_proposal_bound_after_attempt_4_and_executor_ready() -> None:
     path = TAXONOMY / "nortaxa-acquisition.proposal.json"
     data = json.loads(path.read_text())
-    assert data["acquisition_proposal_schema_version"] == 3
+    assert data["acquisition_proposal_schema_version"] == 5
     assert data["approval_status"] == "proposed"
     assert data["download_authorized"] is False
     prereq = data["prerequisites"]
     assert prereq["metadata_verification_final_artifact_exists"] is True
-    assert prereq["executor_ready"] is False
-    assert "acquire_nortaxa.py" in prereq["executor_readiness_audit"]["next_prerequisite"]
+    assert prereq["executor_ready"] is True
+    audit = prereq["executor_readiness_audit"]
+    assert audit["expected_downloader_present"] is True
+    assert audit["all_controls_proven"] is True
     b = data["bound_evidence"]
     assert b["source_selection_proposal_sha256"] == PROPOSAL_SHA
     assert b["request_sha256"] == REQUEST_SHA
@@ -361,20 +363,26 @@ def test_acquisition_proposal_bound_after_attempt_4_but_blocked_by_executor() ->
     assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
     assert b["policy_resolution_sha256"] == self_bound_canonical_sha256(RELEASE / "policy-resolution.json")
     assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
+    assert b["executor_readiness_sha256"] == self_bound_canonical_sha256(RELEASE / "executor-readiness.json")
 
 
-def test_acquisition_proposal_still_cannot_be_created_before_executor_ready() -> None:
+def test_acquisition_proposal_ready_for_approval_but_still_unauthorized() -> None:
     data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
     fut = data["future_approval_artifact"]
     assert fut["cannot_be_self_authorized"] is True
-    assert any("acquire_nortaxa.py" in item for item in fut["cannot_be_created_before"])
+    assert fut["readiness_cannot_authorize_acquisition"] is True
+    assert fut["proposal_cannot_authorize_acquisition"] is True
+    assert fut["approval_lifetime_seconds_max"] == 86400
     required = set(fut["required_bound_fields"])
     for field in (
         "acquisition_proposal_sha256", "metadata_verification_sha256",
-        "policy_resolution_sha256", "approved_at",
-        "executor_script_sha256", "executor_test_evidence_sha256",
+        "policy_resolution_sha256", "executor_readiness_sha256", "approved_at",
+        "expires_at", "executor_script_sha256", "executor_test_evidence_sha256",
     ):
         assert field in required
+    assert data["authorization_state"]["ready_for_approval"] is True
+    assert data["prerequisites"]["approval_lifetime_policy_defined"] is True
+    assert data["prerequisites"]["approval_lifetime_policy"]["maximum_seconds"] == 86400
 
 
 def test_acquisition_proposal_does_not_change_proposal_ceiling() -> None:
@@ -685,22 +693,22 @@ def test_final_metadata_verification_canonical_hash_is_stable() -> None:
     assert data["canonical_sha256"] == self_bound_canonical_sha256(path)
 
 
-def test_revised_acquisition_proposal_binds_attempt_4_and_final_metadata() -> None:
+def test_revised_acquisition_proposal_supersedes_prior_and_binds_readiness() -> None:
     path = TAXONOMY / "nortaxa-acquisition.proposal.json"
     data = json.loads(path.read_text())
-    assert data["acquisition_proposal_schema_version"] == 3
+    assert data["acquisition_proposal_schema_version"] == 5
     assert data["approval_status"] == "proposed"
     assert data["download_authorized"] is False
     b = data["bound_evidence"]
     assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
     assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
+    assert b["executor_readiness_sha256"] == self_bound_canonical_sha256(RELEASE / "executor-readiness.json")
     assert data["supersedes_prior_proposal"]["prior_acquisition_proposal_sha256"] == \
-        "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226"
+        "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0"
     assert data["prerequisites"]["metadata_verification_final_artifact_exists"] is True
-    assert data["prerequisites"]["executor_ready"] is False
-    assert data["authorization_state"]["ready_for_approval"] is False
-    assert data["authorization_state"]["blocked_by"] == "executor readiness"
-    # One future bounded GET; no Range/retry/resume/authentication/fallback.
+    assert data["prerequisites"]["executor_ready"] is True
+    assert data["prerequisites"]["approval_lifetime_policy_defined"] is True
+    assert data["authorization_state"]["ready_for_approval"] is True
     ap = data["attempts_policy"]
     assert ap["permitted_future_get_attempts"] == 1
     for f in ("retries_authorized", "range_requests_authorized",
@@ -709,14 +717,15 @@ def test_revised_acquisition_proposal_binds_attempt_4_and_final_metadata() -> No
         assert ap[f] is False
 
 
-def test_revised_acquisition_proposal_remains_historical_until_executor_commit() -> None:
+def test_executor_readiness_binds_committed_executor_and_tests() -> None:
     data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
     audit = data["prerequisites"]["executor_readiness_audit"]
     assert audit["expected_downloader_script"] == "database/taxonomy/scripts/acquire_nortaxa.py"
-    assert audit["expected_downloader_present"] is False
+    assert audit["expected_downloader_present"] is True
     assert Path("database/taxonomy/scripts/acquire_nortaxa.py").exists()
-    assert data["prerequisites"]["executor_ready"] is False
-    assert data["authorization_state"]["ready_for_approval"] is False
+    assert Path("database/taxonomy/tests/test_acquire_nortaxa.py").exists()
+    assert data["prerequisites"]["executor_ready"] is True
+    assert data["authorization_state"]["ready_for_approval"] is True
 
 
 def test_policy_resolution_unchanged_by_this_task() -> None:

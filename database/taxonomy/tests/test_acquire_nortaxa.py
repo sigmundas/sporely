@@ -26,11 +26,44 @@ from refresh_col_xr import AcquisitionError  # noqa: E402
 TAXONOMY = Path(__file__).resolve().parents[1]
 VALID_ARCHIVE = TAXONOMY / "tests" / "fixtures" / "nortaxa" / "valid-dwca.zip"
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+
+
+def _proposal_sha() -> str:
+    return subject._self_bound_sha(
+        TAXONOMY / "nortaxa-acquisition.proposal.json", "acquisition proposal",
+    )
+
+
+def _readiness_sha() -> str:
+    return subject._self_bound_sha(
+        TAXONOMY / "sources" / "nortaxa" / "1.284" / "executor-readiness.json",
+        "executor readiness",
+    )
+
+
+def _executor_blob() -> str:
+    import subprocess as _sp
+    return _sp.check_output(
+        ["git", "hash-object", "database/taxonomy/scripts/acquire_nortaxa.py"],
+        cwd=TAXONOMY.parents[1], text=True,
+    ).strip()
+
+
+def _test_blob() -> str:
+    import subprocess as _sp
+    return _sp.check_output(
+        ["git", "hash-object", "database/taxonomy/tests/test_acquire_nortaxa.py"],
+        cwd=TAXONOMY.parents[1], text=True,
+    ).strip()
+
+
 GIT = subject.GitState(
     head="a" * 40,
     clean=True,
     committed_executor_sha256=subject._executor_sha(),
     committed_test_sha256=subject._executor_test_sha(),
+    committed_executor_blob_id=_executor_blob(),
+    committed_test_blob_id=_test_blob(),
 )
 
 
@@ -99,12 +132,13 @@ def approval(maximum: int = subject.MAXIMUM_BYTES) -> dict:
         "approval_schema_version": 1,
         "approval_status": "approved",
         "download_authorized": True,
-        "acquisition_proposal_sha256": subject.ACQUISITION_PROPOSAL_SHA256,
+        "acquisition_proposal_sha256": _proposal_sha(),
         "source_selection_proposal_sha256": subject.SOURCE_SELECTION_PROPOSAL_SHA256,
         "request_sha256": subject.REQUEST_SHA256,
         "policy_resolution_sha256": subject.POLICY_RESOLUTION_SHA256,
         "metadata_verification_sha256": subject.METADATA_VERIFICATION_SHA256,
         "attempt_4_sha256": subject.ATTEMPT_4_SHA256,
+        "executor_readiness_sha256": _readiness_sha(),
         "source_code": subject.SOURCE_CODE,
         "profile_code": subject.PROFILE_CODE,
         "version": subject.VERSION,
@@ -123,8 +157,9 @@ def approval(maximum: int = subject.MAXIMUM_BYTES) -> dict:
         "authentication_authorized": False,
         "cookies_authorized": False,
         "conditional_requests_authorized": False,
-        "approved_at": "2026-07-26T00:00:00Z",
-        "expires_at": "2026-08-02T00:00:00Z",
+        # 18-hour approval window: within the 24-hour lifetime maximum policy.
+        "approved_at": "2026-07-26T06:00:00Z",
+        "expires_at": "2026-07-27T00:00:00Z",
         "superseded_by": None,
         "executor_git_sha": GIT.head,
         "executor_script_sha256": subject._executor_sha(),
@@ -144,6 +179,7 @@ def isolated(tmp_path: Path) -> tuple[subject.AcquisitionPaths, Path]:
         TAXONOMY / "sources/nortaxa/1.284/policy-resolution.json": release / "policy-resolution.json",
         TAXONOMY / "sources/nortaxa/1.284/metadata-verification.json": release / "metadata-verification.json",
         TAXONOMY / "sources/nortaxa/1.284/metadata-verification-attempt-4.json": release / "metadata-verification-attempt-4.json",
+        TAXONOMY / "sources/nortaxa/1.284/executor-readiness.json": release / "executor-readiness.json",
     }
     for source, target in copies.items():
         shutil.copyfile(source, target)
@@ -257,7 +293,10 @@ def test_expired_approval_rejected(isolated) -> None:
 
 
 def test_not_yet_valid_approval_rejected(isolated) -> None:
-    rewrite_approval(isolated, lambda raw: raw.__setitem__("approved_at", "2026-07-27T00:00:00Z"))
+    def mutate(raw):
+        raw["approved_at"] = "2026-07-26T18:00:00Z"  # after NOW (12:00)
+        raw["expires_at"] = "2026-07-27T12:00:00Z"   # 18h window, within 24h max
+    rewrite_approval(isolated, mutate)
     with pytest.raises(AcquisitionError, match="not currently valid"):
         run(isolated, FakeTransport(valid_payload()))
 
@@ -275,9 +314,181 @@ def test_clean_but_uncommitted_executor_or_test_evidence_is_rejected(isolated) -
         clean=True,
         committed_executor_sha256="0" * 64,
         committed_test_sha256=GIT.committed_test_sha256,
+        committed_executor_blob_id=GIT.committed_executor_blob_id,
+        committed_test_blob_id=GIT.committed_test_blob_id,
     )
     with pytest.raises(AcquisitionError, match="must be committed"):
         run(isolated, FakeTransport(valid_payload()), git_state=state)
+
+
+def test_executor_has_no_compile_time_proposal_hash_pin() -> None:
+    """Regression: the circular ACQUISITION_PROPOSAL_SHA256 constant is gone."""
+    assert not hasattr(subject, "ACQUISITION_PROPOSAL_SHA256")
+
+
+def test_approval_bound_to_changed_proposal_is_rejected(isolated) -> None:
+    """Changing the on-disk proposal must fail the runtime proposal-SHA check
+    without needing a code change."""
+    paths, _ = isolated
+    raw = json.loads(paths.proposal.read_text())
+    raw["extra_field"] = "changed"
+    raw.pop("canonical_sha256", None)
+    from refresh_col_xr import sha256_json as _sha256_json
+    raw["canonical_sha256"] = _sha256_json({k: v for k, v in raw.items() if k != "canonical_sha256"})
+    paths.proposal.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(AcquisitionError, match="acquisition_proposal_sha256 does not match on-disk"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_future_approval_can_bind_proposal_without_touching_executor(isolated, tmp_path) -> None:
+    """A different valid proposal on disk (with matching approval hash) is
+    accepted by the unchanged executor, proving no compile-time pin remains."""
+    paths, approval_path = isolated
+    # Rewrite the proposal to a byte-different but well-formed value; recompute
+    # its self-bound canonical hash, and rebind the approval to match.
+    from refresh_col_xr import sha256_json as _sha256_json
+    raw = json.loads(paths.proposal.read_text())
+    raw["proposed_at"] = "2099-01-01T00:00:00Z"
+    stripped = {k: v for k, v in raw.items() if k != "canonical_sha256"}
+    new_sha = _sha256_json(stripped)
+    raw["canonical_sha256"] = new_sha
+    paths.proposal.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    )
+    ap = json.loads(approval_path.read_text())
+    ap["acquisition_proposal_sha256"] = new_sha
+    approval_path.write_text(json.dumps(ap), encoding="utf-8")
+    result = run(isolated, FakeTransport(valid_payload()))
+    assert result["result"] == "passed"
+    assert result["acquisition_proposal_sha256"] == new_sha
+
+
+def test_changed_readiness_blob_bindings_fail(isolated) -> None:
+    """A different but self-consistent readiness (with wrong blob bindings)
+    must fail even when its self-bound hash is rebound in the approval."""
+    paths, approval_path = isolated
+    readiness = json.loads(paths.readiness.read_text())
+    readiness["executor_tests"]["committed_git_blob_id"] = "0" * 40
+    readiness.pop("canonical_sha256", None)
+    from refresh_col_xr import sha256_json as _sha256_json
+    new_sha = _sha256_json({k: v for k, v in readiness.items() if k != "canonical_sha256"})
+    readiness["canonical_sha256"] = new_sha
+    paths.readiness.write_text(json.dumps(readiness), encoding="utf-8")
+    ap = json.loads(approval_path.read_text())
+    ap["executor_readiness_sha256"] = new_sha
+    approval_path.write_text(json.dumps(ap), encoding="utf-8")
+    with pytest.raises(AcquisitionError, match="readiness executor-test bindings"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_readiness_missing_executor_ready_flag_fails(isolated) -> None:
+    paths, approval_path = isolated
+    readiness = json.loads(paths.readiness.read_text())
+    readiness["executor_ready"] = False
+    readiness.pop("canonical_sha256", None)
+    from refresh_col_xr import sha256_json as _sha256_json
+    new_sha = _sha256_json({k: v for k, v in readiness.items() if k != "canonical_sha256"})
+    readiness["canonical_sha256"] = new_sha
+    paths.readiness.write_text(json.dumps(readiness), encoding="utf-8")
+    ap = json.loads(approval_path.read_text())
+    ap["executor_readiness_sha256"] = new_sha
+    approval_path.write_text(json.dumps(ap), encoding="utf-8")
+    with pytest.raises(AcquisitionError, match="executor_ready is not True"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+# ----- Approval lifetime boundary tests (24-hour maintainer policy) -----
+
+
+def _rewrite_window(isolated, approved_at: str, expires_at: str) -> None:
+    def mutate(raw):
+        raw["approved_at"] = approved_at
+        raw["expires_at"] = expires_at
+    rewrite_approval(isolated, mutate)
+
+
+def test_lifetime_boundary_zero_rejected(isolated) -> None:
+    _rewrite_window(isolated, "2026-07-26T12:00:00Z", "2026-07-26T12:00:00Z")
+    with pytest.raises(AcquisitionError, match="strictly after"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_lifetime_boundary_negative_rejected(isolated) -> None:
+    _rewrite_window(isolated, "2026-07-26T12:00:00Z", "2026-07-26T11:00:00Z")
+    with pytest.raises(AcquisitionError, match="strictly after"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_lifetime_boundary_86400_accepted(isolated) -> None:
+    _rewrite_window(isolated, "2026-07-26T00:00:00Z", "2026-07-27T00:00:00Z")
+    result = run(isolated, FakeTransport(valid_payload()))
+    assert result["result"] == "passed"
+
+
+def test_lifetime_boundary_86401_rejected(isolated) -> None:
+    _rewrite_window(isolated, "2026-07-25T23:59:59Z", "2026-07-27T00:00:00Z")
+    with pytest.raises(AcquisitionError, match="exceeds maximum"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_lifetime_ambiguous_utc_rejected(isolated) -> None:
+    """approved_at without trailing 'Z' fails as non-UTC."""
+    _rewrite_window(isolated, "2026-07-26T00:00:00+00:00", "2026-07-26T12:00:00Z")
+    with pytest.raises(AcquisitionError, match="approved_at must be a UTC timestamp"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+def test_lifetime_malformed_timestamp_rejected(isolated) -> None:
+    _rewrite_window(isolated, "not-a-timestampZ", "2026-07-26T12:00:00Z")
+    with pytest.raises(AcquisitionError, match="approved_at is invalid"):
+        run(isolated, FakeTransport(valid_payload()))
+
+
+# ----- Approval-path is the ONLY untracked entry permitted -----
+
+
+def test_only_approval_path_may_be_untracked(isolated) -> None:
+    """A working tree with ONLY the approval file untracked passes the gate.
+
+    We verify the gate implementation of `current_git_state` directly, since the
+    isolated tmp_path fixture is not itself a git repo.
+    """
+    entries = subject._parse_porcelain(
+        "?? database/taxonomy/nortaxa-acquisition.approved.json\n"
+    )
+    non_conforming = [
+        (xy, path) for xy, path in entries
+        if not (xy == "??" and path == "database/taxonomy/nortaxa-acquisition.approved.json")
+    ]
+    assert non_conforming == []
+
+
+def test_unrelated_untracked_file_blocks_acquisition() -> None:
+    """Any other modification or untracked entry keeps the tree dirty."""
+    entries = subject._parse_porcelain(
+        "?? database/taxonomy/nortaxa-acquisition.approved.json\n"
+        " M database/taxonomy/scripts/acquire_nortaxa.py\n"
+    )
+    allowed = {"database/taxonomy/nortaxa-acquisition.approved.json"}
+    non_conforming = [
+        (xy, path) for xy, path in entries
+        if not (xy == "??" and path in allowed)
+    ]
+    assert non_conforming == [(" M", "database/taxonomy/scripts/acquire_nortaxa.py")]
+
+
+def test_modified_approval_path_still_blocks() -> None:
+    """The approval file must be freshly UNTRACKED — a tracked-and-modified
+    approval file is NOT permitted (the executor never writes an approval)."""
+    entries = subject._parse_porcelain(
+        " M database/taxonomy/nortaxa-acquisition.approved.json\n"
+    )
+    allowed = {"database/taxonomy/nortaxa-acquisition.approved.json"}
+    non_conforming = [
+        (xy, path) for xy, path in entries
+        if not (xy == "??" and path in allowed)
+    ]
+    assert non_conforming != []
 
 
 @pytest.mark.parametrize(

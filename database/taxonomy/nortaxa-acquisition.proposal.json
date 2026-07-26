@@ -1,5 +1,5 @@
 {
-  "acquisition_proposal_schema_version": 3,
+  "acquisition_proposal_schema_version": 5,
   "approval_status": "proposed",
   "archive_policy": {
     "abort_before_next_chunk_would_exceed_maximum": true,
@@ -38,20 +38,25 @@
     "archive_body_retrieved": false,
     "archive_extracted": false,
     "archive_get_authorized": false,
-    "blocked_by": "executor readiness",
-    "ready_for_approval": false
+    "readiness_note": "The proposal is ready for a separately generated approval artifact. It cannot authorize itself; readiness cannot authorize acquisition either. A maintainer must sign a separate nortaxa-acquisition.approved.json that binds this proposal's canonical SHA-256, the executor-readiness SHA-256, and a final clean Git HEAD.",
+    "ready_for_approval": true
   },
   "bound_evidence": {
     "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
     "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
     "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
     "attempt_4_sha256": "36b1aa2504d4b6eec998d734916e56ce9ab759e45020b2917ff3bb7c8d715938",
+    "executor_git_blob_id": "09fb34c714399a98065a8945875fdce323103b12",
+    "executor_readiness_sha256": "18252e29711ff4392945f34c581b25e59821c39e31aa800506626d808e4354d0",
+    "executor_script_sha256": "21fa22c6f21fae209661093dc662910aa24d2513a5c7b22c237a27de27451f18",
+    "executor_test_evidence_sha256": "ef62713598afe7ec7add167c13bbb1278e8ca3ce20ef705049bc0275477495d4",
+    "executor_test_git_blob_id": "530389abd4479ee79f2ac9d6e4b87645981e783e",
     "metadata_verification_sha256": "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa",
     "policy_resolution_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
     "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
     "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
   },
-  "canonical_sha256": "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0",
+  "canonical_sha256": "6d0ebe86caf982468f2d478a352a6030710d56e0f7222d0b34d34a1cb7184ca0",
   "delivery": {
     "accepted_final_content_types": [
       "application/octet-stream",
@@ -64,38 +69,46 @@
     ],
     "authentication_required": false,
     "canonical_archive_endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+    "conditional_requests_authorized": false,
+    "cookies_authorized": false,
     "expected_archive_format": "Darwin Core Archive",
     "expected_license": "CC-BY 4.0",
     "http_method": "GET",
     "https_only": true,
-    "max_redirects": 3,
+    "max_redirects": 0,
     "permitted_redirect_hosts": []
   },
   "download_authorized": false,
   "future_approval_artifact": {
-    "cannot_be_created_before": [
-      "final metadata-verification.json exists (satisfied)",
-      "acquire_nortaxa.py exists and passes end-to-end offline proof (not satisfied)",
-      "executor_ready is True in this proposal"
-    ],
+    "approval_lifetime_seconds_max": 86400,
     "cannot_be_self_authorized": true,
     "filename": "nortaxa-acquisition.approved.json",
     "must_be_separately_generated": true,
+    "proposal_cannot_authorize_acquisition": true,
+    "readiness_cannot_authorize_acquisition": true,
     "required_bound_fields": [
       "acquisition_proposal_sha256",
       "source_selection_proposal_sha256",
       "request_sha256",
       "metadata_verification_sha256",
       "policy_resolution_sha256",
+      "executor_readiness_sha256",
       "approval_status",
       "download_authorized",
       "approved_at",
+      "expires_at",
       "approved_canonical_endpoint",
       "approved_maximum_bytes",
       "approved_redirect_hosts",
+      "executor_git_sha",
       "executor_script_sha256",
       "executor_test_evidence_sha256"
-    ]
+    ],
+    "revision_binding": {
+      "must_bind_executor_readiness_sha256": true,
+      "must_bind_final_clean_git_head": true,
+      "must_bind_this_proposal_sha256": true
+    }
   },
   "network_activity": {
     "dns": false,
@@ -109,39 +122,41 @@
   "policy_helper": {
     "closure_helper": "nortaxa_metadata.verify_closure_conditions",
     "composer_helper": "nortaxa_metadata.compose_supplemental_metadata_verification",
+    "executor_entry_point": "acquire_nortaxa.acquire",
     "streaming_evaluator": "nortaxa_metadata.evaluate_archive_get",
     "streaming_evaluator_binds_ceiling_and_length": true
   },
   "prerequisites": {
-    "executor_readiness_audit": {
-      "expected_downloader_present": false,
-      "expected_downloader_script": "database/taxonomy/scripts/acquire_nortaxa.py",
-      "fixture_validator_only": "database/taxonomy/scripts/refresh_nortaxa.py::validate_fixture",
-      "next_prerequisite": "Implement acquire_nortaxa.py that satisfies the above requirements, prove it end-to-end with offline fixtures and injected transports, and only then may this acquisition proposal be considered for a separately generated approval artifact.",
-      "requirements_not_yet_proven_by_code": [
-        "single bounded GET to the canonical archive endpoint",
-        "https-only, ipt.artsdatabanken.no host allowlist, no redirects, no fallback",
-        "no Range, retry, resume, or authentication",
-        "free-disk check against the 67,108,864-byte ceiling before transport",
-        "bounded-chunk streaming that never buffers the full body",
-        "incremental byte count and incremental SHA-256",
-        "abort before the next chunk would exceed the ceiling",
-        "clean EOF within the ceiling when Content-Length is absent",
-        "declared Content-Length (when present) exactly equal to completed bytes and reaching EOF",
-        "partial-file quarantine or deletion on any transport interruption or overflow",
-        "no promotion of a partial or oversized file",
-        "non-empty and complete structural ZIP validation before promotion",
-        "atomic promotion of validated bytes to archive.zip",
-        "recording final observed size and SHA-256",
-        "provably one permitted future GET attempt only"
-      ]
+    "approval_lifetime_policy": {
+      "enforced_at": "acquire_nortaxa.validate_approval",
+      "enforced_by_executor": true,
+      "maximum_hours": 24,
+      "maximum_seconds": 86400,
+      "requires_current_time_within_window": true,
+      "requires_expires_after_approved": true,
+      "requires_utc_timestamps": true
     },
-    "executor_ready": false,
+    "approval_lifetime_policy_defined": true,
+    "executor_readiness_audit": {
+      "all_controls_proven": true,
+      "circular_proposal_hash_pin_removed": true,
+      "executor_filesystem_sha256": "21fa22c6f21fae209661093dc662910aa24d2513a5c7b22c237a27de27451f18",
+      "executor_git_blob_id": "09fb34c714399a98065a8945875fdce323103b12",
+      "executor_test_filesystem_sha256": "ef62713598afe7ec7add167c13bbb1278e8ca3ce20ef705049bc0275477495d4",
+      "executor_test_git_blob_id": "530389abd4479ee79f2ac9d6e4b87645981e783e",
+      "expected_downloader_present": true,
+      "expected_downloader_script": "database/taxonomy/scripts/acquire_nortaxa.py",
+      "readiness_note": "Executor readiness has been established. This does NOT authorize acquisition; a separately generated approval artifact is still required.",
+      "runtime_proposal_hash_binding": "acquire_nortaxa.validate_approval computes _self_bound_sha(paths.proposal) at run time and requires approval.acquisition_proposal_sha256 to bind that exact value.",
+      "test_result": "90 passed"
+    },
+    "executor_readiness_sha256": "18252e29711ff4392945f34c581b25e59821c39e31aa800506626d808e4354d0",
+    "executor_ready": true,
     "metadata_verification_final_artifact_exists": true,
     "metadata_verification_final_artifact_sha256": "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa"
   },
   "profile_code": "nortaxa_dwca",
-  "proposed_at": "2026-07-26T00:00:00Z",
+  "proposed_at": "2026-07-26T02:15:00Z",
   "proposed_offline": true,
   "release": {
     "issued_date": "2026-07-17",
@@ -149,7 +164,7 @@
   },
   "source_code": "nortaxa",
   "supersedes_prior_proposal": {
-    "prior_acquisition_proposal_sha256": "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226",
-    "reason": "Attempt 4 supplied the archive HEAD evidence attempt 3 could not preserve; the composed metadata verification is now final. This revision binds the new evidence and continues to await executor readiness."
+    "prior_acquisition_proposal_sha256": "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0",
+    "reason": "The prior schema-v3 proposal recorded executor_ready=false. The executor has been refactored to remove the circular compile-time proposal-hash pin and to enforce the 24-hour approval-lifetime maintainer decision. Executor readiness is now proven; the approval-lifetime policy is defined."
   }
 }

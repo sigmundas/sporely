@@ -39,8 +39,8 @@ PROFILE_CODE = "nortaxa_dwca"
 VERSION = "1.284"
 ISSUED_DATE = "2026-07-17"
 DATASET_UUID = "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec"
-ACQUISITION_PROPOSAL_SHA256 = "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0"
 SOURCE_SELECTION_PROPOSAL_SHA256 = "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
+MAXIMUM_APPROVAL_LIFETIME_SECONDS = 86_400
 REQUEST_SHA256 = "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392"
 POLICY_RESOLUTION_SHA256 = "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc"
 METADATA_VERIFICATION_SHA256 = "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa"
@@ -64,7 +64,7 @@ APPROVAL_KEYS = {
     "fallback_endpoint_authorized", "authentication_authorized",
     "cookies_authorized", "conditional_requests_authorized", "approved_at",
     "expires_at", "superseded_by", "executor_git_sha", "executor_script_sha256",
-    "executor_test_evidence_sha256",
+    "executor_test_evidence_sha256", "executor_readiness_sha256",
 }
 ATTEMPT_KEYS = {
     "acquisition_attempt_schema_version", "state", "approval_sha256",
@@ -95,6 +95,8 @@ class GitState:
     clean: bool
     committed_executor_sha256: str | None = None
     committed_test_sha256: str | None = None
+    committed_executor_blob_id: str | None = None
+    committed_test_blob_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,8 @@ class Approval:
     canonical_sha256: str
     maximum_bytes: int
     executor_git_sha: str
+    proposal_sha256: str
+    readiness_sha256: str
 
 
 @dataclass
@@ -155,6 +159,10 @@ class AcquisitionPaths:
     @property
     def policy_resolution(self) -> Path:
         return self.release / "policy-resolution.json"
+
+    @property
+    def readiness(self) -> Path:
+        return self.release / "executor-readiness.json"
 
     @property
     def lock(self) -> Path:
@@ -232,7 +240,28 @@ def _executor_test_sha() -> str:
     )
 
 
-def current_git_state(repository_root: Path) -> GitState:
+def _parse_porcelain(status: str) -> list[tuple[str, str]]:
+    """Return (xy, path) entries from `git status --porcelain=v1` output."""
+    entries: list[tuple[str, str]] = []
+    for line in status.splitlines():
+        if len(line) < 4:
+            continue
+        entries.append((line[:2], line[3:]))
+    return entries
+
+
+def current_git_state(
+    repository_root: Path,
+    *,
+    allowed_untracked_paths: frozenset[str] | None = None,
+) -> GitState:
+    """Inspect the current commit and working tree.
+
+    ``clean`` is True when the working tree is clean OR when the only entries
+    reported by ``git status`` are untracked additions at exactly one of the
+    ``allowed_untracked_paths`` (typically the separately supplied approval
+    artifact at its exact permitted repo-relative path).
+    """
     try:
         head = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repository_root, check=True,
@@ -254,15 +283,33 @@ def current_git_state(repository_root: Path) -> GitState:
             ["git", "show", f"{head}:{test_relative}"],
             cwd=repository_root, check=True, capture_output=True,
         ).stdout
+        # Committed Git blob IDs at HEAD (deterministic, not derived from
+        # working-tree file contents).
+        executor_blob = subprocess.run(
+            ["git", "rev-parse", f"{head}:{executor_relative}"],
+            cwd=repository_root, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        test_blob = subprocess.run(
+            ["git", "rev-parse", f"{head}:{test_relative}"],
+            cwd=repository_root, check=True, capture_output=True, text=True,
+        ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise AcquisitionError(f"cannot establish Git state: {exc}") from exc
     except ValueError as exc:
         raise AcquisitionError("executor paths are outside the repository root") from exc
+    allowed = frozenset(allowed_untracked_paths or ())
+    entries = _parse_porcelain(status)
+    non_conforming = [
+        (xy, path) for xy, path in entries
+        if not (xy == "??" and path in allowed)
+    ]
     return GitState(
         head=head,
-        clean=not status,
+        clean=not non_conforming,
         committed_executor_sha256=hashlib.sha256(committed_executor).hexdigest(),
         committed_test_sha256=hashlib.sha256(committed_test).hexdigest(),
+        committed_executor_blob_id=executor_blob,
+        committed_test_blob_id=test_blob,
     )
 
 
@@ -278,12 +325,14 @@ def validate_approval(
         missing = sorted(APPROVAL_KEYS - set(raw))
         raise AcquisitionError(f"approval fields differ; unknown={unknown}, missing={missing}")
     if not git.clean:
-        raise AcquisitionError("working tree must be clean")
+        raise AcquisitionError("working tree must be clean (only the approval artifact may be untracked)")
+    # Fixed authority-reducing constants. `acquisition_proposal_sha256` is
+    # explicitly NOT compared to a compile-time constant; it is computed at
+    # runtime from the committed on-disk proposal and validated below.
     expected = {
         "approval_schema_version": 1,
         "approval_status": "approved",
         "download_authorized": True,
-        "acquisition_proposal_sha256": ACQUISITION_PROPOSAL_SHA256,
         "source_selection_proposal_sha256": SOURCE_SELECTION_PROPOSAL_SHA256,
         "request_sha256": REQUEST_SHA256,
         "policy_resolution_sha256": POLICY_RESOLUTION_SHA256,
@@ -325,16 +374,62 @@ def validate_approval(
         or git.committed_test_sha256 != _executor_test_sha()
     ):
         raise AcquisitionError("approved executor and test evidence must be committed at current HEAD")
+
+    # Runtime-computed acquisition-proposal canonical SHA.
+    proposal_sha = _self_bound_sha(paths.proposal, "acquisition proposal")
+    if raw.get("acquisition_proposal_sha256") != proposal_sha:
+        raise AcquisitionError(
+            "approval acquisition_proposal_sha256 does not match on-disk proposal"
+        )
+
+    # Runtime-computed executor-readiness canonical SHA.
+    readiness_sha = _self_bound_sha(paths.readiness, "executor readiness")
+    if raw.get("executor_readiness_sha256") != readiness_sha:
+        raise AcquisitionError(
+            "approval executor_readiness_sha256 does not match on-disk readiness"
+        )
+
+    # Readiness must bind the committed executor and test blob identities
+    # that Git reports for the current HEAD. This is the sole authoritative
+    # link between an audit-time attestation and the executor's runtime.
+    readiness = _load_json(paths.readiness)
+    exe_binding = readiness.get("executor") or {}
+    test_binding = readiness.get("executor_tests") or {}
+    if (
+        exe_binding.get("committed_blob_sha256") != git.committed_executor_sha256
+        or exe_binding.get("committed_git_blob_id") != git.committed_executor_blob_id
+    ):
+        raise AcquisitionError(
+            "readiness executor bindings do not match the committed executor at HEAD"
+        )
+    if (
+        test_binding.get("committed_blob_sha256") != git.committed_test_sha256
+        or test_binding.get("committed_git_blob_id") != git.committed_test_blob_id
+    ):
+        raise AcquisitionError(
+            "readiness executor-test bindings do not match the committed tests at HEAD"
+        )
+    if readiness.get("executor_ready") is not True:
+        raise AcquisitionError("readiness executor_ready is not True")
+
+    # Time policy: unambiguous UTC ISO8601, positive duration, within the
+    # 24-hour lifetime maintainer decision, and current time inside the window.
     approved_at = _parse_time(raw.get("approved_at"), "approved_at")
     expires_at = _parse_time(raw.get("expires_at"), "expires_at")
-    if approved_at > now or expires_at <= now or expires_at <= approved_at:
+    if expires_at <= approved_at:
+        raise AcquisitionError("approval expires_at must be strictly after approved_at")
+    lifetime = (expires_at - approved_at).total_seconds()
+    if lifetime > MAXIMUM_APPROVAL_LIFETIME_SECONDS:
+        raise AcquisitionError(
+            f"approval lifetime {lifetime:.0f}s exceeds maximum "
+            f"{MAXIMUM_APPROVAL_LIFETIME_SECONDS}s policy"
+        )
+    if approved_at > now or expires_at <= now:
         raise AcquisitionError("approval is not currently valid or has expired")
 
+    # Immutable evidence hashes still pinned as constants; only the acquisition
+    # proposal's hash is computed at runtime from disk.
     artifact_hashes = {
-        "acquisition proposal": (
-            _self_bound_sha(paths.proposal, "acquisition proposal"),
-            ACQUISITION_PROPOSAL_SHA256,
-        ),
         "source-selection proposal": (_file_canonical_sha(paths.source_proposal), SOURCE_SELECTION_PROPOSAL_SHA256),
         "request": (load_request(paths.request, paths.source_proposal).request_sha256, REQUEST_SHA256),
         "policy resolution": (
@@ -353,6 +448,7 @@ def validate_approval(
     return Approval(
         raw=dict(raw), canonical_sha256=sha256_json(raw),
         maximum_bytes=maximum, executor_git_sha=git.head,
+        proposal_sha256=proposal_sha, readiness_sha256=readiness_sha,
     )
 
 
@@ -617,7 +713,7 @@ def _result_value(
         "approval_sha256": approval.canonical_sha256,
         "attempt_sha256": receipt["attempt_sha256"],
         "receipt_sha256": sha256_json(receipt),
-        "acquisition_proposal_sha256": ACQUISITION_PROPOSAL_SHA256,
+        "acquisition_proposal_sha256": approval.proposal_sha256,
         "metadata_verification_sha256": METADATA_VERIFICATION_SHA256,
         "attempt_4_sha256": ATTEMPT_4_SHA256,
         "tool_commit": approval.executor_git_sha,
@@ -647,7 +743,7 @@ def _validate_attempt_record(value: dict[str, Any], approval: Approval) -> str:
         "acquisition_attempt_schema_version": 1,
         "state": "network_attempt_consumed",
         "approval_sha256": approval.canonical_sha256,
-        "acquisition_proposal_sha256": ACQUISITION_PROPOSAL_SHA256,
+        "acquisition_proposal_sha256": approval.proposal_sha256,
         "endpoint": CANONICAL_ENDPOINT,
         "maximum_bytes": approval.maximum_bytes,
     }
@@ -884,9 +980,21 @@ def acquire(
     _require_real_directory_chain(paths.taxonomy_root, root=paths.repository_root)
     _require_real_directory_chain(paths.release, root=paths.taxonomy_root)
     raw_approval = _load_json(approval_path)
+    # The approval artifact at its exact repo-relative path is the sole
+    # untracked/modified path the working tree may contain.
+    try:
+        approval_repo_relative = approval_path.resolve().relative_to(
+            paths.repository_root.resolve()
+        ).as_posix()
+        allowed_untracked = frozenset({approval_repo_relative})
+    except ValueError:
+        allowed_untracked = frozenset()
     approval = validate_approval(
         raw_approval, paths=paths,
-        git=git_state or current_git_state(paths.repository_root), now=now,
+        git=(git_state
+             or current_git_state(paths.repository_root,
+                                  allowed_untracked_paths=allowed_untracked)),
+        now=now,
     )
     request = load_request(paths.request, paths.source_proposal)
 
@@ -930,7 +1038,7 @@ def acquire(
             "acquisition_attempt_schema_version": 1,
             "state": "network_attempt_consumed",
             "approval_sha256": approval.canonical_sha256,
-            "acquisition_proposal_sha256": ACQUISITION_PROPOSAL_SHA256,
+            "acquisition_proposal_sha256": approval.proposal_sha256,
             "endpoint": CANONICAL_ENDPOINT,
             "maximum_bytes": approval.maximum_bytes,
             "consumed_at": isoformat(now),

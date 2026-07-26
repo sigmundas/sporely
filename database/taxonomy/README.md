@@ -515,6 +515,59 @@ proof. Only after that commit may maintainers update executor-readiness
 evidence and separately create a time-bounded approval artifact bound to the
 committed SHA. No live acquisition is authorized by this code or documentation.
 
+### Executor-readiness closure
+
+`scripts/acquire_nortaxa.py` (committed Git blob
+`8af2f7999a04a4f6d66914e6ee3f74653a0f0b0a`) and
+`tests/test_acquire_nortaxa.py` (committed Git blob
+`7c45fc3809eaa9505da948737a1539710623adda`) are committed at
+`2f000d7fc5180bea7db7cdf40000a437ae026723`. All 90 executor tests pass
+under `pytest`. A single review-time modification of the test's `isolated`
+fixture pulls every bound acquisition artifact from `git show HEAD:...`,
+decoupling the executor test suite from any subsequent working-tree revision
+of `nortaxa-acquisition.proposal.json`; the readiness artifact binds
+committed-blob evidence and documents this drift under `working_tree_drift`.
+
+An entirely offline readiness review confirmed every acquisition control
+enumerated in the acquisition proposal against exact code and test references:
+separately supplied non-self-authorizing approval; binding to the proposal,
+metadata verification, attempt 4, source, release, endpoint, host, ceiling and
+executor commit; committed executor/test blobs at HEAD; exactly one durable
+GET attempt; durable attempt consumption before transport; concurrency locking
+without relying on the lock for durability; no redirects/retries/Range/resume/
+fallback/proxies/cookies/authentication; identity HTTP encoding and rejection
+of transformed bodies; raw repeated Content-Length handling; destination-
+filesystem free-space verification; bounded incremental streaming and SHA-256;
+overflow detection before writing the excess byte; clean-EOF and declared-
+length consistency; safe staging and symlink rejection; non-extracting
+structural ZIP validation; non-overwriting exclusive promotion; durable result
+persistence; and crash recovery without a second GET.
+
+The `sources/nortaxa/1.284/executor-readiness.json` artifact
+(`nortaxa-executor-readiness-v1`, schema v2) binds these bindings
+deterministically and declares `executor_ready: true`. Readiness is not
+acquisition approval — the artifact explicitly states that a separately
+generated approval is still required and cannot be substituted by readiness.
+
+The revised `nortaxa-acquisition.proposal.json` (schema v4, supersedes the
+predecessor at canonical SHA-256
+`eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0`) binds the
+executor-readiness canonical SHA-256, the committed executor Git SHA, and
+current working-tree executor and test filesystem SHA-256 values.
+`prerequisites.executor_ready` is `true`. However, no repository policy
+defines a maximum approval lifetime between `approved_at` and `expires_at`;
+`acquire_nortaxa.py` enforces whatever `expires_at` value the approval
+carries, but the maintainer decision that would bound that value is missing.
+The revised proposal also documents an `executor_pin_consistency_note`:
+`acquire_nortaxa.py` at HEAD hard-pins `ACQUISITION_PROPOSAL_SHA256` to the
+predecessor `eaf85515…`; a future coordinated commit must update the pin to
+this proposal's canonical SHA-256 before an approval bound to this proposal
+can pass the executor's approval validator. Consequently
+`authorization_state.ready_for_approval` is `false` and `blocked_by` is
+`approval_lifetime_policy_undefined`. No approval exists; no live acquisition
+has occurred; the release directory contains no archive, staging, quarantine,
+or extraction payload.
+
 ## COL XR acquisition boundary
 
 COL releases must be explicitly pinned because Extended and Base releases are
