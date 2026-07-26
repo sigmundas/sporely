@@ -6,9 +6,9 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QFontMetrics, QColor, QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QDialog, QFrame, QGridLayout, QScrollArea, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QDialog, QFrame, QGridLayout, QScrollArea, QWidget
 
 import ui.main_window as main_window
 from ui.image_gallery_widget import center_horizontal_scroll_target
@@ -315,6 +315,99 @@ def test_analysis_gallery_selection_does_not_restyle_frame(monkeypatch, qapp):
     assert frame.style_calls == 0
     assert frame.selected_calls == [True]
     assert frame.hover_calls == [False]
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_link_switches_tab_before_loading_source_image(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    calls = []
+    measurement = {
+        "id": 42,
+        "image_id": 7,
+        "p1_x": 100.0,
+        "p1_y": 120.0,
+        "p2_x": 160.0,
+        "p2_y": 120.0,
+        "p3_x": 160.0,
+        "p3_y": 150.0,
+        "p4_x": 100.0,
+        "p4_y": 150.0,
+    }
+
+    window.measurement_active = False
+    window.current_image_id = 2
+    window._get_measurement_by_id = lambda measurement_id: measurement
+    window.tab_widget = SimpleNamespace(
+        setCurrentIndex=lambda index: calls.append(("tab", index))
+    )
+    window.load_image_record = lambda image_data, refresh_table=True: calls.append(
+        ("load", image_data["id"])
+    )
+    window.select_measurement_in_table = lambda measurement_id: calls.append(
+        ("select", measurement_id)
+    )
+    window._focus_measurement_in_image = lambda selected: calls.append(
+        ("focus", selected["id"])
+    )
+
+    monkeypatch.setattr(main_window.ImageDB, "get_image", lambda image_id: {"id": image_id})
+    monkeypatch.setattr(main_window.QTimer, "singleShot", lambda _delay, callback: callback())
+
+    main_window.MainWindow._open_measurement_from_gallery_impl(window, 42)
+
+    assert calls == [
+        ("tab", 1),
+        ("load", 7),
+        ("select", 42),
+        ("focus", 42),
+    ]
+
+    window.deleteLater()
+
+
+def test_analysis_gallery_link_focuses_viewer_on_measurement_at_fifty_percent(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    window.current_image_id = 7
+    window.image_label = main_window.ZoomableImageLabel()
+    window.image_label.resize(900, 600)
+    window.image_label.set_image(QPixmap(2400, 1600))
+    measurement = {
+        "id": 42,
+        "image_id": 7,
+        "p1_x": 100.0,
+        "p1_y": 150.0,
+        "p2_x": 200.0,
+        "p2_y": 150.0,
+        "p3_x": 200.0,
+        "p3_y": 200.0,
+        "p4_x": 100.0,
+        "p4_y": 200.0,
+    }
+
+    main_window.MainWindow._focus_measurement_in_image(window, measurement)
+
+    view = window.image_label.get_view_state()
+    assert view is not None
+    assert view["center"] == QPointF(150.0, 175.0)
+    assert view["zoom"] == pytest.approx(0.5)
+
+    window.image_label.deleteLater()
+    window.deleteLater()
+
+
+def test_new_observation_analysis_gallery_defaults_are_enabled(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    window.orient_checkbox = QCheckBox()
+    window.uniform_scale_checkbox = QCheckBox()
+    window.orient_checkbox.setChecked(False)
+    window.uniform_scale_checkbox.setChecked(False)
+    window._load_gallery_settings = lambda: {}
+
+    main_window.MainWindow.apply_gallery_settings(window)
+
+    assert window.orient_checkbox.isChecked()
+    assert window.uniform_scale_checkbox.isChecked()
 
     window.deleteLater()
 

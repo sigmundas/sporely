@@ -8068,11 +8068,13 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         gallery_row = QHBoxLayout()
         self.orient_checkbox = QCheckBox(self.tr("Orient"))
+        self.orient_checkbox.setChecked(True)
         self.orient_checkbox.setToolTip(self.tr("Rotate thumbnails so length axis is vertical"))
         self.orient_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.orient_checkbox)
 
         self.uniform_scale_checkbox = QCheckBox(self.tr("Uniform scale"))
+        self.uniform_scale_checkbox.setChecked(True)
         self.uniform_scale_checkbox.setToolTip(self.tr("Use the same scale for all thumbnails"))
         self.uniform_scale_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.uniform_scale_checkbox)
@@ -17504,6 +17506,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._prepare_analysis_gallery_for_tab_switch()
         QTimer.singleShot(75, lambda mid=measurement_id: self._open_measurement_from_gallery_impl(mid))
 
+    def _focus_measurement_in_image(self, measurement: dict) -> None:
+        """Center the Measure viewer on a measurement with nearby context."""
+        if not hasattr(self, "image_label") or not getattr(self.image_label, "original_pixmap", None):
+            return
+        image_id = int(measurement.get("image_id") or 0)
+        if image_id <= 0 or image_id != int(self.current_image_id or 0):
+            return
+
+        points = []
+        for index in range(1, 5):
+            x = measurement.get(f"p{index}_x")
+            y = measurement.get(f"p{index}_y")
+            if x is not None and y is not None:
+                points.append((float(x), float(y)))
+        if len(points) < 2:
+            return
+
+        min_x = min(point[0] for point in points)
+        max_x = max(point[0] for point in points)
+        min_y = min(point[1] for point in points)
+        max_y = max(point[1] for point in points)
+        center = QPointF((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
+        self.image_label.set_view_state(center, 0.5)
+
     def _show_analysis_gallery_thumbnail_context_menu(
         self,
         measurement_id: int,
@@ -17529,6 +17555,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         measurement = self._get_measurement_by_id(measurement_id)
         if not measurement:
             return
+        # Changing tabs refreshes the Measure viewer from the Observations
+        # selection. Do that first so it cannot overwrite the source image
+        # loaded for this gallery measurement.
+        if hasattr(self, "tab_widget"):
+            self.tab_widget.setCurrentIndex(1)
         self._suppress_gallery_update = True
         try:
             image_id = measurement.get("image_id")
@@ -17541,8 +17572,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         finally:
             self._suppress_gallery_update = False
         self.select_measurement_in_table(measurement_id)
-        if hasattr(self, "tab_widget"):
-            self.tab_widget.setCurrentIndex(1)
+        # load_image_record queues its default fit-to-view update, so focus
+        # on the spore on the following event-loop pass.
+        QTimer.singleShot(0, lambda m=measurement: self._focus_measurement_in_image(m))
 
     def _highlight_selected_measurement(self, measurement):
         if not measurement:
@@ -19392,6 +19424,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     def apply_gallery_settings(self):
         settings = self._load_gallery_settings()
         if not settings:
+            for checkbox_name in ("orient_checkbox", "uniform_scale_checkbox"):
+                checkbox = getattr(self, checkbox_name, None)
+                if checkbox is not None:
+                    checkbox.blockSignals(True)
+                    checkbox.setChecked(True)
+                    checkbox.blockSignals(False)
             return
         loaded_plot_settings = {
             "bins": int(settings.get("bins", self.gallery_plot_settings.get("bins", 8))),
