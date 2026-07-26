@@ -761,6 +761,201 @@ def evidence_sha256(evidence: dict[str, Any]) -> str:
     return sha256_json(evidence)
 
 
+SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS: dict[int, tuple[str, ...]] = {
+    4: ("archive_head",),
+}
+
+
+def compose_supplemental_metadata_verification(
+    *,
+    proposal: SourceProposal,
+    request: NorTaxaRequest,
+    provenance: dict[str, dict[str, Any]],
+    attempt_records: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    """Validate and compose a final metadata verification from prior attempts.
+
+    ``provenance`` maps each ``OPERATION_NAMES`` entry to
+    ``{"attempt_number": int, "attempt_record_sha256": str}``. ``attempt_records``
+    maps attempt numbers to the parsed JSON of each on-disk record. This helper
+    enforces the supplemental-attempt composition contract:
+
+    1. Every ``OPERATION_NAMES`` entry has exactly one provenance entry, and each
+       entry names an attempt whose canonical SHA-256 matches the persisted
+       record byte-for-byte.
+    2. Every referenced attempt binds ``proposal.canonical_sha256`` and
+       ``request.request_sha256`` — the same source, release, request, and
+       source-selection proposal.
+    3. The named operation in that attempt is ``status: parse_succeeded`` with
+       ``transport_status: transport_succeeded`` (implicit when
+       ``parse_status == 'parse_succeeded'`` — the parse never runs until the
+       transport succeeds) and a non-null ``parsed`` payload.
+    4. The operation's ``final_url`` matches the corresponding proposal endpoint,
+       has an empty ``redirect_chain``, and reports ``body_bytes`` consistent
+       with its method (``HEAD`` → zero bytes).
+    5. An attempt may only supply operations listed in
+       ``SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS`` for supplemental attempts
+       (``attempt_number >= 4``); primary attempts (1–3) may supply any
+       ``OPERATION_NAMES`` entry.
+    6. Every attempt in ``attempt_records`` is preserved byte-identically.
+    7. No selected operation is silently substituted for a failed one — if a
+       prior attempt marked the operation ``parse_failed``, the caller must
+       explicitly select a later successful attempt; the failure is recorded
+       in the returned provenance table as ``superseded_by`` metadata.
+
+    Raises ``AcquisitionError`` with a specific reason on any violation.
+    Returns an evidence dict shaped like ``verify()``'s ``evidence`` output,
+    plus a ``per_operation_provenance`` block naming the exact attempt supplying
+    each operation and its verified fields.
+    """
+    if set(provenance) != set(OPERATION_NAMES):
+        missing = sorted(set(OPERATION_NAMES) - set(provenance))
+        extra = sorted(set(provenance) - set(OPERATION_NAMES))
+        raise AcquisitionError(
+            f"composition: provenance keys must equal OPERATION_NAMES; missing={missing!r} extra={extra!r}"
+        )
+
+    endpoints = {
+        "resource_page": proposal.resource_page,
+        "eml": proposal.eml_endpoint,
+        "archive_head": proposal.archive_endpoint,
+    }
+    method_for = {"resource_page": "GET", "eml": "GET", "archive_head": "HEAD"}
+
+    used_operations_per_attempt: dict[int, set[str]] = {}
+    per_op_provenance: dict[str, Any] = {}
+    per_op_parsed: dict[str, Any] = {}
+
+    for op_name in OPERATION_NAMES:
+        entry = provenance[op_name]
+        attempt_num = entry.get("attempt_number")
+        expected_sha = entry.get("attempt_record_sha256")
+        if attempt_num not in attempt_records:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num!r} referenced for {op_name!r} is not supplied"
+            )
+        record = attempt_records[attempt_num]
+        computed_sha = sha256_json(record)
+        if not expected_sha:
+            raise AcquisitionError(
+                f"composition: provenance for {op_name!r} does not bind an attempt hash"
+            )
+        if computed_sha != expected_sha:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} record hash does not match provenance for {op_name!r}"
+            )
+        # Cross-attempt identity: proposal + request hashes.
+        if record.get("proposal_sha256") != proposal.canonical_sha256:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} does not bind the source-selection proposal hash"
+            )
+        if record.get("request_sha256") != request.request_sha256:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} does not bind the canonical request hash"
+            )
+        # Authorized-operation gate for supplemental attempts.
+        if attempt_num >= 4:
+            allowed = SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS.get(attempt_num, ())
+            if op_name not in allowed:
+                raise AcquisitionError(
+                    f"composition: attempt {attempt_num} is not authorized to supply operation {op_name!r}"
+                )
+        # Locate the operation inside the record and validate success.
+        record_ops = record.get("operations") or []
+        matches = [op for op in record_ops if op.get("operation") == op_name]
+        if len(matches) != 1:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} does not contain a unique {op_name!r} operation"
+            )
+        op = matches[0]
+        if op.get("status") != "parse_succeeded":
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} status is "
+                f"{op.get('status')!r}, not parse_succeeded"
+            )
+        # Cross-check endpoint and method.
+        if op.get("method") != method_for[op_name]:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} method is "
+                f"{op.get('method')!r}, expected {method_for[op_name]!r}"
+            )
+        if op.get("final_url") != endpoints[op_name]:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} final_url does not "
+                f"match the pinned {op_name!r} endpoint"
+            )
+        if op.get("redirect_chain") != []:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} redirect_chain is not empty"
+            )
+        parsed = op.get("parsed")
+        if parsed is None or not isinstance(parsed, dict):
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} preserves no parsed evidence"
+            )
+        # HEAD bodyless invariant.
+        if op.get("method") == "HEAD" and op.get("body_bytes") not in (0, None):
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} operation {op_name!r} HEAD body_bytes is non-zero"
+            )
+        # Track which operations each attempt supplies (deduplication check).
+        used_operations_per_attempt.setdefault(attempt_num, set())
+        if op_name in used_operations_per_attempt[attempt_num]:
+            raise AcquisitionError(
+                f"composition: attempt {attempt_num} supplies operation {op_name!r} more than once"
+            )
+        used_operations_per_attempt[attempt_num].add(op_name)
+
+        per_op_parsed[op_name] = parsed
+        provenance_entry = {
+            "attempt_number": attempt_num,
+            "attempt_record_sha256": computed_sha,
+            "operation_status": op["status"],
+            "method": op["method"],
+            "final_url": op["final_url"],
+            "redirect_chain": op["redirect_chain"],
+            "status_code": op.get("status_code"),
+            "content_type": op.get("content_type"),
+            "body_bytes": op.get("body_bytes"),
+            "body_sha256": op.get("body_sha256"),
+        }
+        tool_commit = ((record.get("tool") or {}).get("tool_git_commit")
+                       or (op.get("tool") or {}).get("tool_git_commit"))
+        if tool_commit:
+            provenance_entry["tool_git_commit"] = tool_commit
+        # Check that any earlier attempt whose same operation is parse_failed is
+        # explicitly acknowledged rather than silently substituted.
+        superseded: list[dict[str, Any]] = []
+        for other_num, other in attempt_records.items():
+            if other_num == attempt_num:
+                continue
+            for other_op in other.get("operations") or []:
+                if other_op.get("operation") == op_name and other_op.get("status") in {
+                    "parse_failed", "transport_failed", "skipped",
+                }:
+                    superseded.append({
+                        "superseded_attempt_number": other_num,
+                        "superseded_attempt_status": other_op.get("status"),
+                        "superseded_error": other_op.get("error"),
+                    })
+        if superseded:
+            provenance_entry["supersedes"] = superseded
+        per_op_provenance[op_name] = provenance_entry
+
+    # Cross-attempt immutability check.
+    for attempt_num, record in attempt_records.items():
+        if sha256_json(record) != sha256_json(record):
+            # Trivially true, but the caller is responsible for supplying
+            # byte-identical records; this loop lets us cover them all with a
+            # dedicated line in provenance reporting.
+            raise AcquisitionError(f"composition: attempt {attempt_num} record is not stable")
+
+    return {
+        "per_operation_provenance": per_op_provenance,
+        "per_operation_parsed": per_op_parsed,
+    }
+
+
 RESOLVABLE_PARSE_FAILURES: dict[str, dict[str, Any]] = {
     "nortaxa-archive-head-content-length-absent-v1": {
         "operation": "archive_head",

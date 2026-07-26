@@ -26,10 +26,14 @@ sys.path.insert(0, str(SCRIPTS))
 
 from nortaxa_metadata import (  # noqa: E402
     AcquisitionError,
+    OPERATION_NAMES,
     RESOLVABLE_PARSE_FAILURES,
+    SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS,
+    compose_supplemental_metadata_verification,
     evaluate_archive_get,
     verify_closure_conditions,
 )
+from refresh_nortaxa import load_proposal, load_request  # noqa: E402
 
 RELEASE = Path(__file__).resolve().parents[1] / "sources" / "nortaxa" / "1.284"
 TAXONOMY = Path(__file__).resolve().parents[1]
@@ -130,9 +134,9 @@ def test_policy_resolution_reports_insufficient_evidence_for_attempt_3() -> None
     assert data["attempt_3_reclassification_interpretation_only"]["attempt_3_record_modified"] is False
 
 
-def test_final_metadata_verification_artifact_deliberately_absent() -> None:
-    """Because attempt 3 lacks the preserved HEAD headers required by the new policy."""
-    assert not (RELEASE / "metadata-verification.json").exists()
+def test_final_metadata_verification_artifact_now_exists_via_composition() -> None:
+    """Attempt 3 alone was insufficient; attempt 4 supplied the HEAD evidence."""
+    assert (RELEASE / "metadata-verification.json").exists()
 
 
 # ----- Formalized closure-conditions helper (verify_closure_conditions) -----
@@ -340,34 +344,35 @@ def test_closure_refuses_when_policy_resolution_omits_transport_field() -> None:
 # ----- Unauthorized acquisition proposal -----
 
 
-def test_acquisition_proposal_awaits_new_head_attempt() -> None:
+def test_acquisition_proposal_bound_after_attempt_4_but_blocked_by_executor() -> None:
     path = TAXONOMY / "nortaxa-acquisition.proposal.json"
     data = json.loads(path.read_text())
-    assert data["acquisition_proposal_schema_version"] == 2
+    assert data["acquisition_proposal_schema_version"] == 3
     assert data["approval_status"] == "proposed"
     assert data["download_authorized"] is False
     prereq = data["prerequisites"]
-    assert prereq["metadata_verification_final_artifact_exists"] is False
-    assert prereq["metadata_verification_final_artifact_required_before_approval"] is True
-    assert "newly authorized" in prereq["next_prerequisite"].lower() or "bounded head" in prereq["next_prerequisite"].lower()
+    assert prereq["metadata_verification_final_artifact_exists"] is True
+    assert prereq["executor_ready"] is False
+    assert "acquire_nortaxa.py" in prereq["executor_readiness_audit"]["next_prerequisite"]
     b = data["bound_evidence"]
     assert b["source_selection_proposal_sha256"] == PROPOSAL_SHA
     assert b["request_sha256"] == REQUEST_SHA
     assert b["attempt_3_sha256"] == ATTEMPT_3_SHA
+    assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
     assert b["policy_resolution_sha256"] == self_bound_canonical_sha256(RELEASE / "policy-resolution.json")
-    # No metadata_verification_sha256 binding while awaiting a new attempt.
-    assert data["unbound_evidence"]["metadata_verification_sha256"] is None
+    assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
 
 
-def test_acquisition_proposal_cannot_be_created_before_metadata_verification_exists() -> None:
+def test_acquisition_proposal_still_cannot_be_created_before_executor_ready() -> None:
     data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
     fut = data["future_approval_artifact"]
     assert fut["cannot_be_self_authorized"] is True
-    assert "final metadata-verification.json exists" in fut["cannot_be_created_before"]
+    assert any("acquire_nortaxa.py" in item for item in fut["cannot_be_created_before"])
     required = set(fut["required_bound_fields"])
     for field in (
         "acquisition_proposal_sha256", "metadata_verification_sha256",
         "policy_resolution_sha256", "approved_at",
+        "executor_script_sha256", "executor_test_evidence_sha256",
     ):
         assert field in required
 
@@ -422,6 +427,300 @@ def test_manifest_state_is_still_planned_and_download_unauthorized() -> None:
     assert manifest["execution_attempts"] == []
     assert manifest["download"] is None
     assert manifest["validation"] is None
+
+
+# ----- Cross-attempt composition (compose_supplemental_metadata_verification) -----
+
+
+ATTEMPT_4_SHA = "36b1aa2504d4b6eec998d734916e56ce9ab759e45020b2917ff3bb7c8d715938"
+
+
+def _load_composition_inputs():
+    proposal = load_proposal()
+    request  = load_request(RELEASE / "request.json")
+    attempts = {n: json.loads((RELEASE / f"metadata-verification-attempt-{n}.json").read_text())
+                for n in (1, 2, 3, 4)}
+    attempt_hashes = {n: canonical_sha256(a) for n, a in attempts.items()}
+    provenance = {
+        "resource_page": {"attempt_number": 3, "attempt_record_sha256": attempt_hashes[3]},
+        "eml":           {"attempt_number": 3, "attempt_record_sha256": attempt_hashes[3]},
+        "archive_head":  {"attempt_number": 4, "attempt_record_sha256": attempt_hashes[4]},
+    }
+    return proposal, request, provenance, attempts, attempt_hashes
+
+
+def test_composition_succeeds_for_attempt_3_plus_attempt_4() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    result = compose_supplemental_metadata_verification(
+        proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+    )
+    assert set(result["per_operation_parsed"]) == set(OPERATION_NAMES)
+    p = result["per_operation_provenance"]
+    assert p["archive_head"]["attempt_number"] == 4
+    assert p["resource_page"]["attempt_number"] == 3
+    assert p["eml"]["attempt_number"] == 3
+    # Attempt-3 archive_head parse_failure is explicitly recorded as superseded.
+    superseded = p["archive_head"].get("supersedes")
+    assert superseded and any(s["superseded_attempt_number"] == 3 for s in superseded)
+
+
+def test_composition_requires_every_operation_name() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    provenance = {k: v for k, v in provenance.items() if k != "archive_head"}
+    with pytest.raises(AcquisitionError, match="OPERATION_NAMES"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_tampered_attempt_hash() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = "0" * 64
+    with pytest.raises(AcquisitionError, match="does not match provenance"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_missing_attempt_record() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = {k: v for k, v in attempts.items() if k != 4}
+    with pytest.raises(AcquisitionError, match="is not supplied"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_mismatched_release_endpoint() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    head_op = next(op for op in attempts[4]["operations"] if op["operation"] == "archive_head")
+    head_op["final_url"] = "https://ipt.artsdatabanken.no/archive.do?r=other&v=9.999"
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="does not match the pinned"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_mismatched_request_hash() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    attempts[4]["request_sha256"] = "0" * 64
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="canonical request hash"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_mismatched_proposal_hash() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    attempts[4]["proposal_sha256"] = "f" * 64
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="source-selection proposal hash"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_unauthorized_supplemental_operation() -> None:
+    """Attempt 4 is HEAD-only; it must not pretend to supply resource_page evidence."""
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    provenance = copy.deepcopy(provenance)
+    provenance["resource_page"] = {
+        "attempt_number": 4,
+        "attempt_record_sha256": canonical_sha256(attempts[4]),
+    }
+    with pytest.raises(AcquisitionError, match="is not authorized to supply"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_missing_operation_in_attempt() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    attempts[4]["operations"] = [
+        op for op in attempts[4]["operations"] if op["operation"] != "archive_head"
+    ]
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="unique 'archive_head' operation"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_duplicate_conflicting_operation() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    attempts[4]["operations"] = attempts[4]["operations"] + copy.deepcopy(attempts[4]["operations"])
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="unique 'archive_head' operation"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_operation_marked_parse_failed() -> None:
+    """Attempt 3's archive_head is parse_failed; composing it directly must fail."""
+    proposal, request, provenance, attempts, hashes = _load_composition_inputs()
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"] = {"attempt_number": 3, "attempt_record_sha256": hashes[3]}
+    with pytest.raises(AcquisitionError, match="not parse_succeeded"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_wrong_method_for_operation() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    head_op = next(op for op in attempts[4]["operations"] if op["operation"] == "archive_head")
+    head_op["method"] = "GET"
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="method is 'GET'"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_redirect_chain_not_empty() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    head_op = next(op for op in attempts[4]["operations"] if op["operation"] == "archive_head")
+    head_op["redirect_chain"] = ["https://ipt.artsdatabanken.no/other"]
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="redirect_chain is not empty"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_head_operation_with_non_zero_body_bytes() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    attempts = copy.deepcopy(attempts)
+    head_op = next(op for op in attempts[4]["operations"] if op["operation"] == "archive_head")
+    head_op["body_bytes"] = 1
+    provenance = copy.deepcopy(provenance)
+    provenance["archive_head"]["attempt_record_sha256"] = canonical_sha256(attempts[4])
+    with pytest.raises(AcquisitionError, match="HEAD body_bytes is non-zero"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_composition_refuses_missing_provenance_hash() -> None:
+    proposal, request, provenance, attempts, _ = _load_composition_inputs()
+    provenance = copy.deepcopy(provenance)
+    del provenance["archive_head"]["attempt_record_sha256"]
+    with pytest.raises(AcquisitionError, match="does not bind an attempt hash"):
+        compose_supplemental_metadata_verification(
+            proposal=proposal, request=request, provenance=provenance, attempt_records=attempts,
+        )
+
+
+def test_supplemental_operation_registry_is_frozen() -> None:
+    assert set(SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS) == {4}
+    assert SUPPLEMENTAL_ATTEMPT_AUTHORIZED_OPERATIONS[4] == ("archive_head",)
+
+
+# ----- Final metadata-verification.json (composed) and revised acquisition proposal -----
+
+
+def test_final_metadata_verification_exists_and_matches_composer_output() -> None:
+    path = RELEASE / "metadata-verification.json"
+    assert path.exists()
+    data = json.loads(path.read_text())
+    assert data["metadata_verification_schema_version"] == 3
+    assert data["verdict"] == "passed"
+    assert data["archive_acquisition_authorization_status"] == "not_authorized"
+    assert data["policy_identifier"] == "nortaxa-archive-head-content-length-absent-v1"
+    b = data["bound_evidence"]
+    assert b["source_selection_proposal_sha256"] == PROPOSAL_SHA
+    assert b["request_sha256"] == REQUEST_SHA
+    assert b["attempt_1_sha256"] == ATTEMPT_1_SHA
+    assert b["attempt_2_sha256"] == ATTEMPT_2_SHA
+    assert b["attempt_3_sha256"] == ATTEMPT_3_SHA
+    assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
+    assert b["policy_resolution_sha256"] == self_bound_canonical_sha256(RELEASE / "policy-resolution.json")
+    # Per-operation provenance identifies attempts.
+    p = data["per_operation_provenance"]
+    assert p["resource_page"]["attempt_number"] == 3
+    assert p["eml"]["attempt_number"] == 3
+    assert p["archive_head"]["attempt_number"] == 4
+    # Archive-HEAD evidence matches attempt-4's allowlisted headers exactly.
+    head = data["observed"]["archive_head"]
+    assert head["status_code"] == 200
+    assert head["redirect_chain"] == []
+    assert head["content_type_raw"] == "application/zip;charset=UTF-8"
+    ah = head["allowlisted_headers"]
+    assert ah["Content-Length"]["present"] is False
+    assert ah["ETag"]["present"] is False
+    assert ah["Accept-Ranges"]["present"] is False
+    assert ah["Last-Modified"]["raw_values"] == ["Fri, 17 Jul 2026 12:08:23 GMT"]
+    assert ah["Content-Disposition"]["raw_values"] == ['filename="dwca-artsnavnebase-v1.284.zip"']
+    vm = data["verified_metadata"]
+    for field in ("content_length", "etag", "accept_ranges"):
+        assert vm[field]["value"] is None
+        assert vm[field]["status"] == "not_exposed"
+    assert vm["last_modified"]["status"] == "verified"
+    assert vm["content_disposition"]["status"] == "verified"
+    assert vm["declared_archive_size_bytes"]["status"] == "unavailable"
+    assert vm["declared_archive_size_bytes"]["value"] is None
+
+
+def test_final_metadata_verification_canonical_hash_is_stable() -> None:
+    path = RELEASE / "metadata-verification.json"
+    data = json.loads(path.read_text())
+    assert data["canonical_sha256"] == self_bound_canonical_sha256(path)
+
+
+def test_revised_acquisition_proposal_binds_attempt_4_and_final_metadata() -> None:
+    path = TAXONOMY / "nortaxa-acquisition.proposal.json"
+    data = json.loads(path.read_text())
+    assert data["acquisition_proposal_schema_version"] == 3
+    assert data["approval_status"] == "proposed"
+    assert data["download_authorized"] is False
+    b = data["bound_evidence"]
+    assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
+    assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
+    assert data["supersedes_prior_proposal"]["prior_acquisition_proposal_sha256"] == \
+        "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226"
+    assert data["prerequisites"]["metadata_verification_final_artifact_exists"] is True
+    assert data["prerequisites"]["executor_ready"] is False
+    assert data["authorization_state"]["ready_for_approval"] is False
+    assert data["authorization_state"]["blocked_by"] == "executor readiness"
+    # One future bounded GET; no Range/retry/resume/authentication/fallback.
+    ap = data["attempts_policy"]
+    assert ap["permitted_future_get_attempts"] == 1
+    for f in ("retries_authorized", "range_requests_authorized",
+              "resume_authorized", "authentication_authorized",
+              "fallback_endpoint_authorized"):
+        assert ap[f] is False
+
+
+def test_revised_acquisition_proposal_reports_missing_executor() -> None:
+    data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
+    audit = data["prerequisites"]["executor_readiness_audit"]
+    assert audit["expected_downloader_script"] == "database/taxonomy/scripts/acquire_nortaxa.py"
+    assert audit["expected_downloader_present"] is False
+    assert not (Path("database/taxonomy/scripts/acquire_nortaxa.py").exists())
+
+
+def test_policy_resolution_unchanged_by_this_task() -> None:
+    """policy-resolution.json must remain historical evidence."""
+    assert self_bound_canonical_sha256(RELEASE / "policy-resolution.json") == \
+        "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc"
 
 
 def test_resolvable_parse_failures_registry_is_frozen() -> None:

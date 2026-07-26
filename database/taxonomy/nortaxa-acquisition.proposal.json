@@ -1,5 +1,5 @@
 {
-  "acquisition_proposal_schema_version": 2,
+  "acquisition_proposal_schema_version": 3,
   "approval_status": "proposed",
   "archive_policy": {
     "abort_before_next_chunk_would_exceed_maximum": true,
@@ -27,6 +27,7 @@
   },
   "attempts_policy": {
     "authentication_authorized": false,
+    "fallback_endpoint_authorized": false,
     "permitted_future_get_attempts": 1,
     "range_requests_authorized": false,
     "resume_authorized": false,
@@ -36,17 +37,21 @@
     "acquisition_approval_created": false,
     "archive_body_retrieved": false,
     "archive_extracted": false,
-    "archive_get_authorized": false
+    "archive_get_authorized": false,
+    "blocked_by": "executor readiness",
+    "ready_for_approval": false
   },
   "bound_evidence": {
     "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
     "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
     "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+    "attempt_4_sha256": "36b1aa2504d4b6eec998d734916e56ce9ab759e45020b2917ff3bb7c8d715938",
+    "metadata_verification_sha256": "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa",
     "policy_resolution_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
     "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
     "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
   },
-  "canonical_sha256": "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226",
+  "canonical_sha256": "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0",
   "delivery": {
     "accepted_final_content_types": [
       "application/octet-stream",
@@ -69,9 +74,9 @@
   "download_authorized": false,
   "future_approval_artifact": {
     "cannot_be_created_before": [
-      "final metadata-verification.json exists",
-      "final metadata-verification.json references this policy resolution",
-      "final metadata-verification.json canonical SHA-256 is bound in the approval"
+      "final metadata-verification.json exists (satisfied)",
+      "acquire_nortaxa.py exists and passes end-to-end offline proof (not satisfied)",
+      "executor_ready is True in this proposal"
     ],
     "cannot_be_self_authorized": true,
     "filename": "nortaxa-acquisition.approved.json",
@@ -87,7 +92,9 @@
       "approved_at",
       "approved_canonical_endpoint",
       "approved_maximum_bytes",
-      "approved_redirect_hosts"
+      "approved_redirect_hosts",
+      "executor_script_sha256",
+      "executor_test_evidence_sha256"
     ]
   },
   "network_activity": {
@@ -101,24 +108,48 @@
   },
   "policy_helper": {
     "closure_helper": "nortaxa_metadata.verify_closure_conditions",
+    "composer_helper": "nortaxa_metadata.compose_supplemental_metadata_verification",
     "streaming_evaluator": "nortaxa_metadata.evaluate_archive_get",
     "streaming_evaluator_binds_ceiling_and_length": true
   },
   "prerequisites": {
-    "metadata_verification_final_artifact_exists": false,
-    "metadata_verification_final_artifact_required_before_approval": true,
-    "next_prerequisite": "a separately authorized bounded HEAD retry that preserves raw HEAD headers (Content-Length presence/value, ETag, Last-Modified, Accept-Ranges, Content-Disposition), followed by an offline-closure emitted metadata-verification.json referencing this policy resolution"
+    "executor_readiness_audit": {
+      "expected_downloader_present": false,
+      "expected_downloader_script": "database/taxonomy/scripts/acquire_nortaxa.py",
+      "fixture_validator_only": "database/taxonomy/scripts/refresh_nortaxa.py::validate_fixture",
+      "next_prerequisite": "Implement acquire_nortaxa.py that satisfies the above requirements, prove it end-to-end with offline fixtures and injected transports, and only then may this acquisition proposal be considered for a separately generated approval artifact.",
+      "requirements_not_yet_proven_by_code": [
+        "single bounded GET to the canonical archive endpoint",
+        "https-only, ipt.artsdatabanken.no host allowlist, no redirects, no fallback",
+        "no Range, retry, resume, or authentication",
+        "free-disk check against the 67,108,864-byte ceiling before transport",
+        "bounded-chunk streaming that never buffers the full body",
+        "incremental byte count and incremental SHA-256",
+        "abort before the next chunk would exceed the ceiling",
+        "clean EOF within the ceiling when Content-Length is absent",
+        "declared Content-Length (when present) exactly equal to completed bytes and reaching EOF",
+        "partial-file quarantine or deletion on any transport interruption or overflow",
+        "no promotion of a partial or oversized file",
+        "non-empty and complete structural ZIP validation before promotion",
+        "atomic promotion of validated bytes to archive.zip",
+        "recording final observed size and SHA-256",
+        "provably one permitted future GET attempt only"
+      ]
+    },
+    "executor_ready": false,
+    "metadata_verification_final_artifact_exists": true,
+    "metadata_verification_final_artifact_sha256": "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa"
   },
   "profile_code": "nortaxa_dwca",
-  "proposed_at": "2026-07-24T21:05:00Z",
+  "proposed_at": "2026-07-26T00:00:00Z",
   "proposed_offline": true,
   "release": {
     "issued_date": "2026-07-17",
     "version": "1.284"
   },
   "source_code": "nortaxa",
-  "unbound_evidence": {
-    "metadata_verification_sha256": null,
-    "reason": "No metadata-verification.json exists. Attempt 3 did not preserve sufficient HEAD transport evidence for offline closure under policy nortaxa-archive-head-content-length-absent-v1. A newly authorized HEAD attempt is required before this proposal can be considered for approval."
+  "supersedes_prior_proposal": {
+    "prior_acquisition_proposal_sha256": "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226",
+    "reason": "Attempt 4 supplied the archive HEAD evidence attempt 3 could not preserve; the composed metadata verification is now final. This revision binds the new evidence and continues to await executor readiness."
   }
 }
