@@ -3823,15 +3823,29 @@ def _analyze_image_changes(
     }
 
 
+def _non_blocking_local_only_fields(field_changes: dict) -> frozenset[str]:
+    if 'local_payload' not in field_changes:
+        return _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+    local_payload = dict(field_changes.get('local_payload') or {})
+    identification_is_empty = not any(
+        str(local_payload.get(field) or '').strip()
+        for field in ('genus', 'species', 'common_name', 'species_guess')
+    )
+    if identification_is_empty:
+        return frozenset()
+    return _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+
+
 def _remaining_local_changes_after_remote_merge(
     field_changes: dict,
     *,
     local_media_changed: bool,
 ) -> bool:
+    non_blocking_fields = _non_blocking_local_only_fields(field_changes)
     blocking_local_only_fields = {
         str(field or '').strip()
         for field in (field_changes.get('local_only_fields') or [])
-        if str(field or '').strip() not in _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+        if str(field or '').strip() not in non_blocking_fields
     }
     return bool(blocking_local_only_fields or field_changes.get('conflict_fields') or local_media_changed)
 
@@ -8038,18 +8052,20 @@ def _remote_observation_extra_values(remote: dict) -> dict:
 
 
 def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
-    """Preserve cloud-side selected AI values when the desktop row is still empty.
+    """Preserve cloud-side selected AI values for an existing identification.
 
     Existing desktop observations may have `NULL` in the newly added fields until
     they are re-pulled from cloud. When we push an unrelated desktop edit, we
-    don't want those missing local values to wipe the cloud selection. Red-list
-    fields are included here as a forward-compatible safety net: they are
-    currently pull-only (absent from `_OBS_PUSH_COLS`) so the merge has no
-    effect today, but if that ever changes the local NULL will not overwrite
-    a cloud-populated value.
+    don't want those missing local values to wipe the cloud selection. A fully
+    empty local identification is different: its nulls are an explicit clear
+    and must reach the cloud.
     """
     merged = dict(local_obs or {})
     remote = dict(remote_obs or {})
+    identification_is_empty = not any(
+        str(merged.get(field) or '').strip()
+        for field in ('genus', 'species', 'common_name', 'species_guess')
+    )
     for field in (
         'ai_selected_service',
         'ai_selected_taxon_id',
@@ -8059,6 +8075,11 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
         'red_list_category',
         'red_list_categories_json',
     ):
+        # An empty local identification is an explicit tombstone when the row
+        # is pushed. Preserve raw observation_identifications separately, but
+        # do not resurrect the previously selected AI taxon or red-list data.
+        if identification_is_empty:
+            continue
         local_value = merged.get(field)
         if local_value not in (None, ''):
             continue
@@ -16655,7 +16676,7 @@ def pull_all(
                         reasons: list[str] = []
                         blocking_local_only_fields = sorted(
                             set(field_changes.get('local_only_fields') or [])
-                            - _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
+                            - _non_blocking_local_only_fields(field_changes)
                         )
                         if blocking_local_only_fields:
                             reasons.append(f"local_only_fields={blocking_local_only_fields}")

@@ -10818,8 +10818,7 @@ class ObservationsTab(QWidget):
                     or str(data.get("species") or "").strip() != str(observation.get("species") or "").strip()
                 )
                 self._observation_edit_draft_cache.pop(obs_id, None)
-                ObservationDB.update_observation(
-                    obs_id,
+                observation_updates = dict(
                     genus=data.get('genus'),
                     species=data.get('species'),
                     common_name=data.get('common_name'),
@@ -10861,6 +10860,31 @@ class ObservationsTab(QWidget):
                     country_code=data.get('country_code'),
                     region_id=data.get('region_id'),
                     allow_nulls=True
+                )
+                if dialog.is_unidentified():
+                    for field in (
+                        'genus',
+                        'species',
+                        'common_name',
+                        'inaturalist_taxon_id',
+                        'ai_selected_service',
+                        'ai_selected_taxon_id',
+                        'ai_selected_scientific_name',
+                        'ai_selected_probability',
+                        'ai_selected_at',
+                        'red_list_category',
+                        'red_list_categories_json',
+                        'species_guess',
+                        'uncertain',
+                        'determination_method',
+                    ):
+                        observation_updates.pop(field, None)
+                    ObservationDB.clear_observation_identification(
+                        obs_id,
+                    )
+                ObservationDB.update_observation(
+                    obs_id,
+                    **observation_updates,
                 )
                 self.schedule_metadata_cloud_sync(obs_id)
 
@@ -13897,6 +13921,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.publish_target_hint.setStyleSheet("color: #6b7280; font-size: 11px;")
         self.publish_target_hint.setVisible(False)
 
+        unidentified_row = QHBoxLayout()
+        unidentified_row.setContentsMargins(0, 0, 0, 0)
+        unidentified_row.setSpacing(4)
+        unidentified_row.addSpacing(taxonomy_label_width)
+        self.unidentified_checkbox = QCheckBox(self.tr("Unidentified"))
+        self.unidentified_checkbox.toggled.connect(self._on_unidentified_toggled)
+        unidentified_row.addWidget(self.unidentified_checkbox)
+        unidentified_row.addStretch()
+        identified_layout.addLayout(unidentified_row)
+
         uncertain_row = QHBoxLayout()
         uncertain_row.setContentsMargins(0, 0, 0, 0)
         uncertain_row.setSpacing(4)
@@ -14264,6 +14298,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.tr("Open location in Google Maps"),
             allow_when_disabled=True,
             disabled_hint=self.tr("Enter coordinates to enable the map"),
+        )
+        self._register_hint_widget(
+            self.unidentified_checkbox,
+            self.tr("Clear the current identification while keeping AI candidates."),
         )
         self._register_hint_widget(
             self.uncertain_checkbox,
@@ -15170,8 +15208,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         else:
             if hasattr(self, "taxonomy_tabs"):
                 self.taxonomy_tabs.setCurrentIndex(self.taxonomy_tabs.indexOf(self.species_tab))
-            if hasattr(self, "unknown_checkbox") and self.unknown_checkbox.isChecked():
-                self.unknown_checkbox.setChecked(False)
+            if self.is_unidentified():
+                self.unidentified_checkbox.setChecked(False)
             self._suppress_taxon_autofill = True
             if hasattr(self, "genus_input"):
                 self.genus_input.setText(genus)
@@ -15578,6 +15616,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _apply_suggested_taxon(self):
         if not self.suggested_taxon:
+            return
+        if self.is_unidentified():
             return
         if not hasattr(self, "genus_input") or not hasattr(self, "species_input"):
             return
@@ -16289,6 +16329,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species = self.species_input.text().strip() or None
         common_name = self.vernacular_input.text().strip() or None
         species_guess = f"{genus} {species}".strip() if genus and species else None
+        unidentified = self.is_unidentified()
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -16325,6 +16366,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self.observation if isinstance(self.observation, dict) and self.observation else self.draft_data
             )
         )
+        if unidentified:
+            genus = None
+            species = None
+            common_name = None
+            species_guess = None
+            ai_selected = {
+                "ai_selected_service": None,
+                "ai_selected_taxon_id": None,
+                "ai_selected_scientific_name": None,
+                "ai_selected_probability": None,
+                "ai_selected_at": None,
+            }
         habitat_parts: list[str] = []
         if nin2_labels:
             habitat_parts.append(f"{self._nin2_tab_title()}: {' > '.join(nin2_labels)}")
@@ -16340,11 +16393,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'genus': genus,
             'species': species,
             'common_name': common_name,
-            'inaturalist_taxon_id': self._inaturalist_taxon_id,
-            'red_list_category': self._red_list_category or None,
+            'inaturalist_taxon_id': None if unidentified else self._inaturalist_taxon_id,
+            'red_list_category': None if unidentified else self._red_list_category or None,
             'red_list_categories_json': (
                 json.dumps(self._red_list_categories, ensure_ascii=False)
-                if isinstance(self._red_list_categories, dict) and self._red_list_categories
+                if not unidentified and isinstance(self._red_list_categories, dict) and self._red_list_categories
                 else None
             ),
             'publish_target': publish_target,
@@ -16354,9 +16407,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'location_precision': location_precision,
             'species_guess': species_guess,
             **ai_selected,
-            'uncertain': self.uncertain_checkbox.isChecked(),
+            'uncertain': False if unidentified else self.uncertain_checkbox.isChecked(),
             'unspontaneous': self.unspontaneous_checkbox.isChecked(),
-            'determination_method': self.determination_method_combo.currentData(),
+            'determination_method': None if unidentified else self.determination_method_combo.currentData(),
             'date': self.datetime_input.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
             'location': self.location_input.text().strip() or None,
             'habitat': " | ".join(habitat_parts) if habitat_parts else None,
@@ -16598,6 +16651,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if key == "species":
             return any(
                 [
+                    bool(self.unidentified_checkbox.isChecked()),
                     (self.genus_input.text() or "").strip(),
                     (self.species_input.text() or "").strip(),
                     (self.vernacular_input.text() or "").strip(),
@@ -16624,6 +16678,41 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 ]
             )
         return False
+
+    def is_unidentified(self) -> bool:
+        checkbox = getattr(self, "unidentified_checkbox", None)
+        return bool(checkbox is not None and checkbox.isChecked())
+
+    def _on_unidentified_toggled(self, checked: bool) -> None:
+        checked = bool(checked)
+        for widget in (
+            getattr(self, "vernacular_input", None),
+            getattr(self, "vernacular_language_btn", None),
+            getattr(self, "genus_input", None),
+            getattr(self, "species_input", None),
+            getattr(self, "uncertain_checkbox", None),
+            getattr(self, "determination_method_combo", None),
+        ):
+            if widget is not None:
+                widget.setEnabled(not checked)
+
+        if checked:
+            self._suppress_taxon_autofill = True
+            self.vernacular_input.clear()
+            self.genus_input.clear()
+            self.species_input.clear()
+            self.uncertain_checkbox.setChecked(False)
+            self.determination_method_combo.setCurrentIndex(0)
+            self._set_inaturalist_taxon_id(None)
+            self._set_red_list_category(None, None)
+            self._current_ai_selected_fields = self._ai_selected_fields(None)
+            self._ai_selected_by_index.clear()
+            self._inat_selected_by_index.clear()
+            self._ai_selected_taxon = None
+            self._update_selected_ai_summary_label(None)
+            self._suppress_taxon_autofill = False
+
+        self._update_taxonomy_tab_indicators()
 
     def _update_taxonomy_tab_indicators(self) -> None:
         if not hasattr(self, "taxonomy_tabs"):
@@ -18944,7 +19033,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         genus = obs.get("genus") or ""
         species = obs.get("species") or ""
-        if not genus or not species:
+        has_identification = any(
+            str(obs.get(field) or "").strip()
+            for field in (
+                "genus",
+                "species",
+                "common_name",
+                "species_guess",
+                "ai_selected_scientific_name",
+            )
+        )
+        unidentified = not has_identification
+        if not genus and not species and not unidentified:
             for candidate in (obs.get("species_guess"), obs.get("ai_selected_scientific_name")):
                 fallback_genus, fallback_species = self._split_scientific_name_text(candidate)
                 if not genus and fallback_genus:
@@ -18957,6 +19057,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.genus_input.setText(genus)
         self.species_input.setText(species)
         self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
+        self.unidentified_checkbox.setChecked(unidentified)
         if hasattr(self, "vernacular_input"):
             self.vernacular_input.setText(obs.get("common_name") or "")
         self._set_inaturalist_taxon_id(obs.get("inaturalist_taxon_id"))

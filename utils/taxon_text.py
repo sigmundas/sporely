@@ -106,6 +106,12 @@ def resolve_observation_taxon_fields(
     if genus_text and species_text:
         return genus_text, species_text, f"{genus_text} {species_text}".strip()
 
+    # A structured genus-only (or legacy species-only) value is an explicit
+    # identification level. Do not silently complete it from an AI candidate
+    # or free-form guess.
+    if genus_text or species_text:
+        return genus_text or None, species_text or None, None
+
     for candidate in (guess_text, ai_selected_scientific_name):
         split = split_scientific_name_text(candidate)
         if not split:

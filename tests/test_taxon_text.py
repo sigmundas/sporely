@@ -1,4 +1,4 @@
-from utils.taxon_text import split_scientific_name_text
+from utils.taxon_text import resolve_observation_taxon_fields, split_scientific_name_text
 
 
 def test_plain_binomial() -> None:
@@ -63,3 +63,21 @@ def test_returns_none_when_only_genus() -> None:
 def test_returns_none_for_empty() -> None:
     assert split_scientific_name_text("") == (None, None)
     assert split_scientific_name_text(None) == (None, None)
+
+
+def test_resolver_preserves_genus_only_identification() -> None:
+    assert resolve_observation_taxon_fields(
+        "Mycena",
+        None,
+        None,
+        "Mycena galericulata",
+    ) == ("Mycena", None, None)
+
+
+def test_resolver_can_hydrate_legacy_unstructured_name() -> None:
+    assert resolve_observation_taxon_fields(
+        None,
+        None,
+        None,
+        "Mycena galericulata",
+    ) == ("Mycena", "galericulata", "Mycena galericulata")

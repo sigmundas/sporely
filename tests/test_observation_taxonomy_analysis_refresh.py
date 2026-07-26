@@ -88,6 +88,9 @@ class _FakeObservationDetailsDialog:
     def get_ai_state(self) -> dict:
         return {}
 
+    def is_unidentified(self) -> bool:
+        return False
+
     def get_data(self) -> dict:
         return {
             "genus": "Entoloma",

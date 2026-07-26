@@ -620,3 +620,96 @@ def test_existing_observation_hydrates_taxonomy_from_species_guess(
 
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
+
+
+def test_genus_only_observation_is_not_completed_from_ai_selection(
+    monkeypatch,
+    qapp,
+    tmp_path: Path,
+) -> None:
+    image_path = _make_oriented_image(tmp_path / "genus-only.jpg")
+    dialog = _build_dialog(
+        monkeypatch,
+        qapp,
+        image_path=image_path,
+        observation={
+            "id": 464,
+            "genus": "Mycena",
+            "species": "",
+            "common_name": "",
+            "species_guess": "",
+            "ai_selected_scientific_name": "Mycena galericulata",
+        },
+    )
+
+    assert not dialog.is_unidentified()
+    assert dialog.genus_input.text() == "Mycena"
+    assert dialog.species_input.text() == ""
+    data = dialog.get_data()
+    assert data["genus"] == "Mycena"
+    assert data["species"] is None
+    assert data["species_guess"] is None
+
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_unidentified_clears_selection_but_retains_raw_ai_candidates(
+    monkeypatch,
+    qapp,
+    tmp_path: Path,
+) -> None:
+    image_path = _make_oriented_image(tmp_path / "unidentified.jpg")
+    dialog = _build_dialog(
+        monkeypatch,
+        qapp,
+        image_path=image_path,
+        observation={
+            "id": 465,
+            "genus": "Amanita",
+            "species": "regalis",
+            "common_name": "Kongefluesopp",
+            "species_guess": "Amanita regalis",
+            "uncertain": True,
+            "determination_method": 1,
+            "inaturalist_taxon_id": 123,
+            "red_list_category": "NT",
+            "ai_selected_service": "artsorakel",
+            "ai_selected_taxon_id": "456",
+            "ai_selected_scientific_name": "Amanita regalis",
+            "ai_selected_probability": 0.84,
+        },
+    )
+    candidate = {"scientificName": "Amanita regalis"}
+    dialog._ai_predictions_by_index[0] = [candidate]
+    dialog._ai_selected_by_index[0] = candidate
+
+    dialog.unidentified_checkbox.setChecked(True)
+    dialog.suggested_taxon = {"genus": "Amanita", "species": "regalis"}
+    dialog._apply_suggested_taxon()
+    data = dialog.get_data()
+
+    for field in (
+        "genus",
+        "species",
+        "common_name",
+        "species_guess",
+        "inaturalist_taxon_id",
+        "red_list_category",
+        "red_list_categories_json",
+        "ai_selected_service",
+        "ai_selected_taxon_id",
+        "ai_selected_scientific_name",
+        "ai_selected_probability",
+        "ai_selected_at",
+        "determination_method",
+    ):
+        assert data[field] is None
+    assert data["uncertain"] is False
+    assert dialog.genus_input.text() == ""
+    assert dialog.species_input.text() == ""
+    assert dialog.get_ai_state()["predictions"][0] == [candidate]
+    assert dialog.get_ai_state()["selected"] == {}
+
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()

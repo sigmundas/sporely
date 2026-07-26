@@ -1352,6 +1352,38 @@ class ObservationDB:
             conn.close()
 
     @staticmethod
+    def clear_observation_identification(
+        observation_id: int,
+    ) -> Optional[str]:
+        """Clear the selected identification while retaining raw AI evidence.
+
+        ``ai_state_json`` is intentionally not cleared: it contains the raw AI
+        candidates that may still be useful after an incorrect selection is
+        removed.
+        """
+        identification_fields = {
+            'genus': None,
+            'species': None,
+            'common_name': None,
+            'species_guess': None,
+            'uncertain': False,
+            'determination_method': None,
+            'inaturalist_taxon_id': None,
+            'red_list_category': None,
+            'red_list_categories_json': None,
+            'ai_selected_service': None,
+            'ai_selected_taxon_id': None,
+            'ai_selected_scientific_name': None,
+            'ai_selected_probability': None,
+            'ai_selected_at': None,
+        }
+        return ObservationDB.update_observation(
+            observation_id,
+            **identification_fields,
+            allow_nulls=True,
+        )
+
+    @staticmethod
     def _update_image_paths(cursor, observation_id: int, old_folder: str, new_folder: str):
         """Update image filepaths when folder is renamed."""
         cursor.execute('SELECT id, filepath FROM images WHERE observation_id = ?', (observation_id,))

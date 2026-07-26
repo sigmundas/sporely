@@ -283,6 +283,162 @@ def test_cloud_pull_backfills_taxonomy_from_selected_ai_scientific_name(tmp_path
     assert local_row["ai_selected_scientific_name"] == "Entoloma clypeatum"
 
 
+def test_clear_identification_is_atomic_and_retains_raw_ai_state(tmp_path, monkeypatch) -> None:
+    db_path = _init_fresh_database(tmp_path, monkeypatch)
+    _patch_connection_helpers(monkeypatch, db_path)
+    raw_ai_state = '{"predictions":{"0":[{"scientificName":"Entoloma clypeatum"}]}}'
+    local_id = models.ObservationDB.create_observation(
+        date="2026-05-01",
+        genus="Entoloma",
+        species="clypeatum",
+        common_name="ask",
+        species_guess="Entoloma clypeatum",
+        uncertain=True,
+        determination_method=1,
+        inaturalist_taxon_id=12345,
+        red_list_category="NT",
+        red_list_categories_json='{"NO":"NT"}',
+        ai_state_json=raw_ai_state,
+        ai_selected_service="inat",
+        ai_selected_taxon_id="12345",
+        ai_selected_scientific_name="Entoloma clypeatum",
+        ai_selected_probability=0.97,
+        ai_selected_at="2026-05-01T12:34:56Z",
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE observations SET cloud_id = 'cloud-123', sync_status = 'synced' WHERE id = ?",
+            (local_id,),
+        )
+        conn.commit()
+
+    models.ObservationDB.clear_observation_identification(local_id)
+
+    row = models.ObservationDB.get_observation(local_id)
+    assert row is not None
+    for field in (
+        "genus",
+        "species",
+        "common_name",
+        "species_guess",
+        "determination_method",
+        "inaturalist_taxon_id",
+        "red_list_category",
+        "red_list_categories_json",
+        "ai_selected_service",
+        "ai_selected_taxon_id",
+        "ai_selected_scientific_name",
+        "ai_selected_probability",
+        "ai_selected_at",
+    ):
+        assert row[field] is None
+    assert row["uncertain"] == 0
+    assert row["ai_state_json"] == raw_ai_state
+    assert row["sync_status"] == "dirty"
+
+
+def test_explicit_identification_nulls_are_not_restored_from_cloud() -> None:
+    local = {
+        "id": 7,
+        "genus": None,
+        "species": None,
+        "common_name": None,
+        "species_guess": None,
+        "ai_selected_service": None,
+        "ai_selected_taxon_id": None,
+        "ai_selected_scientific_name": None,
+        "ai_selected_probability": None,
+        "ai_selected_at": None,
+        "red_list_category": None,
+        "red_list_categories_json": None,
+    }
+    remote = {
+        "genus": "Entoloma",
+        "species": "clypeatum",
+        "common_name": "ask",
+        "species_guess": "Entoloma clypeatum",
+        "ai_selected_service": "inat",
+        "ai_selected_taxon_id": "12345",
+        "ai_selected_scientific_name": "Entoloma clypeatum",
+        "ai_selected_probability": 0.97,
+        "ai_selected_at": "2026-05-01T12:34:56Z",
+        "red_list_category": "NT",
+        "red_list_categories_json": {"NO": "NT"},
+    }
+
+    merged = cloud_sync._merge_cloud_selected_ai_fields(local, remote)
+    payload = cloud_sync._observation_push_payload(merged, local=True)
+
+    for field in (
+        "genus",
+        "species",
+        "common_name",
+        "species_guess",
+        "ai_selected_service",
+        "ai_selected_taxon_id",
+        "ai_selected_scientific_name",
+        "ai_selected_probability",
+        "ai_selected_at",
+        "red_list_category",
+        "red_list_categories_json",
+    ):
+        assert payload[field] is None
+
+    client = cloud_sync.SporelyCloudClient.__new__(cloud_sync.SporelyCloudClient)
+    client.user_id = "user-123"
+    client._find_cloud_observation = lambda desktop_id: "cloud-123"
+    captured: dict[str, object] = {}
+
+    def fake_patch(path: str, patch_payload: dict) -> None:
+        captured["path"] = path
+        captured["payload"] = dict(patch_payload)
+
+    client._patch = fake_patch
+    client.push_observation(merged, remote_obs=remote)
+
+    assert captured["path"] == "observations?id=eq.cloud-123"
+    patch_payload = captured["payload"]
+    assert isinstance(patch_payload, dict)
+    for field in (
+        "genus",
+        "species",
+        "common_name",
+        "species_guess",
+        "ai_selected_service",
+        "ai_selected_taxon_id",
+        "ai_selected_scientific_name",
+        "ai_selected_probability",
+        "ai_selected_at",
+        "red_list_category",
+        "red_list_categories_json",
+    ):
+        assert patch_payload[field] is None
+
+
+def test_offline_pull_keeps_ai_clear_dirty_until_it_can_be_pushed() -> None:
+    field_changes = {
+        "local_payload": {
+            "genus": None,
+            "species": None,
+            "common_name": None,
+            "species_guess": None,
+        },
+        "local_only_fields": [
+            "ai_selected_service",
+            "ai_selected_taxon_id",
+            "ai_selected_scientific_name",
+            "ai_selected_probability",
+            "ai_selected_at",
+        ],
+        "conflict_fields": [],
+    }
+
+    assert cloud_sync._remaining_local_changes_after_remote_merge(
+        field_changes,
+        local_media_changed=False,
+    )
+
+
 def test_cloud_identification_rows_hydrate_desktop_ai_state(tmp_path, monkeypatch) -> None:
     db_path = _init_fresh_database(tmp_path, monkeypatch)
     _patch_connection_helpers(monkeypatch, db_path)
