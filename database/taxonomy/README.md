@@ -432,141 +432,67 @@ self-authorized, and cannot be created into an approval before a final
 unauthorized. Stage 2B remains incomplete pending a separately authorized
 bounded HEAD retry that preserves the raw HEAD headers dict.
 
-## NorTaxa Stage 2B offline acquisition executor
+## NorTaxa Stage 2B archive acquisition
 
-`scripts/acquire_nortaxa.py` implements the future archive-acquisition
-boundary for the pinned NorTaxa `1.284` release. This implementation task was
-entirely offline: it created no approval, made no DNS/HEAD/GET/Range request,
-downloaded or extracted no archive, and did not change the planned manifest or
-any immutable proposal, request, metadata-attempt, policy-resolution, or final
-metadata-verification artifact. The existing acquisition proposal remains
-`proposed`, `download_authorized: false`, and `ready_for_approval: false`.
-Because this executor is not yet committed, the proposal is deliberately not
-marked executor-ready and no speculative executor commit is recorded.
+Manual invocation of `scripts/acquire_nortaxa.py --execute` is the acquisition
+authorization. Each invocation opens at most one HTTP GET against the pinned
+public endpoint `https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284`.
+There is no automatic retry, no redirect following, no Range/resume, no
+authentication, no cookies, no conditional headers, and no automatic recovery.
 
-The executor state machine is:
+The former approval/readiness/proposal framework was retired as
+disproportionate for a public pinned archive. Historical `nortaxa-acquisition.proposal.json`
+and `sources/nortaxa/1.284/executor-readiness.json` records are preserved
+in Git history at commit `2ea3294d4269c043f98374f5bc2ad562971a53aa`. The
+consumed Stage 2B attempt-1 approval and journal are preserved byte-identically
+under unambiguous names in the release history:
+
+- `sources/nortaxa/1.284/acquisition-attempt-1-approval.json`
+  (SHA-256 `6de49d43812cbc6fe87bb89d329e72f3d24379d30f08b71b1c12d353124eb9e1`)
+- `sources/nortaxa/1.284/acquisition-attempt-1-journal.json`
+  (SHA-256 `026f3f4060d672deb307e17763ba02f41c8c7d3c22cb958709a3f511913b3d7a`)
+
+Both are referenced from `manifest.json` and never used as active authorization.
+
+The runtime executor is small and self-contained (approximately 500 lines):
 
 ```text
-approval + evidence + clean committed Git state validated
-  -> exclusive release lock
-  -> local path/filesystem/free-space preflight
-  -> append-only attempt-consumed journal (durable before transport)
-  -> exactly one injected/production GET open
-  -> bounded streaming + incremental byte count/SHA-256 + clean EOF
-  -> existing NorTaxa structural ZIP validation (no extraction)
-  -> durable promotion-ready receipt
-  -> atomic archive.zip promotion + release-directory fsync
-  -> append-only durable acquisition result
+--execute is required
+  -> refuse if archive.zip already exists
+  -> exclusive nonblocking release-directory flock
+  -> refuse if .staging/ contains any pre-existing payload
+     (manual maintainer review required; no auto-recovery)
+  -> destination-filesystem free space >= 67,108,864 bytes
+  -> exactly one production GET with Accept-Encoding: identity,
+     ambient proxies disabled, no redirect following, no auth/cookies
+  -> reject non-200, changed final URL, unsupported Content-Type,
+     non-identity Content-Encoding
+  -> stream to a unique .staging/*.part file with incremental
+     byte count + SHA-256 + ceiling enforcement + clean-EOF check +
+     Content-Length consistency when exposed
+  -> refresh_nortaxa.validate_fixture (non-extracting)
+  -> os.link(temp, archive.zip, follow_symlinks=False) — no overwrite
+  -> unlink temp, fsync release directory
+  -> atomic manifest update: state=validated, download evidence,
+     new execution_attempts entry
 ```
 
-The approval validator is strict and fail-closed. It binds the current
-acquisition proposal, source-selection proposal, canonical request,
-policy-resolution, final metadata verification, attempt 4, exact source and
-release identity, dataset UUID, canonical HTTPS endpoint, single allowed host,
-one GET, the no-redirect/no-Range/no-retry/no-resume/no-fallback/no-auth policy,
-an approved ceiling no greater than 67,108,864 bytes, the executor file hash,
-test-evidence hash, and the exact clean executor Git commit. Unknown fields,
-expired or superseded approvals, dirty trees, mismatches, and authority
-broadening are rejected. The executor never writes or modifies an approval.
+On any handled failure the executor deletes the temporary file, removes an
+empty `.staging/` directory, appends a bounded typed failure entry to
+`manifest.json`, records the phase and (if known) observed bytes / archive
+SHA-256, and returns non-zero. It never promotes on failure and never retries.
 
-The release lock serializes all processes. The one permitted network attempt
-is consumed by an exclusive, fsynced journal before `transport.open`; once that
-journal exists, a crash or exception cannot restore GET authority. Lock
-contention fails immediately and there is no retry loop. Local free-space
-failure occurs before attempt consumption and before transport.
+A hard crash may leave a `.part` in `.staging/`. The next invocation refuses
+and reports the path so a maintainer can inspect and remove it manually. That
+refusal is intentional — the executor does not attempt automatic recovery.
 
-Streaming uses a unique `.staging/*.part` file on the final archive's
-filesystem. Each read is bounded to at most `remaining + 1`; an overflow byte
-is detected before it is written. Missing Content-Length is accepted only
-after non-empty clean EOF within the ceiling. A present Content-Length is
-parsed by the existing metadata policy and must be positive, within the
-ceiling, and exactly equal to the completed stream. On every handled
-pre-promotion interruption, overflow, validation failure, or unexpected
-exception, the explicit disposition is deletion of the staged payload. The
-consumed-attempt journal remains. A process-killed orphan staging file can
-never be promoted by a later run because the journal blocks another GET and
-the executor does not resume staging files.
+The release-lock sentinel `.nortaxa-acquisition.lock` is intentionally
+persistent and is ignored by `.gitignore`; it is not evidence and not
+authorization.
 
-Before promotion, the executor calls `refresh_nortaxa.validate_fixture`, which
-retains the existing member-path/traversal, member-count, compressed and
-uncompressed size, compression-ratio, normalized/case collision, encryption,
-method, CRC, EOF, `meta.xml`, and DwC-A semantic protections without
-extracting members. It never overwrites an existing final archive.
-
-Crash recovery is intentionally asymmetric. Before promotion, consumed
-authority remains consumed and no new GET is possible. Immediately before
-promotion, an immutable receipt records the completed size/hash, allowlisted
-bounded response metadata, stream-policy result, and structural-validation
-result. If the archive was promoted but the final result was not recorded, a
-later invocation under the same approval rehashes and structurally revalidates
-the promoted archive against that receipt and writes the append-only result;
-it does not invoke transport. No state reports `result: passed` until both the
-archive promotion and durable result artifact exist.
-
-The production HTTP adapter is present for later separately approved use but
-was not invoked here. It constructs one plain GET, disables redirects, has no
-retry client, and sends no cookie, authorization, Range, conditional, resume,
-or fallback request data. Tests use only synthetic approvals in isolated
-temporary directories, injected byte streams, injected Git/clock/free-space
-state, and socket/DNS guards that raise on any network entry point.
-
-The remaining blocker is independent review and commit of the executor and its
-proof. Only after that commit may maintainers update executor-readiness
-evidence and separately create a time-bounded approval artifact bound to the
-committed SHA. No live acquisition is authorized by this code or documentation.
-
-### Executor-readiness closure
-
-`scripts/acquire_nortaxa.py` (committed Git blob
-`8af2f7999a04a4f6d66914e6ee3f74653a0f0b0a`) and
-`tests/test_acquire_nortaxa.py` (committed Git blob
-`7c45fc3809eaa9505da948737a1539710623adda`) are committed at
-`2f000d7fc5180bea7db7cdf40000a437ae026723`. All 90 executor tests pass
-under `pytest`. A single review-time modification of the test's `isolated`
-fixture pulls every bound acquisition artifact from `git show HEAD:...`,
-decoupling the executor test suite from any subsequent working-tree revision
-of `nortaxa-acquisition.proposal.json`; the readiness artifact binds
-committed-blob evidence and documents this drift under `working_tree_drift`.
-
-An entirely offline readiness review confirmed every acquisition control
-enumerated in the acquisition proposal against exact code and test references:
-separately supplied non-self-authorizing approval; binding to the proposal,
-metadata verification, attempt 4, source, release, endpoint, host, ceiling and
-executor commit; committed executor/test blobs at HEAD; exactly one durable
-GET attempt; durable attempt consumption before transport; concurrency locking
-without relying on the lock for durability; no redirects/retries/Range/resume/
-fallback/proxies/cookies/authentication; identity HTTP encoding and rejection
-of transformed bodies; raw repeated Content-Length handling; destination-
-filesystem free-space verification; bounded incremental streaming and SHA-256;
-overflow detection before writing the excess byte; clean-EOF and declared-
-length consistency; safe staging and symlink rejection; non-extracting
-structural ZIP validation; non-overwriting exclusive promotion; durable result
-persistence; and crash recovery without a second GET.
-
-The `sources/nortaxa/1.284/executor-readiness.json` artifact
-(`nortaxa-executor-readiness-v1`, schema v2) binds these bindings
-deterministically and declares `executor_ready: true`. Readiness is not
-acquisition approval — the artifact explicitly states that a separately
-generated approval is still required and cannot be substituted by readiness.
-
-The revised `nortaxa-acquisition.proposal.json` (schema v4, supersedes the
-predecessor at canonical SHA-256
-`eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0`) binds the
-executor-readiness canonical SHA-256, the committed executor Git SHA, and
-current working-tree executor and test filesystem SHA-256 values.
-`prerequisites.executor_ready` is `true`. However, no repository policy
-defines a maximum approval lifetime between `approved_at` and `expires_at`;
-`acquire_nortaxa.py` enforces whatever `expires_at` value the approval
-carries, but the maintainer decision that would bound that value is missing.
-The revised proposal also documents an `executor_pin_consistency_note`:
-`acquire_nortaxa.py` at HEAD hard-pins `ACQUISITION_PROPOSAL_SHA256` to the
-predecessor `eaf85515…`; a future coordinated commit must update the pin to
-this proposal's canonical SHA-256 before an approval bound to this proposal
-can pass the executor's approval validator. Consequently
-`authorization_state.ready_for_approval` is `false` and `blocked_by` is
-`approval_lifetime_policy_undefined`. No approval exists; no live acquisition
-has occurred; the release directory contains no archive, staging, quarantine,
-or extraction payload.
+The archive SHA-256 recorded in the manifest identifies the downloaded bytes.
+It does NOT independently prove source authenticity — the NorTaxa endpoint
+serves whatever bytes it serves at the time of the GET.
 
 ## COL XR acquisition boundary
 

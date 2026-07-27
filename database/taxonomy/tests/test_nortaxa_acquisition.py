@@ -70,6 +70,8 @@ def meta_xml(
     vern_terms: list[str] | None = None,
     malformed_index: str | None = None,
     include_distribution: bool = True,
+    distribution_row_type: str | None = None,
+    extra_extension: tuple[str, str] | None = None,
 ) -> bytes:
     core_terms = CORE_TERMS if core_terms is None else core_terms
     vern_terms = VERN_TERMS if vern_terms is None else vern_terms
@@ -81,12 +83,22 @@ def meta_xml(
         f'<field index="{offset}" term="{GBIF if term in {"vernacularName", "isPreferredName"} else DWC}{term}"/>'
         for offset, term in enumerate(vern_terms, 1)
     )
+    distribution_row_type = distribution_row_type or (DWC + "Distribution")
     distribution = (
-        f'<extension rowType="{DWC}Distribution" encoding="UTF-8" fieldsTerminatedBy="\\t" linesTerminatedBy="{lines}" '
+        f'<extension rowType="{distribution_row_type}" encoding="UTF-8" fieldsTerminatedBy="\\t" linesTerminatedBy="{lines}" '
         'ignoreHeaderLines="1"><files><location>extra/distribution.tsv</location></files>'
         f'<coreid index="0"/><field index="1" term="{DWC}countryCode"/></extension>'
         if include_distribution else ""
     )
+    extra_extension_xml = ""
+    if extra_extension is not None:
+        extra_row_type, extra_location = extra_extension
+        extra_extension_xml = (
+            f'<extension rowType="{extra_row_type}" encoding="UTF-8" '
+            f'fieldsTerminatedBy="\\t" linesTerminatedBy="{lines}" ignoreHeaderLines="1">'
+            f'<files><location>{extra_location}</location></files>'
+            f'<coreid index="0"/><field index="1" term="{DWC}countryCode"/></extension>'
+        )
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>'
         f'<archive xmlns="{NS}">'
@@ -96,7 +108,7 @@ def meta_xml(
         f'<extension rowType="{GBIF}VernacularName" encoding="UTF-8" fieldsTerminatedBy="{delimiter}" linesTerminatedBy="{lines}" '
         f'fieldsEnclosedBy="&quot;" ignoreHeaderLines="1"><files><location>{vern_file}</location></files>'
         f'{"<coreid index=\"0\"/>" if include_coreid else ""}{vern_fields}</extension>'
-        f'{distribution}</archive>'
+        f'{distribution}{extra_extension_xml}</archive>'
     ).encode("utf-8")
 
 
@@ -489,3 +501,150 @@ def test_plan_cli_reports_created_then_idempotent_not_dry_run(tmp_path: Path) ->
     assert created["created"] is True and created["idempotent"] is False
     assert repeated["created"] is False and repeated["idempotent"] is True
     assert "dry_run" not in created
+
+
+# ----- Distribution extension namespace handling (nortaxa_dwca) -----
+
+
+def test_gbif_namespace_distribution_extension_is_accepted(tmp_path: Path) -> None:
+    """The pinned NorTaxa 1.284 archive uses the GBIF Distribution row-type
+    namespace. The profile allowlist recognizes both DwC and GBIF namespaces."""
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(distribution_row_type=GBIF + "Distribution")),
+        request(),
+    )
+    assert report["result"] == "passed"
+    assert report["record_counts"] == {"Distribution": 1, "Taxon": 4, "VernacularName": 3}
+    # The Distribution row-type identity is preserved in the meta_xml evidence.
+    exts = report["meta_xml"]["extensions"]
+    assert any(e["row_type"] == GBIF + "Distribution" for e in exts)
+
+
+def test_dwc_namespace_distribution_extension_still_accepted(tmp_path: Path) -> None:
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(distribution_row_type=DWC + "Distribution")),
+        request(),
+    )
+    assert report["result"] == "passed"
+    assert report["record_counts"]["Distribution"] == 1
+
+
+def test_missing_required_row_types_fails(tmp_path: Path) -> None:
+    """Removing VernacularName is fatal even when Distribution is present.
+
+    Uses real XML parsing to REMOVE the VernacularName extension node (not
+    rename it), so parse_meta observes a genuinely absent extension and the
+    'exactly one VernacularName extension is required' gate fires.
+    """
+    from xml.etree import ElementTree as ET
+    meta = meta_xml(include_distribution=True)
+    ns = "http://rs.tdwg.org/dwc/text/"
+    ET.register_namespace("", ns)
+    root = ET.fromstring(meta)
+    removed = 0
+    for ext in list(root.findall(f"{{{ns}}}extension")):
+        if ext.attrib.get("rowType") == "http://rs.gbif.org/terms/1.0/VernacularName":
+            root.remove(ext)
+            removed += 1
+    assert removed == 1, "test fixture must contain exactly one VernacularName extension"
+    # The VernacularName extension is now truly absent from the parse tree.
+    stripped = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    with pytest.raises(AcquisitionError, match="exactly one VernacularName"):
+        parse_meta(stripped)
+
+
+def test_multiple_distribution_extensions_rejected(tmp_path: Path) -> None:
+    """Policy: exactly one Distribution extension may be present. A meta.xml
+    that declares two Distribution extensions (either namespace, in any
+    combination) is rejected as a structural error, not silently aggregated.
+    """
+    from xml.etree import ElementTree as ET
+    meta = meta_xml(distribution_row_type=DWC + "Distribution")
+    ns = "http://rs.tdwg.org/dwc/text/"
+    ET.register_namespace("", ns)
+    root = ET.fromstring(meta)
+    original = next(
+        ext for ext in root.findall(f"{{{ns}}}extension")
+        if ext.attrib.get("rowType") == DWC + "Distribution"
+    )
+    duplicate = ET.SubElement(root, f"{{{ns}}}extension", {
+        "rowType": GBIF + "Distribution", "encoding": "UTF-8",
+        "fieldsTerminatedBy": "\\t", "linesTerminatedBy": "\\n",
+        "ignoreHeaderLines": "1",
+    })
+    files = ET.SubElement(duplicate, f"{{{ns}}}files")
+    ET.SubElement(files, f"{{{ns}}}location").text = "extra/distribution.tsv"
+    ET.SubElement(duplicate, f"{{{ns}}}coreid", {"index": "0"})
+    ET.SubElement(duplicate, f"{{{ns}}}field", {"index": "1", "term": DWC + "countryCode"})
+    payload = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    with pytest.raises(AcquisitionError):
+        parse_meta(payload)
+
+
+def test_unknown_extension_still_rejected(tmp_path: Path) -> None:
+    """An unrelated extension row type (not Vernacular, not Distribution in
+    either allowlisted namespace) must fail parse_meta."""
+    with pytest.raises(AcquisitionError, match="unsupported extension row type"):
+        parse_meta(meta_xml(extra_extension=(GBIF + "Reference", "extra/references.tsv")))
+
+
+def test_distribution_referencing_missing_file_fails(tmp_path: Path) -> None:
+    """If meta.xml declares Distribution at a location that does not exist as a
+    ZIP member, validation fails at the ZIP-member existence check."""
+    payload = archive_bytes(
+        meta=meta_xml(distribution_row_type=GBIF + "Distribution"),
+    )
+    # Rebuild the ZIP without the Distribution table.
+    import io as _io, zipfile as _zip
+    src = _zip.ZipFile(_io.BytesIO(payload), "r")
+    out = _io.BytesIO()
+    with _zip.ZipFile(out, "w", compression=_zip.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            if info.filename == "extra/distribution.tsv":
+                continue
+            dst.writestr(info, src.read(info.filename))
+    path = tmp_path / "no-distribution-file.zip"
+    path.write_bytes(out.getvalue())
+    with pytest.raises(AcquisitionError):
+        validate_fixture(path, request())
+
+
+def test_distribution_unsafe_location_rejected(tmp_path: Path) -> None:
+    """A Distribution `<location>` outside the archive root fails the safe-path check."""
+    unsafe = meta_xml(distribution_row_type=GBIF + "Distribution").replace(
+        b"<location>extra/distribution.tsv</location>",
+        b"<location>../evil.tsv</location>",
+    )
+    with pytest.raises(AcquisitionError, match="unsafe DwC-A location"):
+        parse_meta(unsafe)
+
+
+def test_distribution_data_is_not_extracted_to_disk(tmp_path: Path) -> None:
+    """The validator streams Distribution rows in memory only; no file is
+    written or extracted beside the archive."""
+    archive_path = write_archive(tmp_path, meta=meta_xml(distribution_row_type=GBIF + "Distribution"))
+    report = validate_fixture(archive_path, request())
+    assert report["result"] == "passed"
+    # Only the archive fixture itself exists in tmp_path — no extraction.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["fixture.zip"]
+
+
+def test_distribution_orphan_core_id_still_fails(tmp_path: Path) -> None:
+    """Distribution row-linkage check still fires under the GBIF namespace."""
+    payload = archive_bytes(
+        meta=meta_xml(distribution_row_type=GBIF + "Distribution"),
+    )
+    # Rewrite the distribution table with an orphan core id.
+    import io as _io, zipfile as _zip
+    src = _zip.ZipFile(_io.BytesIO(payload), "r")
+    out = _io.BytesIO()
+    with _zip.ZipFile(out, "w", compression=_zip.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            if info.filename == "extra/distribution.tsv":
+                dst.writestr(info, "header\nrow-DOES-NOT-EXIST\tNO")
+            else:
+                dst.writestr(info, src.read(info.filename))
+    path = tmp_path / "orphan-distribution.zip"
+    path.write_bytes(out.getvalue())
+    with pytest.raises(AcquisitionError, match="orphan Distribution core ID"):
+        validate_fixture(path, request())

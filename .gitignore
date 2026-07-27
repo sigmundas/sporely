@@ -138,3 +138,5 @@ sopp.jpg
 /database/taxonomy/sources/nortaxa/*/extracted/
 /database/taxonomy/sources/nortaxa/*/*.part
 /database/taxonomy/sources/nortaxa/*/*.partial
+# Runtime flock sentinel: intentionally persistent, never committed
+/database/taxonomy/sources/nortaxa/*/.nortaxa-acquisition.lock

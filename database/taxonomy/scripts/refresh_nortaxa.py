@@ -38,6 +38,12 @@ DEFAULT_PROPOSAL = Path(__file__).resolve().parents[1] / "nortaxa-source-selecti
 TAXON_ROW_TYPE = "http://rs.tdwg.org/dwc/terms/Taxon"
 VERNACULAR_ROW_TYPE = "http://rs.gbif.org/terms/1.0/VernacularName"
 DISTRIBUTION_ROW_TYPE = "http://rs.tdwg.org/dwc/terms/Distribution"
+# The current pinned NorTaxa DwC-A declares its Distribution extension using
+# the GBIF namespace below. Both are Distribution-extension identities: they
+# are structurally validated (safe path, ZIP member present, no traversal) and
+# then ignored — Distribution data is not imported or interpreted here.
+DISTRIBUTION_ROW_TYPE_GBIF = "http://rs.gbif.org/terms/1.0/Distribution"
+DISTRIBUTION_ROW_TYPES = frozenset({DISTRIBUTION_ROW_TYPE, DISTRIBUTION_ROW_TYPE_GBIF})
 SUPPORTED_ENCODINGS = {"utf-8": "utf-8", "utf8": "utf-8"}
 SUPPORTED_DELIMITERS = {"\\t": "\t", "\\,": ",", ",": ",", "\t": "\t"}
 SUPPORTED_LINE_TERMINATORS = {"\\n": b"\n", "\\r\\n": b"\r\n", "\\r": b"\r"}
@@ -446,9 +452,19 @@ def parse_meta(raw: bytes) -> tuple[Table, list[Table]]:
     vernacular = [table for table in extensions if table.row_type == VERNACULAR_ROW_TYPE]
     if len(vernacular) != 1:
         raise AcquisitionError("exactly one VernacularName extension is required")
-    unknown = [table.row_type for table in extensions if table.row_type not in {VERNACULAR_ROW_TYPE, DISTRIBUTION_ROW_TYPE}]
+    allowed_extension_types = {VERNACULAR_ROW_TYPE, *DISTRIBUTION_ROW_TYPES}
+    unknown = [table.row_type for table in extensions if table.row_type not in allowed_extension_types]
     if unknown:
         raise AcquisitionError(f"unsupported extension row type: {unknown[0]}")
+    # Policy: at most one Distribution extension. Multiple Distribution extensions
+    # (in either namespace, in any combination) are rejected rather than silently
+    # aggregated, so the archive's Distribution provenance stays unambiguous.
+    distribution = [table for table in extensions if table.row_type in DISTRIBUTION_ROW_TYPES]
+    if len(distribution) > 1:
+        raise AcquisitionError(
+            "at most one Distribution extension is permitted; the meta.xml declared "
+            f"{len(distribution)} Distribution extensions"
+        )
     missing_core = COLUMN_REQUIRED - set(core.terms)
     missing_vernacular = VERNACULAR_REQUIRED - set(vernacular[0].terms)
     if missing_core:
@@ -647,7 +663,10 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                 links[core_id] = links.get(core_id, 0) + 1
             counts["VernacularName"] = vernacular_count
             for extension in extensions:
-                if extension.row_type == DISTRIBUTION_ROW_TYPE:
+                if extension.row_type in DISTRIBUTION_ROW_TYPES:
+                    # Distribution rows are structurally checked (bounded stream,
+                    # core-id linkage) and then ignored. No Distribution field
+                    # is imported or interpreted here.
                     distribution_count = 0
                     for row in _rows(archive, extension):
                         distribution_count += 1

@@ -341,59 +341,14 @@ def test_closure_refuses_when_policy_resolution_omits_transport_field() -> None:
                                   replacement_evaluator=always_parse_succeeded)
 
 
-# ----- Unauthorized acquisition proposal -----
+# ----- Retired: nortaxa-acquisition.proposal.json and executor-readiness.json -----
+# The approval/readiness/proposal framework was removed as disproportionate for a
+# public pinned NorTaxa archive. Historical evidence lives in Git history.
 
 
-def test_acquisition_proposal_bound_after_attempt_4_and_executor_ready() -> None:
-    path = TAXONOMY / "nortaxa-acquisition.proposal.json"
-    data = json.loads(path.read_text())
-    assert data["acquisition_proposal_schema_version"] == 5
-    assert data["approval_status"] == "proposed"
-    assert data["download_authorized"] is False
-    prereq = data["prerequisites"]
-    assert prereq["metadata_verification_final_artifact_exists"] is True
-    assert prereq["executor_ready"] is True
-    audit = prereq["executor_readiness_audit"]
-    assert audit["expected_downloader_present"] is True
-    assert audit["all_controls_proven"] is True
-    b = data["bound_evidence"]
-    assert b["source_selection_proposal_sha256"] == PROPOSAL_SHA
-    assert b["request_sha256"] == REQUEST_SHA
-    assert b["attempt_3_sha256"] == ATTEMPT_3_SHA
-    assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
-    assert b["policy_resolution_sha256"] == self_bound_canonical_sha256(RELEASE / "policy-resolution.json")
-    assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
-    assert b["executor_readiness_sha256"] == self_bound_canonical_sha256(RELEASE / "executor-readiness.json")
-
-
-def test_acquisition_proposal_ready_for_approval_but_still_unauthorized() -> None:
-    data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
-    fut = data["future_approval_artifact"]
-    assert fut["cannot_be_self_authorized"] is True
-    assert fut["readiness_cannot_authorize_acquisition"] is True
-    assert fut["proposal_cannot_authorize_acquisition"] is True
-    assert fut["approval_lifetime_seconds_max"] == 86400
-    required = set(fut["required_bound_fields"])
-    for field in (
-        "acquisition_proposal_sha256", "metadata_verification_sha256",
-        "policy_resolution_sha256", "executor_readiness_sha256", "approved_at",
-        "expires_at", "executor_script_sha256", "executor_test_evidence_sha256",
-    ):
-        assert field in required
-    assert data["authorization_state"]["ready_for_approval"] is True
-    assert data["prerequisites"]["approval_lifetime_policy_defined"] is True
-    assert data["prerequisites"]["approval_lifetime_policy"]["maximum_seconds"] == 86400
-
-
-def test_acquisition_proposal_does_not_change_proposal_ceiling() -> None:
-    proposal = json.loads((TAXONOMY / "nortaxa-source-selection.proposal.json").read_text())
-    acquisition = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
-    assert (
-        acquisition["archive_policy"]["proposed_maximum_bytes"]
-        == proposal["archive_policy"]["proposed_maximum_bytes"]
-    )
-    # And no `nortaxa-acquisition.approved.json` exists on disk.
-    assert not (TAXONOMY / "nortaxa-acquisition.approved.json").exists()
+def test_retired_proposal_and_readiness_artifacts_are_absent() -> None:
+    assert not (TAXONOMY / "nortaxa-acquisition.proposal.json").exists()
+    assert not (RELEASE / "executor-readiness.json").exists()
 
 
 # ----- Streaming-overflow enforcement (belt-and-braces on evaluate_archive_get) -----
@@ -418,23 +373,46 @@ def test_streaming_overflow_fails_before_promotion_undeclared() -> None:
         )
 
 
-def test_partial_cleanup_is_required_by_acquisition_proposal() -> None:
-    proposal = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
-    controls = proposal["archive_policy"]
-    assert controls["quarantine_or_delete_interrupted_or_oversized_partial_bytes"] is True
-    assert controls["never_promote_partial_file_as_final_archive"] is True
-    assert controls["require_non_empty_bytes_before_promotion"] is True
-    assert controls["require_complete_structural_validation_before_promotion"] is True
+# test_partial_cleanup_is_required_by_acquisition_proposal removed:
+# the acquisition proposal artifact was retired. The simplified executor
+# in acquire_nortaxa.py enforces staged-byte cleanup directly (see
+# tests/test_acquire_nortaxa.py::test_interrupted_stream_deletes_partial_and_records_failure
+# and ::test_structural_validation_failure_cleans_up_and_records).
 
 
-def test_manifest_state_is_still_planned_and_download_unauthorized() -> None:
+def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
+    """Manifest correction: schema v2 truthfully records the failed consumed
+    Stage 2B attempt-1 (approval created, GET consumed, body reached structural
+    validation, body not retained). Exact HTTP/stream evidence for attempt 1 is
+    unavailable_due_to_not_persisted."""
     manifest = json.loads((RELEASE / "manifest.json").read_text())
-    assert manifest["state"] == "planned"
-    assert manifest["approval_status"] == "proposed"
+    assert manifest["manifest_schema_version"] == 2
+    assert manifest["state"] == "consumed_and_structurally_failed"
+    assert manifest["approval_status"] == "consumed"
+    assert manifest["current_active_approval"] is False
     assert manifest["download_authorized"] is False
-    assert manifest["execution_attempts"] == []
     assert manifest["download"] is None
-    assert manifest["validation"] is None
+    attempts = manifest["execution_attempts"]
+    assert len(attempts) == 1
+    a1 = attempts[0]
+    assert a1["attempt_number"] == 1
+    assert a1["outcome"] == "failed"
+    assert a1["phase"] == "structural_validation"
+    assert a1["approval_created"] is True
+    assert a1["get_authority_consumed"] is True
+    assert a1["archive_body_retrieved_once"] is True
+    assert a1["archive_retained"] is False
+    assert a1["archive_promoted"] is False
+    assert a1["approval_sha256"] == "6de49d43812cbc6fe87bb89d329e72f3d24379d30f08b71b1c12d353124eb9e1"
+    assert a1["attempt_journal_sha256"] == "026f3f4060d672deb307e17763ba02f41c8c7d3c22cb958709a3f511913b3d7a"
+    assert "Distribution" in a1["structural_validation_error"]["message"]
+    for f in ("response_headers", "observed_bytes", "streamed_sha256",
+              "final_url", "http_status", "redirect_chain",
+              "content_length_result", "content_encoding"):
+        assert a1[f] == "unavailable_due_to_not_persisted", f
+    # `validation` no longer null: the manifest now carries the state note.
+    v = manifest["validation"]
+    assert v["state"] == "structural_validation_failed_cleanup_pending_or_completed"
 
 
 # ----- Cross-attempt composition (compose_supplemental_metadata_verification) -----
@@ -693,39 +671,9 @@ def test_final_metadata_verification_canonical_hash_is_stable() -> None:
     assert data["canonical_sha256"] == self_bound_canonical_sha256(path)
 
 
-def test_revised_acquisition_proposal_supersedes_prior_and_binds_readiness() -> None:
-    path = TAXONOMY / "nortaxa-acquisition.proposal.json"
-    data = json.loads(path.read_text())
-    assert data["acquisition_proposal_schema_version"] == 5
-    assert data["approval_status"] == "proposed"
-    assert data["download_authorized"] is False
-    b = data["bound_evidence"]
-    assert b["attempt_4_sha256"] == ATTEMPT_4_SHA
-    assert b["metadata_verification_sha256"] == self_bound_canonical_sha256(RELEASE / "metadata-verification.json")
-    assert b["executor_readiness_sha256"] == self_bound_canonical_sha256(RELEASE / "executor-readiness.json")
-    assert data["supersedes_prior_proposal"]["prior_acquisition_proposal_sha256"] == \
-        "eaf85515e4fe60d0ccafdde9b99c335d78e0d3e77e624ac8d9c5b6adf7ddd1b0"
-    assert data["prerequisites"]["metadata_verification_final_artifact_exists"] is True
-    assert data["prerequisites"]["executor_ready"] is True
-    assert data["prerequisites"]["approval_lifetime_policy_defined"] is True
-    assert data["authorization_state"]["ready_for_approval"] is True
-    ap = data["attempts_policy"]
-    assert ap["permitted_future_get_attempts"] == 1
-    for f in ("retries_authorized", "range_requests_authorized",
-              "resume_authorized", "authentication_authorized",
-              "fallback_endpoint_authorized"):
-        assert ap[f] is False
-
-
-def test_executor_readiness_binds_committed_executor_and_tests() -> None:
-    data = json.loads((TAXONOMY / "nortaxa-acquisition.proposal.json").read_text())
-    audit = data["prerequisites"]["executor_readiness_audit"]
-    assert audit["expected_downloader_script"] == "database/taxonomy/scripts/acquire_nortaxa.py"
-    assert audit["expected_downloader_present"] is True
-    assert Path("database/taxonomy/scripts/acquire_nortaxa.py").exists()
-    assert Path("database/taxonomy/tests/test_acquire_nortaxa.py").exists()
-    assert data["prerequisites"]["executor_ready"] is True
-    assert data["authorization_state"]["ready_for_approval"] is True
+# The two acquisition-proposal/readiness tests here were retired along with
+# nortaxa-acquisition.proposal.json and executor-readiness.json. See
+# test_acquire_nortaxa.py for the simplified-executor contract.
 
 
 def test_policy_resolution_unchanged_by_this_task() -> None:

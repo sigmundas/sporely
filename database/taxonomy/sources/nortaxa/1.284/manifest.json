@@ -1,9 +1,42 @@
 {
-  "approval_status": "proposed",
+  "approval_status": "consumed",
+  "authorization_model": "Manual invocation of database/taxonomy/scripts/acquire_nortaxa.py --execute is the acquisition authorization. Each invocation opens at most one HTTP GET; there is no automatic retry, no approval artifact, no readiness artifact, and no acquisition proposal at runtime.",
+  "current_active_approval": false,
   "download": null,
   "download_authorized": false,
-  "execution_attempts": [],
-  "manifest_schema_version": 1,
+  "execution_attempts": [
+    {
+      "approval_created": true,
+      "approval_path": "acquisition-attempt-1-approval.json",
+      "approval_sha256": "6de49d43812cbc6fe87bb89d329e72f3d24379d30f08b71b1c12d353124eb9e1",
+      "archive_body_retrieved_once": true,
+      "archive_promoted": false,
+      "archive_retained": false,
+      "attempt_journal_path": "acquisition-attempt-1-journal.json",
+      "attempt_journal_sha256": "026f3f4060d672deb307e17763ba02f41c8c7d3c22cb958709a3f511913b3d7a",
+      "attempt_number": 1,
+      "body_reached_structural_validation": true,
+      "consumed_at": "2026-07-26T22:07:55.918862Z",
+      "content_encoding": "unavailable_due_to_not_persisted",
+      "content_length_result": "unavailable_due_to_not_persisted",
+      "final_url": "unavailable_due_to_not_persisted",
+      "get_authority_consumed": true,
+      "http_status": "unavailable_due_to_not_persisted",
+      "observed_bytes": "unavailable_due_to_not_persisted",
+      "outcome": "failed",
+      "phase": "structural_validation",
+      "redirect_chain": "unavailable_due_to_not_persisted",
+      "response_headers": "unavailable_due_to_not_persisted",
+      "streamed_sha256": "unavailable_due_to_not_persisted",
+      "structural_validation_error": {
+        "cause": "The pinned committed validator recognized only DwC-namespace Distribution rows; the pinned NorTaxa 1.284 archive declares Distribution under the GBIF 1.0 namespace.",
+        "message": "unsupported extension row type: http://rs.gbif.org/terms/1.0/Distribution",
+        "type": "AcquisitionError"
+      }
+    }
+  ],
+  "historical_executor_commit": "2ea3294d4269c043f98374f5bc2ad562971a53aa",
+  "manifest_schema_version": 2,
   "profile_code": "nortaxa_dwca",
   "release": {
     "issued_date": "2026-07-17",
@@ -12,6 +45,9 @@
   "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
   "source_code": "nortaxa",
   "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
-  "state": "planned",
-  "validation": null
+  "state": "consumed_and_structurally_failed",
+  "validation": {
+    "note": "Attempt 1 streamed the archive body but failed structural validation. Staged bytes were deleted by the finally block of the pre-corrective executor. This manifest is updated by the offline corrective pass; the terminal-result artifact required by the schema-v2 executor is not yet materialized because the corrective-pass executor has not been re-run.",
+    "state": "structural_validation_failed_cleanup_pending_or_completed"
+  }
 }
